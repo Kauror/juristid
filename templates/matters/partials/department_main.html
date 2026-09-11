@@ -57,32 +57,21 @@ build them, so there is no empty shell and no manager population was queried
               <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
             {% endfor %}
           </div>
-        {% else %}
+        {% elif row.url %}
           <a class="uxstat__row" href="{{ row.url }}">
-            <span class="uxteam__who">
-              {% if row.is_unassigned %}
-                <span class="uxav uxav--none" title="Vastutajata" aria-hidden="true">!</span>
-              {% else %}
-                <span class="avatar avatar--sm" aria-hidden="true">{{ row.initials }}</span>
-              {% endif %}
-              <span class="uxteam__name{% if row.is_unassigned %} uxteam__name--none{% endif %}">
-                {{ row.name }}{% if row.is_self %} <span class="uxteam__self">· sina</span>{% endif %}
-              </span>
-              {% comment %}
-                A colleague who has left but still holds live work. Surfaced
-                rather than hidden: dropping the row would take the Matter off
-                this page entirely, and an active file owned by somebody who has
-                left is exactly what a department head needs to see.
-              {% endcomment %}
-              {% if row.is_former %}
-                <span class="badge badge--restricted"
-                      title="Kasutaja ei ole enam aktiivne, kuid tal on avatud teemasid">endine</span>
-              {% endif %}
-            </span>
-            {% for cell in row.cells %}
-              <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
-            {% endfor %}
+            {% include "matters/partials/department_team_row.html" with row=row %}
           </a>
+        {% else %}
+          {% comment %}
+            A row with nowhere honest to go. «Väljaspool osakonda» is every
+            owner who is not one of the department's people, and the register
+            cannot express that population — so the row is a `div` and the
+            numbers carry no link, for the reason three of the columns already
+            carry none (`_column_url`).
+          {% endcomment %}
+          <div class="uxstat__row">
+            {% include "matters/partials/department_team_row.html" with row=row %}
+          </div>
         {% endif %}
       {% endfor %}
     </div>

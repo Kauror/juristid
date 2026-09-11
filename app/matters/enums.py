@@ -96,13 +96,38 @@ class EngagementKind(models.TextChoices):
     service was used is answered by the title and the link, where a person can
     read it and correct it (Agent-F brief 9).
 
-    There is deliberately no ``MEETING``. A meeting is authored chronology and
-    `Entry` already records it with a date, an author and a body; adding it here
-    would create two places to write down one fact and guarantee they disagree
-    (brief 10).
+    ``MEETING`` was deliberately absent until the approved Teema target asked for
+    it by name. The old reasoning — a meeting is authored chronology, `Entry`
+    already records it with a date, an author and a body, and a second home for
+    the fact would guarantee two records that disagree — held while `Kaasamine`
+    was a standing section filled in separately from the composer (brief 10).
+    The target folds both into one save: `+ Kaasamine` offers `Koosolek` beside
+    `Küsitlus` and `Kirjade voor`, and one `Salvesta` writes whichever was
+    chosen, in the same transaction as the note describing it. A meeting
+    recorded through that panel is the engagement, not a copy of one
+    (docs/adr/0074).
+
+    ``WEB_CALL`` is not offered by the composer and is not retired either: rows
+    carrying it are historical fact, they still read, they still filter and they
+    still edit. A value the write surface stopped offering is not a value the
+    database stopped accepting.
     """
 
     WEB_CALL = "WEB_CALL", "Kaasamiskutse veebis"
     EMAIL_CAMPAIGN = "EMAIL_CAMPAIGN", "E-kiri või kampaania"
     SURVEY = "SURVEY", "Küsitlus"
+    MEETING = "MEETING", "Koosolek"
     OTHER = "OTHER", "Muu"
+
+
+#: What `+ Kaasamine` offers, in the order the approved target lists it.
+#:
+#: Three chips, not five. `Kirjade voor` is the target's name for the mailing
+#: `EMAIL_CAMPAIGN` has always stored, so the label moved and the stored value
+#: did not. `WEB_CALL` and `OTHER` remain valid stored values with no chip
+#: (docs/adr/0074, TEEMA_TARGET_SPEC §C.4).
+COMPOSER_ENGAGEMENT_KINDS: tuple[tuple[str, str], ...] = (
+    (EngagementKind.SURVEY.value, "Küsitlus"),
+    (EngagementKind.MEETING.value, "Koosolek"),
+    (EngagementKind.EMAIL_CAMPAIGN.value, "Kirjade voor"),
+)

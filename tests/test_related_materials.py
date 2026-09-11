@@ -892,7 +892,8 @@ def test_the_matter_page_never_runs_the_recommendation_engine(monkeypatch, signe
     every Matter page, because those are decisions somebody already made. What
     must not happen is the page ranking candidates nobody asked for: the engine
     reads the search projections, the archive and every other Matter, and it is
-    behind `Võimalikud seosed` for that reason (docs/adr/0062 §7).
+    behind the `Lisa` disclosure for that reason (docs/adr/0062 §7, and
+    docs/adr/0074 §21 for why the two add affordances became one).
 
     Asserted by making the engine fail loudly rather than by counting queries.
     A budget can absorb a new call by being generous; this cannot. It also
@@ -915,7 +916,7 @@ def test_the_matter_page_never_runs_the_recommendation_engine(monkeypatch, signe
     body = response.content.decode()
     # The section is there, and its lazy control is the way in.
     assert "Seotud materjalid" in body
-    assert "Võimalikud seosed" in body
+    assert ">Lisa</summary>" in body
 
 
 def test_the_order_is_the_same_every_time(specialist):
@@ -1124,10 +1125,13 @@ def test_the_matter_page_renders_the_section_closed_and_computes_no_suggestions(
 
     assert 'id="seotud-materjalid"' in body
     assert 'data-suggestions="closed"' in body
-    assert "Võimalikud seosed" in body
+    # One `Lisa` affordance over both ways of adding something — the search and
+    # the suggestions — which is the order somebody uses them in: look for the
+    # thing you know about, read what the application offers if you do not find
+    # it (docs/adr/0074 §21).
+    assert ">Lisa</summary>" in body
     assert "data-related-suggestions" not in body
     assert "Jäätmeseaduse rakendamine" not in body
-    assert "Lisa seotud teema" in body
 
 
 def test_a_reader_gets_the_section_without_controls(specialist, reader, client):
@@ -1141,7 +1145,7 @@ def test_a_reader_gets_the_section_without_controls(specialist, reader, client):
 
     assert "Jäätmeseaduse rakendamine" in body
     assert "Sama õigusakt: jäätmeseadus" in body
-    for control in ("Seo teemaga", "Ei ole seotud", "Lisa seotud teema", "Lisa taustmaterjaliks"):
+    for control in (">Lisa</summary>", "Ei ole seotud", "Otsi teemat või dokumenti…"):
         assert control not in body
 
 
@@ -1158,7 +1162,7 @@ def test_the_fragment_and_the_page_carry_the_reasons(specialist, signed_in):
         assert response.status_code == 200
         assert 'data-suggestions="open"' in body
         assert "Sama õigusakt: jäätmeseadus" in body
-        assert "Seo teemaga" in body
+        assert "Lisa" in body
         assert "%" not in body.split('id="seotud-materjalid"', 1)[1].split("</section>", 1)[0]
     assert "<title>" in page.content.decode()
     assert "<title>" not in fragment.content.decode()

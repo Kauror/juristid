@@ -10,7 +10,7 @@ line, with the management-command wrapper replaced by a `__main__` block. The
 fixture is the oracle; forking it would have meant comparing two different
 Matters and calling the difference a design deviation.
 
-    uv run python devtools/matter-refinement/seed_populated.py
+    uv run python devtools/teema-target/seed_populated.py
 
 Prints the Matter id. Idempotent; a Matter with history cannot be deleted, so
 reseeding means a fresh database.
@@ -49,12 +49,27 @@ from app.core.enums import Visibility  # noqa: E402
 from app.documents.enums import DocumentRole  # noqa: E402
 from app.documents.services import add_evidence_version, create_document  # noqa: E402
 from app.intelligence.enums import EffectiveDateKind  # noqa: E402
-from app.intelligence.services import add_effective_date, add_important_date  # noqa: E402
+from app.intelligence.services import (  # noqa: E402
+    add_confirmed_work_victory,
+    add_effective_date,
+    add_important_date,
+)
 from app.matters.entry_enums import EntryKind  # noqa: E402
 from app.matters.enums import EngagementKind, MatterDataClass, MatterOrigin  # noqa: E402
 from app.matters.models import Matter, MatterPersonalNote  # noqa: E402
-from app.matters.services import add_engagement, add_entry, create_matter  # noqa: E402
+from app.matters.services import (  # noqa: E402
+    add_engagement,
+    add_entry,
+    change_stage,
+    create_matter,
+)
 from app.organisations.models import Organisation, OrganisationType  # noqa: E402
+from app.submissions.enums import SentAtPrecision  # noqa: E402
+from app.submissions.services import (  # noqa: E402
+    create_submission,
+    mark_submission_sent,
+    select_final_evidence,
+)
 from app.taxonomy.models import PolicyArea  # noqa: E402
 from app.workflow.dates import period_bounds  # noqa: E402
 from app.workflow.enums import DatePrecision, Track  # noqa: E402
@@ -159,6 +174,7 @@ class Command(BaseCommand):
 
         self._facts(matter, owner, today)
         self._chronology(matter, owner, colleague, today)
+        self._progress(matter, owner, addressee, today)
         self._next_action(matter, owner, today)
         self._neighbours(matter, owner, sender, addressee)
 
@@ -273,11 +289,32 @@ class Command(BaseCommand):
             description="Pakendiseaduse muudatused",
             actor=actor,
         )
+        # `Keda kaasati` and `Vastuseid`, which is what `+ Kaasamine` asks for
+        # since the approved target (docs/adr/0074 §4, §5). The engagement is
+        # also a `.tl-strip` column, so it has to carry a date.
         add_engagement(
             matter=matter,
             kind=EngagementKind.SURVEY,
-            title="liikmetelt kogutud tagasiside tootjavastutuse kohta",
+            title="liikmed ja kaubandusvaldkonna töögrupp",
             occurred_on=today - timedelta(days=12),
+            response_count=14,
+            actor=actor,
+        )
+        # A `Koosolek`, the kind the target added. Two engagements also prove the
+        # strip draws two columns rather than one merged «Kaasamine».
+        add_engagement(
+            matter=matter,
+            kind=EngagementKind.MEETING,
+            title="ministeeriumi ja liikmete ümarlaud",
+            occurred_on=today - timedelta(days=9),
+            actor=actor,
+        )
+        # A confirmed win, recorded while the file is still open. It is a
+        # chronology milestone and deliberately *not* a `.tl-strip` step: a win
+        # is not a stage of the proceeding (docs/adr/0074 §8, §12).
+        add_confirmed_work_victory(
+            matter=matter,
+            title="Üleminekuaeg väiketootjatele pikendati 2028. aastani",
             actor=actor,
         )
 
@@ -397,6 +434,47 @@ class Command(BaseCommand):
             original_filename=ATTACHMENT_NAME,
             mime_type="application/pdf",
             uploaded_by=actor,
+        )
+
+    def _progress(self, matter: Matter, actor: User, addressee: Organisation, today: date) -> None:
+        """Where the file stands, and the opinion that went out.
+
+        Both are `.tl-strip` columns and both are chronology milestones, and
+        neither is drawn from an invented fact: the stage is a real
+        `MATTER_STAGE_CHANGED` event, so the strip's current step carries a real
+        transition date instead of «praegu» alone, and the sent opinion is a
+        canonical `Submission` with its exact final evidence bound to it
+        (docs/adr/0074 §12).
+        """
+        later = StageVocabulary.objects.filter(is_active=True).order_by("sort_order")[1:2].first()
+        if later is not None:
+            change_stage(matter=matter, stage=later, actor=actor)
+
+        document = create_document(
+            matter=matter,
+            title="Koja arvamus pakendiseaduse kohta",
+            role=DocumentRole.KODA_SUBMISSION_FINAL,
+            created_by=actor,
+        )
+        version = add_evidence_version(
+            document=document,
+            content=b"%PDF-1.4 koja arvamus",
+            original_filename="Koja_arvamus_pakendiseadus.pdf",
+            mime_type="application/pdf",
+            uploaded_by=actor,
+        )
+        submission = create_submission(
+            matter=matter,
+            title=matter.title,
+            actor=actor,
+            recipients=[addressee],
+        )
+        select_final_evidence(submission=submission, version=version, actor=actor)
+        mark_submission_sent(
+            submission=submission,
+            actor=actor,
+            sent_at=timezone.now() - timedelta(days=7),
+            sent_at_precision=SentAtPrecision.DATE,
         )
 
     def _next_action(self, matter: Matter, actor: User, today: date) -> None:

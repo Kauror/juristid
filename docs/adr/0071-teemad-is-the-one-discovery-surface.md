@@ -197,3 +197,144 @@ Only its discovery surface moved.
 **Deleting the important-date records with the page.** Retiring a reading
 surface is a decision about where information is consumed. Not one row was
 touched.
+
+---
+
+## Amendment, 2026-09-11 — the column headings are controls
+
+**Status:** accepted
+
+Teemad is where a Teema is found, and the table is what a reader actually looks
+at. Five of its columns name working dimensions — Hetkeseis, Vastutaja,
+Järgmiseks, Kuupäev, Viimane tegevus — and every one of them was passive. Acting
+on what you are looking at meant opening Täpsem otsing, finding the matching
+control, choosing the same words the row in front of you already says, and
+submitting a form.
+
+So the headings are now controls. No second toolbar, no second filter system:
+this decision is about which element writes the parameters this ADR already
+defines.
+
+### The two behaviours, and why they are not one
+
+| Column | Heading does |
+| --- | --- |
+| Hetkeseis | filters — `?hetkeseis=` |
+| Vastutaja | filters — `?vastutaja=` |
+| Järgmiseks | filters — `?tegevus=` |
+| Kuupäev | sorts — `?jarjestus=kuupaev_asc` / `kuupaev_desc` |
+| Viimane tegevus | sorts — `?jarjestus=viimane_uusim` / `viimane_vanim` |
+
+Generic ascending/descending on every heading would have been less code and the
+wrong product. Sorting *Marko / Ireen / Sandra* alphabetically answers nothing
+anybody asks of the Vastutaja column; sorting *vaata üle / helistan / ootan
+vastust* alphabetically is not a question at all. What those three columns are
+for is **show me only these**, so that is what their headings do — and
+Järgmiseks filters by the work states `?tegevus=` already understands
+(`Puudub`, `Tähtaeg möödas`, `Ülevaatus käes`), never by the letters of one
+file's sentence. Free text is what the search box above the table is for.
+
+### The URL is still the whole state
+
+A heading writes the same parameter Täpsem otsing writes, produces the same
+removable chip, and reads its own active state back out of the address.
+Every menu is populated from the same context list the panel's own select is
+populated from — `stages`, `owners` (`owner_filter_choices`, ADR 0036),
+`next_action_options` — so "the heading and the panel agree" is not a property
+to be maintained but the absence of a second thing to maintain.
+
+Nothing is stored. No session, no `localStorage`, no preferences row, no
+migration: a narrowed, sorted register is a link somebody can paste, and that
+was already true before the headings could be clicked.
+
+Everything not named survives a heading's activation — `q`, every other filter,
+the sort. Only `leht` resets, because a different population starts at its first
+page.
+
+### Kuupäev sorts the date the row displays
+
+This is the load-bearing half. The cell has always chosen between the open
+`Järgmiseks` step's own date and the Matter's `Arvamuse tähtaeg`, and an
+ordering built from either column alone would produce a table reading 12.09,
+15.09, 13.09 under a heading insisting it was sorted by date.
+
+So the choice is one rule, `app/matters/register_dates.py`, read two ways: a
+Python reader the row renders from, and a `COALESCE` the database orders on.
+This is the shape `app/matters/activity.py` already uses for *Viimane tegevus*,
+and `?jarjestus=viimane_*` orders on that module's own SQL twin of
+`activity_of` — never on `Matter.updated_at`, which for most of this register is
+the moment the 2026 cutover touched the row (ADR 0026).
+
+**A restricted step contributes to neither reading.** The prefetch and the
+subquery are both `NextAction.objects.visible_to(user)`, so an action this
+reader may not open moves neither the date on the row nor the row up the page.
+Authorization happens before the sort key exists, not after the text is hidden
+(AUTH-003).
+
+**A missing date is last in both directions.** PostgreSQL's own default is NULLS
+LAST ascending and NULLS FIRST descending, so «hiliseim enne» would have opened
+on a page of em dashes above the rows somebody clicked the heading to see.
+
+### What does not change
+
+* **The default order.** Newest reference first, exactly as before. A column
+  becoming clickable is not a decision about what the register opens on.
+* **Old sort addresses.** `?jarjestus=reference|title|updated|deadline` keep
+  their values *and their meanings*. `deadline` still orders on
+  `Matter.response_deadline`, which is deliberately **not** the Kuupäev column;
+  it is relabelled «Arvamuse tähtaeg» in the Järjestus control so two sorts on
+  one page do not both read as «Tähtaeg».
+* **Every other surface's table.** `matters/partials/matter_table.html` is
+  shared with Saabunud, which writes no register parameters, so the interactive
+  head is a partial of its own included on an explicit flag. A filtering control
+  on a page whose address nothing reads would be a control that looks like it
+  works and changes nothing.
+
+### Consequences
+
+* Three filter menus are `<details>`/`<summary>` with plain links inside:
+  keyboard-operable, Escape-closable and functional with scripting off, which is
+  the same pattern the row's own `Määra` menu uses (buttons there, because that
+  one writes).
+* `aria-sort` on the cell is the single statement of which way a column is
+  sorted — the stylesheet draws its arrow from it, so the two cannot disagree.
+  It describes the *column*: «uusim enne» is a descending date column even
+  though it is the heading's first activation.
+* **Every interactive `<th>` names itself with `aria-label`.** A `<details>`
+  maps to role `group`, which is not named from its contents, so a heading whose
+  whole content is one left the column header with no accessible name at all and
+  a screen reader reading down that column announced nothing in front of each
+  cell. The sorting columns carry one for the opposite reason: their link is
+  called «Kuupäev — järjesta varaseim enne», which is right for a control and
+  wrong to hear repeated twelve times.
+* **The controls are `position: relative`.** Each carries a `.visually-hidden`
+  span, `.visually-hidden` is `position: absolute` with no offsets, and without
+  a positioned ancestor that 1px box escaped `.tablewrap`'s clipping to sit
+  765px into a 375px document — `/teemad/` scrolled sideways on a phone, with
+  nothing visible at the far end to explain it.
+* **`Viimane tegevus` is 132px rather than 110.** Its heading is 93px of
+  uppercase and the cell's content box was 82, so it has been overflowing its
+  own column on every surface that renders this table — harmlessly, until the
+  part running off the end became the arrow saying which way the column is
+  sorted. Taken from the title column, which absorbs the remainder in a fixed
+  layout; not from Kuupäev, which is at 158px of 162 on real rows. Below 1200px
+  the column is not rendered at all.
+* The full register page costs the same number of queries as before. The live
+  search fragment costs two more (17 → 19), because the three menus are inside
+  the region a keystroke replaces and must still be there afterwards; both are
+  bounded reads — a nine-row vocabulary and one union over owners — and neither
+  grows with the register.
+* The two derived sort keys are annotated only when they are ordered on, so an
+  unsorted page pays for neither.
+
+### What was considered and refused
+
+**A toolbar above the table.** The dimensions are the columns; a second row of
+controls restating them is the thing this change removes work from.
+
+**Sorting in Python after pagination.** It would have ordered the twelve rows
+that happened to land on the current page and called the result a sorted
+register.
+
+**Making the values in Järgmiseks clickable filters.** The sentence is one
+file's wording, not a category.

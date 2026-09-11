@@ -552,7 +552,6 @@ def test_a_do_action_dated_inside_the_horizon_is_never_swallowed(specialist):
     ("form_class", "field"),
     [
         (MatterCreateForm, "received_date"),
-        (ComposerForm, "occurred_on"),
         (IncomingIntakeForm, "received_date"),
         (EngagementForm, "occurred_on"),
     ],
@@ -569,18 +568,20 @@ def test_a_fresh_date_box_starts_on_today(form_class, field):
 
 def test_a_posted_date_always_beats_the_default():
     """`initial` fills an unbound form only, so nothing here overwrites input."""
-    form = ComposerForm({"body": "Märkus", "occurred_on": "3.8.2026"})
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["occurred_on"].isoformat() == "2026-08-03"
+    form = IncomingIntakeForm({"title": "Näidisteema", "received_date": "3.8.2026"})
+    form.is_valid()
+    assert form.cleaned_data["received_date"].isoformat() == "2026-08-03"
 
 
-def test_today_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist):
-    """The box is pre-filled with today, so leaving it alone is the ordinary
-    case — and stamping 00:00 on something written at half past two would be a
-    small untruth on every routine save.
+def test_a_composer_save_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist):
+    """The composer stopped asking `Toimus` with the approved target — a person
+    writing up this afternoon's call is not also classifying when it happened —
+    so every entry it creates is stamped by `add_entry` with the moment of the
+    save, and never with a midnight the form invented (docs/adr/0074 §6).
     """
     form = ComposerForm({"body": "Märkus"})
     assert form.is_valid(), form.errors
+    assert "occurred_on" not in form.fields
     assert form.as_service_kwargs()["occurred_at"] is None
 
 
@@ -590,7 +591,6 @@ def test_today_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist)
         (ComposerForm, "next_date"),
         (NextActionForm, "target_date"),
         (ComposerForm, "deadline_date"),
-        (ComposerForm, "final_sent_on"),
         (EffectiveDateForm, "exact_date"),
         (MatterCreateForm, "response_deadline"),
     ],
@@ -710,27 +710,36 @@ def test_the_mode_chip_has_no_rules_left_to_be_legible_in():
 # ---------------------------------------------------------------------------
 
 
-def test_the_composer_does_not_offer_a_second_kaasamine(signed_in, normal_matter):
-    """Two ways to create the same record, with different fields.
+def test_the_composer_is_the_one_kaasamine_path(signed_in, normal_matter):
+    """**One way to create the record, and it is the composer.**
 
-    The composer's version asked for a kind and a date; the section's version
-    asks for the title, the participants and the link the record is actually
-    for. Keeping both meant a Kaasamine created one way was quietly poorer than
-    the same thing created the other (Teema QA §8).
+    This reverses the QA §8 decision, and for the reason that decision gave. Two
+    ways to create one record, with different fields, meant a Kaasamine created
+    one way was quietly poorer than the same thing created the other — so there
+    had to be one, and while the standalone section existed the section was it.
+    The approved target removed that section; the composer panel is now the one
+    path rather than the second (docs/adr/0074 §9).
     """
     body = _detail(signed_in, normal_matter)
 
-    assert "+ Kaasamine" not in body
-    assert "koostaja-kaasamine" not in body
-    assert 'name="engagement_title"' not in body
+    assert "+ Kaasamine" in body
+    assert 'id="cx-kaasamine"' in body
+    # And the section it replaced is gone rather than hidden beside it.
+    assert 'id="kaasamine"' not in body
+    assert "+ Lisa kaasamine" not in body
 
 
-def test_the_composer_form_has_no_engagement_fields():
-    assert not [name for name in ComposerForm().fields if name.startswith("engagement")]
+def test_the_composer_form_asks_the_three_target_engagement_questions():
+    assert [name for name in ComposerForm().fields if name.startswith("engagement")] == [
+        "engagement_kind",
+        "engagement_audience",
+        "engagement_responses",
+    ]
 
+    # An ordinary save that answered none of them sends the service nothing.
     bound = ComposerForm({"body": "Märkus"})
     assert bound.is_valid(), bound.errors
-    assert "engagement" not in bound.as_service_kwargs()
+    assert bound.as_service_kwargs()["engagement"] is None
 
 
 def test_the_one_kaasamine_path_still_works(signed_in, normal_matter, specialist):

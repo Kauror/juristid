@@ -192,17 +192,20 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # -- Scenario B: one composer save, two changes ----------------------
     page.goto(matter_url)
 
-    # The composer is one field and three chips. Everything else is out of the
-    # way until it is asked for — that is the adoption argument, not decoration.
-    expect(page.locator("#koostaja-manus")).to_be_hidden()
-    expect(page.locator("#koostaja-tahtaeg")).to_be_hidden()
-    expect(page.locator("#koostaja-lopetamine")).to_be_hidden()
-    # And `+ Kaasamine` is not among them. Kaasamine has exactly one path — its
-    # own section, with the fields the record actually needs — and a second,
-    # thinner one in the composer was two ways to create the same thing
-    # (Teema QA §8).
-    expect(page.locator("#koostaja-kaasamine")).to_have_count(0)
-    expect(page.locator(".disclosure-chip", has_text="+ Kaasamine")).to_have_count(0)
+    # The composer is open, and everything beyond the two boxes and the dates is
+    # a closed chip until it is asked for — that is the adoption argument, not
+    # decoration (docs/adr/0074 §3).
+    expect(page.locator("details.uxcomp")).to_have_attribute("open", "")
+    for panel in ("#cx-tahtaeg", "#cx-joustumine", "#cx-toovoit", "#cx-kaasamine", "#cx-lopeta"):
+        expect(page.locator(panel)).not_to_have_attribute("open", "")
+    # `+ Kaasamine` **is** among them now. It was kept out while the standalone
+    # Kaasamine section existed, because two entry points for one act is how the
+    # same consultation gets recorded twice; that section is gone, so this is
+    # the one entry point rather than the second (docs/adr/0074 §9).
+    expect(page.locator("#cx-kaasamine")).to_have_count(1)
+    # And the file is reachable without opening anything at all.
+    expect(page.locator(".cx-drop--corner input[type=file]")).to_have_count(1)
+    expect(page.locator(".disclosure-chip", has_text="+ Manus")).to_have_count(0)
 
     # Two boxes asking two different questions, and no third control mediating
     # them. What happened goes in one, what happens next in the other, and
@@ -214,11 +217,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     open_composer(page)
     page.locator(".composer__body").fill("Ministeerium lubas uue sõnastuse")
     page.locator("[name='next_text']").fill("Kontrollida ministeeriumi uut sõnastust")
-    # Revealing one optional block must not reveal the others.
-    page.locator(".disclosure-chip", has_text="+ Manus").click()
-    expect(page.locator("#koostaja-manus")).to_be_visible()
-    expect(page.locator("#koostaja-lopetamine")).to_be_hidden()
-    page.locator("#id_kind").select_option("MEETING")
+    # Opening one panel must not open the others.
+    page.locator("#cx-tahtaeg > summary").click()
+    expect(page.locator("#cx-tahtaeg")).to_have_attribute("open", "")
+    expect(page.locator("#cx-lopeta")).not_to_have_attribute("open", "")
+    page.locator("#cx-tahtaeg > summary").click()
     page.locator("#id_next_date").fill(_future(7))
     screenshots(page, "04-komposer")
 
@@ -251,13 +254,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # strip below now shows in full (design handoff 1b).
     entry = page.locator(".uxtl__body").filter(has_text="Ministeerium lubas uue sõnastuse")
     expect(entry).to_have_count(1)
-    # The kind badge is still rendered and still carries the stored kind; the
-    # 2026-09 refinement stopped *showing* it on an entry, because every note
-    # said «Märkus» and a badge on almost every row carries no information. An
-    # event's badge is untouched (design handoff §14,
-    # docs/matter-page-refinement.md).
-    expect(entry.locator(".uxtl__kind")).to_have_count(1)
-    expect(entry.locator(".uxtl__kind")).to_be_hidden()
+    # The kind badge is **not rendered at all** on a work entry any more. The
+    # 2026-09 refinement hid it with CSS because every note said «Märkus»; the
+    # approved target stops writing it, because a note is what a row *is* unless
+    # its verb phrase says otherwise. The stored `Entry.kind` is untouched and
+    # every reporting surface still reads it (docs/adr/0074 §14).
+    expect(entry.locator(".uxtl__kind")).to_have_count(0)
     expect(entry.locator(".uxtl__next")).to_contain_text("Kontrollida ministeeriumi uut sõnastust")
     # The strip states the step, not its category. It re-states the same fact
     # the Järgmiseks row above it carries, and that row stopped naming a kind
@@ -369,18 +371,17 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.goto(matter_url)
     # innerText reports the rendered text, and these labels are uppercased by
     # CSS, so the comparison is case-insensitive.
-    kinds = [
-        kind.lower()
-        for kind in page.locator(".uxtl__did, .uxtl__kind, .systemevent__type").all_inner_texts()
-    ]
-    # The entry is named by its own kind now — the spine's badge says
-    # «Kohtumine», where the old card said "lisas märkuse" whatever the kind
-    # actually was (design handoff 1b).
-    assert any("kohtumine" in kind for kind in kinds), kinds
-    assert any("saadetud" in kind for kind in kinds), kinds
+    # Every row's own headline, in the order the page renders them: a milestone
+    # states what happened to the file, a work entry states what somebody did.
+    rows = [row.lower() for row in page.locator(".uxtl__mswhat, .uxtl__did").all_inner_texts()]
+    # `Arvamus välja` is the sent opinion, as a milestone of its own — the
+    # approved target names it rather than reciting the audit vocabulary
+    # (docs/adr/0074 §14).
+    assert any("arvamus välja" in row for row in rows), rows
+    assert any("määras järgmise sammu" in row for row in rows), rows
     # Newest first: the send happened after the meeting was written up.
-    assert next(i for i, k in enumerate(kinds) if "saadetud" in k) < next(
-        i for i, k in enumerate(kinds) if "kohtumine" in k
+    assert next(i for i, row in enumerate(rows) if "arvamus välja" in row) < next(
+        i for i, row in enumerate(rows) if "määras järgmise sammu" in row
     )
 
     # -- Teemad ----------------------------------------------------------

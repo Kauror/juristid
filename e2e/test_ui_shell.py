@@ -839,6 +839,11 @@ def test_the_composer_starts_as_one_row(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_first_matter(page, base_url)
 
+    # **The composer is open on arrival**, so the collapsed prompt is what the
+    # page shows *after* somebody folds it away rather than before they open it
+    # (docs/adr/0074 §3). The disclosure still closes, and the one-line resting
+    # state it closes to is unchanged.
+    page.locator(".uxnext__label").click()
     closed = page.locator("summary.uxcomp__collapsed")
     expect(closed).to_be_visible()
     resting = closed.bounding_box()["height"]

@@ -72,7 +72,10 @@ def test_the_page_is_titled_uuendused(client: Client) -> None:
 def test_the_page_renders_every_committed_day(client: Client) -> None:
     body = client.get(URL).content.decode()
     for day in load_release_notes():
-        assert day.heading in body, day.heading
+        # As its own element: `1. september 2026` is a substring of
+        # `11. september 2026`, so a bare `in` would let the second day stand in
+        # for the first (see `_heading_at`).
+        assert f'<h2 class="accordion__title">{day.heading}</h2>' in body, day.heading
 
 
 def test_the_newest_day_comes_first(client: Client) -> None:
@@ -84,7 +87,7 @@ def test_the_newest_day_comes_first(client: Client) -> None:
     """
     body = client.get(URL).content.decode()
     days = load_release_notes()
-    positions = [body.index(day.heading) for day in days]
+    positions = [_heading_at(body, day.heading) for day in days]
     assert positions == sorted(positions)
     assert days[0].date == max(day.date for day in days)
 
@@ -110,6 +113,44 @@ def test_one_accordion_per_day_and_no_more(client: Client) -> None:
         "every committed day carries exactly one change, so this test could not "
         "tell one-accordion-per-day from one-accordion-per-change"
     )
+
+
+def test_a_one_digit_day_is_not_read_off_a_two_digit_one_in_the_same_month() -> None:
+    """`1. september 2026` is a substring of `11. september 2026`.
+
+    Found on 2026-09-11, the first day this file ever held both shapes in one
+    month: two assertions about the *rendering* started reading the 11 September
+    accordion whenever they asked for the 1 September one, and reported the page
+    as unsorted and the counts as wrong. Nothing on the page was wrong — the
+    searches were, and they had been for as long as no month carried both.
+
+    So the containment is built deliberately here rather than waited for: the
+    next time somebody reaches for `body.index(heading)` this fails on the spot
+    instead of on whichever morning the calendar gets round to it.
+    """
+    days = parse_release_notes(
+        """
+[[day]]
+date = 2026-09-11
+changes = ["Üheteistkümnenda oma"]
+
+[[day]]
+date = 2026-09-01
+changes = ["Esimese oma"]
+"""
+    )
+    rendered = _render(days)
+
+    first = _accordion_holding(rendered, "1. september 2026")
+    assert "Esimese oma" in first
+    assert "Üheteistkümnenda oma" not in first
+
+    eleventh = _accordion_holding(rendered, "11. september 2026")
+    assert "Üheteistkümnenda oma" in eleventh
+    assert "Esimese oma" not in eleventh
+
+    # And the newest is still first on the page.
+    assert _heading_at(rendered, "11. september 2026") < _heading_at(rendered, "1. september 2026")
 
 
 def test_a_day_with_several_changes_holds_them_all_inside_its_own_accordion() -> None:
@@ -490,9 +531,29 @@ def _render(days: tuple[ReleaseDay, ...]) -> str:
     return render_to_string("core/release_notes.html", {"release_days": days})
 
 
+def _heading_at(body: str, heading: str) -> int:
+    """Where a day's heading is rendered — matched as its own element.
+
+    **Not `body.index(heading)`.** A heading is `11. september 2026`, and
+    `1. september 2026` is a *substring* of it: on the first page that carried
+    both, a plain search for the 1 September day answered with the 11 September
+    day's position, so the ordering assertion read the page as unsorted and the
+    accordion helper returned the wrong block. Both days rendered correctly —
+    the search was wrong, and it stayed right for as long as no month held a
+    one-digit and a two-digit day at once.
+
+    The `<h2>` is what `test_no_date_gets_a_second_accordion` already matches on,
+    and it closes immediately after the text, so it cannot contain another day.
+    """
+    marker = f'<h2 class="accordion__title">{heading}</h2>'
+    index = body.find(marker)
+    assert index != -1, f"{heading!r} is not rendered as an accordion title"
+    return index
+
+
 def _accordion_holding(body: str, heading: str) -> str:
     """One `<details>` block, from the day's own heading to the next day's."""
-    start = body.rindex("<details", 0, body.index(heading))
+    start = body.rindex("<details", 0, _heading_at(body, heading))
     end = body.find("<details", start + 1)
     return body[start:] if end == -1 else body[start:end]
 

@@ -306,26 +306,29 @@ def test_a_partial_search_string_can_never_become_an_institution(signed_in):
 def test_the_search_input_posts_nothing(signed_in):
     """Stated against the rendered page, not only against the POST above.
 
-    A later round that "helpfully" added `name=` to the filter box would make
-    the previous test pass and this one fail, which is the right way round.
+    A later round that "helpfully" added `name=` to the search box would make
+    the previous test pass and this one fail, which is the right way round —
+    and that round is now *more* tempting rather than less, because since
+    docs/adr/0073 the same box also carries the name a person is proposing. It
+    does not post it: the `+` beside it moves the text into `addressee_name`,
+    which is a different control with a different meaning.
+
+    The box is `[data-orgfind-input]` now rather than a label carrying
+    `data-choicefilter`; `Muuda teemat` still renders the old filter and is
+    covered by the same loop, because both are asked the same question.
     """
     import re
 
-    # More than the ten offered as chips, so there is a long tail and the
-    # disclosure that holds the filter box is actually rendered.
+    # More than the ten offered as chips, so there are bodies the search has to
+    # reach and the control is doing something.
     factories.OrganisationFactory.create_batch(12)
     body = signed_in.get(CREATE).content.decode()
 
-    assert 'data-choicefilter="adressaat-nimekiri"' in body
-
-    # Every filter box on the page: the label carries `data-choicefilter`, and
-    # the input inside it is the one a person types into to narrow the list.
-    # The header's own site search is a different control and does post `q`.
-    boxes = re.findall(r"<label[^>]*data-choicefilter=[^>]*>.*?</label>", body, flags=re.S)
-    assert boxes, "the long-tail filter box is not on the page"
+    boxes = [tag for tag in re.findall(r"<input[^>]*>", body) if "data-orgfind-input" in tag]
+    assert len(boxes) == 2, "Saatja and Adressaat should each offer one search box"
     for box in boxes:
         assert 'type="search"' in box, box
-        assert "name=" not in box, f"a filter box would post its contents: {box}"
+        assert "name=" not in box, f"a search box would post its contents: {box}"
 
 
 # ---------------------------------------------------------------------------

@@ -1065,10 +1065,20 @@ def personal_note_for(*, matter: Matter, author: Any) -> str:
     colleague's notes, so there is no reader here but the author
     (app/matters/models.py, `MatterPersonalNote`).
     """
-    if author is None or not getattr(author, "is_authenticated", False):
-        return ""
-    record = MatterPersonalNote.objects.filter(matter=matter, author=author).first()
+    record = personal_note_record(matter=matter, author=author)
     return record.body if record is not None else ""
+
+
+def personal_note_record(*, matter: Matter, author: Any) -> MatterPersonalNote | None:
+    """The row itself, for a caller that needs its body **and** when it was saved.
+
+    The Teema rail needs both — the text goes in the box, `updated_at` goes in
+    `Salvestatud HH:mm` — and reading them through two helpers would ask the same
+    table the same question twice per page render (docs/adr/0074 §18).
+    """
+    if author is None or not getattr(author, "is_authenticated", False):
+        return None
+    return MatterPersonalNote.objects.filter(matter=matter, author=author).first()
 
 
 def save_personal_note(*, matter: Matter, author: Any, body: str) -> MatterPersonalNote:
@@ -1330,6 +1340,26 @@ def _engagement_kind(value: str) -> str:
 
 
 @transaction.atomic
+def _engagement_response_count(value: Any) -> int | None:
+    """`Vastuseid`, or nothing at all.
+
+    ``None`` passes through: not answering is the ordinary case and it is a
+    different fact from answering zero. Anything else has to be a whole
+    non-negative number, because the column is one and a refusal here is far
+    better than an `IntegrityError` from inside a composer transaction that has
+    already written a note and a next step (docs/adr/0074 §5).
+    """
+    if value is None:
+        return None
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        raise DomainError("Vastuste arv peab olema täisarv.") from None
+    if count < 0:
+        raise DomainError("Vastuste arv ei saa olla negatiivne.")
+    return count
+
+
 def add_engagement(
     *,
     matter: Matter,
@@ -1338,6 +1368,7 @@ def add_engagement(
     url: str = "",
     note: str = "",
     occurred_on: Any = None,
+    response_count: Any = None,
     actor: Any = None,
 ) -> MatterEngagement:
     """Record one act of asking members or stakeholders for input.
@@ -1345,6 +1376,11 @@ def add_engagement(
     Writes no `Entry`. One action must not become two records — a structured
     engagement and a narrative note saying the same thing — because the day they
     disagree there is no way to tell which was meant (brief 45).
+
+    ``title`` is what the approved Teema target asks as `Keda kaasati`, and what
+    the older five-field form asked as `Pealkiri`. One column, one meaning — the
+    line that identifies this engagement to a reader — and the question printed
+    above it is the surface's to choose (docs/adr/0074 §4).
     """
     clean_title = title.strip()
     if not clean_title:
@@ -1357,6 +1393,7 @@ def add_engagement(
         url=normalize_engagement_url(url),
         note=note.strip(),
         occurred_on=occurred_on,
+        response_count=_engagement_response_count(response_count),
         created_by=actor,
     )
     record_change_event(
@@ -1369,6 +1406,10 @@ def add_engagement(
             "kind": engagement.kind,
             "occurred_on": engagement.occurred_on.isoformat() if engagement.occurred_on else None,
             "has_url": bool(engagement.url),
+            # Whether it was counted, not what the count was. The number is on
+            # the record where a reader can correct it; the audit row says a
+            # question was answered (brief 26).
+            "has_response_count": engagement.response_count is not None,
         },
     )
     return engagement
@@ -2011,6 +2052,8 @@ def compose_update(
     attachment: Any = None,
     attachment_role: str = DocumentRole.OTHER,
     important_date: dict[str, Any] | None = None,
+    effective_date: dict[str, Any] | None = None,
+    work_victory: dict[str, Any] | None = None,
     engagement: dict[str, Any] | None = None,
     closure: dict[str, Any] | None = None,
 ) -> ComposerResult:
@@ -2050,6 +2093,8 @@ def compose_update(
         or next_action
         or attachment is not None
         or important_date
+        or effective_date
+        or work_victory
         or engagement
         or closure
     )
@@ -2098,6 +2143,28 @@ def compose_update(
 
             result.important_date = add_important_date(
                 matter=matter, actor=author, **important_date
+            )
+
+        if effective_date:
+            # `+ Jõustumine`, through the canonical commencement service. Not an
+            # `Entry` describing one and not a second effective-date model: the
+            # composer is a new way in to `MatterEffectiveDate`, not a new place
+            # to keep commencements (docs/adr/0074 §7).
+            from app.intelligence.services import add_effective_date
+
+            result.effective_date = add_effective_date(
+                matter=matter, actor=author, **effective_date
+            )
+
+        if work_victory:
+            # A win is recorded when it happens, which is not necessarily when
+            # the file is closed. `+ Töövõit` therefore stands on its own here,
+            # beside the closure's own victory rather than inside it, and both
+            # go through the same confirmed-victory service (docs/adr/0074 §8).
+            from app.intelligence.services import add_confirmed_work_victory
+
+            result.work_victory = add_confirmed_work_victory(
+                matter=matter, actor=author, **work_victory
             )
 
         if engagement:

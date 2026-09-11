@@ -30,6 +30,7 @@ from app.legacy_import.owner_backfill import apply_backfill_plan, build_backfill
 from app.matters import dashboard as overview
 from app.matters.department import build_department
 from app.matters.department_dashboard import (
+    OUTSIDE_DEPARTMENT_NAME,
     TEAM_COLUMNS,
     incoming_rail,
     seis_figures,
@@ -202,8 +203,18 @@ def test_a_specialist_sees_their_own_restricted_matter(portfolio: Portfolio) -> 
 
 
 def people_rows(user):
-    """The team table without the unassigned pile and the total."""
-    return [row for row in team_rows(user) if not row.is_unassigned and not row.is_total]
+    """The team table's named rows — the ones that claim somebody is a colleague.
+
+    Neither exceptional row is one: `Vastutajata` is work nobody carries and
+    `Väljaspool osakonda` is work carried by somebody who is not a member of
+    this department. The population itself has its own suite in
+    `tests/test_department_team_population.py`.
+    """
+    return [
+        row
+        for row in team_rows(user)
+        if not row.is_unassigned and not row.is_total and not row.is_outside_department
+    ]
 
 
 def cell_of(user, name: str, column: str):
@@ -235,22 +246,31 @@ def test_the_reader_is_marked_on_their_own_row(portfolio: Portfolio) -> None:
     assert not rows[portfolio.people.sandra.display_name].is_self
 
 
-def test_a_departed_colleague_appears_only_while_they_still_hold_live_work(
+def test_a_departed_colleagues_live_work_is_surfaced_without_their_name(
     portfolio: Portfolio,
 ) -> None:
-    """Surfacing the anomaly beats hiding the Matter.
+    """Their work stays on the page; their name comes off the roster.
 
-    Dropping the row would take an open file off the one page whose job is to
-    find open files, so the row stays and says why it is there.
+    They used to reappear as a named row the moment they owned something,
+    flagged «endine» — which put somebody who has left among the people this
+    department's work belongs to. Dropping the row outright would have been the
+    opposite failure: an open file off the one page whose job is to find open
+    files. So the counts move to the aggregate row and the roster says only who
+    is here (docs/adr/0036, amendment of 2026-09-11).
     """
     former = portfolio.people.former
-    rows = {row.name: row for row in people_rows(portfolio.people.head)}
+    head = portfolio.people.head
+    rows = {row.name: row for row in people_rows(head)}
     assert former.display_name not in rows, "an archive-only owner is not on today's team"
 
-    # Give the departed colleague an open FULL Matter and they reappear, flagged.
     Matter.objects.filter(title=OWNED_CANDIDATE).update(owner=former)
-    rows = {row.name: row for row in people_rows(portfolio.people.head)}
-    assert rows[former.display_name].is_former is True
+
+    rows = {row.name: row for row in people_rows(head)}
+    assert former.display_name not in rows, "owning a file is not joining the department"
+
+    outside = next(row for row in team_rows(head) if row.is_outside_department)
+    assert outside.name == OUTSIDE_DEPARTMENT_NAME
+    assert outside.cells[0].value >= 1
 
 
 def test_work_nobody_carries_has_its_own_row(portfolio: Portfolio) -> None:

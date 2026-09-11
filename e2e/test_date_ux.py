@@ -255,10 +255,12 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
     page.wait_for_load_state("networkidle")
 
     # The Matter page shows both dates back, in the same format they were typed.
-    # Saabus is a rail fact now and the one active deadline is in the header
-    # meta line. Both are dates the page renders in Estonian, which is what
-    # this is about (Teema redesign §5.4, §22.1).
-    body = page.locator(".railcard__value--date, .metaline__value--deadline").all_inner_texts()
+    # **Both are in the header meta line now**: the approved target reads arrival
+    # and response deadline as a pair — together they say how much time is left —
+    # so `Saabus` moved out of the rail to sit beside `Tähtaeg`
+    # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). Both are dates the page renders
+    # in Estonian, which is what this is about.
+    body = page.locator(".metaline__value").all_inner_texts()
     assert any("7.9.2026" in text for text in body), body
     assert any(deadline in text for text in body), body
 

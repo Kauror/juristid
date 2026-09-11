@@ -30,14 +30,16 @@ entry, because the system already knows what was completed and inventing
 destroys what somebody has already typed into the open composer below
 (ADR 0052 §8).
 
-«Lükka edasi» moves the date in one gesture, without opening the composer to
-retype a sentence nobody wanted to change. It is called that on every row now:
-it used to read «Vaatasin üle» on a WAIT or a MONITOR, which is the
-classification this surface no longer exposes.
+**The approved target's row holds four things**: the label, the text, the date,
+and — for a writer — `✓ Tehtud` and `Muuda`. «Lükka edasi» is not one of them and
+has left this row; the route, the service and the day-counting-from-the-step rule
+are all untouched and still reached from a work row elsewhere
+(TEEMA_TARGET_SPEC §C.1, docs/adr/0074 §20).
 
-It swaps this row and only this row, for the same reason «✓ Tehtud» does, and
-its options are counted from the date on the step rather than from today — «+1
-päev» on a step due 30.09 lands on 01.10 (pilot QA F-04, F-05).
+**Clicking the row opens the composer.** Anywhere except a button, a link or a
+form: the row says what is owed and the box below is where the answer is
+written, so reaching one from the other should not need aim. Opening it focuses
+the first textarea (static/js/ux.js, `data-koostaja-toggle`).
 {% endcomment %}
 {% comment %}
   One element, three states. The row is its own HTMX swap target now, so the id
@@ -45,15 +47,15 @@ päev» on a step due 30.09 lands on 01.10 (pilot QA F-04, F-05).
   `jargmiseks-rida` is a duplicate id on every render, whichever branch happens
   to be taken (tests/test_templates.py).
 
-  It is also where `Märgi tehtuks` and `Vaatasin üle…` land from a work row on
-  another page: the controls those two name — «✓ Tehtud» and «Lükka edasi» —
-  are inside this row, so the row is the destination. `tabindex="-1"` is what
+  It is also where `Märgi tehtuks` lands from a work row on another page: the
+  control it names — «✓ Tehtud» — is inside this row, so the row is the
+  destination. `tabindex="-1"` is what
   lets the arrival focus it without making it a tab stop, the same way
   `#tulemused` accepts a drill-down on the register (static/js/ux.js,
   templates/matters/matter_list.html).
 {% endcomment %}
 <div class="uxnext {% if matter.is_open and current_action.is_overdue %}uxnext--overdue{% endif %}"
-     id="jargmiseks-rida" tabindex="-1">
+     id="jargmiseks-rida" tabindex="-1" data-koostaja-toggle="1">
 {% comment %}
   A refused completion comes back inside the row, because the row is what the
   response replaced. Outside the three branches rather than in one of them: the
@@ -106,59 +108,19 @@ päev» on a step due 30.09 lands on 01.10 (pilot QA F-04, F-05).
         <button class="button button--primary" type="submit">✓ Tehtud</button>
       </form>
 
-      {% if can_defer %}
-        {% comment %}
-          The same disclosure pattern the rest of the application uses: a real
-          <details>, closed until asked for, closing on Escape and on a click
-          elsewhere (static/js/ux.js). Every option inside it is a POST, because
-          each one changes a stored record — a link here would be a state change
-          a browser is entitled to prefetch.
+      {% comment %}
+        **No «Lükka edasi» here.** The approved target's row is the text, the
+        date, `✓ Tehtud` and `Muuda` — four things, and moving a date is not one
+        of them. A whole second disclosure, holding four POST buttons and a date
+        box, sat in the row whose job is to state in one line what is owed
+        (TEEMA_TARGET_SPEC §C.1, docs/adr/0074 §20).
 
-          Offered only where the date is exact. A step recorded to a month is
-          deliberately vague and a day added to it would be a day nobody chose.
-        {% endcomment %}
-        <details class="uxnext__defer" data-uxpopover>
-          <summary class="uxnext__defersum">Lükka edasi ▾</summary>
-          <div class="uxnext__menu">
-            {% comment %}
-              This row, and not the page — the same scope «✓ Tehtud» uses above.
-              Both defer forms used to swap `#teema-vaade`, which is this row
-              *and the open composer under it*, so moving a date threw away
-              every unsaved character somebody had typed into it (pilot QA
-              F-04, ADR 0052 §8).
-            {% endcomment %}
-            <form hx-post="{% url 'matters:defer_action' pk=matter.pk action_id=current_action.pk %}"
-                  hx-target="#jargmiseks-rida" hx-swap="outerHTML">
-              {% csrf_token %}
-              {% for choice in defer_choices %}
-                {% comment %}
-                  The day the option lands on, worked out on the server in
-                  Europe/Tallinn. «+1 nädal» alone would leave the reader doing
-                  the arithmetic, and a browser doing it would answer in the
-                  reader's own timezone.
-                {% endcomment %}
-                <button type="submit" name="paevad" value="{{ choice.days }}">
-                  {{ choice.label }} · {{ choice.when }}
-                </button>
-              {% endfor %}
-            </form>
-            <form class="uxnext__menuform"
-                  hx-post="{% url 'matters:defer_action' pk=matter.pk action_id=current_action.pk %}"
-                  hx-target="#jargmiseks-rida" hx-swap="outerHTML">
-              {% csrf_token %}
-              <label class="visually-hidden" for="jargmiseks-lukka-{{ current_action.pk }}">
-                Uus kuupäev
-              </label>
-              <input class="field__input field__input--compact dateinput"
-                     id="jargmiseks-lukka-{{ current_action.pk }}"
-                     type="text" inputmode="numeric" autocomplete="off"
-                     placeholder="pp.kk.aaaa" name="kuupaev">
-              <button class="button button--quiet button--tiny" type="submit">Kuupäev…</button>
-            </form>
-          </div>
-        </details>
-      {% endif %}
-
+        **The capability did not go.** `matters:defer_action`, `defer_choices`
+        and `defer_base` are untouched, the service still moves the date from the
+        step rather than from today, and `Vaatasin üle…` on a work row elsewhere
+        still reaches it. What went is a control the target does not have, from
+        the one row on the page that has to be readable at a glance.
+      {% endcomment %}
       {% comment %}
         "Muuda" focuses the composer rather than opening a second editor for the
         same value. There is exactly one place a next step is *written*, and it

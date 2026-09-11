@@ -73,6 +73,16 @@ possible.
 ``Matter.updated_at`` is still what ``?jarjestus=updated`` sorts by, and that
 option is labelled *Viimati muudetud* rather than *Viimane tegevus* so the two
 are not read as the same fact.
+
+Sorting the column itself
+-------------------------
+``?jarjestus=viimane_uusim`` and ``?jarjestus=viimane_vanim`` order on
+:func:`annotate_activity_date`, which is this module's own rule stated in SQL —
+the same nine facts, the same maximum, the same refusal to fall back to
+``updated_at`` for an imported row. A sort that read ``updated_at`` while the
+column rendered this would put the rows in an order the dates on screen
+contradict, which is the failure the column exists to prevent, arriving through
+the heading instead of through the cell (docs/adr/0071).
 """
 
 from __future__ import annotations
@@ -81,7 +91,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from django.db.models import Max, OuterRef, QuerySet, Subquery
+from django.db.models import Case, DateField, Max, OuterRef, QuerySet, Subquery, When
+from django.db.models.functions import Coalesce, Greatest, TruncDate
 from django.utils import timezone
 
 from app.core.authorization import apply as apply_scope
@@ -318,6 +329,70 @@ def activity_of(matter: Matter) -> MatterActivityFact | None:
         if basis in bases:
             return MatterActivityFact(occurred_on=latest, basis=basis)
     return None
+
+
+#: The annotation :func:`annotate_activity_date` writes, and the name
+#: ``?jarjestus=viimane_uusim`` orders on. Prefixed like :data:`ANNOTATIONS`,
+#: and for the same reason.
+ACTIVITY_DATE = "last_activity_on"
+
+
+def annotate_activity_date(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
+    """The date :func:`activity_of` would return, computed by the database.
+
+    The SQL twin of the ``max(candidates)`` above, so *Viimane tegevus* can be
+    sorted on without reading a hundred rows into Python and sorting them after
+    the page boundary has already been drawn. Both readings offer the same nine
+    facts and both take the latest; ``tests/test_register_interactive_columns.py``
+    holds them against each other row by row.
+
+    Three things this does **not** do, each of them the whole point of
+    :mod:`app.matters.activity`:
+
+    * It never falls back to ``updated_at`` for an imported row. The ``Case``
+      below is reached only when nothing else is known *and* the record was
+      created here, which is exactly :func:`activity_of`'s last-resort branch —
+      for an imported row that timestamp is a statement about the importer.
+    * It never invents a date. All-NULL in means NULL out, and NULL renders an
+      em dash and sorts last in both directions.
+    * It widens nothing. Every value it reads is either a Matter column this
+      reader already sees or one of :data:`ANNOTATIONS`, which
+      :func:`annotate_last_activity` has already scoped to this reader.
+
+    ``Greatest`` is PostgreSQL's ``GREATEST``, which **ignores NULLs and is NULL
+    only when every argument is** — the behaviour ``max()`` has over the
+    non-``None`` candidates above. Django's own documentation warns that MySQL,
+    SQLite and Oracle return NULL if any argument is; this application runs on
+    PostgreSQL and on nothing else (config/settings.py, docker-compose.yml).
+
+    ``TruncDate`` reads the active timezone, which is what
+    :func:`_as_date`'s ``timezone.localtime`` does, so a submission sent at
+    01:30 Tallinn time lands on the same day in both readings.
+    """
+    return queryset.annotate(
+        **{
+            ACTIVITY_DATE: Coalesce(
+                Greatest(
+                    TruncDate("closed_at"),
+                    TruncDate("activity_submission_at"),
+                    TruncDate("activity_entry_at"),
+                    TruncDate("activity_action_created_at"),
+                    TruncDate("activity_action_ended_at"),
+                    "activity_engagement_on",
+                    "received_date",
+                    TruncDate("activity_page_modified_at"),
+                    TruncDate("activity_page_created_at"),
+                    output_field=DateField(),
+                ),
+                Case(
+                    When(origin=MatterOrigin.NATIVE, then=TruncDate("updated_at")),
+                    default=None,
+                    output_field=DateField(),
+                ),
+                output_field=DateField(),
+            )
+        }
+    )
 
 
 def activity_for_matter(matter: Matter, user: Any) -> MatterActivityFact | None:

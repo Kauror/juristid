@@ -1069,8 +1069,22 @@ p.formnote {
   width: 190px;
 }
 
+/* 132px, not 110. «VIIMANE TEGEVUS» is 93px of uppercase at this size and the
+   cell's content box was 82px, so the heading has been overflowing its own
+   column on every surface that renders this table — invisibly, because a `<th>`
+   does not clip and the text simply ran to the table's edge.
+ *
+ * That became a defect the moment the column was sortable: what sits after the
+ * label is the ↑/↓ that says which way it is sorted, and *that* was the part
+ * scrolled off the end. The direction indicator has to be on screen, so the
+ * column is as wide as its own heading.
+ *
+ * Taken from the title column, which absorbs the remainder in a fixed layout,
+ * and given rather than borrowed from Kuupäev: that one is at 158px of 162px on
+ * real rows («ARVAMUSE TÄHTAEG 15.9.2026»), so narrowing it would clip dates.
+ * Nothing below 1200px is affected — this column is not rendered there. */
 .table--register .table__lastactivity {
-  width: 110px;
+  width: 132px;
 }
 
 /* A flex wrapper inside the cell, not on the cell: a <td> that stops being a
@@ -1146,6 +1160,177 @@ p.formnote {
 .table__missing {
   color: var(--status-warning);
   font-size: var(--typography-size-meta);
+}
+
+/* A value in a row that is also the filter selecting it.
+
+   Quiet by design: a register where every cell reads as a hyperlink is a
+   register nobody can scan, so the cell keeps the colour and the weight it had
+   and the affordance is the underline on hover — the same treatment
+   `.table__titlelink` above already uses. */
+.table__quietlink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.table__quietlink:hover {
+  text-decoration: underline;
+}
+
+/* ---- The register's interactive column headings ---------------------------
+ *
+ * Hetkeseis, Vastutaja and Järgmiseks open a filter menu; Kuupäev and Viimane
+ * tegevus sort. One component for both, because they have to look like the same
+ * kind of thing: a column heading you can act on, not a button that happens to
+ * sit in a table head (templates/matters/partials/register_headers.html).
+ *
+ * Everything typographic is inherited from `.table thead th` — the size, the
+ * weight, the letter-spacing, the uppercase — so a heading is still a heading
+ * and the table's density is unchanged.
+ *
+ * `position: relative` is on **both** variants, and it is load-bearing rather
+ * than tidy.
+ *
+ * Each heading carries a `.visually-hidden` span saying what activating it
+ * does, and `.visually-hidden` is `position: absolute` with no offsets — so it
+ * sits at its static position inside whatever its nearest positioned ancestor
+ * is. On the sort headings there was none, and the 1px box escaped
+ * `.tablewrap`'s clipping to land ~765px into a 375px document: `/teemad/`
+ * scrolled sideways on a phone, invisibly, because the thing sticking out is a
+ * pixel wide and clipped to nothing. `e2e/test_ux_pass.py` measures
+ * `scrollWidth` for exactly this, which is how it was found.
+ *
+ * Positioning the control contains it. The filter variant needed it anyway, as
+ * the box its own menu is measured against. */
+.colhead {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* `list-style: none` and the WebKit rule below it remove the disclosure
+   triangle the browser would otherwise draw in front of the column's name. */
+.colhead__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  list-style: none;
+}
+
+.colhead__trigger::-webkit-details-marker {
+  display: none;
+}
+
+/* The affordance, and the whole of it: a chevron for a menu, an arrow for a
+   sort. One glyph at 9.5px, so a heading grows by a single character — which
+   every column but one had the room for. `.table__lastactivity` did not, and
+   says so where its width is set. */
+.colhead__mark {
+  font-size: var(--typography-size-chip-sm);
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.colhead:hover,
+.colhead:focus-visible {
+  color: var(--text-primary);
+}
+
+.colhead:hover .colhead__mark,
+.colhead:focus-visible .colhead__mark {
+  color: var(--accent-link);
+}
+
+/* Active, quietly. Colour only — no border, no background, no extra glyph — so
+   a filtered column is visibly different and nothing on the page moves. What
+   the filter *is* stays in the removable chip above the table, which is where
+   the reader can undo it (templates/matters/partials/register_results.html). */
+.colhead--filter.is-filtered .colhead__trigger,
+th[aria-sort="ascending"] .colhead--sort,
+th[aria-sort="descending"] .colhead--sort {
+  color: var(--accent-link);
+}
+
+.colhead--filter.is-filtered .colhead__mark,
+th[aria-sort="ascending"] .colhead__mark,
+th[aria-sort="descending"] .colhead__mark {
+  color: var(--accent-link);
+}
+
+/* Which way, for everybody who is not using a screen reader. `aria-sort` on the
+   cell is the single statement of the state; this reads it rather than keeping
+   a second one in a class name. */
+th[aria-sort="none"] .colhead__mark::after {
+  content: "\2195";
+}
+
+th[aria-sort="ascending"] .colhead__mark::after {
+  content: "\2191";
+}
+
+th[aria-sort="descending"] .colhead__mark::after {
+  content: "\2193";
+}
+
+/* The heading cell, while its menu is open.
+ *
+ * `position: sticky` creates a stacking context, so the menu's own `z-index`
+ * below is measured *inside* its `<th>` — it cannot paint above anything
+ * outside it however high it goes. The `Määra ▾` control two rows down is
+ * `position: relative` and later in the document, so it painted straight
+ * through the first option of the owner menu. Raising the cell for exactly as
+ * long as the menu is open is what a `z-index` on the menu was trying and
+ * failing to do; nothing moves when it is shut. */
+.table--register thead th:has(.colhead--filter[open]) {
+  z-index: 40;
+}
+
+/* `fixed`, not `absolute`, and for the reason `.uxassign__menu` gives at
+   length: `.tablewrap` is `overflow-x: auto`, a scroll container clips its
+   absolutely positioned descendants in both axes, and a menu anchored inside
+   one is cut off a line below its trigger. `static/js/ux.js` places it. */
+.colhead__menu {
+  position: fixed;
+  min-width: 190px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-menu);
+  padding: var(--spacing-05);
+  z-index: 30;
+}
+
+/* The options read as sentences, not as headings: the column's uppercase
+   letter-spacing is deliberately not inherited here. */
+.colhead__option {
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font: var(--typography-weight-regular) var(--typography-size-base) / 1.3
+    var(--typography-font-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-body);
+  text-decoration: none;
+}
+
+.colhead__option:hover {
+  background: var(--surface-overlay-hover);
+}
+
+.colhead__option.is-chosen {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
 }
 
 .pagination {
@@ -1626,7 +1811,6 @@ p.formnote {
   font-weight: var(--typography-weight-bold);
 }
 
-.composer__hint,
 .keyhint {
   font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
@@ -1661,28 +1845,6 @@ p.formnote {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
   margin: 0;
-}
-
-.systemevent {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-2);
-  padding: var(--spacing-15) var(--spacing-2);
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
-
-.systemevent__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: var(--radius-circle);
-  background: var(--border-strong);
-  flex: none;
-}
-
-.systemevent__type {
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
 }
 
 /* Authored bodies. Only the allowlist in app/core/richtext.py can appear. */
@@ -4913,6 +5075,166 @@ a.barchart__row:hover {
   display: none;
 }
 
+/* -- the unified organisation picker --------------------------------------- *
+ *
+ * Search first, quick choices under it, and a `+` attached to the box that
+ * turns what is in it into a body the catalogue does not hold yet. It replaces
+ * a shortlist, a «Vali nimekirjast» disclosure and a separate «Uus saatja» box
+ * with one control that does all three (docs/adr/0073,
+ * templates/matters/partials/organisation_picker.html).
+ *
+ * Every selector here is prefixed `.orgfind`. The chips inside it are the
+ * application's own `.chip` and the box is the application's own
+ * `.field__input`, so nothing above this block changes — which matters while a
+ * separate branch is redesigning the Teema page out of the same stylesheet
+ * (task §27).
+ */
+
+.orgfind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+/* The box and its button, joined.
+ *
+ * One row, and the button is the height of the box because they are one
+ * control: `stretch` rather than a matching `min-height`, so the two cannot
+ * drift apart when the input's padding or font changes.
+ *
+ * The box takes the width the field gives it, up to the bound this form already
+ * uses for naming an institution — 30rem, the same as `.createform__newname`,
+ * which is the control it replaces. Unbounded, Adressaat's own row would draw a
+ * 1300px search box across the page at 1440 and make the smallest question on
+ * the form look like the largest; capped much tighter, a stacked row at 420
+ * would leave it an island with the whole width empty beside it. */
+.orgfind__search {
+  display: flex;
+  align-items: stretch;
+  gap: var(--spacing-1);
+  max-width: 30rem;
+  min-width: 0;
+}
+
+.orgfind__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--spacing-15) var(--spacing-2);
+  font-size: var(--typography-size-sm);
+}
+
+/* A real target, not a glyph.
+ *
+ * Square-ish and the full height of the box beside it, with the same border
+ * and radius, so it reads as the other end of one control rather than as
+ * something that happens to sit nearby. `disabled` is the genuine attribute
+ * while the box is empty — an `aria-disabled` on a button that still works is
+ * a claim screen readers repeat and drivers refuse (Uus teema redesign §8). */
+.orgfind__add {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 0 var(--spacing-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--typography-size-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.orgfind__add:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--accent-border);
+}
+
+.orgfind__add:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.orgfind__add:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* The results, under the field rather than over the page.
+ *
+ * A panel that pushes the form down while it is open, which is what a list
+ * inside a long form should do: a popover over the next field would cover the
+ * Valdkonnad row on the very screen somebody is filling in. Bounded and
+ * scrollable, so a catalogue that grows lengthens the list and not the page. */
+.orgfind__results {
+  display: flex;
+  flex-direction: column;
+  max-width: 30rem;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+/* `.orgfind__results` sets `display: flex`, and an author rule beats the user
+   agent's `[hidden] { display: none }` — the defect that once made the old
+   search box do nothing at all (`.chip[hidden]` above). */
+.orgfind__results[hidden] {
+  display: none;
+}
+
+.orgfind__option {
+  padding: var(--spacing-15) var(--spacing-25);
+  font-size: var(--typography-size-meta);
+  line-height: 1.5;
+  color: var(--text-body);
+  cursor: pointer;
+  text-align: left;
+}
+
+.orgfind__option:hover,
+.orgfind__option.is-active {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* The row that is already an answer, so choosing it again says so rather than
+   looking like a duplicate of the chip above. */
+.orgfind__option[aria-disabled="true"] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.orgfind__empty {
+  padding: var(--spacing-15) var(--spacing-25);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* The `<noscript>` half: a box for a body the catalogue does not hold, and the
+   rest of the catalogue as ordinary chips. Styled although a scripted browser
+   never parses it — this is the control somebody without scripting actually
+   uses, and "invisible to us" is not "allowed to look broken". */
+.orgfind__fallbackfield {
+  display: block;
+  max-width: 30rem;
+  margin-bottom: var(--spacing-2);
+}
+
+.orgfind__fallbackfield .field__input {
+  width: 100%;
+}
+
+/* The chips sit directly under the box, with no gap of their own: the
+   picker's own `gap` already spaces them. */
+.orgfind__chips {
+  margin-top: 0;
+}
+
 /* -- Hetkeseis: the chip that explains itself ------------------------------ */
 
 /* The affordance: a small circled "i" saying this chip explains itself.
@@ -5922,13 +6244,6 @@ a.barchart__row:hover {
   flex-wrap: wrap;
 }
 
-.composer__divider {
-  width: 1px;
-  height: 14px;
-  background: var(--border-control);
-  flex: none;
-}
-
 .composer__spacer {
   flex: 1;
 }
@@ -5937,23 +6252,6 @@ a.barchart__row:hover {
    a file is not a routine capture. */
 .disclosure-chip--last {
   color: var(--text-muted);
-}
-
-.composer__optional {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-25);
-  padding: var(--spacing-3) 0 0;
-  border-top: 1px solid var(--border-subtle);
-  max-width: 46rem;
-}
-
-.composer__optional[hidden] {
-  display: none;
-}
-
-.composer__optional--closing {
-  border-top-color: var(--status-warning-border);
 }
 
 .composer__group {
@@ -6204,40 +6502,6 @@ button.accordion__action:focus-visible {
 
 .historicalrow__spacer {
   flex: 1;
-}
-
-/* -- grouped timeline facts ------------------------------------------- */
-
-/* What one professional update actually wrote, under the sentence describing
-   it. One short line per canonical record — not a second timeline, and not an
-   audit dump. */
-.groupfacts {
-  list-style: none;
-  margin: var(--spacing-15) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-}
-
-.groupfacts__row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--typography-size-meta);
-  color: var(--text-secondary);
-}
-
-.groupfacts__kind {
-  font-size: var(--typography-size-chip-sm);
-  font-weight: var(--typography-weight-heavy);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-chip);
-  padding: 1px 6px;
-  flex: none;
 }
 
 /* -- the rail --------------------------------------------------------- */
@@ -7010,44 +7274,6 @@ button.accordion__action:focus-visible {
   letter-spacing: var(--typography-tracking-label);
   color: var(--text-muted);
   text-transform: uppercase;
-}
-
-/* The chronology's Kõik / Sissekanded / Sündmused control. A segmented group of
-   quiet buttons rather than a select: three options that fit on one line are
-   faster to read than a dropdown that hides two of them. */
-.timelinefilter {
-  display: inline-flex;
-  gap: var(--spacing-1);
-  align-self: flex-start;
-}
-
-.timelinefilter__option {
-  min-height: 30px;
-  padding: var(--spacing-1) var(--spacing-25);
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  background: none;
-  font-family: inherit;
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.timelinefilter__option:hover {
-  color: var(--text-primary);
-  border-color: var(--border-control);
-}
-
-.timelinefilter__option.is-active {
-  color: var(--text-primary);
-  background: var(--surface-selected);
-  border-color: var(--accent-border);
-}
-
-.timelinefilter__option:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset-width);
 }
 
 /* The extraction state, under a document's name rather than in a column. */
@@ -9379,38 +9605,43 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-top: var(--spacing-2);
 }
 
-/* ====================================================================
- * The Teema page, 2026-09 refinement
- *
- * The page kept its identity, its markup and its classes; what changed is
- * order, grouping, weight and the amount of chrome. Three zones on three
- * grounds, in a fixed reading order:
- *
- *   A  Järgmiseks + the composer   action     --surface-capture, one accent edge
- *   B  the facts panel             fact       --surface-panel
- *   C  Ajajoon                     history    the page's own ground
- *
- * Every rule below is scoped to the Teema page — `.teemamain`, `.factspanel`
- * or `.teema .rail`. `.factsection`, `.factrow` and `.railcard` are shared with
- * `intelligence/effective_dates.html`, the related-materials picker and the
- * Dokumendid rail, and none of those was part of this design.
- *
- * No new colour, no new shadow, no new typeface: every value here is a token
- * or a geometry the design measures (design handoff 01-overview, 02-layout-spec).
- * ==================================================================== */
+/* The register's own observations, where it made any. A quiet band under the
+ * header band and above the action row, on the page's own ground: these are
+ * facts about the *source* rather than about the work, and one of them is what
+ * explains a passed deadline the metaline does not call late (ADR 0059).
+ * Rendered only when true, so the normal Matter carries no empty box. */
 
-/* -- the shared left edge --------------------------------------------------
- *
- * 32px — `--spacing-8`, which the fact rows and the composer already used. The
- * refinement's single alignment rule is that every heading, row and control in
- * the main column starts there, so the two that did not are brought into line
- * rather than the other twelve being moved. */
+#teema-vaade-wrap .registerfacts {
+  padding: var(--spacing-3) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
 
-.teemamain .uxnext,
-.factspanel .factsection,
-.teemamain .accordion--timeline .accordion__head {
+/* -- one left edge: 32px --------------------------------------------------
+ *
+ * **The single most visible rule of the approved target.** The metaline, the
+ * Järgmiseks row, the composer's questions, the Ajajoon heading, the process
+ * strip and every chronology row start at the same x, and nothing on the page
+ * starts at any other (TEEMA_TARGET_SPEC, VISUAL PRECISION).
+ *
+ * Written as one rule over the elements that would otherwise disagree, because
+ * they disagree for three different reasons: `.uxnext` and `.uxcomp__form`
+ * carry a 16px component padding from `ux.css`, and `.tl-strip` carries the
+ * design export's own 32px margin *inside* an accordion body that is already
+ * padded by 32 — which put it at 64 and made the one rule visibly false. The
+ * strip's inset is the body's; the margin is zeroed rather than the padding,
+ * so the chronology under it keeps the same edge. */
+
+#teema-vaade-wrap .uxnext,
+#teema-vaade-wrap .registerfacts,
+#teema-vaade-wrap .accordion--timeline .accordion__head,
+#teema-vaade-wrap .accordion--timeline .accordion__body {
   padding-left: var(--spacing-8);
   padding-right: var(--spacing-8);
+}
+
+#teema-vaade-wrap .uxcomp__form {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* -- zone A: one action unit ----------------------------------------------
@@ -9488,117 +9719,206 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-secondary);
 }
 
-/* -- zone B: the facts panel ----------------------------------------------
- *
- * One surface carrying every dated fact about the file, sections divided by a
- * hairline. It holds two independent HTMX swap targets — `#teema-faktid` is
- * `app.intelligence`'s and `#kaasamine` is `app.matters`' — so the boundary
- * hairline has to be drawn across a wrapper it cannot see into. `:has()` is
- * what makes that exact rather than approximate: Kaasamine takes a top border
- * only when there is a section above it to be separated from. */
-
-.factspanel {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-panel);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.factspanel .factsection {
-  border-top: 0;
-  border-bottom: 0;
-  margin: 0;
-  padding-top: var(--spacing-4);
-  padding-bottom: var(--spacing-35);
-  gap: var(--spacing-2);
-}
-
-.factspanel .factsections > .factsection + .factsection,
-.factspanel > .factsections:has(.factsection) + .factsection {
-  border-top: 1px solid var(--border-subtle);
-}
-
-/* The head is the label. It used to reserve a button's height on every
- * section, which is most of what made three dates as tall as a paragraph. */
-.factspanel .factsection__head {
-  margin: 0;
-  min-height: 0;
-}
-
-.factspanel .sectionlabel {
-  padding: 0;
-  margin: 0 0 var(--spacing-2);
-}
-
-.factspanel .factlist {
-  margin-top: 0;
-}
-
-/* Rows tightened, and the rules between them dropped. At this density a line
- * every four pixels is what made a short list read as a table. */
-.factspanel .factlist--compact .factrow {
-  padding-top: 4px;
-  padding-bottom: 4px;
-  border-color: transparent;
-}
-
-/* The muted qualifier beside a date — how far away it is, or what the date
- * means. New in this design, and the reason `.factrow__date` becomes a flex
- * line rather than a single value (handoff C12). */
-.factspanel .factrow__date {
-  display: inline-flex;
-  gap: var(--spacing-2);
-  align-items: baseline;
-}
-
+/* How far off a dated fact is, beside the date it is counting from. Rendered by
+ * `intelligence/partials/important_date_row.html`, which the structured-fact
+ * fragment still serves. */
 .factrow__dist {
   font-weight: var(--typography-weight-regular);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
-/* Chrome only when reached for. `:focus-within` is what keeps the actions
- * reachable from a keyboard; a pointer is not required to use this page
- * (handoff §9, I06). */
-.factspanel .factrow__actions {
-  opacity: 0;
-  transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
+/* -- the composer's five panels -------------------------------------------
+ *
+ * `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit`, `+ Kaasamine`,
+ * `+ Lõpeta teema` — closed chips on one wrapping row, each opening to a full
+ * row *underneath* that row rather than pushing its neighbours sideways. That
+ * is what `order: 1` buys: the chips keep their line and the open body takes
+ * the next one, so two open panels stack instead of breaking the layout
+ * (TEEMA_TARGET_SPEC §C.4).
+ *
+ * This replaces the standing facts panel that used to sit between the composer
+ * and the chronology. The records are unchanged; the surface that writes them
+ * moved into the one box the page is built around (docs/adr/0074 §15). */
+
+#teema-vaade-wrap .cx-panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  margin-top: 10px;
 }
 
-.factspanel .factrow:hover .factrow__actions,
-.factspanel .factrow:focus-within .factrow__actions {
-  opacity: 1;
+#teema-vaade-wrap .cx-panel {
+  flex: none;
 }
 
-/* Touch has no hover. A coarse pointer gets the actions unconditionally rather
- * than a row it cannot act on — the design addresses keyboards and says
- * nothing about touch, and an unreachable control is worse than a busy row. */
-@media (hover: none) {
-  .factspanel .factrow__actions {
-    opacity: 1;
-  }
+#teema-vaade-wrap .cx-panel[open] {
+  flex: 1 1 100%;
+  order: 1;
 }
 
-/* The add control under the last row, where the next row would go. */
-.factspanel .addrow {
-  margin: 2px 0 0;
-  padding: 0;
-  border: 0;
+/* `+ Lõpeta teema` is visually last on the chip row. The target draws the five
+ * contiguous and in this order, so this only pins the one that must not float
+ * into the middle of them if the DOM is ever reordered — finishing a file is
+ * not a routine capture. */
+#teema-vaade-wrap .cx-panel--last:not([open]) {
+  order: 0;
 }
 
-.factspanel .addrow .disclosure-chip,
-.factspanel .addrow .disclosure__summary {
-  border: 0;
-  padding: 2px 0;
-  background: none;
+#teema-vaade-wrap .cx-panel > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+#teema-vaade-wrap .cx-panel > summary::-webkit-details-marker,
+#teema-vaade-wrap .cx-panel > summary::marker {
+  display: none;
+  content: "";
+}
+
+#teema-vaade-wrap .cx-panel[open] > summary {
+  border-color: var(--accent-border);
   color: var(--accent-link);
-  text-decoration: none;
 }
 
-.factspanel .addrow .disclosure-chip:hover,
-.factspanel .addrow .disclosure__summary:hover {
+#teema-vaade-wrap .cx-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 7px 0 var(--spacing-1);
+  padding: var(--spacing-3);
+  border: 1px solid var(--border-control);
+  border-left: 2px solid var(--accent-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+}
+
+/* A wide field and a date beside it. The date column is fixed because a date is
+ * a known width and the thing being dated is not. */
+#teema-vaade-wrap .cx-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 9px var(--spacing-3);
+}
+
+#teema-vaade-wrap .cx-f {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* The dated half of a `cx-grid` pair. It is the fixed column, so it never grows
+ * past the width a `pp.kk.aaaa` box needs — the thing being dated takes the
+ * slack instead. */
+#teema-vaade-wrap .cx-f--date {
+  min-width: 0;
+}
+
+/* `Vastuseid` is a count, and a count does not need a text field's width. */
+#teema-vaade-wrap .cx-f--num {
+  max-width: 110px;
+}
+
+#teema-vaade-wrap .cx-f__lab {
+  font-size: 10px;
+  font-weight: var(--typography-weight-bold);
+  line-height: 1.2;
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* «valikuline» rides inside the label without inheriting its shouting. */
+#teema-vaade-wrap .cx-f__opt {
+  font-weight: var(--typography-weight-regular);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+#teema-vaade-wrap .cx-when {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  flex-wrap: wrap;
+}
+
+#teema-vaade-wrap .cx-when .cx-f__lab {
+  margin-right: var(--spacing-1);
+}
+
+#teema-vaade-wrap .cx-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* -- the file affordance ---------------------------------------------------
+ *
+ * `Lohista fail siia või vali arvutist`, at the right end of the `Millal?` row.
+ * A corner affordance rather than a drop zone: attaching a file is common but
+ * secondary to writing the entry, and a dashed rectangle across the width of
+ * the composer would say the opposite (TEEMA_TARGET_SPEC §C.3).
+ *
+ * The whole box is a `<label>` over a visually hidden file input, so it works
+ * as a picker with no script at all. */
+
+#teema-vaade-wrap .uxcomp__row {
+  position: relative;
+  padding-top: var(--spacing-2);
+}
+
+#teema-vaade-wrap .cx-drop {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px var(--spacing-35);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+#teema-vaade-wrap .cx-drop--corner {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: -34px;
+}
+
+#teema-vaade-wrap .cx-drop:hover,
+#teema-vaade-wrap .cx-drop:focus-within,
+#teema-vaade-wrap .cx-drop.is-dragover {
+  border-color: var(--accent-border);
+}
+
+/* The input is reachable by keyboard and invisible to the layout: the label
+ * around it is the control a person sees. Not `display: none`, which would take
+ * it out of the tab order and out of the form on some browsers. */
+#teema-vaade-wrap .cx-drop input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#teema-vaade-wrap .cx-drop__text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .cx-drop__pick {
+  color: var(--accent-link);
+}
+
+#teema-vaade-wrap .cx-drop:hover .cx-drop__pick {
   text-decoration: underline;
+}
+
+/* Once a file is chosen the box says which one, in the accent the link wore. */
+#teema-vaade-wrap .cx-drop.is-chosen .cx-drop__text {
+  color: var(--accent-link);
 }
 
 /* -- zone C: the chronology ------------------------------------------------
@@ -9621,13 +9941,6 @@ section:has(.pw-more[open]) tbody.uxextra {
  * removed — the `<details>` still opens and closes, and the whole head is its
  * trigger. */
 .teemamain .accordion--timeline .accordion__caret {
-  display: none;
-}
-
-/* Open, the preview quote and the owed step are what the section is showing in
- * full below them (handoff I11). */
-.teemamain .accordion--timeline[open] .uxtl__preview,
-.teemamain .accordion--timeline[open] .uxtl__previewnext {
   display: none;
 }
 
@@ -9815,51 +10128,267 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-left: 0;
 }
 
-/* -- the chronology filter -------------------------------------------------
+/* -- the process strip ----------------------------------------------------
  *
- * Kept, and quiet. The design's frame does not draw it and the reviewer asked
- * for its removal from the drawing — but `?ajajoon=` is a link somebody can
- * send, the route still serves every slice, and a capability is not dropped
- * because one frame of one Matter did not show it (design handoff README,
- * `10-open-questions.md` Q10). What it stops being is a row of buttons under a
- * heading: at rest it is three words in the muted colour, and the active one
- * is the only one that is not.
- */
+ * `Teema käik` — where the file stands, above the chronology it explains. The
+ * columns share the width evenly however many there are, so the strip is a
+ * proportion rather than a scale: what it says is *how far along*, and a fixed
+ * column width would say *how long* instead (TEEMA_TARGET_SPEC §D).
+ *
+ * The connector is the step's own `::before`, running from its dot's right edge
+ * to the next column. A completed step draws it in the accent and the current
+ * and future ones draw it grey, so the accent line stops at the dot the file has
+ * reached. `:last-child` draws none, which is why one milestone renders one dot
+ * and no connector. */
 
-.teemamain .accordion--timeline .timelinefilter {
-  gap: var(--spacing-3);
-  padding: 0 var(--spacing-8) var(--spacing-2);
-  border: 0;
-  background: none;
+#teema-vaade-wrap .tl-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  /* No side margin. The design export inset the strip by 32px itself because
+     its accordion body had none; production's body is already padded by the
+     one-edge rule above, and keeping both put the strip at 64 — the single
+     most visible rule of the redesign, visibly broken by the element that
+     leads the section (TEEMA_TARGET_SPEC, VISUAL PRECISION). */
+  margin: 0 0 14px;
+  padding: var(--spacing-3) 0 var(--spacing-2);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.teemamain .accordion--timeline .timelinefilter__option {
-  border: 0;
-  padding: 0;
-  background: none;
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
+#teema-vaade-wrap .tl-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding-right: var(--spacing-2);
+  min-width: 0;
 }
 
-.teemamain .accordion--timeline .timelinefilter__option:hover {
+#teema-vaade-wrap .tl-step::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 0;
+  top: 5px;
+  height: 2px;
+  background: var(--accent-link);
+}
+
+#teema-vaade-wrap .tl-step.is-current::before,
+#teema-vaade-wrap .tl-step.is-todo::before {
+  background: var(--border-strong);
+}
+
+#teema-vaade-wrap .tl-step:last-child::before {
+  display: none;
+}
+
+#teema-vaade-wrap .tl-step__dot {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-link);
+  border: 2px solid var(--accent-link);
+  box-sizing: border-box;
+}
+
+#teema-vaade-wrap .tl-step.is-current .tl-step__dot {
+  background: var(--surface-base);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+#teema-vaade-wrap .tl-step.is-todo .tl-step__dot {
+  background: var(--surface-base);
+  border-color: var(--border-strong);
+}
+
+#teema-vaade-wrap .tl-step__what {
+  font-size: 12.5px;
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+#teema-vaade-wrap .tl-step.is-todo .tl-step__what {
   color: var(--text-secondary);
+  font-weight: var(--typography-weight-medium);
+}
+
+#teema-vaade-wrap .tl-step__date {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#teema-vaade-wrap .tl-step.is-current .tl-step__date {
+  color: var(--accent-link);
+}
+
+/* -- the chronology's two kinds -------------------------------------------
+ *
+ * A 12px accent dot for something that happened to the file, a 6px muted one
+ * for work somebody did on it. That is the whole hierarchy, and it is the one
+ * thing a reader scanning six months uses (TEEMA_TARGET_SPEC §E). */
+
+#teema-vaade-wrap .uxtl__dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  background: var(--text-muted);
+}
+
+#teema-vaade-wrap .uxtl__dot--ms {
+  width: 12px;
+  height: 12px;
+  margin-top: 5px;
+  background: var(--accent-link);
+  border: 0;
+}
+
+#teema-vaade-wrap .uxtl__ms {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+}
+
+#teema-vaade-wrap .uxtl__mswhat {
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+#teema-vaade-wrap .uxtl__msdate {
+  font-size: var(--typography-size-meta);
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#teema-vaade-wrap .uxtl__mssub {
+  display: block;
+  margin-top: 1px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+/* The attachment, by its real name and linked to its exact bytes. The glyph is
+ * a bordered pseudo-element rather than an icon font: two rules, no request,
+ * and it inherits the link's colour on hover without a second asset. */
+#teema-vaade-wrap .uxtl__file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+#teema-vaade-wrap .uxtl__file::before {
+  content: "";
+  width: 9px;
+  height: 11px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  opacity: 0.8;
+}
+
+#teema-vaade-wrap .uxtl__file:hover {
   text-decoration: underline;
 }
 
-.teemamain .accordion--timeline .timelinefilter__option.is-active {
-  color: var(--text-secondary);
+/* What one save decided, as a bordered pill under the note rather than a line
+ * of its own. */
+#teema-vaade-wrap .uxtl__next {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-1);
+  padding: 3px 9px;
+  border: 1px solid var(--accent-border);
+  border-radius: 5px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-body);
+}
+
+#teema-vaade-wrap .uxtl__next .uxtl__nextmode {
+  color: var(--accent-link);
   font-weight: var(--typography-weight-semibold);
 }
 
-/* An add control that is a disclosure keeps the link shape the others have:
- * inside the facts panel the marker is the only thing that distinguishes
- * «+ Lisa kaasamine» from «+ Lisa tähtaeg», and they do the same job. */
-.factspanel .addrow .disclosure__summary {
-  list-style: none;
-}
+/* -- the target at narrow widths ------------------------------------------
+ *
+ * **At the end of the file, beside the rules it overrides.** A media query is a
+ * condition, not a specificity boost: written earlier in app.css — inside the
+ * `max-width: 720px` block the rest of the Teema page uses — these same-weight
+ * selectors lost to the component rules above, and the measured symptom was the
+ * one defect this round must not reproduce (see `.cx-drop--corner` below). */
 
-.factspanel .addrow .disclosure__summary::-webkit-details-marker,
-.factspanel .addrow .disclosure__summary::marker {
-  display: none;
-  content: "";
+@media (max-width: 720px) {
+  /* The one left edge follows `--layout-gutter` down to 12px with every other
+     row on the page. It has to be restated here rather than left to the
+     page-wide rule higher up the file: these selectors carry an id, so the
+     scoped block above beats that rule wherever both apply, and a media query
+     is a condition rather than a specificity boost. */
+  #teema-vaade-wrap .uxnext,
+  #teema-vaade-wrap .registerfacts,
+  #teema-vaade-wrap .accordion--timeline .accordion__head,
+  #teema-vaade-wrap .accordion--timeline .accordion__body {
+    padding-left: var(--layout-gutter);
+    padding-right: var(--layout-gutter);
+  }
+
+  /* **The 420px drop-zone defect, fixed rather than reproduced.**
+
+     At desktop `.cx-drop--corner` is absolutely positioned to the right end of
+     the `Millal?` row, which is where the approved design wants it. In
+     `TEEMA_TARGET_420.png` it is still absolute and lands on top of «+1 nädal»
+     and «+2 nädalat» — a prototype defect `TEEMA_TARGET_SPEC` §H names as such
+     and asks to be fixed: below this breakpoint the drop area leaves the corner
+     and becomes a normal-flow, full-width row directly under the chips.
+
+     `order` is what puts it *after* them while it stays first in the DOM, where
+     it belongs for a reader who tabs through the row (docs/adr/0074 §19). */
+  #teema-vaade-wrap .uxcomp__row {
+    flex-wrap: wrap;
+  }
+
+  #teema-vaade-wrap .cx-drop--corner {
+    position: static;
+    order: 1;
+    flex: 1 1 100%;
+    box-sizing: border-box;
+    justify-content: center;
+    margin-bottom: 0;
+    margin-top: var(--spacing-2);
+  }
+
+  /* A two-column field grid does not fit beside a 12px gutter. */
+  #teema-vaade-wrap .cx-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #teema-vaade-wrap .cx-f--num {
+    max-width: none;
+  }
+
+  /* The strip keeps every milestone. If the labels cannot be read at this
+     width the strip scrolls itself rather than the page — never dropped steps,
+     never abbreviated nonsense, and never a horizontally scrolling document
+     (TEEMA_TARGET_SPEC §H). Its inset is still the accordion body's, which
+     follows `--layout-gutter` down to 12px with every other row. */
+  #teema-vaade-wrap .tl-strip {
+    grid-auto-columns: minmax(96px, 1fr);
+    overflow-x: auto;
+  }
 }

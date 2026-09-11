@@ -22,12 +22,13 @@ from app.accounts.enums import UserRole
 from app.accounts.models import User
 from app.accounts.services import create_synthetic_user
 from app.core.enums import Visibility
+from app.core.text import normalize_for_matching
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import DataQualityTier, EngagementKind, MatterOrigin, RecordMode
 from app.matters.models import Matter
 from app.matters.services import add_engagement, add_entry, close_matter, create_matter
 from app.matters.work_items import start_of_iso_week
-from app.organisations.models import Organisation, OrganisationType
+from app.organisations.models import AliasType, Organisation, OrganisationType
 from app.taxonomy.models import PolicyArea
 from app.workflow.enums import ActionKind, DateSemantics, Disposition, Track
 from app.workflow.models import StageVocabulary
@@ -238,6 +239,21 @@ class Command(BaseCommand):
         )
         partner, _ = Organisation.objects.get_or_create(
             name=PARTNER, defaults={"organisation_type": OrganisationType.ASSOCIATION}
+        )
+        # One recorded spelling, so that «alias search finds the body it names»
+        # is a property this world can actually be asked about.
+        #
+        # An alias is somebody's decision that two names mean one institution,
+        # and the unified picker on `Uus teema` searches them — but nothing in
+        # the seeded world had one, so the only browser proof available was a
+        # test that skipped. It renders nowhere and is not a visible label, so
+        # it moves no chip, no count and no baseline: it is read by
+        # `bindOrganisationPickers` off `data-aliases`, and by
+        # `app.organisations.services.find_matches` on the server
+        # (docs/adr/0073).
+        ministry.aliases.get_or_create(
+            normalized_alias=normalize_for_matching("NÄIDISMIN"),
+            defaults={"alias": "NÄIDISMIN", "alias_type": AliasType.ABBREVIATION},
         )
         # Read, not created. The vocabulary is reference data and arrives with
         # `taxonomy/0002_reference_policy_areas`; a browser world that invented

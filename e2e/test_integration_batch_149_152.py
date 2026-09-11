@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import SANDRA, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -138,27 +138,34 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_through_assisted_intak
     expect(page.get_by_text("kaaskiri.pdf").first).to_be_visible()
     page.goto(where)
 
-    form = page.locator(".factslot")
-    # `+ Töövõit` moved into the composer's action row with the 2026-09
-    # refinement — one place from which a fact is added — so reaching it opens
-    # the composer first (docs/matter-page-refinement.md).
-    page.locator("#teema-koostaja summary.uxcomp__collapsed").click()
-    page.get_by_role("link", name="+ Töövõit", exact=True).click()
+    # **The fragment route, not the Teema page.** `+ Töövõit` and `+ Jõustumine`
+    # are composer panels since the approved target, and the composer's panels
+    # are not this accordion (docs/adr/0074 §7, §8). What this test is about —
+    # that `bindPeriodFields` still narrows the control on a Matter created
+    # through assisted intake, and narrows it on the second open too — is a
+    # property of the fragment, which is where it is now asserted.
+    page.goto(f"{where.rstrip('/')}/toovoidud/lisa/")
+    page.wait_for_load_state("networkidle")
+    form = page.locator("form").filter(has=page.get_by_label("Kvartali täpsusega")).first
     expect(form).to_be_visible()
 
     form.get_by_label("Kvartali täpsusega").check()
     expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
     expect(form.get_by_label("Kvartal", exact=True)).to_be_visible()
 
-    # Opening the other one closes this one: the accordion is the render, and a
-    # second binding pass has not left two forms on the page.
-    page.get_by_role("link", name="+ Jõustumine", exact=True).click()
-    expect(page.locator("#faktivorm-joustumine")).to_be_visible()
-    expect(page.locator("#faktivorm-toovoit")).to_have_count(0)
+    # And the same control on the other fact, opened in its turn, binds once.
+    page.goto(f"{where.rstrip('/')}/joustumine/lisa/")
+    page.wait_for_load_state("networkidle")
+    other = page.locator("form").filter(has=page.get_by_label("Kvartali täpsusega")).first
+    other.get_by_label("Kvartali täpsusega").check()
+    expect(other.get_by_label("Kuupäev", exact=True)).to_be_hidden()
+    expect(other.get_by_label("Kvartal", exact=True)).to_be_visible()
 
-    # And back, through a fragment that has now been swapped twice.
-    page.get_by_role("link", name="+ Töövõit", exact=True).click()
-    expect(page.locator("#faktivorm-toovoit")).to_be_visible()
+    # And back, through a fragment that has now been swapped twice — and it
+    # still saves, which is the end of what this test is about.
+    page.goto(f"{where.rstrip('/')}/toovoidud/lisa/")
+    page.wait_for_load_state("networkidle")
+    form = page.locator("form").filter(has=page.get_by_label("Kvartali täpsusega")).first
     form.get_by_label("Kvartali täpsusega").check()
     expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
 
@@ -166,11 +173,11 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_through_assisted_intak
     form.get_by_label("Kvartal", exact=True).select_option("2")
     form.get_by_label("Aasta", exact=True).fill("2031")
     form.get_by_role("button", name="Salvesta töövõit").click()
+    page.wait_for_load_state("networkidle")
 
-    victories = page.get_by_role("region", name="Töövõidud")
-    expect(victories.get_by_text("Erisus jäi rakendusmäärusesse")).to_be_visible()
-    expect(page.locator(".factslot")).to_have_count(0)
-    assert page.url == where
+    # The record landed, and the standalone route redirected back to the Matter.
+    assert page.url.startswith(where.rstrip("/"))
+    expect(page.get_by_text("Erisus jäi rakendusmäärusesse").first).to_be_visible()
 
 
 def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
@@ -192,19 +199,32 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
     )
 
     # The composer's own approximate-period control, open and visible.
-    page.locator("summary.uxcomp__collapsed").click()
-    page.get_by_role("button", name="+ Oluline tähtaeg").click()
-    page.locator("#koostaja-tahtaeg summary", has_text="Ligikaudne aeg").click()
-    composer_precision = page.locator("input[name=deadline_precision]").first
+    # The composer is open on arrival since the approved target, so the
+    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
+    # this honest if it is ever reached from the closed state
+    # (docs/adr/0074 §3).
+    open_composer(page)
+    # `Täpsus` is three chips over a hidden field since the approved target: the
+    # panel asks for the day somebody was told about and says how precisely it
+    # was meant, and `_period_anchor` derives the period from that day
+    # (docs/adr/0074 §11).
+    page.locator("#cx-tahtaeg > summary").click()
+    composer_precision = page.locator("#cx-tahtaeg .cx-when .uxchip").first
     expect(composer_precision).to_be_visible()
 
     # Now the inline commencement form, and the answer that removes its own
-    # date control entirely.
-    page.get_by_role("link", name="+ Jõustumine", exact=True).click()
-    form = page.locator(".factslot")
+    # date control entirely. Reached through the fragment route, because the
+    # Teema page's own `+ Jõustumine` is a composer panel now and this test is
+    # about the *other* form keeping its date control (docs/adr/0074 §7).
+    page.goto(f"{page.url.split('#')[0].rstrip('/')}/joustumine/lisa/")
+    page.wait_for_load_state("networkidle")
+    form = page.locator("form").filter(has=page.get_by_label("Jõustub üldises korras")).first
     expect(form).to_be_visible()
     form.get_by_label("Jõustub üldises korras").check()
 
     expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
-    # The composer is a different form and keeps its control.
-    expect(composer_precision).to_be_visible()
+    # The composer is a different form on a different page and keeps its own.
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+    page.locator("#cx-tahtaeg > summary").click()
+    expect(page.locator("#cx-tahtaeg .cx-when .uxchip").first).to_be_visible()

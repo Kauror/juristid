@@ -177,39 +177,48 @@ def test_the_catalogue_list_does_not_repeat_the_shortlist_above_it(page, base_ur
     assert chips.isdisjoint(listed), "the catalogue list repeats the chips above it"
 
 
-def test_the_whole_catalogue_is_searchable_behind_one_named_door(page, base_url):
+def test_the_whole_catalogue_is_searchable_from_the_one_box(page, base_url):
     """Searchable, and reachable — which is not the same as permanently on screen.
 
-    This test used to require the search to be visible at rest, and that
-    decision is superseded (ADR 0067). The reasoning behind it was sound as far
-    as it went: a door labelled only with a number is a door somebody has to
-    guess is worth opening. What it did not weigh is that the shortlist is
-    *filled* to eight from the bodies this department actually works with, so on
-    almost every visit the sender is already on screen and the permanent
-    catalogue was occupying the column for nothing.
+    This requirement has been made three ways and it is worth keeping the
+    history, because each round changed the *shape* and none of them changed
+    what was being asked. It first required the search to be permanently
+    visible; ADR 0067 put it back behind «Vali nimekirjast», on the grounds that
+    the shortlist is filled to eight from the bodies this department actually
+    works with and answers the question on almost every visit; docs/adr/0073
+    removed the door entirely and made the search the first control in the
+    field, because the person still had to decide which of three controls they
+    were on before typing.
 
-    So the requirement becomes the one that was really being made: the whole
-    catalogue must be reachable, the search must reach it, and the door must say
-    how much is behind it. Adressaat has worked exactly this way throughout.
+    The requirement throughout: the whole catalogue must be reachable, and the
+    search must reach it — including bodies the quick row does not show.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    rows = page.locator("#saatja-nimekiri .chip")
-    if not rows.count():
-        # Every body fits in the shortlist, so there is no catalogue behind a
-        # door and correctly no door.
-        assert page.locator(".senderpick details").count() == 0
-        return
+    box = page.locator("#saatja-otsi")
+    expect(box).to_be_visible()
+    expect(box).to_have_attribute("placeholder", "Otsi või lisa asutus…")
 
-    summary = page.locator(".senderpick summary.chipdetails__summary")
-    expect(summary).to_contain_text("Vali nimekirjast")
-    summary.click()
+    # Every institution is a control in the document, which is what lets the
+    # search select a row rather than describe one (task §24).
+    offered = page.locator(
+        '#saatja-valik input[name="source_organisations"],'
+        ' #saatja-valik input[name="source_organisations_other"]'
+    )
+    assert offered.count() >= 1
 
-    search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
-    expect(search).to_be_visible()
-    search.fill(rows.first.inner_text().strip()[:4])
-    expect(rows.first).to_be_visible()
+    name = (
+        (page.locator("#saatja-valik label.chip").first.inner_text() or "")
+        .strip()
+        .rstrip("×")
+        .strip()
+    )
+    box.click()
+    box.fill(name[:5])
+    expect(
+        page.locator("#saatja-tulemused").get_by_role("option", name=name, exact=True)
+    ).to_be_visible()
 
 
 def test_the_form_answers_a_missing_institution_instead_of_redirecting_it(page, base_url):
@@ -220,17 +229,17 @@ def test_the_form_answers_a_missing_institution_instead_of_redirecting_it(page, 
     the Teema with no sender. The answer to «it is not here» is now a box on the
     page, and the sentence is gone with the rule it stated (docs/adr/0063).
 
-    And `Uus saatja` is reachable without opening anything. That is the half of
-    the previous round that survived ADR 0067's reversal: the catalogue and its
-    search went back behind «Vali nimekirjast», but the answer to "the body I
-    need is not on this page" may not itself be behind a click, or the workflow
-    this replaced comes back.
+    And naming one is reachable without opening anything. That is the half of
+    every round since which has survived: the answer to "the body I need is not
+    on this page" may not itself be behind a click, or the workflow this
+    replaced comes back. It is the `+` attached to the search box now, and it is
+    the same box — one control for finding and for naming (docs/adr/0073).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
     assert "asutuste alla" not in page.content()
-    expect(page.get_by_label("Uus saatja")).to_be_visible()
+    expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

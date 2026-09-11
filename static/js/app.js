@@ -1683,11 +1683,485 @@
       }
       box.querySelectorAll('input[type="radio"][name="' + group + '"]').forEach(function (radio) {
         radio.addEventListener("change", function () {
-          if (radio.checked) {
+          if (radio.checked && field.value !== "") {
             field.value = "";
+            /* Said out loud, because on `Uus teema` the box this empties is a
+               hidden carrier with a chip standing for it — and a chip nobody
+               took away is an answer the form no longer holds. Untrusted, so
+               nothing reads it as somebody typing (`bindOrganisationPickers`). */
+            field.dispatchEvent(new Event("input", { bubbles: true }));
           }
         });
       });
+    });
+  }
+
+  /* ---- One control for «which institution?» -------------------------------
+   *
+   * `Uus teema` used to ask its two counterparty questions through three
+   * controls each — a row of quick chips, a `<details>` reading «Vali
+   * nimekirjast (N)» with a search box inside it, and a separate «Uus saatja» /
+   * «Uus adressaat» text field somewhere else again. Three interactions to
+   * learn, and the person had to decide which of them they were on before they
+   * could type a letter.
+   *
+   * This is the one that replaced them:
+   *
+   *     Otsi kõigepealt olemasolevat. Kui seda ei ole, lisa sama välja kaudu uus.
+   *
+   * **Typing is not creating, and that boundary is the whole design.** The box
+   * has no `name` and posts nothing. What it does is *find* — over the chips
+   * already in the document, which are the real form controls for every
+   * institution in the catalogue, so choosing a result ticks a control rather
+   * than describing one and no request is made to select an existing body. Only
+   * `+` writes, and what it writes is the typed name into `sender_name` /
+   * `addressee_name` — the fields that have always carried a body the catalogue
+   * does not hold. Nothing here creates an `Organisation`, at any point, under
+   * any key (task §9, §25).
+   *
+   * **And the server still decides what a name means.** `+` on a spelling the
+   * catalogue already holds selects that row here, because feedback a person
+   * can see beats a surprise after the save — but that is *feedback*. The
+   * decision is `app.organisations.services.resolve_organisation_name` inside
+   * the save's own transaction: reuse an exact or alias match, create only a
+   * genuinely new body, refuse a spelling that names two. The normalisation
+   * below folds case and diacritics the way `normalize_for_matching` does so
+   * that the same things look the same on screen; it is not a second definition
+   * of identity and nothing is decided by it (task §10, §21, docs/adr/0073).
+   *
+   * Progressive enhancement throughout. With scripting off the shortlist is
+   * still visible and tickable and the `<noscript>` block carries the rest of
+   * the catalogue and the typed-name box; none of that is in the document here
+   * (templates/matters/partials/organisation_picker.html).
+   */
+
+  /* Enough rows to choose from, few enough that the panel stays a list. Beyond
+     this the query is the wrong length rather than the list being too short —
+     refining brings the wanted row up, because the ranking puts exact and
+     prefix matches first. */
+  var ORGANISATION_RESULT_LIMIT = 20;
+
+  /* Casefold, strip diacritics, collapse whitespace — `app.core.text
+     .normalize_for_matching`, as far as a browser needs it. Comparison only:
+     `data-aliases` arrives already normalised by the server, so this exists to
+     put the *typed* text and the *rendered* label into the same shape. */
+  function normalisedOrganisationName(value) {
+    return (value || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function bindOrganisationPickers(scope) {
+    (scope || document).querySelectorAll("[data-orgfind]").forEach(function (picker) {
+      if (!once(picker, "OrgPicker")) {
+        return;
+      }
+      var box = picker.querySelector("[data-orgfind-input]");
+      var add = picker.querySelector("[data-orgfind-add]");
+      var results = picker.querySelector(".orgfind__results");
+      var chips = picker.querySelector("[data-orgfind-chips]");
+      var typed = picker.querySelector("[data-orgfind-typed]");
+      var status = picker.querySelector("[role=status]");
+      if (!box || !add || !results || !results.id || !chips || !typed) {
+        return;
+      }
+
+      /* Announced only now that the behaviour exists. Written into the template
+         it would describe a listbox nothing can open, which is markup lying to
+         a screen reader about what the page does (templates/base.html). */
+      box.setAttribute("role", "combobox");
+      box.setAttribute("aria-autocomplete", "list");
+      box.setAttribute("aria-expanded", "false");
+      box.setAttribute("aria-controls", results.id);
+      results.setAttribute("role", "listbox");
+      results.setAttribute("aria-label", "Asutused");
+
+      var options = [];
+      var active = -1;
+
+      function chipLabel(chip) {
+        var name = chip ? chip.querySelector(".chip__name") : null;
+        return name ? name.textContent.trim().replace(/\s*×$/, "") : "";
+      }
+
+      /* Every institution this picker offers, read once.
+       *
+       * The membership cannot change — the whole catalogue is rendered, the
+       * shortlist visibly and the rest `hidden` — so this is computed at bind
+       * time. Order can and does change (`bindAddresseeDefault` moves a chosen
+       * sender to the front of the Adressaat row), which is why results are
+       * ranked from the query rather than read off the row. */
+      var entries = [];
+      var allChips = [];
+      chips.querySelectorAll("label.chip").forEach(function (chip) {
+        var input = chip.querySelector("input");
+        if (!input) {
+          return;
+        }
+        allChips.push({ chip: chip, input: input });
+        if (!input.name || !input.value) {
+          /* «Määramata» is a real radio with an empty value — it is what makes
+             an addressee chosen by mistake unchoosable again — and the
+             provisional chip posts nothing at all. Neither names an
+             institution, so neither is searchable. */
+          return;
+        }
+        var label = chipLabel(chip);
+        entries.push({
+          chip: chip,
+          input: input,
+          name: label,
+          key: normalisedOrganisationName(label),
+          aliases: (input.getAttribute("data-aliases") || "").split("|").filter(Boolean),
+        });
+      });
+
+      function announce(text) {
+        if (status) {
+          status.textContent = text;
+        }
+      }
+
+      /* Ranked the way task §6 asks, and the tie-break is the label so that two
+         readers with the same query see the same list in the same order. */
+      function score(entry, needle) {
+        if (entry.key === needle) {
+          return 0;
+        }
+        if (entry.aliases.indexOf(needle) !== -1) {
+          return 1;
+        }
+        if (entry.key.indexOf(needle) === 0) {
+          return 2;
+        }
+        if (entry.key.indexOf(needle) !== -1) {
+          return 3;
+        }
+        var hit = entry.aliases.some(function (alias) {
+          return alias.indexOf(needle) !== -1;
+        });
+        return hit ? 4 : -1;
+      }
+
+      function matching(needle) {
+        var found = [];
+        entries.forEach(function (entry) {
+          var rank = score(entry, needle);
+          if (rank >= 0) {
+            found.push({ entry: entry, rank: rank });
+          }
+        });
+        found.sort(function (a, b) {
+          return a.rank - b.rank || a.entry.name.localeCompare(b.entry.name, "et");
+        });
+        return found.map(function (item) {
+          return item.entry;
+        });
+      }
+
+      /* The spelling that already *is* an institution, canonically or through a
+         recorded alias. `+` on one of these selects the row rather than
+         proposing the word — the same answer the server would reach, given
+         early enough for somebody to see it (task §10). */
+      function exactEntry(needle) {
+        var found = null;
+        entries.forEach(function (entry) {
+          if (found) {
+            return;
+          }
+          if (entry.key === needle || entry.aliases.indexOf(needle) !== -1) {
+            found = entry;
+          }
+        });
+        return found;
+      }
+
+      function setActive(index) {
+        if (active >= 0 && options[active]) {
+          options[active].setAttribute("aria-selected", "false");
+          options[active].classList.remove("is-active");
+        }
+        active = index;
+        if (active >= 0 && options[active]) {
+          var option = options[active];
+          option.setAttribute("aria-selected", "true");
+          option.classList.add("is-active");
+          box.setAttribute("aria-activedescendant", option.id);
+          if (option.scrollIntoView) {
+            option.scrollIntoView({ block: "nearest" });
+          }
+        } else {
+          box.removeAttribute("aria-activedescendant");
+        }
+      }
+
+      function closeResults() {
+        results.hidden = true;
+        results.textContent = "";
+        options = [];
+        active = -1;
+        box.setAttribute("aria-expanded", "false");
+        box.removeAttribute("aria-activedescendant");
+      }
+
+      function openResults(found) {
+        results.textContent = "";
+        options = [];
+        active = -1;
+        box.removeAttribute("aria-activedescendant");
+
+        if (!found.length) {
+          var empty = document.createElement("p");
+          empty.className = "orgfind__empty";
+          /* An option rather than loose text: the only valid child of a listbox
+             is an option. Disabled, because there is nothing here to choose,
+             and never pushed onto `options`, so the arrows skip it. */
+          empty.setAttribute("role", "option");
+          empty.setAttribute("aria-disabled", "true");
+          empty.setAttribute("aria-selected", "false");
+          empty.textContent = "Asutust ei leitud — lisa see nupuga +";
+          results.appendChild(empty);
+          announce("Asutust ei leitud");
+        } else {
+          found.slice(0, ORGANISATION_RESULT_LIMIT).forEach(function (entry, index) {
+            var option = document.createElement("div");
+            option.className = "orgfind__option";
+            option.id = results.id + "-" + index;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", "false");
+            /* Reachable by the arrows and by the pointer, never by Tab: a
+               listbox is one stop, and the `+` is the next one. */
+            option.setAttribute("tabindex", "-1");
+            /* textContent, so an institution named with a tag stays a name. */
+            option.textContent = entry.name;
+            option.addEventListener("mousedown", function (event) {
+              /* Before the blur, so the box does not lose focus and close this
+                 list out from under the click. */
+              event.preventDefault();
+            });
+            option.addEventListener("click", function () {
+              choose(entry);
+            });
+            results.appendChild(option);
+            options.push(option);
+          });
+          announce(
+            found.length > ORGANISATION_RESULT_LIMIT
+              ? found.length + " sobivat asutust, näidatakse " + ORGANISATION_RESULT_LIMIT
+              : found.length === 1
+                ? "1 sobiv asutus"
+                : found.length + " sobivat asutust"
+          );
+        }
+        results.hidden = false;
+        box.setAttribute("aria-expanded", "true");
+      }
+
+      /* What is on screen, from the query and from what has been answered.
+       *
+       * One rule for every chip, and the first half of it is task §8: a chip
+       * that is an answer is never hidden. Not while somebody is searching for
+       * the next sender, not because it was never in the shortlist, not because
+       * the reader chose it rather than a person. The second half is §6: with a
+       * query in the box the quick choices give way to the results. */
+      function paint() {
+        var needle = normalisedOrganisationName(box.value);
+        allChips.forEach(function (item) {
+          if (item.input.checked) {
+            item.chip.hidden = false;
+            return;
+          }
+          item.chip.hidden = needle
+            ? true
+            : item.chip.hasAttribute("data-orgfind-tail");
+        });
+        add.disabled = !box.value.trim();
+        if (needle) {
+          openResults(matching(needle));
+        } else {
+          closeResults();
+          announce("");
+        }
+      }
+
+      function clearQuery() {
+        box.value = "";
+        paint();
+      }
+
+      /* «A person answered this», said out loud.
+       *
+       * `bindAddresseeDefault` distinguishes a value it wrote from one somebody
+       * gave, and it does so with `event.isTrusted` — which is exactly right for
+       * a click on a radio and useless here, where a person's choice reaches the
+       * control through this function. So the picker says so itself, from the
+       * chip row, and only ever on a path a person started. */
+      function declareAnswer() {
+        chips.dispatchEvent(new CustomEvent("orgfind:answer", { bubbles: true }));
+      }
+
+      function choose(entry) {
+        /* A radio unchecks its group by itself, which is what keeps Adressaat
+           single-valued; a checkbox does not, which is what lets a Matter
+           arrive from several bodies (task §7). */
+        entry.input.checked = true;
+        entry.chip.hidden = false;
+        entry.input.dispatchEvent(new Event("change", { bubbles: true }));
+        declareAnswer();
+        clearQuery();
+        box.focus();
+        announce("Valitud: " + entry.name);
+      }
+
+      /* The chip standing for a body that does not exist yet.
+       *
+       * Built to match what the server renders for a refused save, so the two
+       * states are one state: nameless, checked, dashed, and holding nothing
+       * but the typed name. It posts nothing — the hidden field beside it is
+       * what the server reads. */
+      function syncProvisional() {
+        var value = typed.value.trim();
+        var chip = chips.querySelector("[data-orgfind-provisional]");
+        if (!value) {
+          if (chip) {
+            chip.remove();
+          }
+          return;
+        }
+        if (!chip) {
+          chip = document.createElement("label");
+          chip.className = "chip chip--provisional";
+          chip.setAttribute("data-orgfind-provisional", "");
+          var input = document.createElement("input");
+          input.type = "checkbox";
+          input.className = "chip__input";
+          input.checked = true;
+          input.setAttribute("data-orgfind-provisional-input", "");
+          var text = document.createElement("span");
+          text.className = "chip__name";
+          text.appendChild(document.createTextNode(value));
+          var clear = document.createElement("span");
+          clear.className = "chip__clear";
+          clear.setAttribute("aria-hidden", "true");
+          clear.textContent = "×";
+          text.appendChild(clear);
+          chip.appendChild(input);
+          chip.appendChild(text);
+          chips.insertBefore(chip, chips.firstChild);
+          return;
+        }
+        var name = chip.querySelector(".chip__name");
+        if (name && name.firstChild) {
+          name.firstChild.nodeValue = value;
+        }
+        chip.querySelector("input").checked = true;
+      }
+
+      function setTyped(value) {
+        typed.value = value;
+        syncProvisional();
+        /* Untrusted on purpose: `bindAddresseeDefault` listens here and must not
+           read this as somebody typing into Adressaat — this *is* the picker,
+           and what it means is said by `orgfind:answer` instead. */
+        typed.dispatchEvent(new Event("input", { bubbles: true }));
+        typed.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+
+      function addTyped() {
+        var raw = box.value.replace(/\s+/g, " ").trim();
+        if (!raw) {
+          return;
+        }
+        var known = exactEntry(normalisedOrganisationName(raw));
+        if (known) {
+          /* Already an institution, so this is that institution — never a
+             second row spelled the same way (task §10). */
+          choose(known);
+          return;
+        }
+        setTyped(raw);
+        declareAnswer();
+        clearQuery();
+        box.focus();
+        announce("Lisatud uue asutusena: " + raw);
+      }
+
+      box.addEventListener("input", paint);
+
+      box.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          if (!options.length) {
+            return;
+          }
+          event.preventDefault();
+          var step = event.key === "ArrowDown" ? 1 : -1;
+          var next = active + step;
+          if (next < 0) {
+            next = options.length - 1;
+          }
+          if (next >= options.length) {
+            next = 0;
+          }
+          setActive(next);
+          return;
+        }
+        if (event.key === "Escape") {
+          if (!results.hidden) {
+            event.preventDefault();
+            closeResults();
+          }
+          return;
+        }
+        if (event.key === "Enter") {
+          /* Never a submit, and never an add.
+           *
+           * This is a search box inside a long form, so an unguarded Enter
+           * would file the Teema — and an Enter that fell through to «add new»
+           * would file a duplicate institution under a name the person was
+           * about to select from the list below. An existing result always
+           * wins, and with nothing highlighted the keystroke does nothing at
+           * all (task §19). */
+          event.preventDefault();
+          if (active >= 0 && options[active]) {
+            options[active].click();
+          }
+        }
+      });
+
+      add.addEventListener("click", addTyped);
+
+      /* Anything that changes what is ticked repaints, wherever it came from —
+         a click on a chip, the intake reader's autofill, «Kasuta» on a
+         suggestion, or `bindAddresseeDefault` answering Adressaat from Saatja.
+         A body the reader chose is an answer like any other, and §8 says an
+         answer is visible: the shortlist it is not in is not a reason to hide
+         it (task §16). */
+      picker.addEventListener("change", function (event) {
+        var target = event.target;
+        if (target && target.hasAttribute && target.hasAttribute("data-orgfind-provisional-input")) {
+          if (!target.checked) {
+            /* Letting go of the typed name is answering the question too. */
+            setTyped("");
+            declareAnswer();
+          }
+          paint();
+          return;
+        }
+        paint();
+      });
+
+      /* The typed carrier is written from outside as well as from here — the
+         server's own sender→addressee default reaches Adressaat through it. */
+      typed.addEventListener("input", function () {
+        syncProvisional();
+        paint();
+      });
+
+      syncProvisional();
+      paint();
     });
   }
 
@@ -1764,7 +2238,7 @@
       };
 
       /* The label wrapping one addressee radio, wherever it currently lives —
-         the quick row or the disclosure's long tail.
+         the visible chips or the part of the catalogue only the search reaches.
          Compared as a property rather than built into an attribute selector, so
          nothing here has to reason about escaping a value that came from the
          page. */
@@ -1794,16 +2268,13 @@
       var manual = !!(manualField && manualField.value);
       var seed = null;
 
-      var provisional = null;
-      var provisionalName = "";
-
       var sameToken = function (left, right) {
         return !!left && !!right && left.kind === right.kind && left.value === right.value;
       };
 
       /* The addressee radio offering one body *by name*, if the catalogue holds
-         it. `Uus saatja` is a box for a body that does not exist yet, but people
-         type into it names that do — and a spelling the catalogue already holds
+         it. The typed field is for a body that does not exist yet, but people
+         put names into it that do — and a spelling the catalogue already holds
          should answer with the row rather than with the word. */
       var optionValueNamed = function (name) {
         var found = null;
@@ -1816,10 +2287,10 @@
       };
 
       /* Every sender this form currently names: the ticked bodies, plus the one
-         being typed into `Uus saatja`. A typed name the catalogue does not hold
-         has no primary key and is carried by its spelling — which is exactly
-         what `addressee_name` posts, and what the server resolves against the
-         same catalogue inside the save's own transaction. */
+         the picker's `+` has proposed as new. A typed name the catalogue does
+         not hold has no primary key and is carried by its spelling — which is
+         exactly what `addressee_name` posts, and what the server resolves
+         against the same catalogue inside the save's own transaction. */
       var senderTokens = function () {
         var tokens = [];
         senderInputs().forEach(function (input) {
@@ -1839,91 +2310,34 @@
         return tokens;
       };
 
-      /* ---- the temporary chip for a sender that does not exist yet --------
+      /* Adressaat's own typed field, written and taken back.
        *
-       * `Uus saatja: Euroopa Komisjon` with no such body in the catalogue has
-       * no primary key to answer with — there is no row until `Loo teema`
-       * creates one. The same name still has to become the addressee, so it is
-       * offered as a chip that writes into the `addressee_name` free-text
-       * control, which is the path that already exists for exactly this
-       * (`app.matters.services.resolve_addressee`).
+       * A body being named for the first time has no primary key — there is no
+       * row until `Loo teema` creates one — so the same name becomes the
+       * addressee through the control that already exists for exactly that.
+       * The event is what makes the Adressaat picker draw or drop its
+       * provisional chip; the picker owns that chip, and this owns the value
+       * (`bindOrganisationPickers`, task §14).
        *
-       * Deliberately nameless. It is not a form field, it posts nothing, and
-       * everything it does is done through the two controls that do post. On
-       * save the server resolves one typed sender and one typed addressee
-       * against one catalogue inside one transaction, so the same spelling
-       * becomes one Organisation row used twice — never two (§5, §15).
-       */
-      var clearProvisional = function () {
-        if (!provisional) {
+       * Untrusted by construction, which is how the picker and the listener
+       * below both know the person did not type it. */
+      var setTypedAddressee = function (value) {
+        if (!addresseeName || addresseeName.value === value) {
           return;
         }
-        provisional.remove();
-        provisional = null;
-        provisionalName = "";
+        addresseeName.value = value;
+        addresseeName.dispatchEvent(new Event("input", { bubbles: true }));
       };
 
-      var syncProvisional = function () {
-        if (!typed || !addresseeName) {
-          return;
-        }
-        var name = typed.value.trim();
-        if (!name) {
-          clearProvisional();
-          return;
-        }
-        /* Already offered as a real body: the catalogue holds this spelling, so
-           the ordinary chip covers it and a second one saying the same word
-           would be the form offering one institution twice. */
-        var existing = Array.prototype.some.call(addresseeInputs(), function (radio) {
-          return chipName(radio.closest(".chip")) === name;
-        });
-        if (existing) {
-          clearProvisional();
-          return;
-        }
-        if (provisional && provisionalName === name) {
-          return;
-        }
-        var checked = provisional && provisional.querySelector("input").checked;
-        clearProvisional();
-        provisional = document.createElement("label");
-        provisional.className = "chip chip--provisional";
-        provisional.setAttribute("data-provisional-addressee", "");
-        var input = document.createElement("input");
-        input.type = "radio";
-        input.className = "chip__input";
-        input.checked = !!checked;
-        var text = document.createElement("span");
-        text.className = "chip__name";
-        text.textContent = name;
-        provisional.appendChild(input);
-        provisional.appendChild(text);
-        quick.insertBefore(provisional, quick.firstChild);
-        provisionalName = name;
-        input.addEventListener("change", function () {
-          if (!input.checked) {
-            return;
-          }
-          /* One answer at a time. The typed name is what the server will
-             resolve, so the chosen chip has to let go. */
-          addresseeInputs().forEach(function (radio) {
-            radio.checked = false;
-          });
-          addresseeName.value = name;
-        });
-        if (checked) {
-          addresseeName.value = name;
-        }
-      };
-
-      /* The chosen senders, at the front of the quick row.
+      /* The chosen senders, at the front of the Adressaat chips.
        *
        * Ordering, and since docs/adr/0069 it is ordering with a job rather than
        * a suggestion: the body that has just become the addressee has to be one
        * of the chips, because the chips are what somebody sees when they open
-       * Adressaat to check. A default left in the long tail would be an answer
-       * hidden behind a second disclosure. */
+       * Adressaat to check. A default left among the bodies only the search
+       * reaches would be an answer hidden behind a query nobody would think to
+       * type. `hidden = false` is the other half of that: those entries arrive
+       * out of sight, and an answer is never out of sight (task §8). */
       var promote = function () {
         var chosen = [];
         senderInputs().forEach(function (input) {
@@ -1940,7 +2354,8 @@
         /* Inserted in reverse so that repeated `insertBefore(first)` leaves
            them in `chosen` order, and after the provisional chip if there is
            one — a body the catalogue does not hold yet is the one the person is
-           in the middle of typing. */
+           in the middle of naming. */
+        var provisional = quick.querySelector("[data-orgfind-provisional]");
         for (var index = chosen.length - 1; index >= 0; index -= 1) {
           var option = optionFor(chosen[index].value);
           if (!option) {
@@ -1965,15 +2380,11 @@
           return;
         }
         var name = "";
-        if (provisional && provisional.querySelector("input").checked) {
-          name = provisionalName;
-        } else {
-          addresseeInputs().forEach(function (radio) {
-            if (radio.checked && radio.value) {
-              name = chipName(radio.closest(".chip"));
-            }
-          });
-        }
+        addresseeInputs().forEach(function (radio) {
+          if (radio.checked && radio.value) {
+            name = chipName(radio.closest(".chip"));
+          }
+        });
         if (!name && addresseeName) {
           name = addresseeName.value.trim();
         }
@@ -1990,20 +2401,10 @@
           addresseeInputs().forEach(function (radio) {
             radio.checked = false;
           });
-          if (provisional) {
-            provisional.querySelector("input").checked = true;
-          }
-          if (addresseeName) {
-            addresseeName.value = seed.value;
-          }
+          setTypedAddressee(seed.value);
           return;
         }
-        if (provisional) {
-          provisional.querySelector("input").checked = false;
-        }
-        if (addresseeName) {
-          addresseeName.value = "";
-        }
+        setTypedAddressee("");
         /* `Määramata` is a real radio with an empty value, and it is what "no
            answer" looks like — so clearing the default means selecting it,
            never leaving the group with nothing checked. */
@@ -2013,7 +2414,6 @@
       };
 
       var refresh = function () {
-        syncProvisional();
         promote();
         if (!manual) {
           var tokens = senderTokens();
@@ -2083,16 +2483,7 @@
 
       form.addEventListener("change", function (event) {
         var target = event.target;
-        if (!target) {
-          return;
-        }
-        if (!target.name) {
-          /* The provisional chip posts nothing and so has no name. Choosing it
-             is still a person answering Adressaat. */
-          if (provisional && provisional.contains(target) && event.isTrusted) {
-            takeOver();
-            updateSummary();
-          }
+        if (!target || !target.name) {
           return;
         }
         if (
@@ -2104,15 +2495,25 @@
         }
         if (target.name === "addressee_organisation" && event.isTrusted) {
           takeOver();
-          if (target.checked && provisional) {
-            /* The person chose a real body, so the typed one is no longer the
-               answer. `bindExclusiveName` empties the text box; this releases
-               the chip that filled it — it has no `name`, so the radio group
-               cannot uncheck it on its own. */
-            provisional.querySelector("input").checked = false;
-          }
           updateSummary();
         }
+      });
+
+      /* «A person answered Adressaat», said by the picker.
+       *
+       * `event.isTrusted` is the right test for a click on a radio and the
+       * wrong one for the unified picker, where choosing a search result,
+       * pressing `+` and letting go of a provisional chip all reach the control
+       * through script. So the picker announces a person-driven answer from its
+       * own chip row, and only that row's announcement counts here — the Saatja
+       * picker fires the same event and it must feed this default rather than
+       * override it (task §15, `bindOrganisationPickers`). */
+      form.addEventListener("orgfind:answer", function (event) {
+        if (event.target !== quick) {
+          return;
+        }
+        takeOver();
+        updateSummary();
       });
 
       if (typed) {
@@ -2120,17 +2521,16 @@
       }
       if (addresseeName) {
         addresseeName.addEventListener("input", function (event) {
+          /* A person typing into the `<noscript>` box — or, with scripting on,
+             nothing at all, because everything that writes here does so
+             untrusted and says what it meant through the event above. */
           if (event.isTrusted) {
             takeOver();
-          }
-          if (provisional && addresseeName.value.trim() !== provisionalName) {
-            provisional.querySelector("input").checked = false;
           }
           updateSummary();
         });
       }
 
-      syncProvisional();
       promote();
       adopt();
       updateSummary();
@@ -2871,6 +3271,7 @@
     bindDatePickers(document);
     bindChoiceFilters(document);
     bindExclusiveName(document);
+    bindOrganisationPickers(document);
     bindAddresseeDefault(document);
     bindOpenChosenDetails(document);
     bindChipCounts(document);
@@ -2900,6 +3301,7 @@
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
     bindExclusiveName(event.target.querySelector ? event.target : document);
+    bindOrganisationPickers(event.target.querySelector ? event.target : document);
     bindAddresseeDefault(event.target.querySelector ? event.target : document);
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);

@@ -1,0 +1,26 @@
+{% comment %}
+`Salvestatud HH:mm` — the whole of the notes autosave's feedback.
+
+Its own fragment because it is its own swap target. The textarea must not be
+replaced while somebody is typing into it, so the POST returns this span alone
+and htmx puts it back in place; the box, the cursor and the selection are never
+touched (templates/matters/partials/rail.html).
+
+It renders nothing at all until there is something true to say. A note that has
+never been saved shows no time rather than a placeholder or a zero — and because
+htmx swaps on a 2xx only, a refused save leaves whatever was here before rather
+than announcing a save that did not happen.
+
+The time is Europe/Tallinn, from the row's own `updated_at`, so it says when the
+*record* was written rather than when this page happened to render.
+{% endcomment %}
+<span class="railcard__hint" id="teema-markme-seis">
+  {% if note_saved_at %}
+    {% comment %}
+      A `<time>`, so the visual-regression mask that paints over every
+      clock-derived value covers this one too (e2e/test_ui_regression.py,
+      `CLOCK_DEPENDENT`).
+    {% endcomment %}
+    Salvestatud <time datetime="{{ note_saved_at|date:'c' }}">{{ note_saved_at|time:"H:i" }}</time>
+  {% endif %}
+</span>

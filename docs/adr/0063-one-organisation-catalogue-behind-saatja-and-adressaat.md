@@ -5,6 +5,17 @@
 **Extended by** ADR 0069 — the two relations stay distinct exactly as decided
 here, and on `Uus teema` the answer to one now fills in the answer to the other
 by default. Nothing in this record is withdrawn.
+**Superseded in part by** ADR 0073 (2026-09-11), and only on `/teemad/uus/`:
+the reasoning below under *«Two controls, on purpose»* is right about the
+*distinction* and wrong about the *shape*. Finding an institution and naming
+one are still two form fields with two different meanings, and the search box
+still posts nothing — but they are one visible control there now, a box and a
+`+` attached to it, because three affordances for one question made the person
+choose between them before they had looked. Everything this record decides
+about identity — one catalogue, normalised-exact reuse, alias reuse, refusal of
+an ambiguous spelling, resolution inside the save's own transaction — is
+untouched and is restated in 0073. `Muuda teemat` and `Saabunud` still render
+exactly the shape described here.
 **Amends** ADR 0025 (multiple Matter senders), §"The control matches the model".
 **Builds on** ADR 0029 (reference data foundation), ADR 0032 (Uus teema redesign).
 
