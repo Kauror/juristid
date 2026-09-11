@@ -362,21 +362,25 @@ def test_an_owner_can_be_set_from_the_register_row(page, base_url):
         f"files it with no owner and nothing else here assigns it."
     )
 
-    # **Clear the sticky chrome before clicking into the row.** The register's
-    # column head is `position: sticky; top: 48px` beneath a sticky top bar, and
-    # Playwright's own scroll parks the target at the very top of the viewport —
-    # which is exactly where those two sit. The click then waits out its full
-    # actionability timeout against a header it cannot see through. `open_matter`
-    # in `e2e/conftest.py` carries the same reasoning and dodges it by following
-    # the link instead; a disclosure has to be clicked.
+    # **Put the row in the middle of the viewport before clicking into it**, and
+    # the two failures that got here are why it has to be the middle rather than
+    # either end.
+    #
+    # At the top, the register's column head — `position: sticky; top: 48px`
+    # beneath a sticky top bar — covers the row, and the click on the trigger
+    # waits out its full actionability timeout against a header it cannot see
+    # through (`e2e/conftest.py` `open_matter` documents the same hazard).
+    #
+    # At the bottom, the trigger is clickable and the *menu* is not: it is
+    # `position: fixed` and `static/js/ux.js` `place()` puts it four pixels under
+    # the trigger, so a row near the fold opens a menu below it.
     #
     # Latent until it was not. This file shares a browser shard with whichever
     # files the partition puts beside it, and adding one file to the suite moved
     # two Matter-creating ones in front of this test — more unassigned Matters,
-    # this row further down, and the auto-scroll wrong for the first time
-    # (ci_sharding.py, and the repartition note in the browser-ordering memo).
-    row.scroll_into_view_if_needed()
-    page.evaluate("() => window.scrollBy(0, -160)")
+    # this row further down the list than it has ever been, and both ends of
+    # that scroll wrong for the first time (ci_sharding.py).
+    row.evaluate("node => node.scrollIntoView({block: 'center', behavior: 'instant'})")
 
     row.locator("summary.uxassign__trigger").click()
     menu = row.locator(".uxassign__menu")
