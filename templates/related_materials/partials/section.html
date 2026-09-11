@@ -159,17 +159,23 @@ lists and the suggestions cannot disagree about the click that just happened.
           therefore this element and nothing above it; it replaces itself, and
           what arrives carries no htmx attributes of its own.
 
-          `revealed` rather than a click: a closed `<details>` has no laid-out
-          content, so the slot becomes visible exactly when the disclosure opens,
-          and the ranking runs once — which is the whole reason it is behind a
-          disclosure at all (docs/adr/0062 §7, docs/adr/0074 §21).
+          `toggle … from:` is how the slot hears the disclosure without the
+          disclosure carrying any attribute of its own: the request belongs to
+          this element, the event belongs to that one. **Not `revealed`** — htmx
+          decides that by the element's rectangle, and a zero-height box inside a
+          closed `<details>` is inside the viewport, so the engine ran on every
+          Matter page load. That is precisely what ADR 0062 §7 put it behind a
+          disclosure to prevent, and CI's browser shard is what noticed.
+
+          `once`, so the ranking runs on the first open and never again on this
+          page (docs/adr/0062 §7, docs/adr/0074 §21).
         {% endcomment %}
         {% if suggestions_open %}
           {% include "related_materials/partials/suggestions.html" %}
         {% else %}
           <div id="voimalikud-seosed"
                hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1"
-               hx-trigger="revealed"
+               hx-trigger="toggle once from:#lisa-seotud-teema"
                hx-select="#voimalikud-seosed"
                hx-swap="outerHTML"></div>
         {% endif %}
