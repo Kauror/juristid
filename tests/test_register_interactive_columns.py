@@ -889,6 +889,21 @@ def test_pagination_carries_the_heading_state(signed_in, specialist, stages):
     assert "leht=2" in body
 
 
+def test_changing_only_the_page_size_keeps_the_filter_and_the_sort(signed_in, specialist, stages):
+    """«näita korraga» changes how much of the same list is on screen (brief 22)."""
+    chosen, _ = stages
+    matter(owner=specialist, stage=chosen, title="Teema")
+
+    response = signed_in.get(
+        REGISTER, {"hetkeseis": chosen.key, "jarjestus": views.ACTIVITY_SORT_OLDEST, "leht": "2"}
+    )
+
+    for option in response.context["page_size_options"]:
+        assert f"hetkeseis={chosen.key}" in option["query"], option
+        assert f"jarjestus={views.ACTIVITY_SORT_OLDEST}" in option["query"], option
+        assert "leht" not in option["query"], option
+
+
 def test_the_second_page_is_still_in_the_chosen_order(signed_in, specialist):
     for index in range(30):
         matter(

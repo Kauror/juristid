@@ -1069,8 +1069,22 @@ p.formnote {
   width: 190px;
 }
 
+/* 132px, not 110. «VIIMANE TEGEVUS» is 93px of uppercase at this size and the
+   cell's content box was 82px, so the heading has been overflowing its own
+   column on every surface that renders this table — invisibly, because a `<th>`
+   does not clip and the text simply ran to the table's edge.
+ *
+ * That became a defect the moment the column was sortable: what sits after the
+ * label is the ↑/↓ that says which way it is sorted, and *that* was the part
+ * scrolled off the end. The direction indicator has to be on screen, so the
+ * column is as wide as its own heading.
+ *
+ * Taken from the title column, which absorbs the remainder in a fixed layout,
+ * and given rather than borrowed from Kuupäev: that one is at 158px of 162px on
+ * real rows («ARVAMUSE TÄHTAEG 15.9.2026»), so narrowing it would clip dates.
+ * Nothing below 1200px is affected — this column is not rendered there. */
 .table--register .table__lastactivity {
-  width: 110px;
+  width: 132px;
 }
 
 /* A flex wrapper inside the cell, not on the cell: a <td> that stops being a
