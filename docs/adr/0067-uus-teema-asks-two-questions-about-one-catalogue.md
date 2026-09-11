@@ -8,6 +8,16 @@
   the page (reversed)
 - Related: ADR 0025 (senders are a set), ADR 0029 (organisation identity),
   ADR 0032 (what `Uus teema` creates)
+- Superseded in part by: ADR 0073 (2026-09-11), on `/teemad/uus/` only. The
+  «Vali nimekirjast (N)» disclosure this record restored is withdrawn there, and
+  so is the separate `Uus saatja` box it kept outside — not because either was
+  wrong about what it was for, but because a person meeting three affordances
+  for one question has to choose between them before they have looked.
+  The half this record insisted on is kept and is the reason the `+` exists at
+  all: the answer to «the body I need is not on this page» may not be behind a
+  click. Everything else 0067 decided — the promotion, the typed-sender chip,
+  `Andmeklass` leaving the form — stands, and `Muuda teemat` and `Saabunud`
+  still render the shape described here.
 
 ## Context
 

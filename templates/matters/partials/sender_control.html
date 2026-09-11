@@ -8,6 +8,20 @@ that is no longer true. A person should not learn one sender workflow filing a
 Teema, a second correcting it and a third at intake, so there is one control and
 it lives here (§2E).
 
+**`Uus teema` no longer renders this, and that is deliberate rather than a
+drift.** Since docs/adr/0073 it asks the question through one control — a box
+reading «Otsi või lisa asutus…» with a `+` attached to it — and
+`matters/partials/organisation_picker.html` is what draws it. The reasoning for
+splitting rather than changing this partial is in the ADR and in
+`matter_create.html`: `Muuda teemat` and `Saabunud` arrive with the answer
+already given, which is a different interaction, and neither was part of that
+review. So the shape below is still the shape those two surfaces have, and
+everything this comment says about it is still true of them. What is *not* true
+any more is that it is the only sender control in the application — and the
+«Two controls, on purpose» paragraph below is the one decision 0073 supersedes.
+The distinction it protects survives; what changed is that an *action* now
+expresses it instead of a second box.
+
 **The shape, and why it is this one again.**
 
 Three operations, in the order somebody reaches for them:
