@@ -323,6 +323,66 @@ class LegalInstrumentChoicesMixin:
         return any(str(item) == other for item in values)
 
 
+class OrganisationPickerChoicesMixin:
+    """What `organisation_picker.html` needs, on both forms that draw it.
+
+    `organisation_picker.html` renders one control for both counterparty
+    questions, and each of them offers the same two things: a handful of
+    institutions as visible chips, and the rest of the catalogue as entries the
+    search can reach. The split differs underneath — Saatja is two checkbox
+    *fields* because one group cannot be rendered in two places without becoming
+    two, Adressaat is one radio group sliced at `addressee_split` because it
+    holds one value — and neither difference belongs in a template that is
+    supposed to be the same control twice.
+
+    So the slicing is done here, in Python, and the partial receives two plain
+    lists of subwidgets either way (task §23, docs/adr/0073).
+
+    **Shared rather than copied, and that is the point of R2-12.** These four
+    properties were `MatterCreateForm`'s alone while `Muuda teemat` rendered the
+    older three-control shape — popular chips, `Vali nimekirjast`, `Uus saatja`,
+    and no search at all over the catalogue. Same concept, same interaction: a
+    person who learns one Organisation control filing a Teema must not find a
+    different one on the page they correct it from. A second picker built for
+    the edit page would be a second set of these rules to keep in step
+    (post-QA R2-12).
+
+    The forms remain two forms. What they now share is how the one control is
+    *fed*, never what either of them writes: creating a Matter and correcting one
+    are different transactions with different services and different rules about
+    defaults, and §11 of the same brief turns on their staying that way.
+    """
+
+    fields: dict[str, forms.Field]
+
+    #: Where the Adressaat radio group stops being chips and starts being tail.
+    #: `None` on a form with no viewer — no usage to rank by means no shortlist,
+    #: and everything is a chip.
+    addressee_split: int | None = None
+
+    @property
+    def sender_chip_choices(self) -> list[Any]:
+        """The senders offered without being asked."""
+        return list(cast(Any, self)["source_organisations"])
+
+    @property
+    def sender_tail_choices(self) -> list[Any]:
+        """Every other institution, searchable rather than on screen."""
+        return list(cast(Any, self)["source_organisations_other"])
+
+    @property
+    def addressee_chip_choices(self) -> list[Any]:
+        """«Määramata», the chosen senders, and the bodies most often answered."""
+        offered = list(cast(Any, self)["addressee_organisation"])
+        return offered if self.addressee_split is None else offered[: self.addressee_split]
+
+    @property
+    def addressee_tail_choices(self) -> list[Any]:
+        if self.addressee_split is None:
+            return []
+        return list(cast(Any, self)["addressee_organisation"])[self.addressee_split :]
+
+
 def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
     """A box for naming an institution the catalogue may not hold yet.
 
@@ -772,7 +832,7 @@ def _default_addressee(form: Any, senders: list[Organisation]) -> tuple[str, str
     return ("addressee_name", typed)
 
 
-class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
+class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form):
     """Creating a Teema requires a title and nothing else.
 
     Everything else is optional and disclosed under a details panel. Demanding
@@ -1115,46 +1175,6 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
         """
         return bool(self.errors.get("addressee_organisation") or self.errors.get("addressee_name"))
 
-    # ---- the two halves of one picker ------------------------------------
-    #
-    # `organisation_picker.html` renders one control for both counterparty
-    # questions, and each of them offers the same two things: a handful of
-    # institutions as visible chips, and the rest of the catalogue as entries
-    # the search can reach. The split differs underneath — Saatja is two
-    # checkbox *fields* because one group cannot be rendered in two places
-    # without becoming two, Adressaat is one radio group sliced at
-    # `addressee_split` because it holds one value — and neither difference
-    # belongs in a template that is supposed to be the same control twice.
-    #
-    # So the slicing is done here, in Python, and the partial receives two
-    # plain lists of subwidgets either way (task §23, docs/adr/0073).
-
-    @property
-    def sender_chip_choices(self) -> list[Any]:
-        """The senders offered without being asked."""
-        return list(cast(Any, self)["source_organisations"])
-
-    @property
-    def sender_tail_choices(self) -> list[Any]:
-        """Every other institution, searchable rather than on screen."""
-        return list(cast(Any, self)["source_organisations_other"])
-
-    @property
-    def addressee_chip_choices(self) -> list[Any]:
-        """«Määramata», the chosen senders, and the bodies most often answered.
-
-        `addressee_split` is `None` when the form has no viewer — no usage to
-        rank by means no shortlist and no tail, and everything is a chip.
-        """
-        offered = list(cast(Any, self)["addressee_organisation"])
-        return offered if self.addressee_split is None else offered[: self.addressee_split]
-
-    @property
-    def addressee_tail_choices(self) -> list[Any]:
-        if self.addressee_split is None:
-            return []
-        return list(cast(Any, self)["addressee_organisation"])[self.addressee_split :]
-
     @property
     def data_class(self) -> str:
         """Ordinary `Uus teema` creates real work. There is no other answer.
@@ -1329,7 +1349,7 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
                 if organisation.pk not in shortlist
             ]
             self.addressee_offered = [*self.frequent_addressees, *tail]
-            self.addressee_split: int | None = 1 + len(self.frequent_addressees)
+            self.addressee_split = 1 + len(self.frequent_addressees)
             addressees = cast(Any, self.fields["addressee_organisation"])
             # The named blank option, restated. Assigning `choices` replaces
             # Django's iterator, and the iterator is what would otherwise have
@@ -1368,7 +1388,7 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
             self.addressee_tail_count = 0
 
 
-class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
+class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form):
     """`Muuda teemat` — the whole record on one page.
 
     The redesign replaced the edit page with inline controls in the header and
@@ -1456,11 +1476,15 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         required=False,
         widget=TEXT_WIDGET,
     )
+    #: `OrganisationCheckboxSelect`, not a plain one: the widget is what writes
+    #: each institution's recorded spellings onto its own control, and without
+    #: them «MKM» finds nothing on this page while finding the ministry on `Uus
+    #: teema`. One control means one search behaviour (post-QA R2-12).
     source_organisations = forms.ModelMultipleChoiceField(
         label="Kellelt",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     #: The rest of the catalogue, exactly as `Uus teema` splits it. Two fields
     #: rather than one because a checkbox group cannot be split without
@@ -1469,7 +1493,7 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     #: And Saatja's typed half, so correcting a Teema offers what filing one
     #: does. A person who learns one sender workflow must not find a different
@@ -1481,7 +1505,7 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         required=False,
         empty_label="Määramata",
         blank=True,
-        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
+        widget=OrganisationRadioSelect(attrs={"class": "chip__input"}),
     )
     addressee_name = addressee_name_field()
     #: No `initial=timezone.localdate` on either date, unlike every other date
@@ -1589,7 +1613,7 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         self.addressee_offered = [*shortlist, *addressee_tail]
         # Counting the named blank option Django puts first, which the template
         # slices on rather than comparing primary keys.
-        self.addressee_split: int | None = 1 + len(shortlist)
+        self.addressee_split = 1 + len(shortlist)
         self.addressee_tail_count = len(addressee_tail)
         addressees = cast(Any, self.fields["addressee_organisation"])
         # Assigning `choices` replaces Django's iterator, and the iterator is
@@ -1600,6 +1624,21 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
             ("", addressees.empty_label),
             *((item.pk, item.name) for item in self.addressee_offered),
         ]
+
+        # The recorded spellings, onto the controls that carry them.
+        #
+        # Read once for the whole catalogue and handed to all three choice
+        # fields, exactly as `Uus teema` does it: the picker searches one pool
+        # of institutions through two questions, and «MKM» has to find the same
+        # ministry whichever of them is being answered — and on whichever of the
+        # two pages is asking (docs/adr/0073 task §13, post-QA R2-12).
+        spellings = organisation_alias_terms()
+        for field_name in (
+            "source_organisations",
+            "source_organisations_other",
+            "addressee_organisation",
+        ):
+            cast(Any, self.fields[field_name].widget).alias_terms = spellings
 
         # Validation accepts the whole vocabulary; only the *offered* list is
         # narrowed. A Matter filed years ago under a since-retired area keeps
@@ -1882,10 +1921,16 @@ HALF_CHOICES: tuple[tuple[str, str], ...] = (("1", "I poolaasta"), ("2", "II poo
 #: department settled on these three words and a fourth option nobody picks is
 #: a fourth way for two people to file the same thing differently
 #: (Teema redesign §14).
+#:
+#: The labels are `EngagementKind`'s, never written out again here. This tuple
+#: decides which kinds are offered; what each is called is the enum's answer, so
+#: this form cannot call `EMAIL_CAMPAIGN` «Otsepostitus» while `+ Kaasamine`
+#: calls it «Kirjade voor» and the chronology calls it something else again
+#: (post-QA R2-06).
 ENGAGEMENT_CHOICES: tuple[tuple[str, str], ...] = (
-    (EngagementKind.SURVEY.value, "Küsitlus"),
-    (EngagementKind.EMAIL_CAMPAIGN.value, "Otsepostitus"),
-    (EngagementKind.OTHER.value, "Muu"),
+    (EngagementKind.SURVEY.value, EngagementKind.SURVEY.label),
+    (EngagementKind.EMAIL_CAMPAIGN.value, EngagementKind.EMAIL_CAMPAIGN.label),
+    (EngagementKind.OTHER.value, EngagementKind.OTHER.label),
 )
 
 #: The closure reasons the composer offers, in the order they are read.

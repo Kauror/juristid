@@ -199,10 +199,48 @@ finds again (§23.5).
       {% else %}
         {% if evidence_documents %}
           <section class="docsection" aria-labelledby="failid-heading">
+            {% comment %}
+              **The count says whether it counted everything.**
+
+              Filing evidence against an opinion redirects here carrying
+              `?roll=arvamus`, so this heading came back reading «Failid · 1
+              faili» on a Matter holding nine. The number was right and the
+              sentence was not: nobody had asked for a filter, one had been
+              applied on their behalf, and the only thing on the page saying so
+              was a `<select>` in the toolbar above — which is not where
+              somebody reading a count is looking (post-QA R2-13).
+
+              The filter stays. Landing on the file you just attached with the
+              other eight out of the way is what the redirect is *for*, and
+              removing it would answer a labelling defect by taking away a
+              useful view. What is added is the word `filtreeritud` beside the
+              number and the chips that name each filter and take it off —
+              `filterchip`, which is the language the register already uses for
+              exactly this (templates/matters/partials/register_results.html).
+            {% endcomment %}
             <div class="docsection__head">
               <h2 class="docsection__title" id="failid-heading">Failid</h2>
-              <span class="docsection__count">{{ evidence_total }} faili</span>
+              <span class="docsection__count">
+                {{ evidence_total }} faili{% if document_filter_chips %} · filtreeritud{% endif %}
+              </span>
             </div>
+            {% if document_filter_chips %}
+              <div class="filterbar filterbar--chips">
+                {% for chip in document_filter_chips %}
+                  <a class="filterchip" href="?{{ chip.remove_query }}"
+                     title="Eemalda filter: {{ chip.label }}">
+                    <span class="filterchip__label">{{ chip.label }}:</span>
+                    <span>{{ chip.value }}</span>
+                    <span class="filterchip__remove" aria-hidden="true">×</span>
+                    <span class="visually-hidden">Eemalda filter</span>
+                  </a>
+                {% endfor %}
+                {% if document_filter_chips|length > 1 %}
+                  <a class="filterchip filterchip--clear"
+                     href="{% url 'matters:matter_documents' pk=matter.pk %}">Näita kõiki faile</a>
+                {% endif %}
+              </div>
+            {% endif %}
             <div class="tablewrap tablewrap--evidence">
               <table class="table doctable">
                 <thead>

@@ -24,7 +24,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import F, Q
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -165,6 +165,7 @@ from app.submissions.opinions import (
     opinion_documents,
     sent_submission_by_document,
 )
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
@@ -2262,6 +2263,46 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     return render(request, "matters/matter_detail.html", context)
 
 
+def _legal_instrument_line(matter: Matter) -> list[str]:
+    """`Õigusakt` as the rail reads it: the labels, with `Muu` carrying its text.
+
+    **The fact this application asked for and never once read back.** `Uus
+    teema` asks which instrument a Matter concerns, `Muuda teemat` corrects the
+    answer, the search index carries it and `Seotud materjalid` matches on it —
+    and no surface a lawyer *reads* a Matter from showed it at all. Somebody
+    could file a Matter as a `Määrus`, reopen it the next morning, and find
+    nothing on the page saying they had (post-QA R2-08).
+
+    `Muu` is a real vocabulary row here rather than a checkbox beside one
+    (docs/adr/0070 §8), so `legal_instrument_other` is folded *onto* that row —
+    `["Määrus", "Muu: rohepöörde tegevuskava"]` — rather than appended after it
+    as a fourth nameless value. Deciding that here keeps the vocabulary's own
+    key out of a template, which is the one place a rename would not be found.
+
+    Free text with no `Muu` row is a state both forms refuse and no importer
+    produces. It is still rendered, on a row of its own, because a rendering
+    that silently drops a stored value because its shape was unexpected is how
+    a data problem becomes invisible.
+
+    Ordered by the vocabulary's `sort_order`, so two Matters carrying the same
+    pair list them the same way round. Read here rather than in the template for
+    the reason `matter_policy_areas` is: the rail renders on all three Matter
+    surfaces, and `.all()` inside a loop would be a query per render of each.
+    """
+    other = (matter.legal_instrument_other or "").strip()
+    labels: list[str] = []
+    matched = False
+    for instrument in matter.legal_instruments.all():
+        if instrument.key == OTHER_LEGAL_INSTRUMENT_KEY and other:
+            labels.append(f"{instrument.label_et}: {other}")
+            matched = True
+        else:
+            labels.append(instrument.label_et)
+    if other and not matched:
+        labels.append(f"Muu: {other}")
+    return labels
+
+
 def _header_context(
     request: HttpRequest, matter: Matter, *, milestones: Any = None
 ) -> dict[str, Any]:
@@ -2299,6 +2340,7 @@ def _header_context(
         "policy_area_choices": selectable_policy_areas(),
         "selected_policy_area_ids": {area.pk for area in matter.policy_areas.all()},
         "matter_policy_areas": list(matter.policy_areas.all()),
+        "matter_legal_instruments": _legal_instrument_line(matter),
         # The one deadline the header shows, chosen by the rule in §5.5 rather
         # than by the template picking whichever field is non-empty.
         # `milestones` when the caller has already read them, which the Matter
@@ -2415,6 +2457,52 @@ def _historical_context(matter: Any, user: Any) -> dict:
 #: "Näita rohkem". A file with forty documents is real; forty rows above the
 #: fold is not what somebody opening the tab is looking for.
 DOCUMENT_PAGE_SIZE = 12
+
+
+#: What each Dokumendid filter is called on the chip that removes it.
+DOCUMENT_FILTER_LABELS: dict[str, str] = {
+    "otsi": "Otsing",
+    "roll": "Roll",
+    "aasta": "Aasta",
+}
+
+
+def _document_filter_chips(params: Any, *, roll_labels: dict[str, str]) -> list[dict[str, str]]:
+    """The active Dokumendid filters, each with the link that takes it off.
+
+    **A count under a heading has to say what it counted.** Attaching evidence to
+    an opinion redirects to this page carrying `?roll=arvamus`, so `Failid` came
+    back reading «1 faili» on a Matter holding nine — technically the filtered
+    result count, and visually indistinguishable from the total. Nobody had
+    asked for a filter; the redirect applied one on their behalf, and the only
+    thing on the page admitting it was a `<select>` further up (post-QA R2-13).
+
+    The filter is not removed: landing on the opinion you just filed, with the
+    other eight files out of the way, is what the redirect is *for*. What is
+    added is the sentence saying so, in the chip language the register already
+    uses — name the filter, name its value, and make the chip itself the way
+    back (`_active_filters`, templates/matters/partials/register_results.html).
+
+    `roll` is displayed through the menu's own labels, so the chip reads
+    «Roll: Arvamus» rather than «Roll: arvamus» or, worse, the stored
+    `KODA_SUBMISSION_FINAL` a saved link may still carry.
+    """
+    chips: list[dict[str, str]] = []
+    for name, label in DOCUMENT_FILTER_LABELS.items():
+        value = (params.get(name) or "").strip()
+        if not value:
+            continue
+        without = params.copy()
+        without.pop(name, None)
+        chips.append(
+            {
+                "name": name,
+                "label": label,
+                "value": roll_labels.get(value, value) if name == "roll" else value,
+                "remove_query": without.urlencode(),
+            }
+        )
+    return chips
 
 
 def _role_filter_choices() -> list[tuple[str, str]]:
@@ -2541,6 +2629,15 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     if year.isdigit():
         documents = documents.filter(created_at__year=int(year))
 
+    # The filters as they were actually applied, which is what the chips name
+    # and what their removal links rebuild. `koik` is deliberately not carried:
+    # taking a filter off starts the list again from the top, the same way the
+    # register drops `leht` (`_active_filters`).
+    applied_filters = QueryDict(mutable=True)
+    for name, value in (("otsi", term), ("roll", role), ("aasta", year)):
+        if value:
+            applied_filters[name] = value
+
     rows = list(documents)
     evidence = [document for document in rows if not document.has_working_document]
     working = [document for document in rows if document.has_working_document]
@@ -2592,6 +2689,14 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "document_years": sorted({document.created_at.year for document in rows}, reverse=True),
             "document_filters": {"otsi": term, "roll": role, "aasta": year},
             "document_filters_active": bool(term or role or year),
+            # Built from the *applied* values rather than from `request.GET`, so
+            # the chip says what actually narrowed the table: a saved
+            # `?roll=KODA_SUBMISSION_FINAL` link was read as the opinion union
+            # above, and a chip echoing the raw parameter would name a filter
+            # the page is not running (post-QA R2-13).
+            "document_filter_chips": _document_filter_chips(
+                applied_filters, roll_labels=dict(_role_filter_choices())
+            ),
             "working_document_form": WorkingDocumentForm(),
             "can_write": may_write_business_content(request.user),
             "historical": _historical_context(matter, request.user),
@@ -3393,7 +3498,13 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 #: where they are now shown. Swapping the header for one of them would leave the
 #: value on screen unchanged while claiming it had saved (Teema redesign §22.1).
 _FIELD_SURFACES = {
-    "policy_area_other": "matters/partials/rail.html",
+    # **`policy_area_other` renders the header now.** It is read in the
+    # `Valdkond` slot beside the canonical areas — the filing decision and the
+    # words qualifying it are one answer and belong in one place — so a save
+    # that swapped the rail would leave the value on screen unchanged while
+    # claiming it had saved, which is the exact failure this mapping exists to
+    # prevent (post-QA R2-07, `templates/matters/partials/header.html`).
+    "policy_area_other": "matters/partials/header.html",
     "track": "matters/partials/rail.html",
     "source_organisations": "matters/partials/rail.html",
     "addressee_organisation": "matters/partials/rail.html",

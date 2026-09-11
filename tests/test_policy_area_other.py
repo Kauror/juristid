@@ -115,19 +115,24 @@ def test_the_inline_edit_reaches_the_service(signed_in, specialist):
 
 
 def test_the_endpoint_still_writes_the_value(signed_in, specialist):
-    """The route, the service and the audit row are untouched by the retirement
-    of the control that used to reach them from the Teema rail.
+    """The route, the service and the audit row are untouched.
 
-    It still answers with the rail fragment, which is what it always swapped —
-    the rail simply no longer renders this row (docs/adr/0074 §17).
+    **It answers with the header now, and that is the point of the mapping.**
+    It used to answer with the rail, from the days when `Muu valdkond` had a
+    control there; the target took that control out and the answer went on
+    pointing at a fragment that rendered nothing of this value
+    (docs/adr/0074 §17). Since R2-07 the value is read in the header's
+    `Valdkond` slot, beside the canonical areas it qualifies — so that is the
+    surface a save has to swap, or the write would succeed while the number on
+    screen stayed as it was (`_FIELD_SURFACES`).
     """
     matter = factories.MatterFactory(owner=specialist)
     url = reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "policy_area_other"})
 
     body = signed_in.post(url, {"policy_area_other": "Kosmoseõigus"}).content.decode()
 
-    assert 'id="teema-andmed"' in body
-    assert 'id="teema-pais"' not in body
+    assert 'id="teema-pais"' in body
+    assert "Muu: Kosmoseõigus" in body
     matter.refresh_from_db()
     assert matter.policy_area_other == "Kosmoseõigus"
 
@@ -144,19 +149,29 @@ def test_a_matter_nobody_may_see_is_a_404_here_too(client, reader, restricted_ma
 # -- display -----------------------------------------------------------------
 
 
-def test_it_is_not_on_the_matter_page_and_is_still_on_the_record(signed_in, specialist):
-    """UI retirement, not a data change.
+def test_the_value_reads_on_the_matter_page_and_the_form_label_does_not(
+    signed_in, specialist
+):
+    """Read here, edited on `Muuda teemat`.
 
-    The approved target's `Teema andmed` is four rows, every one of which answers
-    a question a lawyer asks mid-sentence. `Muu valdkond` is a correction to how
-    the file was classified — `Muuda teemat` work, which still edits it
-    (TEEMA_TARGET_SPEC §G.1, docs/adr/0074 §17).
+    The target took `Muu valdkond` out of `Teema andmed` as an *editable row*,
+    on the argument that correcting how a file was classified is `Muuda teemat`
+    work rather than a fact a lawyer looks up mid-sentence
+    (TEEMA_TARGET_SPEC §G.1, docs/adr/0074 §17). That argument was about the
+    control and was read as being about the value, and the result was a Matter
+    filed under `Muu` alone reading «Valdkond: Määramata» — the page denying
+    that a question it had asked had been answered (post-QA R2-07).
+
+    So the value reads in the `Valdkond` slot beside the canonical areas, and
+    the form label «Muu valdkond» stays off this page: there is no box here to
+    label, and the row says where the box is.
     """
     matter = factories.MatterFactory(owner=specialist, policy_area_other="Kosmoseõigus")
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
+    assert "Muu: Kosmoseõigus" in body
     assert "Muu valdkond" not in body
     matter.refresh_from_db()
     assert matter.policy_area_other == "Kosmoseõigus"
