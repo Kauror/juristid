@@ -188,17 +188,28 @@ def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    # «Lükka edasi» left the Järgmiseks row with the approved target
-    # (docs/adr/0074 §20), so the disclosure this measured is the composer's own
-    # `Kuupäev…` — the other `[data-uxpopover]` on this page, and the one a
-    # reader is far likelier to open by mistake.
+    # «Lükka edasi» left the Järgmiseks row with the approved target, and with
+    # it the only `[data-uxpopover]` this page had (docs/adr/0074 §20). The
+    # composer's `Kuupäev…` deliberately does **not** join that contract: it
+    # closes on a click outside, which is right for a menu and wrong for a box
+    # somebody is typing a date into. So what is asserted here is the disclosure
+    # the page does have — it opens and closes by its own summary, and typing
+    # into it survives a click elsewhere in the composer.
     popover = page.locator("details.uxcomp__date")
     trigger = popover.locator("summary")
     trigger.click()
     assert popover.evaluate("node => node.open") is True
-    page.keyboard.press("Escape")
+
+    page.locator("#id_next_date").fill("30.09.2026")
+    page.locator(".composer__body").click()
+
+    assert popover.evaluate("node => node.open") is True, (
+        "a date box must not close under the cursor mid-entry"
+    )
+    assert page.locator("#id_next_date").input_value() == "30.09.2026"
+
+    trigger.click()
     assert popover.evaluate("node => node.open") is False
-    expect(trigger).to_be_focused()
 
 
 # =========================================================================

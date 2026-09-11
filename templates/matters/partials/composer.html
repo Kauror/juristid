@@ -140,14 +140,14 @@ field with no visible focus at all (static/css/app.css).
         the box the reader has to correct.
       {% endcomment %}
       {% comment %}
-        `data-uxpopover` puts it under the same contract every other disclosure
-        in this product follows: Escape closes it and returns focus to its own
-        summary, and opening one closes the others. It was the retired
-        `Lükka edasi` menu that carried this on the Järgmiseks row; the composer's
-        own date box is the popover a reader is now far likelier to open by
-        mistake (static/js/ux.js, docs/adr/0074 §20).
+        **Deliberately not `data-uxpopover`.** That contract closes a disclosure
+        on any click outside it, which is right for a menu and wrong for a box
+        somebody is typing a date into: the browser lane caught it closing under
+        the cursor mid-entry, taking the field with it. The retired
+        `Lükka edasi` menu was a menu and carried it; this is a field
+        (static/js/ux.js, docs/adr/0074 §20).
       {% endcomment %}
-      <details class="uxcomp__date" data-uxpopover
+      <details class="uxcomp__date"
                {% if composer_form.next_date.value or composer_form.next_date.errors %}open{% endif %}>
         <summary class="uxchip">Kuupäev…</summary>
         <div class="uxcomp__datebody">
