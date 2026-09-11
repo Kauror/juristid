@@ -40,7 +40,7 @@ from app.submissions.forms import (
     SubmissionCreateForm,
 )
 from app.submissions.models import Submission
-from app.submissions.opinions import opinion_documents, sent_submission_by_document
+from app.submissions.opinions import unregistered_opinion_documents
 from app.submissions.services import (
     attach_final_evidence,
     create_submission,
@@ -203,18 +203,23 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
     binary the page offered.
     """
     matter = get_visible_matter(request, matter_id)
-    sends = sent_submission_by_document(matter, viewer=request.user)
     candidates = {
         str(document.pk): document
-        for document in opinion_documents(matter, viewer=request.user)
-        if document.current_version_id and document.pk not in sends
+        for document in unregistered_opinion_documents(matter, viewer=request.user)
     }
     form = RegisterSentOpinionForm(
         request.POST, prefix=REGISTER_PREFIX, documents=candidates.values()
     )
 
     if not form.is_valid():
-        messages.error(request, "Saatmise registreerimine ebaõnnestus. Kontrolli välju.")
+        # Named rather than counted. `Saadetud` and `Adressaat` are now required
+        # — a registered send with neither used to succeed and stamp today's
+        # date onto a letter nobody had dated (R2-01) — and «Kontrolli välju»
+        # above a panel of nine fields does not say which two (§19).
+        messages.error(
+            request,
+            "Saatmise registreerimine ebaõnnestus: " + _refusal_detail(form),
+        )
         return redirect(opinions_url(matter))
 
     document = candidates[form.cleaned_data["document"]]
@@ -242,8 +247,11 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
             # A day the sender typed is a day, and midnight in the department's
             # timezone is the honest reading of it. Empty means now, which is a
             # real moment and is stored as one (app/submissions/enums.py).
+            # Always a supplied day, never `timezone.now()`: the form requires
+            # `Saadetud` and the service refuses a call without it, so this
+            # route has no path to a fabricated send date (R2-01).
             sent_at=_as_midnight(sent_on),
-            sent_at_precision=SentAtPrecision.DATE if sent_on else SentAtPrecision.TIMESTAMP,
+            sent_at_precision=SentAtPrecision.DATE,
         )
         messages.success(request, "Arvamus on märgitud saadetuks.")
     except DomainError as error:
@@ -251,6 +259,23 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
         return redirect(opinions_url(matter))
 
     return redirect(opinions_url(matter, anchor=f"dokument-{document.pk}"))
+
+
+def _refusal_detail(form: RegisterSentOpinionForm) -> str:
+    """Which fields refused, in the words the panel labels them with.
+
+    A full-page POST that lands back on Dokumendid cannot redisplay the bound
+    form — the page is rendered by another view, from an unbound one — so the
+    message is the only thing carrying the refusal. Listing the labels is what
+    that architecture allows; it is the difference between a reader who fixes
+    the form and one who tries the same thing again (§19).
+    """
+    labels = [str(form.fields[name].label or name) for name in form.fields if name in form.errors]
+    if not labels:
+        # A non-field error, or a `document` the browser invented. Nothing to
+        # point at, so say so rather than printing an empty list.
+        return "kontrolli välju."
+    return "täida " + ", ".join(labels) + "."
 
 
 def _as_midnight(value: Any) -> Any:

@@ -164,6 +164,7 @@ from app.submissions.opinions import (
     opinion_document_ids,
     opinion_documents,
     sent_submission_by_document,
+    unregistered_opinion_documents,
 )
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
@@ -2580,15 +2581,20 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             else document.get_role_display()
         )
 
-    # Opinion files this Matter holds that no canonical Submission accounts for.
+    # Opinion files this Matter holds that no Submission accounts for at all.
     # They are the candidates for «Registreeri saatmine», and the reason that
     # control exists at all: uploading a file as `Arvamus` records that Koda has
     # it, never that Koda sent it, and only a person can close that gap (§18).
-    unregistered = [
-        document
-        for document in opinion_documents(matter, viewer=request.user)
-        if document.current_version_id and document.pk not in sends
-    ]
+    #
+    # The rule lives in `unregistered_opinion_documents` rather than here,
+    # because it also lived in `app/submissions/views.py` — and a candidate rule
+    # written as two list comprehensions is one that gets fixed in one of them.
+    # A draft's own final evidence is excluded by it: that file's correct
+    # operation is `Märgi saadetuks` on the draft below, and offering it here as
+    # well produced a second, parallel SENT Submission for the same bytes, on a
+    # Matter that then read `1 koostamisel` beside a sent opinion of the same
+    # text (R2-01).
+    unregistered = unregistered_opinion_documents(matter, viewer=request.user)
     drafts = open_drafts(matter, viewer=request.user)
 
     # Historical letters already filed onto this Matter. Imported lazily for the

@@ -167,3 +167,61 @@ belongs on.
 **Rebuild the old page as a section at the bottom of `Dokumendid`.** That is the
 same duplication with a shorter URL: the sent opinions would be rows in the
 table *and* cards underneath it.
+
+## Amendment, 2026-09-11 — «Registreeri saatmine» states the send, it does not infer it
+
+**Status:** accepted
+
+`register_sent_opinion` was given the shape of the operation beside it, and the
+two operations are not the same act. QA filled in a title, left `Saadetud`,
+`Adressaat` and `Kanal` empty, and pressed the button. A canonical SENT
+Submission appeared; the empty date became `timezone.now()`; and the outbound
+register and the process timeline then reported `Arvamus välja <today>` about a
+letter whose send date nobody had supplied. The file was already the final
+evidence of a DRAFT, so the same Matter read `1 koostamisel` beside a sent
+opinion of the same bytes (R2-01).
+
+### Two acts, and only one of them may mean *now*
+
+| | asks | `sent_at` |
+| --- | --- | --- |
+| `Märgi saadetuks` | acting on a draft — this is going out now | `timezone.now()` is the truth |
+| `Registreeri saatmine` | record a send that already happened | the person must say when |
+
+`mark_submission_sent` keeps its default, because pressing send *is* a moment.
+What was wrong was reaching that default from a form whose entire purpose is to
+record something historical. Blank on that form is not an answer meaning *now*;
+it is the absence of one, and the application has no source for it.
+
+So `Saadetud` and at least one `Adressaat` are **required** on
+`RegisterSentOpinionForm`, the help text that said blank meant now is gone, and
+a successful registration always carries a supplied day at
+`SentAtPrecision.DATE`. `register_sent_opinion` refuses `sent_at=None` and a
+precision other than DATE itself, so the rule holds for a caller that never went
+through the form. The existing "no future sending date" validation is unchanged.
+`Kanal`, `Viide`, `Teadmiseks` and `Kaasesitajad` stay optional: each is a fact
+that may genuinely not exist, which is different from one nobody was asked for.
+
+### A draft's final evidence is already accounted for
+
+A `DocumentVersion` bound as the final evidence of a DRAFT Submission is no
+longer a registration candidate. The correct operation for those bytes is
+`Märgi saadetuks` on the draft itself, which sends the record that already
+exists; offering them here as well produced a second, parallel SENT Submission
+for one file.
+
+Stated twice, because hiding a candidate is half a rule:
+`unregistered_opinion_documents` is the one read model behind the select and the
+route's own resolution, and `register_sent_opinion` re-establishes the same fact
+against the database under the Matter lock — the first step of the lock order in
+`app/matters/locks.py`, so no new edge — before it writes anything.
+
+**Narrow on DRAFT, deliberately.** `withdraw_submission` accepts only a SENT
+submission, so a WITHDRAWN one was genuinely sent once and has no draft to open
+instead; SUPERSEDED is likewise terminal. Blocking their evidence would remove
+the only way to record a later send of the same bytes, which is a legitimate
+historical act this amendment does not rule on. **The open question** is what a
+deliberate resend or supersession of the same text should produce, and it is
+left open rather than answered by the shape of a bug fix.
+
+Nothing here changes the schema, the projection or `INDEX_VERSION`.
