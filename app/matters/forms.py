@@ -2149,6 +2149,16 @@ class ComposerForm(forms.Form):
     engagement_kind = forms.ChoiceField(
         label="Liik",
         choices=EngagementKind.choices,
+        #: `Küsitlus`, because that is the chip the panel opens with.
+        #:
+        #: **Not merely a server-side fallback.** `_clean_engagement` defaults to
+        #: the same value, so a POST that never touched the chips saves correctly
+        #: either way — but the hidden input is what the chip script reads to
+        #: decide which chip is selected, and an empty one made it *deselect* the
+        #: chip the server had just rendered as chosen. A form whose first paint
+        #: contradicts itself is the defect; the browser lane caught it
+        #: (static/js/ux.js `bindChipGroups`, e2e/test_engagement.py).
+        initial=COMPOSER_ENGAGEMENT_KINDS[0][0],
         required=False,
         widget=forms.HiddenInput(),
     )

@@ -59,8 +59,10 @@ def test_state_a_the_closed_page_shows_the_step_its_date_and_tehtud(page, base_u
     create_matter(page, base_url, "Seisund A brauserikatsest")
     set_step(page, "Vaadata uus eelnõu versioon üle", 22)
 
-    # Composer closed, which is how a Matter opens.
-    assert page.locator("details.uxcomp").evaluate("node => node.open") is False
+    # Composer **open**, which is how a Matter opens since the approved target:
+    # recording what happened is the reason this product exists and must not
+    # begin with a click (docs/adr/0074 §3).
+    assert page.locator("details.uxcomp").evaluate("node => node.open") is True
 
     row = page.locator(".uxnext")
     expect(row).to_contain_text("Järgmiseks")
@@ -225,67 +227,32 @@ def test_tehtud_does_not_discard_what_is_already_typed_into_the_composer(page, b
 
 
 # ---------------------------------------------------------------------------
-# Pilot QA F-04, F-05 — «Lükka edasi» is the same kind of gesture as ✓ Tehtud
+# Pilot QA F-04 — «✓ Tehtud» never discards what is already typed
+#
+# «Lükka edasi» left the Järgmiseks row with the approved target: the row is the
+# label, the text, the date and two controls, and a second disclosure holding
+# four POST buttons and a date box does not belong in the one line on the page
+# that has to be readable at a glance (docs/adr/0074 §20).
+#
+# The route, the service and F-05's counting-from-the-step rule are untouched
+# and are asserted in `tests/test_pilot_p1_workflows.py`, which drives them
+# directly. F-04 — that finishing a step does not throw away the write-up
+# somebody is in the middle of — is already proven above on «✓ Tehtud», the
+# control on this row that still does it.
 # ---------------------------------------------------------------------------
 
 
-def _defer(page, label: str, *, lands_on: str) -> None:
-    """Press one defer chip and wait for the row it swaps to carry the new day.
-
-    `networkidle` is not enough on its own: the POST completes before HTMX has
-    put the fragment in the document, so an assertion taken straight afterwards
-    reads the row that is on its way out.
-    """
-    page.locator("summary.uxnext__defersum").click()
-    page.locator(".uxnext__menu button", has_text=label).first.click()
-    expect(page.locator(".uxnext__date")).to_contain_text(lands_on)
-
-
-def test_lukka_edasi_does_not_discard_what_is_already_typed_into_the_composer(page, base_url):
-    """The pilot's F-04, in the only place it exists.
-
-    Both defer forms swapped `#teema-vaade` — the Järgmiseks row *and the open
-    composer under it* — so moving a date threw away the write-up somebody was
-    in the middle of. `✓ Tehtud` had been fixed for exactly this and this
-    control had not.
-    """
-    sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Edasilükkamine brauserikatsest")
-    set_step(page, "Helistada ministeeriumisse", 30)
-
-    open_composer(page)
-    body = "Ministeerium lubas uue versiooni kuu lõpuks."
-    page.locator("textarea.composer__body").fill(body)
-    page.locator("[name='next_text']").fill("Vaadata uus versioon üle")
-    page.locator("[data-quickdate]").filter(has_text="+2 nädalat").first.click()
-    chosen_date = page.locator("#id_next_date").input_value()
-    assert chosen_date, "the quick chip did not fill the field that is submitted"
-
-    _defer(page, "+1 päev", lands_on=_future(31))
-
-    # The row moved, and every unsaved value is exactly where it was.
-    assert page.locator("details.uxcomp").evaluate("node => node.open") is True
-    assert page.locator("textarea.composer__body").input_value() == body
-    assert page.locator("[name='next_text']").input_value() == "Vaadata uus versioon üle"
-    assert page.locator("#id_next_date").input_value() == chosen_date
-
-
-def test_the_defer_chips_name_the_day_the_step_actually_moves_to(page, base_url):
-    """F-05 on the control itself.
-
-    The chips were computed from today, so over a step dated four weeks out they
-    named a day four weeks earlier than the one the press would produce.
-    """
+def test_the_jargmiseks_row_carries_only_the_targets_two_controls(page, base_url):
+    """Text, date, `✓ Tehtud`, `Muuda` — and no defer disclosure."""
     sign_in(page, base_url, SANDRA)
-    create_matter(page, base_url, "Edasilükkamise kuupäev brauserikatsest")
+    create_matter(page, base_url, "Rea kontrollid brauserikatsest")
     set_step(page, "Saata kiri ministeeriumile", 30)
 
-    page.locator("summary.uxnext__defersum").click()
-    chip = page.locator(".uxnext__menu button", has_text="+1 päev").first
-    assert _short(31) in chip.inner_text()
-
-    chip.click()
-    expect(page.locator(".uxnext__date")).to_contain_text(_future(31))
+    row = page.locator(".uxnext")
+    expect(row.get_by_role("button", name="✓ Tehtud")).to_be_visible()
+    expect(row.get_by_role("button", name="Muuda")).to_be_visible()
+    expect(page.locator("summary.uxnext__defersum")).to_have_count(0)
+    assert "Lükka edasi" not in row.inner_text()
 
 
 # ---------------------------------------------------------------------------
@@ -363,20 +330,24 @@ def test_the_rail_has_no_sildid_card(page, base_url):
     expect(rail.locator(".tag")).to_have_count(0)
 
 
-def test_muu_valdkond_is_in_the_facts_block_and_still_editable(page, base_url):
+def test_the_rail_carries_the_four_target_rows_and_no_maintenance_ones(page, base_url):
+    """`Teemaviide`, `Menetlusliik`, `Kellelt`, `Kellele` — every one of them a
+    question a lawyer asks mid-sentence (TEEMA_TARGET_SPEC §G.1).
+
+    `Muu valdkond`, `Andmeklass` and `Märgi testandmeteks` are retired from this
+    page: the first is a correction to how the file was classified and the other
+    two are a developer's switch. The columns, the values and the endpoints are
+    untouched, and `Muuda teemat` still edits what it edited
+    (docs/adr/0074 §17).
+    """
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Muu valdkonna brauserikatse")
+    create_matter(page, base_url, "Raili brauserikatse")
 
-    facts = page.locator("#teema-andmed")
-    expect(facts).to_contain_text("Muu valdkond")
-
-    row = facts.locator(".railcard__row").filter(has_text="Muu valdkond")
-    row.locator("summary.inlineedit__trigger").click()
-    row.locator("input[name='policy_area_other']").fill("Riigihanked ja ehitus")
-    row.get_by_role("button", name="Salvesta").click()
-    page.wait_for_load_state("networkidle")
-
-    expect(page.locator("#teema-andmed")).to_contain_text("Riigihanked ja ehitus")
+    rail = page.locator("#teema-andmed")
+    for row in ("Teemaviide", "Menetlusliik", "Kellelt", "Kellele"):
+        expect(rail).to_contain_text(row)
+    for gone in ("Muu valdkond", "Andmeklass", "Märgi testandmeteks", "Saabus"):
+        assert gone not in rail.inner_text()
 
 
 # ---------------------------------------------------------------------------

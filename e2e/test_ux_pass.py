@@ -20,7 +20,7 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     UNASSIGNED_TITLE,
 )
-from e2e.conftest import HEAD, SANDRA, sign_in
+from e2e.conftest import HEAD, SANDRA, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -84,7 +84,11 @@ def test_a_quick_date_fills_the_field_that_is_actually_submitted(page, base_url)
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    page.locator("summary.uxcomp__collapsed").click()
+    # The composer is open on arrival since the approved target, so the
+    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
+    # this honest if it is ever reached from the closed state
+    # (docs/adr/0074 §3).
+    open_composer(page)
     chip = page.locator("[data-quickdate]").filter(has_text="+1 nädal").first
     expected = chip.get_attribute("data-quickdate")
     chip.click()
@@ -139,9 +143,9 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
         expect(page.locator("#cx-tahtaeg .uxchip", has_text=label)).to_have_count(1)
     expect(page.locator("#cx-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
-    page.get_by_role("button", name="+ Lõpeta teema").click()
-    expect(page.locator("#koostaja-lopetamine")).to_be_visible()
-    expect(page.locator("#id_disposition")).to_be_visible()
+    page.locator("#cx-lopeta > summary").click()
+    expect(page.locator("#cx-lopeta")).to_have_attribute("open", "")
+    expect(page.locator("#cx-lopeta [name=closing_words]")).to_be_visible()
 
 
 # =========================================================================
@@ -184,15 +188,16 @@ def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    defer = page.locator("details.uxnext__defer")
-    if not defer.count():
-        pytest.skip("this Matter's step carries no exact date to defer")
-
-    trigger = defer.locator("summary")
+    # «Lükka edasi» left the Järgmiseks row with the approved target
+    # (docs/adr/0074 §20), so the disclosure this measured is the composer's own
+    # `Kuupäev…` — the other `[data-uxpopover]` on this page, and the one a
+    # reader is far likelier to open by mistake.
+    popover = page.locator("details.uxcomp__date")
+    trigger = popover.locator("summary")
     trigger.click()
-    assert defer.evaluate("node => node.open") is True
+    assert popover.evaluate("node => node.open") is True
     page.keyboard.press("Escape")
-    assert defer.evaluate("node => node.open") is False
+    assert popover.evaluate("node => node.open") is False
     expect(trigger).to_be_focused()
 
 
@@ -206,14 +211,17 @@ def test_the_closed_timeline_carries_more_than_a_counter(page, base_url):
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     summary = page.locator(".accordion--timeline > summary")
+    # `AJAJOON` and `{n} kirjet`, and nothing else. The head carried a preview
+    # quote *and* the step currently owed *and* the count — three facts in a
+    # summary line for a section that is open on arrival, one of them a verbatim
+    # repeat of the Järgmiseks row three inches above it (docs/adr/0074 §16).
+    expect(summary).to_contain_text("Ajajoon")
     expect(summary).to_contain_text("kirjet")
-    # Closed is what this is about, and the section is open on arrival. The
-    # head is the whole trigger now — the «Ava ajajoon» text action beside it
-    # said what the layout already said and the 2026-09 refinement took it
-    # (design handoff §12, docs/matter-page-refinement.md).
+    expect(summary.locator(".uxtl__preview")).to_have_count(0)
+    expect(summary.locator(".uxtl__previewnext")).to_have_count(0)
+    # The head is still the whole trigger: the section closes.
     summary.click()
     expect(page.locator(".accordion--timeline")).not_to_have_attribute("open", "")
-    expect(summary.locator(".uxtl__preview")).to_be_visible()
 
 
 def test_the_timeline_draws_one_spine(page, base_url):

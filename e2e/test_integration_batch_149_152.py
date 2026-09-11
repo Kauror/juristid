@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import SANDRA, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -142,7 +142,11 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_through_assisted_intak
     # `+ Töövõit` moved into the composer's action row with the 2026-09
     # refinement — one place from which a fact is added — so reaching it opens
     # the composer first (docs/matter-page-refinement.md).
-    page.locator("#teema-koostaja summary.uxcomp__collapsed").click()
+    # The composer is open on arrival since the approved target, so the
+    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
+    # this honest if it is ever reached from the closed state
+    # (docs/adr/0074 §3).
+    open_composer(page)
     page.get_by_role("link", name="+ Töövõit", exact=True).click()
     expect(form).to_be_visible()
 
@@ -192,19 +196,32 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
     )
 
     # The composer's own approximate-period control, open and visible.
-    page.locator("summary.uxcomp__collapsed").click()
-    page.get_by_role("button", name="+ Oluline tähtaeg").click()
-    page.locator("#koostaja-tahtaeg summary", has_text="Ligikaudne aeg").click()
-    composer_precision = page.locator("input[name=deadline_precision]").first
+    # The composer is open on arrival since the approved target, so the
+    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
+    # this honest if it is ever reached from the closed state
+    # (docs/adr/0074 §3).
+    open_composer(page)
+    # `Täpsus` is three chips over a hidden field since the approved target: the
+    # panel asks for the day somebody was told about and says how precisely it
+    # was meant, and `_period_anchor` derives the period from that day
+    # (docs/adr/0074 §11).
+    page.locator("#cx-tahtaeg > summary").click()
+    composer_precision = page.locator("#cx-tahtaeg .cx-when .uxchip").first
     expect(composer_precision).to_be_visible()
 
     # Now the inline commencement form, and the answer that removes its own
-    # date control entirely.
-    page.get_by_role("link", name="+ Jõustumine", exact=True).click()
-    form = page.locator(".factslot")
+    # date control entirely. Reached through the fragment route, because the
+    # Teema page's own `+ Jõustumine` is a composer panel now and this test is
+    # about the *other* form keeping its date control (docs/adr/0074 §7).
+    page.goto(f"{page.url.split('#')[0].rstrip('/')}/joustumine/lisa/")
+    page.wait_for_load_state("networkidle")
+    form = page.locator("form").filter(has=page.get_by_label("Jõustub üldises korras")).first
     expect(form).to_be_visible()
     form.get_by_label("Jõustub üldises korras").check()
 
     expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
-    # The composer is a different form and keeps its control.
-    expect(composer_precision).to_be_visible()
+    # The composer is a different form on a different page and keeps its own.
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+    page.locator("#cx-tahtaeg > summary").click()
+    expect(page.locator("#cx-tahtaeg .cx-when .uxchip").first).to_be_visible()

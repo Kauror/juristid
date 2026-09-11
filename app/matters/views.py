@@ -26,6 +26,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -2376,11 +2377,18 @@ def _render_overview(
     status: int = 200,
     *,
     engagement_open: bool = False,
+    header_out_of_band: bool = False,
 ) -> HttpResponse:
     """Re-render the whole overview column.
 
     One render from one set of queries, so `Järgmiseks` and the timeline can
     never show different pictures of the same save.
+
+    ``header_out_of_band`` appends the header band to the same response, marked
+    `hx-swap-oob`, for the one save that changes something the header states —
+    a closure, which moves the state badge. Everything else leaves the header
+    alone, because re-rendering it would rebuild five inline editors on every
+    note somebody writes (docs/adr/0074 §10).
     """
     context = _overview_context(request, matter)
     intelligence = context["intelligence"]
@@ -2392,7 +2400,11 @@ def _render_overview(
         )
     )
     context["engagement_open"] = engagement_open
-    return render(request, "matters/partials/overview.html", context, status=status)
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    if header_out_of_band:
+        context["header_out_of_band"] = True
+        body += render_to_string("matters/partials/header.html", context, request=request)
+    return HttpResponse(body, status=status)
 
 
 @login_required
@@ -2419,7 +2431,21 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     matter.refresh_from_db()
-    return _render_overview(request, matter)
+    # **The header follows a closure out of band.**
+    #
+    # The composer swaps `#teema-vaade`, which is the action row, the chronology
+    # and the rail — and deliberately not the header band, because a save that
+    # only wrote a note has no business re-rendering the title, the metaline and
+    # its five inline editors. A closure is the one thing this save does that the
+    # header states: the state badge says `Avatud`, and it kept saying it beside
+    # a Matter that had just been archived. A page showing contradictory state
+    # after its own save is the defect HTMX swaps exist to avoid
+    # (implementation brief §57, docs/adr/0074 §10).
+    #
+    # Out of band rather than by widening the target: `#teema-vaade` is what the
+    # form must own, and a response that also replaced the header would re-render
+    # every inline editor on every note somebody writes.
+    return _render_overview(request, matter, header_out_of_band=not matter.is_open)
 
 
 @login_required

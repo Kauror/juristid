@@ -86,7 +86,7 @@ def open_add_form(page, label: str):
     if label in COMPOSER_CHIPS:
         composer = page.locator("#teema-koostaja")
         if composer.get_attribute("open") is None:
-            composer.locator("summary.uxcomp__collapsed").click()
+            composer.evaluate("node => node.open = true")
     page.get_by_role("link", name=label, exact=True).click()
     form = add_form(page)
     expect(form).to_be_visible()
@@ -97,7 +97,7 @@ def expect_chip(page, label: str):
     """A composer chip is present, with the composer opened to look at it."""
     composer = page.locator("#teema-koostaja")
     if composer.get_attribute("open") is None:
-        composer.locator("summary.uxcomp__collapsed").click()
+        composer.evaluate("node => node.open = true")
     return expect(page.get_by_role("link", name=label, exact=True))
 
 

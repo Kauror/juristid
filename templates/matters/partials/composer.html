@@ -139,7 +139,15 @@ field with no visible focus at all (static/css/app.css).
         whenever it holds a value or a refusal, so a rejected save never hides
         the box the reader has to correct.
       {% endcomment %}
-      <details class="uxcomp__date"
+      {% comment %}
+        `data-uxpopover` puts it under the same contract every other disclosure
+        in this product follows: Escape closes it and returns focus to its own
+        summary, and opening one closes the others. It was the retired
+        `Lükka edasi` menu that carried this on the Järgmiseks row; the composer's
+        own date box is the popover a reader is now far likelier to open by
+        mistake (static/js/ux.js, docs/adr/0074 §20).
+      {% endcomment %}
+      <details class="uxcomp__date" data-uxpopover
                {% if composer_form.next_date.value or composer_form.next_date.errors %}open{% endif %}>
         <summary class="uxchip">Kuupäev…</summary>
         <div class="uxcomp__datebody">

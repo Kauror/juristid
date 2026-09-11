@@ -17,7 +17,14 @@ when somebody reaches for it. Every fact that is not in the four — Kellelt,
 Kellele, Saabus, Menetlusliik — moved to the facts rail, where it is looked up
 rather than read.
 {% endcomment %}
-<header class="matterhead" id="teema-pais">
+{% comment %}
+  `hx-swap-oob` only where the caller asked for it. The composer swaps
+  `#teema-vaade` and leaves this band alone, except on the one save that changes
+  something the band states: a closure moves the state badge, and the page must
+  not come back from its own save saying `Avatud` about an archived Matter
+  (app/matters/views.py `_render_overview`, docs/adr/0074 §10).
+{% endcomment %}
+<header class="matterhead" id="teema-pais"{% if header_out_of_band %} hx-swap-oob="true"{% endif %}>
   {% comment %}
     A div, not a paragraph. The ⋯ menu is a <details>, and a <details> start
     tag inside an open <p> makes the parser close the paragraph — so the menu

@@ -58,7 +58,10 @@ def test_a_normal_matter_answers_everything_above_the_fold(page, base_url):
         ".matterhead__title",
         ".metaline",
         ".uxnext",
-        "summary.uxcomp__collapsed",
+        # The composer itself, open. It was the collapsed prompt until the
+        # approved target, which is the one-line summary the open box replaced
+        # (docs/adr/0074 §3).
+        "details.composer .composer__body",
     ):
         box = page.locator(selector).first.bounding_box()
         assert box is not None, f"{selector} did not render"
@@ -168,7 +171,7 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     fold = page.viewport_size["height"]
     assert page.locator(".uxnext").bounding_box()["y"] < fold
     assert timeline.bounding_box()["y"] > page.locator(".uxnext").bounding_box()["y"]
-    assert page.locator("summary.uxcomp__collapsed").bounding_box()["y"] < fold
+    assert page.locator("details.composer .composer__body").bounding_box()["y"] < fold
 
 
 # ---------------------------------------------------------------------------
@@ -189,27 +192,25 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     page.wait_for_load_state("networkidle")
     expect(page.locator(".uxnext__text")).to_have_text("Esitada arvamus ministeeriumile")
 
-    # Closing is a composer action, not a panel in the rail.
+    # Closing is a composer panel, not a box in the rail.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
-    # The save above re-rendered the surface, and a saved composer folds shut —
-    # which is the point of it being a disclosure (design handoff 1d).
     open_composer(page)
-    page.locator(".disclosure-chip", has_text="+ Lõpeta teema").click()
-    expect(page.locator("#koostaja-lopetamine")).to_be_visible()
+    page.locator("#cx-lopeta > summary").click()
+    expect(page.locator("#cx-lopeta")).to_have_attribute("open", "")
 
     # No confirmation box: answering the section is the request (pilot QA F-02).
     expect(page.locator("#id_close_matter")).to_have_count(0)
     expect(page.locator("[data-composer-submit]")).to_have_text("Salvesta")
 
-    page.locator("#id_disposition").select_option("COMPLETED")
-    # The primary button says what the save will actually do, and it now tracks
-    # the answers rather than a checkbox.
-    expect(page.locator("[data-composer-submit]")).to_have_text("Lõpeta teema")
-    # No second narrative box: the closure reason *is* the composer body, and
-    # `Töövõit` is a decision the closure now insists on
-    # (Teema closing redesign §2, §10).
+    # `Kuidas lõppes` is three chips over the field the server validates, and
+    # nothing is chosen until somebody chooses (docs/adr/0074 §10).
+    page.locator("#cx-lopeta .uxchip", has_text="Jõustus").click()
+    expect(page.locator("#cx-lopeta input[name=disposition]")).to_have_value("COMPLETED")
+    # No confirmation box, no second narrative box, and no work-victory
+    # decision: closing a file is not a claim that anything was won, and
+    # `+ Töövõit` records a win without closing anything.
     expect(page.locator("#id_closure_reason")).to_have_count(0)
-    page.locator("#id_work_victory_1").check()
+    expect(page.locator("[name=work_victory]")).to_have_count(0)
     page.locator(".composer__body").fill("Menetlus lõppes; töö on tehtud.")
     # The server's own answer, not what the page looks like afterwards. A save
     # that is refused and a save that quietly did nothing leave an identical
@@ -224,6 +225,11 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     expect(page.locator(".formerror")).to_have_count(0)
     expect(page.locator(".composer .field__error")).to_have_count(0)
 
+    # The header followed the closure out of band, so the page does not come
+    # back from its own save calling an archived Matter `Avatud`
+    # (docs/adr/0074 §10, app/matters/views.py `_render_overview`).
+    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+
     # -- E. the closed Matter -------------------------------------------
     page.goto(url)
     expect(page.locator(".badge--closed")).to_be_visible()
@@ -232,9 +238,9 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     expect(page.locator(".uxnext")).to_contain_text("teema on suletud")
     # No writable next step and no composer at all.
     expect(page.locator("#teema-koostaja")).to_have_count(0)
-    # The past stays readable, and is open on arrival.
-    # Scoped to the entry body: the accordion quotes the newest entry in its own
-    # summary line, so the words are on the page twice (design handoff 1b).
+    # The past stays readable, and is open on arrival. The head no longer quotes
+    # the newest entry, so the words are on the page exactly once
+    # (docs/adr/0074 §16).
     expect(page.locator(".richtext").get_by_text("Menetlus lõppes; töö on tehtud.")).to_be_visible()
 
 
@@ -423,10 +429,14 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     # (design handoff 1b).
     expect(page.locator(".richtext").get_by_text("Salvestatud klaviatuurilt.")).to_be_visible()
 
-    # The visible equivalent is beside the hint.
+    # The visible equivalent is the button itself. The `Ctrl + Enter` hint that
+    # used to sit beside it went with the approved target's action row, which is
+    # a spacer and one `Salvesta` — AGENTS.md asks every shortcut to have an
+    # obvious click equivalent, and that is the control, not a caption naming
+    # the shortcut (TEEMA_TARGET_SPEC §C.5, docs/adr/0074 §3).
     page.goto(url)
     open_composer(page)
-    expect(page.locator(".composer .composer__hint")).to_be_visible()
+    expect(page.locator(".composer .composer__hint")).to_have_count(0)
     expect(page.locator("[data-composer-submit]")).to_be_visible()
 
 
