@@ -536,9 +536,50 @@ def register_sent_opinion(
     because the exact bytes that were sent are the point and a document's
     current version moves. The caller resolves it under the reader's own
     visibility scope before it gets here.
+
+    **This route never invents the moment.** ``sent_at`` is required and must be
+    a day the person actually supplied, because the act is *record a send that
+    already happened* — not *send this now*. Registering an opinion with the
+    date left blank used to stamp `timezone.now()` through
+    `mark_submission_sent`, so the outbound register and the process timeline
+    reported `Arvamus välja <today>` about a letter whose send date nobody had
+    stated (R2-01). `mark_submission_sent` keeps its "now" default for the
+    separate real-time act — pressing `Märgi saadetuks` on a draft genuinely
+    does mean *now* — and this route refuses to use it.
     """
     if version.document_id != document.pk:
         raise DomainError("Tõend peab kuuluma valitud dokumendi juurde.")
+    if sent_at is None:
+        raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
+    if sent_at_precision != SentAtPrecision.DATE:
+        raise DomainError("Registreeritud saatmise täpsus on kuupäev.")
+    if not recipients:
+        raise DomainError("Saatmise registreerimiseks on vaja vähemalt üht adressaati.")
+
+    # The read model keeps this file out of the select; this keeps a crafted
+    # post from binding it anyway. Unscoped by viewer on purpose: whether these
+    # bytes are already a draft's evidence is a fact about the record, not about
+    # who is looking, and a check that could not see the draft would answer the
+    # question wrongly rather than refuse to answer it.
+    #
+    # Under the Matter lock, taken here rather than left to
+    # `select_final_evidence` further down. It is the first step of the one lock
+    # order (`app/matters/locks.py`), so taking it earlier adds no edge to the
+    # graph — and a check that read before the lock would be exactly the stale
+    # read the lock exists to prevent: a draft binding these same bytes in
+    # another transaction would pass both checks and produce the two records
+    # this refuses.
+    lock_matter_for_evidence_integrity(document.matter_id)
+    owning_draft = Submission.objects.filter(
+        matter=document.matter,
+        status=SubmissionStatus.DRAFT,
+        final_version=version,
+    ).first()
+    if owning_draft is not None:
+        raise DomainError(
+            "See fail on juba koostatava arvamuse lõplik tõend. "
+            "Märgi see arvamus saadetuks selle enda juures."
+        )
 
     submission = create_submission(
         matter=document.matter,
