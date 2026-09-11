@@ -60,7 +60,12 @@ somebody is typing into would move the caret on every keystroke.
   {% endif %}
 
   {% if page.object_list %}
-    {% include "matters/partials/matter_table.html" with matters=page.object_list %}
+    {% comment %}
+      The register's own table, and the only one whose headings filter and
+      sort. The flag is explicit rather than inferred: the same partial is
+      embedded by Saabunud, which must keep its static headings (brief 23).
+    {% endcomment %}
+    {% include "matters/partials/matter_table.html" with matters=page.object_list register_interactive=register_interactive %}
     {% include "components/pagination.html" with page=page query_string=query_string %}
   {% elif query %}
     <p class="empty">

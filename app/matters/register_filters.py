@@ -654,6 +654,36 @@ def apply_register_filters(
     return queryset, {**echo, **commencement_echo}
 
 
+def register_query(params: Any, **changes: str | None) -> str:
+    """The address a reader is at, with some parameters replaced.
+
+    The one idea of what a register link is, so a column heading, a value inside
+    a row and a sort arrow cannot each invent their own. Everything not named
+    survives — `q`, every structured filter, the sort, the page size — because
+    every one of these controls *narrows* what is on screen rather than
+    replacing it (docs/adr/0071).
+
+    ``None`` removes a parameter, which is what *Kõik* means on a heading's menu
+    and what the × on a filter chip already does.
+
+    `leht` is dropped, and only `leht`. A different population starts at its
+    first page; carrying the number over would land somebody on page seven of a
+    list that now has three, and the register would answer with nothing while
+    the chip above it said the filter had matched.
+
+    Takes a ``QueryDict`` — a ``dict`` has no ``urlencode`` — so a caller
+    without a request passes an empty one rather than ``{}``.
+    """
+    query = params.copy()
+    for name, value in changes.items():
+        if value is None:
+            query.pop(name, None)
+        else:
+            query[name] = value
+    query.pop("leht", None)
+    return str(query.urlencode())
+
+
 def as_text(params: Any) -> dict[str, str]:
     """A parameter mapping as the register reads one: every value a string.
 

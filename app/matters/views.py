@@ -23,7 +23,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -70,8 +70,10 @@ from app.legacy_import.register_display import (
     source_instructions_for,
 )
 from app.matters import (
+    activity,
     department_dashboard,
     intake_staging,
+    register_dates,
     register_filters,
     selectors,
     work_items,
@@ -777,6 +779,202 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     return options
 
 
+#: The sorts that order on a stored column, as the column names to order by.
+#:
+#: Every one of these four is an address somebody may already hold. `reference`
+#: is what a bare `/teemad/` means and what the Järjestus control posts;
+#: `deadline` orders on `Matter.response_deadline` and is **not** the Kuupäev
+#: column — the column shows the open step's own date whenever the visible step
+#: has one, and the two coincide on only some of the register. Neither value's
+#: meaning changes here: the interactive headings add values beside these rather
+#: than redefining them, because a bookmark that silently starts answering a
+#: different question is worse than one that stops working (brief 18).
+SORT_FIELDS = {
+    "reference": ("-reference_year", "-reference_number"),
+    "title": ("title",),
+    "updated": ("-updated_at",),
+    "deadline": ("response_deadline",),
+}
+
+#: The register's ordering when nobody has chosen one. Newest reference first —
+#: the department's own filing order, and the list a lawyer expects to open on.
+#: A clickable heading does not change it: the two new columns are sortable, not
+#: the new default (brief 19).
+DEFAULT_SORT = "reference"
+
+#: What the **Kuupäev** heading sorts by, in the order its activations cycle
+#: through. The key is the effective date the row displays, never a hidden
+#: column beside it (app/matters/register_dates.py).
+DATE_SORT_ASC = "kuupaev_asc"
+DATE_SORT_DESC = "kuupaev_desc"
+
+#: What the **Viimane tegevus** heading sorts by. Named for the column rather
+#: than for `?tegevus=`, which is a different dimension one column to the left:
+#: `?tegevus=` narrows by the *next* step and this orders by the *last* thing
+#: that happened, and one vocabulary answering both would be two questions
+#: wearing one word (app/matters/views.py `FILTER_LABELS`).
+ACTIVITY_SORT_NEWEST = "viimane_uusim"
+ACTIVITY_SORT_OLDEST = "viimane_vanim"
+
+#: How each sort reads in the Järjestus control. Every value the register
+#: understands is offered there, including the four a heading sets: a sort a
+#: heading can reach and the panel cannot is a state somebody arrives at and
+#: then loses the moment they submit the panel — the select would post its first
+#: option and silently undo their ordering (brief 16, 20).
+SORT_LABELS = {
+    # `Vaikimisi`, not `Viide`: the reference is no longer anywhere on this page,
+    # so an option naming it asked somebody to sort by a value they cannot see.
+    # The value behind it is untouched (review of PR #72, §18).
+    "reference": "Vaikimisi",
+    # Named for what it sorts by. `?jarjestus=updated` orders on
+    # `Matter.updated_at` — when the row was last *written* — which the Viimane
+    # tegevus column deliberately does not show (ADR 0026).
+    "updated": "Viimati muudetud",
+    # Named for the column it reads rather than for the word «Tähtaeg», which
+    # now belongs to two different sorts on one page: this one orders on the
+    # Matter's own `Arvamuse tähtaeg`, and the Kuupäev pair below orders on
+    # whatever the row is actually showing.
+    "deadline": "Arvamuse tähtaeg",
+    "title": "Pealkiri",
+    DATE_SORT_ASC: "Kuupäev — varaseim enne",
+    DATE_SORT_DESC: "Kuupäev — hiliseim enne",
+    ACTIVITY_SORT_NEWEST: "Viimane tegevus — uusim enne",
+    ACTIVITY_SORT_OLDEST: "Viimane tegevus — vanim enne",
+}
+
+
+# ---------------------------------------------------------------------------
+# The register's interactive column headings
+#
+# Hetkeseis, Vastutaja and Järgmiseks filter; Kuupäev and Viimane tegevus sort.
+# Nothing here is a second filter system: a heading writes the same `?`
+# parameter Täpsem otsing writes, produces the same chip, and reads its own
+# active state back out of the address — so the panel, the chips and the heading
+# cannot disagree, because there is only one of them (docs/adr/0071).
+#
+# The *option lists* are deliberately not built here. Hetkeseis offers
+# `stages`, Vastutaja offers `owners` and Järgmiseks offers
+# `next_action_options` — the same three context variables the Täpsem otsing
+# panel's own selects are rendered from. A heading with its own catalogue would
+# be a second population to keep in step, which is exactly the defect the
+# organisation chooser cost a round to find (docs/adr/0071, Asutus pool).
+# ---------------------------------------------------------------------------
+
+#: What a register link is, reused rather than redefined — so a heading, a value
+#: inside a row and a sort arrow cannot each invent their own idea of which
+#: parameters survive (app/matters/register_filters.py).
+register_query = register_filters.register_query
+
+#: Each filtering heading: the word the column has always carried, and how its
+#: trigger is named to assistive technology. The visible label is *inside* the
+#: accessible name, so the two cannot drift apart and a voice user asking for
+#: «Hetkeseis» reaches the control they can see (WCAG 2.5.3).
+#:
+#: The heading's own word, not the chip's. `?tegevus=` appears above the table
+#: as «Järgmine tegevus» because a chip has to say which dimension it is; the
+#: column it belongs to has been «Järgmiseks» since the register was drawn, and
+#: renaming a column to match a chip would be this change editing a product
+#: decision it was not asked about.
+#:
+#: The third entry is the column's own width class, which stays with the
+#: heading: `table-layout: fixed` takes the register's geometry from the head
+#: row, so a `<th>` that lost its class would resize the column under it
+#: (static/css/app.css, `.table--register`).
+COLUMN_FILTERS = (
+    ("hetkeseis", "Hetkeseis", "table__stage", "filtreeri hetkeseisu järgi"),
+    ("vastutaja", "Vastutaja", "table__owner", "filtreeri vastutaja järgi"),
+    ("tegevus", "Järgmiseks", "table__action", "filtreeri järgmise tegevuse järgi"),
+)
+
+
+#: Each sortable heading, as the label it carries and the two orderings its
+#: activations cycle through. A cycle entry is (parameter value, what
+#: ``aria-sort`` calls the resulting order, what the link that reaches it does).
+#:
+#: **`aria-sort` describes the column, not the click.** Kuupäev opens on
+#: *varaseim enne* and that is an ascending column; Viimane tegevus opens on
+#: *uusim enne*, which is the same first click and a **descending** column. A
+#: heading that announced "ascending" while showing the newest date at the top
+#: would be telling a screen-reader user the opposite of what is on the screen
+#: (WAI-ARIA 1.2, `aria-sort`).
+#:
+#: The two open differently on purpose: earliest-first is what somebody means by
+#: sorting a column of things still to come, and newest-first is what they mean
+#: by sorting a column of things that have already happened.
+SORT_COLUMNS: dict[str, tuple[str, tuple[str, str, str], tuple[str, str, str]]] = {
+    "kuupaev": (
+        "Kuupäev",
+        (DATE_SORT_ASC, "ascending", "järjesta varaseim enne"),
+        (DATE_SORT_DESC, "descending", "järjesta hiliseim enne"),
+    ),
+    "viimane": (
+        "Viimane tegevus",
+        (ACTIVITY_SORT_NEWEST, "descending", "järjesta uusim enne"),
+        (ACTIVITY_SORT_OLDEST, "ascending", "järjesta vanim enne"),
+    ),
+}
+
+
+def _sort_column(
+    params: Any,
+    current: str,
+    label: str,
+    first: tuple[str, str, str],
+    second: tuple[str, str, str],
+) -> dict[str, Any]:
+    """One sortable heading: where its next activation goes, and where it is now.
+
+    Three states, in one cycle. Unsorted, then this column one way, then the
+    other, then back to the register's own order — so the heading that turned
+    the ordering on is also the heading that turns it off, and nobody has to
+    find the Järjestus control to undo a click (brief 9, 12).
+
+    ``aria-sort`` carries the same three states to a screen reader, which is the
+    only reason the arrow beside the label may stay decorative.
+    """
+    following: str | None
+    if current == first[0]:
+        direction, following, hint = first[1], second[0], second[2]
+    elif current == second[0]:
+        direction, following, hint = second[1], None, "taasta vaikimisi järjestus"
+    else:
+        direction, following, hint = "none", first[0], first[2]
+    return {
+        "label": label,
+        "direction": direction,
+        "hint": hint,
+        "query": register_query(params, jarjestus=following),
+    }
+
+
+def register_columns(params: Any) -> dict[str, Any]:
+    """What the interactive headings need, beside the option lists they share.
+
+    Built before the fragment branch in :func:`matter_list`, because the live
+    search replaces the results region and the table's own head is inside it: a
+    heading that lost its menu or its sort arrow on the first keystroke would be
+    a control that works until you use the control beside it (brief 21).
+    """
+    sort = params.get("jarjestus", DEFAULT_SORT)
+    return {
+        "column_filters": {
+            name: {
+                "value": params.get(name, ""),
+                "label": label,
+                "cell": cell,
+                "accessible": accessible,
+                # What *Kõik* points at: this address minus this one dimension.
+                "clear_query": register_query(params, **{name: None}),
+            }
+            for name, label, cell, accessible in COLUMN_FILTERS
+        },
+        "column_sorts": {
+            key: _sort_column(params, sort, label, first, second)
+            for key, (label, first, second) in SORT_COLUMNS.items()
+        },
+    }
+
+
 def _named_by_pk(model: Any, raw: str) -> Any:
     """Look a row up by primary key without trusting the string.
 
@@ -922,12 +1120,42 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     return chips
 
 
-SORT_FIELDS = {
-    "reference": ("-reference_year", "-reference_number"),
-    "title": ("title",),
-    "updated": ("-updated_at",),
-    "deadline": ("response_deadline",),
-}
+def _ordered(queryset: Any, sort: str, user: Any) -> Any:
+    """The register in the chosen order, with the derived keys it needs.
+
+    Two rules the headings rest on.
+
+    **A missing date is last in both directions.** PostgreSQL's own default puts
+    NULLs last ascending and *first* descending, so "latest first" would have
+    opened on every row that has no date at all — a page of em dashes, above the
+    rows somebody clicked the heading to see. ``nulls_last=True`` on both sides
+    says what the column means instead: rows with a known date, in order, then
+    the rows without one.
+
+    **The derived keys are annotated only when they are ordered on.** Each costs
+    a correlated subquery (`register_display_date`) or re-reads seven of them
+    (`last_activity_on`), and the register's ordinary page reads neither — the
+    row renders both facts from what
+    ``selectors.matter_list_queryset`` has already loaded.
+
+    ``-created_at`` stays the final tie-break for every sort, so two rows sharing
+    a date have one stable order rather than whatever the planner returns
+    (brief 22: a page boundary that moves between requests loses rows).
+    """
+    chosen: tuple[Any, ...]
+    if sort in (DATE_SORT_ASC, DATE_SORT_DESC):
+        queryset = register_dates.annotate_display_date(queryset, user)
+        key = F(register_dates.DISPLAY_DATE)
+        chosen = (key.asc(nulls_last=True) if sort == DATE_SORT_ASC else key.desc(nulls_last=True),)
+    elif sort in (ACTIVITY_SORT_NEWEST, ACTIVITY_SORT_OLDEST):
+        queryset = activity.annotate_activity_date(queryset)
+        key = F(activity.ACTIVITY_DATE)
+        chosen = (
+            key.desc(nulls_last=True) if sort == ACTIVITY_SORT_NEWEST else key.asc(nulls_last=True),
+        )
+    else:
+        chosen = SORT_FIELDS.get(sort, SORT_FIELDS[DEFAULT_SORT])
+    return queryset.order_by(*chosen, "-created_at")
 
 
 def _wants_fragment(request: HttpRequest) -> bool:
@@ -979,8 +1207,12 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     scope = params.get("ulatus", "koik")
     queryset, date_echo = register_filters.apply_register_filters(queryset, request.user, params)
 
-    sort = params.get("jarjestus", "reference")
-    queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
+    # The database orders, and it orders before the page boundary is drawn. A
+    # sort applied to `page.object_list` would order the twenty-five rows that
+    # happened to land on this page and call the result a sorted register
+    # (brief 26).
+    sort = params.get("jarjestus", DEFAULT_SORT)
+    queryset = _ordered(queryset, sort, request.user)
 
     per_page, page_size_key = page_size_from(params.get(PAGE_SIZE_PARAM))
     paginator = Paginator(queryset.distinct(), per_page)
@@ -1055,6 +1287,34 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "jarjestus": sort,
         },
         "nav_active": "teemad",
+        # This page's table is the interactive one. The partial is shared with
+        # Saabunud, which keeps its static headings and its plain cells: a
+        # filtering control on a surface that has no filter parameters to write
+        # would be a control that changes nothing (brief 23).
+        "register_interactive": True,
+        # A filter, not a chooser. `Vastutaja` here describes stored work, so
+        # it offers the current department workers *and* everybody who actually
+        # owns something in this register — a colleague who left with seventeen
+        # files still open is precisely who somebody comes to this control
+        # looking for, and the earlier narrowing left them reachable only by
+        # typing a UUID into the address bar.
+        #
+        # Bounded by `visible_to`, and by that alone: the option list must not
+        # name somebody who appears only on Matters this reader may not open.
+        # Read before the register's own `vastutaja` filter, so selecting a name
+        # does not reduce the select to that one name
+        # (app/accounts/selectors.py `owner_filter_choices`, docs/adr/0036).
+        #
+        # These three are read *above* the fragment branch, unlike the option
+        # lists below it, because the Vastutaja, Hetkeseis and Järgmiseks
+        # headings are inside the results region the live search replaces. Two
+        # small queries per keystroke — a vocabulary table of nine rows and one
+        # union over owners — buy a heading that still has its menu after
+        # somebody types (brief 21).
+        "owners": owner_filter_choices(Matter.objects.visible_to(request.user)),
+        "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
+        "next_action_options": list(NEXT_ACTION_LABELS.items()),
+        **register_columns(params),
     }
 
     # Only on the full page. The chips sit above the filter bar, outside the
@@ -1071,33 +1331,25 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # one queryset cannot disagree with itself about how many rows there are
         # (the convention this module opens with).
         #
-        # Returned before the filter-control options are built. Those populate
-        # selects that are not in this fragment, and a keystroke must not pay
-        # for a list of organisations nobody is going to see (brief 14).
+        # Returned before the rest of the filter-control options are built.
+        # Those populate selects that are not in this fragment, and a keystroke
+        # must not pay for a list of organisations nobody is going to see
+        # (brief 14). The three the column headings share are above, because
+        # the headings *are* in this fragment.
         return render(request, "matters/partials/register_results.html", context)
 
     context |= {
-        # A filter, not a chooser. `Vastutaja` here describes stored work, so
-        # it offers the current department workers *and* everybody who actually
-        # owns something in this register — a colleague who left with seventeen
-        # files still open is precisely who somebody comes to this control
-        # looking for, and the earlier narrowing left them reachable only by
-        # typing a UUID into the address bar.
-        #
-        # Bounded by `visible_to`, and by that alone: the option list must not
-        # name somebody who appears only on Matters this reader may not open.
-        # Read before the register's own `vastutaja` filter, so selecting a name
-        # does not reduce the select to that one name
-        # (app/accounts/selectors.py `owner_filter_choices`, docs/adr/0036).
-        "owners": owner_filter_choices(Matter.objects.visible_to(request.user)),
-        "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "tracks": Track.choices,
         # The governed vocabulary, so the register's filter offers exactly what
         # Uus teema and the Teema header offer (app/taxonomy/vocabulary.py).
         "policy_areas": selectable_policy_areas(),
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
-        "next_action_options": list(NEXT_ACTION_LABELS.items()),
+        # Every ordering the register understands, including the four a column
+        # heading sets. Built from one mapping rather than written out in the
+        # template, so a sort the headings can reach and the panel cannot is not
+        # expressible (brief 16).
+        "sort_options": list(SORT_LABELS.items()),
         "opinion_options": list(OPINION_LABELS.items()),
         "victory_options": list(VICTORY_LABELS.items()),
         "commencement_options": list(COMMENCEMENT_LABELS.items()),

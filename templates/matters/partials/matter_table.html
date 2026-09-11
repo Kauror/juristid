@@ -14,14 +14,30 @@ list by.
 <div class="tablewrap">
   <table class="table table--register">
     <thead>
-      <tr>
-        <th scope="col" class="table__title">Pealkiri</th>
-        <th scope="col" class="table__stage">Hetkeseis</th>
-        <th scope="col" class="table__owner">Vastutaja</th>
-        <th scope="col" class="table__action">Järgmiseks</th>
-        <th scope="col" class="table__date">Kuupäev</th>
-        <th scope="col" class="table__date table__lastactivity">Viimane tegevus</th>
-      </tr>
+      {% comment %}
+        Teemad's headings filter and sort; every other surface's state the
+        column and stop there.
+
+        The interactive head is a partial of its own, included on an explicit
+        flag the register sets, rather than inferred from whichever context
+        variable happens to be present. Saabunud renders this same table from a
+        page that reads no register parameters: a heading offering to narrow by
+        Vastutaja there would write `?vastutaja=` into an address nothing on
+        that page looks at, and the reader would click it and watch nothing
+        happen (brief 23).
+      {% endcomment %}
+      {% if register_interactive %}
+        {% include "matters/partials/register_headers.html" %}
+      {% else %}
+        <tr>
+          <th scope="col" class="table__title">Pealkiri</th>
+          <th scope="col" class="table__stage">Hetkeseis</th>
+          <th scope="col" class="table__owner">Vastutaja</th>
+          <th scope="col" class="table__action">Järgmiseks</th>
+          <th scope="col" class="table__date">Kuupäev</th>
+          <th scope="col" class="table__date table__lastactivity">Viimane tegevus</th>
+        </tr>
+      {% endif %}
     </thead>
     <tbody>
       {% for matter in matters %}

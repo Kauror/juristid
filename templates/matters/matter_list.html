@@ -403,27 +403,28 @@ localStorage (Stage-2E.1 brief 12).
 
         <label class="field">
           <span class="field__label">Järjestus</span>
+          {% comment %}
+            Every ordering the register understands, from one mapping in
+            `app/matters/views.py` — including the four the Kuupäev and Viimane
+            tegevus headings set.
+
+            Those four have to be here. The panel is a plain GET form, so a
+            select that did not know about the sort somebody had chosen from a
+            heading would post its first option and silently undo their
+            ordering the moment they narrowed anything (brief 16, 20).
+
+            The values are unchanged and so are their meanings. `reference` is
+            still the default; `deadline` still orders on the Matter's own
+            `Arvamuse tähtaeg`, which is *not* the Kuupäev column — the column
+            shows the open step's date whenever the visible step has one — and
+            is labelled for the field it reads now that two sorts on this page
+            would otherwise both read as «Tähtaeg» (review of PR #72 §18,
+            ADR 0026).
+          {% endcomment %}
           <select class="field__input" name="jarjestus">
-            {% comment %}
-              `Vaikimisi`, not `Viide`. The value is unchanged and so is the
-              ordering: newest reference first, which is the register's own
-              filing order and the list a lawyer expects to open on. What
-              changed is that the reference is no longer anywhere on this page,
-              so an option naming it asked somebody to sort by a value they
-              cannot see. `?jarjestus=reference` still works and is still what
-              the form posts — the label is the only thing that moved
-              (review of PR #72, §18).
-            {% endcomment %}
-            <option value="reference" {% if filters.jarjestus == "reference" %}selected{% endif %}>Vaikimisi</option>
-            {% comment %}
-              Named for what it sorts by. `?jarjestus=updated` orders on
-              `Matter.updated_at` — when the row was last written — and the
-              Viimane tegevus column no longer shows that. Leaving both called
-              the same thing would make a sorted page look wrong (ADR 0026).
-            {% endcomment %}
-            <option value="updated" {% if filters.jarjestus == "updated" %}selected{% endif %}>Viimati muudetud</option>
-            <option value="deadline" {% if filters.jarjestus == "deadline" %}selected{% endif %}>Tähtaeg</option>
-            <option value="title" {% if filters.jarjestus == "title" %}selected{% endif %}>Pealkiri</option>
+            {% for value, label in sort_options %}
+              <option value="{{ value }}" {% if filters.jarjestus == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
           </select>
         </label>
 
