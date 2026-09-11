@@ -172,12 +172,12 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
     {% with shown=matter|register_date %}
       {% if shown %}
         <span class="datemeaning">{{ shown.meaning }}</span>
-        <span class="dateline
-                     {% if shown.is_overdue %}dateline--overdue
-                     {% elif shown.is_deadline %}dateline--deadline{% endif %}
-                     {% if shown.is_approximate %}dateline--approximate{% endif %}">
-          {{ shown.display }}
-        </span>
+        {% comment %}
+          One line, and deliberately: the class list used to be written across
+          four, which left the rendered attribute carrying the indentation
+          between its names. Harmless to CSS and not harmless to read.
+        {% endcomment %}
+        <span class="dateline{% if shown.is_overdue %} dateline--overdue{% elif shown.is_deadline %} dateline--deadline{% endif %}{% if shown.is_approximate %} dateline--approximate{% endif %}">{{ shown.display }}</span>
       {% else %}
         <span class="muted">—</span>
       {% endif %}
