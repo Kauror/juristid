@@ -8,6 +8,33 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-11
+basis = "deployment"
+# Kaks väljalaset ühel päeval, üks kirje — nii nagu reegel ütleb.
+#
+# Öine väljalase (3f795a7d) tõi saatja–adressaadi vaikeväärtuse, Õigusakti
+# liigi, faili lugemise uue teema vormil ja Teemade koondamise üheks
+# avastamispinnaks. Sama päeva teine väljalase — nelja ettevalmistuse ühendus —
+# tõi otsinguga algava asutusevaliku, tabelipäiste filtrid ja järjestused,
+# ümber tehtud teema vaate ja osakonna meeskonna paranduse.
+#
+# Teise väljalaske liitmisrevisjon sünnib alles pärast selle faili kirjutamist,
+# nii et siia seda ette kirjutada ei saa; ta on kirjas väljalaske raportis —
+# täpselt nagu 9. septembri kirje puhul.
+revisions = ["3f795a7ddbac36a25245cf2df1f5854646a0002d"]
+prs = [169, 170, 171, 172, 173, 174, 175, 176, 177]
+changes = [
+  "Uue teema saatja määratakse nüüd vaikimisi ka adressaadiks. Adressaati saab endiselt eraldi muuta.",
+  "Uuel teemal saab määrata Õigusakti liigi või mitu liiki.",
+  "Uue teema vormile lisatud fail loetakse kohapeal läbi ja leitut kasutatakse pealkirja, saatja, arvamuse tähtaja, menetlusliigi ja valdkondade eeltäitmiseks.",
+  "Saatja ja adressaadi valik algab nüüd otsingust: sama väljaga leiab olemasoleva asutuse või lisab + abil uue.",
+  "Teemad on keskne avastamispind: töövõidu ja jõustumise leiab Täpsema otsingu kaudu ning eraldi Tähtajad jaotist enam ei ole.",
+  "Teemade tabeli päised on toimivad: Hetkeseis, Vastutaja ja Järgmiseks filtreerivad, Kuupäev ja Viimane tegevus järjestavad.",
+  "Teema vaade on ümber tehtud: tegevuse sisestamine on kohe avatud, Saabus on päises, kaasamine ja muud sündmused lisatakse samast tegevusalast ning Ajajoone ülaosas näitab uus riba, kus menetlus parajasti on.",
+  "Osakonna Meeskond näitab ainult osakonna töötajaid. Mujale kuuluva vastutaja töö on koondatud reale «Väljaspool osakonda».",
+]
+
+[[day]]
 date = 2026-09-09
 basis = "deployment"
 # Kaks väljalaset ühel päeval, üks kirje — nii nagu reegel ütleb.
