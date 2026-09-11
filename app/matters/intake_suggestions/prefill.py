@@ -43,8 +43,17 @@ teemat` does not, and its behaviour is byte-for-byte what it was. Both ask the
 same question of the same analysis — exactly one HIGH candidate, no conflict —
 so the two surfaces cannot come to disagree about which titles are strong.
 
-A bound form — a submit that failed validation — never reaches this module.
-What the person typed is what is re-rendered.
+**A bound form reaches this module, and that was the defect.** The sentence
+here used to say it did not. `Uus teema` renders the intake panel on every
+answer it gives, including the 400 a refused save returns, and the pre-fill
+decision was made against an empty ``CurrentValues()`` every time — so a form
+coming back from a validation refusal was treated as a form nobody had filled
+in. What the person typed *is* re-rendered; what was also re-rendered was a
+proposal to overwrite it.
+
+So the decision now reads the bound form's own data
+(``CurrentValues.answered_on``), and the question it asks about Saatja is
+`has_sender` — either control, because both are answers (R2-03).
 """
 
 from __future__ import annotations
@@ -126,8 +135,12 @@ def prefill_initial(
             initial["title"] = chosen.value
             prefilled[SuggestedField.TITLE] = (chosen.value,)
 
+    # `has_sender`, not `source_organisation_ids`: Saatja has two controls and
+    # answering it through the second one used to read as no answer at all, so a
+    # HIGH suggestion was applied straight over a sender the person had typed
+    # and committed (R2-03, `CurrentValues.has_sender`).
     senders = analysis.fields.get(SuggestedField.SOURCE_ORGANISATIONS)
-    if senders is not None and not current.source_organisation_ids:
+    if senders is not None and not current.has_sender:
         chosen = senders.prefill_candidate
         if chosen is not None:
             initial["source_organisations"] = [chosen.value]
