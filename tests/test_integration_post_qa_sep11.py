@@ -176,12 +176,22 @@ def test_a_file_attached_to_a_work_victory_is_never_a_send_candidate(
             "saadetud-document": str(document.pk),
             "saadetud-title": "Voltsitud registreering",
             "saadetud-kind": SubmissionKind.FORMAL_OPINION,
-            "saadetud-sent_at": "1.09.2026",
+            "saadetud-sent_on": "1.09.2026",
             "saadetud-recipients": str(factories.OrganisationFactory().pk),
         },
+        follow=True,
     )
 
-    assert response.status_code in (302, 303), response.status_code
+    # Refused for naming a document that is not a candidate, and not merely for
+    # some other field being wrong: `sent_on` and `recipients` are both filled
+    # in, so `document` is the only thing left to refuse. (`sent_on`, not
+    # `sent_at` - the model attribute and the form field are spelled
+    # differently, and a payload carrying the wrong key would have been refused
+    # for the missing date instead, which is passing for the wrong reason.)
+    assert response.status_code == 200, response.status_code
+    body = response.content.decode()
+    assert "Saatmise registreerimine ebaõnnestus" in body
+    assert "Saadetud fail" in body, "the refusal did not name the document field"
     assert Submission.objects.filter(matter=normal_matter).count() == 0
 
 
