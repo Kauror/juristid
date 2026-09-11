@@ -1148,6 +1148,153 @@ p.formnote {
   font-size: var(--typography-size-meta);
 }
 
+/* A value in a row that is also the filter selecting it.
+
+   Quiet by design: a register where every cell reads as a hyperlink is a
+   register nobody can scan, so the cell keeps the colour and the weight it had
+   and the affordance is the underline on hover — the same treatment
+   `.table__titlelink` above already uses. */
+.table__quietlink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.table__quietlink:hover {
+  text-decoration: underline;
+}
+
+/* ---- The register's interactive column headings ---------------------------
+ *
+ * Hetkeseis, Vastutaja and Järgmiseks open a filter menu; Kuupäev and Viimane
+ * tegevus sort. One component for both, because they have to look like the same
+ * kind of thing: a column heading you can act on, not a button that happens to
+ * sit in a table head (templates/matters/partials/register_headers.html).
+ *
+ * Everything typographic is inherited from `.table thead th` — the size, the
+ * weight, the letter-spacing, the uppercase — so a heading is still a heading
+ * and the table's density is unchanged. */
+.colhead {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* The <details> is the positioning context its own menu is measured against,
+   and `list-style: none` removes the disclosure triangle the browser would
+   otherwise draw in front of the column name. */
+.colhead--filter {
+  position: relative;
+}
+
+.colhead__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  list-style: none;
+}
+
+.colhead__trigger::-webkit-details-marker {
+  display: none;
+}
+
+/* The affordance, and the whole of it. A chevron for a menu, an arrow pair for
+   a sort — one glyph at 9.5px, which is what keeps this change invisible in the
+   table's geometry: the columns are sized by `.table--register` and the head row
+   grows by a single character. */
+.colhead__mark {
+  font-size: var(--typography-size-chip-sm);
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.colhead:hover,
+.colhead:focus-visible {
+  color: var(--text-primary);
+}
+
+.colhead:hover .colhead__mark,
+.colhead:focus-visible .colhead__mark {
+  color: var(--accent-link);
+}
+
+/* Active, quietly. Colour only — no border, no background, no extra glyph — so
+   a filtered column is visibly different and nothing on the page moves. What
+   the filter *is* stays in the removable chip above the table, which is where
+   the reader can undo it (templates/matters/partials/register_results.html). */
+.colhead--filter.is-filtered .colhead__trigger,
+th[aria-sort="ascending"] .colhead--sort,
+th[aria-sort="descending"] .colhead--sort {
+  color: var(--accent-link);
+}
+
+.colhead--filter.is-filtered .colhead__mark,
+th[aria-sort="ascending"] .colhead__mark,
+th[aria-sort="descending"] .colhead__mark {
+  color: var(--accent-link);
+}
+
+/* Which way, for everybody who is not using a screen reader. `aria-sort` on the
+   cell is the single statement of the state; this reads it rather than keeping
+   a second one in a class name. */
+th[aria-sort="none"] .colhead__mark::after {
+  content: "\2195";
+}
+
+th[aria-sort="ascending"] .colhead__mark::after {
+  content: "\2191";
+}
+
+th[aria-sort="descending"] .colhead__mark::after {
+  content: "\2193";
+}
+
+/* `fixed`, not `absolute`, and for the reason `.uxassign__menu` gives at
+   length: `.tablewrap` is `overflow-x: auto`, a scroll container clips its
+   absolutely positioned descendants in both axes, and a menu anchored inside
+   one is cut off a line below its trigger. `static/js/ux.js` places it. */
+.colhead__menu {
+  position: fixed;
+  min-width: 190px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-menu);
+  padding: var(--spacing-05);
+  z-index: 30;
+}
+
+/* The options read as sentences, not as headings: the column's uppercase
+   letter-spacing is deliberately not inherited here. */
+.colhead__option {
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font: var(--typography-weight-regular) var(--typography-size-base) / 1.3
+    var(--typography-font-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-body);
+  text-decoration: none;
+}
+
+.colhead__option:hover {
+  background: var(--surface-overlay-hover);
+}
+
+.colhead__option.is-chosen {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
+}
+
 .pagination {
   display: flex;
   align-items: center;

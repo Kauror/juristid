@@ -1,0 +1,104 @@
+{% load people register_links %}
+{% comment %}
+Teemad's own table head: five headings a reader can act on.
+
+Only Teemad renders this. `matter_table.html` is shared with Saabunud, which
+writes no register parameters of its own and keeps the static headings it has
+always had — a filtering control on a surface whose address nothing reads would
+be a control that appears to work and changes nothing (brief 23).
+
+Two behaviours, chosen by what the column means rather than by what is easiest
+to implement uniformly.
+
+  Hetkeseis · Vastutaja · Järgmiseks   filter
+  Kuupäev   · Viimane tegevus          sort
+
+Sorting «Marko / Ireen / Sandra» alphabetically is not a thing anybody wants
+from the Vastutaja column, and sorting «vaata üle / helistan / ootan vastust»
+alphabetically is not a thing at all. What those columns are for is *show me
+only these*, so that is what their headings do.
+
+The menus are filled from `stages`, `owners` and `next_action_options` — the
+same three context variables the Täpsem otsing panel's own selects are built
+from, and the active option is decided by the same `filters.*` comparison the
+panel makes. There is one filter state, it lives in the address, and both
+controls read it (brief 16).
+
+`<details>`/`<summary>` rather than a scripted menu: it opens with Enter and
+Space, closes with Escape, and works with JavaScript switched off entirely —
+`static/js/ux.js` only adds "one open at a time" and the positioning that keeps
+a menu out of `.tablewrap`'s scroll clip. Every option inside is a plain link,
+because filtering is a read; the «Määra» menu one column to the left is buttons
+for the opposite reason.
+
+The sort arrow is drawn from `aria-sort` on the cell rather than from a class of
+its own, so there is one statement of which way the column is sorted and both
+the screen reader and the stylesheet read it.
+{% endcomment %}
+<tr>
+  <th scope="col" class="table__title">Pealkiri</th>
+
+  {% for name, column in column_filters.items %}
+    <th scope="col" class="{{ column.cell }}">
+      <details class="colhead colhead--filter{% if column.value %} is-filtered{% endif %}" data-uxpopover>
+        {% comment %}
+          The visible word is inside the accessible name rather than hidden
+          beside it, so voice control reaches the heading somebody can actually
+          read (WCAG 2.5.3). The chevron is decoration; the state it indicates
+          is spoken by the text after the dash.
+        {% endcomment %}
+        <summary class="colhead__trigger">{{ column.label }}<span class="visually-hidden"> — {{ column.accessible }}{% if column.value %}, filter on aktiivne{% endif %}</span><span class="colhead__mark" aria-hidden="true">▾</span></summary>
+        <div class="colhead__menu" data-uxfloat>
+          <a class="colhead__option{% if not column.value %} is-chosen{% endif %}"
+             href="?{{ column.clear_query }}#tulemused">Kõik</a>
+
+          {% if name == "hetkeseis" %}
+            {% for stage in stages %}
+              <a class="colhead__option{% if filters.hetkeseis == stage.key %} is-chosen{% endif %}"
+                 href="?{% register_filter_query 'hetkeseis' stage.key %}#tulemused">{{ stage.label_et }}</a>
+            {% endfor %}
+          {% elif name == "vastutaja" %}
+            {% comment %}
+              «Määramata» is the register's one word for an empty field, and it
+              is an option here for the same reason it is a bar on a chart: a
+              bucket a reader cannot click is a bucket they have to take on
+              trust (Stage-2E brief 42).
+            {% endcomment %}
+            <a class="colhead__option{% if filters.vastutaja == 'puudub' %} is-chosen{% endif %}"
+               href="?{% register_filter_query 'vastutaja' 'puudub' %}#tulemused">Määramata</a>
+            {% for owner in owners %}
+              <a class="colhead__option{% if filters.vastutaja == owner.pk|stringformat:'s' %} is-chosen{% endif %}"
+                 href="?{% register_filter_query 'vastutaja' owner.pk %}#tulemused">{{ owner|name_among:owners }}</a>
+            {% endfor %}
+          {% else %}
+            {% comment %}
+              The work states `?tegevus=` already understands, and nothing else.
+              Arbitrary wording in a Järgmiseks sentence is what the search box
+              above the table is for; a heading offering «helistan» as a filter
+              value would be offering one file's sentence as a category
+              (ADR 0054).
+            {% endcomment %}
+            {% for value, label in next_action_options %}
+              <a class="colhead__option{% if filters.tegevus == value %} is-chosen{% endif %}"
+                 href="?{% register_filter_query 'tegevus' value %}#tulemused">{{ label }}</a>
+            {% endfor %}
+          {% endif %}
+        </div>
+      </details>
+    </th>
+  {% endfor %}
+
+  {% comment %}
+    Both sorts are links, so Back returns to the previous ordering and the
+    address somebody copies carries it.
+  {% endcomment %}
+  <th scope="col" class="table__date" aria-sort="{{ column_sorts.kuupaev.direction }}">
+    <a class="colhead colhead--sort"
+       href="?{{ column_sorts.kuupaev.query }}#tulemused">{{ column_sorts.kuupaev.label }}<span class="visually-hidden"> — {{ column_sorts.kuupaev.hint }}</span><span class="colhead__mark" aria-hidden="true"></span></a>
+  </th>
+
+  <th scope="col" class="table__date table__lastactivity" aria-sort="{{ column_sorts.viimane.direction }}">
+    <a class="colhead colhead--sort"
+       href="?{{ column_sorts.viimane.query }}#tulemused">{{ column_sorts.viimane.label }}<span class="visually-hidden"> — {{ column_sorts.viimane.hint }}</span><span class="colhead__mark" aria-hidden="true"></span></a>
+  </th>
+</tr>
