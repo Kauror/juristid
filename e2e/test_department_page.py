@@ -16,6 +16,7 @@ in a merge — fails in exactly the place no unit test looks (Stage-2F brief 45)
 
 from __future__ import annotations
 
+import re
 from urllib.parse import quote
 
 import pytest
@@ -91,6 +92,23 @@ def team_names(page) -> list[str]:
         name.replace("· sina", "").strip()
         for name in meeskond(page).locator(".uxstat__row .uxteam__name").all_inner_texts()
     ]
+
+
+def cell_value(text: str) -> int:
+    """The number in one grid cell, out of everything the cell renders.
+
+    Three things end up in `inner_text` and only one of them is the figure. Each
+    number carries a visually-hidden label naming its column — the grid is a
+    grid rather than a `<table>`, so nothing associates a header with a cell —
+    and that label can itself hold a year: «Arvamusi välja · 2026: 5». A nought
+    renders as an `aria-hidden` em dash beside a visually-hidden `0`, so the
+    cell reads «Avatud: —0» and splitting on the colon does not parse.
+
+    The last run of digits is the figure in all three shapes.
+    """
+    digits = re.findall(r"\d+", text)
+    assert digits, f"no number in {text!r}"
+    return int(digits[-1])
 
 
 def all_matters(page, figure_caption: str):
@@ -431,12 +449,7 @@ def test_the_team_table_reconciles_with_its_own_kokku_line(page, base_url):
     total: list[int] | None = None
     for index in range(rows.count()):
         row = rows.nth(index)
-        # Every number is preceded by a visually-hidden label naming its column,
-        # because the grid is a grid and nothing associates a header with a cell.
-        numbers = [
-            int(text.split(":")[-1].strip())
-            for text in row.locator(".uxstat__num").all_inner_texts()
-        ]
+        numbers = [cell_value(text) for text in row.locator(".uxstat__num").all_inner_texts()]
         if "uxstat__row--total" in (row.get_attribute("class") or ""):
             total = numbers
         else:

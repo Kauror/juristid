@@ -6,7 +6,9 @@ are the two read models one page composes, and the composition is
 :mod:`app.matters.department` (docs/adr/0049).
 
 * **Seis** — six risks rather than six counters, each opening exactly its rows.
-* **Mida meeskond teeb** — the Meeskond table, one row per person. Head only.
+* **Mida meeskond teeb** — the Meeskond table, one row per member of the
+  department, plus the work carried outside it and the work carried by
+  nobody. Head only.
 * **Mis on ees** — Eesolev, the department's real deadlines in five windows.
 * **Mis on tehtud** — Tehtud, what came out of a period the reader chooses,
   narrowable by row kind. Head only.
@@ -334,9 +336,13 @@ def seis_figures(
 # ---------------------------------------------------------------------------
 # Meeskond
 #
-# One row per person, and the same refusal the module opens with: this is
-# inventory and attention, never workload and never a ranking. Alphabetical, and
-# that ordering is load-bearing.
+# One row per member of the department — and a name on it says exactly that,
+# which is why the two rows that are not people are not given one
+# (docs/adr/0036, amendment of 2026-09-11).
+#
+# The same refusal the module opens with: this is inventory and attention,
+# never workload and never a ranking. Alphabetical, and that ordering is
+# load-bearing.
 # ---------------------------------------------------------------------------
 
 
