@@ -69,14 +69,15 @@
    * itself — one behaviour, not two implementations of it.
    *
    * The two destinations are not interchangeable, because the control each link
-   * promises lives in a different place: «✓ Tehtud» and «Lükka edasi» are in the
-   * Järgmiseks row, and a next step is *written* only in the composer.
+   * promises lives in a different place: recording that a task is done is
+   * `PRAEGUNE TEGEVUS`, and *changing what the task is* is the `Muuda` /
+   * `+ Järgmine tegevus` disclosure (docs/adr/0075 §3, §9).
    *
-   * The composer is rendered only for a writer on an open Matter
-   * (matters/partials/overview.html), so `#teema-koostaja` can legitimately be
-   * absent. Falling back to the row — which every branch renders — is what stops
-   * a link from stranding the browser at `scrollY = 0` the way the broken
-   * fragment did. This never opens the composer on an ordinary page load: it
+   * Those write surfaces render only for a writer on an open Matter
+   * (matters/partials/overview.html), so `#lisa-jargmine` can legitimately be
+   * absent. Falling back to `#praegune-tegevus` — which every branch renders —
+   * is what stops a link from stranding the browser at `scrollY = 0` the way the
+   * broken fragment did. This never opens a panel on an ordinary page load: it
    * runs once, on a hash somebody followed deliberately.
    *
    * **On `load`, not on `DOMContentLoaded`, and that is not a detail.**
@@ -86,7 +87,7 @@
    * silently undid the focus this sets: measured in Chromium, the composer
    * opened correctly and the caret was on the body. Running last is the only
    * order in which the focus survives. */
-  var NEXT_STEP_TARGETS = ["teema-koostaja", "jargmiseks-rida"];
+  var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine"];
 
   function focusQuietly(element) {
     /* The scroll is ours, just above; focusing again would fight it. */
@@ -102,7 +103,7 @@
     if (NEXT_STEP_TARGETS.indexOf(wanted) === -1) {
       return;
     }
-    var target = document.getElementById(wanted) || document.getElementById("jargmiseks-rida");
+    var target = document.getElementById(wanted) || document.getElementById("praegune-tegevus");
     if (!target) {
       return;
     }
@@ -119,12 +120,12 @@
       }
       return;
     }
-    /* The row. Deliberately *not* the first field inside it — that is the
-       «Kuupäev…» box inside the closed `Lükka edasi` popover, and focusing into
-       a shut disclosure puts the cursor nowhere. The row carries the buttons
-       this link promised, so the row is what the reader is shown. */
+    /* `PRAEGUNE TEGEVUS`. The control this link promised is the box that
+       records what was done, so that is what takes the cursor; a Matter with no
+       open task, or a reader who may not write, renders no box and the zone
+       itself is focused through its `tabindex="-1"`. */
     target.scrollIntoView({ block: "center", behavior: "auto" });
-    focusQuietly(target);
+    focusQuietly(target.querySelector("textarea") || target);
   }
 
   /* Any control that sends the reader to a collapsed disclosure has to open it
@@ -154,12 +155,22 @@
     if (event.key !== "l" && event.key !== "L") {
       return;
     }
-    var composer = document.querySelector("details.uxcomp");
-    if (!composer) {
+    /* `L` for «lisa»: the box where something gets written down. On a Matter
+       with a current task that is `Mida tegid?`; on one without, there is
+       nothing to complete, so it opens `+ Märge` instead. It used to open the
+       composer, which was both of those and is gone (docs/adr/0075 §3). */
+    var box = document.querySelector("#praegune-tegevus textarea");
+    if (box) {
+      event.preventDefault();
+      box.focus();
+      return;
+    }
+    var note = document.getElementById("lisa-marge");
+    if (!note) {
       return;
     }
     event.preventDefault();
-    openComposer(composer);
+    openComposer(note);
   });
 
   /* ---- Quick dates in the composer --------------------------------------
@@ -282,6 +293,38 @@
     });
   }
 
+  /* ---- LISA TEEMALE: one panel open at a time ---------------------------
+   * Opening one add-to-matter form closes whichever other one was open. The
+   * zone is a *choice* of seven operations, and seven expanded panels stacked
+   * down the page is the composer it replaces wearing different markup
+   * (brief §11).
+   *
+   * Deliberately **not** `data-uxpopover`. That contract also closes on any
+   * click outside the disclosure, which is right for a menu and wrong for a
+   * form somebody is typing into: the browser lane caught it shutting under the
+   * cursor mid-entry and taking the field with it (docs/adr/0074 §20).
+   *
+   * With scripting off every `<details>` still opens, closes, submits and
+   * validates. What is lost is the tidiness, not the capability.
+   */
+  function bindAddPanels(scope) {
+    scope.querySelectorAll("details[data-addpanel]").forEach(function (panel) {
+      if (!once(panel, "AddPanel")) {
+        return;
+      }
+      panel.addEventListener("toggle", function () {
+        if (!panel.open) {
+          return;
+        }
+        document.querySelectorAll("details[data-addpanel][open]").forEach(function (other) {
+          if (other !== panel) {
+            other.open = false;
+          }
+        });
+      });
+    });
+  }
+
   /* ---- The file affordance -----------------------------------------------
    * The dashed box is a `<label>` over a hidden file input, so choosing a file
    * works with no script at all. This adds the two things a script can add:
@@ -301,11 +344,18 @@
         return;
       }
       var prompt = text.innerHTML;
+      /* One name, or how many. Every workspace control now takes several files,
+         and listing eight filenames inside a dashed box is a box nobody can
+         read — the count is what somebody checks before pressing Salvesta
+         (brief §21). */
       var show = function () {
-        var chosen = field.files && field.files.length ? field.files[0].name : "";
-        drop.classList.toggle("is-chosen", Boolean(chosen));
-        if (chosen) {
-          text.textContent = chosen;
+        var files = field.files;
+        var count = files ? files.length : 0;
+        drop.classList.toggle("is-chosen", count > 0);
+        if (count === 1) {
+          text.textContent = files[0].name;
+        } else if (count > 1) {
+          text.textContent = count + " faili";
         } else {
           text.innerHTML = prompt;
         }
@@ -584,6 +634,7 @@
     bindQuickDates(root);
     bindComposerToggle(root);
     bindChipGroups(root);
+    bindAddPanels(root);
     bindFileDrop(root);
     bindWorkRows(root);
     bindExclusivePopovers(root);

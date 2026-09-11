@@ -710,20 +710,21 @@ def test_the_mode_chip_has_no_rules_left_to_be_legible_in():
 # ---------------------------------------------------------------------------
 
 
-def test_the_composer_is_the_one_kaasamine_path(signed_in, normal_matter):
-    """**One way to create the record, and it is the composer.**
+def test_lisa_teemale_is_the_one_kaasamine_path(signed_in, normal_matter):
+    """**One way to create the record, and it is `+ Kaasamine`.**
 
     This reverses the QA §8 decision, and for the reason that decision gave. Two
     ways to create one record, with different fields, meant a Kaasamine created
     one way was quietly poorer than the same thing created the other — so there
     had to be one, and while the standalone section existed the section was it.
-    The approved target removed that section; the composer panel is now the one
-    path rather than the second (docs/adr/0074 §9).
+    The approved target removed that section; the panel under `LISA TEEMALE` is
+    now the one path rather than the second (docs/adr/0074 §9,
+    docs/adr/0075 §2).
     """
     body = _detail(signed_in, normal_matter)
 
     assert "+ Kaasamine" in body
-    assert 'id="cx-kaasamine"' in body
+    assert 'id="lisa-kaasamine"' in body
     # And the section it replaced is gone rather than hidden beside it.
     assert 'id="kaasamine"' not in body
     assert "+ Lisa kaasamine" not in body

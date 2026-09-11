@@ -33,7 +33,7 @@ from app.matters.models import Entry, MatterEngagement
 from app.matters.process_timeline import STATE_CURRENT, STATE_DONE, STATE_TODO, process_steps
 from app.matters.services import add_engagement, change_stage
 from app.matters.timeline import matter_timeline
-from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
+from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics, Disposition
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -210,97 +210,134 @@ def test_every_metaline_value_is_an_inline_editor(signed_in, normal_matter, stag
 
 
 # ===========================================================================
-# COMPOSER — §15, §16, §17, §18, §27
+# THE WORKSPACE — §15, §16, §17, §18, §27 as docs/adr/0075 supersedes them
 # ===========================================================================
+#
+# The approved target's composer clauses are superseded by ADR 0075: the open
+# five-panel form over one `Salvesta` is replaced by `PRAEGUNE TEGEVUS` and
+# `LISA TEEMALE`. What these tests still guard is everything the target decided
+# that ADR 0075 did *not* touch — the file affordance being immediately
+# available, the retired classification vocabulary staying retired, the reader
+# and the closed Matter getting no write controls, and every panel's questions.
 
 
-def test_the_composer_is_open_on_an_initial_get(signed_in, normal_matter):
-    """**§15, load-bearing.** Not only after an error, not only after clicking
-    the row, and not only with query parameters."""
+def test_the_current_action_is_answerable_on_an_initial_get(signed_in, normal_matter, specialist):
+    """The box that finishes the current task is on the page, not behind a
+    click. Recording work is the reason this product exists and it must not
+    begin with opening something (docs/adr/0075 §3)."""
+    _action(normal_matter, specialist)
     body = _detail(signed_in, normal_matter)
-    tag = body[body.index('id="teema-koostaja"') :].split(">")[0]
+    zone = body[body.index('id="praegune-tegevus"') : body.index('id="lisa-teemale"')]
 
-    assert "open" in tag
+    assert "Koosta koja arvamus" in zone
+    assert "Mida tegid?" in zone
+    assert 'name="action_id"' in zone
+    assert "<textarea" in zone
 
 
-def test_a_refused_save_comes_back_open(signed_in, normal_matter):
-    response = _compose(signed_in, normal_matter, next_text="Saada arvamus", next_date="")
+def test_a_refused_save_comes_back_with_what_was_typed(signed_in, normal_matter, specialist):
+    action = _action(normal_matter, specialist)
+    response = signed_in.post(
+        reverse("matters:add_note", kwargs={"pk": normal_matter.pk}),
+        {"body": ""},
+        headers={"HX-Request": "true"},
+    )
     html = response.content.decode()
 
     assert response.status_code == 400
-    assert "open" in html[html.index('id="teema-koostaja"') :].split(">")[0]
-    assert "Saada arvamus" in html
+    # Its own panel, open, with its own refusal beside its own field.
+    assert 'id="lisa-marge"' in html
+    assert "Kirjelda, mis juhtus." in html
+    # And the current action is untouched by a refused note.
+    action.refresh_from_db()
+    assert action.status == ActionStatus.OPEN
 
 
-def test_a_reader_gets_no_composer(client, normal_matter, reader):
+def test_a_reader_gets_no_write_controls(client, normal_matter, reader, specialist):
+    _action(normal_matter, specialist)
     client.force_login(reader)
     body = _detail(client, normal_matter)
 
-    assert 'id="teema-koostaja"' not in body
+    # The task reads; nothing offers to change it.
+    assert "Koosta koja arvamus" in body
+    assert "Mida tegid?" not in body
+    assert 'id="lisa-teemale"' not in body
     assert "Salvesta" not in body.split('id="teema-vaade"')[1].split("</div>")[0]
 
 
-def test_a_closed_matter_gets_no_composer(signed_in, normal_matter, specialist):
+def test_a_closed_matter_gets_no_workspace(signed_in, normal_matter, specialist):
     from app.matters.services import close_matter
 
     close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
     body = _detail(signed_in, normal_matter)
 
-    assert 'id="teema-koostaja"' not in body
+    assert "Mida tegid?" not in body
+    assert 'id="lisa-teemale"' not in body
     # …and the chronology is still readable.
     assert 'id="ajalugu-loend"' in body
 
 
-def test_the_composer_asks_the_three_primary_questions_in_order(signed_in, normal_matter):
-    body = _detail(signed_in, normal_matter)
-    form = body[body.index('id="teema-koostaja"') : body.index('id="ajajoon"')]
+def test_the_next_step_is_asked_for_in_its_own_words(signed_in, normal_matter):
+    """`Mida on vaja teha?` and `Millal?`, and no classification behind them.
 
-    assert form.index("Mida tegid või mis juhtus?") < form.index("Järgmiseks")
-    assert form.index("Järgmiseks") < form.index("Millal?")
+    The target's «three primary questions in one form» is superseded: *what
+    happened* and *what happens next* are two intentions and two saves now. What
+    survives unchanged is the vocabulary — a next step is a sentence and a day
+    (docs/adr/0075 §2, ADR 0052)."""
+    body = _detail(signed_in, normal_matter)
+    panel = body[body.index('id="lisa-jargmine"') : body.index('id="lisa-kaasamine"')]
+
+    assert panel.index("Mida on vaja teha?") < panel.index("Millal?")
     for chip in ("Täna", "Homme", "+1 nädal", "+2 nädalat", "Kuupäev…"):
-        assert chip in form
+        assert chip in panel
     # The retired vocabulary is not back.
     for gone in ("TEEN", "OOTAN", "JÄLGIN", "Täpsemalt…"):
-        assert gone not in form
+        assert gone not in panel
 
 
 def test_the_file_control_is_immediately_available_and_there_is_no_manus_panel(
-    signed_in, normal_matter
+    signed_in, normal_matter, specialist
 ):
-    """**§17.** Attaching a file must not begin with opening a panel."""
+    """**§17.** Attaching files must not begin with opening a second panel.
+
+    True of the current-action box, which is open on arrival, and of every
+    `LISA TEEMALE` form once its own panel is chosen: the drop area is part of
+    the form rather than a disclosure inside it."""
+    _action(normal_matter, specialist)
     body = _detail(signed_in, normal_matter)
-    row = body[body.index('class="uxcomp__row"') :]
-    row = row[: row.index('class="cx-panels"')]
+    zone = body[body.index('id="praegune-tegevus"') : body.index('id="lisa-teemale"')]
 
     assert "+ Manus" not in body
-    assert "cx-drop" in row
-    assert "Lohista fail siia või" in row
-    assert "vali arvutist" in row
-    assert 'type="file"' in row
+    assert "cx-drop" in zone
+    assert "Lohista failid siia või" in zone
+    assert "vali arvutist" in zone
+    assert 'type="file"' in zone
+    assert "multiple" in zone
     # And the four questions the target does not ask about a file.
     for gone in ("Sissekande liik", "Roll", "Toimus"):
         assert gone not in body
 
 
-def test_the_composer_offers_exactly_five_panels(signed_in, normal_matter):
-    """**§18.** No `+ Manus`, and `Jõustumine`/`Töövõit` are here rather than
-    under a standing facts section."""
+def test_lisa_teemale_offers_seven_choices_and_opens_none_of_them(signed_in, normal_matter):
+    """**§18, as ADR 0075 restates it.** Seven operations, each its own form,
+    and the zone is a choice until one is picked."""
     body = _detail(signed_in, normal_matter)
-    panels = body[body.index('class="cx-panels"') : body.index('class="composer__actions"')]
+    panels = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
 
     expected = [
+        "+ Märge",
+        "+ Järgmine tegevus",
+        "+ Kaasamine",
         "+ Oluline tähtaeg",
         "+ Jõustumine",
         "+ Töövõit",
-        "+ Kaasamine",
         "+ Lõpeta teema",
     ]
     assert [chip for chip in expected if chip in panels] == expected
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 5
-    # All closed on arrival.
-    assert '<details class="cx-panel" id="cx-tahtaeg">' in panels or ">" in panels
-    for opened in ('id="cx-tahtaeg"\n               open', 'cx-panel" open'):
-        assert opened not in panels
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 7
+    # All closed on arrival: nothing in this zone is a form until it is chosen.
+    assert "data-addpanel\n             open" not in panels
+    assert 'cx-panel" open' not in panels
 
 
 def test_the_panels_offered_do_not_depend_on_what_the_matter_already_holds(
@@ -332,13 +369,33 @@ def test_the_panels_offered_do_not_depend_on_what_the_matter_already_holds(
     assert "+ Töövõit" in body
 
 
-def test_there_is_one_save_and_no_panel_carries_a_second(signed_in, normal_matter):
-    """**§27.** One primary `Salvesta` for the whole composer."""
-    body = _detail(signed_in, normal_matter)
-    form = body[body.index('id="teema-koostaja"') : body.index('id="ajajoon"')]
+def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
+    signed_in, normal_matter, specialist
+):
+    """**§27 reversed by docs/adr/0075 §2.** One `Salvesta` per intention.
 
-    assert form.count('type="submit"') == 1
-    assert form.count("composer__actions") == 1
+    The target's single save was the whole claim that a professional update is
+    one act. It is not: one button that could mean *note* and *deadline* and
+    *win* and *closure* at once is a button whose meaning has to be
+    reconstructed from which boxes were filled in."""
+    _action(normal_matter, specialist)
+    body = _detail(signed_in, normal_matter)
+    workspace = body[body.index('id="praegune-tegevus"') : body.index('id="ajajoon"')]
+
+    # The current action's own save, and one only. `Muuda` is beside it with a
+    # save of its own — a different operation, which is the distinction this
+    # round exists to make (brief §9).
+    zone = body[body.index('id="praegune-tegevus"') : body.index('id="lisa-teemale"')]
+    completion = zone[zone.index('class="curact__form"') :]
+    assert completion.count('type="submit"') == 1
+    assert zone.count('type="submit"') == 2
+
+    # Seven choices under LISA TEEMALE, minus the one hidden while a step is
+    # open, each with exactly one save of its own.
+    panels = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
+    assert panels.count('type="submit"') == 6
+    # And the composer's single global save is gone from the page entirely.
+    assert "composer__actions" not in workspace
 
 
 # ===========================================================================
@@ -510,10 +567,10 @@ def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter)
 # ===========================================================================
 
 
-def test_the_composer_offers_the_three_target_engagement_kinds(signed_in, normal_matter):
+def test_the_engagement_panel_offers_the_three_target_kinds(signed_in, normal_matter):
     body = _detail(signed_in, normal_matter)
-    panel = body[body.index('id="cx-kaasamine"') :]
-    panel = panel[: panel.index('id="cx-lopeta"')]
+    panel = body[body.index('id="lisa-kaasamine"') :]
+    panel = panel[: panel.index('id="lisa-tahtaeg"')]
 
     assert [label for _value, label in COMPOSER_ENGAGEMENT_KINDS] == [
         "Küsitlus",
@@ -1193,33 +1250,36 @@ def test_a_reader_sees_the_same_reading_hierarchy_without_the_write_controls(
 
     body = _detail(client, normal_matter)
 
-    assert 'id="jargmiseks-rida"' in body
+    assert 'id="praegune-tegevus"' in body
     assert 'id="ajajoon"' in body
     assert 'id="teema-andmed"' in body
     assert "✓ Tehtud" not in body
-    assert 'id="teema-koostaja"' not in body
+    assert "Mida tegid?" not in body
+    assert 'id="lisa-teemale"' not in body
 
 
 # ===========================================================================
-# JÄRGMISEKS ROW — §14
+# PRAEGUNE TEGEVUS — §14 as docs/adr/0075 §3 supersedes it
 # ===========================================================================
 
 
-def test_the_row_holds_the_target_controls_and_the_composer_hook(
+def test_the_current_action_zone_holds_the_task_and_exactly_one_way_to_finish_it(
     signed_in, normal_matter, specialist
 ):
     _action(normal_matter, specialist)
 
     body = _detail(signed_in, normal_matter)
-    row = body[body.index('id="jargmiseks-rida"') :]
-    row = row[: row.index('id="teema-koostaja"')]
+    zone = body[body.index('id="praegune-tegevus"') : body.index('id="lisa-teemale"')]
 
-    assert "Järgmiseks" in row
-    assert "Koosta koja arvamus" in row
-    assert "✓ Tehtud" in row
-    assert "Muuda" in row
-    assert "data-koostaja-toggle" in body
+    assert "Praegune tegevus" in zone
+    assert "Koosta koja arvamus" in zone
+    assert "Mida tegid?" in zone
+    assert "Muuda" in zone
+    # **The whole point of the round.** Completion is the result being saved,
+    # so there is no second control that completes without one.
+    for gone in ("✓ Tehtud", "Märgi tehtuks", "Tehtud</button>"):
+        assert gone not in zone
     # And not the retired controls or vocabulary.
     assert "Lükka edasi" not in body
     for gone in ("TEEN", "OOTAN", "JÄLGIN"):
-        assert gone not in row
+        assert gone not in zone

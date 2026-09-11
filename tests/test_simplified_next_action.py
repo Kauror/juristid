@@ -56,10 +56,17 @@ RETIRED_DATE_WORDS = ("TÄHTAEG", "VAATAN ÜLE", "OODATAV", "ÜLEVAATUS MÖÖDAS
 
 
 def _jargmiseks_row(body: str) -> str:
-    """The `Järgmiseks` row alone, so an assertion about it cannot be answered
-    by something else on the page."""
-    start = body.index('id="jargmiseks-rida"')
-    return " ".join(body[start : body.index("</div>", start)].split())
+    """`PRAEGUNE TEGEVUS` alone, so an assertion about it cannot be answered by
+    something else on the page.
+
+    The `Järgmiseks` row it used to cut out is superseded by the zone that
+    states the current task and takes the answer that finishes it
+    (docs/adr/0075 §3). Everything this file asserts about that surface — the
+    sentence, the date, the lateness, and the retired vocabulary staying
+    retired — is asked of the zone instead.
+    """
+    start = body.index('id="praegune-tegevus"')
+    return " ".join(body[start : body.index('id="lisa-teemale"', start)].split())
 
 
 def _compose_url(matter) -> str:
@@ -402,9 +409,15 @@ def test_tehtud_answers_with_the_row_and_not_the_whole_column(signed_in, normal_
     assert "composer__body" not in body
 
 
-def test_the_completion_target_is_the_row(signed_in, normal_matter, specialist):
-    """And the page asks for it. A fragment response into `#teema-vaade` would
-    put one row where the whole column was."""
+def test_completion_is_the_result_being_saved_and_swaps_the_whole_column(
+    signed_in, normal_matter, specialist
+):
+    """ADR 0052 §8 kept `✓ Tehtud` off `#teema-vaade` so an open composer was
+    not thrown away by pressing it. docs/adr/0075 §3 removes the problem rather
+    than working around it: there is no second control, the result and the
+    completion are one save, and the response may therefore legitimately
+    re-render the whole column — there is nothing left underneath to discard.
+    """
     set_next_action(
         matter=normal_matter,
         text="Saata kiri",
@@ -415,10 +428,12 @@ def test_the_completion_target_is_the_row(signed_in, normal_matter, specialist):
     )
     body = _detail(signed_in, normal_matter)
     row = _jargmiseks_row(body)
-    assert "/valmis/" in row, "the row no longer offers the completion route"
-    complete_form = row[row.index("/valmis/") : row.index("Tehtud")]
-    assert 'hx-target="#jargmiseks-rida"' in complete_form
-    assert 'hx-target="#teema-vaade"' not in complete_form
+
+    assert "/praegune/" in row, "the zone no longer offers the completion route"
+    assert 'hx-target="#teema-vaade"' in row
+    # The two-save shape is gone: no completion route that writes no result.
+    assert "/valmis/" not in row
+    assert "✓ Tehtud" not in row
 
 
 # ---------------------------------------------------------------------------
@@ -605,27 +620,30 @@ def test_the_next_action_text_is_stored_exactly_as_typed(signed_in, normal_matte
 # ---------------------------------------------------------------------------
 
 
-def test_the_composer_asks_three_questions_and_no_classification(signed_in, normal_matter):
+def test_the_workspace_asks_its_questions_and_no_classification(signed_in, normal_matter):
     body = _detail(signed_in, normal_matter)
     flat = " ".join(body.split())
 
-    assert "Mida tegid või mis juhtus?" in flat
-    assert "Järgmiseks" in flat
+    assert "Mis juhtus või mida tegid?" in flat
+    assert "Mida on vaja teha?" in flat
     assert "Millal?" in flat
-    assert 'name="next_text"' in body
+    assert 'name="text"' in body
 
     for word in RETIRED_WORDS:
-        assert word not in flat, f"the composer still offers «{word}»"
+        assert word not in flat, f"the workspace still offers «{word}»"
     assert 'name="next_kind"' not in body
     assert 'name="next_date_semantics"' not in body
     assert "Mida kuupäev" not in flat
     assert "Täpsemalt…" not in flat
 
 
-def test_the_body_placeholder_stopped_asking_for_both_at_once(signed_in, normal_matter):
+def test_the_questions_stopped_asking_for_both_at_once(signed_in, normal_matter):
     body = _detail(signed_in, normal_matter)
     assert "Kirjelda, mis tegid ja mida teed edasi" not in body
-    assert "Kirjelda, mida tegid või mis juhtus…" in body
+    # What happened and what happens next are two panels and two saves now, so
+    # neither box has to carry both (docs/adr/0075 §2).
+    assert "Mis juhtus või mida tegid?" in body
+    assert "Mida on vaja teha?" in body
 
 
 def test_the_current_step_shows_its_text_its_date_and_tehtud(signed_in, normal_matter, specialist):
@@ -645,7 +663,10 @@ def test_the_current_step_shows_its_text_its_date_and_tehtud(signed_in, normal_m
 
     assert "Vaadata uus eelnõu versioon üle" in flat
     assert action.display_date in flat
-    assert "Tehtud" in flat
+    # **Not «Tehtud».** State A is the task, its date, and the box that finishes
+    # it by recording what was done (docs/adr/0075 §3).
+    assert "Mida tegid?" in flat
+    assert "Tehtud" not in flat
     for word in RETIRED_WORDS:
         assert word not in flat
 
@@ -667,8 +688,8 @@ def test_an_overdue_step_still_reads_as_late(signed_in, normal_matter, specialis
     body = _detail(signed_in, normal_matter)
     flat = " ".join(body.split())
 
-    assert "uxnext--overdue" in body
-    assert "uxnext__date--overdue" in body
+    assert "curact--overdue" in body
+    assert "curact__date--overdue" in body
     assert "6 p" in flat
     assert "TÄHTAEG MÖÖDAS" not in flat
 

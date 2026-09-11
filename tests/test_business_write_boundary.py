@@ -257,6 +257,75 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["action"].pk)
         ),
     ),
+    # -- the Teema workspace --------------------------------------------------
+    #
+    # Seven routes where `matters:compose` was one. Each is a separate door onto
+    # a different canonical record, so each has to be fired at separately: a
+    # boundary that covered the old composer would have said nothing about six
+    # of these (docs/adr/0075 §2).
+    WriteRoute(
+        name="matters:complete_current_action",
+        label="Praeguse tegevuse lõpetamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"action_id": str(w["action"].pk), "body": "<p>Loata tulemus.</p>"},
+        ),
+        probe=lambda w: (
+            w["matter"].entries.count(),
+            w["action"].__class__.objects.values_list("status", flat=True).get(pk=w["action"].pk),
+        ),
+    ),
+    WriteRoute(
+        name="matters:add_note",
+        label="Märkme lisamine",
+        request=lambda w: ({"pk": w["matter"].pk}, {"body": "<p>Loata märge.</p>"}),
+        probe=lambda w: w["matter"].entries.count(),
+    ),
+    WriteRoute(
+        name="matters:add_engagement_compact",
+        label="Kaasamise lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"kind": "SURVEY", "audience": "Loata kaasamine"},
+        ),
+        probe=lambda w: w["matter"].engagements.count(),
+    ),
+    WriteRoute(
+        name="matters:add_important_date",
+        label="Olulise tähtaja lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "deadline_title": "Loata tähtaeg",
+                "deadline_date": "1.12.2099",
+                "deadline_precision": "EXACT",
+            },
+        ),
+        probe=lambda w: w["matter"].important_dates.count(),
+    ),
+    WriteRoute(
+        name="matters:add_effective_date",
+        label="Jõustumise lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"effective_title": "Loata jõustumine", "effective_on": "1.12.2099"},
+        ),
+        probe=lambda w: w["matter"].effective_dates.count(),
+    ),
+    WriteRoute(
+        name="matters:add_work_victory",
+        label="Töövõidu lisamine",
+        request=lambda w: ({"pk": w["matter"].pk}, {"victory_change": "Loata töövõit"}),
+        probe=lambda w: w["matter"].work_victories.count(),
+    ),
+    WriteRoute(
+        name="matters:close_from_workspace",
+        label="Teema lõpetamine töölaualt",
+        request=lambda w: ({"pk": w["matter"].pk}, {"disposition": "INITIATIVE_WITHDRAWN"}),
+        probe=lambda w: (
+            w["matter"].__class__.objects.values_list("is_open", flat=True).get(pk=w["matter"].pk)
+        ),
+    ),
     WriteRoute(
         name="matters:compose",
         label="Sissekande lisamine",

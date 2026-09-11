@@ -1,0 +1,143 @@
+{% comment %}
+`PRAEGUNE TEGEVUS` — the task this file is waiting on, and the one box that
+finishes it.
+
+This is the first zone of the page and the reason the page exists. A lawyer
+opening a Matter has one question — *what am I supposed to be doing about this*
+— and underneath the answer is the only thing they are asked: **Mida tegid?**
+
+**Saving the result completes the step. That is the whole interaction.** There
+is no `Märgi tehtuks`, no `✓ Tehtud`, no second confirmation and no order in
+which half of it can happen. The previous page had two: a button on the row that
+completed the step and wrote nothing, and a composer underneath that wrote a
+note and completed nothing — two saves for one act, in either order, with
+nothing tying them together, so a Matter could carry an account of finishing
+something beside a step that was still open (docs/adr/0075 §3).
+
+**One question, and the file rides with it.** `Mida tegid?` is required: a step
+marked done with nothing said about it leaves the record saying only that
+somebody pressed a button. An attachment is supplementary evidence and never a
+substitute — nothing here invents a description from a filename, from the task's
+own wording or from the word "Tehtud" (brief §5).
+
+**The step is named by a hidden `action_id`, and that is not a detail.** A
+lawyer with this Matter open in two tabs finishes the task in one; the other tab
+is still showing the step that has since been replaced. Without the identifier,
+`Salvesta` there would complete *whatever is open now* — a different task,
+marked done by somebody who never saw it. The service re-reads the open action
+under a row lock and refuses anything else, writing nothing (brief §6,
+app/matters/workspace.py).
+
+**Nothing is offered when there is nothing to complete.** A Matter with no open
+step shows one compact line and no textarea: a large empty `Mida tegid?` with no
+task above it is a form asking about work nobody has named. The route to work is
+`+ Järgmine tegevus` under `LISA TEEMALE` (brief §8).
+{% endcomment %}
+<section class="curact{% if matter.is_open and current_action.is_overdue %} curact--overdue{% endif %}"
+         id="praegune-tegevus" tabindex="-1" aria-labelledby="praegune-pealkiri">
+  <h2 class="rowlabel" id="praegune-pealkiri">Praegune tegevus</h2>
+
+  {% if not matter.is_open %}
+    {% comment %}
+      A closed Matter is read-only. No completion box, and — in overview.html —
+      no `LISA TEEMALE` either; the chronology and the files stay readable
+      according to authorization, which is what an archived file is for
+      (brief §31).
+    {% endcomment %}
+    <p class="curact__empty">
+      Puudub — teema on suletud. Uut sammu ei saa määrata ilma taasavamiseta.
+    </p>
+  {% elif current_action %}
+    <p class="curact__task">
+      <span class="curact__text">{{ current_action.text }}</span>
+      {% comment %}
+        Rendered at its stored precision, with `days_late` riding on the date
+        rather than standing alone — a number of days is only readable once you
+        know what it is counting from (app/workflow/models.py).
+      {% endcomment %}
+      {% if current_action.target_date %}
+        <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% endif %}">
+          {{ current_action.display_date }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
+        </span>
+      {% endif %}
+    </p>
+
+    {% if can_write %}
+      {% comment %}
+        `Muuda` — change what the task is or when it is due. Quiet, beside the
+        task, and **not** a way to record that it was done: completion happens
+        through `Mida tegid?` → `Salvesta` and nowhere else. Combining the two
+        meanings into one control is what this round exists to undo (brief §9).
+      {% endcomment %}
+      <details class="cx-panel curact__edit" id="lisa-jargmine" data-addpanel
+               {% if open_panel == "lisa-jargmine" %}open{% endif %}>
+        <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
+        <div class="cx-panel__body">
+          {% if open_panel == "lisa-jargmine" and workspace_error %}
+            <p class="formerror" role="alert">{{ workspace_error }}</p>
+          {% endif %}
+          {% include "matters/partials/next_action_form.html" %}
+        </div>
+      </details>
+
+      <form class="curact__form" data-composer
+            hx-post="{% url 'matters:complete_current_action' pk=matter.pk %}"
+            hx-target="#teema-vaade"
+            hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="action_id" value="{{ current_action.pk }}">
+
+        {% if workspace_error and not open_panel %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <label class="uxcomp__q" for="{{ current_action_form.body.id_for_label }}">
+          Mida tegid?
+        </label>
+        {{ current_action_form.body }}
+        {% if current_action_form.body.errors %}
+          <p class="field__error">{{ current_action_form.body.errors|first }}</p>
+        {% endif %}
+        {% if current_action_form.action_id.errors %}
+          <p class="field__error">{{ current_action_form.action_id.errors|first }}</p>
+        {% endif %}
+
+        <div class="curact__row">
+          {% comment %}
+            A `<label>` wrapping a visually hidden multiple file input. The whole
+            dashed box is the picker, so choosing files works with no script at
+            all; `ux.js` adds dragging and the chosen-file summary on top of that
+            rather than instead of it.
+          {% endcomment %}
+          <label class="cx-drop" data-filedrop>
+            <span class="visually-hidden">{{ current_action_form.attachments.label }}</span>
+            {{ current_action_form.attachments }}
+            <span class="cx-drop__text" data-filedrop-text>Lohista failid siia või <span class="cx-drop__pick">vali arvutist</span></span>
+          </label>
+          <span class="curact__spacer"></span>
+          <button class="button button--primary" type="submit" data-composer-submit>Salvesta</button>
+        </div>
+        {% if current_action_form.attachments.errors %}
+          <p class="field__error">{{ current_action_form.attachments.errors|first }}</p>
+        {% endif %}
+      </form>
+    {% endif %}
+  {% else %}
+    {% comment %}
+      No open step. The register's own `JÄRGMISEKS` still reads here where a
+      Matter imported from Excel carries one and no structured action: the
+      sentence is real, it is labelled as coming from Excel, and it renders with
+      no date because the importer refuses to guess which of three meanings it
+      carried (ADR 0021).
+    {% endcomment %}
+    {% if source_instruction %}
+      <p class="curact__task">
+        <span class="curact__flag">Excelist</span>
+        <span class="curact__text curact__text--source">{{ source_instruction }}</span>
+        {% if source_snapshot %}<span class="curact__flag">{{ source_snapshot }}</span>{% endif %}
+      </p>
+    {% else %}
+      <p class="curact__empty">Järgmine samm on määramata</p>
+    {% endif %}
+  {% endif %}
+</section>

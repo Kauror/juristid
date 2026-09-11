@@ -54,6 +54,16 @@ record, not professional chronology (master specification 16.5).
         {% if item.milestone.sub %}
           <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
         {% endif %}
+        {% comment %}
+          The files this milestone's own record carries, in the same compact
+          link language a work entry uses. **Not a new chronology event**: no dot
+          of its own, no line of its own, no contribution to the count — the
+          record already has a row and these belong under it
+          (app/matters/timeline.py `_with_linked_files`, brief §25).
+        {% endcomment %}
+        {% for file in item.files %}
+          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}</a>
+        {% endfor %}
       {% else %}
         {% comment %}
           The meta line is one baseline-aligned row: who, what they did, and
