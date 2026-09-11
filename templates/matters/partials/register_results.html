@@ -37,7 +37,14 @@ somebody is typing into would move the caret on every keystroke.
   {% if active_filters or query %}
     <div class="filterbar filterbar--chips">
       {% if query %}
-        <a class="filterchip" href="?{{ cleared_query }}" title="Tühjenda otsing">
+        {% comment %}
+          Removes `q` and nothing else, exactly like every sibling chip's `×`.
+          It used to carry `cleared_query` — the `Tühjenda kõik` address — so
+          clearing the search word also dropped every filter and the sort
+          (R2-04). `app.matters.views._without_dimension` now builds all of
+          them.
+        {% endcomment %}
+        <a class="filterchip" href="?{{ cleared_search_query }}" title="Tühjenda otsing">
           <span class="filterchip__label">Otsing:</span>
           <span>{{ query }}</span>
           <span class="filterchip__remove" aria-hidden="true">×</span>

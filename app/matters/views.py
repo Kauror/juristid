@@ -1089,6 +1089,28 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     return value
 
 
+def _without_dimension(params: Any, name: str) -> str:
+    """The same address, minus one narrowing dimension. The chip `×` contract.
+
+    Every `×` in the chip row means the same thing — *stop narrowing by this
+    one* — so every `×` is built here. It was not always: the free-text chip
+    carried `cleared_query`, the address `Tühjenda kõik` uses, and therefore
+    removed `q`, every structured filter and the sort together (R2-04). A
+    control that says `Otsing: eelnõu ×` and silently clears `Hetkeseis`,
+    `Vastutaja` and `Järjestus` is not a slower way to reach the same place;
+    it is a different answer, and the reader has no way to see it happen.
+
+    `leht` goes with it for the reason every other filter change drops it:
+    widening the population renumbers the pages, so page 4 of the narrower
+    list addresses rows that are no longer there. The page size (`kaupa`) and
+    every dimension the reader did not click stay exactly as they were.
+    """
+    without = params.copy()
+    without.pop(name, None)
+    without.pop("leht", None)
+    return without.urlencode()
+
+
 def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     chips = []
     for name, label in FILTER_LABELS.items():
@@ -1106,15 +1128,12 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
             register_filters.WORK_WINDOW_END_PARAM,
         ) and not params.get(register_filters.WORK_PARAM):
             continue
-        without = params.copy()
-        without.pop(name, None)
-        without.pop("leht", None)
         chips.append(
             {
                 "name": name,
                 "label": label,
                 "value": _filter_display(request, name, value),
-                "remove_query": without.urlencode(),
+                "remove_query": _without_dimension(params, name),
             }
         )
     return chips
@@ -1238,6 +1257,9 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "query": query,
         "query_string": query_without_page.urlencode(),
         "cleared_query": cleared.urlencode(),
+        # The free-text chip's own `×`, built like every sibling chip's rather
+        # than aliased to `Tühjenda kõik` (R2-04).
+        "cleared_search_query": _without_dimension(params, "q"),
         "has_any_filter": bool(chips or query),
         "source_instructions": source_instructions_for(page.object_list),
         "source_snapshot": snapshot_label(),

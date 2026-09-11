@@ -15,6 +15,8 @@ once. Filters do not widen each other, and the search does not widen them.
 from __future__ import annotations
 
 import datetime
+import html
+from urllib.parse import parse_qs
 
 import pytest
 from django.urls import reverse
@@ -22,9 +24,10 @@ from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.services import close_matter
 from app.search.indexing import refresh_matters
 from app.search.models import SearchDocument
-from app.search.services import matching_matter_ids
+from app.search.services import matching_matter_ids, search_matters
 from app.workflow.enums import Disposition
 from tests import factories
 
@@ -278,6 +281,124 @@ def test_one_chip_removes_only_itself(signed_in, specialist):
 
     assert "aasta" not in chips["aasta"]
     assert "vastutaja" in chips["aasta"]
+
+
+def test_the_search_chip_removes_only_the_search_word(signed_in, specialist):
+    """R2-04. `Otsing: eelnõu ×` is a chip, not `Tühjenda kõik` in disguise.
+
+    It carried `cleared_query` — the address that drops every dimension at once
+    — so removing the word the reader had searched for also silently dropped
+    `Hetkeseis`, `Vastutaja`, the sort and every other filter, leaving only the
+    page size. The sibling chips beside it removed only themselves the whole
+    time, which is what made the behaviour impossible to predict from the row.
+    """
+    response = signed_in.get(
+        REGISTER,
+        {
+            "q": "eelnõu",
+            "hetkeseis": "menetluses",
+            "vastutaja": str(specialist.pk),
+            "aasta": "2024",
+            "jarjestus": "kuupaev_asc",
+            "kaupa": "30",
+        },
+    )
+
+    remaining = parse_qs(response.context["cleared_search_query"])
+
+    # The one thing the click promised to remove.
+    assert "q" not in remaining
+    # Everything it did not.
+    assert remaining["hetkeseis"] == ["menetluses"]
+    assert remaining["vastutaja"] == [str(specialist.pk)]
+    assert remaining["aasta"] == ["2024"]
+    assert remaining["jarjestus"] == ["kuupaev_asc"]
+    assert remaining["kaupa"] == ["30"]
+
+    # And the chip in the page actually points at it. Asserting only the
+    # context would leave the template free to go back to `cleared_query`
+    # with every test still green — which is the shape the bug had.
+    body = response.content.decode()
+    chip = body.split('<span class="filterchip__label">Otsing:</span>')[0]
+    href = chip.rsplit('<a class="filterchip" href="?', 1)[1].split('"', 1)[0]
+    assert parse_qs(html.unescape(href)) == remaining
+
+
+def test_the_search_chip_and_clear_everything_are_no_longer_the_same_address(signed_in, specialist):
+    """The two controls sit in the same row and must not do the same thing."""
+    response = signed_in.get(REGISTER, {"q": "eelnõu", "vastutaja": str(specialist.pk)})
+
+    assert response.context["cleared_search_query"] != response.context["cleared_query"]
+    assert "vastutaja" in response.context["cleared_search_query"]
+    assert "vastutaja" not in response.context["cleared_query"]
+
+
+def test_removing_the_search_word_forgets_the_page_number(signed_in, specialist):
+    """Like every other filter change: a wider population renumbers the pages."""
+    response = signed_in.get(
+        REGISTER, {"q": "eelnõu", "vastutaja": str(specialist.pk), "leht": "4"}
+    )
+
+    assert "leht" not in parse_qs(response.context["cleared_search_query"])
+
+
+def test_a_closed_matter_stays_findable_under_the_olek_contract(signed_in, specialist):
+    """R2-05, and the parameter it turns on.
+
+    QA reported that a closed Matter could not be found by title or reference,
+    using `?status=koik` and `?status=suletud`. The register's status parameter
+    is `?olek=`; `?status=` is not a parameter at all, so those addresses were
+    the *default* register — `olek=avatud` — which of course excludes a Matter
+    that has just been closed.
+
+    Searched through the same closure path the application uses, with no
+    rebuild in between, the projection keeps the row and every surface still
+    returns it. The alleged defect was the harness, and this test exists so the
+    contract that falsified it cannot be changed by accident.
+    """
+    matter = indexed(
+        factories.MatterFactory(
+            title="Kvanttehnoloogia eelnõu ainulaadne pealkiri",
+            owner=specialist,
+            reference_year=2026,
+            reference_number=777,
+        )
+    )
+    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="QA")
+
+    # The projection survives closure: same row, same version, same text.
+    row = SearchDocument.objects.get(matter=matter, source_kind="MATTER")
+    assert row.title == "Kvanttehnoloogia eelnõu ainulaadne pealkiri"
+    assert "2026_777" in row.identifiers
+
+    # The search service underneath, by title and by reference.
+    assert [r.matter.pk for r in search_matters(query=matter.title, user=specialist)] == [matter.pk]
+    assert [row["matter_id"] for row in matching_matter_ids(query="2026_777", user=specialist)] == [
+        matter.pk
+    ]
+
+    # And the register above it, both ways of asking for a closed Matter.
+    for status in ("koik", "suletud"):
+        for term in (matter.title, "2026_777"):
+            assert total_of(signed_in.get(REGISTER, {"q": term, "olek": status})) == 1, (
+                status,
+                term,
+            )
+
+
+def test_status_is_not_the_registers_status_parameter(signed_in, specialist):
+    """The other half of R2-05's falsification, kept honest.
+
+    If `?status=` ever started narrowing the register, the reasoning above
+    would stop holding and this test would be the one that said so.
+    """
+    matter = indexed(factories.MatterFactory(title="Suletud teema otsingu näide", owner=specialist))
+    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="QA")
+
+    # `?status=` is ignored, so this is the default register: open Matters only.
+    assert total_of(signed_in.get(REGISTER, {"q": matter.title, "status": "koik"})) == 0
+    # The real parameter finds it.
+    assert total_of(signed_in.get(REGISTER, {"q": matter.title, "olek": "koik"})) == 1
 
 
 def test_a_chip_shows_a_name_rather_than_a_key(signed_in, specialist):
