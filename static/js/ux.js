@@ -293,6 +293,34 @@
     });
   }
 
+  /* ---- A refused workspace save puts the cursor where the problem is -----
+   * Every save on this page swaps `#teema-vaade`, and a swap leaves focus on
+   * `<body>` — so a keyboard or screen-reader user who pressed `Salvesta` and
+   * was refused lands at the top of the document with the explanation somewhere
+   * below them. The message is announced by its `role="alert"`; this is the
+   * other half, and it is what «errors move focus appropriately» means (§33).
+   *
+   * The first error on the swapped surface, and the control it belongs to —
+   * never a control in a different form, and never anything at all when the
+   * save succeeded.
+   */
+  function focusFirstRefusal(scope) {
+    var problem = scope.querySelector ? scope.querySelector(".field__error") : null;
+    if (!problem) {
+      return;
+    }
+    var form = problem.closest("form");
+    if (!form) {
+      return;
+    }
+    var field = form.querySelector(
+      "textarea:not([hidden]), select:not([hidden]), input:not([type=hidden]):not([hidden])"
+    );
+    if (field) {
+      focusQuietly(field);
+    }
+  }
+
   /* ---- LISA TEEMALE: one panel open at a time ---------------------------
    * Opening one add-to-matter form closes whichever other one was open. The
    * zone is a *choice* of seven operations, and seven expanded panels stacked
@@ -654,5 +682,6 @@
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     bindAll(event.target);
+    focusFirstRefusal(event.target);
   });
 })();

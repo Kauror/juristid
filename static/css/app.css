@@ -10646,3 +10646,10 @@ section:has(.pw-more[open]) tbody.uxextra {
     margin-right: var(--layout-gutter);
   }
 }
+
+/* A refused upload takes a line of its own inside the completion row rather
+ * than squeezing between the drop area and the save. */
+.curact__row .field__error {
+  flex: 1 1 100%;
+  margin: 0;
+}

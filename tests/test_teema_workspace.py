@@ -929,3 +929,29 @@ def test_the_rendered_workspace_contains_no_duplicate_element_id(
     identifiers = re.findall(r'\sid="([^"{}]+)"', body)
     duplicates = sorted({value for value in identifiers if identifiers.count(value) > 1})
     assert not duplicates, f"the Teema page renders duplicate ids: {duplicates}"
+
+
+def test_an_associated_file_is_still_an_ordinary_document_on_dokumendid(signed_in, normal_matter):
+    """The association is additional, not a different kind of storage.
+
+    A file that supports a work victory is evidence on this Matter like any
+    other: it has a `Document`, an immutable version, a checksum, and a row on
+    the Dokumendid tab. What the link adds is which fact it is the evidence
+    *for* (docs/adr/0075 §6).
+    """
+    _post(
+        signed_in,
+        "matters:add_work_victory",
+        normal_matter,
+        {"victory_change": "Üleminekuaeg pikendati"},
+        files=[_pdf("toend.pdf")],
+    )
+
+    body = signed_in.get(
+        reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+
+    assert "toend.pdf" in body
+    document = Document.objects.get(matter=normal_matter)
+    assert document.current_version is not None
+    assert document.current_version.sha256

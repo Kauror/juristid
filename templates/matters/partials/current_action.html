@@ -104,22 +104,15 @@ task above it is a form asking about work nobody has named. The route to work is
 
         <div class="curact__row">
           {% comment %}
-            A `<label>` wrapping a visually hidden multiple file input. The whole
-            dashed box is the picker, so choosing files works with no script at
-            all; `ux.js` adds dragging and the chosen-file summary on top of that
-            rather than instead of it.
+            The same file affordance every `LISA TEEMALE` form uses, from the
+            same partial — one accessible name, one drop contract, one place to
+            change either. Here it shares the row with `Salvesta`, which is the
+            only difference (templates/matters/partials/add_files.html).
           {% endcomment %}
-          <label class="cx-drop" data-filedrop>
-            <span class="visually-hidden">{{ current_action_form.attachments.label }}</span>
-            {{ current_action_form.attachments }}
-            <span class="cx-drop__text" data-filedrop-text>Lohista failid siia või <span class="cx-drop__pick">vali arvutist</span></span>
-          </label>
+          {% include "matters/partials/add_files.html" with field=current_action_form.attachments %}
           <span class="curact__spacer"></span>
           <button class="button button--primary" type="submit" data-composer-submit>Salvesta</button>
         </div>
-        {% if current_action_form.attachments.errors %}
-          <p class="field__error">{{ current_action_form.attachments.errors|first }}</p>
-        {% endif %}
       </form>
     {% endif %}
   {% else %}

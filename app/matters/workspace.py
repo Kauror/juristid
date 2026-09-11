@@ -125,12 +125,21 @@ def complete_current_action(
     the description — filing "arvamus.pdf" as an account of what somebody did is
     the application putting words in a lawyer's mouth (docs/adr/0075 §3).
     """
-    locked_matter = Matter.objects.select_for_update().get(pk=matter.pk)
+    # `no_key=True` on both, and that is not a detail. This transaction locks
+    # the Matter and then *inserts rows that point at it* — an `Entry`, a
+    # `Document`, a `DocumentVersion`, several `ChangeEvent`s — which is
+    # precisely the shape that turns a plain `FOR UPDATE` into a deadlock: an
+    # FK-referencing insert takes `FOR KEY SHARE` on the parent, and `FOR
+    # UPDATE` conflicts with it while `FOR NO KEY UPDATE` does not. The weaker
+    # mode still conflicts with itself and with the plain `FOR UPDATE` that
+    # `set_next_action` and `close_matter` take, so this is serialised against
+    # both of them exactly as it must be (app/matters/locks.py, PR #80).
+    locked_matter = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
     if not locked_matter.is_open:
         raise DomainError("Suletud teemal ei saa tegevust lõpetada.")
 
     current = (
-        NextAction.objects.select_for_update()
+        NextAction.objects.select_for_update(no_key=True)
         .filter(matter=locked_matter, status=ActionStatus.OPEN)
         .first()
     )
