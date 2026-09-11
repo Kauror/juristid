@@ -438,6 +438,46 @@ def active_deadline(
     )
 
 
+def response_deadline_of(
+    matter: Matter, user: Any, today: date | None = None
+) -> ActiveDeadline | None:
+    """`Tähtaeg` in the approved Teema header: **Koda's own opinion deadline.**
+
+    The metaline slot means one thing — `Matter.response_deadline`, labelled
+    `Arvamuse tähtaeg` — and never «whichever dated fact is nearest».
+
+    :func:`active_deadline` answers a different, still useful question: *what is
+    the next dated thing on this file*, over both the response deadline and the
+    watched milestones. That is the right answer for a work list, where a row
+    stands for a Matter and the reader wants to know when anything about it is
+    due. It is the wrong answer for a header slot whose editor opens
+    `Arvamuse tähtaeg` and whose neighbour is `Saabus`: read as a pair, arrival
+    and response deadline are one fact about Koda's obligation, and silently
+    showing a Riigikogu reading date between them says Koda owes an opinion on
+    a day nobody set (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2).
+
+    Lateness is asked of the same canonical work model the header already used,
+    so this page and every work list answer it once. A passed deadline whose
+    opinion work the register records as finished is not late (ADR 0059).
+    """
+    if matter.response_deadline is None:
+        return None
+    from app.matters.work_items import response_deadline_is_outstanding
+
+    day = today or timezone.localdate()
+    value = matter.response_deadline
+    is_past = value < day
+    return ActiveDeadline(
+        label="Arvamuse tähtaeg",
+        value=value,
+        display=format_estonian_date(value),
+        is_past=is_past,
+        days_remaining=(value - day).days,
+        is_overdue=response_deadline_is_outstanding(matter, user) if is_past else False,
+        days_late=(day - value).days if is_past else 0,
+    )
+
+
 def current_action_of(matter: Matter, user: Any = None) -> NextAction | None:
     """Read the prefetched open action, falling back to a query if absent.
 

@@ -17,27 +17,19 @@ nothing confirmed and nothing opened is one quiet row. The whole section is
 what a decision re-renders (`hx-target="#seotud-materjalid"`), so the confirmed
 lists and the suggestions cannot disagree about the click that just happened.
 {% endcomment %}
-<section class="factsection relatedmaterials {% if related_materials.is_empty and not suggestions_open %}relatedmaterials--compact{% endif %}"
+<section class="railcard relatedmaterials {% if related_materials.is_empty and not suggestions_open %}relatedmaterials--compact{% endif %}"
          id="seotud-materjalid" aria-labelledby="seotud-materjalid-heading"
          data-suggestions="{% if suggestions_open %}open{% else %}closed{% endif %}">
-  <div class="factsection__head relatedmaterials__head">
-    <h2 class="sectionlabel" id="seotud-materjalid-heading">Seotud materjalid</h2>
-    {% if related_materials.is_empty and not suggestions_open %}
-      <span class="relatedmaterials__hint">Seotud teemasid ega taustmaterjali ei ole valitud</span>
-    {% endif %}
-    <span class="relatedmaterials__spacer"></span>
-    {% if suggestions_open %}
-      <a class="button button--quiet button--tiny" data-related-close
-         href="{% url 'matters:matter_detail' pk=matter.pk %}#seotud-materjalid"
-         hx-get="{% url 'related_materials:section' pk=matter.pk %}"
-         hx-target="#seotud-materjalid" hx-swap="outerHTML">Sule</a>
-    {% else %}
-      <a class="button button--quiet button--tiny" data-related-suggest
-         href="{% url 'related_materials:section' pk=matter.pk %}?avatud=1"
-         hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1"
-         hx-target="#seotud-materjalid" hx-swap="outerHTML">Võimalikud seosed</a>
-    {% endif %}
-  </div>
+  {% comment %}
+    A flat rail block, not a bordered card in a panel. The approved target's rail
+    is one background, one left border and a label per group — «the label is the
+    separation» — so this section reads as the third of four groups rather than
+    as a box sitting inside one (TEEMA_TARGET_SPEC §G, docs/adr/0074 §21).
+  {% endcomment %}
+  <h2 class="railcard__label" id="seotud-materjalid-heading">Seotud materjalid</h2>
+  {% if related_materials.is_empty %}
+    <span class="railcard__none">Seotud teemasid ega taustmaterjali ei ole valitud.</span>
+  {% endif %}
 
   {% if notice %}
     <p class="factnote {% if notice_is_error %}factnote--warning{% endif %} relatedmaterials__notice"
@@ -107,79 +99,30 @@ lists and the suggestions cannot disagree about the click that just happened.
     </ul>
   {% endif %}
 
-  {% if suggestions_open and suggestions %}
-    <div class="relatedmaterials__suggestions" id="voimalikud-seosed" data-related-suggestions>
-      <h3 class="relatedmaterials__sub">
-        Võimalikud seosed <span class="sectionlabel__count">{{ suggestions.count }}</span>
-      </h3>
-
-      {% if suggestions.is_empty %}
-        <p class="relatedmaterials__empty" data-related-empty>{{ empty_message }}</p>
-      {% else %}
-        {% if suggestions.matters %}
-          <h4 class="relatedmaterials__group">Võimalikud seotud teemad</h4>
-          <ul class="relatedmaterials__cards" data-related-matter-suggestions>
-            {% for item in suggestions.matters %}
-              {% include "related_materials/partials/matter_card.html" %}
-            {% endfor %}
-          </ul>
-        {% endif %}
-        {% if suggestions.materials %}
-          <h4 class="relatedmaterials__group">Varasemad arvamused ja võimalik taustmaterjal</h4>
-          <ul class="relatedmaterials__cards" data-related-material-suggestions>
-            {% for item in suggestions.materials %}
-              {% include "related_materials/partials/material_card.html" %}
-            {% endfor %}
-          </ul>
-        {% endif %}
-      {% endif %}
-
-      <div class="relatedmaterials__more">
-        {% if suggestions.has_more %}
-          <a class="quietlink" data-related-more
-             href="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ max_limit }}{% if hidden_shown %}&peidetud=1{% endif %}"
-             hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ max_limit }}{% if hidden_shown %}&peidetud=1{% endif %}"
-             hx-target="#seotud-materjalid" hx-swap="outerHTML">Näita veel</a>
-        {% endif %}
-        {% if suggestions.hidden_count %}
-          {% if suggestions.hidden_shown %}
-            <a class="quietlink" data-related-hide-hidden
-               href="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ suggestion_limit }}"
-               hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ suggestion_limit }}"
-               hx-target="#seotud-materjalid" hx-swap="outerHTML">Peida peidetud</a>
-          {% else %}
-            <a class="quietlink" data-related-show-hidden
-               href="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&peidetud=1&piir={{ suggestion_limit }}"
-               hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&peidetud=1&piir={{ suggestion_limit }}"
-               hx-target="#seotud-materjalid" hx-swap="outerHTML">Näita peidetud · {{ suggestions.hidden_count }}</a>
-          {% endif %}
-        {% endif %}
-      </div>
-
-      {% if suggestions.hidden_shown and suggestions.hidden_count %}
-        <h4 class="relatedmaterials__group" id="peidetud-soovitused">Peidetud <span class="sectionlabel__count">{{ suggestions.hidden_count }}</span></h4>
-        <ul class="relatedmaterials__cards" data-related-hidden>
-          {% for item in suggestions.hidden_matters %}
-            {% include "related_materials/partials/matter_card.html" %}
-          {% endfor %}
-          {% for item in suggestions.hidden_materials %}
-            {% include "related_materials/partials/material_card.html" %}
-          {% endfor %}
-        </ul>
-      {% endif %}
-    </div>
-  {% endif %}
-
   {% if can_write %}
     {% comment %}
-      Manual linking. The recommendation is never the only way to say two
-      Matters belong together: the person may know what no title reveals.
-      The input asks the picker as it is typed; the form still submits as a
-      plain GET to the section's own page, so it works with scripting off.
+      `Lisa` — **one disclosure over both ways of adding something.** It used to
+      be two controls that did not know about each other: `Võimalikud seosed` in
+      the head, which reloaded the section, and `Lisa seotud teema` at the
+      bottom, which held the search. The approved target has one affordance
+      holding the search and then the suggestions beneath it, which is also the
+      order somebody uses them in — look for the thing you know about, and read
+      what the application offers if you do not find it
+      (TEEMA_TARGET_SPEC §G.3, docs/adr/0074 §21).
+
+      **Suggestions stay a disclosure, never standing content.** They are
+      computed on the request that opens this, not on every Matter render, and
+      the deterministic ranking and the authorization behind them are untouched
+      (app/related_materials/selectors.py).
+
+      The summary asks the server for them only while they are *not* already
+      open, so clicking a second time closes the disclosure natively instead of
+      re-opening it through a swap. The form still submits as a plain GET to the
+      section's own page, so it works with scripting off.
     {% endcomment %}
     <details class="disclosure disclosure--inline relatedmaterials__picker" id="lisa-seotud-teema"
-             {% if picker_query %}open{% endif %}>
-      <summary class="disclosure__summary">Lisa seotud teema</summary>
+             {% if suggestions_open or picker_query %}open{% endif %}>
+      <summary class="disclosure__summary">Lisa</summary>
       <div class="disclosure__body">
         <form class="relatedmaterials__search" method="get"
               action="{% url 'related_materials:section' pk=matter.pk %}"
@@ -187,18 +130,65 @@ lists and the suggestions cannot disagree about the click that just happened.
               hx-trigger="submit"
               hx-target="#seotud-teema-otsing" hx-swap="innerHTML">
           <label class="visually-hidden" for="seotud-teema-q">Otsi teemat</label>
-          <input id="seotud-teema-q" class="field__input" type="search" name="q"
-                 value="{{ picker_query }}" placeholder="Otsi teemat pealkirja järgi"
+          <input id="seotud-teema-q" class="field__input field__input--compact" type="search" name="q"
+                 value="{{ picker_query }}" placeholder="Otsi teemat või dokumenti…"
                  autocomplete="off"
                  hx-get="{% url 'related_materials:picker' pk=matter.pk %}"
                  hx-trigger="input changed delay:300ms, search"
                  hx-target="#seotud-teema-otsing" hx-swap="innerHTML">
-          <button class="button button--quiet button--tiny" type="submit">Otsi</button>
         </form>
         <div id="seotud-teema-otsing">
           {% include "related_materials/partials/picker_results.html" %}
         </div>
+        {% comment %}
+          **The suggestions load into their own slot, and the slot asks for
+          them itself.**
+
+          Two things this must not do, both of which a browser found:
+
+          *Not swap the whole section.* Asking the `Lisa` summary to replace
+          `#seotud-materjalid` re-rendered the search box a fraction of a second
+          after the disclosure opened, so anything typed straight away went with
+          the swap — a search that silently returned nothing.
+
+          *Not put `hx-select` on an ancestor.* htmx attributes are inherited:
+          `hx-select` on the `<details>` reached every card's own form and the
+          search field below it, cutting their responses down to the suggestion
+          block — so linking a candidate stopped rendering its confirmation
+          notice and the picker stopped rendering its results. The loader is
+          therefore this element and nothing above it; it replaces itself, and
+          what arrives carries no htmx attributes of its own.
+
+          `toggle … from:` is how the slot hears the disclosure without the
+          disclosure carrying any attribute of its own: the request belongs to
+          this element, the event belongs to that one. **Not `revealed`** — htmx
+          decides that by the element's rectangle, and a zero-height box inside a
+          closed `<details>` is inside the viewport, so the engine ran on every
+          Matter page load. That is precisely what ADR 0062 §7 put it behind a
+          disclosure to prevent, and CI's browser shard is what noticed.
+
+          `once`, so the ranking runs on the first open and never again on this
+          page (docs/adr/0062 §7, docs/adr/0074 §21).
+        {% endcomment %}
+        {% if suggestions_open %}
+          {% include "related_materials/partials/suggestions.html" %}
+        {% else %}
+          <div id="voimalikud-seosed"
+               hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1"
+               hx-trigger="toggle once from:#lisa-seotud-teema"
+               hx-select="#voimalikud-seosed"
+               hx-swap="outerHTML"></div>
+        {% endif %}
       </div>
     </details>
+  {% else %}
+    {% comment %}
+      A reader gets the suggestions and not the affordance. `Lisa` is an add
+      control and a reader adds nothing — but what the application thinks is
+      related here is reading material like the confirmed lists above it, and
+      hiding it behind a writer-only disclosure would make this section say less
+      to a reader than it did before the target (docs/adr/0074 §21).
+    {% endcomment %}
+    {% include "related_materials/partials/suggestions.html" %}
   {% endif %}
 </section>

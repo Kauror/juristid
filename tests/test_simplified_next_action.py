@@ -705,16 +705,34 @@ def test_reading_the_page_does_not_touch_stored_tags(signed_in, normal_matter):
     assert list(normal_matter.tags.all()) == [tag]
 
 
-def test_muu_valdkond_is_in_the_teema_facts_block(signed_in, normal_matter):
-    """It is not a tag, and it did not leave with the card it happened to be in."""
+def test_muu_valdkond_left_the_teema_rail_without_leaving_the_record(signed_in, normal_matter):
+    """UI retirement, not a data change.
+
+    The approved target's `Teema andmed` is four rows — `Teemaviide`,
+    `Menetlusliik`, `Kellelt`, `Kellele` — and every one of them answers a
+    question somebody asks mid-sentence. `Muu valdkond` is a correction to how
+    the file was classified, which is `Muuda teemat` work
+    (TEEMA_TARGET_SPEC §G.1, docs/adr/0074 §17).
+
+    The column, the value, the endpoint and the audit row are all untouched; the
+    test below still edits it in place.
+    """
     normal_matter.policy_area_other = "Riigihanked ja ehitus"
     normal_matter.save(update_fields=["policy_area_other"])
 
     body = _detail(signed_in, normal_matter)
-    facts = body[body.index('id="teema-andmed"') :]
-    facts = facts[: facts.index("</aside>")]
-    assert "Muu valdkond" in facts
-    assert "Riigihanked ja ehitus" in facts
+    rail = body[body.index('id="teema-andmed"') :]
+    rail = rail[: rail.index("</aside>")]
+
+    assert "Muu valdkond" not in rail
+    assert "Andmeklass" not in rail
+    assert "Märgi testandmeteks" not in rail
+    assert "Saabus" not in rail
+    for kept in ("Teemaviide", "Menetlusliik", "Kellelt", "Kellele"):
+        assert kept in rail
+
+    normal_matter.refresh_from_db()
+    assert normal_matter.policy_area_other == "Riigihanked ja ehitus"
 
 
 def test_muu_valdkond_is_still_editable_in_place(signed_in, normal_matter):

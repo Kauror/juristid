@@ -210,6 +210,12 @@
      design's sense — no elevation is implied — which is why it is named for
      the accent rather than for a shadow role. */
   --accent-halo: rgba(0, 159, 218, 0.12);
+  /* The ring the process strip draws around the dot the file has reached. A
+     third accent alpha rather than a reuse of --accent-halo: that one sits
+     behind a focused input at 4px and this one is a 3px state marker on a 12px
+     dot, so they read at different strengths on the same background
+     (app/matters/process_timeline.py, TEEMA_TARGET_SPEC §D). */
+  --accent-glow: rgba(92, 199, 239, 0.18);
   /* The same halo in the danger role: what a refused field wears, so that the
      box says something is wrong as well as the message under it. */
   --status-danger-halo: rgba(239, 125, 110, 0.08);
@@ -284,6 +290,7 @@
 
   --focus-ring: #0079a6;
   --accent-halo: rgba(0, 121, 166, 0.14);
+  --accent-glow: rgba(0, 121, 166, 0.16);
   --status-danger-halo: rgba(178, 60, 44, 0.1);
 
   --status-danger: #b23c2c;

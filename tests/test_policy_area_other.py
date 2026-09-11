@@ -114,11 +114,12 @@ def test_the_inline_edit_reaches_the_service(signed_in, specialist):
     assert matter.policy_area_other == "Kosmoseõigus"
 
 
-def test_the_inline_edit_re_renders_the_surface_it_lives_on(signed_in, specialist):
-    """The rail, not the header band.
+def test_the_endpoint_still_writes_the_value(signed_in, specialist):
+    """The route, the service and the audit row are untouched by the retirement
+    of the control that used to reach them from the Teema rail.
 
-    Swapping the header for it would leave the value on screen unchanged while
-    claiming the save had worked.
+    It still answers with the rail fragment, which is what it always swapped —
+    the rail simply no longer renders this row (docs/adr/0074 §17).
     """
     matter = factories.MatterFactory(owner=specialist)
     url = reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "policy_area_other"})
@@ -127,7 +128,8 @@ def test_the_inline_edit_re_renders_the_surface_it_lives_on(signed_in, specialis
 
     assert 'id="teema-andmed"' in body
     assert 'id="teema-pais"' not in body
-    assert "Kosmoseõigus" in body
+    matter.refresh_from_db()
+    assert matter.policy_area_other == "Kosmoseõigus"
 
 
 def test_a_matter_nobody_may_see_is_a_404_here_too(client, reader, restricted_matter):
@@ -142,14 +144,22 @@ def test_a_matter_nobody_may_see_is_a_404_here_too(client, reader, restricted_ma
 # -- display -----------------------------------------------------------------
 
 
-def test_it_appears_on_the_matter_page_when_populated(signed_in, specialist):
+def test_it_is_not_on_the_matter_page_and_is_still_on_the_record(signed_in, specialist):
+    """UI retirement, not a data change.
+
+    The approved target's `Teema andmed` is four rows, every one of which answers
+    a question a lawyer asks mid-sentence. `Muu valdkond` is a correction to how
+    the file was classified — `Muuda teemat` work, which still edits it
+    (TEEMA_TARGET_SPEC §G.1, docs/adr/0074 §17).
+    """
     matter = factories.MatterFactory(owner=specialist, policy_area_other="Kosmoseõigus")
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert "Muu valdkond" in body
-    assert "Kosmoseõigus" in body
+    assert "Muu valdkond" not in body
+    matter.refresh_from_db()
+    assert matter.policy_area_other == "Kosmoseõigus"
 
 
 def test_an_empty_value_shows_no_stale_label(signed_in, specialist):

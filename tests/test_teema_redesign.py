@@ -678,9 +678,12 @@ def test_one_composer_save_is_one_timeline_item(normal_matter, specialist):
     saves = [item for item in items if item.is_grouped]
 
     assert len(saves) == 1
-    assert saves[0].summary_sentence == (
-        "lisas märkuse, määras järgmise sammu ja lisas olulise tähtaja"
-    )
+    # «lisas olulise tähtaja» is no longer a clause. The approved target gives
+    # the deadline a milestone row of its own, projected from the canonical
+    # `MatterImportantDate`, so a clause here would state one act twice: «Marko
+    # lisas märkuse ja lisas olulise tähtaja» directly above «Kooskõlastusringi
+    # lõpp» (docs/adr/0074 §14).
+    assert saves[0].summary_sentence == "lisas märkuse ja määras järgmise sammu"
 
 
 def test_the_underlying_audit_facts_are_all_still_there(normal_matter, specialist):
@@ -790,29 +793,38 @@ def test_a_legacy_engagement_kind_is_still_readable(signed_in, specialist):
     assert "Kaasamiskutse veebis" in body
 
 
-def test_the_engagement_line_shows_type_and_date_not_an_invented_count(signed_in, specialist):
-    """`MatterEngagement` stores no response count, so none is displayed."""
+def test_an_engagement_reads_as_a_chronology_milestone(signed_in, specialist):
+    """`Kaasamine` has no standing section any more; it has a row.
+
+    The approved target removed the block that sat open on every Matter to say
+    "none yet", and projects the canonical `MatterEngagement` into the chronology
+    where a dated event belongs — one 12 px accent row, `Kaasamine: <keda
+    kaasati>`, with its kind underneath (TEEMA_TARGET_SPEC §F, docs/adr/0074 §9).
+    """
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(
         matter=matter,
         kind=EngagementKind.SURVEY,
-        title="Liikmete küsitlus",
+        title="liikmed",
         occurred_on=timezone.localdate(),
+        response_count=14,
         actor=specialist,
     )
 
     body = _detail(signed_in, matter)
-    # Scoped to the section's own rows. The composer's outcome box quotes a
-    # survey result as its placeholder, which is copy rather than data.
-    #
-    # The 2026-09 refinement retired the collapsed summary line this used to
-    # read: the section is open and shows its rows, so what a count would have
-    # decorated is the row itself.
-    line = body[body.index('id="kaasamine"') : body.index("+ Lisa kaasamine")]
 
-    assert "Küsitlus" in line
-    assert "vastajat" not in line
-    assert not any(field.name == "response_count" for field in MatterEngagement._meta.get_fields())
+    assert 'id="kaasamine"' not in body, "no standalone Kaasamine section"
+    assert "+ Lisa kaasamine" not in body
+
+    chronology = body[body.index('id="ajalugu-loend"') :]
+    assert "Kaasamine: liikmed" in chronology
+    assert "Küsitlus" in chronology
+    # `Vastuseid` is real stored data now, printed with the panel's own label
+    # rather than a sentence composed here (docs/adr/0074 §5).
+    assert "Vastuseid 14" in chronology
+    # And the milestone is stated once: the audit event no longer contributes a
+    # clause beside it.
+    assert "lisas kaasamise" not in chronology
 
 
 def test_an_engagement_can_carry_a_linked_file(normal_matter, specialist):
@@ -1157,7 +1169,11 @@ def test_a_note_autosaves_and_swaps_nothing(signed_in, normal_matter, specialist
         headers={"HX-Request": "true"},
     )
 
-    assert response.status_code == 204
+    # 200 and the `Salvestatud HH:mm` hint, not 204 and silence. The approved
+    # target's notes block has no save button, so the hint is the only thing
+    # that tells a person their draft landed (docs/adr/0074 §18).
+    assert response.status_code == 200
+    assert "Salvestatud" in response.content.decode()
     assert personal_note_for(matter=normal_matter, author=specialist).startswith("Küsi üle")
 
 
@@ -1539,7 +1555,14 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
     # section is a label and an add control, and the absence is the blank space
     # under them (docs/matter-page-refinement.md).
     assert "Kaasamist ei ole kirja pandud" not in body
-    assert "+ Lisa kaasamine" in body
+    # And the section itself is gone. `+ Kaasamine` is a composer panel now, so
+    # a Matter with no consultation carries no heading announcing that
+    # (TEEMA_TARGET_SPEC §F, docs/adr/0074 §9).
+    assert "+ Lisa kaasamine" not in body
+    assert 'id="kaasamine"' not in body
+    assert 'id="cx-kaasamine"' in body, "the way to record one is the composer panel"
+    # No standing facts panel between the composer and the chronology either.
+    assert 'class="factspanel"' not in body
 
 
 def test_the_matter_page_does_not_explode_into_queries(

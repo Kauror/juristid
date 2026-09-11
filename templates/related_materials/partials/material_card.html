@@ -42,7 +42,7 @@ page, never through a storage address (docs/adr/0062 §3, §5).
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="liik" value="{{ item.form_kind }}">
           <input type="hidden" name="kandidaat" value="{{ item.key }}">
-          <button class="button button--tiny" type="submit">Lisa taustmaterjaliks</button>
+          <button class="button button--quiet button--tiny" type="submit">Lisa</button>
         </form>
         <form method="post" action="{% url 'related_materials:dismiss' pk=matter.pk %}"
               hx-post="{% url 'related_materials:dismiss' pk=matter.pk %}"

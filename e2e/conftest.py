@@ -155,12 +155,15 @@ def sign_out(page, base_url: str) -> None:
 
 
 def open_composer(page) -> None:
-    """Open the Matter composer, which is a disclosure and starts closed.
+    """Make sure the Matter composer is open before typing into it.
 
-    A Matter is read far more often than it is written to, so the box that
-    writes to it folds until somebody asks for it (design handoff 1d,
-    docs/adr/0043). Every test that types into the composer goes through here,
-    so the day it stops being a disclosure this is the only line that changes.
+    **It is open on arrival** since the approved Teema target (docs/adr/0074 §3),
+    so this is normally a no-op — it stays because the disclosure still closes,
+    by the `L` shortcut, by its summary and by clicking the Järgmiseks row, and
+    a test that reaches it after one of those must not depend on which.
+
+    Every test that types into the composer goes through here, so the day it
+    stops being a disclosure this is the only line that changes.
     """
     composer = page.locator("details.uxcomp")
     if composer.count() and composer.evaluate("node => !node.open"):

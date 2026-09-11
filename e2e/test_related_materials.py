@@ -2,7 +2,7 @@
 
 What only a browser can prove here: that the Matter page loads with the
 suggestions unopened, that opening them swaps the section in place with the
-reasons on the cards, that «Seo teemaga» moves a candidate out of the
+reasons on the cards, that «Lisa» moves a candidate out of the
 suggestions and into `Seotud teemad` on *both* Matters, that «Ei ole seotud»
 survives a reload and comes back through «Näita peidetud», that an earlier
 opinion and an archive letter become background without anything else
@@ -37,8 +37,21 @@ def section(page):
     return page.locator("#seotud-materjalid")
 
 
+def add_disclosure(page):
+    """`Lisa` — one affordance over the search *and* the suggestions.
+
+    They were two controls that did not know about each other: `Võimalikud
+    seosed` in the head, which reloaded the section, and `Lisa seotud teema` at
+    the bottom, which held the search. The approved target has one, in the order
+    somebody uses them (docs/adr/0074 §21).
+    """
+    return section(page).locator("#lisa-seotud-teema")
+
+
 def open_suggestions(page) -> None:
-    section(page).locator("[data-related-suggest]").click()
+    disclosure = add_disclosure(page)
+    if disclosure.count() and disclosure.evaluate("node => !node.open"):
+        disclosure.locator("> summary").click()
     expect(page.locator("[data-related-suggestions]")).to_be_visible()
 
 
@@ -64,7 +77,8 @@ def test_the_matter_page_loads_with_suggestions_unopened(page, base_url):
 
     expect(section(page)).to_be_visible()
     expect(section(page).get_by_role("heading", name="Seotud materjalid")).to_be_visible()
-    expect(section(page).locator("[data-related-suggest]")).to_have_text("Võimalikud seosed")
+    expect(add_disclosure(page).locator("> summary")).to_have_text("Lisa")
+    expect(add_disclosure(page)).not_to_have_attribute("open", "")
     expect(page.locator("[data-related-suggestions]")).to_have_count(0)
     # Secondary: in the facts rail, not the main column. The 2026-09 refinement
     # moved it there — it is look-up material, read by reaching for it, like
@@ -89,7 +103,10 @@ def test_opening_suggestions_explains_and_linking_shows_both_sides(page, base_ur
     expect(card.locator(".relatedcard__reasons")).to_contain_text("Sama õigusakt: pakendiseadus")
     assert "%" not in card.inner_text()
 
-    card.get_by_role("button", name="Seo teemaga").click()
+    # `Lisa`, which is the target's own word for this action on a suggestion
+    # row (TEEMA_TARGET.html §G.3). The picker results below are a different
+    # template and keep `Seo teemaga`.
+    card.get_by_role("button", name="Lisa", exact=True).click()
 
     expect(page.locator("[data-related-notice]")).to_contain_text("Teemad on seotud.")
     expect(confirmed_row(page, title_a)).to_be_visible()
@@ -142,7 +159,7 @@ def test_an_earlier_opinion_becomes_background_and_stays_where_it_was(page, base
     # page, which is only a compatibility redirect now (docs/adr/0061).
     assert re.search(r"/teemad/[0-9a-f-]{36}/dokumendid/\?roll=arvamus$", source_href), source_href
 
-    card.get_by_role("button", name="Lisa taustmaterjaliks").click()
+    card.get_by_role("button", name="Lisa", exact=True).click()
 
     expect(page.locator("[data-related-notice]")).to_contain_text("Taustmaterjal on lisatud.")
     row = background_row(page, SUBMISSION_TITLE)
@@ -168,7 +185,7 @@ def test_archive_material_opens_through_the_archive_and_files_no_link(page, base
     expect(card.locator(".relatedcard__label")).to_have_text("Arhiivimaterjal")
     expect(card.locator(".relatedcard__reasons")).to_contain_text("Sama õigusakt: näidisseadus")
 
-    card.get_by_role("button", name="Lisa taustmaterjaliks").click()
+    card.get_by_role("button", name="Lisa", exact=True).click()
 
     row = background_row(page, ARCHIVE_LETTER_TITLE)
     expect(row).to_be_visible()
@@ -188,7 +205,7 @@ def test_a_manual_link_to_a_restricted_matter_is_invisible_to_a_reader(page, bas
     title_g = "Käsitsi seotud teema (seotud G5)"
     url_g = create_matter(page, base_url, title_g)
 
-    section(page).get_by_text("Lisa seotud teema").click()
+    add_disclosure(page).locator("> summary").click()
     search = section(page).get_by_label("Otsi teemat")
     search.fill("Konfidentsiaalne")
     search.press("Enter")
@@ -208,8 +225,13 @@ def test_a_manual_link_to_a_restricted_matter_is_invisible_to_a_reader(page, bas
     body = page.content()
     assert RESTRICTED_TITLE not in body
     assert "Seotud teemad" not in body
-    for control in ("Seo teemaga", "Lisa seotud teema", "Ei ole seotud"):
+    # A reader gets no add affordance at all: `Lisa` is a write control.
+    for control in ("Seo teemaga", "Ei ole seotud", "Otsi teemat või dokumenti…"):
         assert control not in body
-    # Reading is still allowed: the suggestions open, with no buttons on them.
-    open_suggestions(page)
+    # Reading is still allowed: what the application thinks is related here is
+    # reading material like the confirmed lists, so it renders for a reader
+    # directly rather than behind a writer-only disclosure — with no buttons on
+    # it (docs/adr/0074 §21).
+    page.goto(f"{url_g}?avatud=1" if "?" not in url_g else f"{url_g}&avatud=1")
+    page.wait_for_load_state("networkidle")
     expect(page.locator("[data-related-suggestions] button")).to_have_count(0)

@@ -36,8 +36,10 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
+from app.core.dates import format_estonian_date
 from app.matters.entry_enums import EntryKind
-from app.matters.models import Entry, Matter
+from app.matters.models import Entry, Matter, MatterEngagement
+from app.workflow.dates import format_at_precision
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
 #: absent: a lawyer scrolling six months of work does not need to see that a
@@ -56,23 +58,16 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
     ChangeEventType.MATTER_REOPENED,
 )
 
-#: Facts that never earn a line of their own, but do earn a clause when they
-#: were part of one composer save.
-#:
-#: `Kaasamine` and `Oluline tähtaeg` each have a section on the Matter page that
-#: shows the fact in a form a reader can act on, and echoing every one of them
-#: into the narrative is the noise those sections exist to avoid — which is why
-#: they are not in `TIMELINE_EVENT_TYPES` and why adding one from its own
-#: control still writes nothing here (Stage-2G brief 34, Agent-F brief 20).
-#:
-#: But "Marko lisas märkuse ja määras järgmise sammu" is a description of what
-#: somebody did, and if that same save also recorded a members' survey then
-#: leaving it out makes the sentence wrong. So these are read, grouped, and
-#: contribute a clause — never a row (Teema redesign §11.1, §21).
-GROUPED_ONLY_EVENT_TYPES: tuple[str, ...] = (
-    ChangeEventType.IMPORTANT_DATE_ADDED,
-    ChangeEventType.ENGAGEMENT_ADDED,
-)
+#: **Nothing, since the approved target** — and kept as a name so the reasoning
+#: survives. The two facts below were read here and rendered as a *clause* on the
+#: save that produced them, never a row, because each had a standing section on
+#: the Matter page showing it. Those sections are gone and
+#: :func:`projected_milestones` now gives each canonical record a row of its own,
+#: which makes the clause the duplicate: «Marko lisas märkuse ja lisas kaasamise»
+#: directly above «Kaasamine: liikmed» states one act twice. So they are no
+#: longer read at all, and the fact is stated exactly once, off the record that
+#: owns it (docs/adr/0074 §14, superseding Stage-2G brief 34, Agent-F brief 20).
+GROUPED_ONLY_EVENT_TYPES: tuple[str, ...] = ()
 
 #: An entry the composer just created also produces an ENTRY_ADDED change event.
 #: The entry itself is the richer of the two, so the event is not rendered
@@ -85,15 +80,51 @@ SUPPRESSED_WHEN_ENTRY_SHOWN: frozenset[str] = frozenset(
 #: How one composer save is described, in the order the clauses read. Estonian
 #: third person, because the line begins with the person's name: "Marko lisas
 #: märkuse ja määras järgmise sammu."
+#: Two verbs went when the approved target gave those facts rows of their own.
+#:
+#: `lisas olulise tähtaja` and `lisas kaasamise` used to be clauses precisely
+#: because the deadline and the consultation had standing sections showing them —
+#: a row would have been the same fact twice. Those sections are gone, the
+#: canonical records are projected into the chronology as milestones, and the
+#: clause is now the duplicate: «Marko lisas märkuse ja lisas kaasamise» directly
+#: above «Kaasamine: liikmed» says one act twice (docs/adr/0074 §14).
+#:
+#: `märkis arvamuse saadetuks` and `lõpetas teema` went for the same reason:
+#: `SUBMISSION_SENT` and `MATTER_CLOSED` are milestone rows now.
 _CLAUSES: tuple[tuple[str, str], ...] = (
     (ChangeEventType.EVIDENCE_VERSION_ADDED, "lisas dokumendi"),
     (ChangeEventType.NEXT_ACTION_SET, "määras järgmise sammu"),
     (ChangeEventType.NEXT_ACTION_COMPLETED, "märkis eelmise sammu tehtuks"),
-    (ChangeEventType.IMPORTANT_DATE_ADDED, "lisas olulise tähtaja"),
-    (ChangeEventType.ENGAGEMENT_ADDED, "lisas kaasamise"),
-    (ChangeEventType.SUBMISSION_SENT, "märkis arvamuse saadetuks"),
-    (ChangeEventType.MATTER_CLOSED, "lõpetas teema"),
 )
+
+#: The events that draw a 12 px accent dot: things that happened *to the file*,
+#: as opposed to work somebody did on it.
+#:
+#: Each one takes a row of its own even when it shares a composer operation with
+#: an entry, which is the one place this projection deliberately does not group.
+#: A save that wrote a note and changed the stage did two separable things to the
+#: record, and the target shows them as two rows — the note under its author, the
+#: stage as a milestone — rather than as one line with a clause
+#: (TEEMA_TARGET_SPEC §E, docs/adr/0074 §14).
+MILESTONE_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        ChangeEventType.MATTER_CREATED,
+        ChangeEventType.MATTER_STAGE_CHANGED,
+        ChangeEventType.SUBMISSION_SENT,
+        ChangeEventType.SUBMISSION_WITHDRAWN,
+        ChangeEventType.MATTER_CLOSED,
+        ChangeEventType.MATTER_REOPENED,
+    }
+)
+
+#: What a milestone event is called on the chronology. The target's own words
+#: where it has them — `Arvamus välja`, `Teema loodud` — and the audit
+#: vocabulary's where it does not, because inventing a second name for an event
+#: type is how two surfaces start describing one act differently.
+_MILESTONE_LABELS: dict[str, str] = {
+    ChangeEventType.MATTER_CREATED.value: "Teema loodud",
+    ChangeEventType.SUBMISSION_SENT.value: "Arvamus välja",
+}
 
 
 def _join(verbs: Any) -> str:
@@ -161,6 +192,40 @@ class TimelineNextStep:
 
 
 @dataclass(frozen=True)
+class ChronologyMilestone:
+    """A 12 px accent row: something that happened to the file.
+
+    ``what`` is the headline — `Töövõit`, `Hetkeseis: Valitsuses`,
+    `Kaasamine: liikmed`. ``sub`` is the optional second line, and ``file_url``
+    turns part of it into a link to the exact bytes.
+
+    Milestones carry a **date, never a clock time**. A work entry says when
+    somebody wrote it because two notes on one afternoon need separating; a
+    commencement or a stage change happened on a day (TEEMA_TARGET_SPEC §E).
+    """
+
+    what: str
+    display_date: str
+    sub: str = ""
+    file_url: str = ""
+    file_label: str = ""
+
+
+@dataclass(frozen=True)
+class ChronologyFile:
+    """One attachment under a work entry: its real name, and a link to its bytes.
+
+    The link is to the ``DocumentVersion``, because `documents:download` is keyed
+    on the exact bytes — which is what makes a link to evidence a link to
+    evidence rather than to whatever the document holds today
+    (templates/matters/partials/opinion_rail.html).
+    """
+
+    label: str
+    url: str
+
+
+@dataclass(frozen=True)
 class TimelineItem:
     """One rendered line. ``occurred_at`` is what the reader sees.
 
@@ -181,6 +246,18 @@ class TimelineItem:
     #: What this save decided, when it decided anything. Attached after the
     #: page is assembled, in one query for the whole page.
     next_step: TimelineNextStep | None = None
+    #: Set on a milestone row and on nothing else. It is the whole switch the
+    #: chronology template reads: a row either has one and draws the 12 px accent
+    #: dot, or it has not and draws the 6 px muted one. There is no third kind
+    #: (TEEMA_TARGET_SPEC §E).
+    milestone: ChronologyMilestone | None = None
+    #: Files this save captured, attached after the page is assembled in one
+    #: query, like ``next_step``.
+    files: tuple[ChronologyFile, ...] = ()
+
+    @property
+    def is_milestone(self) -> bool:
+        return self.milestone is not None
 
     @property
     def is_entry(self) -> bool:
@@ -428,6 +505,196 @@ TIMELINE_FILTERS: tuple[tuple[str, str], ...] = (
 )
 
 
+def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
+    """What an event-derived milestone row says.
+
+    `Hetkeseis: Valitsuses` is composed from the event's own summary, which
+    `change_stage` records as the stage label. Everything else is named by the
+    target where it has a name and by the audit vocabulary where it does not —
+    a second, prettier name for an event type is how two surfaces start
+    describing one act differently (TEEMA_TARGET_SPEC §E).
+    """
+    if event.event_type == ChangeEventType.MATTER_STAGE_CHANGED:
+        what = f"Hetkeseis: {event.summary}" if event.summary else "Hetkeseis muudetud"
+        sub = ""
+    elif event.event_type == ChangeEventType.SUBMISSION_SENT:
+        # **Who it went to**, from the payload the send recorded. The event's
+        # summary is the submission's title, and a submission is titled after
+        # its Matter — so printing it here repeats the <h1> a few hundred pixels
+        # up the page, which is what the target's own row does not do
+        # (`Arvamus välja · Kliimaministeeriumile`).
+        what = _MILESTONE_LABELS[ChangeEventType.SUBMISSION_SENT.value]
+        addressees = (event.payload or {}).get("addressees") or []
+        sub = ", ".join(str(name) for name in addressees)
+    else:
+        what = _MILESTONE_LABELS.get(event.event_type, str(event.get_event_type_display()))
+        # The summary of a created Matter is its own title, which is the <h1>
+        # forty pixels up the page. Every other milestone's summary says
+        # something the headline does not.
+        sub = "" if event.event_type == ChangeEventType.MATTER_CREATED else (event.summary or "")
+    return ChronologyMilestone(
+        what=what,
+        display_date=format_estonian_date(_local_day(event.occurred_at)),
+        sub=sub,
+    )
+
+
+def _end_of_day(day: date) -> datetime:
+    """Where a dated fact sorts among the timestamped ones.
+
+    A milestone knows its day and not its hour, so it takes the last moment of
+    that day and sits **above** the work entries written on it. That is the
+    reading order the target shows: the day's headline first, then what was done
+    around it (TEEMA_TARGET_SPEC §E).
+    """
+    return timezone.make_aware(datetime.combine(day, datetime.max.time()))
+
+
+def projected_milestones(
+    *,
+    matter: Matter,
+    user: Any,
+    intelligence: Any = None,
+    today: date | None = None,
+) -> list[TimelineItem]:
+    """The structured facts, as chronology rows, read from their own records.
+
+    Older ADRs kept `Töövõit`, `Jõustumine`, `Oluline tähtaeg` and `Kaasamine`
+    out of the professional timeline because each had a standing section on the
+    Matter page showing it. Those sections are gone, so the reasoning is gone
+    with them: a fact nobody can see anywhere is not a quieter chronology, it is
+    a lost record (docs/adr/0065, superseded by docs/adr/0074 §15).
+
+    **Projected, never duplicated.** Nothing here writes a `ChangeEvent` and
+    nothing here reads one. The canonical record already exists and already
+    carries the date, the wording and the visibility; this turns it into a row.
+    That is also why the corresponding audit clauses left `_CLAUSES` — the
+    alternative was rendering one act as a clause and a row (§36 of the brief).
+
+    **Only what has happened.** A deadline in October is where the file is going,
+    which is the `.tl-strip`'s question; the chronology answers what has already
+    occurred. Projecting a future date here would put tomorrow above yesterday in
+    a list that reads newest-first and means *past*.
+
+    Scoped through `matter_intelligence` and `visible_to`, so a restricted child
+    changes no row, no count and no ordering (AUTH-003).
+    """
+    from app.intelligence.selectors import matter_intelligence
+
+    day = today or timezone.localdate()
+    facts = intelligence if intelligence is not None else matter_intelligence(matter, user, day)
+    rows: list[TimelineItem] = []
+
+    def add(record: Any, when: datetime, milestone: ChronologyMilestone) -> None:
+        rows.append(
+            TimelineItem(
+                occurred_at=when,
+                created_at=record.created_at,
+                sort_key=str(record.pk),
+                item_type=type(record).__name__,
+                milestone=milestone,
+            )
+        )
+
+    for victory in facts.work_victories:
+        if victory.confirmed_at is None:
+            # A machine's candidate is a proposal, not a professional fact. It
+            # reads where candidates are reviewed, and it earns a chronology row
+            # on the day somebody confirms it (Stage-2G).
+            continue
+        confirmed = _local_day(victory.confirmed_at)
+        if confirmed > day:
+            continue
+        add(
+            victory,
+            _end_of_day(confirmed),
+            ChronologyMilestone(
+                what="Töövõit",
+                display_date=format_estonian_date(confirmed),
+                sub=victory.title,
+            ),
+        )
+
+    for record in [*facts.past_dates, *facts.upcoming_dates]:
+        # **A cancelled expectation is history, and it reads as history.**
+        # Nothing is deleted when a plan changes: an expectation somebody called
+        # off is part of the file, and quietly dropping it is how a reader
+        # concludes nobody ever recorded anything (Stage-2G brief 5, 33). It is
+        # marked rather than hidden, and it does not reach the process strip —
+        # the strip says where the file is going, and a called-off milestone is
+        # not on that path (docs/adr/0074 §12).
+        if record.is_cancelled:
+            add(
+                record,
+                _end_of_day(record.period_end),
+                ChronologyMilestone(
+                    what=record.title,
+                    display_date=record.display_date,
+                    sub=str(record.get_status_display()),
+                ),
+            )
+            continue
+        if not record.has_passed(day):
+            continue
+        add(
+            record,
+            _end_of_day(record.period_end),
+            ChronologyMilestone(
+                what=record.title,
+                display_date=record.display_date,
+            ),
+        )
+
+    for record in facts.effective_dates:
+        if record.date_value is None:
+            continue
+        if record.is_cancelled:
+            add(
+                record,
+                _end_of_day(record.date_value),
+                ChronologyMilestone(
+                    what=record.description or "Jõustumine",
+                    display_date=format_at_precision(record.date_value, record.date_precision),
+                    sub=str(record.get_status_display()),
+                ),
+            )
+            continue
+        if record.date_value > day:
+            continue
+        add(
+            record,
+            _end_of_day(record.date_value),
+            ChronologyMilestone(
+                what="Jõustus" if record.date_value < day else "Jõustub",
+                display_date=format_at_precision(record.date_value, record.date_precision),
+                sub=record.description,
+            ),
+        )
+
+    for engagement in MatterEngagement.objects.filter(matter=matter).visible_to(user):
+        when = engagement.occurred_on or _local_day(engagement.created_at)
+        if when > day:
+            continue
+        # `Vastuseid 14`, using the panel's own label rather than a sentence
+        # composed here. `response_count` is nullable and NULL means «nobody
+        # counted», which is not «nobody answered» — so an uncounted engagement
+        # says nothing about responses at all (docs/adr/0074 §5).
+        sub = engagement.get_kind_display()
+        if engagement.response_count is not None:
+            sub = f"{sub} · Vastuseid {engagement.response_count}"
+        add(
+            engagement,
+            _end_of_day(when),
+            ChronologyMilestone(
+                what=f"Kaasamine: {engagement.title}",
+                display_date=format_estonian_date(when),
+                sub=sub,
+            ),
+        )
+
+    return rows
+
+
 def matter_timeline(
     *,
     matter: Matter,
@@ -435,6 +702,8 @@ def matter_timeline(
     limit: int = 50,
     offset: int = 0,
     only: str = TIMELINE_FILTER_ALL,
+    intelligence: Any = None,
+    today: date | None = None,
 ) -> tuple[list[TimelineItem], bool]:
     """Return one page of the timeline, newest first.
 
@@ -475,10 +744,6 @@ def matter_timeline(
         .filter(
             models.Q(event_type__in=TIMELINE_EVENT_TYPES)
             | models.Q(event_type__in=SUPPRESSED_WHEN_ENTRY_SHOWN)
-            # A grouped-only fact is read only when it belongs to a save. On its
-            # own it is not chronology and the query does not return it, so the
-            # section that owns it stays the single place it is reported.
-            | models.Q(event_type__in=GROUPED_ONLY_EVENT_TYPES, operation_id__isnull=False)
         )
         .select_related("actor")
         .order_by("-occurred_at", "-created_at", "-id")[: window * 3]
@@ -493,6 +758,25 @@ def matter_timeline(
 
     groups: dict[uuid.UUID, _Group] = {}
     items: list[TimelineItem] = []
+
+    # Milestone events leave the grouping before it starts. A save that wrote a
+    # note and changed the stage did two separable things to the record, and the
+    # approved target shows two rows for it — not one line with a clause
+    # (docs/adr/0074 §14).
+    milestone_events = [event for event in renderable if event.event_type in MILESTONE_EVENT_TYPES]
+    renderable = [event for event in renderable if event.event_type not in MILESTONE_EVENT_TYPES]
+    for event in milestone_events:
+        items.append(
+            TimelineItem(
+                occurred_at=event.occurred_at,
+                created_at=event.created_at,
+                sort_key=str(event.id),
+                item_type=event.event_type,
+                event=event,
+                events=(event,),
+                milestone=_milestone_for_event(event),
+            )
+        )
 
     for entry in entries:
         operation = entry_operations.get(entry.pk)
@@ -520,6 +804,14 @@ def matter_timeline(
                     item_type=event.event_type,
                     event=event,
                     events=(event,),
+                    # A lone work event reads as its verb too. «Marko Udras
+                    # määras järgmise sammu» is the target's meta line; «Marko
+                    # Udras Järgmiseks määratud» is the audit vocabulary set
+                    # beside a name it does not agree with. The verbs are the
+                    # same ones a grouped save uses, so one act reads the same
+                    # whether or not it happened to be part of a composer save
+                    # (TEEMA_TARGET_SPEC §E).
+                    summary_verbs=_verbs_for(None, [event]),
                 )
             )
             continue
@@ -552,6 +844,13 @@ def matter_timeline(
     # then the time-sortable id. Without the last two, two things written in the
     # same minute could swap places between page loads and pagination could
     # repeat or skip a line.
+    # The structured facts, as their own rows. Read from the canonical records
+    # rather than from audit events, so one act is one row (docs/adr/0074 §15).
+    if only != TIMELINE_FILTER_ENTRIES:
+        items.extend(
+            projected_milestones(matter=matter, user=user, intelligence=intelligence, today=today)
+        )
+
     if only == TIMELINE_FILTER_ENTRIES:
         items = [item for item in items if item.is_entry]
 
@@ -559,7 +858,54 @@ def matter_timeline(
 
     page = items[offset : offset + limit]
     has_more = len(items) > offset + limit
-    return _with_next_steps(page, user), has_more
+    return _with_files(_with_next_steps(page, user), user), has_more
+
+
+def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
+    """Attach the real filename and a link to the bytes, for every captured file.
+
+    One query for the whole page, like ``_with_next_steps``. The old chronology
+    printed the name out of the change event's summary and offered no way to open
+    it, which made the commonest reason to scroll a file — finding the version
+    somebody attached in June — a trip to another tab.
+
+    **Scoped through `Document.visible_to`.** `DocumentVersion` has no visibility
+    of its own; it inherits the document's, which inherits the Matter's. A
+    version whose document is restricted below this Matter contributes no link
+    and no line, exactly as its evidence event contributes no clause.
+    """
+    from django.urls import reverse
+
+    from app.documents.models import Document, DocumentVersion
+
+    def versions_of(item: TimelineItem) -> list[Any]:
+        return [
+            event.object_id
+            for event in item.events
+            if event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED and event.object_id
+        ]
+
+    wanted = {key for item in page for key in versions_of(item)}
+    if not wanted:
+        return page
+
+    found = {
+        version.pk: ChronologyFile(
+            label=version.original_filename,
+            url=reverse("documents:download", kwargs={"pk": version.pk}),
+        )
+        for version in DocumentVersion.objects.filter(
+            pk__in=wanted, document__in=Document.objects.visible_to(user)
+        )
+    }
+    if not found:
+        return page
+
+    resolved = []
+    for item in page:
+        files = tuple(found[key] for key in versions_of(item) if key in found)
+        resolved.append(replace(item, files=files) if files else item)
+    return resolved
 
 
 def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:

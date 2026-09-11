@@ -20,7 +20,7 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     UNASSIGNED_TITLE,
 )
-from e2e.conftest import HEAD, SANDRA, sign_in
+from e2e.conftest import HEAD, SANDRA, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -65,6 +65,10 @@ def test_the_composer_opens_with_l_and_never_while_somebody_is_typing(page, base
 
     composer = page.locator("details.uxcomp")
     expect(composer).to_have_count(1)
+    # Open on arrival (docs/adr/0074 §3). `L` still has to work from the closed
+    # state, which is what the row click above puts it in.
+    assert composer.evaluate("node => node.open") is True
+    page.locator(".uxnext__label").click()
     assert composer.evaluate("node => node.open") is False
 
     page.keyboard.press("l")
@@ -80,7 +84,11 @@ def test_a_quick_date_fills_the_field_that_is_actually_submitted(page, base_url)
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    page.locator("summary.uxcomp__collapsed").click()
+    # The composer is open on arrival since the approved target, so the
+    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
+    # this honest if it is ever reached from the closed state
+    # (docs/adr/0074 §3).
+    open_composer(page)
     chip = page.locator("[data-quickdate]").filter(has_text="+1 nädal").first
     expected = chip.get_attribute("data-quickdate")
     chip.click()
@@ -116,8 +124,6 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    page.locator("summary.uxcomp__collapsed").click()
-
     # The next step asks two things and nothing else.
     expect(page.locator("[name='next_text']")).to_be_visible()
     expect(page.locator("#id_next_date")).to_have_count(1)
@@ -125,13 +131,21 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     expect(page.locator("#id_next_date_semantics")).to_have_count(0)
     expect(page.locator("input[name=next_precision]")).to_have_count(0)
 
-    page.get_by_role("button", name="+ Oluline tähtaeg").click()
-    page.locator("#koostaja-tahtaeg summary", has_text="Ligikaudne aeg").click()
-    expect(page.locator("input[name=deadline_precision]").first).to_be_visible()
+    # `Oluline tähtaeg` is one date box and three precision chips since the
+    # approved target: the panel asks for the day somebody was told about and
+    # says how precisely it was meant, and `_period_anchor` derives the period
+    # from that day. The «Ligikaudne aeg» disclosure and its four selects are
+    # gone from this surface and still serve `Olulised tähtajad`
+    # (docs/adr/0074 §11).
+    page.locator("#cx-tahtaeg > summary").click()
+    expect(page.locator("#cx-tahtaeg [name=deadline_date]")).to_be_visible()
+    for label in ("Täpne päev", "Kuu", "Kvartal"):
+        expect(page.locator("#cx-tahtaeg .uxchip", has_text=label)).to_have_count(1)
+    expect(page.locator("#cx-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
-    page.get_by_role("button", name="+ Lõpeta teema").click()
-    expect(page.locator("#koostaja-lopetamine")).to_be_visible()
-    expect(page.locator("#id_disposition")).to_be_visible()
+    page.locator("#cx-lopeta > summary").click()
+    expect(page.locator("#cx-lopeta")).to_have_attribute("open", "")
+    expect(page.locator("#cx-lopeta [name=closing_words]")).to_be_visible()
 
 
 # =========================================================================
@@ -174,16 +188,28 @@ def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    defer = page.locator("details.uxnext__defer")
-    if not defer.count():
-        pytest.skip("this Matter's step carries no exact date to defer")
-
-    trigger = defer.locator("summary")
+    # «Lükka edasi» left the Järgmiseks row with the approved target, and with
+    # it the only `[data-uxpopover]` this page had (docs/adr/0074 §20). The
+    # composer's `Kuupäev…` deliberately does **not** join that contract: it
+    # closes on a click outside, which is right for a menu and wrong for a box
+    # somebody is typing a date into. So what is asserted here is the disclosure
+    # the page does have — it opens and closes by its own summary, and typing
+    # into it survives a click elsewhere in the composer.
+    popover = page.locator("details.uxcomp__date")
+    trigger = popover.locator("summary")
     trigger.click()
-    assert defer.evaluate("node => node.open") is True
-    page.keyboard.press("Escape")
-    assert defer.evaluate("node => node.open") is False
-    expect(trigger).to_be_focused()
+    assert popover.evaluate("node => node.open") is True
+
+    page.locator("#id_next_date").fill("30.09.2026")
+    page.locator(".composer__body").click()
+
+    assert popover.evaluate("node => node.open") is True, (
+        "a date box must not close under the cursor mid-entry"
+    )
+    assert page.locator("#id_next_date").input_value() == "30.09.2026"
+
+    trigger.click()
+    assert popover.evaluate("node => node.open") is False
 
 
 # =========================================================================
@@ -196,14 +222,17 @@ def test_the_closed_timeline_carries_more_than_a_counter(page, base_url):
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     summary = page.locator(".accordion--timeline > summary")
+    # `AJAJOON` and `{n} kirjet`, and nothing else. The head carried a preview
+    # quote *and* the step currently owed *and* the count — three facts in a
+    # summary line for a section that is open on arrival, one of them a verbatim
+    # repeat of the Järgmiseks row three inches above it (docs/adr/0074 §16).
+    expect(summary).to_contain_text("Ajajoon")
     expect(summary).to_contain_text("kirjet")
-    # Closed is what this is about, and the section is open on arrival. The
-    # head is the whole trigger now — the «Ava ajajoon» text action beside it
-    # said what the layout already said and the 2026-09 refinement took it
-    # (design handoff §12, docs/matter-page-refinement.md).
+    expect(summary.locator(".uxtl__preview")).to_have_count(0)
+    expect(summary.locator(".uxtl__previewnext")).to_have_count(0)
+    # The head is still the whole trigger: the section closes.
     summary.click()
     expect(page.locator(".accordion--timeline")).not_to_have_attribute("open", "")
-    expect(summary.locator(".uxtl__preview")).to_be_visible()
 
 
 def test_the_timeline_draws_one_spine(page, base_url):

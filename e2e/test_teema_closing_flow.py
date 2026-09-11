@@ -1,13 +1,21 @@
 """Closing a Teema, in a real browser.
 
 The domain suite proves the rules; this proves that a person can actually
-perform them. Two of the redesign's claims are only true in a browser: that
-seven new recipients can be added before a single save, and that removing one
-that was typed by mistake does not cost a page load.
+perform them.
 
-Everything here is synthetic. The Matters are created through the UI, the
-recipients are invented party names, and the uploaded opinion is a few bytes of
-PDF header.
+**The panel asks two questions since the approved Teema target**: `Kuidas lõppes`
+and an optional `Lõppsõna`. Seven-new-recipients-in-one-save and the chip that
+removes a mistyped one went with the sent-opinion half of the closure — closing a
+Matter is not a claim that an opinion was sent, and requiring the PDF made the
+commonest closure impossible to record honestly (docs/adr/0074 §10). Both are
+still proven through `compose_update` in `tests/test_teema_closing_flow.py`,
+which is where that half of the contract now lives.
+
+What is left is what only a browser can show: that the panel opens, that its
+chips are a single-select group over the field the server validates, that one
+`Salvesta` closes the file, and that a refusal comes back where the reader is.
+
+Everything here is synthetic.
 """
 
 from __future__ import annotations
@@ -20,39 +28,16 @@ from e2e.conftest import MARTIN, create_matter, open_composer, sign_in
 pytestmark = pytest.mark.e2e
 
 
-NEW_RECIPIENTS = [
-    "Näidiserakond Alpha",
-    "Näidiserakond Beeta",
-    "Näidiserakond Gamma",
-    "Näidiserakond Delta",
-    "Näidiserakond Epsilon",
-    "Näidiserakond Zeeta",
-    "Näidiserakond Eeta",
-]
-
-OPINION_PDF = {
-    "name": "Koja_arvamus.pdf",
-    "mimeType": "application/pdf",
-    "buffer": b"%PDF-1.4 synthetic opinion",
-}
-
-
-def open_closing_section(page):
+def open_closing_panel(page):
     open_composer(page)
-    page.locator(".disclosure-chip", has_text="+ Lõpeta teema").click()
-    section = page.locator("#koostaja-lopetamine")
-    expect(section).to_be_visible()
-    # No confirmation box to tick. Answering the section is the request to
-    # close, and the primary button says so as soon as anything is answered
+    page.locator("#cx-lopeta > summary").click()
+    panel = page.locator("#cx-lopeta")
+    expect(panel).to_have_attribute("open", "")
+    # No confirmation box to tick. Answering the panel is the request to close,
+    # and the primary button says so as soon as anything is answered
     # (pilot QA F-02).
     expect(page.locator("#id_close_matter")).to_have_count(0)
-    return section
-
-
-def add_recipient(page, name: str) -> None:
-    box = page.locator("[data-recipient-input]")
-    box.fill(name)
-    page.locator("[data-recipient-add]").click()
+    return panel
 
 
 def save_and_expect_ok(page):
@@ -63,147 +48,77 @@ def save_and_expect_ok(page):
     saved = caught.value
     assert saved.status == 200, f"the closure save was refused: {saved.status}"
     page.wait_for_load_state("networkidle")
-    return saved
 
 
-def test_the_closing_section_asks_only_the_approved_questions(page, base_url):
-    """Everything the redesign removed is gone from the page, not merely from
-    the template that happened to render last."""
+def test_the_closing_panel_asks_only_the_approved_questions(page, base_url):
+    """Two questions, and none of the four the target retired."""
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Lihtsustatud lõpetamine brauserikatsest")
-    section = open_closing_section(page)
+    create_matter(page, base_url, "Lõpetamise brauserikatse: küsimused")
 
-    for name in (
-        "closure_reason",
-        "successor",
-        "final_version",
-        "final_title",
-        "final_channel",
-        "final_reference",
-        "victory_title",
-        "victory_detail",
-    ):
-        expect(page.locator(f"[name='{name}']")).to_have_count(0)
+    panel = open_closing_panel(page)
 
-    # And what remains is the approved list.
-    expect(section.locator("#id_disposition")).to_be_visible()
-    expect(section.locator("#id_final_file")).to_be_visible()
-    expect(section.locator("#id_final_sent_on")).to_be_visible()
-    expect(section.locator("[data-recipient-input]")).to_be_visible()
-    expect(section.locator("#id_work_victory_0")).to_be_visible()
-    expect(section.locator("#id_work_victory_1")).to_be_visible()
-    # The commencement date belongs to "Jah" and is not offered before it.
-    expect(section.locator("[data-victory-date]")).to_be_hidden()
+    expect(panel).to_contain_text("Kuidas lõppes")
+    for label in ("Jõustus", "Menetlus lõppes", "Loobuti"):
+        expect(panel.locator(".uxchip", has_text=label)).to_have_count(1)
+    expect(panel.locator("[name=closing_words]")).to_be_visible()
+    expect(panel).to_contain_text("valikuline")
+    expect(panel).to_contain_text("Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.")
+
+    # And the four that went with the sent-opinion half.
+    for gone in ("[name=final_file]", "[name=final_sent_on]", "[name=work_victory]"):
+        expect(page.locator(gone)).to_have_count(0)
 
 
-def test_closing_with_an_opinion_seven_new_recipients_and_a_victory(page, base_url):
-    """The whole approved flow in one save, including the case the old fixed
-    checkbox list could not record at all."""
+def test_nothing_is_chosen_until_somebody_chooses(page, base_url):
+    """An unanswered `Kuidas lõppes` has to be representable, or opening the
+    panel would post a closure from the next ordinary save (pilot QA F-02)."""
     sign_in(page, base_url, MARTIN)
-    url = create_matter(page, base_url, "Seitsme saajaga lõpetamine brauserikatsest")
-    section = open_closing_section(page)
+    create_matter(page, base_url, "Lõpetamise brauserikatse: vastamata")
 
-    page.locator(".composer__body").fill("Arvamus esitati ja piirmäär tõsteti.")
-    page.locator("#id_disposition").select_option("COMPLETED")
+    panel = open_closing_panel(page)
 
-    # The final opinion is uploaded here, not chosen from files already on the
-    # Matter — this Matter has none, which is the ordinary case at closure.
-    section.locator("#id_final_file").set_input_files(files=[OPINION_PDF])
-    section.locator("#id_final_sent_on").fill("12.08.2026")
+    expect(panel.locator("input[name=disposition]")).to_have_value("")
+    expect(panel.locator(".uxchip.is-selected")).to_have_count(0)
 
-    # An existing institution from the shortlist, if the register has offered
-    # one, and then seven that do not exist yet.
-    shortlist = section.locator("input[name='final_recipients']")
-    if shortlist.count():
-        shortlist.first.check()
+    panel.locator(".uxchip", has_text="Loobuti").click()
 
-    for name in NEW_RECIPIENTS:
-        add_recipient(page, name)
-    expect(section.locator(".recipientadd__item")).to_have_count(7)
-    # The box is empty and ready for the next one, never carrying the last.
-    expect(section.locator("[data-recipient-input]")).to_have_value("")
-
-    # A mistake is removable without a page load, and another goes in after it.
-    section.locator(".recipientadd__item", has_text="Näidiserakond Eeta").locator(
-        "[data-recipient-remove]"
-    ).click()
-    expect(section.locator(".recipientadd__item")).to_have_count(6)
-    add_recipient(page, "Näidiserakond Teeta")
-    expect(section.locator(".recipientadd__item")).to_have_count(7)
-
-    # Töövõit is an explicit decision, and only "Jah" asks when it commenced.
-    expect(section.locator("[data-victory-date]")).to_be_hidden()
-    section.locator("#id_work_victory_0").check()
-    expect(section.locator("[data-victory-date]")).to_be_visible()
-    section.locator("#id_victory_effective_on").fill("01.01.2027")
-
-    save_and_expect_ok(page)
-    expect(page.locator(".formerror")).to_have_count(0)
-    expect(page.locator(".composer .field__error")).to_have_count(0)
-
-    # The Matter is closed, and the records it wrote render.
-    page.goto(url)
-    expect(page.locator(".badge--closed")).to_be_visible()
-    # The banner quotes the one narrative the save carried.
-    expect(page.locator(".banner--closed")).to_contain_text("Arvamus esitati")
-    # The sent opinion reaches the rail with the file that went out. The block
-    # is `Koja arvamus` — the closing flow files its upload under
-    # `KODA_SUBMISSION_FINAL`, which is exactly the role that block lists.
-    opinion = page.locator("#koja-arvamus")
-    expect(opinion).to_be_visible()
-    expect(opinion).to_contain_text("Koja_arvamus.pdf")
-
-    # The commencement is a Jõustumine — the domain's own section for it — and
-    # not a period borrowed from the work victory.
-    # Rendered the way every date in this application is rendered — the box
-    # takes 01.01.2027 and the page says 1.1.2027 (app/core/dates.py).
-    expect(page.locator("#joustumine")).to_contain_text("1.1.2027")
+    expect(panel.locator("input[name=disposition]")).to_have_value("MONITORING_STOPPED")
+    expect(panel.locator(".uxchip.is-selected")).to_have_count(1)
 
 
-def test_a_duplicate_recipient_cannot_be_added_twice(page, base_url):
+def test_one_save_closes_the_file_and_leaves_a_readable_past(page, base_url):
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Korduva saajaga lõpetamine brauserikatsest")
-    section = open_closing_section(page)
+    create_matter(page, base_url, "Lõpetamise brauserikatse: üks salvestus")
 
-    add_recipient(page, "Näidiserakond Alpha")
-    add_recipient(page, "Näidiserakond Alpha")
-
-    expect(section.locator(".recipientadd__item")).to_have_count(1)
-
-
-def test_closing_without_a_work_victory(page, base_url):
-    """The other half of the decision, and the shorter path through the form."""
-    sign_in(page, base_url, MARTIN)
-    url = create_matter(page, base_url, "Töövõiduta lõpetamine brauserikatsest")
-    section = open_closing_section(page)
-
-    page.locator(".composer__body").fill("Koda ei tegele teemaga edasi.")
-    page.locator("#id_disposition").select_option("MONITORING_STOPPED")
-    section.locator("#id_work_victory_1").check()
-    # Saying "Ei" never asks for a commencement date.
-    expect(section.locator("[data-victory-date]")).to_be_hidden()
+    open_composer(page)
+    page.locator(".composer__body").fill("Menetlus lõppes ministeeriumis.")
+    panel = open_closing_panel(page)
+    panel.locator(".uxchip", has_text="Menetlus lõppes").click()
+    panel.locator("[name=closing_words]").fill("Eelnõu langes ära.")
 
     save_and_expect_ok(page)
 
-    page.goto(url)
-    expect(page.locator(".badge--closed")).to_be_visible()
-    expect(page.locator(".banner--closed")).to_contain_text("Koda ei tegele teemaga edasi.")
+    # The file is closed, and says so beside its own title.
+    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    # There is no writable composer on a closed Matter…
+    expect(page.locator("details.composer")).to_have_count(0)
+    # …and the history is still readable.
+    expect(page.locator("#ajalugu-loend")).to_contain_text("Menetlus lõppes ministeeriumis")
 
 
-def test_closing_without_an_answer_about_the_work_victory_is_refused(page, base_url):
-    """The decision is required, so it cannot be skipped into a silent "no"."""
+def test_a_refused_closure_comes_back_in_an_open_panel(page, base_url):
+    """`Lõppsõna` alone is an answer only a closure is asked, so it asks to
+    close — and the missing half is refused where the reader is looking."""
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Otsustamata lõpetamine brauserikatsest")
-    open_closing_section(page)
+    create_matter(page, base_url, "Lõpetamise brauserikatse: keeldumine")
 
-    page.locator(".composer__body").fill("Menetlus lõppes.")
-    page.locator("#id_disposition").select_option("COMPLETED")
-
-    with page.expect_response(
-        lambda response: "/sissekanne/" in response.url and response.request.method == "POST"
-    ) as caught:
-        page.locator("[data-composer-submit]").click()
-    assert caught.value.status == 400
+    panel = open_closing_panel(page)
+    panel.locator("[name=closing_words]").fill("Midagi juhtus.")
+    page.locator("[data-composer-submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#koostaja-lopetamine")).to_contain_text("Märgi, kas teemast sai töövõit.")
+    expect(page.locator("#cx-lopeta")).to_have_attribute("open", "")
+    expect(page.locator("#cx-lopeta")).to_contain_text("Vali, kuidas teema lõppes")
+    expect(page.locator("details.uxcomp")).to_have_attribute("open", "")
+    expect(page.locator("#cx-lopeta [name=closing_words]")).to_have_value("Midagi juhtus.")
+    expect(page.locator(".badge--state")).to_contain_text("Avatud")

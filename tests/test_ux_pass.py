@@ -394,15 +394,18 @@ def test_a_later_system_run_never_claims_a_creation_date(specialist, other_speci
 
 
 @pytest.mark.django_db
-def test_the_collapsed_row_stops_reciting_event_types_and_keeps_them_underneath(
-    client, specialist
-) -> None:
-    """A presentation change, and the evidence is untouched.
+def test_the_events_a_folded_run_used_to_hide_are_all_on_the_page(client, specialist) -> None:
+    """The collapsed «tegevusi 3 — näita ▸» row is gone, and nothing went with it.
 
-    The summary line names no event type; the disclosure under it still names
-    every one of them, one per line, and the `ChangeEvent` rows behind those
-    lines are all still there. Nothing is filtered out of the read model to
-    make the summary quieter.
+    It was a third row style for events that are now either milestones in their
+    own right — `Teema loodud`, `Hetkeseis: …` — or ordinary work. The approved
+    target has two row kinds and no third, so a reader sees each of these events
+    on its own line instead of behind a disclosure counting them
+    (TEEMA_TARGET_SPEC §E, docs/adr/0074 §14).
+
+    `collapse_system_runs` itself is unchanged and still tested above: it is a
+    projection helper, not a page. What changed is that the Teema page stopped
+    calling it.
     """
     from app.audit.enums import ChangeEventType
     from app.audit.models import ChangeEvent
@@ -411,17 +414,17 @@ def test_the_collapsed_row_stops_reciting_event_types_and_keeps_them_underneath(
 
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
-    row = " ".join(body.split('class="uxtl__sysrow"')[1].split("</summary>")[0].split())
 
-    assert "tegevusi 3" in row
-    for word in ("süsteemimuudatus", "Järgmiseks määratud", "Hetkeseis muudetud"):
-        assert word not in row, f"the collapsed summary still recites {word!r}"
+    assert "uxtl__sysrow" not in body, "the folded run is not part of the approved target"
+    assert "näita ▸" not in body
 
-    # Open, the run is the event log it always was.
-    opened = body.split('class="uxtl__sysbody"')[1]
-    for label in ("Teema loodud", "Hetkeseis muudetud", "Järgmiseks määratud"):
-        assert label in opened
+    # Every one of the three is readable on the page, as its own row.
+    chronology = body.split('id="ajalugu-loend"')[1]
+    assert "Teema loodud" in chronology
+    assert "Hetkeseis:" in chronology
+    assert "määras järgmise sammu" in chronology
 
+    # And the evidence underneath is untouched.
     kept = set(ChangeEvent.objects.filter(matter=matter).values_list("event_type", flat=True))
     assert {
         ChangeEventType.MATTER_CREATED,
@@ -431,9 +434,14 @@ def test_the_collapsed_row_stops_reciting_event_types_and_keeps_them_underneath(
 
 
 @pytest.mark.django_db
-def test_the_closed_timeline_says_what_was_written_and_what_is_owed(client, specialist) -> None:
-    """A counter tells a reader how much there is and nothing about whether
-    they need it (design handoff 1b)."""
+def test_the_ajajoon_head_is_the_label_and_the_count(client, specialist) -> None:
+    """`AJAJOON` and `{n} kirjet`, and nothing else.
+
+    The head carried a preview sentence quoting the last entry *and* the step
+    currently owed *and* the count — three facts in a summary line for a section
+    that is open on arrival, one of them a verbatim repeat of the Järgmiseks row
+    three inches above it (TEEMA_TARGET_SPEC §E, docs/adr/0074 §16).
+    """
     matter = factories.MatterFactory(owner=specialist)
     add_entry(
         matter=matter,
@@ -453,12 +461,15 @@ def test_the_closed_timeline_says_what_was_written_and_what_is_owed(client, spec
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     summary = " ".join(body.split("accordion--timeline")[1].split("</summary>")[0].split())
 
-    assert "üleminekuaeg on läbiräägitav" in summary, "the last thing somebody wrote"
-    assert "→" in summary and "Saada koja arvamus EIS-i" in summary, "what is owed"
-    assert "kirjet" in summary, "and how much there is"
-    # The step, not its category. This strip re-states the current action, and
-    # the Järgmiseks row above it stopped naming a kind (ADR 0052 §6).
+    assert "Ajajoon" in summary
+    assert "kirjet" in summary
+    assert "üleminekuaeg on läbiräägitav" not in summary, "no preview quote"
+    assert "Saada koja arvamus EIS-i" not in summary, "the owed step is the row above"
     assert "TEEN" not in summary
+
+    # Both facts are still on the page, once each.
+    assert "üleminekuaeg on läbiräägitav" in body
+    assert body.count("Saada koja arvamus EIS-i") >= 1
 
 
 @pytest.mark.django_db
@@ -624,21 +635,26 @@ def _composer_is_open(body: str) -> bool:
 
 
 @pytest.mark.django_db
-def test_the_composer_is_closed_until_it_is_wanted_and_opens_on_a_refusal(
-    client, specialist
-) -> None:
-    """A Matter is read far more often than it is written to.
+def test_the_composer_is_open_on_arrival_and_stays_open_on_a_refusal(client, specialist) -> None:
+    """**Open by default**, reversing the 2026-08 decision to close it.
 
-    But a save that was refused must never fold the explanation away with the
-    text somebody typed (design handoff 1d).
+    That decision was reasonable on its own terms — a Matter is read far more
+    often than it is written to, and an eight-line form pushed the file's content
+    below the fold. What the approved target does instead is make the form short
+    enough to live open: a 60 px body, a one-row next step, and everything else a
+    chip. Recording what happened is the reason this product exists, and it must
+    not begin with a click (TEEMA_TARGET_SPEC §C.2, docs/adr/0074 §3).
+
+    A refused save comes back open for the same reason an ordinary load does, so
+    nobody loses what they typed either way.
     """
     matter = factories.MatterFactory(owner=specialist)
     client.force_login(specialist)
     url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
     body = client.get(url).content.decode()
-    assert not _composer_is_open(body), "the composer opens on request, not on arrival"
-    assert "Mis juhtus?" in body, "and it says what it is for while closed"
+    assert _composer_is_open(body), "the composer is open on arrival"
+    assert "Mis juhtus?" in body, "and the collapsed prompt is kept for the closed state"
 
     # A next step with no date: refused, and the composer must come back open
     # with the sentence still in it (ADR 0052 §5).
@@ -671,9 +687,21 @@ def test_folding_the_composer_dropped_none_of_its_fields(client, specialist) -> 
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     composer = _composer_markup(body)
 
+    # The four period selects are deliberately not rendered. The approved
+    # target's `+ Oluline tähtaeg` is one `Kuupäev` box plus `Täpne päev` /
+    # `Kuu` / `Kvartal`, and `_period_anchor` derives the month, quarter, half
+    # and year from the day that was picked. The fields stay on the form because
+    # the surfaces that *do* ask those questions post them, and because
+    # `bounds_for` must normalise both routes to one stored anchor
+    # (docs/adr/0074 §11).
+    derived = {"deadline_month", "deadline_quarter", "deadline_half", "deadline_year"}
+
     form = ComposerForm(matter=matter, viewer=specialist)
-    missing = [name for name in form.fields if f'name="{name}"' not in composer]
+    missing = [
+        name for name in form.fields if name not in derived and f'name="{name}"' not in composer
+    ]
     assert not missing, f"the composer no longer offers: {missing}"
+    assert derived <= set(form.fields), "the period group is derived, not deleted"
 
 
 @pytest.mark.django_db

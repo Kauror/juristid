@@ -112,8 +112,7 @@ def document_overflows(page) -> bool:
 def sparse_matter(page, base_url: str, title: str) -> str:
     """A Matter with the shape the QA report described.
 
-    Teemaviide, Saabus and Andmeklass come with the record — a new Matter is
-    dated the day it was opened. `Kellele` is filled in through the rail's own
+    Teemaviide comes with the record. `Kellele` is filled in through the rail's own
     control, which is both how a lawyer would do it and a second proof that the
     control works, and it is filled in with a **named** institution: the option
     at position 1 is whatever the shared catalogue happens to sort first, and a
@@ -152,19 +151,21 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
 
     rows = row_geometry(page)
     keys = [row["key"] for row in rows]
-    # `Muu valdkond` sits among the facts because it *is* one. It used to hang
-    # off the bottom of the `Sildid` card, which was an accident of layout — it
-    # is not a tag and nothing counts it — and when that card was retired it
-    # moved here rather than leaving with it (ADR 0052 §15).
-    assert keys[:7] == [
+    # **Four rows.** The approved target's `Teema andmed` answers four questions
+    # a lawyer asks mid-sentence, and nothing else: `Saabus` moved into the
+    # header metaline to sit beside `Tähtaeg`, and `Muu valdkond` and
+    # `Andmeklass` are retired from this page — the first is a correction to how
+    # the file was classified and the other a developer's switch. Every column,
+    # value and endpoint is untouched (TEEMA_TARGET_SPEC §G.1,
+    # docs/adr/0074 §2, §17).
+    assert keys[:4] == [
         "Teemaviide",
         "Menetlusliik",
         "Kellelt",
         "Kellele",
-        "Saabus",
-        "Muu valdkond",
-        "Andmeklass",
     ], keys
+    for gone in ("Saabus", "Muu valdkond", "Andmeklass"):
+        assert gone not in keys, f"{gone} is retired from this rail"
 
     for row in rows:
         # One short fact is one line. 12.5px text on a 1.35 line-height is
@@ -201,7 +202,10 @@ def test_an_empty_fact_costs_no_more_than_a_filled_one(page, base_url):
     rows = {row["key"]: row for row in row_geometry(page)}
 
     empty = rows["Menetlusliik"]["height"]
-    filled = rows["Saabus"]["height"]
+    # `Kellele`, because `Saabus` left this rail for the header metaline
+    # (docs/adr/0074 §2). The sparse fixture fills it through the rail's own
+    # control, so it is the filled row this block still has.
+    filled = rows["Kellele"]["height"]
     assert abs(empty - filled) <= 2, (
         f"an empty fact is {empty:.1f}px and a filled one {filled:.1f}px"
     )
@@ -254,7 +258,9 @@ def test_a_multi_sender_value_wraps_and_pushes_the_rest_down(page, base_url):
 # ---------------------------------------------------------------------------
 
 #: Each editable fact, with the control its editor opens and how to commit it.
-EDITABLE_FACTS = ["Menetlusliik", "Kellelt", "Kellele", "Saabus"]
+#: Three, not four: `Saabus` is edited in the header metaline now, where the
+#: `Teema andmed` rail no longer carries it (docs/adr/0074 §2).
+EDITABLE_FACTS = ["Menetlusliik", "Kellelt", "Kellele"]
 
 
 @pytest.mark.parametrize("key", EDITABLE_FACTS)
@@ -385,30 +391,39 @@ def test_adding_an_addressee_saves_and_the_rail_shows_it(page, base_url):
     expect(fact_value(page, "Kellele")).to_have_text(chosen)
 
 
-def test_adding_a_received_date_saves_and_the_rail_formats_it(page, base_url):
-    """A new Matter is dated today, so the empty state is reached by clearing.
+def test_adding_a_received_date_saves_and_the_header_formats_it(page, base_url):
+    """`Saabus` is a header fact now, and it is still edited in place.
 
-    Worth reaching rather than skipping: `Saabus` is one of the four facts the
-    QA report named, and an empty one is what a register row imported without a
-    date looks like.
+    It moved out of this rail into the metaline, beside `Tähtaeg`: arrival and
+    response deadline are read as a pair, so they sit next to each other
+    (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). The control, the endpoint, the
+    field and the empty state are exactly what they were — only the element they
+    render inside changed, and the swap target follows them.
+
+    The empty state — a register row imported without a date — is asserted in
+    `tests/test_teema_approved_target.py`, where it costs no browser.
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Saabumise kuupäeva lisamine")
 
-    row = fact_row(page, "Saabus")
-    row.locator("summary.inlineedit__trigger").click()
-    row.locator("input[name=received_date]").fill("")
-    row.get_by_role("button", name="Salvesta saabumise kuupäeva muudatus").click()
+    header = page.locator("#teema-pais")
+    expect(header).to_contain_text("Saabus")
+    # And it is gone from the rail rather than rendered in both.
+    assert "Saabus" not in page.locator("#teema-andmed").inner_text()
 
-    row = fact_row(page, "Saabus")
-    expect(fact_value(page, "Saabus")).to_have_text("+ Lisa")
-    row.get_by_text("+ Lisa").click()
-    row.locator("input[name=received_date]").fill("14.8.2026")
-    row.get_by_role("button", name="Salvesta saabumise kuupäeva muudatus").click()
+    item = header.locator(".metaline__item").filter(has_text="Saabus")
+    item.locator("summary.inlineedit__trigger").click()
+    item.locator("input[name=received_date]").fill("14.8.2026")
+    item.get_by_role("button", name="Salvesta saabumise kuupäeva muudatus").click()
+    page.wait_for_load_state("networkidle")
 
-    expect(fact_value(page, "Saabus")).to_have_text("14.8.2026")
+    # Saved, formatted, and still in the header after a reload — the editor
+    # swaps `#teema-pais`, which is where the value it wrote is read.
+    expect(page.locator("#teema-pais")).to_contain_text("14.8.2026")
     page.reload()
-    expect(fact_value(page, "Saabus")).to_have_text("14.8.2026")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#teema-pais")).to_contain_text("14.8.2026")
+    assert "14.8.2026" not in page.locator("#teema-andmed").inner_text()
 
 
 def test_a_reader_is_offered_no_editors_at_all(page, base_url):
