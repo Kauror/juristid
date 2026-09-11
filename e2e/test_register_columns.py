@@ -504,6 +504,32 @@ def test_a_filter_menu_is_reachable_and_dismissable_from_the_keyboard(page, base
     assert page.evaluate("() => document.activeElement.tagName.toLowerCase()") == "summary"
 
 
+def test_no_row_control_paints_through_an_open_menu(page, base_url):
+    """`position: sticky` on the `<th>` creates a stacking context, so the
+    menu's own `z-index` is measured inside its own cell and cannot lift it
+    above anything outside. The `Määra ▾` control two rows down is positioned
+    and later in the document, and it painted straight through the first option.
+
+    Asserted by hit-testing rather than by `to_be_visible`, which is true of a
+    fully covered element.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_register(page, base_url, "?olek=koik")
+    control = heading(page, "Vastutaja")
+    control.locator("summary").click()
+
+    first = control.locator(".colhead__option").first
+    expect(first).to_be_visible()
+    box = first.bounding_box()
+    on_top = page.evaluate(
+        "([x, y]) => { const el = document.elementFromPoint(x, y);"
+        " return el ? !!el.closest('.colhead__menu') : false; }",
+        [box["x"] + box["width"] / 2, box["y"] + box["height"] / 2],
+    )
+
+    assert on_top, "something is painted over the first option of the owner menu"
+
+
 def test_only_one_heading_menu_is_open_at_a_time(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url, "?olek=koik")

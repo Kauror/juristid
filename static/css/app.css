@@ -1279,6 +1279,19 @@ th[aria-sort="descending"] .colhead__mark::after {
   content: "\2193";
 }
 
+/* The heading cell, while its menu is open.
+ *
+ * `position: sticky` creates a stacking context, so the menu's own `z-index`
+ * below is measured *inside* its `<th>` — it cannot paint above anything
+ * outside it however high it goes. The `Määra ▾` control two rows down is
+ * `position: relative` and later in the document, so it painted straight
+ * through the first option of the owner menu. Raising the cell for exactly as
+ * long as the menu is open is what a `z-index` on the menu was trying and
+ * failing to do; nothing moves when it is shut. */
+.table--register thead th:has(.colhead--filter[open]) {
+  z-index: 40;
+}
+
 /* `fixed`, not `absolute`, and for the reason `.uxassign__menu` gives at
    length: `.tablewrap` is `overflow-x: auto`, a scroll container clips its
    absolutely positioned descendants in both axes, and a menu anchored inside
