@@ -251,10 +251,16 @@ rather than read.
               Only when there is one — an empty `Muu` needs no sentence, and a
               standing caption about a field nobody used is the kind of
               explanation this band had removed from it (Teema redesign §5.5).
+
+              The link is behind `can_write`, because `Muuda teemat` is: a
+              reader who cannot edit would be sent to a page that refuses them,
+              and the sentence would be advice they cannot take. The words
+              themselves stay either way — knowing what the `Muu` value is does
+              not depend on being able to change it.
             {% endcomment %}
             <span class="field__help">
-              Muu: {{ matter.policy_area_other }} —
-              <a href="{% url 'matters:matter_edit' pk=matter.pk %}">muuda teemat</a>
+              Muu: {{ matter.policy_area_other }}{% if can_write %} —
+              <a href="{% url 'matters:matter_edit' pk=matter.pk %}">muuda teemat</a>{% endif %}
             </span>
           {% endif %}
           <button class="button button--quiet button--tiny" type="submit"

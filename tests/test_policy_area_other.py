@@ -149,9 +149,7 @@ def test_a_matter_nobody_may_see_is_a_404_here_too(client, reader, restricted_ma
 # -- display -----------------------------------------------------------------
 
 
-def test_the_value_reads_on_the_matter_page_and_the_form_label_does_not(
-    signed_in, specialist
-):
+def test_the_value_reads_on_the_matter_page_and_the_form_label_does_not(signed_in, specialist):
     """Read here, edited on `Muuda teemat`.
 
     The target took `Muu valdkond` out of `Teema andmed` as an *editable row*,

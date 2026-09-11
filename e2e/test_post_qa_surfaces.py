@@ -103,6 +103,12 @@ def selected_count(page) -> str:
     return (page.locator('[data-chipcount-for="source_organisations"]').inner_text() or "").strip()
 
 
+def count_after(before: str) -> str:
+    """The badge one more selection would show, from the one it shows now."""
+    current = int(before.split(" ")[0]) if before else 0
+    return f"{current + 1} valitud"
+
+
 def create_form(page, base_url) -> None:
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size(VIEWPORTS["wide"])
@@ -110,18 +116,51 @@ def create_form(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def edit_form(page, base_url, title: str | None = None) -> str:
-    """A Matter of this test's own, opened on `Muuda teemat`.
+#: The one Matter this whole file works on, created on first use and reused.
+#:
+#: **This suite shares one database and this file must not grow it.** That is
+#: the rule `e2e/test_unified_organisation_picker.py` states about the
+#: institution catalogue, and the register is tighter than the catalogue:
+#: `e2e/test_register_columns.py` reads the first row that carries a link to
+#: prove that clicking a cell filters by it, and asserts that a `Hetkeseis`
+#: filter returns fewer rows than no filter — against a seeded world of twelve
+#: Matters on a page that holds twelve. One new row costs that file nothing;
+#: fifteen fill its first page with rows whose `Hetkeseis` and `Vastutaja`
+#: cells hold no link at all, and it then fails for reasons that have nothing
+#: to do with either file. Which of them notices depends on how CI sharded.
+#:
+#: So: one Matter, made the way `e2e.conftest.create_matter` makes one — title
+#: only, no stage, no owner — because a row with no `Hetkeseis` is *excluded*
+#: from every stage bucket that file counts, where a row carrying the seeded
+#: stage would be the twelfth in one. Every test below works on that Matter, and
+#: the three that save are written to be true whatever order they run in: each
+#: asserts that what it just recorded is *among* what the page holds, never that
+#: it is the only thing there.
+_WORKING_MATTER: dict[str, str] = {}
 
-    Its own rather than a seeded one: these tests change senders and addressees,
-    and the seeded Matters are what the visual job photographs.
-    """
+
+def working_matter(page, base_url) -> str:
+    """This file's Matter, signed in and ready, created at most once."""
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size(VIEWPORTS["wide"])
-    detail = create_matter(page, base_url, title or f"Parandatav teema {uuid.uuid4().hex[:8]}")
+    if "url" not in _WORKING_MATTER:
+        _WORKING_MATTER["url"] = create_matter(
+            page, base_url, f"Post-QA parandatav teema {uuid.uuid4().hex[:8]}"
+        )
+    return _WORKING_MATTER["url"]
+
+
+def edit_form(page, base_url) -> str:
+    """Open `Muuda teemat` on this file's Matter."""
+    detail = working_matter(page, base_url)
     page.goto(f"{detail}muuda/")
     page.wait_for_load_state("networkidle")
     return detail
+
+
+def save_edit(page) -> None:
+    page.get_by_role("button", name="Salvesta").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
 
 # ---------------------------------------------------------------------------
@@ -324,31 +363,35 @@ def test_the_edit_pickers_popup_closes_on_blur_too(page, base_url):
 
 
 def test_the_edit_page_prepopulates_the_current_sender(page, base_url):
-    """Choose, save, reopen: the answer comes back visibly chosen."""
+    """Choose, save, reopen: the answer comes back visibly chosen.
+
+    `in` rather than `==`, because this file works one Matter and another test
+    may already have named a body on it. What is being proved is that a saved
+    sender returns as a *visible* chip rather than hiding in the searchable
+    tail, and that is true of it whatever else the Matter names.
+    """
     detail = edit_form(page, base_url)
     search(page, EDIT_SENDER, "Näidismin")
     results(page, EDIT_SENDER).get_by_role("option", name=MINISTRY, exact=True).click()
-    page.get_by_role("button", name="Salvesta").click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    save_edit(page)
 
     page.goto(f"{detail}muuda/")
     page.wait_for_load_state("networkidle")
 
-    assert chosen_names(page, EDIT_SENDER) == [MINISTRY]
+    assert MINISTRY in chosen_names(page, EDIT_SENDER)
 
 
 def test_the_edit_page_commits_a_new_body_with_plus(page, base_url):
-    detail = edit_form(page, base_url)
+    """`+` on this page creates the body the catalogue did not hold, on save."""
+    edit_form(page, base_url)
     name = a_new_name()
     search(page, EDIT_SENDER, name)
     add_button(page, EDIT_SENDER).click()
-    assert chosen_names(page, EDIT_SENDER) == [name]
+    assert name in chosen_names(page, EDIT_SENDER)
 
-    page.get_by_role("button", name="Salvesta").click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    save_edit(page)
 
     expect(page.locator("#teema-andmed")).to_contain_text(name)
-    assert detail
 
 
 def test_pressing_add_on_an_existing_name_selects_that_body(page, base_url):
@@ -361,7 +404,7 @@ def test_pressing_add_on_an_existing_name_selects_that_body(page, base_url):
     search(page, EDIT_SENDER, MINISTRY)
     add_button(page, EDIT_SENDER).click()
 
-    assert chosen_names(page, EDIT_SENDER) == [MINISTRY]
+    assert MINISTRY in chosen_names(page, EDIT_SENDER)
     assert page.locator(f"#{EDIT_SENDER}-valik [data-orgfind-provisional]").count() == 0
     assert page.locator(f"#{EDIT_SENDER}-uus").input_value() == ""
 
@@ -371,7 +414,7 @@ def test_pressing_add_on_an_alias_selects_the_canonical_body(page, base_url):
     search(page, EDIT_SENDER, MINISTRY_ALIAS)
     add_button(page, EDIT_SENDER).click()
 
-    assert chosen_names(page, EDIT_SENDER) == [MINISTRY]
+    assert MINISTRY in chosen_names(page, EDIT_SENDER)
     assert page.locator(f"#{EDIT_SENDER}-uus").input_value() == ""
 
 
@@ -386,21 +429,35 @@ def test_enter_in_the_edit_search_box_never_submits_the_form(page, base_url):
 
 def test_choosing_a_sender_on_the_edit_page_does_not_answer_the_addressee(page, base_url):
     """§11. On `Uus teema` a sender may default the addressee; here it may not —
-    both are established facts by the time this page opens."""
+    both are established facts by the time this page opens.
+
+    Compared against what Adressaat held on arrival rather than against an
+    empty list: what must not happen is that *ticking a sender changes it*, and
+    that is the claim whether or not the Matter already names somebody.
+    """
     edit_form(page, base_url)
+    before = chosen_names(page, EDIT_ADDRESSEE)
+
     search(page, EDIT_SENDER, "Näidismin")
     results(page, EDIT_SENDER).get_by_role("option", name=MINISTRY, exact=True).click()
 
-    assert chosen_names(page, EDIT_ADDRESSEE) == []
+    assert chosen_names(page, EDIT_ADDRESSEE) == before
 
 
 def test_the_edit_page_counts_a_provisional_sender_too(page, base_url):
-    """One picker, one count rule, on whichever page renders it."""
+    """One picker, one count rule, on whichever page renders it.
+
+    Measured as the increment rather than as an absolute, because this file
+    works one Matter and another test may have left a sender on it. The defect
+    was that `+` moved the count by nothing at all.
+    """
     edit_form(page, base_url)
+    before = selected_count(page)
+
     search(page, EDIT_SENDER, a_new_name())
     add_button(page, EDIT_SENDER).click()
 
-    assert selected_count(page) == "1 valitud"
+    assert selected_count(page) == count_after(before)
 
 
 # ---------------------------------------------------------------------------
@@ -448,11 +505,14 @@ def test_teema_andmed_with_oigusakt_and_muu_fits_every_width(page, base_url, siz
     # `Muu` is a real vocabulary row in Õigusakt, and `.chip--other` is the class
     # the template puts on exactly that one — a lookup by the label «Muu» would
     # be a lookup by a word several rows on this form use.
+    #
+    # The same save at every width, which is idempotent: it writes the values it
+    # then reads, so running it three times leaves the Matter where one run
+    # would have.
     page.locator("label.chip--other input").check()
     page.fill("#id_legal_instrument_other", "Rohepöörde tegevuskava ja selle rakendusaktid")
     page.fill("#id_policy_area_other", "Ringmajandus ja kliimaneutraalsus")
-    page.get_by_role("button", name="Salvesta").click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    save_edit(page)
 
     page.set_viewport_size(VIEWPORTS[size])
     page.goto(detail)
@@ -465,8 +525,7 @@ def test_teema_andmed_with_oigusakt_and_muu_fits_every_width(page, base_url, siz
 
 @pytest.mark.parametrize("size", list(VIEWPORTS))
 def test_the_empty_deadline_editor_fits_every_width_and_starts_blank(page, base_url, size):
-    sign_in(page, base_url, MARTIN)
-    detail = create_matter(page, base_url, f"Tähtajata teema {uuid.uuid4().hex[:8]}")
+    detail = working_matter(page, base_url)
 
     page.set_viewport_size(VIEWPORTS[size])
     page.goto(detail)
@@ -481,8 +540,7 @@ def test_the_empty_deadline_editor_fits_every_width_and_starts_blank(page, base_
 
 @pytest.mark.parametrize("size", list(VIEWPORTS))
 def test_the_filtered_documents_view_fits_every_width(page, base_url, size):
-    sign_in(page, base_url, MARTIN)
-    detail = create_matter(page, base_url, f"Failidega teema {uuid.uuid4().hex[:8]}")
+    detail = working_matter(page, base_url)
 
     page.set_viewport_size(VIEWPORTS[size])
     page.goto(f"{detail}dokumendid/?roll=arvamus")
