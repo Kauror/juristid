@@ -34,7 +34,7 @@ CREATE_PATH = "/teemad/uus/"
 #: legend or a disclosure moving inside one of them does not rename it here.
 OWNER = 'fieldset.field:has(input[name="owner"])'
 SENDER = 'fieldset.field:has(input[name="sender_name"])'
-ADDRESSEE = "fieldset.field:has(#id_addressee_name)"
+ADDRESSEE = "fieldset.field:has([data-addressee-disclosure])"
 
 #: Adressaat's own disclosure. Since docs/adr/0069 the field is folded away
 #: behind it — a sender answers it, so on the ordinary visit there is nothing
@@ -253,27 +253,34 @@ def test_the_row_stacks_and_saatja_keeps_the_width(page, base_url, width):
 
 
 @pytest.mark.parametrize("width", [1024, 768, 420])
-def test_the_sender_disclosure_is_not_a_narrow_island_when_stacked(page, base_url, width):
-    """`chipdetails--stretch`, on the control that has just started using it.
+def test_the_sender_search_is_not_a_narrow_island_when_stacked(page, base_url, width):
+    """The control that opens, opened, on a row it owns.
 
-    Open and stacked, a shrink-to-fit disclosure measures its search box and its
-    chip names and ends up a narrow panel in a field with the whole row to
-    spend. Adressaat has carried this modifier since it was written; Saatja
-    gained the disclosure this round and had to gain the rule with it.
+    This measured the Saatja disclosure until docs/adr/0073 removed it, and the
+    failure it guards against is unchanged: whatever the field opens onto must
+    not be a narrow panel in a field with the whole row to spend. What opens is
+    the results list now, and it is measured against the box above it rather
+    than against the field — the box is deliberately bounded at 30rem, which is
+    what this form has always allowed a control for naming an institution
+    (static/css/app.css `.orgfind__search`).
     """
     _open(page, base_url, width)
 
-    disclosure = page.locator(f"{SENDER} details.chipdetails").first
-    if disclosure.count() == 0:
-        pytest.skip("this dataset has no long tail, so there is no disclosure to open")
-    disclosure.locator("summary").click()
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.fill("näidis")
 
     field = _box(page, SENDER)
-    box = disclosure.bounding_box()
-    assert box is not None
-    assert box["width"] > field["width"] * 0.8, (
-        f"the open Saatja disclosure is {box['width']}px inside a {field['width']}px "
-        f"field at {width}px — a narrow island rather than a panel"
+    search = _box(page, f"{SENDER} .orgfind__search")
+    panel = _box(page, "#saatja-tulemused")
+
+    assert search["width"] >= min(field["width"], 30 * 16) - 2, (
+        f"the Saatja search box is {search['width']}px inside a {field['width']}px "
+        f"field at {width}px — a narrow island rather than a control"
+    )
+    assert abs(panel["width"] - search["width"]) <= 2, (
+        f"the results ({panel['width']}px) are not the width of the box "
+        f"({search['width']}px) at {width}px"
     )
 
 

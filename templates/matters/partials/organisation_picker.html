@@ -1,0 +1,234 @@
+{% comment %}
+One control for «which institution?», wherever `Uus teema` asks it.
+
+**What this replaces.** Saatja and Adressaat each used to offer three separate
+ways to name a body, and they had to be learned in order: a row of quick chips,
+a `<details>` reading «Vali nimekirjast (N)» holding a search box, and — a
+third control, somewhere else again — «Uus saatja» / «Uus adressaat» for a body
+the catalogue did not hold. Three paths to one answer, and the person had to
+decide which of them they were on before they could type anything.
+
+They are one path now:
+
+    Otsi kõigepealt olemasolevat. Kui seda ei ole, lisa sama välja kaudu uus.
+
+The search box is the first control in the field, and the `+` attached to it
+takes whatever is in the box and says «this is a body you do not have». Nothing
+is folded away, and there is no second text input underneath
+(docs/adr/0073, task §2, §3, §12).
+
+**What did not change, and must not.** Typing is not creating. The search box
+posts nothing at all — it has no `name` — so a half-typed «Kliima» left behind
+after somebody chose `Kliimaministeerium` cannot become an institution. Only
+`+` writes, and what it writes is a *provisional* answer in the form's own
+state: `sender_name` / `addressee_name`, the fields that have always carried a
+typed institution. Nothing reaches the database until `Loo teema` runs, and what
+the name means there is still
+`app.organisations.services.resolve_organisation_name` — reuse an exact or
+alias match, create only a genuinely new body, refuse a spelling that names two
+(task §9, §10, §21).
+
+**One catalogue, two questions.** Saatja and Adressaat are the same
+`Organisation` rows reached through two relations, so this partial is included
+twice rather than written twice, and the ranking each asks for is the only
+difference in what it is given (`organisations_by_usage`,
+`addressees_by_usage`, docs/adr/0063).
+
+**The chips are the whole catalogue, and only the shortlist is on screen.**
+`tail` holds every institution the shortlist did not, rendered as real controls
+and `hidden` until the search finds one or somebody has already chosen it. That
+is what makes three separate things work without any of them having to reach a
+server: the search selects an existing row rather than describing one; a body
+chosen after a refused save comes back visible without the browser having to
+rebuild it; and the intake reader can fill Saatja with a ministry nobody put in
+the quick row, because the control it needs is already in the document
+(static/js/app.js `bindOrganisationPickers`, task §8, §16, §24).
+
+**Progressive enhancement, and the shape of the fallback.** Everything the
+scripted control adds is bound onto markup that posts correctly without it. With
+scripting off the shortlist is still visible and tickable and the `<noscript>`
+block below carries the two capabilities the script would otherwise have
+provided — the rest of the catalogue, and a box for a body that is not in it. It
+is deliberately the *old* pair of controls: this is the one place where two
+inputs are the right answer, because there is no way to attach the second
+intention to the first without a script (task §22).
+
+`<noscript>` is inert markup in a scripted browser — not hidden, not present —
+so none of it reaches the ordinary UX, and the typed field inside it cannot
+double-post. The one thing that depends on document order is stated where it
+happens, on the hidden carrier below.
+
+Callers pass:
+
+    picker_id     unique on the page; ids and hooks are derived from it
+    legend        what the field is called
+    chips         the subwidgets rendered as visible chips
+    tail          the subwidgets rendered as searchable entries
+    typed_field   `sender_name` or `addressee_name`
+    add_label     the accessible name of the `+`
+    single        true where the field holds one value (Adressaat)
+    clearable     true where a chosen chip offers its own `×` (Saatja)
+    clears_group  the radio group `bindExclusiveName` empties this field for
+    sender_row    marks the row the Adressaat default reads (Saatja only)
+    typed_hook    `sender` or `addressee` — which control the carrier is
+{% endcomment %}
+{% comment %}
+  No cardinality flag on this element, deliberately. The script never has to be
+  told: a radio unchecks its own group when another is checked and a checkbox
+  does not, so «one answer» and «several» are properties of the controls the
+  form already renders rather than a claim written beside them. `single` is
+  read below, where it decides what the `<noscript>` fallback's inputs are —
+  which is the one place nothing else can answer it.
+{% endcomment %}
+<div class="orgfind" id="{{ picker_id }}-valik" data-orgfind>
+
+  {% comment %}
+    The provisional answer, carried by the field that has always carried it.
+
+    A hidden input rather than the labelled box it used to be: `+` writes here,
+    `×` on the provisional chip empties it, and a refused save re-renders it
+    holding what was typed — which is what makes «vali nimekirjast» the answer
+    to an ambiguous name rather than an instruction to type it all again
+    (task §11).
+
+    **Before the `<noscript>` block, and that is load-bearing.** With scripting
+    off both controls post under this name, and Django reads the *last* value
+    for a text field — so the box somebody actually typed into has to come
+    second. With scripting on the block below is not markup at all and only this
+    posts.
+
+    `data-sender-name` / `data-addressee-name` are how `bindAddresseeDefault`
+    finds the two typed controls without depending on an auto-generated `id` a
+    renamed field would change under it. They were on the visible boxes and are
+    on these, because these *are* those boxes now — the rule they serve is
+    unchanged (app/matters/forms.py `_typed_organisation_field`).
+  {% endcomment %}
+  <input type="hidden" id="{{ picker_id }}-uus" data-orgfind-typed
+         {% if typed_hook == 'sender' %}data-sender-name{% endif %}{% if typed_hook == 'addressee' %}data-addressee-name{% endif %}
+         name="{{ typed_field.html_name }}"
+         value="{{ typed_field.value|default_if_none:'' }}">
+
+  <noscript>
+    <label class="field orgfind__fallbackfield">
+      <span class="field__label">{{ typed_field.label }}</span>
+      {{ typed_field }}
+    </label>
+    {% if tail %}
+      {% comment %}
+        The rest of the catalogue, for a browser that cannot search it.
+
+        Only the entries that are *not* already answers, and the controls are
+        written out rather than rendered from the subwidget: the same subwidget
+        twice would put one `id` on two inputs, and a checked twin down here
+        would keep a sender ticked after somebody unticked its chip above.
+      {% endcomment %}
+      <fieldset class="field orgfind__fallbackfield">
+        <legend class="field__label">Vali nimekirjast</legend>
+        <div class="chiprow">
+          {% for choice in tail %}
+            {% if not choice.data.selected %}
+              <label class="chip">
+                <input class="chip__input" type="{% if single %}radio{% else %}checkbox{% endif %}"
+                       name="{{ choice.data.name }}" value="{{ choice.data.value }}">
+                <span class="chip__name">{{ choice.choice_label }}</span>
+              </label>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </fieldset>
+    {% endif %}
+  </noscript>
+
+  {% comment %}
+    The one visible control, and the first thing in the field.
+
+    `role="combobox"` and the rest are set by the script, never written here:
+    markup announcing a listbox that nothing can open describes behaviour the
+    page does not have, which is the rule the header search already follows
+    (templates/base.html, static/js/app.js `bindLiveSearch`).
+
+    The `+` is a real button element, attached to the box, the height of it,
+    and `disabled` until there is something to add — a genuine `disabled`
+    rather than an `aria-disabled` claim, because with an empty query it really
+    does nothing. Its name is text rather than an `aria-label`, so «Lisa uus
+    saatja» is what a screen reader announces and what a test can ask for
+    (task §4, §18, §20).
+  {% endcomment %}
+  <div class="orgfind__search">
+    <label class="visually-hidden" for="{{ picker_id }}-otsi">{{ legend }} — otsi või lisa asutus</label>
+    <input class="field__input orgfind__input" id="{{ picker_id }}-otsi"
+           type="search" autocomplete="off" data-orgfind-input
+           placeholder="Otsi või lisa asutus…">
+    <button type="button" class="orgfind__add" data-orgfind-add disabled>
+      <span aria-hidden="true">+</span>
+      <span class="visually-hidden">{{ add_label }}</span>
+    </button>
+  </div>
+
+  {% comment %}
+    Empty and absent at rest; the script fills it and reveals it, and gives it
+    its listbox semantics at the same time. Not inside the search row, because
+    it is a list under the field rather than a popover over the page.
+  {% endcomment %}
+  <div class="orgfind__results" id="{{ picker_id }}-tulemused" hidden></div>
+
+  {% comment %}
+    What has been chosen, and what can be chosen in one click.
+
+    One row, in three parts and in this order: the provisional chip for a body
+    being named for the first time, the shortlist, and every other institution
+    — the last of those `hidden` unless the search has found it or it is
+    already an answer. A chip that is an answer is never hidden, which is the
+    whole of task §8: a sender the reader inferred, a body chosen from the
+    search, and one that came back on a refused save are all visibly selected
+    without anything having to be opened.
+  {% endcomment %}
+  <div class="chiprow orgfind__chips" data-orgfind-chips
+       {% if sender_row %}data-sender-chips{% endif %}
+       {% if clears_group %}data-clears="{{ clears_group }}" data-clears-field="{{ picker_id }}-uus"{% endif %}>
+    {% if typed_field.value %}
+      {% comment %}
+        The body that does not exist yet.
+
+        Nameless, so it posts nothing: everything it does is done through the
+        hidden field above, which is the control the server reads. Dashed and
+        checked, because «not saved yet» is what a dashed border means
+        everywhere in this application and this is nonetheless an answer.
+      {% endcomment %}
+      <label class="chip chip--provisional" data-orgfind-provisional>
+        <input type="checkbox" class="chip__input" checked data-orgfind-provisional-input>
+        <span class="chip__name">{{ typed_field.value }}<span class="chip__clear" aria-hidden="true">×</span></span>
+      </label>
+    {% endif %}
+
+    {% for choice in chips %}
+      <label class="chip">
+        {{ choice.tag }}
+        <span class="chip__name">{{ choice.choice_label }}{% if clearable %}<span class="chip__clear" aria-hidden="true">×</span>{% endif %}</span>
+      </label>
+    {% endfor %}
+
+    {% for choice in tail %}
+      {% comment %}
+        `hidden` unless it is an answer. `.chip[hidden]` is already spelled out
+        in the stylesheet — `.chip` sets `display: inline-flex`, and an author
+        rule beats the user agent's `[hidden] { display: none }`, which is the
+        defect that once made the old search box do nothing at all.
+      {% endcomment %}
+      <label class="chip" data-orgfind-tail {% if not choice.data.selected %}hidden{% endif %}>
+        {{ choice.tag }}
+        <span class="chip__name">{{ choice.choice_label }}{% if clearable %}<span class="chip__clear" aria-hidden="true">×</span>{% endif %}</span>
+      </label>
+    {% endfor %}
+  </div>
+
+  {% comment %}
+    What happened, for somebody who cannot see the list appear. Polite: an
+    assertive region would interrupt the typing it is describing.
+  {% endcomment %}
+  <p class="visually-hidden" id="{{ picker_id }}-seis" role="status" aria-live="polite"></p>
+
+  {% if typed_field.errors %}
+    <span class="field__error">{{ typed_field.errors|first }}</span>
+  {% endif %}
+</div>

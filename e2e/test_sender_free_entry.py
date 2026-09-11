@@ -13,6 +13,13 @@ closed `<details>` labelled «Vali nimekirjast (15)» and put the sentence sayin
 creation was impossible inside it too — so the answer to "the body I need is not
 here" was visible only to somebody who had already opened the thing that did not
 contain it (docs/adr/0063).
+
+Since docs/adr/0073 there is no disclosure and no second box on `Uus teema`: one
+field searches the catalogue and the `+` beside it proposes what was typed. The
+rules underneath are untouched, which is why this file kept every assertion
+about them and changed only how the browser reaches them. `Muuda teemat` and
+`Saabunud` still render `sender_control.html`, so the tests below that drive
+those surfaces are untouched as well (task §26).
 """
 
 from __future__ import annotations
@@ -36,70 +43,80 @@ def create_form(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def test_the_two_sender_operations_that_matter_are_on_the_page_at_rest(page, base_url):
-    """The shortlist and `Uus saatja`, with nothing to open first.
+def name_a_new_sender(page, typed: str) -> None:
+    """Say «this is a body you do not have», through the one control that does.
 
-    This used to require the *search* to be at rest on the page too, and to
-    assert that the control had no disclosure at all. That decision is
-    superseded (ADR 0067): the catalogue and its search moved back behind
-    «Vali nimekirjast», where Adressaat has always kept them, because the
-    shortlist is filled to eight from the bodies this department actually works
-    with and answers the question on almost every visit — so what the permanent
-    catalogue bought was a search box and a scrolling list occupying the Saatja
-    column every single time.
+    The search box finds what exists; `+` proposes what was typed. Both are the
+    same field, which is the whole of docs/adr/0073 — so a test that used to
+    `fill("#id_sender_name")` types into the box and presses the button.
+    """
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.fill(typed)
+    page.locator("#saatja-valik [data-orgfind-add]").click()
 
-    What did **not** move is the half of that round which was load-bearing, and
-    it is what this test now pins: `Uus saatja` stays outside the disclosure.
-    The answer to "the body I need is not on this page" must not itself be
-    behind a click, because the workflow that replaced was «abandon this Teema,
-    go to Asutused, come back» and nobody performed it — they filed the Teema
-    with no sender (ADR 0063).
+
+def test_the_one_sender_operation_is_on_the_page_at_rest(page, base_url):
+    """Search, quick choices, and a `+` — with nothing to open first.
+
+    This assertion has moved twice and it is worth saying why, because the
+    reasoning is the product decision rather than a preference. It first
+    required the catalogue and its search to be permanently on the page; ADR
+    0067 put them back behind «Vali nimekirjast», on the argument that the
+    shortlist answers the question on almost every visit and a permanent
+    scrolling list was occupying the Saatja column for nothing. Both rounds
+    agreed on the half that was load-bearing — the answer to "the body I need is
+    not on this page" must not itself be behind a click, because the workflow
+    that replaces is «abandon this Teema, go to Asutused, come back» and nobody
+    performs it.
+
+    docs/adr/0073 keeps that half and removes the choice between the other two:
+    the search box *is* the box for a body the catalogue does not hold, so there
+    is one control, it is first, and nothing is folded away (task §2, §3).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
     expect(page.locator('input[name="source_organisations"]').first).to_be_visible()
-    expect(page.get_by_label("Uus saatja")).to_be_visible()
+    expect(page.locator("#saatja-otsi")).to_be_visible()
+    expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_be_visible()
 
-    # And the search is behind the door rather than beside the chips.
-    search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
-    if search.count():
-        expect(search).to_be_hidden()
-        assert page.locator(".senderpick details").count() == 1
+    # And neither retired control is anywhere on the rendered page.
+    body = page.locator("form.createform").inner_text()
+    assert "Vali nimekirjast" not in body
+    assert "Uus saatja" not in body
+    assert page.locator(".senderpick details").count() == 0
 
 
 def test_the_search_is_a_result_area_that_keeps_what_was_ticked(page, base_url):
     """Type to find, and a ticked body never hides afterwards.
 
-    Three states in one test, because they are one behaviour: at rest the
-    result area holds nothing, a query fills it with what matches, and a body
-    ticked from it stays on screen when the query stops matching it. That last
-    one is the rule that matters — hiding a checkbox does not clear it, so a
-    save must never depend on what is on screen.
+    Three states in one test, because they are one behaviour: at rest the result
+    area holds nothing, a query fills it with what matches, and a body chosen
+    from it stays on screen when the query stops matching it. That last one is
+    the rule that matters — hiding a control does not clear it, so a save must
+    never depend on what is on screen (task §8).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    rows = page.locator("#saatja-nimekiri .chip")
-    if not rows.count():
-        pytest.skip("the seeded catalogue holds no body outside the shortlist")
+    results = page.locator("#saatja-tulemused")
+    expect(results).to_be_hidden()
 
-    # At rest the catalogue is behind «Vali nimekirjast» (ADR 0067), so it is
-    # opened before anything inside it is measured.
-    expect(rows.first).to_be_hidden()
-    page.locator(".senderpick summary.chipdetails__summary").click()
+    chips = page.locator("#saatja-valik label.chip")
+    name = (chips.first.inner_text() or "").strip().rstrip("×").strip()
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.fill(name[:5])
+    expect(results).to_be_visible()
 
-    search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
-    name = rows.first.inner_text().strip()
-    search.fill(name[:4])
-    expect(rows.first).to_be_visible()
+    results.get_by_role("option", name=name, exact=True).click()
+    box.fill("zzzzz-ei-leidu")
 
-    rows.first.locator("input").check()
-    search.fill("zzzzz-ei-leidu")
-
-    # Ticked, therefore still visible and still ticked.
-    expect(rows.first).to_be_visible()
-    expect(rows.first.locator("input")).to_be_checked()
+    # Chosen, therefore still visible and still chosen.
+    chosen = page.locator("#saatja-valik label.chip", has_text=name).first
+    expect(chosen).to_be_visible()
+    expect(chosen.locator("input")).to_be_checked()
 
 
 def test_a_sender_can_be_named_on_uus_teema(page, base_url):
@@ -108,7 +125,7 @@ def test_a_sender_can_be_named_on_uus_teema(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_title", "Brauseris kirjutatud saatja")
-    page.fill("#id_sender_name", TYPED_SENDER)
+    name_a_new_sender(page, TYPED_SENDER)
     # A next step, for the same reason `test_addressee_free_entry` files one:
     # every Teema this suite leaves behind without one is a permanent row in
     # the department's «järgmise tegevuseta» list, which another file reads.
@@ -135,7 +152,7 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
     # The Teema filed by the test above put this body in the catalogue. Filing
     # it again here would be a second Matter for nothing, so this reads the
     # control rather than the record.
-    page.fill("#id_sender_name", TYPED_SENDER)
+    name_a_new_sender(page, TYPED_SENDER)
     page.fill("#id_title", "Sama asutus adressaadina")
     page.fill("#id_next-text", "Kontrollida vastust")
     page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
@@ -178,19 +195,36 @@ def test_the_count_beside_the_legend_reads_both_halves_of_the_set(page, base_url
     create_form(page, base_url)
 
     badge = page.locator("[data-chipcount-for='source_organisations']")
-    shortlist = page.locator('input[name="source_organisations"]')
-    if not shortlist.count():
-        pytest.skip("the seeded world offers no sender chips")
+    shortlist = page.locator('#saatja-valik input[name="source_organisations"]')
+    assert shortlist.count(), (
+        "the seeded world offers two institutions as sender chips — an empty "
+        "locator here is a moved element, not an empty catalogue"
+    )
 
     shortlist.first.check()
     expect(badge).to_have_text("1 valitud")
 
-    rows = page.locator("#saatja-nimekiri .chip")
-    if not rows.count():
-        pytest.skip("the seeded catalogue holds no body outside the shortlist")
+    # The second body through the search, which is where the two halves of the
+    # set actually come apart: everything outside the shortlist posts under
+    # `source_organisations_other`, and a badge reading only the first field
+    # said «1 valitud» over two ticked bodies.
+    others = page.locator("#saatja-valik label.chip").evaluate_all(
+        "(nodes, chosen) => nodes"
+        ".map(node => { const i = node.querySelector('input');"
+        " const n = node.querySelector('.chip__name');"
+        " return {checked: i ? i.checked : false,"
+        " name: (n ? n.textContent : '').replace(/\\s*×$/, '').trim()}; })"
+        ".filter(item => !item.checked && item.name)"
+        ".map(item => item.name)",
+        None,
+    )
+    assert others, (
+        "the seeded world offers two institutions and this needs the second — "
+        "an empty list here is a moved element, not an empty catalogue"
+    )
 
-    page.locator(".senderpick summary.chipdetails__summary").click()
-    search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
-    search.fill(rows.first.inner_text().strip()[:4])
-    rows.first.locator("input").check()
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.fill(others[0][:5])
+    page.locator("#saatja-tulemused").get_by_role("option", name=others[0], exact=True).click()
     expect(badge).to_have_text("2 valitud")

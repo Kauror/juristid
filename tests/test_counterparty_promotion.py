@@ -2,11 +2,14 @@
 
 Three things this file pins, and they are the three the department asked for.
 
-**Saatja looks like Adressaat.** Chips first, «Vali nimekirjast (N)» holding the
-search and the rest of the catalogue, `Uus saatja` outside where it is always
-reachable. A person should not learn one interaction for the field on the left
-and a different one for the field on the right when the two sit on the same row
-of the same form and answer the two halves of one question.
+**Saatja looks like Adressaat.** One control: a box reading «Otsi või lisa
+asutus…» with a `+` attached to it, and the quick choices under it. A person
+should not learn one interaction for the field on the left and a different one
+for the field on the right when the two sit on the same row of the same form and
+answer the two halves of one question — and they should not learn three
+interactions for either of them, which is what the shortlist, the «Vali
+nimekirjast» disclosure and the separate «Uus saatja» box added up to
+(docs/adr/0073).
 
 **Whoever wrote to you is the first person you might answer** — and since
 docs/adr/0069, the one the form answers. A body chosen as the sender is moved to
@@ -16,13 +19,15 @@ default sitting in the long tail behind a closed disclosure would be an answer
 nobody could find. What the default *is* belongs to
 `tests/test_addressee_defaults_to_sender.py`.
 
-**One name is one institution.** Typing the same new body into `Uus saatja` and
-`Uus adressaat` on one form creates exactly one `Organisation` row, used twice.
+**One name is one institution.** Naming the same new body as sender and as
+addressee on one form creates exactly one `Organisation` row, used twice.
 Two rows would be the catalogue quietly acquiring a duplicate on the most
 ordinary journey there is (docs/adr/0063, docs/adr/0067).
 """
 
 from __future__ import annotations
+
+import re
 
 import pytest
 from django.urls import reverse
@@ -45,96 +50,121 @@ def komisjon():
 
 
 # ---------------------------------------------------------------------------
-# The disclosure
+# One control: search first, quick choices under it
 # ---------------------------------------------------------------------------
 
 
-def test_the_sender_control_offers_chips_then_a_disclosure(signed_in, komisjon):
+def _without_noscript(page: str) -> str:
+    """The page a scripted browser builds a document from.
+
+    `<noscript>` content is not markup in a browser that runs scripts — it is
+    text the parser skips — so anything asserted about what a person sees has to
+    be asserted about the response with those blocks taken out. Without this the
+    fallback's «Vali nimekirjast» would satisfy a test written to prove it gone.
+    """
+    return re.sub(r"<noscript>.*?</noscript>", "", page, flags=re.DOTALL)
+
+
+def test_the_sender_control_is_a_search_box_and_then_chips(signed_in, komisjon):
     """The shape, read off the rendered page rather than off the form object.
 
     A count on the form and a control on the page are two different claims, and
-    it is the second one the person meets.
+    it is the second one the person meets. What that person now meets is one
+    control: «Otsi või lisa asutus…», with the quick choices under it and
+    nothing folded away (docs/adr/0073, task §3).
     """
     for index in range(12):
         Organisation.objects.create(name=f"Asutus {index:02d}")
 
     page = signed_in.get(CREATE).content.decode()
 
-    assert "Vali nimekirjast" in page
-    # The typed-sender box is outside the disclosure, so it survives with the
-    # door shut. Asserted through the label, which is what somebody looks for.
-    assert "Uus saatja" in page
+    assert "Otsi või lisa asutus…" in page
+    assert "Lisa uus saatja" in page
+    assert "Lisa uus adressaat" in page
 
 
-def test_the_sender_search_is_inside_the_disclosure_and_the_new_box_is_not(signed_in, komisjon):
+def test_the_retired_controls_are_gone_from_the_scripted_page(signed_in, komisjon):
+    """«Vali nimekirjast» and «Uus saatja» reach an ordinary browser nowhere.
+
+    They are still in the response — inside `<noscript>`, which is the fallback
+    for a browser that cannot search the catalogue — and a scripted browser
+    never parses that into anything. So the assertion has to be made against the
+    document *minus* those blocks, which is what the person actually sees
+    (task §12, §22).
+
+    `Muuda teemat` and `Saabunud` keep the old pair of controls and are not
+    asserted here: this round changed `Uus teema` and deliberately nothing else
+    (task §26).
+    """
+    for index in range(12):
+        Organisation.objects.create(name=f"Asutus {index:02d}")
+
+    scripted = _without_noscript(signed_in.get(CREATE).content.decode())
+
+    assert "Vali nimekirjast" not in scripted
+    assert "Uus saatja" not in scripted
+    assert "Uus adressaat" not in scripted
+    # The field is not merely invisible: it still posts, because `+` writes into
+    # it and a refused save has to come back holding what was typed.
+    assert 'name="sender_name"' in scripted
+    assert 'name="addressee_name"' in scripted
+
+
+def test_the_search_box_is_the_first_control_in_each_field(signed_in, komisjon):
     """The one structural claim worth making with a parser rather than a substring.
 
-    «Uus saatja» being *outside* is the half of the previous round that was
-    load-bearing: it is the answer to "the body I need is not on this page", and
-    hiding that behind a click restores the workflow nobody used. The search
-    being *inside* is what gives the row back to the eight chips that answer the
-    question on almost every visit (task §9).
+    «Search first» is the whole product decision, and a template that rendered
+    the chips above the box would satisfy every substring assertion in this file
+    while shipping the shape this round exists to replace. So the two fields are
+    walked in document order and the first control in each is named (task §3).
     """
     from html.parser import HTMLParser
 
     for index in range(12):
         Organisation.objects.create(name=f"Asutus {index:02d}")
-    page = signed_in.get(CREATE).content.decode()
+    page = _without_noscript(signed_in.get(CREATE).content.decode())
 
     class Reader(HTMLParser):
+        """The controls inside each picker, in the order they are written."""
+
         def __init__(self) -> None:
             super().__init__()
-            self.depth = 0
-            self.in_sender = False
-            self.search_depths: list[int] = []
-            self.new_sender_depths: list[int] = []
+            self.picker: str | None = None
+            self.seen: dict[str, list[str]] = {}
 
-        def handle_starttag(self, tag, attrs):
+        def handle_starttag(self, tag: str, attrs: list) -> None:
             values = dict(attrs)
-            classes = (values.get("class") or "").split()
-            if tag == "fieldset" and "senderpick" in classes:
-                self.in_sender = True
-                self.depth = 0
-            if not self.in_sender:
+            if tag == "div" and "data-orgfind" in values:
+                self.picker = values.get("id") or ""
+            if tag != "input" or self.picker is None:
                 return
-            if tag == "details":
-                self.depth += 1
-            if tag == "input" and values.get("type") == "search":
-                self.search_depths.append(self.depth)
-            if tag == "input" and values.get("name") == "sender_name":
-                self.new_sender_depths.append(self.depth)
+            kind = values.get("type") or "text"
+            if kind == "hidden":
+                # The carrier posts and is not a control anybody meets.
+                return
+            self.seen.setdefault(self.picker, []).append(
+                "search" if kind == "search" else values.get("name") or "?"
+            )
 
-        def handle_endtag(self, tag):
-            if self.in_sender and tag == "details":
-                self.depth -= 1
-            if self.in_sender and tag == "fieldset" and self.depth == 0:
-                self.in_sender = False
-
-    reader = Reader()
-    reader.feed(page)
-
-    assert reader.search_depths == [1], "the Saatja search box is not inside the disclosure"
-    assert reader.new_sender_depths == [0], "Uus saatja is not outside the disclosure"
-
-
-def test_the_disclosure_counts_the_bodies_behind_it(specialist):
-    """(N) is the tail, not the catalogue: the chips are already on the page."""
-    for index in range(15):
-        Organisation.objects.create(name=f"Asutus {index:02d}")
-
-    form = MatterCreateForm(viewer=specialist)
-
-    assert len(form.frequent_senders) == 8
-    assert form.sender_tail_count == 15 - 8
+    # Two pickers on the page and neither carries an id, so they are told apart
+    # by the order the halves of the document put them in.
+    for index, half in enumerate(page.split("data-orgfind ")[1:], start=1):
+        one = Reader()
+        one.picker = str(index)
+        one.feed(half)
+        assert one.seen[str(index)][0] == "search", (
+            f"picker {index} renders something before its search box: {one.seen[str(index)][:3]}"
+        )
 
 
-def test_a_catalogue_smaller_than_the_shortlist_renders_no_disclosure(specialist):
-    """No door where there is nothing behind it."""
+def test_a_catalogue_smaller_than_the_shortlist_has_no_hidden_tail(specialist):
+    """Nothing behind the search when the shortlist already holds everything."""
     Organisation.objects.create(name="Ainus Asutus")
 
     form = MatterCreateForm(viewer=specialist)
 
     assert form.sender_tail_count == 0
+    assert form.sender_tail_choices == []
 
 
 # ---------------------------------------------------------------------------

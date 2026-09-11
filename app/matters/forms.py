@@ -31,7 +31,7 @@ from app.documents.enums import DocumentRole
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, MatterDataClass
 from app.matters.models import Matter
-from app.organisations.models import Organisation
+from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
 from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
 from app.taxonomy.vocabulary import (
@@ -364,12 +364,22 @@ def sender_name_field() -> forms.CharField:
     creating a body and coming back to find it again is not a workflow anybody
     used; they filed the Teema with no sender.
 
-    Its own control and never a `name` on the search box beside it, for exactly
-    the reason spelled out under `addressee_name_field`: one control filters
-    what exists, the other says «this is a body you do not have».
+    **It is no longer a visible box on `Uus teema`.** That surface asks one
+    question — «Otsi või lisa asutus…» — and this field is what the `+` beside
+    it writes into, so the distinction between *finding* an institution and
+    *naming* one survives in the posted data without being two controls on the
+    screen. `Muuda teemat` and `Saabunud` still render it as an ordinary text
+    box, and so does the `<noscript>` fallback (docs/adr/0073, task §2, §22).
 
-    Nothing is created here. `app.matters.services.resolve_source_organisations`
-    decides what the typed name means, inside the save's own transaction.
+    What has not changed is the rule underneath, and it is the reason the field
+    still exists at all: the search box posts nothing. Somebody who types
+    «Kliima», watches the list narrow to `Kliimaministeerium` and chooses it has
+    answered with a row; only pressing `+` says «this is a body you do not
+    have», and only that writes here.
+
+    Nothing is created here either way.
+    `app.matters.services.resolve_source_organisations` decides what the typed
+    name means, inside the save's own transaction.
     """
     return _typed_organisation_field("Uus saatja", hook="data-sender-name")
 
@@ -383,13 +393,17 @@ def addressee_name_field() -> forms.CharField:
     workflows to learn (§7).
 
     Its own field, deliberately, rather than a `name` attribute bolted onto the
-    long tail's search box. That box is a *filter* over choices already on the
-    page: somebody who types «Kliima», watches the list narrow to
-    `Kliimaministeerium` and clicks it has answered the question, and a control
-    that also posted the four letters left in the box would file the Teema
-    against a new institution called «Kliima». One control per intention —
-    filter, or name a body that is not here — is what makes the difference
-    between them decidable on the server (§10).
+    search box. That box is a *filter* over the catalogue: somebody who types
+    «Kliima», watches the list narrow to `Kliimaministeerium` and chooses it has
+    answered the question, and a control that also posted the four letters left
+    in the box would file the Teema against a new institution called «Kliima».
+    One field per intention — found a body, or named one that is not here — is
+    what makes the difference between them decidable on the server (§10).
+
+    On `Uus teema` the two intentions are now expressed through one visible
+    control: the search box, and the `+` attached to it that moves what was
+    typed into this field. Two *fields*, one *control* — see
+    `sender_name_field` and docs/adr/0073.
 
     Nothing is created here. `clean_typed_organisation_name` trims and
     length-caps the text; `app.matters.services.resolve_addressee` decides what
@@ -540,6 +554,76 @@ def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
         return list(Organisation.objects.order_by("name")[:limit])
     found = Organisation.objects.filter(pk__in=ranking)
     return sorted(found, key=lambda organisation: ranking[organisation.pk])
+
+
+class OrganisationSpellings:
+    """A choice widget that writes each institution's other spellings onto it.
+
+    The unified picker searches the catalogue in the browser, and «MKM» has to
+    find `Majandus- ja Kommunikatsiooniministeerium` the way
+    `app.organisations.services.find_matches` does — through a recorded alias,
+    which is somebody's decision that the two name one body rather than a
+    similarity score (`app/organisations/services.py` module docstring).
+
+    Aliases are not in the rendered label, so without this they are simply not
+    on the page and no amount of client-side cleverness can find them. They
+    arrive as ``data-aliases`` on the option's own control, already normalised
+    by `OrganisationAlias.save`, so the browser compares normalised text to
+    normalised text and never re-implements the normaliser.
+
+    **Presentation only, and deliberately so.** What a typed name *means* —
+    reuse, create, or refuse as ambiguous — stays in
+    `app.organisations.services.resolve_organisation_name`, inside the save's
+    own transaction. This makes a spelling findable; it decides nothing
+    (docs/adr/0073, task §21).
+    """
+
+    #: Normalised spellings per option value, joined by ``|``. Per form
+    #: instance: Django deep-copies fields — and their widgets — in
+    #: `BaseForm.__init__`, so assigning this never reaches another request.
+    alias_terms: dict[str, str]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.alias_terms = {}
+
+    def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        option = cast(dict[str, Any], super().create_option(*args, **kwargs))  # type: ignore[misc]
+        # `value` is the second positional argument and may arrive either way.
+        value = kwargs["value"] if "value" in kwargs else args[1]
+        terms = self.alias_terms.get(str(value))
+        if terms:
+            option["attrs"]["data-aliases"] = terms
+        return option
+
+
+class OrganisationCheckboxSelect(OrganisationSpellings, forms.CheckboxSelectMultiple):
+    """Saatja's chips, which are 0..N."""
+
+
+class OrganisationRadioSelect(OrganisationSpellings, forms.RadioSelect):
+    """Adressaat's chips, which are 0..1."""
+
+
+def organisation_alias_terms() -> dict[str, str]:
+    """Every institution's recorded spellings, by primary key, already normalised.
+
+    One query for the whole catalogue rather than one per chip. The picker
+    renders every institution — the shortlist visibly, the rest as searchable
+    entries — so there is no narrower set to ask for, and `normalized_alias` is
+    the column `find_matches` itself searches.
+
+    Nothing here is scoped by viewer and nothing needs to be: an alias is
+    reference data about an institution, the same class of fact as its name,
+    and every name in this catalogue is already on the page. No Matter is read,
+    so no restricted file can reach it (task §28).
+    """
+    terms: dict[str, list[str]] = {}
+    rows = OrganisationAlias.objects.values_list("organisation_id", "normalized_alias")
+    for organisation_id, normalized in rows:
+        if normalized:
+            terms.setdefault(str(organisation_id), []).append(normalized)
+    return {key: "|".join(sorted(set(values))) for key, values in terms.items()}
 
 
 def _raw_value(form: Any, name: str) -> Any:
@@ -817,7 +901,7 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
         # Checkboxes, because a Matter really can arrive from several bodies at
         # once. This was radios while the model held one sender, and the control
         # was right for the model it had; both moved together (Agent-E brief 28).
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     #: The rest of the catalogue, rendered beside the shortlist rather than
     #: behind a disclosure. The rendered choices exclude the chips above, so the
@@ -837,7 +921,7 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     #: Saatja's typed half. The same contract Adressaat has had since the typed
     #: addressee round, on the field that was explicitly denied it — see
@@ -867,7 +951,7 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
         # without it an addressee picked by mistake could not be unpicked — the
         # defect CI caught on `stage` a round ago.
         blank=True,
-        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
+        widget=OrganisationRadioSelect(attrs={"class": "chip__input"}),
     )
     addressee_name = addressee_name_field()
     #: «This person answered Adressaat themselves», said by the browser.
@@ -1026,6 +1110,46 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
         the answer is (§4, §12).
         """
         return bool(self.errors.get("addressee_organisation") or self.errors.get("addressee_name"))
+
+    # ---- the two halves of one picker ------------------------------------
+    #
+    # `organisation_picker.html` renders one control for both counterparty
+    # questions, and each of them offers the same two things: a handful of
+    # institutions as visible chips, and the rest of the catalogue as entries
+    # the search can reach. The split differs underneath — Saatja is two
+    # checkbox *fields* because one group cannot be rendered in two places
+    # without becoming two, Adressaat is one radio group sliced at
+    # `addressee_split` because it holds one value — and neither difference
+    # belongs in a template that is supposed to be the same control twice.
+    #
+    # So the slicing is done here, in Python, and the partial receives two
+    # plain lists of subwidgets either way (task §23, docs/adr/0073).
+
+    @property
+    def sender_chip_choices(self) -> list[Any]:
+        """The senders offered without being asked."""
+        return list(cast(Any, self)["source_organisations"])
+
+    @property
+    def sender_tail_choices(self) -> list[Any]:
+        """Every other institution, searchable rather than on screen."""
+        return list(cast(Any, self)["source_organisations_other"])
+
+    @property
+    def addressee_chip_choices(self) -> list[Any]:
+        """«Määramata», the chosen senders, and the bodies most often answered.
+
+        `addressee_split` is `None` when the form has no viewer — no usage to
+        rank by means no shortlist and no tail, and everything is a chip.
+        """
+        offered = list(cast(Any, self)["addressee_organisation"])
+        return offered if self.addressee_split is None else offered[: self.addressee_split]
+
+    @property
+    def addressee_tail_choices(self) -> list[Any]:
+        if self.addressee_split is None:
+            return []
+        return list(cast(Any, self)["addressee_organisation"])[self.addressee_split :]
 
     @property
     def data_class(self) -> str:
@@ -1212,6 +1336,20 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
                 *((organisation.pk, organisation.name) for organisation in self.addressee_offered),
             ]
             self.addressee_tail_count = len(tail)
+
+            # The recorded spellings, onto the controls that carry them.
+            #
+            # Read once for the whole catalogue and handed to all three choice
+            # fields, because the picker searches one pool of institutions
+            # through two questions and «MKM» has to find the same ministry
+            # whichever of them is being answered (docs/adr/0073, task §13).
+            spellings = organisation_alias_terms()
+            for field_name in (
+                "source_organisations",
+                "source_organisations_other",
+                "addressee_organisation",
+            ):
+                cast(Any, self.fields[field_name].widget).alias_terms = spellings
         else:
             self.frequent_senders = []
             self.sender_tail_count = 0

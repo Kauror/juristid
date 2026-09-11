@@ -5098,6 +5098,166 @@ a.barchart__row:hover {
   display: none;
 }
 
+/* -- the unified organisation picker --------------------------------------- *
+ *
+ * Search first, quick choices under it, and a `+` attached to the box that
+ * turns what is in it into a body the catalogue does not hold yet. It replaces
+ * a shortlist, a «Vali nimekirjast» disclosure and a separate «Uus saatja» box
+ * with one control that does all three (docs/adr/0073,
+ * templates/matters/partials/organisation_picker.html).
+ *
+ * Every selector here is prefixed `.orgfind`. The chips inside it are the
+ * application's own `.chip` and the box is the application's own
+ * `.field__input`, so nothing above this block changes — which matters while a
+ * separate branch is redesigning the Teema page out of the same stylesheet
+ * (task §27).
+ */
+
+.orgfind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+/* The box and its button, joined.
+ *
+ * One row, and the button is the height of the box because they are one
+ * control: `stretch` rather than a matching `min-height`, so the two cannot
+ * drift apart when the input's padding or font changes.
+ *
+ * The box takes the width the field gives it, up to the bound this form already
+ * uses for naming an institution — 30rem, the same as `.createform__newname`,
+ * which is the control it replaces. Unbounded, Adressaat's own row would draw a
+ * 1300px search box across the page at 1440 and make the smallest question on
+ * the form look like the largest; capped much tighter, a stacked row at 420
+ * would leave it an island with the whole width empty beside it. */
+.orgfind__search {
+  display: flex;
+  align-items: stretch;
+  gap: var(--spacing-1);
+  max-width: 30rem;
+  min-width: 0;
+}
+
+.orgfind__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--spacing-15) var(--spacing-2);
+  font-size: var(--typography-size-sm);
+}
+
+/* A real target, not a glyph.
+ *
+ * Square-ish and the full height of the box beside it, with the same border
+ * and radius, so it reads as the other end of one control rather than as
+ * something that happens to sit nearby. `disabled` is the genuine attribute
+ * while the box is empty — an `aria-disabled` on a button that still works is
+ * a claim screen readers repeat and drivers refuse (Uus teema redesign §8). */
+.orgfind__add {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 0 var(--spacing-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--typography-size-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.orgfind__add:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--accent-border);
+}
+
+.orgfind__add:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.orgfind__add:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* The results, under the field rather than over the page.
+ *
+ * A panel that pushes the form down while it is open, which is what a list
+ * inside a long form should do: a popover over the next field would cover the
+ * Valdkonnad row on the very screen somebody is filling in. Bounded and
+ * scrollable, so a catalogue that grows lengthens the list and not the page. */
+.orgfind__results {
+  display: flex;
+  flex-direction: column;
+  max-width: 30rem;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+/* `.orgfind__results` sets `display: flex`, and an author rule beats the user
+   agent's `[hidden] { display: none }` — the defect that once made the old
+   search box do nothing at all (`.chip[hidden]` above). */
+.orgfind__results[hidden] {
+  display: none;
+}
+
+.orgfind__option {
+  padding: var(--spacing-15) var(--spacing-25);
+  font-size: var(--typography-size-meta);
+  line-height: 1.5;
+  color: var(--text-body);
+  cursor: pointer;
+  text-align: left;
+}
+
+.orgfind__option:hover,
+.orgfind__option.is-active {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* The row that is already an answer, so choosing it again says so rather than
+   looking like a duplicate of the chip above. */
+.orgfind__option[aria-disabled="true"] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.orgfind__empty {
+  padding: var(--spacing-15) var(--spacing-25);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* The `<noscript>` half: a box for a body the catalogue does not hold, and the
+   rest of the catalogue as ordinary chips. Styled although a scripted browser
+   never parses it — this is the control somebody without scripting actually
+   uses, and "invisible to us" is not "allowed to look broken". */
+.orgfind__fallbackfield {
+  display: block;
+  max-width: 30rem;
+  margin-bottom: var(--spacing-2);
+}
+
+.orgfind__fallbackfield .field__input {
+  width: 100%;
+}
+
+/* The chips sit directly under the box, with no gap of their own: the
+   picker's own `gap` already spaces them. */
+.orgfind__chips {
+  margin-top: 0;
+}
+
 /* -- Hetkeseis: the chip that explains itself ------------------------------ */
 
 /* The affordance: a small circled "i" saying this chip explains itself.

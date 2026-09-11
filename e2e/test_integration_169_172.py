@@ -122,7 +122,7 @@ def a_new_name() -> str:
 
 def sender_checked_names(page) -> list[str]:
     """Every institution currently ticked as a Saatja, by name."""
-    return page.locator("fieldset.senderpick label.chip").evaluate_all(
+    return page.locator("#saatja-valik label.chip").evaluate_all(
         "nodes => nodes"
         ".filter(node => { const i = node.querySelector('input'); return i && i.checked; })"
         ".map(node => { const n = node.querySelector('.chip__name');"
@@ -135,33 +135,34 @@ def disagree_with_the_default(page) -> str:
 
     Not `e2e/test_counterparty_selection.py::_pick_some_addressee`, and the
     difference is the reason this helper exists rather than an import. That one
-    reads the **shortlist** only, which is correct for its own file: it never
-    has a file being read beside it, so the row it looks at is the one the
-    seeded catalogue produces. Here the ministry has already been promoted into
-    that shortlist by the reader, and on a database where the catalogue is small
-    the shortlist can then hold nothing else at all — everything remaining is
-    behind «Vali nimekirjast». A picker that only read the quick row would pass
-    on a used database and fail on a fresh one, which is the worst possible
-    scheduling for a test of an override rule.
+    reads the chips that are *on screen*, which is correct for its own file: it
+    never has a file being read beside it. Here the ministry has already been
+    promoted into that row by the reader, and on a database where the catalogue
+    is small the visible chips can then hold nothing else at all — everything
+    else is an entry the search reaches. A picker that only read the visible row
+    would pass on a used database and fail on a fresh one, which is the worst
+    possible scheduling for a test of an override rule.
 
-    So it looks where a person looks: the row first, then the list behind the
-    door. Returns the name, which is what the summary is asserted against.
+    So it looks where a person looks: the chips first, and the search for
+    whatever the chips do not show. Returns the name, which is what the summary
+    is asserted against.
+
+    Rewritten for docs/adr/0073's one control. The nested «Vali nimekirjast»
+    this used to open no longer exists, and the entries behind it are now found
+    by typing — which is both simpler and closer to what somebody does.
     """
     open_addressee(page)
-    tail = page.locator(f"{ADDRESSEE_QUICK} details.chipdetails")
-    if tail.count() and not tail.evaluate("node => node.open"):
-        tail.locator("> summary").click()
 
-    # Read the whole control in one evaluation — the chips in the row and the
-    # chips behind the door are the same radio group, and which side of the
-    # split a body lands on is a property of the seeded catalogue rather than
-    # of anything under test.
+    # The whole control in one evaluation: what is on screen and what is not are
+    # the same radio group, and which side of the split a body lands on is a
+    # property of the seeded catalogue rather than of anything under test.
     candidates = page.locator(f"{ADDRESSEE_QUICK} label.chip").evaluate_all(
         "nodes => nodes"
-        ".filter(node => !node.hasAttribute('data-provisional-addressee'))"
+        ".filter(node => !node.hasAttribute('data-orgfind-provisional'))"
         ".map(node => { const input = node.querySelector('input');"
         " const named = node.querySelector('.chip__name');"
         " return {value: input ? input.value : '',"
+        " hidden: node.hidden,"
         " name: ((named ? named.textContent : node.textContent) || '')"
         ".replace(/\\s*×$/, '').trim()}; })"
     )
@@ -180,12 +181,22 @@ def disagree_with_the_default(page) -> str:
     )
     assert chosen, f"the Adressaat control offered no second body to disagree with: {candidates!r}"
 
-    # Bound to the *value*, never to the position it was found at. Promotion
-    # relocates the chosen body's option to the front of this row, so an
-    # `nth(i)` locator starts pointing at a different control the moment the
-    # thing under test does its job — and the tail it may point into is closed
-    # (`e2e/test_counterparty_selection.py::_pick_some_addressee`).
-    page.locator(f'input[name="addressee_organisation"][value="{chosen["value"]}"]').click()
+    if chosen["hidden"]:
+        # Out of sight is what the search is for, and typing is how a person
+        # reaches it. Choosing the result ticks the control already in the
+        # document — it never builds a second one (docs/adr/0073).
+        box = page.locator("#adressaat-otsi")
+        box.click()
+        box.fill(chosen["name"][:6])
+        page.locator("#adressaat-tulemused").get_by_role(
+            "option", name=chosen["name"], exact=True
+        ).click()
+    else:
+        # Bound to the *value*, never to the position it was found at. Promotion
+        # relocates the chosen body's option to the front of this row, so an
+        # `nth(i)` locator starts pointing at a different control the moment the
+        # thing under test does its job.
+        page.locator(f'input[name="addressee_organisation"][value="{chosen["value"]}"]').click()
     return chosen["name"]
 
 
@@ -414,9 +425,14 @@ def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_u
     name = a_new_name()
     title = f"Teema uue asutuse nimel {uuid.uuid4().hex[:8]}"
 
-    # A body that does not exist yet, typed into `Uus saatja`. #169 then offers
-    # it as the addressee too, through the provisional chip.
-    page.locator("[data-sender-name]").fill(name)
+    # A body that does not exist yet, named through the one Saatja control:
+    # type it, then press the `+` that says «this is a body you do not have».
+    # #169 then offers it as the addressee too, through the provisional chip
+    # (docs/adr/0073).
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.fill(name)
+    page.locator("#saatja-valik [data-orgfind-add]").click()
     assert _summary(page) == f"Adressaat · {name}", (
         f"a typed sender did not become the default addressee: {_summary(page)!r}"
     )
