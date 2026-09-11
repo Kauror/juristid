@@ -192,17 +192,20 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # -- Scenario B: one composer save, two changes ----------------------
     page.goto(matter_url)
 
-    # The composer is one field and three chips. Everything else is out of the
-    # way until it is asked for — that is the adoption argument, not decoration.
-    expect(page.locator("#koostaja-manus")).to_be_hidden()
-    expect(page.locator("#koostaja-tahtaeg")).to_be_hidden()
-    expect(page.locator("#koostaja-lopetamine")).to_be_hidden()
-    # And `+ Kaasamine` is not among them. Kaasamine has exactly one path — its
-    # own section, with the fields the record actually needs — and a second,
-    # thinner one in the composer was two ways to create the same thing
-    # (Teema QA §8).
-    expect(page.locator("#koostaja-kaasamine")).to_have_count(0)
-    expect(page.locator(".disclosure-chip", has_text="+ Kaasamine")).to_have_count(0)
+    # The composer is open, and everything beyond the two boxes and the dates is
+    # a closed chip until it is asked for — that is the adoption argument, not
+    # decoration (docs/adr/0074 §3).
+    expect(page.locator("details.uxcomp")).to_have_attribute("open", "")
+    for panel in ("#cx-tahtaeg", "#cx-joustumine", "#cx-toovoit", "#cx-kaasamine", "#cx-lopeta"):
+        expect(page.locator(panel)).not_to_have_attribute("open", "")
+    # `+ Kaasamine` **is** among them now. It was kept out while the standalone
+    # Kaasamine section existed, because two entry points for one act is how the
+    # same consultation gets recorded twice; that section is gone, so this is
+    # the one entry point rather than the second (docs/adr/0074 §9).
+    expect(page.locator("#cx-kaasamine")).to_have_count(1)
+    # And the file is reachable without opening anything at all.
+    expect(page.locator(".cx-drop--corner input[type=file]")).to_have_count(1)
+    expect(page.locator(".disclosure-chip", has_text="+ Manus")).to_have_count(0)
 
     # Two boxes asking two different questions, and no third control mediating
     # them. What happened goes in one, what happens next in the other, and
@@ -214,11 +217,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     open_composer(page)
     page.locator(".composer__body").fill("Ministeerium lubas uue sõnastuse")
     page.locator("[name='next_text']").fill("Kontrollida ministeeriumi uut sõnastust")
-    # Revealing one optional block must not reveal the others.
-    page.locator(".disclosure-chip", has_text="+ Manus").click()
-    expect(page.locator("#koostaja-manus")).to_be_visible()
-    expect(page.locator("#koostaja-lopetamine")).to_be_hidden()
-    page.locator("#id_kind").select_option("MEETING")
+    # Opening one panel must not open the others.
+    page.locator("#cx-tahtaeg > summary").click()
+    expect(page.locator("#cx-tahtaeg")).to_have_attribute("open", "")
+    expect(page.locator("#cx-lopeta")).not_to_have_attribute("open", "")
+    page.locator("#cx-tahtaeg > summary").click()
     page.locator("#id_next_date").fill(_future(7))
     screenshots(page, "04-komposer")
 

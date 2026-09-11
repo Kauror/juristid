@@ -65,6 +65,10 @@ def test_the_composer_opens_with_l_and_never_while_somebody_is_typing(page, base
 
     composer = page.locator("details.uxcomp")
     expect(composer).to_have_count(1)
+    # Open on arrival (docs/adr/0074 §3). `L` still has to work from the closed
+    # state, which is what the row click above puts it in.
+    assert composer.evaluate("node => node.open") is True
+    page.locator(".uxnext__label").click()
     assert composer.evaluate("node => node.open") is False
 
     page.keyboard.press("l")
@@ -116,8 +120,6 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    page.locator("summary.uxcomp__collapsed").click()
-
     # The next step asks two things and nothing else.
     expect(page.locator("[name='next_text']")).to_be_visible()
     expect(page.locator("#id_next_date")).to_have_count(1)
@@ -125,9 +127,17 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     expect(page.locator("#id_next_date_semantics")).to_have_count(0)
     expect(page.locator("input[name=next_precision]")).to_have_count(0)
 
-    page.get_by_role("button", name="+ Oluline tähtaeg").click()
-    page.locator("#koostaja-tahtaeg summary", has_text="Ligikaudne aeg").click()
-    expect(page.locator("input[name=deadline_precision]").first).to_be_visible()
+    # `Oluline tähtaeg` is one date box and three precision chips since the
+    # approved target: the panel asks for the day somebody was told about and
+    # says how precisely it was meant, and `_period_anchor` derives the period
+    # from that day. The «Ligikaudne aeg» disclosure and its four selects are
+    # gone from this surface and still serve `Olulised tähtajad`
+    # (docs/adr/0074 §11).
+    page.locator("#cx-tahtaeg > summary").click()
+    expect(page.locator("#cx-tahtaeg [name=deadline_date]")).to_be_visible()
+    for label in ("Täpne päev", "Kuu", "Kvartal"):
+        expect(page.locator("#cx-tahtaeg .uxchip", has_text=label)).to_have_count(1)
+    expect(page.locator("#cx-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
     page.get_by_role("button", name="+ Lõpeta teema").click()
     expect(page.locator("#koostaja-lopetamine")).to_be_visible()

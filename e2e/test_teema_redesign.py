@@ -119,12 +119,14 @@ def test_a_low_data_matter_is_short_and_deliberate(page, base_url):
 
     expect(page.locator(".uxnext")).to_contain_text("Järgmine samm on määramata")
     # `Kaasamine` used to carry the last of the absence sentences in a collapsed
-    # summary line. It is a section of the facts panel now: a label and an add
-    # control, with the absence stated by the blank space under them
-    # (docs/matter-page-refinement.md).
+    # summary line, and then a standing section with a label and an add control.
+    # The approved target has neither: recording one is a composer panel, and an
+    # empty Matter says nothing about consultations at all (docs/adr/0074 §9).
     expect(page.locator(".accordion__summary--empty")).to_have_count(0)
     expect(page.get_by_text("Kaasamist ei ole kirja pandud")).to_have_count(0)
-    expect(page.locator("#kaasamine").get_by_text("+ Lisa kaasamine")).to_be_visible()
+    expect(page.locator("#kaasamine")).to_have_count(0)
+    expect(page.locator(".factspanel")).to_have_count(0)
+    expect(page.locator("#cx-kaasamine")).to_have_count(1)
 
     # Generous, and still far below what four labelled absences cost: this
     # catches a regression into the old shape, not a precise budget.

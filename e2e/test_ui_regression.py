@@ -76,7 +76,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import re
 
 import pytest
 
@@ -163,17 +162,14 @@ CLOCK_DEPENDENT = [
     ".uxnext__date",
     # `Excelist` and the register snapshot label beside an imported instruction.
     ".uxnext__flag",
-    # The closed timeline's own line. Its quote is content and stays in the
-    # baseline — the date in front of it is a `<time>` and is painted by the
-    # `time` selector below. What is masked here is the two values that move on
-    # their own: the pill carrying the current step's date, and the entry count,
-    # which every functional test that writes a note increments.
+    # The `Ajajoon` head's entry count, which every functional test that writes
+    # a note increments.
     #
-    # Kaasamine's and Töödokumendid's summaries are content and must stay.
-    ".accordion--timeline > summary .uxtl__previewnext",
+    # The preview pill beside it — `.uxtl__previewnext`, the current step's date
+    # repeated in a summary line — and the folded system run's date span are
+    # both gone from the page: the approved target's head is the label and the
+    # count, and there are no folded runs (docs/adr/0074 §14, §16).
     ".accordion--timeline > summary .uxtl__count",
-    # The folded system-run summary's date span. See `TIMELINE_RUN_SPAN`.
-    ".uxtl__sysrow > span:nth-child(2)",
     # Osakond's deadline panel. Every row prints "R 28.08" or "täna", and every
     # group header prints the window it holds — all of it computed from today
     # (design handoff 1a). The owner badges and four of the five group names stay
@@ -268,7 +264,9 @@ CLOCK_DEPENDENT = [
     # what the three disclosures look like when a lawyer opens them all. When
     # the block is shut it is `hidden`, so the input has no box and nothing is
     # painted anywhere else.
-    "#koostaja-manus .dateinput",
+    # `+ Manus` is gone and its date box with it; the composer's own dates are
+    # empty at rest and masking an empty control paints out the one thing the
+    # `teema-koostaja` baseline exists to show (docs/adr/0074 §6).
     # ---- The department page's ISO-week counts (docs/adr/0039, ADR 0049).
     #
     # These are dates that never render as a date. Each is a plain integer
@@ -437,64 +435,9 @@ CLOSED_ON = (".banner--closed .banner__text .muted",)
 
 #: The Ajajoon summary's «29.8», the `<time>` the timeline preview leads with.
 #:
-#: Masked by the bare `time` selector since that was added, and drifting anyway:
-#: the quote after it sits on the same line, so the mask's own width is that
-#: quote's position. Scoped to the preview because `time` is most of the dates
-#: in this application and only this one has content beside it on its line.
-TIMELINE_PREVIEW_ON = (".uxtl__preview time",)
-
-#: The folded system-run summary's date span — «Teema loodud 25.08, tegevusi 3
-#: … 31.08 näita ▸». `TimelineRow.span` over the run's own days, so it moves
-#: every morning: it read `31.08` when these baselines were taken and `01.09`
-#: the next day, for 304 of the 308 pixels each Teema capture was drifting by.
-#:
-#: The selector is positional because the element has no class of its own, and
-#: adding one for a test would put a Playwright concern into product markup. It
-#: is stable rather than incidental: `.uxtl__sysrow` is one `<summary>` with
-#: exactly three unconditional `<span>` children in a fixed order —
-#: `row.summary`, this span, and `.uxtl__sysshow`. Nothing here is inside an
-#: `{% if %}`, so `:nth-child(2)` can only ever be `row.span`
-#: (templates/matters/partials/timeline_items.html).
-#:
-#: Masked rather than normalised, and measured rather than assumed.
-#: `short_day_month` zero-pads, so `31.08` and `01.09` are both five characters,
-#: and the differing columns are x506–574 in both scenarios with `näita ▸`
-#: standing still — the glyphs move and the box does not. `short_range` *can*
-#: return an eleven-character `27.08–31.08` when a run covers more than one day;
-#: the mask covers whatever box is there, where a normalisation would have to
-#: rewrite a real range to a single date and say something untrue about how long
-#: the run lasted.
-TIMELINE_RUN_SPAN = (".uxtl__sysrow > span:nth-child(2)",)
-
-#: The folded run's own sentence, «Teema loodud 08.09, tegevusi 5».
-#:
-#: New in the 2026-09-08 pass, and it brought a second clock value onto the same
-#: line: `TimelineRow.summary` names the day the Matter was created, and the
-#: seeded world creates its Matters when the job runs. `short_day_month`
-#: zero-pads, so the glyphs change and the character count does not — but Barlow
-#: sets figures proportionally, so `08.09` and `11.09` are not the same width
-#: and everything to their right on the line moves with them, the masked span
-#: included.
-#:
-#: Normalised rather than masked. Masking would paint over the whole sentence,
-#: and the sentence is the change this pass made: a baseline that stopped
-#: showing it would stop showing that the row says when the file started and how
-#: much is folded into it, which is content (ADR 0057's rule, and the reason
-#: `:nth-child(2)` is scoped to the date beside it).
-#:
-#: **The canonical carries a count**, which is the one thing to know before
-#: adding a scenario. Exactly two captures render a folded run today —
-#: `teema-ulevaade` and `teema-1024`, both of them this same Matter — so
-#: `tegevusi 5` is that Matter's own number and is written into no other
-#: baseline. A third scenario that grew a run of a different length would have
-#: this string painted into it, so
-#: `test_the_folded_run_summary_is_the_sentence_the_page_really_renders` asserts
-#: the live text against the canonical before any capture is taken.
-TIMELINE_RUN_SUMMARY = (".uxtl__sysrow > span:nth-child(1)",)
-
-#: What that sentence is held still as. A real shape the product produces: a
-#: zero-padded `short_day_month` and the seeded Matter's own five events.
-RUN_SUMMARY = "Teema loodud 25.08, tegevusi 5"
+#: The `Ajajoon` head's preview quote and its date are both gone: the approved
+#: target's head is the label and the count (docs/adr/0074 §16).
+TIMELINE_PREVIEW_ON: tuple[str, ...] = ()
 
 #: Values that have to be held still, not merely covered.
 #:
@@ -560,13 +503,11 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     # would have moved one baseline more.
     (MONTH_VIEW_CHIP[0], "Tähtaeg sel kuul · 1"),
     (CLOSED_ON[0], "(29.8.2026)"),
-    (TIMELINE_PREVIEW_ON[0], "29.8"),
     (OPINION_ROW_SENT[0], "29.8.2026 19:35"),
     # Eight characters, because that is what the committed baselines hold and
     # tabular figures make the count the whole of it. A ten-character canonical
     # would be exactly as stable and would move two baselines to get there.
     (EVIDENCE_DATE[0], "6.9.2026"),
-    (TIMELINE_RUN_SUMMARY[0], RUN_SUMMARY),
 )
 
 #: What each scenario's capture may not silently stop *normalising*.
@@ -612,13 +553,10 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # differ on, and therefore with nothing to say so.
     "teema-dokumendid": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
     "teema-arvamused": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
-    # The two captures that render a folded system run, and they are the same
-    # Matter twice. Required for the reason `TIMELINE_RUN_SPAN` is required
-    # beside it: whether the run exists is decided by the seed's own call order
-    # rather than by the day, so an absence here is the markup or the seed
-    # having moved.
-    "teema-ulevaade": TIMELINE_RUN_SUMMARY,
-    "teema-1024": TIMELINE_RUN_SUMMARY,
+    # The two Teema captures that used to render a folded system run are not
+    # here any more. The approved target has no folded run: those events are
+    # milestones in their own right — `Teema loodud`, `Hetkeseis: …` — or
+    # ordinary work, each on its own line (docs/adr/0074 §14).
 }
 
 assert not {
@@ -635,21 +573,11 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "teemad-3440": OPINION_SENT,
     "teemad-filter": OPINION_SENT,
     "teema-suletud": (".banner--closed .banner__text .muted",),
-    # Required, because what decides it is the seeded world rather than the day.
-    # `collapse_system_runs` folds two or more *adjacent* system events, and the
-    # seed's own sequence of service calls on this Matter produces such a run:
-    # both captures rendered it on the run this mask was measured from, which is
-    # how the drift was found at all. So an absence here means the markup moved
-    # or the seed's call order changed — either is something to look at, not
-    # something to silently stop masking.
-    #
-    # Only these two are *required*. The selector is in `CLOCK_DEPENDENT`, so
-    # any other scenario that renders a folded run has it painted too; requiring
-    # it there as well would assert a presence nothing measured.
-    "teema-ulevaade": TIMELINE_RUN_SPAN,
-    "teema-1024": TIMELINE_RUN_SPAN,
-    # This scenario opens `+ Manus` itself, so the control is always there.
-    "teema-koostaja": ("#koostaja-manus .dateinput",),
+    # The folded system run's date span and `+ Manus`'s date box were required
+    # here until the approved target retired both surfaces (docs/adr/0074 §6,
+    # §14). Nothing replaced them: the milestone rows that took the run's place
+    # carry a date the `time` selector already paints, and the composer's own
+    # date boxes are empty at rest.
     # Unlike `.interrow__detail` above, these three are required. They are not
     # rows of a capped list that a busy world can push off the end: `new_matters`
     # and `reporting` in `app/matters/overview.py` both return a fixed list of
@@ -949,34 +877,6 @@ def test_matter_overview(page, base_url):
     compare("teema-ulevaade", capture(page, "teema-ulevaade"))
 
 
-def test_the_folded_run_summary_is_the_sentence_the_page_really_renders(page, base_url):
-    """What `RUN_SUMMARY` claims, checked against the page before anything
-    rewrites it.
-
-    The normalisation for this element replaces the whole sentence, and the
-    sentence carries a count. Everything but the date therefore has to be a
-    thing the product actually says on this page, or `teema-ulevaade` and
-    `teema-1024` hold a number nobody rendered — the one failure a normalisation
-    can cause that a screenshot cannot show.
-
-    Read before `capture`, on its own page load, so it sees the live value.
-    """
-    signed_in_matter(page, base_url, OPEN_TITLE)
-    live = page.locator(visible(TIMELINE_RUN_SUMMARY[0])).first.inner_text().strip()
-
-    assert re.fullmatch(r"Teema loodud \d{2}\.\d{2}, tegevusi \d+", live), (
-        f"the folded run reads {live!r}, which is not the shape "
-        f"`TimelineRow.summary` produces for a run holding the creation — and "
-        f"the normalisation would write {RUN_SUMMARY!r} over it"
-    )
-    assert live.split(", ", 1)[1] == RUN_SUMMARY.split(", ", 1)[1], (
-        f"the folded run reads {live!r} and the baselines are normalised to "
-        f"{RUN_SUMMARY!r}. Only the date may differ: the count is the seeded "
-        f"world's own, and holding it still at the wrong number paints a "
-        f"figure into two baselines that this page never rendered."
-    )
-
-
 def test_matter_header_only(page, base_url):
     """The band on its own: identity, state, facts and tabs, and how tall."""
     signed_in_matter(page, base_url, OPEN_TITLE)
@@ -1008,20 +908,24 @@ def test_matter_opinions(page, base_url):
 
 
 def test_matter_composer_expanded(page, base_url):
-    """Every progressive disclosure open at once.
+    """Every progressive panel open at once.
 
-    The one state a screenshot is genuinely better at than an assertion: three
-    optional blocks, each of which is a form, and the question is whether the
-    composer still reads as one surface when a lawyer has opened all of them.
+    The one state a screenshot is genuinely better at than an assertion: five
+    panels, each of which is a form, and the question is whether the composer
+    still reads as one surface when a lawyer has opened all of them. An open
+    panel claims the full row, so five of them stack rather than fight for the
+    line — «both are legal, the layout does not break» is exactly the claim a
+    baseline can hold and an assertion cannot (TEEMA_TARGET_SPEC §C.4).
     """
     signed_in_matter(page, base_url, OPEN_TITLE)
-    # The composer is a disclosure now, so the chips inside it are not clickable
-    # until it is open (design handoff 1d).
+    # Open on arrival since the approved target; this is the no-op that keeps
+    # the scenario honest if it is ever reached from the closed state.
     open_composer(page)
-    # Three, not four. `+ Kaasamine` is gone: Kaasamine has one path and it is
-    # its own section (Teema QA §8).
-    for chip in ("+ Manus", "+ Oluline tähtaeg", "+ Lõpeta teema"):
-        page.locator(".disclosure-chip", has_text=chip).click()
+    # Five, not three. `+ Jõustumine` and `+ Töövõit` moved here from the
+    # retired facts panel, and `+ Kaasamine` from the retired standalone
+    # section; `+ Manus` is gone entirely (docs/adr/0074 §6, §7, §9).
+    for panel in ("#cx-tahtaeg", "#cx-joustumine", "#cx-toovoit", "#cx-kaasamine", "#cx-lopeta"):
+        page.locator(f"{panel} > summary").click()
     page.wait_for_timeout(120)
     compare("teema-koostaja", capture(page, "teema-koostaja", clip_to=".composer"))
 
@@ -1045,62 +949,54 @@ def test_matter_at_1024(page, base_url):
     compare("teema-1024", capture(page, "teema-1024"))
 
 
-def _kaasamine(page):
-    return page.locator("#kaasamine")
-
-
 def _at_rest(page):
     """Take the pointer off whatever was just clicked, and settle.
 
-    A click leaves the mouse where it landed, and this section paints its add
-    control in the link colour on hover and reveals a row's actions under it —
-    so the first rendering of these came back hovered in one capture and at rest
-    in another, for no reason a reader of the baseline could see. A baseline
-    should show the state the test is named for and not where the mouse happened
-    to stop.
+    A click leaves the mouse where it landed, and a row that paints an action
+    under the cursor comes back hovered in one capture and at rest in another,
+    for no reason a reader of the baseline could see.
     """
     page.mouse.move(0, 0)
     page.wait_for_timeout(120)
 
 
-# Three clipped captures rather than three full-page ones: what these lock is
-# one section's own shape, and a whole-page baseline per state would put three
-# more pages' worth of unrelated layout under review every time anything else on
-# Teema moved (Kaasamine one-click §23).
+# The three `kaasamine-*` captures are retired with the section they clipped.
 #
-# Three, and not the four there used to be. `kaasamine-suletud` and
-# `kaasamine-tyhi` were the collapsed and the opened empty state, and the
-# 2026-09 refinement left the section no collapsed state to have: it is a
-# section of the facts panel and it always shows what it holds. The two captures
-# had become the same picture, and the baseline that named a state the page no
-# longer has went with the scenario (docs/matter-page-refinement.md).
+# `kaasamine-tyhi`, `kaasamine-kirjed` and `kaasamine-lisa` clipped `#kaasamine`
+# — a standing section with its own empty state, its own row list and its own
+# add form. The approved target has none of it: recording a consultation is the
+# composer panel `teema-koostaja` already captures, and reading one is a
+# chronology row inside `teema-ulevaade`. A clipped baseline of an element the
+# page does not render is a baseline that can only ever skip
+# (TEEMA_TARGET_SPEC §F, docs/adr/0074 §9).
+#
+# What replaced them is covered rather than dropped: the panel is in the
+# composer capture above, and the behaviour those three tests drove is in
+# `e2e/test_engagement.py`, which follows the capability to its new surface.
 
 
-def test_kaasamine_with_nothing_recorded(page, base_url):
-    """The state a reader arrives at, on a Matter nobody has consulted about.
+def test_the_process_strip_is_the_first_thing_in_the_ajajoon(page, base_url):
+    """`Teema käik` — where the file stands, before anything is scrolled.
 
-    The archive Matter, because it is the one the browser suite never writes to
-    that also holds no engagement — the scratch Matter the interactive tests use
-    is empty only until they run.
+    A capture rather than an assertion because what is being locked is a
+    *proportion*: the columns share the width evenly, the accent connector stops
+    at the current dot, and the three dot states have to be told apart at a
+    glance (TEEMA_TARGET_SPEC §D).
     """
-    signed_in_matter(page, base_url, ARCHIVE_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    strip = page.locator(".tl-strip")
+    if not strip.count():
+        pytest.skip("the seeded Matter carries no milestone")
     _at_rest(page)
-    compare("kaasamine-tyhi", capture(page, "kaasamine-tyhi", clip_to="#kaasamine"))
+    compare("teema-kaik", capture(page, "teema-kaik", clip_to=".tl-strip"))
 
 
-def test_kaasamine_with_a_record(page, base_url):
-    """The records, and the add control waiting under them."""
+def test_the_chronology_shows_its_two_row_kinds(page, base_url):
+    """A 12px accent dot for what happened to the file, a 6px muted one for work
+    somebody did on it — and no third (TEEMA_TARGET_SPEC §E)."""
     signed_in_matter(page, base_url, OPEN_TITLE)
     _at_rest(page)
-    compare("kaasamine-kirjed", capture(page, "kaasamine-kirjed", clip_to="#kaasamine"))
-
-
-def test_kaasamine_composer_open_over_a_record(page, base_url):
-    """`+ Lisa kaasamine`: one action, and the form is ready to type into."""
-    signed_in_matter(page, base_url, OPEN_TITLE)
-    _kaasamine(page).locator("[data-engagement-composer] summary").click()
-    _at_rest(page)
-    compare("kaasamine-lisa", capture(page, "kaasamine-lisa", clip_to="#kaasamine"))
+    compare("teema-ajajoon", capture(page, "teema-ajajoon", clip_to="#ajalugu-loend"))
 
 
 def test_matter_documents(page, base_url):
@@ -1537,15 +1433,12 @@ def test_the_closed_banner_date_is_the_same_width_on_any_day(page):
     )
 
 
-def test_the_timeline_preview_date_is_the_same_width_on_any_day(page):
-    """It is masked, and the quote beside it is not. The mask's width is the
-    quote's position, so a narrower date drags a line of real content with it."""
-    _holds_still(
-        page,
-        lambda date: f'<span class="uxtl__preview"><time>{date}</time> · Martin: «tekst»</span>',
-        TIMELINE_ON_VARIANTS,
-        TIMELINE_PREVIEW_ON[0],
-    )
+# The `Ajajoon` preview's date had a geometry test of its own: the mask's width
+# was the quote's position, so a narrower date dragged a line of real content
+# with it. Both the preview and its quote left the head with the approved target
+# — `AJAJOON` and `{n} kirjet` is the whole of it now (docs/adr/0074 §16) — so
+# there is no element left to hold still. The harness it used is unchanged and
+# still serves every other clock value on the page.
 
 
 def test_a_normalisation_that_stops_matching_fails_the_capture(page):
@@ -1616,97 +1509,20 @@ def _box_holds_still(page, build, variants, selector: str) -> None:
     )
 
 
-def _system_run_summary(span: str) -> str:
-    """The folded system-run summary, as `timeline_items.html` writes it.
-
-    Three unconditional spans in a fixed order, which is what makes
-    `:nth-child(2)` a selector rather than a guess.
-    """
-    return (
-        '<details class="uxtl__sys" open><summary class="uxtl__sysrow">'
-        f"<span>{RUN_SUMMARY}</span>"
-        f"<span>{span}</span>"
-        '<span class="uxtl__sysshow">näita ▸</span>'
-        "</summary></details>"
-    )
-
-
-#: The same sentence on four different mornings. Zero-padded by
-#: `short_day_month`, so the character count never changes — and Barlow's
-#: figures are proportional, so the width does until the normalisation holds it.
-RUN_SUMMARY_VARIANTS = (
-    "Teema loodud 25.08, tegevusi 5",
-    "Teema loodud 08.09, tegevusi 5",
-    "Teema loodud 31.12, tegevusi 5",
-    "Teema loodud 01.01, tegevusi 5",
-)
-
-
-def _system_run_line(summary: str) -> str:
-    """The same three spans, with the *first* one varying."""
-    return (
-        '<details class="uxtl__sys" open><summary class="uxtl__sysrow">'
-        f"<span>{summary}</span>"
-        "<span>31.08</span>"
-        '<span class="uxtl__sysshow">näita ▸</span>'
-        "</summary></details>"
-    )
-
-
-def test_the_run_summary_is_the_same_width_on_any_day(page):
-    """Normalised, not masked, so the *text* has to come out identical too.
-
-    The sentence is the content this pass put on the row; painting over it
-    would leave a baseline that no longer shows the row says anything. So it is
-    held still instead, and this is the assertion that it really is held —
-    across the month and year boundaries where the digits change most.
-    """
-    _holds_still(page, _system_run_line, RUN_SUMMARY_VARIANTS, TIMELINE_RUN_SUMMARY[0])
-
-
-def test_the_system_run_span_keeps_its_box_on_any_day(page):
-    """The mask is sized to this element, and the day inside it advances.
-
-    `31.08` became `01.09` overnight and put 304 differing pixels into both
-    Teema captures. Zero-padded, so the digits move and the box does not —
-    which is what makes a mask the right instrument here and a normalisation
-    the wrong one: normalising would have to rewrite a real range to a single
-    date and say something untrue about how long the run lasted.
-    """
-    _box_holds_still(
-        page,
-        _system_run_summary,
-        TIMELINE_SPAN_VARIANTS,
-        TIMELINE_RUN_SPAN[0],
-    )
-
-
-def test_the_system_run_span_keeps_its_box_across_a_multi_day_run(page):
-    """The other shape `short_range` produces, held to the same standard."""
-    _box_holds_still(
-        page,
-        _system_run_summary,
-        TIMELINE_SPAN_RANGE_VARIANTS,
-        TIMELINE_RUN_SPAN[0],
-    )
-
-
-def test_the_system_run_span_selector_takes_the_date_and_nothing_else(page):
-    """`:nth-child(2)` is positional, so what it selects is worth asserting.
-
-    A mask paints over everything it matches. If this selector reached the
-    summary sentence or «näita ▸», the baseline would stop showing that the
-    row says when the file started and how much is folded into it — and that is
-    content, not a clock value (the failure `CLOCK_DEPENDENT` documents for
-    `<td>`/`<th>`).
-    """
-    _fixture(page, _system_run_summary("31.08"))
-
-    assert page.locator(TIMELINE_RUN_SPAN[0]).count() == 1
-    assert page.locator(TIMELINE_RUN_SPAN[0]).inner_text().strip() == "31.08"
-    # The two it must not take.
-    assert page.locator(".uxtl__sysrow > span:nth-child(1)").inner_text().strip() == RUN_SUMMARY
-    assert page.locator(".uxtl__sysshow").inner_text().strip().startswith("näita")
+# The four folded-system-run geometry tests are retired with the row they
+# measured.
+#
+# They proved that `.uxtl__sysrow`'s date span kept its box on any day, across a
+# multi-day run, and that `:nth-child(2)` took the date and nothing else — all
+# of it in service of a mask over «Teema loodud 25.08, tegevusi 3 … 31.08». The
+# approved target has no folded run: those events are milestones in their own
+# right or ordinary work, each on its own line, and each carries a plain `<time>`
+# the bare `time` selector already paints (docs/adr/0074 §14).
+#
+# Nothing about the *method* went with them. `assert_no_clock_value_sizes_a_column`
+# below and the box-stability harness above are untouched, and the milestone
+# dates that replaced this row are covered by the same `CLOCK_DEPENDENT` rule
+# every other date on the page is.
 
 
 # ---------------------------------------------------------------------------
