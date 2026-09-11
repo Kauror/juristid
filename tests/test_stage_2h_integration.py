@@ -22,7 +22,7 @@ import pytest
 from django.urls import reverse
 
 from app.core.enums import Visibility
-from app.intelligence.services import add_important_date, add_work_victory_candidate
+from app.intelligence.services import add_confirmed_work_victory, add_important_date
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission
 from tests import factories
@@ -42,7 +42,7 @@ def _matter_with_everything(owner):
         period_end=FUTURE,
         actor=owner,
     )
-    add_work_victory_candidate(matter=matter, title="Sünteetiline võit", actor=owner)
+    add_confirmed_work_victory(matter=matter, title="Sünteetiline võit", actor=owner)
     return matter
 
 
@@ -55,8 +55,13 @@ def test_a_matter_shows_structured_facts_and_submissions_together(client, specia
 
     assert response.status_code == 200
     body = response.content.decode()
+    # The deadline is ahead of us, so it is where the file is *going* — a
+    # `.tl-strip` column. The win has happened, so it is a chronology milestone.
+    # Both are projected from their own canonical record; neither has a standing
+    # section any more (docs/adr/0074 §12, §15).
     assert "Sünteetiline tähtaeg" in body
     assert "Sünteetiline võit" in body
+    assert "tl-strip" in body
 
 
 def test_the_matter_page_carries_both_stages_context(client, specialist):

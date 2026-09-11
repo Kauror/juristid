@@ -41,6 +41,15 @@ next step and no history renders as a short, deliberate page.
     {% include "matters/partials/matter_banner.html" %}
 
     {% comment %}
+      What the maintained register observed, where it observed anything. Every
+      line inside renders only when its fact exists, so a normal open Matter
+      shows none of it — and two of them are load-bearing for the header
+      directly above: a passed `Arvamuse tähtaeg` the metaline does not call
+      late has to say why (ADR 0059, docs/adr/0074 §17).
+    {% endcomment %}
+    {% include "matters/partials/register_facts.html" %}
+
+    {% comment %}
       Zone A. Two surfaces read as one act: the row states what is owed, the
       composer is where the answer is written, and clicking the row opens the
       composer. They share a ground and one 3 px accent edge.

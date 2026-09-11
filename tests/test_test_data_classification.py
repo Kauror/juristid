@@ -341,43 +341,31 @@ def test_an_omitted_value_does_not_silently_become_real(signed_in, specialist):
     assert matter.data_class == MatterDataClass.TEST
 
 
-def test_the_endpoint_needs_a_visible_matter(client, specialist, reader):
-    hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(reader)
-
-    response = client.post(
-        reverse("matters:set_data_class", kwargs={"pk": hidden.pk}),
-        {"data_class": MatterDataClass.TEST},
-    )
-
-    assert response.status_code == 404
-    hidden.refresh_from_db()
-    assert hidden.data_class == MatterDataClass.REAL
-
-
 def test_the_whole_page_reflects_a_reclassification(signed_in, specialist):
-    """The badge, the rail and the row must not be able to disagree.
+    """The badge, and the register row, and every other reader of the class.
 
-    A partial swap would leave the header still saying nothing about a Matter
-    that had just become development data (Agent-C brief 22).
+    **Not the rail.** `Andmeklass` and `Märgi testandmeteks` are retired from the
+    Teema page: the badge beside the title still makes a development record
+    impossible to mistake for business data, and what left a reading surface is
+    the ability to *change* what a record is (docs/adr/0074 §17). The endpoint,
+    the service, the column and every stored value are untouched, and the
+    reclassification below goes through the service exactly as before.
     """
-    matter = factories.MatterFactory(owner=specialist)
-    signed_in.post(
-        reverse("matters:set_data_class", kwargs={"pk": matter.pk}),
-        {"data_class": MatterDataClass.TEST},
-        follow=True,
-    )
+    matter = factories.MatterFactory(owner=specialist, data_class=MatterDataClass.REAL)
+
+    set_matter_data_class(matter=matter, data_class=MatterDataClass.TEST, actor=specialist)
 
     page = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
     assert "badge--test" in page
-    assert "Testandmed" in page
+    assert ">TEST<" in page
+    # The maintenance controls are not on this page any more.
+    assert "Märgi pärisandmeteks" not in page
+    assert "Märgi testandmeteks" not in page
 
-
-# ---------------------------------------------------------------------------
-# The query vocabulary
-# ---------------------------------------------------------------------------
+    matter.refresh_from_db()
+    assert matter.is_test_data
 
 
 def test_the_helpers_partition_the_population(specialist):

@@ -80,8 +80,16 @@ def test_a_populated_section_still_renders(signed_in, specialist):
         period_end=timezone.localdate() + timedelta(days=10),
         actor=specialist,
     )
-    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    # **The Teema page carries no facts panel.** A dated milestone reads on the
+    # process strip and, once it has happened, in the chronology — projected
+    # from this same record (docs/adr/0074 §15).
+    page = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    assert 'id="teema-faktid"' not in page
+    assert "tl-strip" in page
+    assert "Kooskõlastusringi lõpp" in page
 
+    # The fragment route still serves the section, with its own scoped read.
+    body = _text(signed_in.get(_add_effective(matter), headers={"HX-Request": "true"}))
     assert 'id="olulised-tahtajad"' in body
     assert "Kooskõlastusringi lõpp" in body
     # The two that are still empty stay away.
@@ -102,9 +110,15 @@ def test_the_matter_page_marks_a_cancelled_milestone(signed_in, specialist):
     )
     cancel_important_date(record=record, actor=specialist)
 
+    # Nothing is deleted when a plan changes. A called-off expectation is part
+    # of the file's history, so it reads in the chronology and is marked there —
+    # and it is *not* on the process strip, which says where the file is going
+    # (docs/adr/0074 §12).
     body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
     assert "Ärajäänud ring" in body
     assert "Tühistatud" in body
+    strip = body.split("tl-strip")[1].split("</div>")[0] if "tl-strip" in body else ""
+    assert "Ärajäänud ring" not in strip
 
 
 def test_a_reader_sees_the_facts_and_none_of_the_controls(client, specialist):
@@ -135,7 +149,15 @@ def test_a_specialist_sees_no_confirmation_control(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
 
-    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    # Asserted on the fragment. The Teema page's way to state a win is the
+    # composer's `+ Töövõit`, and its chronology shows *confirmed* victories: a
+    # candidate is a proposal awaiting somebody else's judgement, not a
+    # professional fact about the file (docs/adr/0074 §8).
+    page = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    assert "+ Töövõit" in page
+    assert "Kandidaat" not in page
+
+    body = _text(signed_in.get(_add_effective(matter), headers={"HX-Request": "true"}))
     assert "+ Lisa töövõit" in body
     assert "Kinnita töövõiduks" not in body
 
@@ -229,7 +251,7 @@ def test_the_department_head_sees_the_confirmation_control(client, specialist, d
     add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
     client.force_login(department_head)
 
-    body = _text(client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    body = _text(client.get(_add_effective(matter), headers={"HX-Request": "true"}))
     assert "Kinnita töövõiduks" in body
 
 
@@ -341,18 +363,38 @@ def _add_victory(matter):
     return reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk})
 
 
-def test_the_matter_page_offers_both_add_controls_as_inline_triggers(signed_in, specialist):
-    """The empty state's two chips open in place, and there is a target to open
-    into. The `href` stays, so the control is still a link a browser without
-    scripting can follow to the standalone form."""
+def test_the_matter_page_records_both_facts_from_the_composer(signed_in, specialist):
+    """`+ Jõustumine` and `+ Töövõit` are composer panels, not links to a
+    fragment.
+
+    They opened a form into `#teema-faktid` while the facts panel existed; the
+    panel is gone and both are now closed chips beside the other three, saved by
+    the composer's one `Salvesta` in one transaction (docs/adr/0074 §7, §8).
+
+    The fragment route and its inline triggers are untouched and still tested
+    below — they are simply not what this page reaches for.
+    """
     matter = factories.MatterFactory(owner=specialist)
     body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
 
-    assert 'id="teema-faktid"' in body
-    for url in (_add_effective(matter), _add_victory(matter)):
-        assert f'href="{url}"' in body
-        assert f'hx-get="{url}"' in body
-    assert 'hx-target="#teema-faktid"' in body
+    assert 'id="teema-faktid"' not in body
+    assert 'id="cx-joustumine"' in body
+    assert 'id="cx-toovoit"' in body
+    assert "+ Jõustumine" in body
+    assert "+ Töövõit" in body
+
+
+# The «two chips on the empty state» test retired with the surface it measured.
+#
+# It read the *Matter page*, where an empty facts panel offered `+ Jõustumine`
+# and `+ Töövõit` as inline triggers into `#teema-faktid`. The approved target
+# has no facts panel: both are composer panels now, asserted in
+# `test_the_matter_page_records_both_facts_from_the_composer` above
+# (docs/adr/0074 §7, §8).
+#
+# What the test actually protected — an add control is an inline trigger with an
+# `href` a browser without scripting can follow — is the next test's subject, on
+# the surface that still renders one.
 
 
 def test_the_populated_section_control_opens_in_place_too(signed_in, specialist):
@@ -362,12 +404,18 @@ def test_the_populated_section_control_opens_in_place_too(signed_in, specialist)
     add_effective_date(matter=matter, kind=EffectiveDateKind.GENERAL_ORDER, actor=specialist)
     add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
 
-    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    body = _text(signed_in.get(_add_effective(matter), headers={"HX-Request": "true"}))
     commencements = body.split('id="joustumine"')[1].split("</section>")[0]
 
     assert "+ Lisa jõustumine" in commencements
     assert f'hx-get="{_add_effective(matter)}"' in commencements
-    assert f'hx-get="{_add_victory(matter)}"' in body.split('id="toovoidud"')[1]
+    # The `href` stays beside it: the control is still a link a browser without
+    # scripting can follow to the standalone form (docs/adr/0065).
+    assert f'href="{_add_effective(matter)}"' in commencements
+    assert 'hx-target="#teema-faktid"' in commencements
+    victories = body.split('id="toovoidud"')[1]
+    assert f'hx-get="{_add_victory(matter)}"' in victories
+    assert f'href="{_add_victory(matter)}"' in victories
 
 
 def test_opening_the_commencement_form_answers_with_the_fact_block(signed_in, specialist):

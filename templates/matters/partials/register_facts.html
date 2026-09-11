@@ -1,0 +1,129 @@
+{% comment %}
+What the maintained register observed about this Matter, where it observed
+anything at all.
+
+**A special state, not a section.** Every line below renders only when the
+register actually recorded the fact it states, so the normal open Matter the
+approved target demonstrates shows none of them and its composition is unchanged.
+This is the same rule `matter_banner` and the historical-material row follow — a
+truth the page must not lose because the design's demonstration file does not
+happen to carry it (docs/adr/0074 §17, implementation brief §52).
+
+These lines lived on the retired facts panel. They are here rather than gone
+because two of them are **load-bearing for the header directly above**: a passed
+`Arvamuse tähtaeg` that the metaline does not call late has to say why, or a
+lawyer has no way to find out — and a page that silently stopped calling a file
+late would be worse than the bug it fixed (ADR 0059, CUR-001,
+tests/test_valja_completion_semantics.py).
+
+Nothing here is an evidence claim. The register is a spreadsheet the department
+maintains; a `Submission` is an immutable document Koda can produce. Where both
+exist the stronger one wins and these fall silent.
+{% endcomment %}
+{% if register_facts %}
+  {% if register_facts.feedback.known or register_facts.opinion_not_sent or register_facts.opinion_sent_recorded_date or register_facts.opinion_state_unreadable or register_facts.continues_under_reference or register_facts.has_multiple_addressees %}
+    <section class="registerfacts" aria-label="Registri vaatlus">
+      {% comment %}
+        Two counts, and they are two independent observations — not a numerator
+        and a denominator. Nothing computes a response rate from them: the
+        register's own contract says the columns are not subsets of one another,
+        and the real data holds rows where more members answered than were asked
+        directly.
+
+        `teadmata` rather than an omission or a zero. A blank cell means nobody
+        wrote the number down; a written zero means somebody measured and the
+        answer was none.
+      {% endcomment %}
+      {% if register_facts.feedback.known %}
+        <p class="factnote">
+          <span class="factnote__label">Liikmete tagasiside · registri vaatlus</span>
+          otse küsitud {{ register_facts.feedback.requested_label }} ·
+          vastas {{ register_facts.feedback.responded_label }}
+        </p>
+      {% endif %}
+
+      {% comment %}
+        `ei saatnud` in words, because that is what the register wrote. It is a
+        recorded decision, not an unfinished draft and not a send date whose
+        value was lost — and it can never become a Submission, which needs
+        immutable final evidence a spreadsheet cell is not (ADR 0011, DATA-001).
+
+        It is also why the file's Arvamuse tähtaeg is no longer counted as work:
+        the opinion step is finished, with no opinion (ADR 0059). The quotation
+        is not decoration — it is the difference between reporting what the
+        source says and paraphrasing it.
+      {% endcomment %}
+      {% if register_facts.opinion_not_sent %}
+        <p class="factnote">
+          <span class="factnote__label">Arvamus · registri vaatlus</span>
+          registrisse märgitud „ei saatnud“: arvamust ei saadetud
+        </p>
+      {% endif %}
+
+      {% comment %}
+        Why a passed Arvamuse tähtaeg is not shown as late. The register recorded
+        a send date, so the opinion work is finished — and that is *all* this
+        says. Deliberately not «Koja arvamus saadetud»: Koda cannot show which
+        document went out on that day, and a page that claimed it could would be
+        asserting evidence the model refuses to store (ADR 0011, ADR 0059).
+
+        Suppressed entirely where a canonical Submission exists, because then the
+        page already states the stronger fact with the file attached.
+      {% endcomment %}
+      {% if register_facts.opinion_sent_recorded_date %}
+        <p class="factnote">
+          <span class="factnote__label">Arvamus · registri vaatlus</span>
+          registris märgitud väljasaadetuks {{ register_facts.opinion_sent_recorded_date|date:"j.n.Y" }}
+        </p>
+      {% endif %}
+
+      {% comment %}
+        A VÄLJA cell that is neither a date nor `ei saatnud`. Reported as a data
+        quality question and never as completion — it leaves the deadline
+        outstanding, which is the conservative direction and the one the product
+        owner approved. Zero rows carry this today (ADR 0059).
+      {% endcomment %}
+      {% if register_facts.opinion_state_unreadable %}
+        <p class="factnote factnote--warning">
+          <span class="factnote__label">Arvamus · registri vaatlus</span>
+          VÄLJA lahtris on märge, mida ei õnnestunud lugeda kuupäevana ega
+          märkena „ei saatnud“ — tähtaeg jääb seetõttu avatuks ja märge vajab
+          registris ülevaatamist
+        </p>
+      {% endif %}
+
+      {% comment %}
+        A continuation the register named, as a link when this database holds
+        the Matter it points at and as plain text when it does not. No canonical
+        relationship is created either way: the reference is read at render time
+        from the derived state, exactly as it was written.
+      {% endcomment %}
+      {% if register_facts.continues_under_reference %}
+        <p class="factnote">
+          <span class="factnote__label">Registri järgi jätkub</span>
+          {% if register_facts.continues_under_id %}
+            <a href="{% url 'matters:matter_detail' pk=register_facts.continues_under_id %}">
+              teema {{ register_facts.continues_under_reference }}
+            </a>
+          {% else %}
+            teema {{ register_facts.continues_under_reference }}
+          {% endif %}
+        </p>
+      {% endif %}
+
+      {% comment %}
+        The complete KELLELE cell where it names more than one body. `Matter`
+        holds one addressee and this release does not change that; showing the
+        whole cell here is how a three-ministry consultation stops reading as a
+        one-ministry one, without inventing a relationship the model cannot
+        express.
+      {% endcomment %}
+      {% if register_facts.has_multiple_addressees %}
+        <p class="factnote">
+          <span class="factnote__label">Adressaadid registris</span>
+          {% for name in register_facts.addressees %}{{ name }}{% if not forloop.last %} · {% endif %}{% endfor %}
+        </p>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endif %}

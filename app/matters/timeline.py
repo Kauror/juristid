@@ -616,7 +616,25 @@ def projected_milestones(
         )
 
     for record in [*facts.past_dates, *facts.upcoming_dates]:
-        if record.is_cancelled or not record.has_passed(day):
+        # **A cancelled expectation is history, and it reads as history.**
+        # Nothing is deleted when a plan changes: an expectation somebody called
+        # off is part of the file, and quietly dropping it is how a reader
+        # concludes nobody ever recorded anything (Stage-2G brief 5, 33). It is
+        # marked rather than hidden, and it does not reach the process strip —
+        # the strip says where the file is going, and a called-off milestone is
+        # not on that path (docs/adr/0074 §12).
+        if record.is_cancelled:
+            add(
+                record,
+                _end_of_day(record.period_end),
+                ChronologyMilestone(
+                    what=record.title,
+                    display_date=record.display_date,
+                    sub=str(record.get_status_display()),
+                ),
+            )
+            continue
+        if not record.has_passed(day):
             continue
         add(
             record,
@@ -628,7 +646,20 @@ def projected_milestones(
         )
 
     for record in facts.effective_dates:
-        if record.is_cancelled or record.date_value is None or record.date_value > day:
+        if record.date_value is None:
+            continue
+        if record.is_cancelled:
+            add(
+                record,
+                _end_of_day(record.date_value),
+                ChronologyMilestone(
+                    what=record.description or "Jõustumine",
+                    display_date=format_at_precision(record.date_value, record.date_precision),
+                    sub=str(record.get_status_display()),
+                ),
+            )
+            continue
+        if record.date_value > day:
             continue
         add(
             record,

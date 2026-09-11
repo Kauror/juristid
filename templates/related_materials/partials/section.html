@@ -145,5 +145,14 @@ lists and the suggestions cannot disagree about the click that just happened.
         {% include "related_materials/partials/suggestions.html" %}
       </div>
     </details>
+  {% else %}
+    {% comment %}
+      A reader gets the suggestions and not the affordance. `Lisa` is an add
+      control and a reader adds nothing — but what the application thinks is
+      related here is reading material like the confirmed lists above it, and
+      hiding it behind a writer-only disclosure would make this section say less
+      to a reader than it did before the target (docs/adr/0074 §21).
+    {% endcomment %}
+    {% include "related_materials/partials/suggestions.html" %}
   {% endif %}
 </section>

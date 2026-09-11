@@ -9260,6 +9260,17 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-top: var(--spacing-2);
 }
 
+/* The register's own observations, where it made any. A quiet band under the
+ * header band and above the action row, on the page's own ground: these are
+ * facts about the *source* rather than about the work, and one of them is what
+ * explains a passed deadline the metaline does not call late (ADR 0059).
+ * Rendered only when true, so the normal Matter carries no empty box. */
+
+#teema-vaade-wrap .registerfacts {
+  padding: var(--spacing-3) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 /* -- one left edge: 32px --------------------------------------------------
  *
  * **The single most visible rule of the approved target.** The metaline, the
@@ -9276,6 +9287,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * so the chronology under it keeps the same edge. */
 
 #teema-vaade-wrap .uxnext,
+#teema-vaade-wrap .registerfacts,
 #teema-vaade-wrap .accordion--timeline .accordion__head,
 #teema-vaade-wrap .accordion--timeline .accordion__body {
   padding-left: var(--spacing-8);
@@ -9984,6 +9996,7 @@ section:has(.pw-more[open]) tbody.uxextra {
      scoped block above beats that rule wherever both apply, and a media query
      is a condition rather than a specificity boost. */
   #teema-vaade-wrap .uxnext,
+  #teema-vaade-wrap .registerfacts,
   #teema-vaade-wrap .accordion--timeline .accordion__head,
   #teema-vaade-wrap .accordion--timeline .accordion__body {
     padding-left: var(--layout-gutter);

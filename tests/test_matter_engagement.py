@@ -474,7 +474,15 @@ def test_a_matter_with_two_senders_and_two_engagements_is_one_row(signed_in, spe
 # -- the page ----------------------------------------------------------------
 
 
-def test_the_section_renders_every_engagement_once(signed_in, specialist):
+def test_an_engagement_reads_as_a_chronology_milestone(signed_in, specialist):
+    """**The standalone section is gone.**
+
+    The approved Teema target removed the block that stood open on every Matter
+    to say «none yet» and, when it held something, listed dated facts the
+    chronology now carries. An engagement is an event with a date, so it belongs
+    in the chronology like every other event (TEEMA_TARGET_SPEC §F,
+    docs/adr/0074 §9).
+    """
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(
         matter=matter,
@@ -490,18 +498,23 @@ def test_the_section_renders_every_engagement_once(signed_in, specialist):
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert "Kaasamine" in body
-    # One row. The title also appears in the edit form's prefilled input, which
-    # is correct, so the row count is what this asserts rather than a substring.
-    assert body.count('class="factrow"') == 1
-    assert "Ainulaadne kaasamiskutse" in body
-    assert "Vastuseid ootame" in body
-    assert 'rel="noopener noreferrer"' in body
-    # The host, not the tracking URL, is what the row prints beside the title.
-    assert "www.koda.ee" in body
+    assert 'id="kaasamine"' not in body
+    assert "+ Lisa kaasamine" not in body
+
+    # One row, stated once: the audit event contributes no clause beside it.
+    chronology = body[body.index('id="ajalugu-loend"') :]
+    assert chronology.count("Kaasamine: Ainulaadne kaasamiskutse") == 1
+    assert "lisas kaasamise" not in chronology
+    # Its kind reads under it, and its stored `WEB_CALL` is one the composer no
+    # longer offers — a value the write surface stopped offering is not a value
+    # the page stopped rendering (docs/adr/0074 §9).
+    assert "Kaasamiskutse veebis" in chronology
 
 
-def test_an_undated_engagement_says_so_rather_than_showing_a_blank(signed_in, specialist):
+def test_an_undated_engagement_is_readable_without_a_manufactured_day(signed_in, specialist):
+    """It falls back to when it was recorded rather than inventing a date, and
+    it does **not** reach the process strip: an undated record is a real fact
+    about the file and not a position in a process (docs/adr/0074 §12)."""
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(
         matter=matter, kind=EngagementKind.EMAIL_CAMPAIGN, title="Teavituskiri", actor=specialist
@@ -510,20 +523,31 @@ def test_an_undated_engagement_says_so_rather_than_showing_a_blank(signed_in, sp
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
-    assert "Kuupäev teadmata" in body
+
+    assert "Kaasamine: Teavituskiri" in body
+    strip = body.split("tl-strip")[1].split("</div>")[0] if "tl-strip" in body else ""
+    assert "Teavituskiri" not in strip
 
 
-def test_the_add_form_does_not_prefill_todays_date(signed_in, specialist):
-    """The record may be about a consultation from years ago (brief 38)."""
-    from django.utils import timezone
+def test_the_composer_panel_asks_no_date_at_all(signed_in, specialist):
+    """The target's `+ Kaasamine` asks `Liik`, `Keda kaasati` and `Vastuseid`.
 
+    An engagement recorded from the composer is work being written down now, and
+    takes today in Europe/Tallinn — the same clock `add_entry` stamps with. The
+    service still takes `occurred_on`, and the standalone route still asks for
+    it, so an old consultation can still be recorded with its real date
+    (docs/adr/0074 §9).
+    """
     matter = factories.MatterFactory(owner=specialist)
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
+    panel = body[body.index('id="cx-kaasamine"') : body.index('id="cx-lopeta"')]
 
-    assert 'name="occurred_on"' in body
-    assert timezone.localdate().isoformat() not in body
+    assert 'name="engagement_kind"' in panel
+    assert 'name="engagement_audience"' in panel
+    assert 'name="engagement_responses"' in panel
+    assert 'name="occurred_on"' not in panel
 
 
 def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):
@@ -592,14 +616,17 @@ def test_adding_through_the_page_saves_the_record(signed_in, specialist):
     assert engagement.occurred_on == dt.date(2026, 9, 15)
 
 
-def test_the_page_refuses_a_javascript_link_and_keeps_what_was_typed(signed_in, specialist):
+def test_the_route_refuses_a_javascript_link(signed_in, specialist):
+    """The refusal is the service's and is unchanged. What went with the
+    standalone section is the surface that redisplayed the typed value — the
+    approved target's composer panel does not ask for a link at all
+    (docs/adr/0074 §9)."""
     matter = factories.MatterFactory(owner=specialist)
 
     response = _post_add(signed_in, matter, url="javascript:alert(1)")
 
     assert response.status_code == 400
     assert not MatterEngagement.objects.exists()
-    assert "http" in response.content.decode()
 
 
 def test_editing_through_the_page_updates_the_record(signed_in, specialist):
@@ -822,185 +849,56 @@ def _is_open(body: str, marker: str) -> bool:
 
 
 SECTION = 'id="kaasamine"'
-COMPOSER = "data-engagement-composer"
-ADD_FORM = "data-engagement-add\n"
+PANEL = 'id="cx-kaasamine"'
 
 
-# The 2026-09 refinement made `Kaasamine` a section of the facts panel instead
-# of an accordion of its own, so «is the section open» stopped being a question
-# the page can be asked: it is always showing its rows. Everything else these
-# tests protect is unchanged and is still asserted below — one click to the
-# form, a refusal that is never behind a disclosure, a refused edit that opens
-# its own row, a save the reader can see, and no form for a reader who may not
-# write (docs/matter-page-refinement.md).
+# The approved Teema target removed the standalone `Kaasamine` section, and with
+# it every question about whether that section is open, whether its composer is
+# shut, and what its refusals look like. Recording a consultation is the composer
+# panel `+ Kaasamine`, and the browser tests for it are in
+# `e2e/test_engagement.py` (docs/adr/0074 §9).
+#
+# What those tests protected that is not about a disclosure — a refusal that is
+# never hidden, a save the reader can see, and no write control for somebody who
+# may not write — is asserted below on the surfaces that have it.
 
 
-def test_with_nothing_recorded_one_click_reaches_the_form(signed_in, specialist):
-    """One click, and the thing that opens is the form (§28.1, §28.2, §28.3).
-
-    It used to be the section's own disclosure, which had the form as its body.
-    The section no longer opens, so the one click is the add control — the same
-    single gesture, and the form is still what it reveals.
-    """
+def test_the_page_offers_one_way_in_and_it_is_the_composer(signed_in, specialist):
+    """One entry point. ADR 0031 required that and chose the section; the
+    section is gone, so the panel is it rather than a second one."""
     matter = factories.MatterFactory(owner=specialist)
 
     body = _rendered(signed_in, matter)
-
-    assert SECTION in body
-    assert 'data-engagement-count="0"' in body
-    # The add control, shut, with the form inside it: one click, one form.
-    assert COMPOSER in body
-    assert not _is_open(body, COMPOSER)
-    assert "+ Lisa kaasamine" in body
-    assert ADD_FORM in body
-
-
-def test_with_a_record_the_rows_are_visible_and_the_composer_is_shut(signed_in, specialist):
-    """The records are what the reader came for; the form waits (§28.4, §28.5)."""
-    matter = factories.MatterFactory(owner=specialist)
-    add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="Liikmete küsitlus",
-        occurred_on=dt.date(2026, 7, 1),
-        actor=specialist,
-    )
-
-    body = _rendered(signed_in, matter)
-
-    assert 'data-engagement-count="1"' in body
-    # Visible without opening anything, which is the whole of the change.
-    assert "Liikmete küsitlus" in body
-    assert COMPOSER in body
-    assert not _is_open(body, COMPOSER)
-    assert "+ Lisa kaasamine" in body
-
-
-def test_the_add_action_is_reachable_from_the_keyboard(signed_in, specialist):
-    """It was a `<button>` because a span inside a `<summary>` only toggles it.
-
-    There is no enclosing summary now, so the control is a `<summary>` itself —
-    natively focusable, natively operable with the keyboard, and it needs no
-    script to open what it names (§13, §15).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-
-    body = _rendered(signed_in, matter)
-
-    tag = _opening_tag(body, "+ Lisa kaasamine")
-    assert tag.startswith("<summary")
-    assert 'class="disclosure__summary"' in tag
-
-
-def test_a_refused_add_leaves_the_form_open(signed_in, specialist):
-    """The reason for a refusal must not be behind a disclosure (§28.9)."""
-    matter = factories.MatterFactory(owner=specialist)
-    add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Olemasolev", actor=specialist)
-
-    response = _post_add(signed_in, matter, title="")
-    body = response.content.decode()
-
-    assert response.status_code == 400
-    assert SECTION in body
-    assert _is_open(body, COMPOSER)
-
-
-def test_a_refused_add_keeps_what_was_typed(signed_in, specialist):
-    """`_overview_with_engagement_error` re-renders "so nothing typed is lost".
-
-    The hand-rendered add form read its values from `record`, which is `None`
-    when adding, so a refused save came back with the title box empty and the
-    date box empty — every field the person had filled in wiped by the
-    explanation of why it was refused (Kaasamine one-click §7).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _post_add(
-        signed_in,
-        matter,
-        title="Liikmete kaasamiskutse",
-        url="javascript:alert(1)",
-        note="Vastuseid ootame septembrini.",
-        occurred_on="15.9.2026",
-    )
-    body = response.content.decode()
-
-    assert response.status_code == 400
-    assert 'value="Liikmete kaasamiskutse"' in body
-    assert "Vastuseid ootame septembrini." in body
-    assert 'value="15.9.2026"' in body
-
-
-def test_an_unreadable_date_says_so_where_it_was_typed(signed_in, specialist):
-    """The one field the browser will not police on its way out (§7)."""
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _post_add(signed_in, matter, occurred_on="32.13.2026")
-    body = response.content.decode()
-
-    assert response.status_code == 400
-    assert not MatterEngagement.objects.filter(matter=matter).exists()
-    assert 'class="field__error"' in body
-    assert 'value="32.13.2026"' in body
-
-
-def test_a_refused_edit_opens_its_own_row_and_not_the_composer(signed_in, specialist):
-    """A refusal belongs where it came from, not beside a second empty answer."""
-    matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter, kind=EngagementKind.SURVEY, title="Enne", actor=specialist
-    )
-
-    response = signed_in.post(
-        reverse(
-            "matters:update_engagement", kwargs={"pk": matter.pk, "engagement_id": engagement.pk}
-        ),
-        {"kind": EngagementKind.SURVEY, "title": ""},
-    )
-    body = response.content.decode()
-
-    assert response.status_code == 400
-    assert SECTION in body
-    assert not _is_open(body, COMPOSER)
-
-
-def test_a_saved_engagement_is_visible_and_the_composer_is_shut(signed_in, specialist):
-    """The reader must see the record they just made (§28.8)."""
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _post_add(signed_in, matter, title="Uus kaasamiskutse")
-    body = response.content.decode()
-
-    assert response.status_code == 200
-    assert SECTION in body
-    # Visible on the page rather than behind a disclosure that was left open.
-    assert "Uus kaasamiskutse" in body
-    # And the emptied form is shut, because it is not what the save was for.
-    assert COMPOSER in body
-    assert not _is_open(body, COMPOSER)
-
-
-def test_a_reader_who_cannot_write_gets_no_form_in_either_state(client, specialist):
-    """A form is for somebody who may write, and a heading is for something to read.
-
-    With nothing recorded and no permission to record anything there is now no
-    section at all, rather than a heading over an announcement of an absence —
-    the refinement's rule that the page carries no permanently visible empty
-    sections, applied to the one that still had prose in it.
-    """
-    reader = factories.ReaderFactory()
-    matter = factories.MatterFactory(owner=specialist)
-    client.force_login(reader)
-
-    body = _rendered(client, matter)
 
     assert SECTION not in body
-    assert ADD_FORM not in body
+    assert PANEL in body
+    assert "+ Kaasamine" in body
     assert "+ Lisa kaasamine" not in body
 
 
-def test_a_reader_who_cannot_write_still_reads_the_records(client, specialist):
-    """What the section is for survives having no controls in it."""
+def test_a_refused_engagement_comes_back_in_an_open_panel(signed_in, specialist):
+    """A refusal inside a panel nobody can see is a refusal nobody reads."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        reverse("matters:compose", kwargs={"pk": matter.pk}),
+        {"body": "", "next_text": "", "next_date": "", "engagement_responses": "4"},
+        headers={"HX-Request": "true"},
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.exists()
+    assert "Kirjuta, keda kaasati" in body
+    assert _is_open(body, PANEL)
+    # And what was typed came back with it.
+    assert 'value="4"' in body
+
+
+def test_a_reader_reads_the_records_and_gets_no_way_to_write_one(client, specialist):
+    """What the section was for survives having no controls: the record reads,
+    in the chronology, and the composer that would create one is not rendered
+    at all for somebody who may not write business content."""
     reader = factories.ReaderFactory()
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(
@@ -1010,7 +908,7 @@ def test_a_reader_who_cannot_write_still_reads_the_records(client, specialist):
 
     body = _rendered(client, matter)
 
-    assert SECTION in body
-    assert "Liikmete küsitlus" in body
-    assert ADD_FORM not in body
+    assert "Kaasamine: Liikmete küsitlus" in body
+    assert PANEL not in body
+    assert SECTION not in body
     assert "+ Lisa kaasamine" not in body
