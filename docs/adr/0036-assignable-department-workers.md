@@ -279,6 +279,10 @@ is not permission to hide work.
   holds what must not drop a row because the person holding it has left. Both
   definitions now carry a comment saying so, because the next reader will
   otherwise assume it is a copy that was missed.
+
+  **Superseded on 2026-09-11 for Osakond → Meeskond — see the amendment at the
+  end of this document.** The wider rule turned out to be the wrong shape for a
+  table of *people*, and `CASEWORK_ROLES` no longer exists.
 - **The development sign-in page** (`app/accounts/views.py`), which offers
   synthetic accounts including the administrator, because signing in as one is
   what it is for.
@@ -303,3 +307,90 @@ Django-admin access now takes them off the assignment lists as well as off the
 persona list. That is one line in `department_workers()` to undo, it is visible
 the same day, and the opposite failure — a privileged account quietly becoming
 assignable — is neither.
+
+---
+
+## Amendment, 2026-09-11 — a named row in Meeskond means membership
+
+- Status: accepted, amending the *What this does not change* item above
+- Scope: the `Meeskond` table on `/osakond/` only. Nothing about assignment,
+  personas, authorization, ownership or history changes.
+
+### What was decided before
+
+Osakond's team table built its population as *active caseworkers, unioned with
+everybody appearing in any of its columns*. The reasoning is recorded above and
+was about the work rather than about the people: a departed colleague, or a
+technical account handed a file years ago, should not be able to take an open
+Matter off the one page whose job is to find open Matters. Keeping their row
+kept their work visible.
+
+### Why it is superseded
+
+The union was justified as *a report population, not a chooser* — but the report
+in question is a list of **names**, and a name on that list is read as a
+statement about a person, not about a file. In the pilot's real data an
+active account holding no department role owned a single Matter, and the page
+listed them beside the lawyers, under the heading that says who the department's
+work belongs to. Nothing on the row said "not a colleague", because the rule had
+no such concept: appearing in a column *was* the membership test.
+
+So one rule was doing two jobs. *Whose work is this* and *who is one of us* are
+different questions, and answering the second with the first is how a page
+starts making claims nobody decided to make.
+
+### What is decided now
+
+**A named row in `Meeskond` is a current member of the department, and the
+membership test is `department_workers()`** — the same definition ADR 0034 and
+this ADR already established for the persona list and for every assignment
+control. Not a copy of it: `CASEWORK_ROLES` is deleted, and
+`app/matters/department_dashboard.py` imports the canonical helper. There is now
+one answer in the codebase to *is this person a current department worker*,
+which is what this ADR set out to achieve and left one surface short of.
+
+Owning work confers nothing. A READER, an ADMINISTRATOR, a technical or
+superuser account, an inactive former lawyer — none of them becomes a named row
+by owning one Matter, many Matters, overdue Matters, or opinions sent this year.
+
+**And no work disappears with the name.** Every visible count whose owner is
+present but outside `department_workers()` is aggregated into one row:
+
+    Väljaspool osakonda
+
+A bucket rather than a person. It is rendered only when at least one of its
+cells is non-zero, it carries no initials, no avatar, no link and no identifier,
+and the people behind it are not named anywhere in the table — in text, in a
+tooltip, in an accessible name or in a URL. The Matters keep their real owners
+everywhere a reader is authorized to see them; this table simply stops
+presenting those owners as departmental colleagues.
+
+`Vastutajata` is unchanged and is never merged with it. An owner who is not one
+of us and no owner at all are two different things to do something about, and
+only one of them has somebody to go and ask.
+
+`Kokku` still reconciles: for every column it is the sum of the named rows, the
+bucket and the unassigned pile. The department-wide population did not change —
+only which row owns a non-member's contribution to it.
+
+### What this amendment does not change
+
+- **No ownership was altered.** No Matter was reassigned, no owner cleared, no
+  role changed, no account deactivated. This is a read-model correction, and
+  a Matter owned by somebody outside the legal team is still owned by them.
+- **No migration**, and no department-membership table. The canonical definition
+  already existed; the flag distinguishing the new row is a dataclass field.
+- **The Seis strip is untouched.** Its counts are department-wide authorized
+  populations and always were; this is about the named-person composition of one
+  table.
+- **The historical columns still group by the Matter's *current* owner**, as
+  they always have. An opinion sent last week by a colleague, on a file now
+  owned outside the department, counts under `Väljaspool osakonda`. Whether
+  those columns should follow the actor instead is a separate product question
+  and is not answered here.
+- **`Väljaspool osakonda` has no drill-through**, deliberately. The register has
+  no way to express "owned by anybody who is not a current department worker",
+  and an honest number with nothing behind it beats a link to a different set of
+  Matters — the same treatment the table's three historical columns already get.
+  Adding one would mean widening the register's query language, which belongs
+  with that surface's own work rather than here.

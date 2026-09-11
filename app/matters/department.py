@@ -120,10 +120,6 @@ class Department:
         return bool(self.team)
 
     @property
-    def has_former_members(self) -> bool:
-        return any(row.is_former for row in self.team)
-
-    @property
     def has_upcoming(self) -> bool:
         return any(group.count for group in self.upcoming)
 
