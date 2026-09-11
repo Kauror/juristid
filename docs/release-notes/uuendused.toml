@@ -22,7 +22,7 @@ basis = "deployment"
 # nii et siia seda ette kirjutada ei saa; ta on kirjas väljalaske raportis —
 # täpselt nagu 9. septembri kirje puhul.
 revisions = ["3f795a7ddbac36a25245cf2df1f5854646a0002d"]
-prs = [169, 170, 171, 172, 173, 174, 175, 176, 177]
+prs = [169, 170, 171, 172, 173, 174, 175, 176, 177, 179]
 changes = [
   "Uue teema saatja määratakse nüüd vaikimisi ka adressaadiks. Adressaati saab endiselt eraldi muuta.",
   "Uuel teemal saab määrata Õigusakti liigi või mitu liiki.",
