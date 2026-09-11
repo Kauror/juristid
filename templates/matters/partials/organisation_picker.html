@@ -72,7 +72,15 @@ Callers pass:
     sender_row    marks the row the Adressaat default reads (Saatja only)
     typed_hook    `sender` or `addressee` — which control the carrier is
 {% endcomment %}
-<div class="orgfind" id="{{ picker_id }}-valik" data-orgfind data-orgfind-single="{% if single %}1{% else %}0{% endif %}">
+{% comment %}
+  No cardinality flag on this element, deliberately. The script never has to be
+  told: a radio unchecks its own group when another is checked and a checkbox
+  does not, so «one answer» and «several» are properties of the controls the
+  form already renders rather than a claim written beside them. `single` is
+  read below, where it decides what the `<noscript>` fallback's inputs are —
+  which is the one place nothing else can answer it.
+{% endcomment %}
+<div class="orgfind" id="{{ picker_id }}-valik" data-orgfind>
 
   {% comment %}
     The provisional answer, carried by the field that has always carried it.

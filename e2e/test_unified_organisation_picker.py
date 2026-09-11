@@ -210,7 +210,19 @@ def catalogue_holds(page, base_url, name: str) -> bool:
 
 
 def file_the_teema(page, title: str) -> None:
+    """Save the form, with a next step, because every Teema this suite leaves
+    behind is somebody else's fixture.
+
+    A Teema filed with no next action joins the department's «järgmise
+    tegevuseta» population permanently, and `e2e/test_kpi_navigation.py` reads
+    the first page of that list expecting the seeded record to be on it — two
+    Matters from one file were once enough to push it off. So this says what
+    happens next, which is what a lawyer filing a real one does anyway
+    (`e2e/test_addressee_free_entry.py`).
+    """
     page.locator("#id_title").fill(title)
+    page.fill("#id_next-text", "Kontrollida, kas saatja ootab vastust")
+    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("domcontentloaded")
     complaints = page.locator(".field__error, .formerror").all_inner_texts()
