@@ -114,6 +114,27 @@ def test_saabus_moved_out_of_the_rail_and_kept_its_write_path(signed_in, normal_
     )
 
 
+def test_the_saabus_editor_re_renders_the_surface_it_lives_on(signed_in, normal_matter):
+    """**The surface a field re-renders has to move with the field.**
+
+    The editor swaps `#teema-pais`, so the response has to be the header band.
+    While `Saabus` was a rail fact `update_field` answered with the rail, and a
+    control that swapped the header with a rail replaced the band with a rail —
+    the value it had just written vanished, and so did the title, the metaline
+    and every other inline editor. A browser found it; nothing in the markup
+    could (docs/adr/0074 §2).
+    """
+    url = reverse("matters:update_field", kwargs={"pk": normal_matter.pk, "field": "received_date"})
+
+    body = signed_in.post(url, {"received_date": "14.8.2026"}).content.decode()
+
+    assert 'id="teema-pais"' in body
+    assert 'id="teema-andmed"' not in body
+    assert "14.8.2026" in body
+    normal_matter.refresh_from_db()
+    assert normal_matter.received_date == date(2026, 8, 14)
+
+
 def test_the_header_deadline_is_the_response_deadline_not_the_nearest_milestone(
     signed_in, normal_matter, specialist
 ):
@@ -143,6 +164,22 @@ def test_the_header_deadline_is_the_response_deadline_not_the_nearest_milestone(
     assert "Arvamuse tähtaeg" in slot
     assert "Riigikogu I lugemine" not in slot
     assert "40 p" in slot
+
+
+def test_a_matter_with_no_arrival_date_offers_one(signed_in, normal_matter):
+    """A register row imported without a date, which is an ordinary state.
+
+    A quiet invitation in the slot rather than a label over an em dash — the
+    same treatment `Tähtaeg` gets, and for the same reason (Teema redesign §24).
+    """
+    normal_matter.received_date = None
+    normal_matter.save(update_fields=["received_date"])
+
+    body = _detail(signed_in, normal_matter)
+    header = body[body.index('class="metaline"') : body.index('class="summary"')]
+
+    assert "+ Saabus" in header
+    assert 'name="received_date"' in header
 
 
 def test_a_matter_with_no_response_deadline_offers_one(signed_in, normal_matter):

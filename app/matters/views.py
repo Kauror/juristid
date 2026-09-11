@@ -3145,7 +3145,11 @@ _FIELD_SURFACES = {
     "track": "matters/partials/rail.html",
     "source_organisations": "matters/partials/rail.html",
     "addressee_organisation": "matters/partials/rail.html",
-    "received_date": "matters/partials/rail.html",
+    # **`received_date` renders the header now.** It moved into the metaline
+    # with the approved target, so the surface it re-renders has to move with
+    # it — a control that swaps `#teema-pais` with the rail replaces the header
+    # band with a rail and the value it just wrote disappears
+    # (docs/adr/0074 §2, templates/matters/partials/header.html).
 }
 
 

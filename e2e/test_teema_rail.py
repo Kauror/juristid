@@ -400,7 +400,8 @@ def test_adding_a_received_date_saves_and_the_header_formats_it(page, base_url):
     field and the empty state are exactly what they were — only the element they
     render inside changed, and the swap target follows them.
 
-    A new Matter is dated today, so the empty state is reached by clearing.
+    The empty state — a register row imported without a date — is asserted in
+    `tests/test_teema_approved_target.py`, where it costs no browser.
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Saabumise kuupäeva lisamine")
@@ -412,19 +413,17 @@ def test_adding_a_received_date_saves_and_the_header_formats_it(page, base_url):
 
     item = header.locator(".metaline__item").filter(has_text="Saabus")
     item.locator("summary.inlineedit__trigger").click()
-    item.locator("input[name=received_date]").fill("")
-    item.get_by_role("button", name="Salvesta saabumise kuupäeva muudatus").click()
-    page.wait_for_load_state("networkidle")
-
-    item = page.locator("#teema-pais .metaline__item").filter(has_text="Saabus")
-    expect(item.get_by_text("+ Saabus")).to_be_visible()
-
-    item.locator("summary.inlineedit__trigger").click()
     item.locator("input[name=received_date]").fill("14.8.2026")
     item.get_by_role("button", name="Salvesta saabumise kuupäeva muudatus").click()
     page.wait_for_load_state("networkidle")
 
+    # Saved, formatted, and still in the header after a reload — the editor
+    # swaps `#teema-pais`, which is where the value it wrote is read.
     expect(page.locator("#teema-pais")).to_contain_text("14.8.2026")
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#teema-pais")).to_contain_text("14.8.2026")
+    assert "14.8.2026" not in page.locator("#teema-andmed").inner_text()
 
 
 def test_a_reader_is_offered_no_editors_at_all(page, base_url):
