@@ -371,18 +371,17 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.goto(matter_url)
     # innerText reports the rendered text, and these labels are uppercased by
     # CSS, so the comparison is case-insensitive.
-    kinds = [
-        kind.lower()
-        for kind in page.locator(".uxtl__did, .uxtl__kind, .systemevent__type").all_inner_texts()
-    ]
-    # The entry is named by its own kind now — the spine's badge says
-    # «Kohtumine», where the old card said "lisas märkuse" whatever the kind
-    # actually was (design handoff 1b).
-    assert any("kohtumine" in kind for kind in kinds), kinds
-    assert any("saadetud" in kind for kind in kinds), kinds
+    # Every row's own headline, in the order the page renders them: a milestone
+    # states what happened to the file, a work entry states what somebody did.
+    rows = [row.lower() for row in page.locator(".uxtl__mswhat, .uxtl__did").all_inner_texts()]
+    # `Arvamus välja` is the sent opinion, as a milestone of its own — the
+    # approved target names it rather than reciting the audit vocabulary
+    # (docs/adr/0074 §14).
+    assert any("arvamus välja" in row for row in rows), rows
+    assert any("määras järgmise sammu" in row for row in rows), rows
     # Newest first: the send happened after the meeting was written up.
-    assert next(i for i, k in enumerate(kinds) if "saadetud" in k) < next(
-        i for i, k in enumerate(kinds) if "kohtumine" in k
+    assert next(i for i, row in enumerate(rows) if "arvamus välja" in row) < next(
+        i for i, row in enumerate(rows) if "määras järgmise sammu" in row
     )
 
     # -- Teemad ----------------------------------------------------------

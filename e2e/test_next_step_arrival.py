@@ -81,11 +81,15 @@ def test_maara_opens_the_composer_and_puts_the_caret_in_it(page, base_url):
     ), "arrival left focus outside the composer"
 
 
-def test_an_ordinary_matter_visit_leaves_the_composer_shut(page, base_url):
-    """The invariant the fix must not cost: closed by default.
+def test_an_ordinary_matter_visit_opens_the_composer(page, base_url):
+    """The invariant the fix must not cost, in the direction the target sets it.
 
-    Same page, no fragment. A Matter is read far more often than it is written
-    to, and the box that writes to it folds until somebody asks.
+    Same page, no fragment. The composer is **open** on arrival since the
+    approved target: recording what happened is the reason this product exists
+    and must not begin with a click, and the form is short enough to live open
+    (docs/adr/0074 §3). What this test is really guarding is that an ordinary
+    visit and an arrival-by-fragment agree — the fix must not make one of them
+    special.
     """
     sign_in(page, base_url, SANDRA)
     matter_url = _matter_on_sandras_desk(page, base_url, "UX-003 pärisvaate kontroll")
@@ -96,4 +100,7 @@ def test_an_ordinary_matter_visit_leaves_the_composer_shut(page, base_url):
     composer = page.locator("details.uxcomp")
     composer.wait_for(state="attached")
 
+    assert composer.evaluate("node => node.open") is True
+    # And it still closes, which is what makes it a disclosure.
+    page.locator(".uxnext__label").click()
     assert composer.evaluate("node => node.open") is False
