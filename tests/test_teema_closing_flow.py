@@ -138,7 +138,7 @@ def test_the_closing_panel_asks_the_two_approved_questions(signed_in, normal_mat
     body = _composer_html(signed_in, normal_matter)
 
     # The panel, behind its own chip, and no confirmation box inside it.
-    assert 'id="cx-lopeta"' in body
+    assert 'id="lisa-lopeta"' in body
     assert "+ Lõpeta teema" in body
     assert "Lõpeta see teema" not in body
 

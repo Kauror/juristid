@@ -297,8 +297,8 @@ def test_the_superseded_deadline_is_still_a_fact_on_the_teema_header(page, base_
     # The recorded response deadline is still stated on the page.
     assert "Arvamuse tähtaeg" in body or "Tähtaeg" in body
     # The current instruction is the monitoring one, and it is not styled late.
-    expect(page.locator(".uxnext")).to_be_visible()
-    expect(page.locator(".uxnext--overdue")).to_have_count(0)
+    expect(page.locator("#praegune-tegevus")).to_be_visible()
+    expect(page.locator(".curact--overdue")).to_have_count(0)
     assert "Jälgin menetluse jätkumist" in body
 
 

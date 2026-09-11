@@ -24,6 +24,7 @@ from e2e.conftest import (
     READER,
     SANDRA,
     open_composer,
+    open_next_action_form,
     sign_in,
     sign_out,
 )
@@ -162,14 +163,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(crumbs.get_by_role("link", name="Teemad")).to_be_visible()
     assert not re.search(r"\d{4}_\d+", crumbs.inner_text()), crumbs.inner_text()
 
-    expect(page.locator(".uxnext__text")).to_have_text("Koosta ja saada koja arvamus")
+    expect(page.locator(".curact__text")).to_have_text("Koosta ja saada koja arvamus")
     # The step and its date, and no word saying which of three categories it
     # is. The classification the composer used to demand went with the composer
     # question that demanded it (ADR 0052 §6).
-    expect(page.locator(".uxnext__date")).to_be_visible()
-    expect(page.locator(".uxnext .modechip--do")).to_have_count(0)
+    expect(page.locator(".curact__date")).to_be_visible()
+    expect(page.locator("#praegune-tegevus .modechip--do")).to_have_count(0)
     for retired in ("TEEN", "OOTAN", "JÄLGIN"):
-        assert retired not in page.locator(".uxnext").inner_text()
+        assert retired not in page.locator("#praegune-tegevus").inner_text()
     screenshots(page, "03-teema-ulevaade")
 
     matter_url = page.url
@@ -189,57 +190,68 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
         assert retired not in row.inner_text()
     expect(page.get_by_text(MATTER_TITLE).first).to_be_visible()
 
-    # -- Scenario B: one composer save, two changes ----------------------
+    # -- Scenario B: two intentions, two saves ---------------------------
     page.goto(matter_url)
 
-    # The composer is open, and everything beyond the two boxes and the dates is
-    # a closed chip until it is asked for — that is the adoption argument, not
-    # decoration (docs/adr/0074 §3).
-    expect(page.locator("details.uxcomp")).to_have_attribute("open", "")
-    for panel in ("#cx-tahtaeg", "#cx-joustumine", "#cx-toovoit", "#cx-kaasamine", "#cx-lopeta"):
+    # `LISA TEEMALE` is a choice of operations, not a form: every one of them is
+    # a closed chip until it is asked for. That is the adoption argument, not
+    # decoration (docs/adr/0075 §2).
+    for panel in (
+        "#lisa-marge",
+        "#lisa-kaasamine",
+        "#lisa-tahtaeg",
+        "#lisa-joustumine",
+        "#lisa-toovoit",
+        "#lisa-lopeta",
+    ):
         expect(page.locator(panel)).not_to_have_attribute("open", "")
-    # `+ Kaasamine` **is** among them now. It was kept out while the standalone
+    # `+ Kaasamine` **is** among them. It was kept out while the standalone
     # Kaasamine section existed, because two entry points for one act is how the
     # same consultation gets recorded twice; that section is gone, so this is
     # the one entry point rather than the second (docs/adr/0074 §9).
-    expect(page.locator("#cx-kaasamine")).to_have_count(1)
-    # And the file is reachable without opening anything at all.
-    expect(page.locator(".cx-drop--corner input[type=file]")).to_have_count(1)
+    expect(page.locator("#lisa-kaasamine")).to_have_count(1)
     expect(page.locator(".disclosure-chip", has_text="+ Manus")).to_have_count(0)
 
-    # Two boxes asking two different questions, and no third control mediating
-    # them. What happened goes in one, what happens next in the other, and
-    # nothing classifies either (ADR 0052 §2, §3).
-    expect(page.locator("[name='next_text']")).to_have_count(1)
+    # Two operations asking two different questions, and no third control
+    # mediating them. Nothing classifies either (ADR 0052 §2, §3).
     expect(page.locator("[name='next_kind']")).to_have_count(0)
     expect(page.locator("[name='next_date_semantics']")).to_have_count(0)
 
+    # Something happened. It is a `Märge`, and it must leave the open step alone.
     open_composer(page)
-    page.locator(".composer__body").fill("Ministeerium lubas uue sõnastuse")
-    page.locator("[name='next_text']").fill("Kontrollida ministeeriumi uut sõnastust")
-    # Opening one panel must not open the others.
-    page.locator("#cx-tahtaeg > summary").click()
-    expect(page.locator("#cx-tahtaeg")).to_have_attribute("open", "")
-    expect(page.locator("#cx-lopeta")).not_to_have_attribute("open", "")
-    page.locator("#cx-tahtaeg > summary").click()
-    page.locator("#id_next_date").fill(_future(7))
-    screenshots(page, "04-komposer")
+    page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
+    # Opening one panel closes whichever was open (docs/adr/0075 §2).
+    page.locator("#lisa-tahtaeg > summary").click()
+    expect(page.locator("#lisa-tahtaeg")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-marge")).not_to_have_attribute("open", "")
+    expect(page.locator("#lisa-lopeta")).not_to_have_attribute("open", "")
+    open_composer(page)
+    page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
+    screenshots(page, "04-marge")
+    page.locator("#lisa-marge button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
 
-    page.locator("[data-composer-submit]").click()
-
-    # Both halves landed as two different records, and the surface agrees with
-    # itself. The entry says what happened; the step says what happens next,
-    # and neither was derived from the other (ADR 0052 §2).
-    expect(page.locator(".uxnext__text")).to_have_text("Kontrollida ministeeriumi uut sõnastust")
     expect(page.locator(".uxtl__body .richtext").first).to_contain_text(
         "Ministeerium lubas uue sõnastuse"
     )
-    expect(page.locator(".uxnext__date")).to_be_visible()
+
+    # And what happens next is a second, deliberate save. The step that was open
+    # is replaced through `Muuda`, which is the one control for the one open
+    # action (docs/adr/0075 §10).
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill("Kontrollida ministeeriumi uut sõnastust")
+    page.locator("#id_target_date").fill(_future(7))
+    page.locator("#lisa-jargmine button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    zone = page.locator("#praegune-tegevus")
+    expect(zone.locator(".curact__text")).to_have_text("Kontrollida ministeeriumi uut sõnastust")
+    expect(zone.locator(".curact__date")).to_be_visible()
     for retired in ("TEEN", "OOTAN", "JÄLGIN", "OODATAV", "TÄHTAEG"):
-        assert retired not in page.locator(".uxnext").inner_text()
-    expect(page.locator(".uxnext")).not_to_have_class("uxnext--overdue")
+        assert retired not in zone.inner_text()
+    expect(zone).not_to_have_class("curact--overdue")
     # The superseded DO must no longer be presented as the current action.
-    expect(page.locator(".uxnext").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
+    expect(zone.get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
 
     # The chronology is open by default since the v2 rebuild — the first page of
     # it is what a lawyer opens the file for — and it is still below the next
@@ -247,11 +259,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # (02-EKRAANID §C).
     timeline = page.locator("#ajajoon")
     expect(timeline).to_have_attribute("open", "")
-    assert timeline.bounding_box()["y"] > page.locator(".uxnext").bounding_box()["y"]
-    # One professional update, one line. The spine says what kind of line it is,
-    # and what the save *decided* rides with it on its own strip rather than as
-    # a clause — «lisas märkuse ja määras järgmise sammu» said in words what the
-    # strip below now shows in full (design handoff 1b).
+    assert timeline.bounding_box()["y"] > zone.bounding_box()["y"]
+    # One professional update, one line — and two updates, two lines. The note
+    # and the next step were one composer save until docs/adr/0075; they are two
+    # intentions and two saves now, so the strip that says what was decided
+    # rides on the save that decided it rather than on the note beside it.
     entry = page.locator(".uxtl__body").filter(has_text="Ministeerium lubas uue sõnastuse")
     expect(entry).to_have_count(1)
     # The kind badge is **not rendered at all** on a work entry any more. The
@@ -260,11 +272,15 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # its verb phrase says otherwise. The stored `Entry.kind` is untouched and
     # every reporting surface still reads it (docs/adr/0074 §14).
     expect(entry.locator(".uxtl__kind")).to_have_count(0)
-    expect(entry.locator(".uxtl__next")).to_contain_text("Kontrollida ministeeriumi uut sõnastust")
+    # The note says what happened and nothing about what happens next.
+    expect(entry.locator(".uxtl__next")).to_have_count(0)
+
+    step = page.locator(".uxtl__next").filter(has_text="Kontrollida ministeeriumi uut sõnastust")
+    expect(step).to_have_count(1)
     # The strip states the step, not its category. It re-states the same fact
-    # the Järgmiseks row above it carries, and that row stopped naming a kind
+    # the zone above it carries, and that zone stopped naming a kind
     # (ADR 0052 §6).
-    assert "TEEN" not in entry.locator(".uxtl__next").inner_text()
+    assert "TEEN" not in step.inner_text()
     screenshots(page, "05-komposer-jarel")
 
     # The new step reached Minu asjad, still in the one list, banded by its date
@@ -459,28 +475,32 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_placeholder("Otsi teemat, viidet, asutust…")).to_be_focused()
 
 
-def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(page, base_url):
+def test_a_next_step_without_a_date_is_refused_without_losing_what_was_typed(page, base_url):
     """A refused save must not half-apply, and must not discard what was typed."""
     sign_in(page, base_url, MARTIN)
     open_register(page, base_url)
     register_row(page, "Tavaline avatud teema kõigile nähtav").click()
 
-    open_composer(page)
-    page.locator(".composer__body").fill("See tekst peab alles jääma.")
-    # A next step and no date. This is why `next_date` is the one date box in
-    # the product that does *not* pre-fill with today: a default would answer
-    # the refusal with a day nobody chose, and would decide on a lawyer's behalf
-    # when they are going to do their own work (ADR 0052 §4, §5).
-    page.locator("[name='next_text']").fill("Küsida ministeeriumilt selgitust")
-    expect(page.locator("#id_next_date")).to_have_value("")
-    page.locator("[data-composer-submit]").click()
+    open_next_action_form(page)
+    # A next step and no date. The box never pre-fills with *today*: a default
+    # would answer the refusal with a day nobody chose, and would decide on a
+    # lawyer's behalf when they are going to do their own work (ADR 0052 §4,
+    # §5). On a Matter that already has a step this form is `Muuda` and carries
+    # that step's own date, which is an editor showing what is recorded — so
+    # clearing it is what puts this back in the state being tested.
+    page.locator("#lisa-jargmine [name='text']").fill("Küsida ministeeriumilt selgitust")
+    page.locator("#id_target_date").fill("")
+    expect(page.locator("#id_target_date")).to_have_value("")
+    page.locator("#lisa-jargmine button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
 
     expect(page.get_by_text("Vali järgmise tegevuse kuupäev.")).to_be_visible()
-    # Neither half was applied.
-    expect(page.locator(".uxtl__body").filter(has_text="See tekst peab alles jääma")).to_have_count(
-        0
+    # Nothing was applied, and the sentence came back in its own open panel.
+    expect(page.locator("#lisa-jargmine")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-jargmine [name='text']")).to_have_value(
+        "Küsida ministeeriumilt selgitust"
     )
-    expect(page.locator(".uxnext").get_by_text("Jälgi menetluse käiku")).to_be_visible()
+    expect(page.locator("#praegune-tegevus").get_by_text("Jälgi menetluse käiku")).to_be_visible()
 
 
 class TestRestrictedMatterIsUnreachable:

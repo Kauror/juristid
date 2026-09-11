@@ -828,43 +828,34 @@ def test_the_matter_rail_sits_beside_or_below_but_never_over(page, base_url, wid
 def test_the_composer_starts_as_one_row(page, base_url):
     """Routine capture is one box and Ctrl+Enter; everything else is disclosed.
 
-    The resting state moved with the 2026-08 pass. It used to be a short
-    textarea standing open on every visit; it is now the closed disclosure —
-    one row saying what the box is for — because a Matter is read far more often
-    than it is written to (design handoff 1d, docs/adr/0043). Opened, the field
-    is at its working height and stays there while the composer is open: a mode
-    chip taking the focus must not reflow four lines of somebody's text under
-    the pointer.
+    The resting state is now a *chip*, not a box: `LISA TEEMALE` is a choice of
+    seven operations and none of them is a form until it is chosen, so a Matter
+    nobody is writing to carries one row of chips rather than a textarea
+    (docs/adr/0075 §2). Opened, the field is at its working height and stays
+    there: a chip taking the focus beside it must not reflow four lines of
+    somebody's text under the pointer.
     """
     sign_in(page, base_url, SANDRA)
     open_first_matter(page, base_url)
 
-    # **The composer is open on arrival**, so the collapsed prompt is what the
-    # page shows *after* somebody folds it away rather than before they open it
-    # (docs/adr/0074 §3). The disclosure still closes, and the one-line resting
-    # state it closes to is unchanged.
-    page.locator(".uxnext__label").click()
-    closed = page.locator("summary.uxcomp__collapsed")
+    closed = page.locator("#lisa-marge > summary")
     expect(closed).to_be_visible()
     resting = closed.bounding_box()["height"]
-    # One row of an Estonian sentence, its avatar and the key hint. The number
-    # is the difference between "note this down" and "fill in this form".
-    assert resting <= 48, f"the closed composer is {resting}px tall"
-    expect(page.locator(".composer__body")).to_be_hidden()
+    # One chip. The number is the difference between "note this down" and
+    # "fill in this form".
+    assert resting <= 48, f"the closed Märge chip is {resting}px tall"
+    expect(page.locator("#lisa-marge .composer__body")).to_be_hidden()
 
     open_composer(page)
-    field = page.locator(".composer__body")
+    field = page.locator("#lisa-marge .composer__body")
     expect(field).to_be_visible()
     working = field.bounding_box()["height"]
-    # Two lines, not three. The 2026-09 refinement shrank the resting height of
-    # the opened box from 108px to 60px: an eight-line form standing open under
-    # the Järgmiseks row pushed the file's own content below the fold on every
-    # visit, and the box still grows the moment anybody types in it
-    # (design handoff §18, docs/matter-page-refinement.md).
-    assert 55 <= working <= 70, f"the opened composer gives {working}px to write in"
+    # Three rows of an Estonian sentence. The box still grows the moment
+    # anybody types in it (design handoff §18).
+    assert 55 <= working <= 90, f"the opened box gives {working}px to write in"
 
     # And it does not shrink back when focus moves to a control beside it.
-    page.locator(".uxcomp__row .uxchip", has_text="Homme").first.click()
+    page.locator("#lisa-marge .cx-drop").click()
     expect(field).to_have_css("height", f"{working:g}px")
 
 

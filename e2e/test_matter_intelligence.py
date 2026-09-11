@@ -140,12 +140,12 @@ def open_add_form(page, label: str):
 
 
 def expect_chip(page, label: str):
-    """The composer panel that records this fact on the Teema page.
+    """The `LISA TEEMALE` panel that records this fact on the Teema page.
 
-    `+ Jõustumine` and `+ Töövõit` are closed disclosures in the composer's
-    progressive row now, not links into a fragment.
+    `+ Jõustumine` and `+ Töövõit` are closed disclosures in the add-to-matter
+    launcher now, not links into a fragment (docs/adr/0075 §2).
     """
-    panel = {"+ Jõustumine": "#cx-joustumine", "+ Töövõit": "#cx-toovoit"}[label]
+    panel = {"+ Jõustumine": "#lisa-joustumine", "+ Töövõit": "#lisa-toovoit"}[label]
     return expect(page.locator(panel))
 
 
@@ -361,13 +361,13 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
 def test_a_reader_is_offered_no_way_to_record_a_fact(page, base_url):
     """Authorization did not move with the surface.
 
-    On the Teema page a reader gets no composer at all, so neither panel exists;
-    on the fragment they get the sections and none of the add controls.
+    On the Teema page a reader gets no `LISA TEEMALE` at all, so neither panel
+    exists; on the fragment they get the sections and none of the add controls.
     """
     sign_in(page, base_url, READER)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    expect(page.locator("#teema-koostaja")).to_have_count(0)
+    expect(page.locator("#lisa-teemale")).to_have_count(0)
     expect_chip(page, "+ Jõustumine").to_have_count(0)
     expect_chip(page, "+ Töövõit").to_have_count(0)
 

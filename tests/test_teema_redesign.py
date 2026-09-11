@@ -386,9 +386,9 @@ def test_teen_with_a_passed_deadline_is_overdue(signed_in, specialist):
     # because there is only one kind of step this page creates (ADR 0052 §6).
     assert "· 2 p" in " ".join(body.split())
     assert "TÄHTAEG MÖÖDAS" not in " ".join(body.split())
-    # And lateness is the state of the row, not a word beside it.
-    assert "uxnext--overdue" in body
-    assert "uxnext__date--overdue" in body
+    # And lateness is the state of the zone, not a word beside it.
+    assert "curact--overdue" in body
+    assert "curact__date--overdue" in body
 
 
 @pytest.mark.parametrize("kind", [ActionKind.WAIT, ActionKind.MONITOR])
@@ -517,19 +517,21 @@ def test_completing_the_step_goes_through_the_existing_service(signed_in, specia
 # ---------------------------------------------------------------------------
 
 
-def test_the_composer_has_two_boxes_asking_two_different_questions(signed_in, normal_matter):
-    """Reversed by ADR 0052 §2, and reversed deliberately.
+def test_what_happened_and_what_happens_next_are_two_separate_saves(signed_in, normal_matter):
+    """ADR 0052 §2 made them two boxes; docs/adr/0075 §2 makes them two saves.
 
-    §9.1 refused a second box as duplicate data entry, which was right about
-    the box it was looking at: the old one asked the *same* question in
-    different words. These two ask different ones — what happened, and what
-    happens next — and the refusal below is what still holds: neither is
-    derived from the other, and there is no third control mediating them.
+    §9.1 refused a second box as duplicate data entry, which was right about the
+    box it was looking at: the old one asked the *same* question in different
+    words. These ask different ones — what happened, and what happens next — and
+    the refusal below is what still holds: neither is derived from the other,
+    and there is no third control mediating them.
     """
     body = _detail(signed_in, normal_matter)
 
-    assert "Kirjelda, mida tegid või mis juhtus…" in body
-    assert 'name="next_text"' in body
+    assert 'id="lisa-marge"' in body
+    assert "Mis juhtus või mida tegid?" in body
+    assert 'id="lisa-jargmine"' in body
+    assert 'name="text"' in body
     # The things that must never come back.
     assert "Kirjelda, mis tegid ja mida teed edasi…" not in body
     assert "Muudan Järgmiseks" not in body
@@ -1560,7 +1562,7 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
     # (TEEMA_TARGET_SPEC §F, docs/adr/0074 §9).
     assert "+ Lisa kaasamine" not in body
     assert 'id="kaasamine"' not in body
-    assert 'id="cx-kaasamine"' in body, "the way to record one is the composer panel"
+    assert 'id="lisa-kaasamine"' in body, "the way to record one is the LISA TEEMALE panel"
     # No standing facts panel between the composer and the chronology either.
     assert 'class="factspanel"' not in body
 

@@ -17,6 +17,7 @@ import hashlib
 import logging
 import posixpath
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from django.conf import settings
@@ -347,3 +348,110 @@ def set_legal_hold(
         ]
     )
     return document
+
+
+# ---------------------------------------------------------------------------
+# Evidence for one exact record
+# ---------------------------------------------------------------------------
+
+#: The keyword each linkable record is named by, keyed on its model label. One
+#: mapping so a caller may hand this layer a record and nothing else: the
+#: alternative is every caller knowing which column its own fact lives in, which
+#: is how one of them eventually files an engagement under `entry`
+#: (app/documents/links.py, docs/adr/0075 §6).
+LINK_FIELD_BY_MODEL: dict[str, str] = {
+    "matters.Entry": "entry",
+    "matters.MatterEngagement": "engagement",
+    "intelligence.MatterImportantDate": "important_date",
+    "intelligence.MatterEffectiveDate": "effective_date",
+    "intelligence.MatterWorkVictory": "work_victory",
+}
+
+
+@transaction.atomic
+def link_document_to_record(*, document: Document, record: Any, actor: Any = None) -> Any:
+    """State that ``document`` supports ``record``. The one way a link is made.
+
+    **The cross-Matter refusal lives here**, because it is the one place that
+    can see both ends. A ``CHECK`` constraint sees a single row and cannot
+    follow a foreign key, so the database can guarantee that a link names
+    exactly one record and cannot guarantee that the record and the document
+    belong to the same file. Refused rather than repaired: a link written to
+    the wrong Matter is a disclosure, and quietly moving one end to match the
+    other would be the application deciding which of the two the person meant
+    (docs/adr/0075 §6).
+
+    Idempotent on purpose. A retried save that reaches here twice with the same
+    pair gets one row, because the uniqueness constraint says one document
+    supports one record once.
+    """
+    from app.documents.links import DocumentLink
+
+    label = type(record)._meta.label
+    field = LINK_FIELD_BY_MODEL.get(label)
+    if field is None:
+        raise DomainError(f"Dokumenti ei saa siduda kirjega {label!r}.")
+
+    record_matter = getattr(record, "matter_id", None)
+    if record_matter is None or record_matter != document.matter_id:
+        raise DomainError("Dokumendi ja kirje teema peavad olema samad.")
+
+    link, _created = DocumentLink.objects.get_or_create(
+        document=document,
+        defaults={"created_by": actor},
+        **{field: record},
+    )
+    return link
+
+
+@transaction.atomic
+def capture_supporting_evidence(
+    *,
+    matter: Matter,
+    record: Any,
+    uploads: Sequence[Any],
+    actor: Any = None,
+    role: str = DocumentRole.OTHER,
+) -> list[Document]:
+    """Capture every uploaded file as evidence and tie each to ``record``.
+
+    Three canonical acts per file and one explicit relationship, in one
+    transaction with whatever wrote ``record``: the ``Document``, its immutable
+    ``DocumentVersion``, and the ``DocumentLink`` that says which fact these
+    bytes are the evidence for.
+
+    **All or none.** The second of three files being refused must not leave a
+    fact standing that claims evidence and holds one file — so nothing here is
+    caught. Validation raises ``UploadRejected``, capture raises ``DomainError``,
+    and either one unwinds the caller's transaction along with the record it was
+    writing (docs/adr/0075 §8).
+
+    ``role`` stays ``OTHER`` for every caller on the Teema workspace. The button
+    a file arrived through is not a business role — a PDF attached to a work
+    victory is not a new kind of document — and inventing one to record where it
+    came from is what the link exists to avoid (brief §23).
+    """
+    # Imported here rather than at module scope: `app.documents.uploads` reads
+    # `ALLOWED_EVIDENCE_MIME_TYPES` from this module, so the two may not import
+    # each other on the way in.
+    from app.documents.uploads import read_upload
+
+    captured: list[Document] = []
+    for upload in uploads:
+        accepted = read_upload(upload)
+        document = create_document(
+            matter=matter,
+            title=accepted.filename,
+            role=role,
+            created_by=actor,
+        )
+        add_evidence_version(
+            document=document,
+            content=accepted.content,
+            original_filename=accepted.filename,
+            mime_type=accepted.mime_type,
+            uploaded_by=actor,
+        )
+        link_document_to_record(document=document, record=record, actor=actor)
+        captured.append(document)
+    return captured

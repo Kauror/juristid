@@ -1,21 +1,22 @@
 {% comment %}
 The main `Teema` view: three zones, in the order a lawyer reads them.
 
-  A  `JÄRGMISEKS` + the composer   one action unit, one accent edge
+  A1 `PRAEGUNE TEGEVUS`            the task, and the one box that finishes it
+  A2 `LISA TEEMALE`                seven choices, one small form at a time
   C  `Ajajoon`                     the process strip, then the chronology
   B  the rail                       slow-changing facts, looked up not read
 
-This whole block is what the composer swaps. Re-rendering the surface from one
-set of queries means the prominent action, the process strip and the chronology
-cannot disagree about the save that just happened.
+This whole block is what every workspace save swaps. Re-rendering the surface
+from one set of queries means the prominent action, the process strip and the
+chronology cannot disagree about the save that just happened.
 
 **The approved target removed Zone B from this column.** There is no
-`.factspanel` between the composer and `Ajajoon` and no standalone `Kaasamine`
+`.factspanel` between the workspace and `Ajajoon` and no standalone `Kaasamine`
 section anywhere on the page. The four structured facts those sections showed —
-`Oluline tähtaeg`, `Jõustumine`, `Töövõit`, `Kaasamine` — are entered through the
-composer's five panels and read through the process strip and the chronology,
-which is where a dated fact belongs. A standing section held open on every load
-cost a screenful to say "none yet" on most Matters (TEEMA_TARGET_SPEC §A, §F,
+`Oluline tähtaeg`, `Jõustumine`, `Töövõit`, `Kaasamine` — are entered from
+`LISA TEEMALE` and read through the process strip and the chronology, which is
+where a dated fact belongs. A standing section held open on every load cost a
+screenful to say "none yet" on most Matters (TEEMA_TARGET_SPEC §A, §F,
 docs/adr/0074 §15).
 
 **The records are untouched.** `MatterImportantDate`, `MatterEffectiveDate`,
@@ -50,14 +51,33 @@ next step and no history renders as a short, deliberate page.
     {% include "matters/partials/register_facts.html" %}
 
     {% comment %}
-      Zone A. Two surfaces read as one act: the row states what is owed, the
-      composer is where the answer is written, and clicking the row opens the
-      composer. They share a ground and one 3 px accent edge.
+      Zone A, in two clearly separate parts. `PRAEGUNE TEGEVUS` states the task
+      this file is waiting on and takes the one answer that finishes it;
+      `LISA TEEMALE` is where every other kind of record begins, as a choice of
+      seven operations rather than seven forms held open.
+
+      This supersedes the `Järgmiseks` row over an open composer. That pair read
+      as one act and was one act only by accident: the row's `✓ Tehtud` wrote no
+      description and the composer's `Salvesta` completed no step, so finishing
+      something took two saves in two places with nothing tying them together —
+      and the composer's single save could mean any of seven things at once
+      (docs/adr/0075 §2, §3, superseding docs/adr/0074 §3).
     {% endcomment %}
-    {% include "matters/partials/next_action_row.html" %}
+    {% comment %}
+      A server refusal that no panel owns — and there is one route that can
+      still produce one: `matters:compose`, the superseded composer's endpoint,
+      which no page posts to but which is kept available for its tests and as a
+      compatibility surface (docs/adr/0075 §11). A 400 with nothing on the page
+      saying why is worse than a plain sentence at the top of the workspace.
+    {% endcomment %}
+    {% if composer_error %}
+      <p class="formerror workspace__error" role="alert">{{ composer_error }}</p>
+    {% endif %}
+
+    {% include "matters/partials/current_action.html" %}
 
     {% if matter.is_open and can_write %}
-      {% include "matters/partials/composer.html" %}
+      {% include "matters/partials/add_to_matter.html" %}
     {% endif %}
 
     {% if historical %}

@@ -19,8 +19,11 @@ from django.utils import timezone
 from app.accounts import shared_gate
 from app.accounts.models import SharedGateThrottle
 from app.core.errors import DomainError
+from app.matters import workspace
 from app.matters.models import Entry, EntryRevision, Matter
-from app.matters.services import add_entry, close_matter, edit_entry
+from app.matters.services import add_entry, close_matter, compose_update, edit_entry
+from app.related_materials.models import MatterRelation
+from app.related_materials.services import link_related_matters
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
@@ -563,3 +566,110 @@ def test_a_row_deleted_by_a_successful_sign_in_does_not_break_the_attempt(gate_l
     assert wait == 0
     # The attempt was counted on a fresh row rather than lost or raised.
     assert SharedGateThrottle.objects.get(client_key=key).failures == 1
+
+
+# ---------------------------------------------------------------------------
+# R2-02 — a closure and a business write cannot both land
+# ---------------------------------------------------------------------------
+
+
+def test_closing_while_adding_content_cannot_leave_the_content(specialist):
+    """The race the guard exists for, not the check it replaced.
+
+    ``if not matter.is_open: refuse`` on the instance a request arrived with
+    answers a question about a moment that has already passed. This is the
+    interleaving that makes the difference visible: one transaction takes the
+    Matter row and then writes an `Entry`, while another closes the file and
+    queues behind it. Whichever reaches the row first wins, and both orderings
+    are correct — a closure that lands first makes the write refuse, and a write
+    that lands first is simply part of the file the closure then shuts.
+
+    What cannot happen is both: an `Entry` committed against a Matter that was
+    already closed when it committed.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    holder_ready = threading.Event()
+    closer_started = threading.Event()
+    failures: list[BaseException] = []
+    outcomes: list[str] = []
+
+    def hold_then_write() -> None:
+        try:
+            with transaction.atomic():
+                Matter.objects.select_for_update().get(pk=matter.pk)
+                holder_ready.set()
+                closer_started.wait(timeout=LOCK_WAIT_TIMEOUT)
+                wait_for_a_blocked_backend()
+                workspace.add_matter_note(
+                    matter=matter, author=specialist, body="<p>Võidujooksu märge.</p>"
+                )
+            outcomes.append("note-written")
+        except DomainError:
+            outcomes.append("note-refused")
+        except BaseException as exc:  # pragma: no cover - reported, not swallowed
+            failures.append(exc)
+
+    def close() -> None:
+        try:
+            holder_ready.wait(timeout=LOCK_WAIT_TIMEOUT)
+            closer_started.set()
+            close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+            outcomes.append("closed")
+        except DomainError:
+            outcomes.append("close-refused")
+        except BaseException as exc:  # pragma: no cover
+            failures.append(exc)
+
+    threads = [run_in_thread(hold_then_write), run_in_thread(close)]
+    for thread in threads:
+        thread.join(timeout=40)
+
+    assert failures == [], failures
+    matter.refresh_from_db()
+
+    entries = Entry.objects.filter(matter=matter)
+    # Exactly one serialisation won, and the pair is consistent: an entry exists
+    # only if it was written before the closure committed.
+    assert "closed" in outcomes, outcomes
+    if "note-refused" in outcomes:
+        assert entries.count() == 0, outcomes
+    else:
+        assert "note-written" in outcomes, outcomes
+        assert entries.count() == 1, outcomes
+
+
+def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
+    """The ordering the lock produces, stated on its own.
+
+    Every UI-accessible business write, through the service that decides it —
+    so a surface added later inherits the rule rather than restating it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+
+    for call in (
+        lambda: workspace.add_matter_note(matter=matter, author=specialist, body="<p>Hiline.</p>"),
+        lambda: workspace.add_matter_engagement(
+            matter=matter, author=specialist, kind="SURVEY", audience="Liikmed"
+        ),
+        lambda: workspace.add_matter_important_date(
+            matter=matter,
+            author=specialist,
+            title="Hiline tähtaeg",
+            date_value=timezone.localdate(),
+            period_end=timezone.localdate(),
+            date_precision="EXACT",
+        ),
+        lambda: workspace.add_matter_work_victory(
+            matter=matter, author=specialist, title="Hiline võit"
+        ),
+        lambda: compose_update(matter=matter, author=specialist, body="<p>Hiline.</p>"),
+        lambda: link_related_matters(
+            matter=matter, other=factories.MatterFactory(owner=specialist), actor=specialist
+        ),
+    ):
+        with pytest.raises(DomainError):
+            call()
+
+    assert Entry.objects.filter(matter=matter).count() == 0
+    assert MatterRelation.objects.count() == 0

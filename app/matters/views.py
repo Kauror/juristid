@@ -78,6 +78,7 @@ from app.matters import (
     register_filters,
     selectors,
     work_items,
+    workspace,
 )
 from app.matters import person_work as person_workspace
 from app.matters.department_dashboard import SeisFigure
@@ -85,12 +86,19 @@ from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     BriefSummaryForm,
     CloseMatterForm,
+    CompactClosureForm,
+    CompactEffectiveDateForm,
+    CompactEngagementForm,
+    CompactImportantDateForm,
+    CompactWorkVictoryForm,
+    CompleteCurrentActionForm,
     ComposerForm,
     EngagementForm,
     IncomingIntakeForm,
     MatterCreateForm,
     MatterEditForm,
     MatterFieldForm,
+    MatterNoteForm,
     NextActionForm,
     PersonalNoteForm,
     PositionForm,
@@ -117,7 +125,6 @@ from app.matters.my_work import (
 from app.matters.process_timeline import process_steps
 from app.matters.services import (
     acknowledge_assignment_notice,
-    add_engagement,
     assign_matter,
     change_stage,
     change_track,
@@ -125,6 +132,7 @@ from app.matters.services import (
     compose_update,
     create_matter,
     personal_note_record,
+    record_engagement,
     reopen_matter,
     resolve_addressee,
     resolve_source_organisations,
@@ -2225,6 +2233,14 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_count": len(items) + (1 if has_more else 0),
         "timeline_only": timeline_only,
         "timeline_filters": TIMELINE_FILTERS,
+        # The eight workspace forms, unbound. `PRAEGUNE TEGEVUS` takes one and
+        # `LISA TEEMALE` takes the rest; a refused save replaces exactly one of
+        # them with its bound self and opens that panel alone
+        # (docs/adr/0075 §2, `workspace_forms`).
+        **workspace_forms(current_action),
+        # The superseded composer, still built for the endpoint that still
+        # accepts it. Nothing on this page renders it any more
+        # (docs/adr/0075 §11).
         "composer_form": ComposerForm(matter=matter, viewer=request.user),
         # `summary_form` and `note_form` are deliberately absent: the header
         # context carries them, it is merged over this one, and reading the
@@ -2756,7 +2772,7 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
         return _overview_with_engagement_error(request, matter, form)
 
     try:
-        add_engagement(
+        record_engagement(
             matter=matter,
             kind=form.cleaned_data["kind"],
             title=form.cleaned_data["title"],
@@ -2841,6 +2857,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
         context["action_form"] = form
+        context["open_panel"] = WORKSPACE_PANELS["action_form"]
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
@@ -2848,7 +2865,9 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
-        context["composer_error"] = str(error)
+        context["action_form"] = form
+        context["workspace_error"] = str(error)
+        context["open_panel"] = WORKSPACE_PANELS["action_form"]
         return render(request, "matters/partials/overview.html", context, status=400)
 
     return _render_overview(request, matter)
@@ -3681,3 +3700,281 @@ def matter_url(matter: Matter) -> str:
 
 
 ACTION_KIND_LABELS = dict(ActionKind.choices)
+
+
+# ---------------------------------------------------------------------------
+# The Teema workspace: PRAEGUNE TEGEVUS and LISA TEEMALE
+# ---------------------------------------------------------------------------
+#
+# Eight endpoints where there was one. Each takes one form, calls one use case
+# and re-renders the column; a refused save comes back with its own panel open,
+# its own errors, and every other panel shut and untouched. That last part is
+# the point of splitting them: a single global save meant an invalid `Töövõit`
+# could refuse a note somebody had also typed, and a valid one could write a
+# closure they had merely opened (docs/adr/0075 §2).
+
+
+#: The `<details>` id each operation's panel carries. A refusal reopens exactly
+#: the one it came from — reopening the whole group would answer a refusal by
+#: offering six other forms, and reopening none would print the error inside a
+#: panel nobody can see (brief §33).
+WORKSPACE_PANELS: dict[str, str] = {
+    "matter_note_form": "lisa-marge",
+    "action_form": "lisa-jargmine",
+    "add_engagement_form": "lisa-kaasamine",
+    "important_date_form": "lisa-tahtaeg",
+    "effective_date_form": "lisa-joustumine",
+    "work_victory_form": "lisa-toovoit",
+    "closure_form": "lisa-lopeta",
+}
+
+
+def workspace_forms(current_action: Any = None) -> dict[str, Any]:
+    """One unbound form per write intention, for an ordinary render.
+
+    Built here rather than in the template because a template that constructed
+    its own forms would be a template deciding what may be written.
+
+    `NextActionForm` is prefilled from the open step, because the control that
+    renders it while one exists is `Muuda` — an editor, and an editor that opens
+    empty is asking somebody to retype what is already on the screen. With no
+    open step the same form is `+ Järgmine tegevus` and has nothing to prefill
+    from. A bound form ignores `initial` either way, so a refused save still
+    comes back carrying what was typed (brief §9, §15).
+    """
+    return {
+        "current_action_form": CompleteCurrentActionForm(),
+        "matter_note_form": MatterNoteForm(),
+        "action_form": NextActionForm(
+            initial=(
+                {
+                    "text": current_action.text,
+                    "target_date": current_action.target_date,
+                }
+                if current_action is not None
+                else None
+            )
+        ),
+        "add_engagement_form": CompactEngagementForm(),
+        "important_date_form": CompactImportantDateForm(),
+        "effective_date_form": CompactEffectiveDateForm(),
+        "work_victory_form": CompactWorkVictoryForm(),
+        "closure_form": CompactClosureForm(),
+        "open_panel": "",
+        "workspace_error": "",
+    }
+
+
+def _workspace_refusal(
+    request: HttpRequest,
+    matter: Matter,
+    *,
+    key: str,
+    form: Any,
+    error: str = "",
+) -> HttpResponse:
+    """Re-render the column with one bound form, so nothing typed is lost.
+
+    400 rather than 200, like every other refused write on this page, and the
+    bound form goes back under its own key so the panel that failed is the panel
+    that shows why.
+    """
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context[key] = form
+    context["workspace_error"] = error
+    context["open_panel"] = WORKSPACE_PANELS.get(key, "")
+    return render(request, "matters/partials/overview.html", context, status=400)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`PRAEGUNE TEGEVUS` → `Salvesta`. The result is written and the step is done.
+
+    **One operation.** There is no `Märgi tehtuks` on this page any more and no
+    second confirmation: describing what was done about the current task *is*
+    completing it, which is what a lawyer means by finishing something and what
+    the two-save version could never guarantee (docs/adr/0075 §3).
+
+    The action is fetched through `visible_to` before anything else, so an
+    identifier naming a step this reader may not see answers 404 rather than
+    confirming that it exists — the same rule `complete_action` follows
+    (AUTH-003). Whether it is still *the current one* is a different question,
+    asked inside the service under a row lock (docs/adr/0075 §4).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompleteCurrentActionForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="current_action_form", form=form)
+
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user),
+        pk=form.cleaned_data["action_id"],
+        matter=matter,
+    )
+    try:
+        workspace.complete_current_action(
+            matter=matter,
+            author=request.user,
+            action_id=action.pk,
+            body=form.cleaned_data["body"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="current_action_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Märge` — something happened, and the current step stays exactly as it is."""
+    matter = get_visible_matter(request, pk)
+    form = MatterNoteForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="matter_note_form", form=form)
+    try:
+        workspace.add_matter_note(
+            matter=matter,
+            author=request.user,
+            body=form.cleaned_data["body"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="matter_note_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Kaasamine` — one consultation and the replies that came back with it."""
+    matter = get_visible_matter(request, pk)
+    form = CompactEngagementForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="add_engagement_form", form=form)
+    try:
+        workspace.add_matter_engagement(
+            matter=matter,
+            author=request.user,
+            kind=form.cleaned_data["kind"],
+            audience=form.cleaned_data["audience"],
+            response_count=form.cleaned_data.get("response_count"),
+            occurred_on=timezone.localdate(),
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="add_engagement_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_important_date(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Oluline tähtaeg` — a milestone somebody announced, and its letter."""
+    matter = get_visible_matter(request, pk)
+    form = CompactImportantDateForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="important_date_form", form=form)
+    try:
+        workspace.add_matter_important_date(
+            matter=matter,
+            author=request.user,
+            uploads=form.cleaned_data["attachments"],
+            **form.cleaned_data["important_date_kwargs"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="important_date_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_effective_date(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Jõustumine` — what commences, the day it does, and the act itself."""
+    matter = get_visible_matter(request, pk)
+    form = CompactEffectiveDateForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="effective_date_form", form=form)
+    try:
+        workspace.add_matter_effective_date(
+            matter=matter,
+            author=request.user,
+            uploads=form.cleaned_data["attachments"],
+            **form.cleaned_data["effective_date_kwargs"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="effective_date_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Töövõit` — what changed, with the evidence that it did.
+
+    Closes nothing and completes nothing. A win is its own canonical fact.
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactWorkVictoryForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="work_victory_form", form=form)
+    try:
+        workspace.add_matter_work_victory(
+            matter=matter,
+            author=request.user,
+            title=form.cleaned_data["victory_change"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="work_victory_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Lõpeta teema` — two questions, and the header follows out of band.
+
+    The workspace swaps `#teema-vaade`, which is deliberately not the header
+    band: re-rendering it on every note would rebuild five inline editors. A
+    closure is the one write here that the header states — the state badge said
+    `Avatud` beside an archived Matter until this was added — so the header
+    rides along on this response and on no other (docs/adr/0074 §10).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactClosureForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="closure_form", form=form)
+    try:
+        workspace.close_matter_from_workspace(
+            matter=matter,
+            author=request.user,
+            disposition=form.cleaned_data["disposition"],
+            closing_words=form.cleaned_data.get("closing_words") or "",
+        )
+    except DomainError as error:
+        return _workspace_refusal(request, matter, key="closure_form", form=form, error=str(error))
+
+    matter.refresh_from_db()
+    return _render_overview(request, matter, header_out_of_band=not matter.is_open)

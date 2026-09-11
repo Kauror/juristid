@@ -378,8 +378,8 @@ def test_the_matter_page_records_both_facts_from_the_composer(signed_in, special
     body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
 
     assert 'id="teema-faktid"' not in body
-    assert 'id="cx-joustumine"' in body
-    assert 'id="cx-toovoit"' in body
+    assert 'id="lisa-joustumine"' in body
+    assert 'id="lisa-toovoit"' in body
     assert "+ Jõustumine" in body
     assert "+ Töövõit" in body
 

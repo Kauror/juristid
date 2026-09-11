@@ -1,0 +1,297 @@
+{% comment %}
+`LISA TEEMALE` — what do I want to add to this file?
+
+Seven choices, not seven forms. The launcher is a row of quiet chips and nothing
+else until somebody picks one; clicking a chip opens that one operation's small
+form, with its own fields, its own `Salvesta`, its own validation and its own
+atomic business operation (brief §10–§12).
+
+**This deliberately reverses «one composer, one global save»** (docs/adr/0074
+§3). One save that could mean *note* and *next step* and *deadline* and
+*consultation* and *win* and *commencement* and *closure* is a save whose
+meaning the person has to reconstruct from which boxes they happened to fill in
+— and one invalid panel could refuse a note they had also typed. The person now
+says what they are recording first, and only then answers the questions that
+thing asks (docs/adr/0075 §2).
+
+**`+ Järgmine tegevus` is absent while a step is open.** There is at most one
+open `NextAction` and there is exactly one control for it: while a task is
+current, changing it is `Muuda` in `PRAEGUNE TEGEVUS`; once it is finished, the
+chip appears here. Two controls both offering to set "the next action" is how a
+lawyer ends up believing they have two (brief §15).
+
+**Only one panel open at a time**, enforced in `ux.js` over `[data-addpanel]`.
+With scripting off every disclosure still opens, closes, submits and validates
+— less elegant, fully operable (brief §11, §33).
+
+The whole section renders only for a writer on an open Matter; `overview.html`
+decides that, so a reader and a closed file get no launcher at all rather than a
+row of controls that refuse (brief §30, §31).
+{% endcomment %}
+<section class="addzone" id="lisa-teemale" aria-labelledby="lisa-pealkiri">
+  <h2 class="rowlabel" id="lisa-pealkiri">Lisa teemale</h2>
+
+  <div class="cx-panels">
+    {% comment %}
+      `+ Märge`. Something happened and it is *not* the current task finishing:
+      «Ministeerium helistas ja ütles, et uus versioon tuleb reedel» while the
+      step that is open stays open. It writes an Entry and its files and touches
+      `Järgmiseks` in no way at all (brief §13).
+    {% endcomment %}
+    <details class="cx-panel" id="lisa-marge" data-addpanel
+             {% if open_panel == "lisa-marge" %}open{% endif %}>
+      <summary class="disclosure-chip">+ Märge</summary>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-marge" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_note' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
+          {% csrf_token %}
+          <label class="cx-f__lab" for="{{ matter_note_form.body.id_for_label }}">
+            Mis juhtus või mida tegid?
+          </label>
+          {{ matter_note_form.body }}
+          {% if matter_note_form.body.errors %}
+            <p class="field__error">{{ matter_note_form.body.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/add_files.html" with field=matter_note_form.attachments %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </details>
+
+    {% if not current_action %}
+      <details class="cx-panel" id="lisa-jargmine" data-addpanel
+               {% if open_panel == "lisa-jargmine" %}open{% endif %}>
+        <summary class="disclosure-chip">+ Järgmine tegevus</summary>
+        <div class="cx-panel__body">
+          {% if open_panel == "lisa-jargmine" and workspace_error %}
+            <p class="formerror" role="alert">{{ workspace_error }}</p>
+          {% endif %}
+          {% include "matters/partials/next_action_form.html" %}
+        </div>
+      </details>
+    {% endif %}
+
+    {% comment %}
+      `+ Kaasamine`. The current business model, unchanged this round:
+      `Vastuseid` is optional and blank means *nobody counted* rather than
+      *nobody answered*, and no response rate is computed anywhere. The larger
+      «Alustasin arvamuste küsimist» / «Arvamused saabusid» redesign is a
+      separate product round (brief §16).
+    {% endcomment %}
+    <details class="cx-panel" id="lisa-kaasamine" data-addpanel
+             {% if open_panel == "lisa-kaasamine" %}open{% endif %}>
+      <summary class="disclosure-chip">+ Kaasamine</summary>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-kaasamine" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_engagement_compact' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
+          {% csrf_token %}
+          <div class="cx-when" data-chipgroup="{{ add_engagement_form.kind.html_name }}">
+            <span class="cx-f__lab">Liik</span>
+            {% for chip in add_engagement_form.kind_chips %}
+              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
+                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
+            {% endfor %}
+            {{ add_engagement_form.kind }}
+          </div>
+          <div class="cx-grid">
+            <label class="cx-f">
+              <span class="cx-f__lab">Keda kaasati</span>
+              {{ add_engagement_form.audience }}
+            </label>
+            <label class="cx-f cx-f--num">
+              <span class="cx-f__lab">Vastuseid</span>
+              {{ add_engagement_form.response_count }}
+            </label>
+          </div>
+          {% if add_engagement_form.audience.errors %}
+            <p class="field__error">{{ add_engagement_form.audience.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.response_count.errors %}
+            <p class="field__error">{{ add_engagement_form.response_count.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/add_files.html" with field=add_engagement_form.attachments %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </details>
+
+    {% comment %}
+      `+ Oluline tähtaeg`. One date box over three precision chips: a milestone
+      somebody else announced is often known to a month or a quarter, and the
+      panel reads the precision off the chips and the period off the day that
+      was picked. It creates no `NextAction` — a date the file has to live with
+      is not an instruction to a person (brief §17).
+    {% endcomment %}
+    <details class="cx-panel" id="lisa-tahtaeg" data-addpanel
+             {% if open_panel == "lisa-tahtaeg" %}open{% endif %}>
+      <summary class="disclosure-chip">+ Oluline tähtaeg</summary>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-tahtaeg" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_important_date' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
+          {% csrf_token %}
+          <div class="cx-grid">
+            <label class="cx-f">
+              <span class="cx-f__lab">Mis tähtaeg</span>
+              {{ important_date_form.deadline_title }}
+            </label>
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Kuupäev</span>
+              {{ important_date_form.deadline_date }}
+            </label>
+          </div>
+          <div class="cx-when" data-chipgroup="{{ important_date_form.deadline_precision.html_name }}">
+            <span class="cx-f__lab">Täpsus</span>
+            {% for chip in important_date_form.precision_chips %}
+              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
+                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
+            {% endfor %}
+            <input type="hidden" name="{{ important_date_form.deadline_precision.html_name }}"
+                   value="{{ important_date_form.deadline_precision.value|default:'EXACT' }}">
+          </div>
+          {% if important_date_form.deadline_title.errors %}
+            <p class="field__error">{{ important_date_form.deadline_title.errors|first }}</p>
+          {% endif %}
+          {% if important_date_form.deadline_date.errors %}
+            <p class="field__error">{{ important_date_form.deadline_date.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/add_files.html" with field=important_date_form.attachments %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </details>
+
+    <details class="cx-panel" id="lisa-joustumine" data-addpanel
+             {% if open_panel == "lisa-joustumine" %}open{% endif %}>
+      <summary class="disclosure-chip">+ Jõustumine</summary>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-joustumine" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_effective_date' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
+          {% csrf_token %}
+          <div class="cx-grid">
+            <label class="cx-f">
+              <span class="cx-f__lab">Mis jõustub</span>
+              {{ effective_date_form.effective_title }}
+            </label>
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Jõustub</span>
+              {{ effective_date_form.effective_on }}
+            </label>
+          </div>
+          {% if effective_date_form.effective_title.errors %}
+            <p class="field__error">{{ effective_date_form.effective_title.errors|first }}</p>
+          {% endif %}
+          {% if effective_date_form.effective_on.errors %}
+            <p class="field__error">{{ effective_date_form.effective_on.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/add_files.html" with field=effective_date_form.attachments %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </details>
+
+    {% comment %}
+      `+ Töövõit`. A win is recorded when it happens, not when the file closes,
+      and it neither closes the Matter nor completes the current step
+      (brief §19).
+    {% endcomment %}
+    <details class="cx-panel" id="lisa-toovoit" data-addpanel
+             {% if open_panel == "lisa-toovoit" %}open{% endif %}>
+      <summary class="disclosure-chip">+ Töövõit</summary>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-toovoit" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_work_victory' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
+          {% csrf_token %}
+          <label class="cx-f">
+            <span class="cx-f__lab">Mis muutus</span>
+            {{ work_victory_form.victory_change }}
+          </label>
+          {% if work_victory_form.victory_change.errors %}
+            <p class="field__error">{{ work_victory_form.victory_change.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/add_files.html" with field=work_victory_form.attachments %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </details>
+
+    {% comment %}
+      `+ Lõpeta teema` — last, because finishing a file is not a routine
+      capture, and two questions, because closing a Matter is not a claim that
+      an opinion was sent. The six-question flow is not coming back and nothing
+      here fabricates a sent opinion, a work victory or final evidence
+      (docs/adr/0074 §10, brief §20).
+
+      No file control: closure gained no attachment requirement in this round,
+      and giving it one would quietly restore the final-evidence precondition
+      the previous round removed.
+    {% endcomment %}
+    <details class="cx-panel cx-panel--last" id="lisa-lopeta" data-addpanel
+             {% if open_panel == "lisa-lopeta" %}open{% endif %}>
+      <summary class="disclosure-chip disclosure-chip--last">+ Lõpeta teema</summary>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-lopeta" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:close_from_workspace' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          <div class="cx-when" data-chipgroup="{{ closure_form.disposition.html_name }}">
+            <span class="cx-f__lab">Kuidas lõppes</span>
+            {% for chip in closure_form.closure_chips %}
+              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
+                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
+            {% endfor %}
+            {{ closure_form.disposition }}
+          </div>
+          <label class="cx-f">
+            <span class="cx-f__lab">Lõppsõna <span class="cx-f__opt">valikuline</span></span>
+            {{ closure_form.closing_words }}
+          </label>
+          {% if closure_form.disposition.errors %}
+            <p class="field__error">{{ closure_form.disposition.errors|first }}</p>
+          {% endif %}
+          <p class="cx-note">Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.</p>
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </div>
+</section>
