@@ -8,7 +8,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
-. "$root\devtools\matter-refinement\env.ps1"
+. "$root\devtools\teema-target\env.ps1"
 
 $up = (Test-NetConnection 127.0.0.1 -Port 5432 -WarningAction SilentlyContinue).TcpTestSucceeded
 if (-not $up) {

@@ -33,7 +33,6 @@ from django.utils import timezone
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.matters.models import Entry
-from app.submissions.models import Submission
 from app.workflow.enums import (
     ActionKind,
     ActionStatus,
@@ -76,38 +75,45 @@ def _compose(client, matter, **fields):
 # ---------------------------------------------------------------------------
 
 
-def _full_closure_fields(organisation, **overrides):
-    fields = {
-        "body": "Saatsime lõpparvamuse ja teema on lõppenud.",
-        "disposition": Disposition.COMPLETED,
-        "final_file": _pdf(),
-        "final_sent_on": "12.09.2026",
-        "final_recipients": [str(organisation.pk)],
-        "work_victory": "EI",
-    }
-    fields.update(overrides)
-    return fields
+def test_closure_answers_are_never_accepted_and_then_dropped(signed_in, normal_matter):
+    """The pilot reproduction, on the approved target's panel.
 
-
-def test_closure_answers_are_never_accepted_and_then_dropped(
-    signed_in, normal_matter, organisation
-):
-    """The pilot reproduction, exactly.
-
-    Every closing answer filled in, the old confirmation box left alone, and
-    Salvesta pressed. Before the fix this returned 200, wrote an ordinary Entry
-    and discarded the rest. Now the closure is what the save *is*.
+    Every question the panel asks, answered, and Salvesta pressed. F-02 was that
+    a filled-in closing section could return 200, write an ordinary Entry and
+    silently discard the rest because a seventh control nobody noticed had not
+    been ticked. Answering the section *is* the request to close, and it still is
+    now that the section asks two things instead of six (docs/adr/0074 §10).
     """
-    response = _compose(signed_in, normal_matter, **_full_closure_fields(organisation))
-
-    assert response.status_code == 200
+    response = _compose(
+        signed_in,
+        normal_matter,
+        body="Teema on lõppenud.",
+        disposition=Disposition.COMPLETED,
+        closing_words="Seadus jõustus 1. jaanuaril.",
+    )
+    assert response.status_code == 200, response.content.decode()[:2000]
     normal_matter.refresh_from_db()
     assert not normal_matter.is_open
     assert normal_matter.disposition == Disposition.COMPLETED
-    assert Submission.objects.filter(matter=normal_matter).count() == 1
-    assert Document.objects.filter(
-        matter=normal_matter, role=DocumentRole.KODA_SUBMISSION_FINAL
-    ).exists()
+    assert normal_matter.disposition_reason == "Seadus jõustus 1. jaanuaril."
+
+
+def test_a_final_word_alone_still_asks_to_close(signed_in, normal_matter):
+    """Either half of the panel is an answer only a closure has, so either half
+    is the request — and the missing one is refused on its own control rather
+    than falling through into an ordinary note."""
+    response = _compose(
+        signed_in,
+        normal_matter,
+        body="Teema on lõppenud.",
+        closing_words="Menetlus lõppes.",
+    )
+
+    assert response.status_code == 400
+    assert "Vali, kuidas teema lõppes" in response.content.decode()
+    normal_matter.refresh_from_db()
+    assert normal_matter.is_open
+    assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
 def test_the_old_confirmation_box_is_gone_from_the_form_and_the_page(signed_in, normal_matter):
@@ -122,94 +128,70 @@ def test_the_old_confirmation_box_is_gone_from_the_form_and_the_page(signed_in, 
 
 
 def test_an_unanswered_reason_is_representable_and_refused(signed_in, normal_matter):
-    """`Põhjus` had no empty option, so every POST carried `COMPLETED`.
-
-    Its own refusal — «Vali, miks teema lõpeb» — could therefore never fire, and
-    a reason nobody chose was stored as if they had.
-    """
+    """`Kuidas lõppes` had no empty option once, so every POST carried
+    `COMPLETED`: its own refusal could never fire, and a reason nobody chose was
+    stored as if they had. The chips open on nothing for exactly this reason."""
     response = _compose(
         signed_in,
         normal_matter,
         body="Teema on lõppenud.",
         disposition="",
-        work_victory="EI",
+        closing_words="Menetlus lõppes.",
     )
 
     assert response.status_code == 400
-    assert "Vali, miks teema lõpeb" in response.content.decode()
+    assert "Vali, kuidas teema lõppes" in response.content.decode()
     normal_matter.refresh_from_db()
     assert normal_matter.is_open
     assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
 def test_a_partial_closure_refuses_the_whole_save(signed_in, normal_matter):
-    """Nothing at all is written when the closing half does not hold together."""
+    """Nothing at all is written when the closing half does not hold together —
+    not the entry above it, and not the next step beside it."""
     response = _compose(
         signed_in,
         normal_matter,
         body="Midagi juhtus.",
         next_text="Vaadata versioon üle",
         next_date="20.10.2026",
-        disposition=Disposition.COMPLETED,
+        closing_words="Menetlus lõppes.",
     )
 
     assert response.status_code == 400
-    assert "Märgi, kas teemast sai töövõit" in response.content.decode()
     normal_matter.refresh_from_db()
     assert normal_matter.is_open
     assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert not Submission.objects.filter(matter=normal_matter).exists()
-    assert not Document.objects.filter(matter=normal_matter).exists()
     assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 
-def test_recipients_without_the_file_refuse_the_whole_save(signed_in, normal_matter, organisation):
-    """A sent opinion is claimed by its evidence, never by its metadata alone."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        body="Saatsime arvamuse.",
-        disposition=Disposition.COMPLETED,
-        work_victory="EI",
-        final_sent_on="12.09.2026",
-        final_recipients=[str(organisation.pk)],
-    )
-
-    assert response.status_code == 400
-    assert "Lae saadetud fail" in response.content.decode()
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert not Submission.objects.filter(matter=normal_matter).exists()
-
-
-def test_a_refused_closure_comes_back_with_the_closing_section_open(signed_in, normal_matter):
+def test_a_refused_closure_comes_back_with_the_closing_panel_open(signed_in, normal_matter):
     """An error inside a panel nobody can see is an error nobody reads."""
     response = _compose(
-        signed_in, normal_matter, body="Teema on lõppenud.", disposition=Disposition.COMPLETED
+        signed_in, normal_matter, body="Teema on lõppenud.", closing_words="Menetlus lõppes."
     )
-
     html = response.content.decode()
+
     assert response.status_code == 400
-    assert 'id="koostaja-lopetamine"' in html
-    opening = html.split('id="koostaja-lopetamine"', 1)[1].split(">", 1)[0]
-    assert "hidden" not in opening
+    assert 'id="cx-lopeta"' in html
+    opening = html.split('id="cx-lopeta"', 1)[1].split(">", 1)[0]
+    assert "open" in opening
 
 
-def test_a_rejected_upload_leaves_nothing_behind(signed_in, normal_matter, organisation):
-    """The same atomic refusal when it is the evidence that is refused."""
+def test_a_rejected_upload_leaves_nothing_behind(signed_in, normal_matter):
+    """The same atomic refusal when it is the evidence that is refused.
+
+    Through the composer's own file control, which is the evidence path the
+    approved target has: the closing panel no longer takes an upload, and the
+    canonical rules that governed that one govern this one
+    (app/documents/services.py)."""
     bad = SimpleUploadedFile("arvamus.exe", b"MZ not a pdf", content_type="application/pdf")
-    response = _compose(
-        signed_in,
-        normal_matter,
-        **_full_closure_fields(organisation, final_file=bad),
-    )
+    response = _compose(signed_in, normal_matter, body="Sain faili.", attachment=bad)
 
     assert response.status_code == 400
     normal_matter.refresh_from_db()
     assert normal_matter.is_open
     assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert not Submission.objects.filter(matter=normal_matter).exists()
     assert not Document.objects.filter(matter=normal_matter).exists()
 
 
@@ -284,18 +266,42 @@ def test_a_refused_defer_also_answers_inside_the_row(signed_in, normal_matter, s
     assert "kuupäev" in html
 
 
-def test_both_defer_controls_swap_only_the_row(signed_in, normal_matter, specialist):
-    """The quick chips and the free-date box are two forms; both must be scoped."""
+def test_the_jargmiseks_row_no_longer_carries_the_defer_control(
+    signed_in, normal_matter, specialist
+):
+    """The approved target's row is the text, the date, `✓ Tehtud` and `Muuda`.
+
+    «Lükka edasi» was a second disclosure holding four POST buttons and a date
+    box, inside the one row on the page that has to be readable at a glance
+    (TEEMA_TARGET_SPEC §C.1, docs/adr/0074 §20). The route, the service and the
+    day-counting rules below are untouched, which is what the rest of this
+    section still proves.
+    """
     _action(normal_matter, specialist, days=30)
     html = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
 
-    forms = [part for part in html.split("<form") if "lukka" in part.split("</form>")[0]]
-    assert len(forms) == 2
-    for part in forms:
-        opening = part.split(">", 1)[0]
-        assert 'hx-target="#jargmiseks-rida"' in opening
+    row = html.split('id="jargmiseks-rida"')[1].split("</div>")[0]
+    assert "Lükka edasi" not in html
+    assert "✓ Tehtud" in row
+    assert "Muuda" in row
+
+
+def test_deferring_still_swaps_only_the_row(signed_in, normal_matter, specialist):
+    """The scope rule the two retired forms carried, asserted on the response.
+
+    Completing or deferring must never re-render the composer: a lawyer may be
+    halfway through typing the result of the work into it (ADR 0052 §8)."""
+    action = _action(normal_matter, specialist, days=30)
+
+    response = _defer(signed_in, normal_matter, action, paevad="1")
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'id="jargmiseks-rida"' in html
+    assert 'id="teema-koostaja"' not in html, "a defer must not re-render the composer"
+    assert 'id="ajalugu-loend"' not in html
 
 
 def test_a_future_step_is_deferred_from_its_own_date(signed_in, normal_matter, specialist):

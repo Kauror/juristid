@@ -1,30 +1,23 @@
 {% comment %}
-One timeline projection over authored entries and selected change events.
+The chronology, in **two visual kinds and no third**.
 
-The redesign's rule is one line per professional action, so an item that came
-out of a composer save renders as a single line carrying its sentence — "Marko
-lisas märkuse ja määras järgmise sammu" — and, underneath, the note and the
-next step it produced. Every underlying `ChangeEvent` still exists and still
-says exactly what it said; the grouping is presentation, and no canonical record
-is suppressed or merged (Teema redesign §11.1, app/matters/timeline.py).
+  MILESTONE     12 px accent dot   something that happened to the file
+  WORK ENTRY     6 px muted dot    something a colleague did on it
 
-The 2026-08 pass gives that projection a spine. A dot per line says what kind of
-thing it is before any word is read — a note, an opinion Koda sent, a meeting, a
-change the application recorded — and the vertical rule between the dots is what
-makes six months read as one chronology rather than as a stack of cards
-(design handoff 1b).
+That is the whole hierarchy, and it is the approved target's central claim about
+this list: a reader scanning six months sees the shape of the proceeding in the
+big dots and the work around it in the small ones. Everything used to draw the
+same dot, and a stage change, a note and a captured file were three lines of
+equal weight (TEEMA_TARGET_SPEC §E, docs/adr/0074 §14).
 
-Two things the spine changed, and neither is cosmetic:
+**Milestones are projected from canonical records, never duplicated.** A work
+victory, an engagement, a commencement and a reached deadline each render off
+their own row in their own table; the corresponding audit events are not rendered
+beside them and no longer contribute a clause to the save that wrote them. One
+act, one line (app/matters/timeline.py `projected_milestones`).
 
-* **What one save decided rides with it.** A composer save that set a next step
-  prints it on its own strip under the note — «→ Saada arvamus EIS-i ·
-  TÄHTAEG 21.08» — instead of as a separate line saying "Järgmiseks määratud".
-  The date is the action's own, at the precision it was recorded to.
-* **Adjacent system events fold.** Three field changes in a row become one line
-  that says when the file started and how many actions it holds, and opens to
-  show all of them. Nothing is hidden: it is a `<details>`, and everything
-  inside renders exactly as it did — including each event's own type, which the
-  closed line deliberately no longer recites.
+**No folded system runs.** «3 süsteemimuudatust — näita ▸» was a third row style
+for events that are now either milestones in their own right or ordinary work.
 
 Security audit events never appear here: who downloaded what is a compliance
 record, not professional chronology (master specification 16.5).
@@ -32,138 +25,113 @@ record, not professional chronology (master specification 16.5).
 {% comment %}
   No grid wrapper here: `#ajalugu-loend` in timeline.html is the grid. This
   fragment is also what `timeline_page` returns for «Näita varasemaid», which
-  swaps itself in place *inside* that grid — a wrapper of its own would break
-  one spine into two (app/matters/views.py, `timeline_page`).
+  swaps itself in place *inside* that grid — a wrapper of its own would break one
+  spine into two (app/matters/views.py, `timeline_page`).
 {% endcomment %}
-{% for row in timeline_rows %}
-    {% if row.is_run %}
-      {% comment %}
-        A run of adjacent system events. The closed line says when the file
-        started and how many actions are folded in, over which days — and not
-        what the application called each of them. «3 süsteemimuudatust —
-        Järgmiseks määratud, Tõendiversioon lisatud, Teema loodud» was the
-        chronology reading its own event vocabulary out to a lawyer who has no
-        reason to know it, at the top of nearly every Matter.
-
-        The classifications are still here, one per line, inside the
-        disclosure — the summary stopped naming them, and nothing stopped
-        recording them (app/matters/timeline.py, `TimelineRow.summary`).
-      {% endcomment %}
-      <article class="uxtl__item">
-        <span class="uxtl__rail" aria-hidden="true">
-          <span class="uxtl__dot uxtl__dot--sys"></span>
-          <span class="uxtl__line"></span>
-        </span>
-        <div class="uxtl__body">
-          <details class="uxtl__sys">
-            <summary class="uxtl__sysrow">
-              <span>{{ row.summary }}</span>
-              <span>{{ row.span }}</span>
-              <span class="uxtl__sysshow">näita ▸</span>
-            </summary>
-            <div class="uxtl__sysbody">
-              {% for item in row.items %}
-                <p class="systemevent">
-                  <span class="systemevent__dot" aria-hidden="true"></span>
-                  <span class="systemevent__type">{{ item.event.get_event_type_display }}</span>
-                  <time datetime="{{ item.event.occurred_at|date:'c' }}">
-                    {{ item.event.occurred_at|date:"j.n.Y H:i" }}
-                  </time>
-                  {% if item.event.actor %}<span>{{ item.event.actor.display_name }}</span>{% endif %}
-                  {% if item.event.summary %}<span>· {{ item.event.summary }}</span>{% endif %}
-                </p>
-              {% endfor %}
-            </div>
-          </details>
-        </div>
-      </article>
-
-    {% else %}
-      {% with item=row.item %}
+{% for item in timeline_items %}
+  {% comment %}
+    The id is what a search result for an entry scrolls to. Server-rendered
+    anchor, no router: the timeline is already one page (Stage-2B brief 77).
+  {% endcomment %}
+  <article class="uxtl__item"
+           {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
+    <span class="uxtl__rail" aria-hidden="true">
+      <span class="uxtl__dot {% if item.is_milestone %}uxtl__dot--ms{% endif %}"></span>
+      <span class="uxtl__line"></span>
+    </span>
+    <div class="uxtl__body">
+      {% if item.is_milestone %}
         {% comment %}
-          The id is what a search result for an entry scrolls to. Server-rendered
-          anchor, no router: the timeline is already one page (Stage-2B brief 77).
+          A milestone carries a **date and no clock time**. Two notes on one
+          afternoon need separating; a commencement or a stage change happened on
+          a day, and printing 14:02 beside it would claim a precision the fact
+          does not have.
         {% endcomment %}
-        <article class="uxtl__item"
-                 {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
-          <span class="uxtl__rail" aria-hidden="true">
-            <span class="uxtl__dot uxtl__dot--{{ item.marker }}"></span>
-            <span class="uxtl__line"></span>
-          </span>
-          <div class="uxtl__body">
-            <p class="uxtl__meta">
-              {% if item.actor %}
-                <span class="uxtl__author">{{ item.actor.display_name }}</span>
-              {% endif %}
-              {% comment %}
-                The badge names the kind; the sentence names what the save did.
-                An entry gets the badge and, when the same save did more than
-                write the note, the rest of the sentence — «lisas märkuse»
-                beside a `Märkus` badge above the note itself would be the same
-                fact three times, but "lisas dokumendi ja lisas kaasamise" is
-                not said anywhere else on the line (Teema redesign §11.1).
-              {% endcomment %}
-              {% if item.kind_label %}
-                <span class="uxtl__kind uxtl__kind--{{ item.marker }}">{{ item.kind_label }}</span>
-                {% if item.besides_the_note %}
-                  <span class="uxtl__did">{{ item.besides_the_note }}</span>
-                {% endif %}
-              {% elif item.summary_sentence %}
-                <span class="uxtl__did">{{ item.summary_sentence }}</span>
-              {% elif item.event %}
-                <span class="uxtl__kind uxtl__kind--closed">{{ item.event.get_event_type_display }}</span>
-              {% endif %}
-              {% if item.entry.organisation %}
-                <span class="uxtl__where">{{ item.entry.organisation.name }}</span>
-              {% endif %}
-              {% if item.entry.was_edited %}
-                <span class="uxtl__where" title="Varasem sõnastus on säilitatud">muudetud</span>
-              {% endif %}
-              <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">
-                {{ item.occurred_at|date:"j.n.Y H:i" }}
-              </time>
-            </p>
-
-            {% if item.is_entry %}
-              {% comment %}
-                Bodies are sanitised on write by app.core.richtext, so the stored
-                fragment is safe to render. Nothing reaches this template that has
-                not been through the allowlist.
-              {% endcomment %}
-              <div class="richtext">{{ item.entry.body|safe }}</div>
-            {% elif item.event %}
-              {% if item.event.summary and not item.summary_sentence %}
-                <p class="uxtl__text">{{ item.event.summary }}</p>
-              {% endif %}
-              {% if item.event.payload.addressees %}
-                <p class="uxtl__sub">Saaja: {{ item.event.payload.addressees|join:", " }}</p>
-              {% endif %}
-            {% endif %}
-
-            {% include "matters/partials/timeline_group_facts.html" with item=item %}
-
-            {% comment %}
-              What the save decided. Its own strip rather than its own line: it
-              is the consequence of the thing above it, and a reader scrolling
-              for "what did we agree to do" is looking for exactly this.
-            {% endcomment %}
-            {% if item.next_step %}
-              <p class="uxtl__next">
-                <span class="uxtl__nextmode">→</span>
-                <span class="uxtl__nexttext">{{ item.next_step.text }}</span>
-                {% if item.next_step.date_line %}
-                  <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>
-                {% endif %}
-              </p>
-            {% endif %}
-          </div>
-        </article>
-      {% endwith %}
-    {% endif %}
+        <p class="uxtl__ms">
+          <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
+          <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
+        </p>
+        {% if item.milestone.sub %}
+          <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
+        {% endif %}
+      {% else %}
+        {% comment %}
+          The meta line is one baseline-aligned row: who, what they did, and
+          **the time inline at the end of it** after a `·`. It used to be a
+          right-aligned column of its own, which made every line as wide as the
+          page and left a gutter of dates nobody reads down
+          (TEEMA_TARGET_SPEC §E).
+        {% endcomment %}
+        <p class="uxtl__meta">
+          {% if item.actor %}
+            <span class="uxtl__author">{{ item.actor.display_name }}</span>
+          {% endif %}
+          {% comment %}
+            The verb phrase, and no default badge. «Märkus» was written out
+            beside every note on a page where a note is what a row *is* unless it
+            says otherwise; the target hides it and states the exception instead
+            — «lisas dokumendi», «määras järgmise sammu».
+          {% endcomment %}
+          {% if item.besides_the_note %}
+            <span class="uxtl__did">{{ item.besides_the_note }}</span>
+          {% elif not item.is_entry and item.summary_sentence %}
+            <span class="uxtl__did">{{ item.summary_sentence }}</span>
+          {% elif not item.is_entry and item.event %}
+            <span class="uxtl__did">{{ item.event.get_event_type_display }}</span>
+          {% endif %}
+          {% if item.entry.organisation %}
+            <span class="uxtl__where">{{ item.entry.organisation.name }}</span>
+          {% endif %}
+          {% if item.entry.was_edited %}
+            <span class="uxtl__where" title="Varasem sõnastus on säilitatud">muudetud</span>
+          {% endif %}
+          <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y H:i" }}</time>
+        </p>
+        {% if item.is_entry %}
+          {% comment %}
+            Bodies are sanitised on write by app.core.richtext, so the stored
+            fragment is safe to render. Nothing reaches this template that has
+            not been through the allowlist.
+          {% endcomment %}
+          <div class="richtext">{{ item.entry.body|safe }}</div>
+        {% elif item.event.summary and not item.summary_sentence %}
+          <div class="richtext">{{ item.event.summary }}</div>
+        {% endif %}
+        {% comment %}
+          The file itself, by its real name and linked to the exact bytes. The
+          old list printed the filename out of an audit summary and offered no
+          way to open it, so the commonest reason to scroll a file — finding the
+          version somebody attached in June — meant a trip to another tab
+          (app/matters/timeline.py `_with_files`).
+        {% endcomment %}
+        {% for file in item.files %}
+          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}</a>
+        {% endfor %}
+      {% endif %}
+      {% comment %}
+        What the save decided. Its own pill rather than its own line: it is the
+        consequence of the thing above it, and a reader scrolling for "what did
+        we agree to do" is looking for exactly this.
+      {% endcomment %}
+      {% if item.next_step %}
+        <span class="uxtl__next">
+          <span class="uxtl__nextmode" aria-hidden="true">→</span>
+          <span class="uxtl__nexttext">{{ item.next_step.text }}</span>
+          {% if item.next_step.date_line %}
+            <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>
+          {% endif %}
+        </span>
+      {% endif %}
+    </div>
+  </article>
 {% empty %}
   <p class="uxtl__none">Ajajoon on tühi. Esimene sissekanne ilmub siia.</p>
 {% endfor %}
-
+{% comment %}
+  The continuation control, at the **bottom** of the list where the list runs
+  out — never a scroll container inside the page, and never date-group headings
+  above it (TEEMA_TARGET_SPEC, INTERACTION STATES).
+{% endcomment %}
 {% if timeline_has_more %}
   <button type="button" class="button button--quiet uxtl__older"
           hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?nihe={{ next_offset }}&amp;ajajoon={{ timeline_only|default:'koik' }}"

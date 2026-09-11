@@ -1,82 +1,62 @@
 {% comment %}
-`Mis juhtus?` — the primary surface of the whole application.
+The composer — the primary surface of the whole application, and since the
+approved Teema target **open on arrival**.
 
-One box, three mode chips, and a set of quiet disclosures. Everything a lawyer
-records after a meeting goes in here and saves once: what happened, what
-happens next, the file they were handed, the deadline they were told about,
-and — when the work is finished — the closure itself.
+Two text boxes, a row of quick dates with a file affordance at its right end,
+five progressive panels and one `Salvesta`. Everything a lawyer records after a
+meeting goes in here and saves once: what happened, what happens next, the file
+they were handed, the deadline they were told about, the consultation that
+informed it, the win, the commencement, and — when the work is finished — the
+closure itself.
 
-**No `+ Kaasamine` here.** There is one place a consultation is recorded and it
-is the Kaasamine section below, which shows what is already on the file while
-you add to it. Two entry points for one act is how two people record the same
-consultation twice.
+**OPEN BY DEFAULT.** This reverses the 2026-08 decision to close it (ADR 0043).
+That decision was reasonable on its own terms — a Matter is read far more often
+than written to, and an eight-line form pushed the file's content below the
+fold. What the approved target does instead is make the form *short enough to
+live open*: the body is a 60 px box rather than eight lines, the next step is one
+row, and everything else is a chip. Recording what happened is the reason this
+product exists, and it must not begin with a click (TEEMA_TARGET_SPEC §C.2,
+docs/adr/0074 §3).
 
-**Three questions, in the order a lawyer thinks them.** *Mida tegid või mis
-juhtus?*, *Järgmiseks*, *Millal?* — and nothing else is asked about the next
-step. There is no action kind and no date meaning: the classification the
-composer used to demand (TEEN / OOTAN / JÄLGIN / EI MUUDA) is retired, the
-stored values behind a step recorded here are always `DO` / `DEADLINE` /
-`EXACT`, and the date means the day the work gets done (ADR 0052).
+The collapsed presentation is kept, because the disclosure still closes — by the
+`L` shortcut, by the summary, and by clicking the Järgmiseks row above.
+
+**One save.** The POST goes to one service inside one transaction; it may write
+eight canonical records and the chronology shows what a person did, not what the
+application did (app/matters/services.py `compose_update`, app/audit/operations).
+
+**Three primary questions, in the order a lawyer thinks them.** *Mida tegid või
+mis juhtus?*, *Järgmiseks*, *Millal?* — and nothing else is asked about the next
+step. There is no action kind and no date meaning: the stored values behind a
+step recorded here are always `DO` / `DEADLINE` / `EXACT`, and the date means the
+day the work gets done (ADR 0052).
 
 **The two text boxes are two facts.** What happened and what happens next are
 written separately and stored separately, and neither is derived from the other
-— no splitting, no summarising, no copying. This reverses ADR 0030 §4, which
-only held while the form also asked the lawyer to classify the sentence.
-
-**One save, one professional update.** The POST goes to one service inside one
-transaction; it may write six canonical records and the timeline shows one line
-(app/matters/services.py, app/audit/operations.py).
-
-The 2026-08 pass closes it by default (design handoff 1d). A Matter is read far
-more often than it is written to, and an eight-line form standing open under the
-Järgmiseks row pushed the file's actual content below the fold on every visit.
-Closed it is one line; `L` or a click opens it, and it opens by itself whenever
-a save was refused, so nobody loses what they typed.
-
-**The 2026-08 pass dropped nothing to make it smaller.** What the 2026-08-31
-pass dropped is the mode row and the «Täpsemalt…» panel behind the date, which
-between them asked four questions about a sentence somebody had already written.
-`Millal?` keeps its chips and its exact box; the approximate-period control that
-used to sit under it belongs to `Oluline tähtaeg` and is still there.
-
-**The closing section is different: it was deliberately cut.** `Tulemus`,
-`Järglane`, `Lõpparvamuse pealkiri`, `Kanal`, `Viide`, `Mida Koda saavutas?`
-and `Töövõidu selgitus` are gone, because four of them asked for the narrative
-this form had already taken and the rest asked for facts it can derive or does
-not need. What is left is six questions: why, the file that went out, when, to
-whom, whether it was a win, and — only then — when the result commenced. The
-domain underneath is unchanged; the form simply stopped asking twice
-(Teema closing redesign §2, §3, §5, §8, §9, §10).
+— no splitting, no summarising, no copying (reversing ADR 0030 §4).
 
 `.composer` stays on the element beside `.uxcomp`: the focus treatment for the
 textarea is `.composer:focus-within`, and dropping the class would leave the
 field with no visible focus at all (static/css/app.css).
 {% endcomment %}
-<details class="composer uxcomp" id="teema-koostaja"
-         {% if composer_error or composer_form.errors %}open{% endif %}>
+{% comment %}
+  `open` unconditionally. Not «open unless…», and not «open when a save was
+  refused» — that was the old rule and it is the one the target replaces. A
+  refused save therefore comes back open for the same reason an ordinary load
+  does, and nobody loses what they typed either way.
+{% endcomment %}
+<details class="composer uxcomp" id="teema-koostaja" open>
   <summary class="uxcomp__collapsed">
     <span class="uxcomp__avatar" aria-hidden="true">{{ user.initials }}</span>
     <span class="uxcomp__prompt">Mis juhtus? Kirjuta lühidalt, mida tegid või mida teada said…</span>
-    {% comment %}
-      No `L` hint. The shortcut is untouched — `static/js/ux.js` still binds it
-      — and it still has the obvious click equivalent AGENTS.md asks for:
-      this whole row is the disclosure's own trigger, and since the 2026-09
-      refinement so is the Järgmiseks row above it. What went is the
-      advertisement, which sat at the end of a one-line prompt explaining a
-      letter to a reader who had not asked (design handoff §20; the hint is
-      listed under TEXT NOT PRESENT in `07-copy-inventory.md`).
-    {% endcomment %}
   </summary>
-
   <h2 class="visually-hidden" id="koostaja-pealkiri">Lisa tegevuse kirjeldus</h2>
-
   {% if composer_error %}
     <p class="formerror" role="alert">{{ composer_error }}</p>
   {% endif %}
   {% if composer_form.non_field_errors %}
     <p class="formerror" role="alert">{{ composer_form.non_field_errors|first }}</p>
   {% endif %}
-
   <form class="uxcomp__form" data-composer
         aria-labelledby="koostaja-pealkiri"
         hx-post="{% url 'matters:compose' pk=matter.pk %}"
@@ -84,11 +64,10 @@ field with no visible focus at all (static/css/app.css).
         hx-swap="outerHTML"
         hx-encoding="multipart/form-data">
     {% csrf_token %}
-
     {% comment %}
-      The three questions are visible headings rather than placeholders. A
-      placeholder disappears the moment somebody types, and this form now has
-      two text boxes that would be indistinguishable the instant it did.
+      The questions are visible headings rather than placeholders. A placeholder
+      disappears the moment somebody types, and this form has two text boxes that
+      would be indistinguishable the instant it did.
     {% endcomment %}
     <label class="uxcomp__q" for="{{ composer_form.body.id_for_label }}">
       Mida tegid või mis juhtus?
@@ -100,13 +79,11 @@ field with no visible focus at all (static/css/app.css).
 
     {% comment %}
       JÄRGMISEKS. Its own box, and its own sentence. What goes in here is what
-      the `NextAction` stores, verbatim — the form does not read the box above
-      to fill it in, and does not write this one back into the entry.
+      the `NextAction` stores, verbatim — the form does not read the box above to
+      fill it in, and does not write this one back into the entry.
 
       Leaving both this and the date empty is the ordinary save: the entry is
-      written and whatever step is already open stays open, unchanged. That is
-      what used to be spelled «Ei muuda», and it needs no control now that
-      there is no mode to un-choose.
+      written and whatever step is already open stays open, unchanged.
     {% endcomment %}
     <label class="uxcomp__q" for="{{ composer_form.next_text.id_for_label }}">
       Järgmiseks
@@ -117,19 +94,38 @@ field with no visible focus at all (static/css/app.css).
     {% endif %}
 
     {% comment %}
-      MILLAL? Four spans and the exact box behind them. The chips do not store
-      anything of their own: each one writes the day it names into the date
-      field below, which is the field that is submitted and validated. So the
-      server sees one value however it was chosen, and the form works with the
-      chips ignored entirely.
+      MILLAL? Four chips and the exact box behind them. The chips store nothing
+      of their own: each writes the day it names into the date field below, which
+      is the field that is submitted and validated. So the server sees one value
+      however it was chosen, and the form works with the chips ignored entirely.
 
-      One question, not two. The «Täpsemalt…» panel that used to sit here asked
-      how precisely the date was known and what it meant — reasonable questions
-      about a milestone somebody else announced, and the wrong questions about
-      the day this lawyer intends to do their own work. It is still asked, of
-      `Oluline tähtaeg`, which is where it belongs (ADR 0052 §4).
+      The file affordance shares this row. At desktop it is absolutely positioned
+      to the right end of it — a corner affordance, because attaching a file is
+      common but secondary to writing the entry. Below 720 px it leaves the
+      corner and becomes a normal-flow row under the chips: in the design export
+      it stays absolute at 420 px and lands on top of «+1 nädal», which
+      TEEMA_TARGET_SPEC §H names as a prototype defect to fix rather than
+      reproduce (static/css/app.css, docs/adr/0074 §19).
     {% endcomment %}
     <div class="uxcomp__row" data-quickdate-group="{{ composer_form.next_date.id_for_label }}">
+      {% comment %}
+        A `<label>` wrapping a visually hidden file input. The whole dashed box is
+        the picker, so `vali arvutist` works with no script at all; the drop
+        handler in `ux.js` adds dragging on top of that rather than instead of it.
+
+        **No `+ Manus` disclosure.** The target removed it: opening a panel to
+        reach a file picker is a click spent on the commonest thing anybody does
+        here after typing (TEEMA_TARGET_SPEC §C.3).
+      {% endcomment %}
+      <label class="cx-drop cx-drop--corner" data-filedrop>
+        <span class="visually-hidden">{{ composer_form.attachment.label }}</span>
+        {{ composer_form.attachment }}
+        <span class="cx-drop__text" data-filedrop-text>Lohista fail siia või <span class="cx-drop__pick">vali arvutist</span></span>
+      </label>
+      {% if composer_form.attachment.errors %}
+        <p class="field__error">{{ composer_form.attachment.errors|first }}</p>
+      {% endif %}
+
       <span class="uxcomp__q" id="koostaja-millal">Millal?</span>
       {% for choice in quick_dates %}
         <button type="button" class="uxchip" aria-pressed="false"
@@ -137,7 +133,6 @@ field with no visible focus at all (static/css/app.css).
                 data-label-default="{{ choice.label }}"
                 data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
       {% endfor %}
-
       {% comment %}
         A real disclosure rather than a scripted panel, so the exact date is
         reachable and submittable with JavaScript switched off entirely. Open
@@ -149,17 +144,16 @@ field with no visible focus at all (static/css/app.css).
         <summary class="uxchip">Kuupäev…</summary>
         <div class="uxcomp__datebody">
           <label class="visually-hidden" for="{{ composer_form.next_date.id_for_label }}">
-            {{ composer_form.next_date.label }}
+            Järgmise tegevuse kuupäev
           </label>
           {{ composer_form.next_date }}
         </div>
       </details>
-
       {% comment %}
         The refusal sits on the row rather than inside the disclosure. «Vali
-        järgmise tegevuse kuupäev» printed inside a closed «Kuupäev…» is an
-        error nobody can see, and the chips are how the date is nearly always
-        chosen (ADR 0052 §5).
+        järgmise tegevuse kuupäev» printed inside a closed «Kuupäev…» is an error
+        nobody can see, and the chips are how the date is nearly always chosen
+        (ADR 0052 §5).
       {% endcomment %}
       {% if composer_form.next_date.errors %}
         <p class="field__error">{{ composer_form.next_date.errors|first }}</p>
@@ -167,290 +161,177 @@ field with no visible focus at all (static/css/app.css).
     </div>
 
     {% comment %}
-      Progressive actions. All quiet, all dashed, all expanding in place — no
-      modal, no second page. `+ Lõpeta teema` is visually last and behind a
-      divider, because finishing a file is not a routine capture.
+      THE FIVE PANELS. Exactly five, closed by default, each expanding in place to
+      a full row beneath the chip row — no modal, no second page, and **no second
+      save**. One `Salvesta` at the bottom commits whichever of them were
+      answered, together with the entry, the next step and the file, in one
+      transaction (TEEMA_TARGET_SPEC §C.4).
+
+      `+ Jõustumine` and `+ Töövõit` are here unconditionally. They used to be
+      rendered only on a Matter that had none of that kind, because a second one
+      was added from the standing facts section instead — and that section is
+      gone. A Matter that already carries a commencement can genuinely gain
+      another (docs/adr/0074 §7).
+
+      `+ Lõpeta teema` is last because finishing a file is not a routine capture.
     {% endcomment %}
-    <div class="composer__actions">
-      <button type="button" class="disclosure-chip" data-reveals="koostaja-manus">+ Manus</button>
-      <button type="button" class="disclosure-chip" data-reveals="koostaja-tahtaeg">
-        + Oluline tähtaeg
-      </button>
-      {% comment %}
-        `+ Jõustumine` and `+ Töövõit`, here rather than in a row of their own
-        under the fact sections. One place a fact is added, which is what this
-        row already was for a note, a file and a deadline (design handoff §5).
-
-        Moved, not rebuilt: same routes, same `hx-target`, same conditions.
-        They are `app.intelligence`'s controls and they still swap
-        `#teema-faktid`, which is why the facts panel keeps that id and why the
-        form still opens beside the records it will join (docs/adr/0065).
-
-        Still conditional on the Matter having none, exactly as before. A file
-        that already carries a commencement adds the next one from that
-        section's own control, and offering both would be two ways into one
-        act. The design's frame shows a Matter with neither, so it draws them
-        unconditionally and cannot settle this; production behaviour stands.
-      {% endcomment %}
-      {% if matter.is_open %}
-        {% if not intelligence.has_effective_dates %}
-          <a class="disclosure-chip"
-             href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
-             hx-get="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
-             hx-target="#teema-faktid"
-             hx-swap="outerHTML">+ Jõustumine</a>
-        {% endif %}
-        {% if not intelligence.has_work_victories %}
-          <a class="disclosure-chip"
-             href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
-             hx-get="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
-             hx-target="#teema-faktid"
-             hx-swap="outerHTML">+ Töövõit</a>
-        {% endif %}
-      {% endif %}
-      <span class="composer__divider" aria-hidden="true"></span>
-      <button type="button" class="disclosure-chip disclosure-chip--last"
-              data-reveals="koostaja-lopetamine">+ Lõpeta teema</button>
-      <span class="composer__spacer"></span>
-      <span class="composer__hint">
-        <kbd class="key">Ctrl</kbd> + <kbd class="key">Enter</kbd>
-      </span>
-      <button class="button button--primary" type="submit" data-composer-submit
-              data-label-default="Salvesta" data-label-closing="Lõpeta teema">Salvesta</button>
-    </div>
-
-    <div class="composer__optional" id="koostaja-manus" hidden>
-      {% comment %}
-        The role is asked here, with the file, and never afterwards. A document
-        captured as "Muu" because the form asked too late is a document nobody
-        finds again (Teema redesign §23.5).
-      {% endcomment %}
-      <label class="field">
-        <span class="field__label">Fail</span>
-        {{ composer_form.attachment }}
-      </label>
-      <label class="field">
-        <span class="field__label">Roll</span>
-        {{ composer_form.attachment_role }}
-        <span class="field__help">
-          Salvestatakse muutumatu tõendina selle teema dokumentide alla.
-        </span>
-      </label>
-      <label class="field">
-        <span class="field__label">Sissekande liik</span>
-        {{ composer_form.kind }}
-      </label>
-      <label class="field">
-        <span class="field__label">Asutus</span>
-        {{ composer_form.organisation }}
-      </label>
-      <label class="field">
-        <span class="field__label">Toimus</span>
-        {{ composer_form.occurred_on }}
-      </label>
-    </div>
-
-    <div class="composer__optional" id="koostaja-tahtaeg" hidden>
-      {% comment %}
-        An important deadline is an external milestone — a consultation ending,
-        a transposition date — and it is not the next step. They may share a
-        day and remain different facts, which is why they are two controls and
-        two records (Teema redesign §13).
-      {% endcomment %}
-      {% include "intelligence/partials/field.html" with field=composer_form.deadline_title %}
-      {% include "intelligence/partials/field.html" with field=composer_form.deadline_date %}
-      <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">Ligikaudne aeg</summary>
-        <div class="disclosure__body">
-          <fieldset class="choiceset">
-            <legend class="visually-hidden">Tähtaja täpsus</legend>
-            {% for choice in composer_form.deadline_precision %}
-              <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
-            {% endfor %}
-          </fieldset>
-          <div class="periodfields">
-            <div class="periodfields__group" data-precision="MONTH">
-              {% include "intelligence/partials/field.html" with field=composer_form.deadline_month %}
-            </div>
-            <div class="periodfields__group" data-precision="QUARTER">
-              {% include "intelligence/partials/field.html" with field=composer_form.deadline_quarter %}
-            </div>
-            <div class="periodfields__group" data-precision="HALF_YEAR">
-              {% include "intelligence/partials/field.html" with field=composer_form.deadline_half %}
-            </div>
-            <div class="periodfields__group" data-precision="MONTH QUARTER HALF_YEAR YEAR">
-              {% include "intelligence/partials/field.html" with field=composer_form.deadline_year %}
-            </div>
+    <div class="cx-panels">
+      <details class="cx-panel" id="cx-tahtaeg"
+               {% if composer_form.deadline_title.errors or composer_form.deadline_date.errors %}open{% endif %}>
+        <summary class="disclosure-chip">+ Oluline tähtaeg</summary>
+        <div class="cx-panel__body">
+          <div class="cx-grid">
+            <label class="cx-f">
+              <span class="cx-f__lab">Mis tähtaeg</span>
+              {{ composer_form.deadline_title }}
+            </label>
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Kuupäev</span>
+              {{ composer_form.deadline_date }}
+            </label>
           </div>
+          {% comment %}
+            `Täpsus` — three chips over one date box. A milestone somebody else
+            announced is often known to a month or a quarter, and the panel reads
+            the precision off the chips and the period off the day that was
+            picked (app/matters/forms.py `_period_anchor`).
+
+            `Poolaasta` and `Aasta` are still stored precisions and still render
+            on the records that carry them; they are not worth a chip on a panel
+            whose whole point is that it fits on one row (docs/adr/0074 §11).
+          {% endcomment %}
+          <div class="cx-when" data-chipgroup="{{ composer_form.deadline_precision.html_name }}">
+            <span class="cx-f__lab">Täpsus</span>
+            {% for chip in composer_form.precision_chips %}
+              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
+                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
+            {% endfor %}
+            <input type="hidden" name="{{ composer_form.deadline_precision.html_name }}"
+                   value="{{ composer_form.deadline_precision.value|default:'EXACT' }}">
+          </div>
+          {% if composer_form.deadline_date.errors %}
+            <p class="field__error">{{ composer_form.deadline_date.errors|first }}</p>
+          {% endif %}
+        </div>
+      </details>
+
+      <details class="cx-panel" id="cx-joustumine"
+               {% if composer_form.effective_title.errors or composer_form.effective_on.errors %}open{% endif %}>
+        <summary class="disclosure-chip">+ Jõustumine</summary>
+        <div class="cx-panel__body">
+          <div class="cx-grid">
+            <label class="cx-f">
+              <span class="cx-f__lab">Mis jõustub</span>
+              {{ composer_form.effective_title }}
+            </label>
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Jõustub</span>
+              {{ composer_form.effective_on }}
+            </label>
+          </div>
+          {% if composer_form.effective_title.errors %}
+            <p class="field__error">{{ composer_form.effective_title.errors|first }}</p>
+          {% endif %}
+          {% if composer_form.effective_on.errors %}
+            <p class="field__error">{{ composer_form.effective_on.errors|first }}</p>
+          {% endif %}
+        </div>
+      </details>
+
+      <details class="cx-panel" id="cx-toovoit"
+               {% if composer_form.victory_change.errors %}open{% endif %}>
+        <summary class="disclosure-chip">+ Töövõit</summary>
+        <div class="cx-panel__body">
+          <label class="cx-f">
+            <span class="cx-f__lab">Mis muutus</span>
+            {{ composer_form.victory_change }}
+          </label>
+          {% if composer_form.victory_change.errors %}
+            <p class="field__error">{{ composer_form.victory_change.errors|first }}</p>
+          {% endif %}
+        </div>
+      </details>
+
+      {% comment %}
+        `+ Kaasamine`, in the composer. This reverses ADR 0031, which kept it out
+        on the reasoning that two entry points for one act is how the same
+        consultation gets recorded twice. That held while the standalone
+        `Kaasamine` section existed; it is gone, so this is the one entry point
+        rather than the second one (docs/adr/0074 §9).
+      {% endcomment %}
+      <details class="cx-panel" id="cx-kaasamine"
+               {% if composer_form.engagement_audience.errors or composer_form.engagement_responses.errors %}open{% endif %}>
+        <summary class="disclosure-chip">+ Kaasamine</summary>
+        <div class="cx-panel__body">
+          <div class="cx-when" data-chipgroup="{{ composer_form.engagement_kind.html_name }}">
+            <span class="cx-f__lab">Liik</span>
+            {% for chip in composer_form.engagement_kind_chips %}
+              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
+                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
+            {% endfor %}
+            {{ composer_form.engagement_kind }}
+          </div>
+          <div class="cx-grid">
+            <label class="cx-f">
+              <span class="cx-f__lab">Keda kaasati</span>
+              {{ composer_form.engagement_audience }}
+            </label>
+            <label class="cx-f cx-f--num">
+              <span class="cx-f__lab">Vastuseid</span>
+              {{ composer_form.engagement_responses }}
+            </label>
+          </div>
+          {% if composer_form.engagement_audience.errors %}
+            <p class="field__error">{{ composer_form.engagement_audience.errors|first }}</p>
+          {% endif %}
+          {% if composer_form.engagement_responses.errors %}
+            <p class="field__error">{{ composer_form.engagement_responses.errors|first }}</p>
+          {% endif %}
+        </div>
+      </details>
+
+      {% comment %}
+        `+ Lõpeta teema` — two questions.
+
+        **Closing a Matter is not a claim that an opinion was sent.** The panel
+        asked for the sent PDF, its date, its recipients and a work-victory
+        decision until this pass, which made the commonest closure — a file Koda
+        never wrote to anybody about — impossible to record honestly. The
+        canonical rules did not move: a SENT Submission still needs its exact
+        final evidence, a Töövõit is still a confirmed `MatterWorkVictory` and is
+        recordable from `+ Töövõit` above without closing anything
+        (docs/adr/0074 §10).
+
+        Open whenever this save's closure was refused, so its errors are never
+        printed inside a panel nobody can see.
+      {% endcomment %}
+      <details class="cx-panel cx-panel--last" id="cx-lopeta"
+               {% if composer_form.closure_requested %}open{% endif %}>
+        <summary class="disclosure-chip disclosure-chip--last">+ Lõpeta teema</summary>
+        <div class="cx-panel__body">
+          <div class="cx-when" data-chipgroup="{{ composer_form.disposition.html_name }}">
+            <span class="cx-f__lab">Kuidas lõppes</span>
+            {% for chip in composer_form.closure_chips %}
+              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
+                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
+            {% endfor %}
+            {{ composer_form.disposition }}
+          </div>
+          <label class="cx-f">
+            <span class="cx-f__lab">Lõppsõna <span class="cx-f__opt">valikuline</span></span>
+            {{ composer_form.closing_words }}
+          </label>
+          {% if composer_form.disposition.errors %}
+            <p class="field__error">{{ composer_form.disposition.errors|first }}</p>
+          {% endif %}
+          <p class="cx-note">Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.</p>
         </div>
       </details>
     </div>
 
-    {% comment %}
-      Open whenever the save being re-rendered answered anything in it, and
-      closed otherwise. A refused closure returns the whole surface with its
-      errors in place, and the one refusal this form makes most often —
-      `Töövõit` with no answer — would otherwise come back inside a panel nobody
-      can see.
-    {% endcomment %}
-    <div class="composer__optional composer__optional--closing" id="koostaja-lopetamine"
-         data-closing-section
-         {% if not composer_form.closure_requested %}hidden{% endif %}>
-      {% comment %}
-        Finishing the Matter, inside the composer rather than in a sidebar
-        panel. Closing is something a lawyer does at the end of a professional
-        update — usually the same one that records the final opinion — and a
-        separate box in the rail made it look like an administrative setting
-        (Teema redesign §15).
-
-        **There is no `Lõpeta see teema` box here.** It confirmed the six
-        answers below it and was the only thing that made them count: the pilot
-        filled the whole section, left the box alone, and got a successful save
-        that stored a note and silently discarded the disposition, the sent
-        opinion, its date, its recipients and the work victory. Answering this
-        section is the request; the button says so, and the server reads it the
-        same way (pilot QA F-02, app/matters/forms.py `closure_requested`).
-      {% endcomment %}
-      <p class="field__help">
-        Vastamine siin lõpetab teema. Sulgemine tähendab, et Koda ei tegele teemaga
-        enam aktiivselt. See on eraldi otsus menetluse etapist — jõustunud akt ei
-        sulge teemat automaatselt. Kehtiv järgmine samm lõpetatakse koos teemaga.
-      </p>
-      {% include "intelligence/partials/field.html" with field=composer_form.disposition %}
-
-      <fieldset class="composer__group">
-        <legend class="composer__sublabel">{{ composer_form.final_file.label }}</legend>
-        {% comment %}
-          The file that went out, uploaded here.
-
-          It used to be a picker over versions already on the Matter, which
-          assumed somebody had visited the documents tab before closing the
-          file. They have not: the sent PDF is in front of them *now*, which is
-          why they are closing it. Same evidence architecture, same immutable
-          version, same refusal to mark a submission sent without one — the
-          upload simply happens in this save (§4).
-
-          No `Lõpparvamuse pealkiri`. The submission is titled after the Matter,
-          because asking somebody to retype the name of the file they have open
-          is the duplicate entry this product exists to remove (§5).
-        {% endcomment %}
-        <div class="field">
-          <label class="field__label" for="{{ composer_form.final_file.id_for_label }}">
-            Fail
-          </label>
-          {{ composer_form.final_file }}
-          {% for error in composer_form.final_file.errors %}
-            <span class="field__error">{{ error }}</span>
-          {% endfor %}
-        </div>
-        {% include "intelligence/partials/field.html" with field=composer_form.final_sent_on %}
-
-        {% comment %}
-          SAAJA. A letter goes to one ministry, or to seven parties that are not
-          in the catalogue yet, or to a mixture. The shortlist covers the first
-          case in one click; `Muu` covers the rest without leaving the form
-          (§7).
-        {% endcomment %}
-        <div class="field">
-          <span class="field__label">{{ composer_form.final_recipients.label }}</span>
-          <div class="checkitems">
-            {% for choice in composer_form.shortlist_recipients %}
-              <label class="checkitem">
-                <input type="checkbox" class="checkitem__input" name="final_recipients"
-                       value="{{ choice.value }}" {% if choice.checked %}checked{% endif %}>
-                <span class="checkitem__name">{{ choice.label }}</span>
-              </label>
-            {% endfor %}
-          </div>
-          {% for error in composer_form.final_recipients.errors %}
-            <span class="field__error">{{ error }}</span>
-          {% endfor %}
-        </div>
-
-        {% comment %}
-          `Muu` is one box that may be submitted many times under one name. With
-          JavaScript it becomes chips: type, add, type again, remove one that
-          was wrong. Without it the visible box is still a recipient field and
-          still saves one — the name is the same either way, so nothing here
-          depends on a script having run (app/matters/forms.py MultiTextInput).
-
-          The datalist is the existing Organisation catalogue, canonical names
-          and recorded aliases both, so typing a body that is already known
-          reuses it rather than creating a second spelling of it (§7C).
-        {% endcomment %}
-        <div class="recipientadd" data-recipients>
-          <label class="field__label" for="{{ composer_form.final_recipient_names.id_for_label }}">
-            {{ composer_form.final_recipient_names.label }}
-          </label>
-          <ul class="recipientadd__chosen" data-recipient-list>
-            {% for name in composer_form.typed_recipients %}
-              <li class="recipientadd__item">
-                <span class="recipientadd__name">{{ name }}</span>
-                <input type="hidden" name="final_recipient_names" value="{{ name }}">
-                <button type="button" class="recipientadd__remove" data-recipient-remove
-                        aria-label="Eemalda saaja {{ name }}">×</button>
-              </li>
-            {% endfor %}
-          </ul>
-          <div class="recipientadd__row">
-            <input type="text" class="field__input"
-                   id="{{ composer_form.final_recipient_names.id_for_label }}"
-                   name="final_recipient_names"
-                   list="koostaja-saajakataloog"
-                   autocomplete="off"
-                   data-recipient-input
-                   placeholder="Otsi või kirjuta saaja nimi…">
-            <button type="button" class="button button--quiet" data-recipient-add>
-              Lisa saaja
-            </button>
-          </div>
-          <datalist id="koostaja-saajakataloog">
-            {% for name in composer_form.recipient_catalogue %}
-              <option value="{{ name }}"></option>
-            {% endfor %}
-          </datalist>
-          {% for error in composer_form.final_recipient_names.errors %}
-            <span class="field__error">{{ error }}</span>
-          {% endfor %}
-        </div>
-      </fieldset>
-
-      <fieldset class="composer__group">
-        <legend class="composer__sublabel">{{ composer_form.work_victory.label }}</legend>
-        {% comment %}
-          An explicit decision, taken once, when the file is closed. It used to
-          be a free-text box asking `Mida Koda saavutas?` plus a second box
-          asking for an explanation — the same narrative the composer had
-          already taken, twice more. Now it is a question with two answers, and
-          the wording of a confirmed victory is the composer body (§10, §12).
-        {% endcomment %}
-        <div class="choiceset" role="radiogroup"
-             aria-labelledby="koostaja-toovoit">
-          <span class="visually-hidden" id="koostaja-toovoit">Töövõit</span>
-          {% for choice in composer_form.work_victory %}
-            <label class="choiceset__option">{{ choice.tag }}
-              <span>{{ choice.choice_label }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        {% for error in composer_form.work_victory.errors %}
-          <span class="field__error">{{ error }}</span>
-        {% endfor %}
-
-        {% comment %}
-          Only when the answer is Jah, and stored as a `MatterEffectiveDate`
-          rather than as the victory's reporting period — they are two facts and
-          borrowing one column for the other would put a win in the year the act
-          happened to commence (§13).
-
-          Hidden by markup rather than by script, so a refused save that *did*
-          say Jah comes back with the box open and the error visible.
-        {% endcomment %}
-        <div class="composer__victorydate" data-victory-date
-             {% if composer_form.work_victory.value != "JAH" %}hidden{% endif %}>
-          {% include "intelligence/partials/field.html" with field=composer_form.victory_effective_on %}
-        </div>
-      </fieldset>
+    <div class="composer__actions">
+      <span class="composer__spacer"></span>
+      <button class="button button--primary" type="submit" data-composer-submit>Salvesta</button>
     </div>
   </form>
 </details>

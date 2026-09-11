@@ -198,108 +198,30 @@ whose addressee nobody recorded should look short, not incomplete.
       </span>
     </div>
 
-    <div class="railcard__row">
-      <span class="railcard__key">Saabus</span>
-      <span class="railcard__editable">
-        {% if can_write %}
-          <details class="inlineedit">
-            <summary class="inlineedit__trigger">
-              {% if matter.received_date %}
-                <span class="railcard__value railcard__value--date">{{ matter.received_date|date:"j.n.Y" }}</span>
-              {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
-            </summary>
-            <form class="inlineedit__form inlineform"
-                  hx-post="{% url 'matters:update_field' pk=matter.pk field='received_date' %}"
-                  hx-target="#teema-andmed" hx-swap="outerHTML">
-              {% csrf_token %}
-              <label class="field">
-                <span class="field__label field__label--plain">Saabumise kuupäev</span>
-                {% comment %}
-                  The stored date when there is one, today when there is not —
-                  an edit keeps what it is editing, and a new fact starts from
-                  the answer it nearly always has (Teema QA §5.2).
-                {% endcomment %}
-                <input class="field__input field__input--compact dateinput" type="text"
-                       inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                       data-datepicker="true" name="received_date"
-                       value="{% if matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% else %}{{ today|date:'j.n.Y' }}{% endif %}">
-              </label>
-              <button class="button button--quiet button--tiny" type="submit"
-                      aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>
-            </form>
-          </details>
-        {% elif matter.received_date %}
-          <span class="railcard__value railcard__value--date">{{ matter.received_date|date:"j.n.Y" }}</span>
-        {% else %}<span class="muted">—</span>{% endif %}
-      </span>
-    </div>
-
     {% comment %}
-      `Muu valdkond` — free text, and shown as free text.
+      **What the approved target's rail does not carry, and why.**
 
-      It used to sit in the `Sildid` card, which was an accident of layout
-      rather than a statement about the field: it is not a tag, nothing counts
-      it, and it was only there because that card happened to be where the
-      taxonomy-adjacent things had collected. `Sildid` is retired from this page
-      and this is a Teema fact, so it is in the Teema facts block with the rest
-      of them (ADR 0052 §14, §15).
+      `Muu valdkond`, `Andmeklass` and `Märgi testandmeteks` are gone from this
+      page. None of them is a fact a lawyer looks up while working a file: the
+      first is a correction to how the file was classified, and the other two are
+      a developer's switch. The target's `Teema andmed` is four rows —
+      `Teemaviide`, `Menetlusliik`, `Kellelt`, `Kellele` — and every one of them
+      answers a question somebody asks mid-sentence (TEEMA_TARGET_SPEC §G).
 
-      Deliberately not styled as a `tag` chip: it is what somebody wrote when no
-      Valdkond fitted, no statistic counts it, and dressing it up as taxonomy is
-      exactly the confusion the field exists to avoid (Stage-2E.1 brief 20).
+      **UI retirement only.** `Matter.policy_area_other` and
+      `Matter.data_class` are untouched, every stored value is untouched, the
+      `update_field` endpoints still exist and still audit, and `Muuda teemat`
+      still edits `Muu valdkond`. The `TEST` badge still appears beside the
+      title, so a development record is still impossible to mistake for business
+      data — what is no longer on a reading surface is the ability to *change*
+      what a record is (docs/adr/0074 §17).
     {% endcomment %}
-    {% comment %}
-      A `<div>`, not a `<p>`. `<details>` is flow content and closes an open
-      paragraph, so the disclosure below would escape the row it belongs to and
-      leave an empty `<p></p>` behind it — which is what a browser actually
-      parses out of the rows around this one. It was found by a Playwright
-      locator that could not reach the trigger it was looking straight at.
-    {% endcomment %}
-    <div class="railcard__row">
-      <span class="railcard__key" id="teema-muu-valdkond">Muu valdkond</span>
-      <span class="railcard__editable">
-        {% if can_write %}
-          <details class="inlineedit">
-            <summary class="inlineedit__trigger">
-              {% if matter.policy_area_other %}
-                <span class="railcard__value">{{ matter.policy_area_other }}</span>
-              {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
-            </summary>
-            <form class="inlineedit__form inlineform"
-                  hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
-                  hx-target="#teema-andmed" hx-swap="outerHTML">
-              {% csrf_token %}
-              {% comment %}
-                Named by the row's own label rather than by a second hidden copy
-                of the same two words. An empty value must leave exactly one
-                «Muu valdkond» on the page — the control that would record one,
-                not a label standing over nothing (tests/test_policy_area_other).
-              {% endcomment %}
-              <input class="field__input field__input--compact" type="text"
-                     name="policy_area_other" maxlength="400"
-                     aria-labelledby="teema-muu-valdkond"
-                     value="{{ matter.policy_area_other }}"
-                     placeholder="Millisesse valdkonda see kuulub?">
-              <button class="button button--quiet button--tiny" type="submit"
-                      aria-label="Salvesta muu valdkonna muudatus">Salvesta</button>
-            </form>
-          </details>
-        {% elif matter.policy_area_other %}
-          <span class="railcard__value">{{ matter.policy_area_other }}</span>
-        {% else %}<span class="muted">—</span>{% endif %}
-      </span>
-    </div>
 
     {% comment %}
-      `Aruandlusaasta` is not here any more. It is a reporting dimension — it
-      decides which year a Matter is counted in, and the place to see and use it
-      is Statistika and the register's own `?aasta=` filter. On this rail it was
-      a number beside a label that answered a question nobody was asking while
-      reading a file (02-EKRAANID §C).
-    {% endcomment %}
-    {% comment %}
-      Kirje liik is shown only when it is not the ordinary one. Every current
-      Matter is FULL, and a row saying so on every page is a row nobody reads.
+      The special states, which the normal target does not demonstrate and which
+      are not presentation the target supersedes. An archive record says so, a
+      closed one says when and why and by whom. Rendered only when true, so a
+      normal open Matter shows none of them (§52 of the implementation brief).
     {% endcomment %}
     {% if matter.record_mode != "FULL" %}
       <div class="railcard__row">
@@ -326,41 +248,6 @@ whose addressee nobody recorded should look short, not incomplete.
           <span>{{ matter.closed_by.display_name }}</span>
         </div>
       {% endif %}
-    {% endif %}
-    {% comment %}
-      The class is always shown and the control is one disclosure behind it.
-      Both directions are ordinary: a development record created without ticking
-      the box is the common case, and a real matter opened while demonstrating
-      the system happens too. An imported register row is offered no control at
-      all — the service and the database both refuse TEST on one, and a disabled
-      control the reader cannot use is worse than none (Agent-C brief 12, 18).
-    {% endcomment %}
-    {% if matter.is_test_data or matter.origin == "NATIVE" %}
-      <div class="railcard__row">
-        <span class="railcard__key">Andmeklass</span>
-        <span>{{ matter.get_data_class_display }}</span>
-      </div>
-    {% endif %}
-    {% if matter.origin == "NATIVE" %}
-      <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">
-          {% if matter.is_test_data %}Märgi pärisandmeteks{% else %}Märgi testandmeteks{% endif %}
-        </summary>
-        {% comment %}
-          A plain POST, not an HTMX swap. The class shows in three places at
-          once — the header badge, this row and every register row — and a swap
-          would refresh one of them (Agent-C brief 22).
-        {% endcomment %}
-        <form class="inlineform disclosure__body" method="post"
-              action="{% url 'matters:set_data_class' pk=matter.pk %}">
-          {% csrf_token %}
-          <input type="hidden" name="data_class"
-                 value="{% if matter.is_test_data %}REAL{% else %}TEST{% endif %}">
-          <button class="button button--quiet button--tiny" type="submit">
-            {% if matter.is_test_data %}Märgi pärisandmeteks{% else %}Märgi testandmeteks{% endif %}
-          </button>
-        </form>
-      </details>
     {% endif %}
   </div>
 
@@ -424,33 +311,40 @@ whose addressee nobody recorded should look short, not incomplete.
   {% endif %}
 
   {% comment %}
-    `Märkmed` — the reader's own scratch pad, and the only thing on this page
+    `MÄRKMED` — the reader's own scratch pad, and the only thing on this page
     that is not business history. It autosaves, it is private to whoever is
-    signed in, it never reaches the timeline and it is not evidence. The two
-    captions say all three, because a box on a shared record has to say who can
-    see it before anybody will use it (Teema redesign §22.4).
+    signed in, it never reaches the timeline and it is not evidence.
+
+    **No save button, and no standing caption.** The approved target's block is
+    the label, the box and `Salvestatud HH:mm` — a hint that only appears once
+    there is something true to say. The two captions that stood here on every
+    load («ainult sulle nähtav mustand», «Salvestub automaatselt · ei lähe
+    ajajoonele») explained the box before anybody had used it, which is three
+    lines of reassurance around six of typing (TEEMA_TARGET_SPEC §G.4).
+
+    **The privacy did not weaken — only the sentence about it went.** The note
+    is still one row per (Matter, author), still read back through
+    `personal_note_for` for the signed-in reader alone, and still writes no
+    `ChangeEvent` (app/matters/services.py `save_personal_note`).
+
+    The autosave posts the textarea 900 ms after typing stops and swaps **only
+    the hint**. Replacing the box somebody is typing into would move their
+    cursor; and because htmx swaps on 2xx alone, a refused save leaves the
+    previous `Salvestatud` where it was rather than claiming a save that did not
+    happen (docs/adr/0074 §18).
   {% endcomment %}
   {% if user.is_authenticated %}
     <div class="railcard railcard--note">
-      <span class="railcard__label">
-        Märkmed <span class="railcard__hint">ainult sulle nähtav mustand</span>
-      </span>
+      <span class="railcard__label">Märkmed</span>
       <form class="railnote"
             hx-post="{% url 'matters:save_note' pk=matter.pk %}"
             hx-trigger="input changed delay:900ms from:find textarea"
-            hx-swap="none">
+            hx-target="#teema-markme-seis" hx-swap="outerHTML">
         {% csrf_token %}
         <label class="visually-hidden" for="{{ note_form.body.id_for_label }}">Märkmed</label>
         {{ note_form.body }}
-        {% comment %}
-          A visible save button beside the autosave, because every shortcut and
-          every implicit behaviour in this product has a control somebody can
-          press. A person who does not trust an invisible save needs a way to
-          be sure (master specification 22.3).
-        {% endcomment %}
         <div class="railnote__foot">
-          <span class="railcard__hint">Salvestub automaatselt · ei lähe ajajoonele</span>
-          <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+          {% include "matters/partials/note_saved.html" %}
         </div>
       </form>
     </div>

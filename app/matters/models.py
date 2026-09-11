@@ -783,11 +783,37 @@ class MatterEngagement(VisibilityInheritingModel):
         db_index=True,
         verbose_name="liik",
     )
+    #: **Who was engaged, or what the outreach was about.** One human-readable
+    #: line naming the engagement, and since the approved Teema target it is
+    #: asked as `Keda kaasati` — «liikmed», «kaubandusvaldkonna töögrupp».
+    #:
+    #: The question the composer prints changed; the column did not. A title
+    #: recorded through the old five-field form said what the outreach was
+    #: («Küsitlus liikmetele pakendiseaduse kohta») and an answer recorded
+    #: through `+ Kaasamine` says who it reached — both are the one line that
+    #: identifies this engagement to a reader, both render unchanged in the
+    #: chronology, and no stored row means anything different today than it did
+    #: yesterday. A second `audience` column beside this one would have left
+    #: every historical row with an empty new field and every new row with an
+    #: empty old one, and the section heading would then have to choose which of
+    #: the two to print (docs/adr/0074 §4).
     title = models.CharField(max_length=500, verbose_name="pealkiri")
     #: Optional, and that is the point. An e-mail campaign frequently has no
     #: durable address a colleague could open later; requiring one would make
     #: the commonest kind of engagement unrecordable (brief 12).
     url = models.URLField(max_length=1000, blank=True, verbose_name="link")
+    #: `Vastuseid` — how many responses this engagement actually drew.
+    #:
+    #: Null, not zero, for every row that predates the question and for every
+    #: row somebody leaves blank: «nobody answered» and «nobody counted» are
+    #: different facts about a consultation, and a column that cannot tell them
+    #: apart reports the second as the first (docs/adr/0074 §5).
+    #:
+    #: **Nothing is derived from it.** There is no response *rate* here and no
+    #: contacted count to divide by — this model is a pointer to outreach that
+    #: happened elsewhere, and a percentage computed from one of its two halves
+    #: would be a statistic about a denominator nobody stored (brief 5).
+    response_count = models.PositiveIntegerField(null=True, blank=True, verbose_name="vastuseid")
     note = models.TextField(blank=True, verbose_name="märkus")
     #: Neutral on purpose. One model carries a published call, a mailing and a
     #: questionnaire, so `sent_at`, `published_at` and `survey_opened_at` would

@@ -1,0 +1,73 @@
+{% comment %}
+`Võimalikud seosed` — what the application thinks may be useful here, inside the
+`Lisa` disclosure that asked for it.
+
+Lifted out of `section.html` unchanged when the approved target merged the two
+add-affordances into one: the heading, the grouping, the cards, the reasons, the
+hidden-suggestion handling and `Näita veel` are exactly what they were, and the
+only thing that moved is which element they render inside
+(docs/adr/0074 §21, docs/adr/0062 for the ranking itself).
+{% endcomment %}
+  {% if suggestions_open and suggestions %}
+    <div class="relatedmaterials__suggestions" id="voimalikud-seosed" data-related-suggestions>
+      <h3 class="relatedmaterials__sub">
+        Võimalikud seosed <span class="sectionlabel__count">{{ suggestions.count }}</span>
+      </h3>
+
+      {% if suggestions.is_empty %}
+        <p class="relatedmaterials__empty" data-related-empty>{{ empty_message }}</p>
+      {% else %}
+        {% if suggestions.matters %}
+          <h4 class="relatedmaterials__group">Võimalikud seotud teemad</h4>
+          <ul class="relatedmaterials__cards" data-related-matter-suggestions>
+            {% for item in suggestions.matters %}
+              {% include "related_materials/partials/matter_card.html" %}
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if suggestions.materials %}
+          <h4 class="relatedmaterials__group">Varasemad arvamused ja võimalik taustmaterjal</h4>
+          <ul class="relatedmaterials__cards" data-related-material-suggestions>
+            {% for item in suggestions.materials %}
+              {% include "related_materials/partials/material_card.html" %}
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endif %}
+
+      <div class="relatedmaterials__more">
+        {% if suggestions.has_more %}
+          <a class="quietlink" data-related-more
+             href="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ max_limit }}{% if hidden_shown %}&peidetud=1{% endif %}"
+             hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ max_limit }}{% if hidden_shown %}&peidetud=1{% endif %}"
+             hx-target="#seotud-materjalid" hx-swap="outerHTML">Näita veel</a>
+        {% endif %}
+        {% if suggestions.hidden_count %}
+          {% if suggestions.hidden_shown %}
+            <a class="quietlink" data-related-hide-hidden
+               href="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ suggestion_limit }}"
+               hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&piir={{ suggestion_limit }}"
+               hx-target="#seotud-materjalid" hx-swap="outerHTML">Peida peidetud</a>
+          {% else %}
+            <a class="quietlink" data-related-show-hidden
+               href="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&peidetud=1&piir={{ suggestion_limit }}"
+               hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1&peidetud=1&piir={{ suggestion_limit }}"
+               hx-target="#seotud-materjalid" hx-swap="outerHTML">Näita peidetud · {{ suggestions.hidden_count }}</a>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      {% if suggestions.hidden_shown and suggestions.hidden_count %}
+        <h4 class="relatedmaterials__group" id="peidetud-soovitused">Peidetud <span class="sectionlabel__count">{{ suggestions.hidden_count }}</span></h4>
+        <ul class="relatedmaterials__cards" data-related-hidden>
+          {% for item in suggestions.hidden_matters %}
+            {% include "related_materials/partials/matter_card.html" %}
+          {% endfor %}
+          {% for item in suggestions.hidden_materials %}
+            {% include "related_materials/partials/material_card.html" %}
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+

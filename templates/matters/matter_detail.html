@@ -9,7 +9,16 @@ composer are full-width surfaces separated by hairlines, and a card floating in
 a gutter would turn a workspace back into a dashboard (Teema redesign §4).
 {% endcomment %}
 {% block content %}
-<div class="teema">
+{% comment %}
+  `#teema-vaade-wrap` is the scope root every rule the approved target adds is
+  written under. One id on the outermost element of this page, so a stylesheet
+  can carry the target's geometry — the 32 px left edge, the flat rail, the
+  process strip, the two chronology dots — without a single selector escaping
+  onto Uus teema, the register or Minu asjad. It is what the design export
+  itself used, kept verbatim so the two can be diffed
+  (static/css/app.css, TEEMA_TARGET.html).
+{% endcomment %}
+<div class="teema" id="teema-vaade-wrap">
   {% include "matters/partials/header.html" %}
   {% include "matters/partials/overview.html" %}
 </div>

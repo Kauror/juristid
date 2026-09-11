@@ -29,7 +29,11 @@ from app.core.visibility_help import RESTRICTED_VISIBILITY_HELP
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import EngagementKind, MatterDataClass
+from app.matters.enums import (
+    COMPOSER_ENGAGEMENT_KINDS,
+    EngagementKind,
+    MatterDataClass,
+)
 from app.matters.models import Matter
 from app.organisations.models import Organisation
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
@@ -1774,6 +1778,22 @@ CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
     (Disposition.OTHER.value, "Muu"),
 )
 
+#: `Kuidas lõppes` — the three outcomes the approved target offers, in its order
+#: and with its words.
+#:
+#: Three chips over one stored vocabulary, not a new one. `Jõustus` is the
+#: closure the register has always spelled «Lõpetatud või jõustunud»;
+#: `Menetlus lõppes` is the draft or initiative being dropped upstream; and
+#: `Loobuti` is Koda deciding to stop. `RESPONSE_COMPLETE`,
+#: `NO_POSITION_FORMED`, `DUPLICATE`, `SUPERSEDED` and `OTHER` remain valid
+#: stored dispositions with no chip — every one of them still reads, still
+#: filters and still reports (docs/adr/0074 §10).
+COMPOSER_CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
+    (Disposition.COMPLETED.value, "Jõustus"),
+    (Disposition.INITIATIVE_WITHDRAWN.value, "Menetlus lõppes"),
+    (Disposition.MONITORING_STOPPED.value, "Loobuti"),
+)
+
 #: `Töövõit` is a decision, so it has no default. A Matter closed without
 #: anybody answering would silently count as "no win", which is a claim the
 #: person never made (Teema closing redesign §10).
@@ -1847,14 +1867,41 @@ def _period_anchor(form: forms.Form, prefix: str) -> tuple[date | None, date | N
         DatePrecision.HALF_YEAR.value: f"{prefix}_half",
         DatePrecision.YEAR.value: f"{prefix}_year",
     }
+    # **One date box and a precision, when that is all the surface offers.**
+    #
+    # The approved Teema target's `+ Oluline tähtaeg` is a single `Kuupäev` plus
+    # `Täpne päev` / `Kuu` / `Kvartal`: somebody picks the day they were told
+    # about and says how precisely it was meant. The month, quarter, half and
+    # year selects are still here, still posted by the surfaces that have them,
+    # and still take precedence — this only fills in what a compact panel cannot
+    # ask for, from the date it did ask for. `bounds_for` normalises either way,
+    # which is what keeps a quarter entered here and a quarter entered on
+    # `Olulised tähtajad` the same stored anchor (docs/adr/0074 §11).
+    derived_year = value("year")
+    derived_month = value("month")
+    derived_quarter = value("quarter")
+    derived_half = value("half")
+    if exact is not None:
+        if derived_year is None:
+            derived_year = exact.year
+        if derived_month is None:
+            derived_month = exact.month
+        if derived_quarter is None:
+            derived_quarter = (exact.month - 1) // 3 + 1
+        if derived_half is None:
+            derived_half = 1 if exact.month <= 6 else 2
+    if precision != DatePrecision.EXACT.value and exact is not None:
+        # The refusal has to land on a control the reader can see. On the target
+        # panel that is the date box, whatever precision the chips say.
+        field_for_precision = dict.fromkeys(field_for_precision, f"{prefix}_date")
     try:
         start, end = bounds_for(
             precision,
             exact_date=exact,
-            year=value("year"),
-            month=value("month"),
-            quarter=value("quarter"),
-            half=value("half"),
+            year=derived_year,
+            month=derived_month,
+            quarter=derived_quarter,
+            half=derived_half,
         )
     except InvalidPeriod as error:
         form.add_error(field_for_precision.get(precision, f"{prefix}_date"), str(error))
@@ -1973,51 +2020,28 @@ class ComposerForm(forms.Form):
             }
         ),
     )
-    #: Kept, and kept quiet. The entry kind is a real distinction in the
-    #: chronology — a meeting is not a note — but it is not a question worth
-    #: asking before somebody has written anything, so it defaults to Märkus
-    #: and lives inside the attachment/meta disclosure.
-    kind = forms.ChoiceField(
-        label="Liik",
-        choices=EntryKind.choices,
-        initial=EntryKind.NOTE,
-        required=False,
-        widget=SELECT_WIDGET,
-    )
-    #: An Estonian date box, like every other date in this application.
+    # -- the file ----------------------------------------------------------
+    #: `Lohista fail siia või vali arvutist` — always available, never behind a
+    #: disclosure. `+ Manus` is gone: opening a panel to reach a file picker is a
+    #: click spent on the commonest thing anybody does here after typing
+    #: (TEEMA_TARGET_SPEC §C.3).
     #:
-    #: It was a native `datetime-local`, which renders in the *browser's*
-    #: locale: a lawyer on a US-English Windows saw `mm/dd/yyyy` on an
-    #: otherwise Estonian form, with no way to know it would read 7.9.2026 as
-    #: the 9th of July. That is the whole class of defect `app/core/dates.py`
-    #: exists to prevent, and this control had been missed by it.
+    #: **And nothing else is asked about it.** `Roll`, `Sissekande liik`,
+    #: `Asutus` and `Toimus` were four questions standing between a lawyer and
+    #: the PDF in front of them, and the approved target removes all four: a file
+    #: dropped here is ordinary evidence, captured now, on an ordinary work
+    #: entry. `compose_update` still takes every one of them as a parameter and
+    #: the archive importer still supplies them — what changed is that this
+    #: surface stopped asking a person to classify a file before they could
+    #: attach it (docs/adr/0074 §6).
     #:
-    #: A day rather than a minute. Somebody writing up Friday's meeting on
-    #: Monday knows which day it was and does not know the hour, and the
-    #: chronology sorts by day — `add_entry` stamps the current moment when
-    #: this is left empty, which is the ordinary case.
-    occurred_on = EstonianDateField(
-        label="Toimus", required=False, widget=DATE_WIDGET, initial=timezone.localdate
-    )
-    organisation = forms.ModelChoiceField(
-        label="Asutus", queryset=Organisation.objects.none(), required=False, widget=SELECT_WIDGET
-    )
-
-    # -- + Manus -----------------------------------------------------------
+    #: Removed rather than hidden, which is the rule the retired next-step
+    #: precision group already follows: a control the page does not have must not
+    #: be reachable through a crafted POST either (ADR 0052 §4).
     attachment = forms.FileField(
         label="Manus",
         required=False,
         widget=forms.ClearableFileInput(attrs={"class": "field__input"}),
-    )
-    #: Asked with the file, never after it. A document filed as "Muu" because
-    #: the form asked too late is a document nobody finds again
-    #: (Teema redesign §23.5).
-    attachment_role = forms.ChoiceField(
-        label="Roll",
-        choices=DocumentRole.choices,
-        initial=DocumentRole.OTHER,
-        required=False,
-        widget=SELECT_WIDGET,
     )
 
     # -- JÄRGMISEKS --------------------------------------------------------
@@ -2057,107 +2081,151 @@ class ComposerForm(forms.Form):
 
     # -- + Oluline tähtaeg -------------------------------------------------
     deadline_title = forms.CharField(
-        label="Mis on oodata",
+        label="Mis tähtaeg",
         required=False,
         max_length=2000,
         widget=forms.TextInput(
-            attrs={"class": "field__input", "placeholder": "Näiteks: eelnõu kooskõlastusring"}
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt kooskõlastusringi lõpp",
+            }
+        ),
+    )
+
+    # -- + Jõustumine ------------------------------------------------------
+    #: `Mis jõustub` and `Jõustub` — a composer door onto the existing
+    #: `MatterEffectiveDate`, not a second commencement model and not an `Entry`
+    #: pretending to be one. The panel is compact because a commencement a
+    #: lawyer is writing down mid-work is a named thing on a named day; the
+    #: approximate and general-order kinds the domain also stores keep their own
+    #: surfaces and their own records (docs/adr/0074 §7).
+    effective_title = forms.CharField(
+        label="Mis jõustub",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt pakendiseaduse muudatused",
+            }
+        ),
+    )
+    effective_on = EstonianDateField(label="Jõustub", required=False, widget=EstonianDateInput())
+
+    # -- + Töövõit ---------------------------------------------------------
+    #: `Mis muutus` — one box, and closing the Matter is not a precondition.
+    #:
+    #: A win is recorded when it happens. The closing section has its own
+    #: victory question and always did; this is the other half of the same
+    #: domain fact, for the far commoner case where the file stays open and
+    #: something in it was won this week (docs/adr/0074 §8).
+    victory_change = forms.CharField(
+        label="Mis muutus",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt üleminekuaeg väiketootjatele pikendati 2028. aastani",
+            }
+        ),
+    )
+
+    # -- + Kaasamine -------------------------------------------------------
+    #: `Liik`, `Keda kaasati`, `Vastuseid` — three questions, which is what the
+    #: approved target asks and all it asks.
+    #:
+    #: This reverses ADR 0031's «one entry point, and it is the standalone
+    #: section». That decision was sound while the section existed: two controls
+    #: for one act is how one consultation gets recorded twice. The section is
+    #: gone now, so this is the one entry point rather than the second one
+    #: (docs/adr/0074 §9).
+    #:
+    #: The kind field validates against the *whole* stored vocabulary while the
+    #: page offers three chips. A historical `WEB_CALL` row must stay editable
+    #: through every service that takes a kind, and a form that refused the value
+    #: its own database holds would be the thing that breaks
+    #: (app/matters/enums.py `COMPOSER_ENGAGEMENT_KINDS`).
+    engagement_kind = forms.ChoiceField(
+        label="Liik",
+        choices=EngagementKind.choices,
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    engagement_audience = forms.CharField(
+        label="Keda kaasati",
+        required=False,
+        max_length=500,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt liikmed, kaubandusvaldkonna töögrupp",
+            }
+        ),
+    )
+    #: Optional, and empty means *not counted* rather than *nobody answered*.
+    #: `min_value=0` because a consultation that genuinely drew no reply is a
+    #: real answer somebody may want to record (docs/adr/0074 §5).
+    engagement_responses = forms.IntegerField(
+        label="Vastuseid",
+        required=False,
+        min_value=0,
+        max_value=1_000_000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "numeric",
+                "autocomplete": "off",
+                "placeholder": "14",
+            }
         ),
     )
 
     # -- + Lõpeta teema ----------------------------------------------------
-    #: The closing section asks six things and nothing else: why, the file that
-    #: went out, when it went out, who to, whether it was a win, and — only
-    #: then — when the result commenced.
+    #: **Two questions.** `Kuidas lõppes`, and an optional `Lõppsõna`.
     #:
-    #: **Everything it used to ask twice is gone.** `Tulemus` asked for the
-    #: closing narrative a second time, immediately under the box that had just
-    #: taken it; `Lõpparvamuse pealkiri` asked for the Matter's own title;
-    #: `Mida Koda saavutas?` and `Töövõidu selgitus` asked for the narrative a
-    #: third and fourth time. One save, one narrative — the composer body — and
-    #: the canonical records derive their wording from it
-    #: (Teema closing redesign §2, §5, §10, §12).
+    #: The closing section asked six things until this pass: why, the file that
+    #: went out, when, to whom, whether it was a win, and when the result
+    #: commenced. The approved target asks two, and the four that went are not a
+    #: simplification of the closure — they are a correction of what closing
+    #: *means*. **Closing a Matter is not a claim that an opinion was sent.**
+    #: Koda closes files it never wrote to anybody about; it sends opinions on
+    #: files that stay open for another year. Requiring the sent PDF in order to
+    #: finish a file made the commonest closure impossible to record honestly,
+    #: and made the rarer one — closing *because* the opinion went out — look
+    #: like the only shape a closure has.
     #:
-    #: **There is no `Lõpeta see teema` box.** A seventh control confirming the
-    #: six answers above it was a place for answers to go missing: the pilot
-    #: filled the whole section, left the box alone, got a 200 and a note in the
-    #: chronology, and lost the disposition, the sent opinion, its date, its
-    #: recipients and the work victory without being told (pilot QA F-02).
-    #: Answering the closing section *is* the request to close;
-    #: :meth:`closure_requested` is the whole rule.
+    #: **None of the canonical rules moved.** A `SENT` Submission still needs its
+    #: exact final evidence, still goes through `mark_submission_sent`, and is
+    #: still recorded from Dokumendid or from the composer's own file control. A
+    #: `Töövõit` is still a confirmed `MatterWorkVictory` and is now recordable
+    #: from `+ Töövõit` without closing anything. A commencement is still a
+    #: `MatterEffectiveDate` and is now recordable from `+ Jõustumine`. What the
+    #: closing panel stopped doing is asking for all three at the one moment
+    #: they are least likely to all be true (docs/adr/0074 §10).
     #:
-    #: `Põhjus` opens on nothing. It is a `ChoiceField`, so Django adds no blank
-    #: option of its own, and the select therefore submitted `COMPLETED` from
-    #: every composer save whether or not anybody had looked at it — which made
-    #: its own refusal, «Vali, miks teema lõpeb», unreachable, and would now
-    #: make every ordinary note a closure. An unanswered question has to be
-    #: representable before it can be either asked or refused.
+    #: `_apply_closure` still accepts `final_opinion`, `work_victory` and
+    #: `effective_date` inside a closure payload; this form no longer sends them.
     disposition = forms.ChoiceField(
-        label="Põhjus",
+        label="Kuidas lõppes",
         choices=(("", "Vali põhjus…"), *CLOSURE_CHOICES),
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.HiddenInput(),
     )
-    #: The file that actually went out, uploaded here.
-    #:
-    #: It used to be a picker over versions already on the Matter, which is the
-    #: wrong workflow: closing a file is the moment the lawyer has the sent PDF
-    #: in front of them and has typically never uploaded it. Nothing about the
-    #: canonical rule changed — a SENT `Submission` still needs the exact final
-    #: evidence, still checked against the Matter's visibility. What changed is
-    #: that the evidence is captured in the same save instead of in a visit
-    #: beforehand (Teema closing redesign §4).
-    final_file = forms.FileField(
-        label="Lõpparvamus",
+    #: `Lõppsõna` — what became of this, in the closer's own words, and optional
+    #: because most closures have nothing to add that the chronology above does
+    #: not already say.
+    closing_words = forms.CharField(
+        label="Lõppsõna",
         required=False,
-        widget=forms.ClearableFileInput(attrs={"class": "field__input"}),
-    )
-    #: No `initial`, like every other date box read for its emptiness: a send
-    #: date with no file is an opinion claimed without its evidence, so a
-    #: default would refuse every ordinary closure that is not also recording
-    #: one (Teema QA §5).
-    final_sent_on = EstonianDateField(
-        label="Saatmise kuupäev", required=False, widget=EstonianDateInput()
-    )
-    #: The shortlist half of `Saaja`. The queryset stays the whole catalogue
-    #: because the *rendered* shortlist is a convenience, not a permission —
-    #: an institution reached through `Muu` posts its own name, and an
-    #: institution somebody reached last week must still be tickable.
-    final_recipients = forms.ModelMultipleChoiceField(
-        label="Saaja",
-        queryset=Organisation.objects.none(),
-        required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
-    )
-    #: `Muu` — the typed half, repeatable. Seven new recipients on one opinion
-    #: is a real case and it must not cost seven page loads (§7B).
-    final_recipient_names = RecipientNamesField(
-        label="Muu",
-        required=False,
-        widget=MultiTextInput(
+        max_length=2000,
+        widget=forms.Textarea(
             attrs={
-                "class": "field__input",
-                "autocomplete": "off",
-                "placeholder": "Otsi või kirjuta saaja nimi…",
+                "class": "field__input field__input--compact",
+                "rows": "2",
+                "placeholder": "Mis sellest teemast lõpuks sai?",
             }
         ),
-    )
-    #: An explicit decision, taken when the file is closed. Radios rather than a
-    #: checkbox, because a checkbox left alone cannot be told apart from a
-    #: person who answered "no" (§10).
-    work_victory = forms.ChoiceField(
-        label="Töövõit",
-        choices=WORK_VICTORY_CHOICES,
-        required=False,
-        widget=forms.RadioSelect(attrs={"class": "choiceset__radio"}),
-    )
-    #: `Jõustumise kuupäev` — when the result commenced, and **not** the work
-    #: victory's business period. They are two facts and the domain has two
-    #: models for them; storing a commencement in `MatterWorkVictory.period_date`
-    #: because both happen to be dates would put a win in the reporting year of
-    #: whenever the act took effect (§13).
-    victory_effective_on = EstonianDateField(
-        label="Jõustumise kuupäev", required=False, widget=EstonianDateInput()
     )
 
     def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
@@ -2169,42 +2237,96 @@ class ComposerForm(forms.Form):
         # approximate next step through a control the page no longer has
         # (ADR 0052 §4).
         self.fields.update(_precision_fields("deadline", date_label="Kuupäev"))
-        set_choices(self, "organisation", Organisation.objects.order_by("name"))
-        set_choices(self, "final_recipients", Organisation.objects.order_by("name"))
-        # Ticked in one click, because most letters go to bodies this
-        # department writes to constantly — and computed rather than
-        # hard-coded, because which ones those are changes with the government
-        # (`addressees_by_usage`).
-        self.recipient_shortlist = addressees_by_usage(viewer)
         self.matter = matter
+        self.viewer = viewer
 
         # **Nothing here binds an existing record the viewer might not be able
-        # to read.** The old form offered a `Järglane` picker over Matters and a
+        # to read**, and since the approved target there is nothing here that
+        # could. The form once offered a `Järglane` picker over Matters and a
         # final-evidence picker over `DocumentVersion`, and both had to go
-        # through `visible_to`: a crafted POST naming a restricted Matter would
-        # have told the sender that a file with that id exists, and binding a
-        # document they may not read as a submission's final evidence would
-        # print its filename, size and SHA-256 to everybody who can see the
-        # submission.
+        # through `visible_to`, because a crafted POST naming a restricted record
+        # would have confirmed that it exists. Both were retired with the old
+        # closing flow; the sent-opinion recipient pickers went with the target's
+        # two-question closure (Teema closing redesign §18, docs/adr/0074 §10).
         #
-        # Neither picker exists now. The final opinion is a file this person is
-        # uploading, so it is created on *this* Matter and inherits its
-        # visibility — the whole class of disclosure the two querysets guarded
-        # against has no surface left in this form (Teema closing redesign §18).
+        # Every record this form now writes is created on *this* Matter and
+        # inherits its visibility. There is no queryset left to scope.
+
+    # -- what the panels offer --------------------------------------------
+
+    @property
+    def engagement_kind_chips(self) -> list[dict[str, Any]]:
+        """`Küsitlus` / `Koosolek` / `Kirjade voor`, and which one is chosen.
+
+        Rendered from an explicit list rather than by iterating the field,
+        because the field validates against the whole stored vocabulary on
+        purpose — the same reason `shortlist_recipients` was built this way. The
+        first chip is selected on an unbound form, which is what the target
+        shows (TEEMA_TARGET_SPEC §C.4).
+        """
+        chosen = self._chosen("engagement_kind", COMPOSER_ENGAGEMENT_KINDS[0][0])
+        return [
+            {"value": value, "label": label, "selected": value == chosen}
+            for value, label in COMPOSER_ENGAGEMENT_KINDS
+        ]
+
+    @property
+    def closure_chips(self) -> list[dict[str, Any]]:
+        """`Jõustus` / `Menetlus lõppes` / `Loobuti`.
+
+        Nothing is selected until somebody chooses, including on a first load:
+        an unanswered `Kuidas lõppes` has to be representable, or the panel would
+        post a closure from every ordinary save the moment it was opened — which
+        is the defect the empty `Põhjus` option was added to fix (pilot QA F-02).
+        """
+        chosen = self._chosen("disposition", "")
+        return [
+            {"value": value, "label": label, "selected": value == chosen}
+            for value, label in COMPOSER_CLOSURE_CHOICES
+        ]
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        """`Täpne päev` / `Kuu` / `Kvartal` for `+ Oluline tähtaeg`.
+
+        Three of the five stored precisions. `HALF_YEAR` and `YEAR` are real and
+        stay readable on the records that carry them; they are simply not worth
+        a chip on a panel whose whole point is that it fits on one row
+        (TEEMA_TARGET_SPEC §C.4, docs/adr/0074 §11).
+        """
+        chosen = self._chosen("deadline_precision", DatePrecision.EXACT.value)
+        labels = (
+            (DatePrecision.EXACT.value, "Täpne päev"),
+            (DatePrecision.MONTH.value, "Kuu"),
+            (DatePrecision.QUARTER.value, "Kvartal"),
+        )
+        return [
+            {"value": value, "label": label, "selected": value == chosen} for value, label in labels
+        ]
+
+    def _chosen(self, name: str, fallback: str) -> str:
+        """What a chip group should show as selected, after a refused save too.
+
+        Read from the raw data rather than from `cleaned_data`, for the same
+        reason `typed_recipients` was: the save that most needs its chips back is
+        the one that did not validate.
+        """
+        if self.is_bound:
+            return str(self.data.get(name) or "")
+        return fallback
 
     # -- validation --------------------------------------------------------
 
     #: The controls that only a closure has an answer for. Filling in any one of
     #: them is what asks for the Matter to be closed — see
     #: :meth:`closure_requested` (pilot QA F-02).
+    #:
+    #: Two, since the approved target's closing panel asks two questions. The
+    #: five that went were the sent opinion and the work victory, and neither is
+    #: a closure any more (docs/adr/0074 §10).
     CLOSURE_FIELDS: tuple[str, ...] = (
         "disposition",
-        "final_file",
-        "final_sent_on",
-        "final_recipients",
-        "final_recipient_names",
-        "work_victory",
-        "victory_effective_on",
+        "closing_words",
     )
 
     @cached_property
@@ -2250,17 +2372,42 @@ class ComposerForm(forms.Form):
         # not what happened and does not say where to look.
         wants_next = bool(next_text or cleaned.get("next_date") is not None)
         wants_deadline = bool((cleaned.get("deadline_title") or "").strip())
+        # Each panel is wanted when its own *identifying* answer carries
+        # something — the thing it names, not the date beside it. A date alone
+        # is refused on the empty box below rather than falling through as «you
+        # typed nothing at all», which is the rule `Järgmiseks` already follows.
+        wants_effective = bool(
+            (cleaned.get("effective_title") or "").strip()
+            or cleaned.get("effective_on") is not None
+        )
+        wants_victory = bool((cleaned.get("victory_change") or "").strip())
+        wants_engagement = bool(
+            (cleaned.get("engagement_audience") or "").strip()
+            or cleaned.get("engagement_responses") is not None
+        )
         # Closure-specific input *is* closure intent. There is no second box to
         # tick and therefore no way to fill this section in, be told the save
         # succeeded, and find none of it stored (pilot QA F-02).
         wants_closure = self.closure_requested
         has_file = bool(cleaned.get("attachment"))
 
-        if not (body or wants_next or wants_deadline or wants_closure or has_file):
+        if not (
+            body
+            or wants_next
+            or wants_deadline
+            or wants_effective
+            or wants_victory
+            or wants_engagement
+            or wants_closure
+            or has_file
+        ):
             raise forms.ValidationError("Kirjelda tegevust või vali, mida veel salvestada.")
 
         self._clean_next_action(cleaned)
         self._clean_deadline(cleaned, wanted=wants_deadline)
+        self._clean_effective(cleaned, wanted=wants_effective)
+        self._clean_victory(cleaned, wanted=wants_victory)
+        self._clean_engagement(cleaned, wanted=wants_engagement)
         self._clean_closure(cleaned, wanted=wants_closure)
         return cleaned
 
@@ -2322,14 +2469,101 @@ class ComposerForm(forms.Form):
             "date_precision": precision,
         }
 
-    def _clean_closure(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
-        """The closing half: six answers, and none of them asked twice.
+    def _clean_effective(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        """`+ Jõustumine` — what commences, and the day it does.
 
-        The narrative is the composer body and only the composer body. It
-        becomes the stored closure reason, and — when somebody says this was a
-        win — the work victory's wording too. So `Töövõit = Jah` with an empty
-        box is refused *on the box*, rather than inventing a description for a
-        record the department reports on (Teema closing redesign §2, §12).
+        Both halves or neither, refused on whichever is missing, exactly as
+        `Järgmiseks` and `Oluline tähtaeg` are. A commencement with no date is a
+        sentence, and a date with nothing commencing on it is a number.
+
+        Stored at `EXACT` precision because the panel asks for a day and takes a
+        day. The approximate and general-order kinds `MatterEffectiveDate` also
+        carries are unchanged on the rows that hold them; this compact path
+        simply does not create new ones (docs/adr/0074 §7).
+        """
+        if not wanted:
+            cleaned["effective_date_kwargs"] = None
+            return
+        title = (cleaned.get("effective_title") or "").strip()
+        when = cleaned.get("effective_on")
+        if not title:
+            self.add_error("effective_title", "Kirjuta, mis jõustub.")
+        if when is None:
+            self.add_error("effective_on", "Märgi, millal see jõustub.")
+        if self.errors:
+            return
+        cleaned["effective_date_kwargs"] = {
+            "description": title,
+            "date_value": when,
+            "period_end": when,
+            "date_precision": DatePrecision.EXACT.value,
+        }
+
+    def _clean_victory(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        """`+ Töövõit` — one sentence, and no second question.
+
+        No period. `MatterWorkVictory.period_date` is a *reporting* period, and
+        borrowing today's date for it because the panel happens to be open would
+        file a win into a reporting year nobody chose. The record is created
+        undated, which the domain already supports and the reporting surfaces
+        already count separately (Stage-2G brief 13, docs/adr/0074 §8).
+        """
+        if not wanted:
+            cleaned["work_victory_kwargs"] = None
+            return
+        cleaned["work_victory_kwargs"] = {
+            "title": (cleaned.get("victory_change") or "").strip()[:2000],
+            "detail": "",
+        }
+
+    def _clean_engagement(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        """`+ Kaasamine` — the kind, who was engaged, and how many answered.
+
+        `Keda kaasati` is required because `MatterEngagement.title` is: the
+        database refuses an empty one and so does `add_engagement`, and a
+        refusal that arrives from a CHECK constraint halfway through a composer
+        transaction is a 500 where a sentence would do.
+
+        The kind falls back to the first chip rather than to `OTHER`. The panel
+        shows `Küsitlus` selected on open, so a person who filled in the boxes
+        and never touched the chips chose `Küsitlus` — storing `Muu` instead
+        would contradict what they were looking at (TEEMA_TARGET_SPEC §C.4).
+        """
+        if not wanted:
+            cleaned["engagement_kwargs"] = None
+            return
+        audience = (cleaned.get("engagement_audience") or "").strip()
+        if not audience:
+            self.add_error("engagement_audience", "Kirjuta, keda kaasati.")
+            return
+        kind = cleaned.get("engagement_kind") or COMPOSER_ENGAGEMENT_KINDS[0][0]
+        cleaned["engagement_kwargs"] = {
+            "kind": kind,
+            "title": audience,
+            "response_count": cleaned.get("engagement_responses"),
+            # The day the work is being recorded. The target deliberately does
+            # not ask for an engagement date, and the application's convention
+            # for «this happened as part of the work I am writing down now» is
+            # today in Europe/Tallinn — the same clock `add_entry` stamps with
+            # (docs/adr/0074 §9).
+            "occurred_on": timezone.localdate(),
+        }
+
+    def _clean_closure(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        """`Kuidas lõppes`, and an optional `Lõppsõna`. Nothing else.
+
+        **A closure is not a claim that an opinion was sent.** The old flow made
+        the sent PDF a precondition of finishing a file, which is backwards: most
+        closures are files Koda never wrote to anybody about, and the opinion
+        that *did* go out is normally recorded months before the file closes.
+        `mark_submission_sent` still refuses a submission without its exact final
+        evidence; it is simply no longer this panel's business
+        (docs/adr/0074 §10).
+
+        The stored `reason` is `Lõppsõna` when somebody wrote one, and the
+        composer body otherwise. The body has always been the closing narrative
+        and still is on a save that closes and describes in one go; `Lõppsõna` is
+        the box for a closure whose entry says something else, or nothing.
         """
         if not wanted:
             cleaned["closure_kwargs"] = None
@@ -2337,179 +2571,42 @@ class ComposerForm(forms.Form):
 
         disposition = cleaned.get("disposition") or ""
         if not disposition:
-            self.add_error("disposition", "Vali, miks teema lõpeb.")
+            self.add_error("disposition", "Vali, kuidas teema lõppes.")
 
-        # The plain-text form of what was typed above. `disposition_reason` is
-        # a sentence in a banner, not markup, and the entry keeps the rich text.
-        narrative = plain_text(cleaned.get("body") or "").strip()
-
-        upload = cleaned.get("final_file")
-        chosen = list(cleaned.get("final_recipients") or [])
-        typed = self._clean_recipient_names(cleaned.get("final_recipient_names") or [], chosen)
-        sent_on = cleaned.get("final_sent_on")
-
-        # An opinion is claimed only when somebody chose the file that went out.
-        # Everything else about it is then required, because a sent submission
-        # with no recipient and no date is a claim the record cannot support —
-        # and a PDF on its own is not a sent opinion (§21).
-        if upload is not None:
-            if sent_on is None:
-                self.add_error("final_sent_on", "Märgi, millal arvamus saadeti.")
-            if not chosen and not typed:
-                self.add_error("final_recipients", "Märgi, kellele arvamus saadeti.")
-        elif chosen or typed or sent_on is not None:
-            self.add_error(
-                "final_file",
-                "Lae saadetud fail — ilma täpse tõendita ei saa arvamust saadetuks märkida.",
-            )
-
-        victory = cleaned.get("work_victory") or ""
-        if not victory:
-            self.add_error("work_victory", "Märgi, kas teemast sai töövõit.")
-        elif victory == "JAH":
-            if not narrative:
-                self.add_error(
-                    "body",
-                    "Kirjelda, mida Koda saavutas — sellest saab töövõidu sõnastus.",
-                )
-            if cleaned.get("victory_effective_on") is None:
-                self.add_error("victory_effective_on", "Märgi, millal tulemus jõustus.")
-
-        # Assembled only once nothing was refused. A half-built closure handed
-        # to the service would be a partial save waiting to happen, and the
-        # whole point of one transaction is that there is no such state (§24).
         if self.errors:
             return
 
-        closure: dict[str, Any] = {"disposition": disposition, "reason": narrative}
-        if upload is not None:
-            closure["final_opinion"] = {
-                "upload": upload,
-                "recipients": chosen,
-                "recipient_names": typed,
-                "sent_at": _as_datetime(sent_on),
-            }
-        if victory == "JAH":
-            closure["work_victory"] = {"title": narrative[:2000], "detail": ""}
-            effective_on = cleaned["victory_effective_on"]
-            # `Jõustumise kuupäev` is a commencement, so it goes where the
-            # domain keeps commencements. `MatterWorkVictory.period_date` is a
-            # reporting period and stays empty here rather than being borrowed
-            # because it happens to be the only other date on the record (§13).
-            closure["effective_date"] = {
-                "date_value": effective_on,
-                "period_end": effective_on,
-            }
-        cleaned["closure_kwargs"] = closure
-
-    def _clean_recipient_names(self, typed: list[str], chosen: list[Any]) -> list[str]:
-        """The typed recipients that are still worth resolving.
-
-        Two names are dropped here rather than in the service: one that already
-        names a ticked institution, and one that repeats an earlier line. Both
-        would be collapsed again by `resolve_recipients` and by the unique
-        recipient-per-submission constraint — dropping them at the form is what
-        keeps the count somebody sees equal to the count that is stored (§7F).
-
-        Genuine ambiguity is refused instead. Two institutions spelled the same
-        way is a question only a person can answer, and both silently picking
-        one and silently creating a third are wrong answers (§7D).
-        """
-        from app.core.text import normalize_for_matching
-        from app.organisations.services import find_matches
-
-        seen = {normalize_for_matching(organisation.name) for organisation in chosen}
-        keep: list[str] = []
-        for name in typed:
-            matches = find_matches(name)
-            if len(matches) > 1:
-                self.add_error(
-                    "final_recipient_names",
-                    f"«{name}» sobib mitme organisatsiooniga — vali nimekirjast.",
-                )
-                continue
-            # An existing name — canonical or an alias somebody recorded —
-            # identifies that institution, so the duplicate check compares
-            # institutions rather than spellings.
-            key = normalize_for_matching(matches[0].name if matches else name)
-            if key in seen:
-                continue
-            seen.add(key)
-            keep.append(name)
-        return keep
-
-    @property
-    def shortlist_recipients(self) -> list[dict[str, Any]]:
-        """The tickable half of `Saaja`: who this department writes to most.
-
-        Rendered from an explicit list rather than by iterating the field,
-        because the field's queryset is deliberately wider than the shortlist.
-        The queryset is what a POST is validated against — an institution
-        somebody reached through `Muu` last week must still be tickable if a
-        later form is built with it — while this is only what is worth showing
-        without asking (§7A).
-        """
-        submitted = (
-            set(self.data.getlist("final_recipients"))
-            if self.is_bound and hasattr(self.data, "getlist")
-            else set()
-        )
-        return [
-            {
-                "value": str(organisation.pk),
-                "label": organisation.name,
-                "checked": str(organisation.pk) in submitted,
-            }
-            for organisation in getattr(self, "recipient_shortlist", [])
-        ]
-
-    @property
-    def typed_recipients(self) -> list[str]:
-        """What the `Muu` chips should show again after a refused save.
-
-        Read from the raw data rather than from `cleaned_data`, because the
-        save that most needs its chips back is the one that did not validate.
-        """
-        if not self.is_bound or not hasattr(self.data, "getlist"):
-            return []
-        seen: set[str] = set()
-        names: list[str] = []
-        for raw in self.data.getlist("final_recipient_names"):
-            name = " ".join((raw or "").split())
-            if name and name.casefold() not in seen:
-                seen.add(name.casefold())
-                names.append(name)
-        return names
-
-    @property
-    def recipient_catalogue(self) -> list[str]:
-        """Every spelling the `Muu` box can complete against.
-
-        Canonical names and recorded aliases both, so typing `MKM` finds the
-        ministry somebody decided it means. It is a catalogue rather than a
-        choice list: a name that is not in it is a new institution, created on
-        save (§7C).
-        """
-        from app.organisations.models import OrganisationAlias
-
-        names = list(Organisation.objects.order_by("name").values_list("name", flat=True))
-        aliases = list(OrganisationAlias.objects.order_by("alias").values_list("alias", flat=True))
-        known = {name.casefold() for name in names}
-        return names + [alias for alias in aliases if alias.casefold() not in known]
+        # Plain text, not markup: `disposition_reason` is a sentence in a
+        # banner, and the entry keeps the rich text it was written in.
+        final_word = (cleaned.get("closing_words") or "").strip()
+        narrative = final_word or plain_text(cleaned.get("body") or "").strip()
+        cleaned["closure_kwargs"] = {"disposition": disposition, "reason": narrative}
 
     # -- what the service is called with -----------------------------------
 
     def as_service_kwargs(self) -> dict[str, Any]:
-        """Everything :func:`app.matters.services.compose_update` needs."""
+        """Everything :func:`app.matters.services.compose_update` needs.
+
+        `kind`, `occurred_at`, `organisation` and `attachment_role` are the
+        canonical defaults, written here and never read from the POST. The
+        approved target does not ask a person to classify what they are writing
+        or the file they are attaching, so this surface answers those questions
+        the way it has always answered them for somebody who left the disclosure
+        alone: an ordinary note, recorded now, and an ordinary attachment
+        (docs/adr/0074 §6).
+        """
         return {
             "body": self.cleaned_data.get("body") or "",
-            "kind": self.cleaned_data.get("kind") or EntryKind.NOTE,
-            "occurred_at": _entry_moment(self.cleaned_data.get("occurred_on")),
-            "organisation": self.cleaned_data.get("organisation"),
+            "kind": EntryKind.NOTE,
+            "occurred_at": None,
+            "organisation": None,
             "attachment": self.cleaned_data.get("attachment"),
-            "attachment_role": self.cleaned_data.get("attachment_role") or DocumentRole.OTHER,
+            "attachment_role": DocumentRole.OTHER,
             "next_action": self.cleaned_data.get("next_action_kwargs"),
             "important_date": self.cleaned_data.get("important_date_kwargs"),
+            "effective_date": self.cleaned_data.get("effective_date_kwargs"),
+            "work_victory": self.cleaned_data.get("work_victory_kwargs"),
+            "engagement": self.cleaned_data.get("engagement_kwargs"),
             "closure": self.cleaned_data.get("closure_kwargs"),
         }
 

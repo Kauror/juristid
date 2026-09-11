@@ -1,26 +1,33 @@
-"""The approved `Lõpeta teema` redesign, rule by rule.
+"""`Lõpeta teema`, as the approved Teema target asks it — and everything under it.
 
-The closing section used to ask nine questions, four of which the composer had
-already answered. `Tulemus` asked for the closing narrative immediately below
-the box that had just taken it; `Lõpparvamuse pealkiri` asked for the name of
-the file that was open; `Mida Koda saavutas?` and `Töövõidu selgitus` asked for
-the narrative twice more. `Lõpparvamus` offered a picker over versions already
-uploaded, which is not where the sent PDF is at the moment somebody closes a
-file. `Saaja` was a fixed checkbox list, so an opinion going to seven political
-parties could not be recorded at all without creating seven institutions
-somewhere else first.
+**The panel asks two questions.** `Kuidas lõppes` and an optional `Lõppsõna`.
+The section asked six until this pass: why, the file that went out, when, to
+whom, whether it was a win, and when the result commenced.
 
-What is asserted here is the shape of the replacement — six questions, one
-narrative, one save — and that none of the canonical rules underneath it moved:
-a SENT `Submission` still needs its exact final evidence, a work victory still
-goes through the manual door that already existed, and a commencement date is
-still a `MatterEffectiveDate` rather than a column borrowed from the victory's
-reporting period.
+The four that went are not a simplification of the closure but a correction of
+what closing *means*. **Closing a Matter is not a claim that an opinion was
+sent.** Koda closes files it never wrote to anybody about; it sends opinions on
+files that stay open for another year. Requiring the sent PDF in order to finish
+a file made the commonest closure impossible to record honestly, and made the
+rarer one look like the only shape a closure has (docs/adr/0074 §10).
+
+**None of the canonical rules moved, and this file still proves every one of
+them.** A SENT `Submission` still needs its exact final evidence, still resolves
+its recipients through the organisation catalogue, still refuses an ambiguous
+name and still inherits its Matter's visibility. A work victory still goes
+through the manual door. A commencement is still a `MatterEffectiveDate` and not
+a column borrowed from the victory's reporting period. What changed is the
+caller: those tests drive `compose_update` directly, because the composer form no
+longer carries that half — and `compose_update` is the contract, not the form.
+
+`+ Töövõit` and `+ Jõustumine` are composer panels of their own now, tested in
+`tests/test_teema_approved_target.py`. A win no longer requires closing the file
+to record it.
 """
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -33,7 +40,7 @@ from app.documents.models import Document
 from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
 from app.intelligence.models import MatterEffectiveDate, MatterWorkVictory
 from app.intelligence.services import add_effective_date
-from app.matters.forms import CLOSURE_CHOICES, ComposerForm
+from app.matters.forms import CLOSURE_CHOICES, COMPOSER_CLOSURE_CHOICES, ComposerForm
 from app.matters.models import Entry
 from app.matters.services import compose_update
 from app.organisations.models import AliasType, Organisation, OrganisationAlias, OrganisationType
@@ -69,8 +76,6 @@ def _post(client, matter, **fields):
     """One composer save, with the fields every POST carries filled in."""
     payload = {
         "body": "",
-        "kind": "NOTE",
-        "attachment_role": DocumentRole.OTHER,
         "next_text": "",
         "next_date": "",
         "deadline_title": "",
@@ -104,6 +109,15 @@ REMOVED_FIELDS = [
     "final_reference",
     "victory_title",
     "victory_detail",
+    # Retired by the approved target: closing a file is not a claim that an
+    # opinion was sent, and a win is recorded by `+ Töövõit` whether or not the
+    # file is closing (docs/adr/0074 §10).
+    "final_file",
+    "final_sent_on",
+    "final_recipients",
+    "final_recipient_names",
+    "work_victory",
+    "victory_effective_on",
 ]
 
 
@@ -120,72 +134,105 @@ def test_the_closing_section_no_longer_renders_a_retired_field(signed_in, normal
     assert f'name="{name}"' not in _composer_html(signed_in, normal_matter)
 
 
-def test_the_closing_section_asks_the_six_approved_questions(
-    signed_in, normal_matter, organisation
-):
+def test_the_closing_panel_asks_the_two_approved_questions(signed_in, normal_matter):
     body = _composer_html(signed_in, normal_matter)
 
-    # The section, opened by its own chip. There is no confirmation box inside
-    # it any more (pilot QA F-02).
-    assert 'id="koostaja-lopetamine"' in body
+    # The panel, behind its own chip, and no confirmation box inside it.
+    assert 'id="cx-lopeta"' in body
+    assert "+ Lõpeta teema" in body
     assert "Lõpeta see teema" not in body
-    # Põhjus, kept and not renamed, and opening on nothing so that "unanswered"
-    # is representable.
+
+    # `Kuidas lõppes` — three chips over one hidden field, so an unanswered
+    # question is representable and a crafted POST still validates against the
+    # whole stored vocabulary.
+    assert "Kuidas lõppes" in body
     assert 'name="disposition"' in body
-    assert '<option value="">' in body
-    assert ">Põhjus<" in body
-    # Lõpparvamus, uploaded directly rather than picked from what is already here.
-    assert 'name="final_file"' in body
-    assert 'type="file"' in body
-    assert "Lõpparvamus" in body
-    # Saatmise kuupäev.
-    assert 'name="final_sent_on"' in body
-    assert "Saatmise kuupäev" in body
-    # Saaja: a shortlist and a repeatable Muu that searches the catalogue.
-    assert 'name="final_recipients"' in body
-    assert 'name="final_recipient_names"' in body
-    assert "data-recipient-add" in body
-    assert "koostaja-saajakataloog" in body
-    # Töövõit: an explicit two-way decision.
-    assert 'name="work_victory"' in body
-    assert 'value="JAH"' in body
-    assert 'value="EI"' in body
-    # Jõustumise kuupäev, gated on that decision.
-    assert 'name="victory_effective_on"' in body
-    assert "data-victory-date" in body
+    for label in ("Jõustus", "Menetlus lõppes", "Loobuti"):
+        assert f">{label}<" in body
+
+    # `Lõppsõna`, optional.
+    assert 'name="closing_words"' in body
+    assert "Lõppsõna" in body
+    assert "valikuline" in body
+    assert "Mis sellest teemast lõpuks sai?" in body
+
+    # And the note the target ends the panel with.
+    assert "Teema läheb arhiivi. Avatud järgmised sammud tühistatakse." in body
 
 
-def test_the_commencement_date_is_gated_on_the_answer_being_jah(signed_in, normal_matter):
-    """Gated by markup rather than by script, so a refused save that *did* say
-    Jah comes back with the box open and its error where the reader is."""
-    body = _composer_html(signed_in, normal_matter)
-    panel = body[body.index("data-victory-date") : body.index("data-victory-date") + 200]
-    assert "hidden" in panel
+def test_the_three_offered_outcomes_map_onto_stored_dispositions():
+    """Three chips over one vocabulary, not a new one. `RESPONSE_COMPLETE`,
+    `NO_POSITION_FORMED`, `DUPLICATE` and `OTHER` remain valid stored values with
+    no chip — every one of them still reads, filters and reports."""
+    offered = dict(COMPOSER_CLOSURE_CHOICES)
 
+    assert offered == {
+        Disposition.COMPLETED.value: "Jõustus",
+        Disposition.INITIATIVE_WITHDRAWN.value: "Menetlus lõppes",
+        Disposition.MONITORING_STOPPED.value: "Loobuti",
+    }
+    assert Disposition.SUPERSEDED.value not in offered
+    # The field itself still accepts the wider set, so a historical value is
+    # never refused by the form that happens to be rendering.
+    accepted = {value for value, _label in ComposerForm().fields["disposition"].choices}
+    assert Disposition.RESPONSE_COMPLETE.value in accepted
+
+
+def test_no_chip_is_selected_until_somebody_chooses():
+    """An unanswered `Kuidas lõppes` has to be representable, or the panel would
+    post a closure from every ordinary save the moment it was opened — which is
+    the defect the empty option was added to fix (pilot QA F-02)."""
+    chips = ComposerForm().closure_chips
+
+    assert len(chips) == 3
+    assert not any(chip["selected"] for chip in chips)
+
+
+def test_a_closure_needs_its_reason(normal_matter):
     form = ComposerForm(
-        {
-            "body": "Võit.",
-            "disposition": Disposition.COMPLETED,
-            "work_victory": "JAH",
-        },
-        matter=normal_matter,
+        {"body": "Menetlus lõppes.", "closing_words": "Sai tehtud."}, matter=normal_matter
     )
+
     assert not form.is_valid()
-    assert form["work_victory"].value() == "JAH"
+    assert "disposition" in form.errors
 
 
-def test_the_muu_box_searches_the_existing_catalogue(signed_in, normal_matter):
-    """`Muu` is not a free-text dump: a body somebody added last month must be
-    findable rather than created a second time (§7C)."""
-    organisation = factories.OrganisationFactory(name="Näidisministeerium Üks")
-    OrganisationAlias.objects.create(
-        organisation=organisation, alias="NMÜ", alias_type=AliasType.ABBREVIATION
+def test_the_final_word_is_the_stored_reason_when_there_is_one(signed_in, normal_matter):
+    """`Lõppsõna` is the box for a closure whose entry says something else, or
+    nothing at all."""
+    response = _post(
+        signed_in,
+        normal_matter,
+        body="<p>Helistasin ministeeriumi.</p>",
+        disposition=Disposition.MONITORING_STOPPED,
+        closing_words="Koda ei tegele edasi.",
     )
 
-    body = _composer_html(signed_in, normal_matter)
+    assert response.status_code == 200, response.content.decode()[:2000]
+    normal_matter.refresh_from_db()
+    assert not normal_matter.is_open
+    assert normal_matter.disposition_reason == "Koda ei tegele edasi."
+    # The entry keeps its own wording; the two are different sentences.
+    assert "Helistasin" in Entry.objects.get(matter=normal_matter).body
 
-    assert "Näidisministeerium Üks" in body
-    assert 'value="NMÜ"' in body
+
+def test_closing_no_longer_asks_for_a_sent_opinion(signed_in, normal_matter):
+    """The commonest closure: a file Koda never wrote to anybody about. It used
+    to be unrecordable without uploading something (docs/adr/0074 §10)."""
+    response = _post(
+        signed_in,
+        normal_matter,
+        body="<p>Eelnõu langes ära.</p>",
+        disposition=Disposition.INITIATIVE_WITHDRAWN,
+    )
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    normal_matter.refresh_from_db()
+    assert not normal_matter.is_open
+    assert not Submission.objects.filter(matter=normal_matter).exists()
+    assert not Document.objects.filter(matter=normal_matter).exists()
+    # And no victory was invented for a file nobody called a win.
+    assert not MatterWorkVictory.objects.filter(matter=normal_matter).exists()
 
 
 def test_the_disposition_that_needs_a_successor_is_not_offered():
@@ -250,27 +297,47 @@ def test_an_ordinary_save_is_untouched_by_the_closing_redesign(signed_in, normal
 
 
 # ---------------------------------------------------------------------------
-# §4, §5, §6, §21 — the final opinion, uploaded here
+# The final opinion, the recipients and the work victory — **through the
+# service**, which is where they always were.
+#
+# The composer no longer offers this half. `compose_update` still accepts it,
+# the archive importer and the Submission workflow still call the same four
+# canonical acts, and every invariant below is unchanged: a SENT Submission
+# needs its exact final evidence, recipients resolve through the organisation
+# catalogue, an ambiguous name is refused rather than guessed, and the whole
+# thing is one transaction (docs/adr/0074 §10).
 # ---------------------------------------------------------------------------
 
 
-def _close_with_opinion(client, matter, **overrides):
-    fields = {
-        "body": "<p>Arvamus saadeti välja.</p>",
-        "disposition": Disposition.RESPONSE_COMPLETE,
-        "final_file": _pdf(),
-        "final_sent_on": "12.08.2026",
-        "work_victory": "EI",
+def _close_with_opinion(matter, actor, **overrides):
+    """One composer save that closes a Matter and records the opinion that went
+    out, as the service receives it."""
+    final_opinion = {
+        "upload": _pdf(),
+        "recipients": [],
+        "recipient_names": [],
+        "sent_at": timezone.make_aware(datetime(2026, 8, 12, 0, 0)),
     }
-    fields.update(overrides)
-    return _post(client, matter, **fields)
-
-
-def test_a_direct_upload_becomes_the_canonical_sent_opinion(signed_in, normal_matter, organisation):
-    response = _close_with_opinion(
-        signed_in, normal_matter, final_recipients=[str(organisation.pk)]
+    final_opinion.update(overrides.pop("final_opinion", {}))
+    closure = {
+        "disposition": Disposition.RESPONSE_COMPLETE,
+        "reason": "Arvamus saadeti välja.",
+        "final_opinion": final_opinion,
+    }
+    closure.update(overrides.pop("closure", {}))
+    return compose_update(
+        matter=matter,
+        author=actor,
+        body=overrides.pop("body", "<p>Arvamus saadeti välja.</p>"),
+        closure=closure,
+        **overrides,
     )
-    assert response.status_code == 200, response.content.decode()[:3000]
+
+
+def test_a_direct_upload_becomes_the_canonical_sent_opinion(
+    normal_matter, specialist, organisation
+):
+    _close_with_opinion(normal_matter, specialist, final_opinion={"recipients": [organisation]})
 
     document = Document.objects.get(matter=normal_matter)
     assert document.role == DocumentRole.KODA_SUBMISSION_FINAL
@@ -279,16 +346,16 @@ def test_a_direct_upload_becomes_the_canonical_sent_opinion(signed_in, normal_ma
     submission = Submission.objects.get(matter=normal_matter)
     assert submission.status == SubmissionStatus.SENT
     assert submission.final_version == version
-    # The day somebody chose, stored as a day (§6).
+    # The day somebody chose, stored as a day.
     assert timezone.localtime(submission.sent_at).date() == date(2026, 8, 12)
     assert submission.sent_at_precision == SentAtPrecision.DATE
-    # Titled internally from the Matter; nobody retyped it (§5).
+    # Titled internally from the Matter; nobody retyped it.
     assert submission.title == normal_matter.title
-    # Nothing this flow does not ask for was invented (§8, §9).
+    # Nothing this flow does not ask for was invented.
     assert submission.channel == ""
     assert submission.reference == ""
     # The evidence is created on this Matter, so it can never be broader than
-    # the Matter or the Submission (§18).
+    # the Matter or the Submission.
     assert document.matter == normal_matter
     assert document.effective_visibility == normal_matter.visibility
 
@@ -299,7 +366,6 @@ def test_the_final_opinion_is_optional(signed_in, normal_matter):
         normal_matter,
         body="<p>Koda ei tegele edasi.</p>",
         disposition=Disposition.MONITORING_STOPPED,
-        work_victory="EI",
     )
 
     assert response.status_code == 200
@@ -309,77 +375,47 @@ def test_the_final_opinion_is_optional(signed_in, normal_matter):
     assert not Document.objects.filter(matter=normal_matter).exists()
 
 
-@pytest.mark.parametrize("missing", ["final_sent_on", "final_recipients"])
-def test_an_uploaded_opinion_needs_its_date_and_its_recipients(
-    normal_matter, organisation, missing
+def test_a_sent_opinion_always_carries_its_exact_final_evidence(
+    normal_matter, specialist, organisation
 ):
-    data = {
-        "body": "Arvamus saadeti.",
-        "disposition": Disposition.RESPONSE_COMPLETE,
-        "final_sent_on": "12.08.2026",
-        "final_recipients": [str(organisation.pk)],
-        "work_victory": "EI",
-    }
-    data.pop(missing)
-    form = ComposerForm(data, {"final_file": _pdf()}, matter=normal_matter)
+    """The invariant the old form's four questions were protecting, stated where
+    it is actually enforced.
 
-    assert not form.is_valid()
-    assert missing in form.errors
+    `mark_submission_sent` refuses a submission with no final version, so there
+    is no path — form, importer or shell — that marks an opinion sent without the
+    bytes that went out. The retired «Lae saadetud fail» refusal was a *form*
+    rule layered on top of this one; removing the form did not remove this."""
+    from app.submissions.services import create_submission, mark_submission_sent
 
-
-def test_recipients_and_a_date_cannot_manufacture_a_sent_opinion(
-    signed_in, normal_matter, organisation
-):
-    """A date and an addressee are not evidence. Without the file that went out
-    there is nothing to mark sent, and the refusal names the file."""
-    response = _post(
-        signed_in,
-        normal_matter,
-        body="<p>Arvamus saadeti.</p>",
-        disposition=Disposition.RESPONSE_COMPLETE,
-        final_sent_on="12.08.2026",
-        final_recipients=[str(organisation.pk)],
-        work_victory="EI",
+    submission = create_submission(
+        matter=normal_matter,
+        title=normal_matter.title,
+        actor=specialist,
+        recipients=[organisation],
     )
+    assert submission.final_version is None
 
-    assert response.status_code == 400
-    assert "Lae saadetud fail" in response.content.decode()
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert not Submission.objects.filter(matter=normal_matter).exists()
+    with pytest.raises(DomainError):
+        mark_submission_sent(submission=submission, actor=specialist, sent_at=timezone.now())
 
-
-def test_a_refused_closure_creates_no_canonical_record(signed_in, normal_matter, organisation):
-    """Validation runs before the service, so a refusal writes nothing at all."""
-    response = _close_with_opinion(
-        signed_in,
-        normal_matter,
-        final_recipients=[str(organisation.pk)],
-        final_sent_on="",
-    )
-
-    assert response.status_code == 400
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert not Document.objects.filter(matter=normal_matter).exists()
-    assert not Submission.objects.filter(matter=normal_matter).exists()
-    assert not Entry.objects.filter(matter=normal_matter).exists()
+    submission.refresh_from_db()
+    assert submission.status != SubmissionStatus.SENT
 
 
 # ---------------------------------------------------------------------------
-# §7, §22 — several recipients, existing and new
+# Several recipients, existing and new
 # ---------------------------------------------------------------------------
 
 
-def test_seven_new_recipients_land_in_one_save(signed_in, normal_matter):
+def test_seven_new_recipients_land_in_one_save(normal_matter, specialist):
     """The case the fixed checkbox list could not record at all."""
     before = Organisation.objects.count()
 
-    response = _close_with_opinion(signed_in, normal_matter, final_recipient_names=SEVEN_PARTIES)
-    assert response.status_code == 200, response.content.decode()[:3000]
+    result = _close_with_opinion(
+        normal_matter, specialist, final_opinion={"recipient_names": SEVEN_PARTIES}
+    )
 
-    submission = Submission.objects.get(matter=normal_matter)
-    rows = SubmissionRecipient.objects.filter(submission=submission)
+    rows = SubmissionRecipient.objects.filter(submission=result.submission)
     assert rows.count() == 7
     assert {row.role for row in rows} == {RecipientRole.ADDRESSEE}
     assert Organisation.objects.count() == before + 7
@@ -388,23 +424,23 @@ def test_seven_new_recipients_land_in_one_save(signed_in, normal_matter):
     assert created.count() == 7
     # Named exactly as typed, and classified as nothing the person did not say.
     assert {organisation.organisation_type for organisation in created} == {OrganisationType.OTHER}
-    # And reusable: the next composer's `Muu` box finds all seven.
-    catalogue = ComposerForm(matter=normal_matter).recipient_catalogue
-    assert set(SEVEN_PARTIES) <= set(catalogue)
 
 
-def test_an_existing_name_is_reused_rather_than_duplicated(signed_in, normal_matter):
+def test_an_existing_name_is_reused_rather_than_duplicated(normal_matter, specialist):
     existing = factories.OrganisationFactory(name="Näidisministeerium Kaks")
     before = Organisation.objects.count()
 
-    _close_with_opinion(signed_in, normal_matter, final_recipient_names=["Näidisministeerium Kaks"])
+    result = _close_with_opinion(
+        normal_matter,
+        specialist,
+        final_opinion={"recipient_names": ["Näidisministeerium Kaks"]},
+    )
 
     assert Organisation.objects.count() == before
-    submission = Submission.objects.get(matter=normal_matter)
-    assert list(submission.recipients.all()) == [existing]
+    assert list(result.submission.recipients.all()) == [existing]
 
 
-def test_an_existing_alias_resolves_to_its_organisation(signed_in, normal_matter):
+def test_an_existing_alias_resolves_to_its_organisation(normal_matter, specialist):
     """An alias match is somebody's recorded decision, not a fuzzy guess."""
     existing = factories.OrganisationFactory(name="Näidisministeerium Kolm")
     OrganisationAlias.objects.create(
@@ -412,150 +448,147 @@ def test_an_existing_alias_resolves_to_its_organisation(signed_in, normal_matter
     )
     before = Organisation.objects.count()
 
-    _close_with_opinion(signed_in, normal_matter, final_recipient_names=["NMK"])
-
-    assert Organisation.objects.count() == before
-    submission = Submission.objects.get(matter=normal_matter)
-    assert list(submission.recipients.all()) == [existing]
-
-
-def test_the_same_name_typed_twice_is_one_recipient(signed_in, normal_matter):
-    _close_with_opinion(
-        signed_in,
-        normal_matter,
-        final_recipient_names=["Näidiserakond Eeta", "  Näidiserakond Eeta  "],
+    result = _close_with_opinion(
+        normal_matter, specialist, final_opinion={"recipient_names": ["NMK"]}
     )
 
-    submission = Submission.objects.get(matter=normal_matter)
-    assert SubmissionRecipient.objects.filter(submission=submission).count() == 1
+    assert Organisation.objects.count() == before
+    assert list(result.submission.recipients.all()) == [existing]
+
+
+def test_the_same_name_typed_twice_is_one_recipient(normal_matter, specialist):
+    result = _close_with_opinion(
+        normal_matter,
+        specialist,
+        final_opinion={"recipient_names": ["Näidiserakond Eeta", "  Näidiserakond Eeta  "]},
+    )
+
+    assert SubmissionRecipient.objects.filter(submission=result.submission).count() == 1
     assert Organisation.objects.filter(name="Näidiserakond Eeta").count() == 1
 
 
-def test_a_shortlist_choice_and_the_same_typed_name_are_one_recipient(signed_in, normal_matter):
+def test_a_chosen_organisation_and_the_same_typed_name_are_one_recipient(normal_matter, specialist):
     existing = factories.OrganisationFactory(name="Näidisministeerium Neli")
 
-    _close_with_opinion(
-        signed_in,
+    result = _close_with_opinion(
         normal_matter,
-        final_recipients=[str(existing.pk)],
-        final_recipient_names=["Näidisministeerium Neli"],
+        specialist,
+        final_opinion={
+            "recipients": [existing],
+            "recipient_names": ["Näidisministeerium Neli"],
+        },
     )
 
-    submission = Submission.objects.get(matter=normal_matter)
-    rows = SubmissionRecipient.objects.filter(submission=submission)
+    rows = SubmissionRecipient.objects.filter(submission=result.submission)
     assert rows.count() == 1
     assert rows.get().organisation == existing
 
 
-def test_similar_names_are_never_merged(signed_in, normal_matter):
+def test_similar_names_are_never_merged(normal_matter, specialist):
     """`Keskkonnaministeerium` and `Kliimaministeerium` score highly against each
     other and are different institutions. Only exact normalised identity reuses."""
     factories.OrganisationFactory(name="Näidisministeerium Viis")
 
-    _close_with_opinion(
-        signed_in, normal_matter, final_recipient_names=["Näidisministeerium Viisteist"]
+    result = _close_with_opinion(
+        normal_matter,
+        specialist,
+        final_opinion={"recipient_names": ["Näidisministeerium Viisteist"]},
     )
 
-    submission = Submission.objects.get(matter=normal_matter)
-    assert SubmissionRecipient.objects.filter(submission=submission).count() == 1
+    assert SubmissionRecipient.objects.filter(submission=result.submission).count() == 1
     assert Organisation.objects.filter(name="Näidisministeerium Viisteist").exists()
     assert Organisation.objects.filter(name="Näidisministeerium Viis").exists()
 
 
-def test_an_ambiguous_name_is_refused_rather_than_guessed(normal_matter):
+def test_an_ambiguous_name_is_refused_rather_than_guessed(normal_matter, specialist):
     """Two institutions under one spelling is a question for a person. Picking
     one files the letter against a body nobody named; creating a third makes the
-    ambiguity permanent (§7D)."""
+    ambiguity permanent."""
     Organisation.objects.create(name="Näidiskogu", organisation_type=OrganisationType.OTHER)
     Organisation.objects.create(name="Näidiskogu", organisation_type=OrganisationType.COMPANY)
     before = Organisation.objects.count()
 
-    form = ComposerForm(
-        {
-            "body": "Arvamus saadeti.",
-            "disposition": Disposition.RESPONSE_COMPLETE,
-            "final_sent_on": "12.08.2026",
-            "final_recipient_names": ["Näidiskogu"],
-            "work_victory": "EI",
-        },
-        {"final_file": _pdf()},
-        matter=normal_matter,
-    )
+    with pytest.raises(DomainError):
+        _close_with_opinion(
+            normal_matter, specialist, final_opinion={"recipient_names": ["Näidiskogu"]}
+        )
 
-    assert not form.is_valid()
-    assert "final_recipient_names" in form.errors
     assert Organisation.objects.count() == before
+    normal_matter.refresh_from_db()
+    assert normal_matter.is_open
 
 
-def test_a_failed_closure_leaves_no_organisations_behind(signed_in, normal_matter):
-    """New recipients are persisted by the save, never by somebody typing (§7E)."""
+def test_a_failed_closure_leaves_no_organisations_behind(normal_matter, specialist):
+    """New recipients are persisted by the save, never by somebody typing.
+
+    Seven good names and one ambiguous one: the ambiguity refuses the whole save,
+    and the seven that would have been created are rolled back with it."""
+    Organisation.objects.create(name="Näidiskogu", organisation_type=OrganisationType.OTHER)
+    Organisation.objects.create(name="Näidiskogu", organisation_type=OrganisationType.COMPANY)
     before = Organisation.objects.count()
 
-    response = _close_with_opinion(
-        signed_in, normal_matter, final_recipient_names=SEVEN_PARTIES, final_sent_on=""
-    )
+    with pytest.raises(DomainError):
+        _close_with_opinion(
+            normal_matter,
+            specialist,
+            final_opinion={"recipient_names": [*SEVEN_PARTIES, "Näidiskogu"]},
+        )
 
-    assert response.status_code == 400
     assert Organisation.objects.count() == before
+    assert not Organisation.objects.filter(name__in=SEVEN_PARTIES).exists()
 
 
 # ---------------------------------------------------------------------------
-# §10 – §13, §23 — Töövõit, and where the commencement date goes
+# Töövõit, and where the commencement date goes
 # ---------------------------------------------------------------------------
 
 
-def test_closing_requires_an_explicit_answer_about_the_work_victory(normal_matter):
-    """No silent default. A Matter closed without anybody answering would count
-    as "no win", which is a claim the person never made (§10)."""
-    form = ComposerForm(
-        {"body": "Menetlus lõppes.", "disposition": Disposition.COMPLETED},
-        matter=normal_matter,
-    )
-
-    assert not form.is_valid()
-    assert "work_victory" in form.errors
-
-
-def test_toovoit_ei_records_no_victory_and_no_commencement(signed_in, normal_matter):
+def test_an_ordinary_closure_records_no_victory_and_no_commencement(signed_in, normal_matter):
     response = _post(
         signed_in,
         normal_matter,
         body="<p>Eelnõu langes ära.</p>",
         disposition=Disposition.INITIATIVE_WITHDRAWN,
-        work_victory="EI",
     )
 
     assert response.status_code == 200
     normal_matter.refresh_from_db()
     assert not normal_matter.is_open
-    # The absence of a victory record is the answer. No negative row (§11).
+    # The absence of a victory record is the answer. No negative row.
     assert not MatterWorkVictory.objects.filter(matter=normal_matter).exists()
     assert not MatterEffectiveDate.objects.filter(matter=normal_matter).exists()
 
 
-def test_toovoit_jah_records_the_victory_and_the_commencement(signed_in, normal_matter):
-    response = _post(
-        signed_in,
-        normal_matter,
+def test_a_closure_may_still_carry_a_victory_and_a_commencement(normal_matter, specialist):
+    """The service contract is unchanged, and the archive importer and any later
+    closing operation still rely on it."""
+    result = compose_update(
+        matter=normal_matter,
+        author=specialist,
         body="<p>Piirmäär tõsteti 2000 euroni.</p>",
-        disposition=Disposition.COMPLETED,
-        work_victory="JAH",
-        victory_effective_on="01.01.2027",
+        closure={
+            "disposition": Disposition.COMPLETED,
+            "reason": "Piirmäär tõsteti 2000 euroni.",
+            "work_victory": {"title": "Piirmäär tõsteti 2000 euroni.", "detail": ""},
+            "effective_date": {
+                "date_value": date(2027, 1, 1),
+                "period_end": date(2027, 1, 1),
+            },
+        },
     )
-    assert response.status_code == 200, response.content.decode()[:3000]
+    assert result.closed
 
     victory = MatterWorkVictory.objects.get(matter=normal_matter)
-    # The wording is the one narrative this save carried (§12).
     assert victory.title == "Piirmäär tõsteti 2000 euroni."
     assert victory.detail == ""
     # The existing governance, unchanged: the manual door records a decision
     # somebody has already made, and `may_review_work_victory` — the authority
-    # to rule on *somebody else's* candidate — is not touched by this form.
+    # to rule on *somebody else's* candidate — is not touched by it.
     assert victory.status == WorkVictoryStatus.CONFIRMED
     assert victory.confirmed_by is not None
     assert victory.confirmed_at is not None
 
-    # §13: the commencement is a MatterEffectiveDate…
+    # The commencement is a MatterEffectiveDate…
     effective = MatterEffectiveDate.objects.get(matter=normal_matter)
     assert effective.kind == EffectiveDateKind.KNOWN_DATE
     assert effective.date_precision == DatePrecision.EXACT
@@ -567,40 +600,9 @@ def test_toovoit_jah_records_the_victory_and_the_commencement(signed_in, normal_
     assert victory.period_end is None
 
 
-def test_toovoit_jah_without_a_commencement_date_is_refused(normal_matter):
-    form = ComposerForm(
-        {
-            "body": "Piirmäär tõsteti.",
-            "disposition": Disposition.COMPLETED,
-            "work_victory": "JAH",
-        },
-        matter=normal_matter,
-    )
-
-    assert not form.is_valid()
-    assert "victory_effective_on" in form.errors
-
-
-def test_toovoit_jah_without_a_body_is_refused_on_the_body(normal_matter):
-    """Rather than inventing a description for a record the department reports
-    on. The error belongs where the missing narrative is (§12)."""
-    form = ComposerForm(
-        {
-            "disposition": Disposition.COMPLETED,
-            "work_victory": "JAH",
-            "victory_effective_on": "01.01.2027",
-        },
-        matter=normal_matter,
-    )
-
-    assert not form.is_valid()
-    assert "body" in form.errors
-    assert not MatterWorkVictory.objects.filter(matter=normal_matter).exists()
-
-
-def test_an_equivalent_commencement_date_is_not_duplicated(signed_in, normal_matter, specialist):
+def test_an_equivalent_commencement_date_is_not_duplicated(normal_matter, specialist):
     """The department may already hold the fact, entered when the act was
-    published. Closing the file does not make it true a second time (§13)."""
+    published. Closing the file does not make it true a second time."""
     existing = add_effective_date(
         matter=normal_matter,
         actor=specialist,
@@ -610,13 +612,19 @@ def test_an_equivalent_commencement_date_is_not_duplicated(signed_in, normal_mat
         date_precision=DatePrecision.EXACT,
     )
 
-    _post(
-        signed_in,
-        normal_matter,
+    compose_update(
+        matter=normal_matter,
+        author=specialist,
         body="<p>Piirmäär tõsteti.</p>",
-        disposition=Disposition.COMPLETED,
-        work_victory="JAH",
-        victory_effective_on="01.01.2027",
+        closure={
+            "disposition": Disposition.COMPLETED,
+            "reason": "Piirmäär tõsteti.",
+            "work_victory": {"title": "Piirmäär tõsteti.", "detail": ""},
+            "effective_date": {
+                "date_value": date(2027, 1, 1),
+                "period_end": date(2027, 1, 1),
+            },
+        },
     )
 
     assert MatterEffectiveDate.objects.filter(matter=normal_matter).count() == 1
@@ -624,12 +632,12 @@ def test_an_equivalent_commencement_date_is_not_duplicated(signed_in, normal_mat
 
 
 # ---------------------------------------------------------------------------
-# §14, §24 — one save, one transaction
+# One save, one transaction
 # ---------------------------------------------------------------------------
 
 
 def test_a_closure_that_fails_late_commits_nothing(
-    signed_in, normal_matter, organisation, monkeypatch
+    normal_matter, specialist, organisation, monkeypatch
 ):
     """Everything the closure writes is inside one transaction, so a refusal
     anywhere leaves the Matter exactly as it was — including the institutions
@@ -642,16 +650,25 @@ def test_a_closure_that_fails_late_commits_nothing(
     monkeypatch.setattr(services, "close_matter", explode)
     before = Organisation.objects.count()
 
-    response = _close_with_opinion(
-        signed_in,
-        normal_matter,
-        final_recipients=[str(organisation.pk)],
-        final_recipient_names=SEVEN_PARTIES,
-        work_victory="JAH",
-        victory_effective_on="01.01.2027",
-    )
+    with pytest.raises(DomainError):
+        _close_with_opinion(
+            normal_matter,
+            specialist,
+            final_opinion={
+                "recipients": [organisation],
+                "recipient_names": SEVEN_PARTIES,
+            },
+            closure={
+                "disposition": Disposition.COMPLETED,
+                "reason": "Arvamus saadeti.",
+                "work_victory": {"title": "Piirmäär tõsteti.", "detail": ""},
+                "effective_date": {
+                    "date_value": date(2027, 1, 1),
+                    "period_end": date(2027, 1, 1),
+                },
+            },
+        )
 
-    assert response.status_code == 400
     normal_matter.refresh_from_db()
     assert normal_matter.is_open
     assert not Entry.objects.filter(matter=normal_matter).exists()
@@ -662,18 +679,26 @@ def test_a_closure_that_fails_late_commits_nothing(
     assert Organisation.objects.count() == before
 
 
-def test_one_save_writes_everything_the_closure_carried(signed_in, normal_matter, organisation):
+def test_one_save_writes_everything_the_closure_carried(normal_matter, specialist, organisation):
     """The property the composer exists for: a closure is not four POSTs."""
-    response = _close_with_opinion(
-        signed_in,
+    _close_with_opinion(
         normal_matter,
+        specialist,
         body="<p>Arvamus esitati ja piirmäär tõusis.</p>",
-        final_recipients=[str(organisation.pk)],
-        final_recipient_names=SEVEN_PARTIES,
-        work_victory="JAH",
-        victory_effective_on="01.01.2027",
+        final_opinion={
+            "recipients": [organisation],
+            "recipient_names": SEVEN_PARTIES,
+        },
+        closure={
+            "disposition": Disposition.COMPLETED,
+            "reason": "Arvamus esitati ja piirmäär tõusis.",
+            "work_victory": {"title": "Piirmäär tõusis.", "detail": ""},
+            "effective_date": {
+                "date_value": date(2027, 1, 1),
+                "period_end": date(2027, 1, 1),
+            },
+        },
     )
-    assert response.status_code == 200, response.content.decode()[:3000]
 
     normal_matter.refresh_from_db()
     assert not normal_matter.is_open
@@ -690,30 +715,23 @@ def test_one_save_writes_everything_the_closure_carried(signed_in, normal_matter
 # ---------------------------------------------------------------------------
 
 
-def test_a_reader_cannot_close_upload_or_create_recipients(client, normal_matter):
-    """One gate, before anything is parsed. A crafted POST from somebody who
-    may not write business content adds no document, no recipient, no victory
-    and no effective date."""
+def test_a_reader_cannot_close_a_matter(client, normal_matter):
+    """One gate, before anything is parsed. A crafted POST from somebody who may
+    not write business content closes nothing and writes nothing."""
     reader = factories.ReaderFactory()
     client.force_login(reader)
-    before = Organisation.objects.count()
 
-    response = _close_with_opinion(
+    response = _post(
         client,
         normal_matter,
-        final_recipient_names=SEVEN_PARTIES,
-        work_victory="JAH",
-        victory_effective_on="01.01.2027",
+        body="<p>Katse.</p>",
+        disposition=Disposition.COMPLETED,
     )
 
     assert response.status_code == 404
     normal_matter.refresh_from_db()
     assert normal_matter.is_open
-    assert not Document.objects.filter(matter=normal_matter).exists()
-    assert not Submission.objects.filter(matter=normal_matter).exists()
-    assert not MatterWorkVictory.objects.filter(matter=normal_matter).exists()
-    assert not MatterEffectiveDate.objects.filter(matter=normal_matter).exists()
-    assert Organisation.objects.count() == before
+    assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
 def test_a_closure_on_an_invisible_matter_is_a_404(client, restricted_matter):
@@ -733,23 +751,27 @@ def test_a_closure_on_an_invisible_matter_is_a_404(client, restricted_matter):
     outsider = factories.AdministratorFactory()
     client.force_login(outsider)
 
-    response = _close_with_opinion(client, restricted_matter, final_recipient_names=["Näidissaaja"])
+    response = _post(
+        client,
+        restricted_matter,
+        body="<p>Katse.</p>",
+        disposition=Disposition.COMPLETED,
+    )
 
     assert response.status_code == 404
     restricted_matter.refresh_from_db()
     assert restricted_matter.is_open
-    assert not Document.objects.filter(matter=restricted_matter).exists()
+    assert not Entry.objects.filter(matter=restricted_matter).exists()
 
 
-def test_final_evidence_is_never_broader_than_its_matter(signed_in, restricted_matter):
+def test_final_evidence_is_never_broader_than_its_matter(restricted_matter, specialist):
     """DATA-001/DATA-002: the file is created on this Matter and inherits it, so
     the upload cannot widen what the closure's own evidence discloses."""
     from app.core.enums import Visibility
 
-    response = _close_with_opinion(
-        signed_in, restricted_matter, final_recipient_names=["Näidissaaja"]
+    _close_with_opinion(
+        restricted_matter, specialist, final_opinion={"recipient_names": ["Näidissaaja"]}
     )
-    assert response.status_code == 200, response.content.decode()[:3000]
 
     document = Document.objects.get(matter=restricted_matter)
     submission = Submission.objects.get(matter=restricted_matter)

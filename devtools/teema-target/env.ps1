@@ -5,12 +5,12 @@
 # port on Windows and the older one keeps answering, which serves stale
 # templates from a stale database.
 #
-# Dot-source it:  . devtools\matter-refinement\env.ps1
+# Dot-source it:  . devtools\teema-target\env.ps1
 
 $env:PATH = "C:\Program Files\Git\cmd;C:\Program Files\Git\bin;$env:PATH"
 
 $env:DJANGO_DEBUG = '1'
-$env:DJANGO_SECRET_KEY = 'matter-refinement-local-only'
+$env:DJANGO_SECRET_KEY = 'teema-target-local-only'
 $env:DEV_LOGIN_ENABLED = '1'
 $env:POSTGRES_DB = 'juristid_mpr'
 $env:POSTGRES_USER = 'juristid'

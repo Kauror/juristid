@@ -5,7 +5,7 @@ baselines come from the CI container, where the fonts rasterise differently;
 these captures are for looking at, and for the side-by-side against the
 approved preview.
 
-    uv run python devtools/matter-refinement/capture.py --matter <uuid>
+    uv run python devtools/teema-target/capture.py --matter <uuid>
 """
 
 from __future__ import annotations
@@ -56,10 +56,12 @@ def main() -> int:
         page.screenshot(path=str(OUT / "real-1560-full.png"), full_page=True)
         print("  real-1560x991.png / real-1560-full.png")
 
-        page.locator(".uxnext__text").click()
+        # The composer is open on arrival now, so this closes it — which is the
+        # other half of the row's toggle and worth a frame of its own.
+        page.locator(".uxnext__label").click()
         page.wait_for_timeout(250)
-        page.screenshot(path=str(OUT / "real-composer-open.png"), full_page=True)
-        print("  real-composer-open.png")
+        page.screenshot(path=str(OUT / "real-composer-toggled.png"), full_page=True)
+        print("  real-composer-toggled.png")
 
         page.goto(url)
         settle(page)
@@ -70,10 +72,12 @@ def main() -> int:
 
         page.goto(url)
         settle(page)
-        page.locator(".factspanel .factrow").first.hover()
-        page.wait_for_timeout(300)
-        page.screenshot(path=str(OUT / "real-factrow-hover.png"))
-        print("  real-factrow-hover.png")
+        # A composer panel, open. The approved target's structured facts are
+        # entered here rather than from a standing panel (docs/adr/0074 §15).
+        page.locator("#cx-kaasamine > summary").click()
+        page.wait_for_timeout(250)
+        page.screenshot(path=str(OUT / "real-panel-open.png"), full_page=True)
+        print("  real-panel-open.png")
 
         print()
         failures = []
@@ -97,7 +101,7 @@ def main() -> int:
             # viewport-relative number says how wide the screen is rather than
             # whether the design's 32px edge holds (ultrawide workspace pass).
             edge = page.evaluate(
-                "(() => { const e = document.querySelector('.factspanel .sectionlabel');"
+                "(() => { const e = document.querySelector('.uxnext__label');"
                 " const m = document.querySelector('.teemamain');"
                 " if (!e || !m) return -1;"
                 " return Math.round(e.getBoundingClientRect().left"

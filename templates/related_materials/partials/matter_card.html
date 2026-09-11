@@ -36,7 +36,7 @@ decisions are explicit buttons (docs/adr/0062 §6, §7).
           {% csrf_token %}
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="teema" value="{{ item.matter.pk }}">
-          <button class="button button--tiny" type="submit">Seo teemaga</button>
+          <button class="button button--quiet button--tiny" type="submit">Lisa</button>
         </form>
         <form method="post" action="{% url 'related_materials:dismiss' pk=matter.pk %}"
               hx-post="{% url 'related_materials:dismiss' pk=matter.pk %}"

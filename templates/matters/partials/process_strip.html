@@ -1,0 +1,37 @@
+{% comment %}
+`Teema käik` — the horizontal process timeline, first thing inside the `Ajajoon`
+body and above the chronology. You see where the matter stands before you scroll
+anything (TEEMA_TARGET_SPEC §D).
+
+Three states and one grammar: a completed milestone draws a filled accent dot and
+an accent connector; the current one draws a hollow ringed dot and a grey
+connector; a future one draws a hollow muted dot and a grey connector. So the
+accent line stops at the dot the file has reached, and the strip says how far
+along it is without a word.
+
+**Only the milestones this Matter actually has.** Six evenly-shared columns is
+what the design's demonstration Matter happened to hold, not a fixed rail every
+file is measured against — `app/matters/process_timeline.py` derives the columns
+from canonical records and returns nothing at all for a Matter that has none.
+
+Rendered only when there is something to render. A strip is a comparison, and a
+heading over an empty grid would read as a data-quality problem.
+{% endcomment %}
+{% if process_steps %}
+  <div class="tl-strip" aria-label="Teema käik">
+    {% for step in process_steps %}
+      <span class="tl-step {% if step.is_current %}is-current{% elif step.is_todo %}is-todo{% endif %}">
+        <span class="tl-step__dot" aria-hidden="true"></span>
+        <span class="tl-step__what">{{ step.label }}</span>
+        {% comment %}
+          `1.7.2026 · praegu`, `30.9.2026 · 21 p`, `12.5.2026`, or nothing —
+          composed in `ProcessStep.date_line` so the strip never manufactures a
+          day for a stage whose transition date nobody recorded.
+        {% endcomment %}
+        {% if step.date_line %}
+          <span class="tl-step__date">{{ step.date_line }}</span>
+        {% endif %}
+      </span>
+    {% endfor %}
+  </div>
+{% endif %}

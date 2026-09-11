@@ -203,6 +203,137 @@
     });
   }
 
+  /* ---- The Järgmiseks row opens the composer -----------------------------
+   * The row says what is owed and the box below it is where the answer is
+   * written, so reaching one from the other should not need aim: a click
+   * anywhere on the row toggles the composer, and opening it focuses the first
+   * textarea.
+   *
+   * Clicks on a button, a link or a form inside the row do nothing here. Those
+   * are «✓ Tehtud» and «Muuda», which have their own jobs — and «✓ Tehtud»
+   * swapping this row while the click also collapsed the composer underneath
+   * would throw away whatever somebody had typed into it (ADR 0052 §8).
+   *
+   * Bound per row rather than on the document, because the row is an HTMX swap
+   * target: a delegated listener would survive the swap, and `once` on the new
+   * element is what keeps one listener per rendering.
+   */
+  function bindComposerToggle(scope) {
+    scope.querySelectorAll("[data-koostaja-toggle]").forEach(function (row) {
+      if (!once(row, "KoostajaToggle")) {
+        return;
+      }
+      row.addEventListener("click", function (event) {
+        if (event.target.closest && event.target.closest("button, a, form, label, input, select, textarea")) {
+          return;
+        }
+        var main = row.closest(".teemamain");
+        var composer = main && main.querySelector("details.composer");
+        if (!composer) {
+          return;
+        }
+        composer.open = !composer.open;
+        if (composer.open) {
+          var box = composer.querySelector("textarea");
+          if (box) {
+            box.focus();
+          }
+        }
+      });
+    });
+  }
+
+  /* ---- Single-select chip groups inside the composer panels --------------
+   * `Täpsus`, `Liik` and `Kuidas lõppes` are chips over a hidden input, which
+   * is the field that is actually submitted and validated — the chip is a
+   * faster way to choose a value and nothing more, exactly like the quick
+   * dates above it.
+   *
+   * With no script the hidden input still carries whatever the server rendered:
+   * `EXACT` for a precision, the first kind for an engagement, and nothing at
+   * all for a closure, which is the value that means «nobody has answered».
+   */
+  function bindChipGroups(scope) {
+    scope.querySelectorAll("[data-chipgroup]").forEach(function (group) {
+      if (!once(group, "ChipGroup")) {
+        return;
+      }
+      var name = group.getAttribute("data-chipgroup");
+      var field = group.querySelector("input[name='" + name + "']");
+      if (!field) {
+        return;
+      }
+      var chips = group.querySelectorAll("[data-chipvalue]");
+      var sync = function () {
+        chips.forEach(function (chip) {
+          var chosen = chip.getAttribute("data-chipvalue") === field.value;
+          chip.classList.toggle("is-selected", chosen);
+          chip.setAttribute("aria-pressed", chosen ? "true" : "false");
+        });
+      };
+      chips.forEach(function (chip) {
+        chip.addEventListener("click", function () {
+          field.value = chip.getAttribute("data-chipvalue");
+          field.dispatchEvent(new Event("change", { bubbles: true }));
+          sync();
+        });
+      });
+      sync();
+    });
+  }
+
+  /* ---- The file affordance -----------------------------------------------
+   * The dashed box is a `<label>` over a hidden file input, so choosing a file
+   * works with no script at all. This adds the two things a script can add:
+   * dragging a file onto it, and saying which file was chosen.
+   *
+   * The prompt is restored on an empty selection, so clearing the picker does
+   * not leave the box claiming a file that is no longer attached.
+   */
+  function bindFileDrop(scope) {
+    scope.querySelectorAll("[data-filedrop]").forEach(function (drop) {
+      if (!once(drop, "FileDrop")) {
+        return;
+      }
+      var field = drop.querySelector("input[type=file]");
+      var text = drop.querySelector("[data-filedrop-text]");
+      if (!field || !text) {
+        return;
+      }
+      var prompt = text.innerHTML;
+      var show = function () {
+        var chosen = field.files && field.files.length ? field.files[0].name : "";
+        drop.classList.toggle("is-chosen", Boolean(chosen));
+        if (chosen) {
+          text.textContent = chosen;
+        } else {
+          text.innerHTML = prompt;
+        }
+      };
+      field.addEventListener("change", show);
+      ["dragenter", "dragover"].forEach(function (name) {
+        drop.addEventListener(name, function (event) {
+          event.preventDefault();
+          drop.classList.add("is-dragover");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (name) {
+        drop.addEventListener(name, function () {
+          drop.classList.remove("is-dragover");
+        });
+      });
+      drop.addEventListener("drop", function (event) {
+        if (!event.dataTransfer || !event.dataTransfer.files.length) {
+          return;
+        }
+        event.preventDefault();
+        field.files = event.dataTransfer.files;
+        show();
+      });
+      show();
+    });
+  }
+
   /* ---- Minu töö: J/K move, X completes, Enter opens ----------------------
    * The visible equivalents are all on the row already: the ✓ button, the ⋯
    * menu and the row's own link. The hint strip under the list says so.
@@ -451,6 +582,9 @@
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     bindQuickDates(root);
+    bindComposerToggle(root);
+    bindChipGroups(root);
+    bindFileDrop(root);
     bindWorkRows(root);
     bindExclusivePopovers(root);
     bindCopyLink(root);

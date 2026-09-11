@@ -1,71 +1,54 @@
 {% comment %}
-The main `Teema` view: everything about the situation, the work, the position,
-the engagement and the history, in the order a lawyer reads them.
-
-This whole block is what the composer swaps. Re-rendering the surface from one
-set of queries means the prominent action, the timeline and the sent-opinion
-strip cannot disagree about the save that just happened.
-
-**The 2026-09 refinement changed the order and the grouping, not the contents.**
-The column used to carry seven sibling blocks of equal weight, so a reader could
-not tell at a glance which of them was an action, which a fact and which
-history — and the chronology, which is what a lawyer actually opens the file
-for, started below the fold. There are now three zones on three grounds:
+The main `Teema` view: three zones, in the order a lawyer reads them.
 
   A  `JÄRGMISEKS` + the composer   one action unit, one accent edge
-  B  the facts panel               dated obligations, then Kaasamine
-  C  `Ajajoon`                     the record, on the page's own ground
+  C  `Ajajoon`                     the process strip, then the chronology
+  B  the rail                       slow-changing facts, looked up not read
 
-`Seotud materjalid` moved out of this column into the facts rail: it is look-up
-material, not something read in sequence. Nothing about it changed but where it
-sits (design handoff `09-differences-and-non-goals.md` §6).
+This whole block is what the composer swaps. Re-rendering the surface from one
+set of queries means the prominent action, the process strip and the chronology
+cannot disagree about the save that just happened.
 
-`Koja arvamus` is in the facts rail — the opinion Koda sent, as the file it is.
-There is no separate free-text `Koja seisukoht` block here or there any more:
-the Chamber's output on a Matter is the letter, and a summary of it beside it
-was two answers to one question. The send is also an event in `Ajajoon`.
+**The approved target removed Zone B from this column.** There is no
+`.factspanel` between the composer and `Ajajoon` and no standalone `Kaasamine`
+section anywhere on the page. The four structured facts those sections showed —
+`Oluline tähtaeg`, `Jõustumine`, `Töövõit`, `Kaasamine` — are entered through the
+composer's five panels and read through the process strip and the chronology,
+which is where a dated fact belongs. A standing section held open on every load
+cost a screenful to say "none yet" on most Matters (TEEMA_TARGET_SPEC §A, §F,
+docs/adr/0074 §15).
+
+**The records are untouched.** `MatterImportantDate`, `MatterEffectiveDate`,
+`MatterWorkVictory` and `MatterEngagement` are still canonical, still written by
+their own services, still audited and still read everywhere else they were.
+Only their entry and reading surface on this page changed.
+
+`Seotud materjalid` and `Koja arvamus` are in the rail — look-up material rather
+than something read in sequence. There is no separate free-text `Koja seisukoht`
+block: the Chamber's output on a Matter is the letter it sent.
 
 There are no permanently visible empty sections. A Matter with no summary, no
-next step, no engagement and no opinion renders as a short, deliberate page
-(Teema redesign §4, §24).
+next step and no history renders as a short, deliberate page.
 {% endcomment %}
 <div class="teemagrid" id="teema-vaade">
   <div class="teemamain">
+    {% comment %}
+      The special-state banner: archive, restriction, historical provenance. Not
+      presentation the target supersedes — it is required only where it is true,
+      and it renders nothing on the normal open Matter the target demonstrates
+      (implementation brief §52).
+    {% endcomment %}
     {% include "matters/partials/matter_banner.html" %}
 
     {% comment %}
-      Zone A. Two surfaces the refinement reads as one act: the row states what
-      is owed, the composer is where the answer is written, and clicking the row
-      opens the composer. They share a ground and one 3px accent edge; neither
-      is a card in a gutter any more (handoff §23, §24).
+      Zone A. Two surfaces read as one act: the row states what is owed, the
+      composer is where the answer is written, and clicking the row opens the
+      composer. They share a ground and one 3 px accent edge.
     {% endcomment %}
     {% include "matters/partials/next_action_row.html" %}
 
     {% if matter.is_open and can_write %}
       {% include "matters/partials/composer.html" %}
-    {% endif %}
-
-    {% comment %}
-      Zone B. One panel surface carrying the Matter's dated facts, in the order
-      they are worth reading: what is owed, when things commence, what was won,
-      and who was consulted.
-
-      **Two swap targets inside one visual panel, deliberately.** `#teema-faktid`
-      belongs to `app.intelligence` and `#kaasamine` to `app.matters`, and each
-      re-renders itself in place. Nesting Kaasamine inside the intelligence
-      wrapper would have made an `+ Jõustumine` save silently delete it — the
-      panel is a surface, not an owner (docs/adr/0065).
-
-      Every section inside still renders only when it holds something. The four
-      permanently visible empty headings this page used to carry are gone, and
-      the panel itself disappears on a Matter with no dated facts at all
-      (Stage-2G brief 36, Teema redesign §3, §13).
-    {% endcomment %}
-    {% if intelligence.has_dates or intelligence.has_effective_dates or intelligence.has_work_victories or engagements or can_write %}
-      <div class="factspanel">
-        {% include "intelligence/partials/matter_facts.html" %}
-        {% include "matters/partials/engagement.html" %}
-      </div>
     {% endif %}
 
     {% if historical %}
@@ -89,9 +72,9 @@ next step, no engagement and no opinion renders as a short, deliberate page
     {% endif %}
 
     {% comment %}
-      Zone C. The record, last and open, on the page's own ground rather than on
-      a panel of its own: it is the longest thing here and it should read as the
-      page continuing rather than as one more box (handoff §7).
+      Zone C. Where the file stands, then what has happened — on the page's own
+      ground rather than on a panel of its own: it is the longest thing here and
+      should read as the page continuing rather than as one more box.
     {% endcomment %}
     {% include "matters/partials/timeline.html" %}
   </div>

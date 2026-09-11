@@ -111,6 +111,7 @@ from app.matters.my_work import (
     horizon_from,
     view_from,
 )
+from app.matters.process_timeline import process_steps
 from app.matters.services import (
     acknowledge_assignment_notice,
     add_engagement,
@@ -120,7 +121,7 @@ from app.matters.services import (
     close_matter,
     compose_update,
     create_matter,
-    personal_note_for,
+    personal_note_record,
     reopen_matter,
     resolve_addressee,
     resolve_source_organisations,
@@ -142,8 +143,6 @@ from app.matters.services import (
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
     TIMELINE_FILTERS,
-    collapse_system_runs,
-    latest_authored,
     matter_timeline,
 )
 from app.organisations.models import Organisation
@@ -1887,8 +1886,17 @@ def _timeline_filter(request: HttpRequest) -> str:
 
 def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     timeline_only = _timeline_filter(request)
+    # One scoped read of the structured facts, shared by the chronology, the
+    # process strip and whatever else asks. Built before the timeline rather than
+    # beside it so the three surfaces cannot ask differently scoped questions
+    # about one Matter — the rule `matter_intelligence` itself was written for.
+    intelligence = matter_intelligence(matter, request.user)
     items, has_more = matter_timeline(
-        matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, only=timeline_only
+        matter=matter,
+        user=request.user,
+        limit=TIMELINE_PAGE_SIZE,
+        only=timeline_only,
+        intelligence=intelligence,
     )
     engagements = selectors.matter_engagements(matter, request.user)
     # `selectors.current_action_of`, not `workflow.services.current_next_action`.
@@ -1911,13 +1919,15 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
-        # What the spine renders: the same items, with adjacent system events
-        # folded into one row each. The flat list stays beside it because the
-        # closed summary counts lines rather than rows (app/matters/timeline.py).
-        "timeline_rows": collapse_system_runs(items),
-        # The last thing a colleague actually wrote, for the closed summary. A
-        # system row would quote the application back at the reader.
-        "timeline_preview": latest_authored(items),
+        # `Teema käik` — where the file stands, above the chronology. Derived
+        # from the same scoped facts the chronology reads, so a restricted child
+        # cannot change a column, a connector or an ordering
+        # (app/matters/process_timeline.py, docs/adr/0074 §12).
+        "process_steps": process_steps(matter=matter, user=request.user, intelligence=intelligence),
+        # No `timeline_rows` and no `timeline_preview`. The approved target has
+        # two row kinds and no folded system runs, and its `Ajajoon` head is the
+        # label and the count — the preview sentence and the duplicated current
+        # step are gone from it (docs/adr/0074 §16).
         "timeline_has_more": has_more,
         "timeline_count": len(items) + (1 if has_more else 0),
         "timeline_only": timeline_only,
@@ -1929,7 +1939,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "historical": _historical_context(matter, request.user),
         # Stage 2G's structured facts. Read through their own selector, which
         # scopes them like every other child record.
-        "intelligence": matter_intelligence(matter, request.user),
+        "intelligence": intelligence,
         # Seotud materjalid: the confirmed relations and chosen background,
         # scoped to this reader. Two queries; the suggestions are not read
         # here at all (app/related_materials/selectors.py).
@@ -2002,6 +2012,9 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
 def _header_context(
     request: HttpRequest, matter: Matter, *, milestones: Any = None
 ) -> dict[str, Any]:
+    # One read for the private note: its body fills the box and its `updated_at`
+    # fills `Salvestatud HH:mm`.
+    note_record = personal_note_record(matter=matter, author=request.user)
     return {
         "matter": matter,
         # No `submission_count`. The tab that displayed it is gone, and a count
@@ -2037,7 +2050,17 @@ def _header_context(
         # than by the template picking whichever field is non-empty.
         # `milestones` when the caller has already read them, which the Matter
         # page has: `Olulised tähtajad` renders from the same rows.
+        # **The header's `Tähtaeg` is `Arvamuse tähtaeg`, and only that.** The
+        # approved target reads `Saabus` and `Tähtaeg` as a pair — when it
+        # arrived, when Koda's answer is due — so the slot cannot be filled by
+        # whichever `MatterImportantDate` happens to be nearest
+        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2).
+        #
+        # `active_deadline` is untouched and still answers the broader question
+        # for the surfaces that want it; `milestones` is still passed so it costs
+        # no second query where it is read.
         "active_deadline": selectors.active_deadline(matter, request.user, milestones=milestones),
+        "response_deadline": selectors.response_deadline_of(matter, request.user),
         "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
         # The rail travels with the header — it is on all three Matter surfaces
         # — so the private note and the write flag are read here rather than
@@ -2048,8 +2071,12 @@ def _header_context(
         # Märkmed".
         "note_form": PersonalNoteForm(
             prefix=NOTE_PREFIX,
-            initial={"body": personal_note_for(matter=matter, author=request.user)},
+            initial={"body": note_record.body if note_record is not None else ""},
         ),
+        # When this reader's own note was last written, for the `Salvestatud
+        # HH:mm` hint. `None` on a Matter they have never made a note on, and the
+        # hint renders nothing at all rather than a placeholder.
+        "note_saved_at": note_record.updated_at if note_record is not None else None,
         "can_write": may_write_business_content(request.user),
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over.
@@ -3205,24 +3232,38 @@ def update_summary(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def save_note(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Autosave the private `Märkmed` draft.
+    """Autosave the private `Märkmed` draft, and say when it landed.
 
-    Returns 204 and swaps nothing. The person is mid-sentence: replacing the
-    textarea they are typing into would move their cursor, and there is nothing
-    to show them anyway — the note is theirs, it is not history, and it does not
-    appear anywhere else on the page (Teema redesign §22.4).
+    **The textarea is never swapped.** The person is mid-sentence, and replacing
+    the box they are typing into would move their cursor. What comes back is the
+    hint beside it — `Salvestatud 14:16` — which is the approved target's whole
+    feedback for this control now that it has no save button
+    (TEEMA_TARGET_SPEC §G.4, docs/adr/0074 §18).
+
+    It used to answer 204 and swap nothing, on the reasoning that there was
+    nothing to show. There was, and the target names it: a box that saves
+    silently and has no button is a box a person cannot tell has saved.
+
+    A refusal still answers 400 and htmx still swaps nothing on it, so a failed
+    save leaves the previous time in place rather than claiming one that did not
+    happen. The note is still private, still one row per author, and still
+    writes no `ChangeEvent` (app/matters/services.py).
     """
     matter = get_visible_matter(request, pk)
     form = PersonalNoteForm(request.POST, prefix=NOTE_PREFIX)
     if not form.is_valid():
         return HttpResponse(status=400)
     try:
-        save_personal_note(
+        record = save_personal_note(
             matter=matter, author=request.user, body=form.cleaned_data.get("body") or ""
         )
     except DomainError:
         return HttpResponse(status=400)
-    return HttpResponse(status=204)
+    return render(
+        request,
+        "matters/partials/note_saved.html",
+        {"note_saved_at": record.updated_at},
+    )
 
 
 @login_required
@@ -3300,7 +3341,7 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
         "matters/partials/timeline_items.html",
         {
             "matter": matter,
-            "timeline_rows": collapse_system_runs(items),
+            "timeline_items": items,
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
             "timeline_only": only,
