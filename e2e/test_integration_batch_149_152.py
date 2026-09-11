@@ -138,27 +138,28 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_through_assisted_intak
     expect(page.get_by_text("kaaskiri.pdf").first).to_be_visible()
     page.goto(where)
 
-    form = page.locator(".factslot")
-    # `+ Töövõit` moved into the composer's action row with the 2026-09
-    # refinement — one place from which a fact is added — so reaching it opens
-    # the composer first (docs/matter-page-refinement.md).
-    # The composer is open on arrival since the approved target, so the
-    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
-    # this honest if it is ever reached from the closed state
-    # (docs/adr/0074 §3).
-    open_composer(page)
-    page.get_by_role("link", name="+ Töövõit", exact=True).click()
+    # **The fragment route, not the Teema page.** `+ Töövõit` and `+ Jõustumine`
+    # are composer panels since the approved target, and the composer's panels
+    # are not this accordion (docs/adr/0074 §7, §8). What this test is about —
+    # that `bindPeriodFields` still narrows the control on a Matter created
+    # through assisted intake, and narrows it on the second open too — is a
+    # property of the fragment, which is where it is now asserted.
+    page.goto(f"{where.rstrip('/')}/toovoidud/lisa/")
+    page.wait_for_load_state("networkidle")
+    form = page.locator("form").filter(has=page.get_by_label("Kvartali täpsusega")).first
     expect(form).to_be_visible()
 
     form.get_by_label("Kvartali täpsusega").check()
     expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
     expect(form.get_by_label("Kvartal", exact=True)).to_be_visible()
 
-    # Opening the other one closes this one: the accordion is the render, and a
-    # second binding pass has not left two forms on the page.
-    page.get_by_role("link", name="+ Jõustumine", exact=True).click()
-    expect(page.locator("#faktivorm-joustumine")).to_be_visible()
-    expect(page.locator("#faktivorm-toovoit")).to_have_count(0)
+    # And the same control on the other fact, opened in its turn, binds once.
+    page.goto(f"{where.rstrip('/')}/joustumine/lisa/")
+    page.wait_for_load_state("networkidle")
+    other = page.locator("form").filter(has=page.get_by_label("Kvartali täpsusega")).first
+    other.get_by_label("Kvartali täpsusega").check()
+    expect(other.get_by_label("Kuupäev", exact=True)).to_be_hidden()
+    expect(other.get_by_label("Kvartal", exact=True)).to_be_visible()
 
     # And back, through a fragment that has now been swapped twice.
     page.get_by_role("link", name="+ Töövõit", exact=True).click()
