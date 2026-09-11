@@ -120,11 +120,28 @@ lists and the suggestions cannot disagree about the click that just happened.
       re-opening it through a swap. The form still submits as a plain GET to the
       section's own page, so it works with scripting off.
     {% endcomment %}
+    {% comment %}
+      **The suggestions load into their own slot, not over the whole section.**
+
+      Asking the summary to swap `#seotud-materjalid` replaced the search box a
+      fraction of a second after the disclosure opened — so anything typed
+      straight away was lost to the swap, which the browser lane caught as a
+      search that returned nothing. `hx-select` takes just the suggestion block
+      out of the same response and puts it where the placeholder is; the search
+      box is never re-rendered and the disclosure opens natively and instantly.
+
+      `toggle once`, so the ranking runs on the first open and never again on
+      this page — which is the whole reason it is behind a disclosure
+      (docs/adr/0062 §7, docs/adr/0074 §21).
+    {% endcomment %}
     <details class="disclosure disclosure--inline relatedmaterials__picker" id="lisa-seotud-teema"
+             {% if not suggestions_open %}hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1"
+             hx-trigger="toggle once"
+             hx-select="#voimalikud-seosed"
+             hx-target="#voimalikud-seosed"
+             hx-swap="outerHTML"{% endif %}
              {% if suggestions_open or picker_query %}open{% endif %}>
-      <summary class="disclosure__summary"
-               {% if not suggestions_open %}hx-get="{% url 'related_materials:section' pk=matter.pk %}?avatud=1"
-               hx-target="#seotud-materjalid" hx-swap="outerHTML"{% endif %}>Lisa</summary>
+      <summary class="disclosure__summary">Lisa</summary>
       <div class="disclosure__body">
         <form class="relatedmaterials__search" method="get"
               action="{% url 'related_materials:section' pk=matter.pk %}"
@@ -142,7 +159,15 @@ lists and the suggestions cannot disagree about the click that just happened.
         <div id="seotud-teema-otsing">
           {% include "related_materials/partials/picker_results.html" %}
         </div>
-        {% include "related_materials/partials/suggestions.html" %}
+        {% comment %}
+          The slot the ranking arrives in. Empty until the disclosure asks for
+          it, and the element itself has to exist for `hx-target` to find it.
+        {% endcomment %}
+        {% if suggestions_open %}
+          {% include "related_materials/partials/suggestions.html" %}
+        {% else %}
+          <div id="voimalikud-seosed"></div>
+        {% endif %}
       </div>
     </details>
   {% else %}
