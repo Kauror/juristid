@@ -243,7 +243,35 @@
         {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
       </fieldset>
 
-      {% include "matters/partials/sender_control.html" with list_id="saatja-nimekiri" %}
+      {% comment %}
+        Saatja, as one control rather than three.
+
+        `sender_control.html` still exists and still renders the shortlist, the
+        «Vali nimekirjast» disclosure and a separate «Uus saatja» box — on
+        `Muuda teemat` and `Saabunud`, which were not part of this decision and
+        whose interaction contract is not identical to this one (a form that
+        edits a saved Matter arrives with its answer already given). Changing
+        the shared partial would have redesigned two surfaces nobody reviewed,
+        so `Uus teema` renders its own picker and the other two are untouched
+        (task §26, docs/adr/0073).
+
+        `data-sender-chips` marks the row the Adressaat default reads: ticking a
+        sender here *is* answering Adressaat, because it is the same
+        `Organisation` — one catalogue, two questions about it (static/js/app.js
+        `bindAddresseeDefault`, docs/adr/0069).
+      {% endcomment %}
+      <fieldset class="field senderpick">
+        <legend class="field__label">
+          {{ form.source_organisations.label }}
+          <span class="field__count" data-chipcount-for="source_organisations"></span>
+        </legend>
+        {% include "matters/partials/organisation_picker.html" with picker_id="saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True sender_row=True typed_hook="sender" %}
+        {% if form.source_organisations.errors %}
+          <span class="field__error">{{ form.source_organisations.errors|first }}</span>
+        {% elif form.source_organisations_other.errors %}
+          <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
+        {% endif %}
+      </fieldset>
     </div>
 
     {# 5 — Valdkonnad. #}
@@ -466,87 +494,27 @@
           </summary>
           <div class="createform__addressee">
             {% comment %}
-              One value, so one radio group — rendered in two places. The bodies
-              this department answers most often are chips; the rest are in the
-              disclosure, under the same name, because a group holding one value
-              cannot be split into two fields without splitting the value.
+              The same picker Saatja uses, one value instead of many.
 
-              The approved design draws this as a multi-select mirroring what
-              ADR 0025 did for senders, and offers the single-value chip group as
-              the version to ship if the migration is not wanted yet. This is that
-              version: the layout is the design's, the cardinality is the model's,
-              and whether a Matter may be answered to two bodies at once is left as
-              a decision rather than made as a side effect of a form redesign
-              (Uus teema redesign §5, ADR 0032).
+              What used to be here was a chip row, a nested «Vali nimekirjast»
+              disclosure holding a search box, and a separate «Uus adressaat»
+              field — a second disclosure inside a disclosure, and three ways to
+              answer one question. Opening Adressaat now shows the search box
+              first and nothing is folded away inside it (task §3, §12).
+
+              **The outer fold stays.** The field is normally *answered* by the
+              time somebody reaches it — a file that arrived from X is answered
+              to X — so the ordinary visit has nothing to do here and the summary
+              says what the answer is. That decision is docs/adr/0069's and this
+              round does not revisit it (task §3).
+
+              **And the cardinality stays.** `Matter` holds one addressee, so
+              this is one radio group; Saatja is checkboxes because a Matter
+              really can arrive from several bodies at once. Whether a file may
+              be answered to two bodies at once is still a decision to be taken
+              rather than a side effect of a form redesign (ADR 0025, task §7).
             {% endcomment %}
-            <div class="chiprow" data-clears="addressee_organisation"
-                 data-clears-field="{{ form.addressee_name.id_for_label }}">
-              {% for choice in form.addressee_organisation %}
-                {% if form.addressee_split is None or forloop.counter0 < form.addressee_split %}
-                  <label class="chip">
-                    {{ choice.tag }}
-                    <span class="chip__name">{{ choice.choice_label }}</span>
-                  </label>
-                {% endif %}
-              {% endfor %}
-
-              {% if form.addressee_tail_count %}
-                {% comment %}
-                  `chipdetails--stretch`: when the paired row stacks, this
-                  disclosure fills the Adressaat field rather than shrink-wrapping
-                  into a narrow island beside a large empty area. Scoped to this
-                  control rather than applied to every `chipdetails` in the
-                  application (static/css/app.css, narrow breakpoint).
-                {% endcomment %}
-                <details class="chipdetails chipdetails--stretch">
-                  <summary class="chipdetails__summary">
-                    Vali nimekirjast ({{ form.addressee_tail_count }})
-                  </summary>
-                  <div class="chipdetails__body">
-                    <label class="field chipdetails__search" data-choicefilter="adressaat-nimekiri">
-                      <span class="visually-hidden">Otsi asutust</span>
-                      <input class="field__input field__input--compact" type="search"
-                             autocomplete="off" placeholder="Otsi asutust nime järgi">
-                    </label>
-                    <div class="chiprow" id="adressaat-nimekiri">
-                      {% for choice in form.addressee_organisation %}
-                        {% comment %}
-                          `addressee_split` is never None here: a tail count of
-                          zero is what makes this whole block unrendered.
-                        {% endcomment %}
-                        {% if forloop.counter0 >= form.addressee_split %}
-                          <label class="chip">
-                            {{ choice.tag }}
-                            <span class="chip__name">{{ choice.choice_label }}</span>
-                          </label>
-                        {% endif %}
-                      {% endfor %}
-                    </div>
-                  </div>
-                </details>
-              {% endif %}
-            </div>
-            {% comment %}
-              Free entry, outside the disclosure and always present.
-
-              Outside, because a catalogue small enough to have no long tail renders
-              no disclosure at all, and the capability must not disappear with it.
-              Always present, because it is the answer to "the body I need is not on
-              this page" and hiding that answer behind a click is the workflow this
-              round removed.
-
-              Its own control, never a `name` on the search box above: that box is a
-              client-side filter, and posting whatever is left in it would turn a
-              half-typed «Kliima» into an institution while the person was selecting
-              `Kliimaministeerium` from the list it filtered (§10, app/matters/forms.py).
-            {% endcomment %}
-            <label class="field createform__newname">
-              <span class="field__label">{{ form.addressee_name.label }}</span>
-              {{ form.addressee_name }}
-              {% if form.addressee_name.errors %}
-                <span class="field__error">{{ form.addressee_name.errors|first }}</span>
-              {% endif %}
-            </label>
+            {% include "matters/partials/organisation_picker.html" with picker_id="adressaat" legend=form.addressee_organisation.label chips=form.addressee_chip_choices tail=form.addressee_tail_choices typed_field=form.addressee_name add_label="Lisa uus adressaat" single=True clears_group="addressee_organisation" typed_hook="addressee" %}
             {% if form.addressee_organisation.errors %}
               <span class="field__error">{{ form.addressee_organisation.errors|first }}</span>
             {% endif %}

@@ -53,8 +53,35 @@ def a_new_name() -> str:
 
 
 SENDER_FIELD = "fieldset.senderpick"
+#: The sender chips themselves. Addressed through the picker's own id rather
+#: than as `fieldset.senderpick > .chiprow`: the row is a level deeper since
+#: docs/adr/0073, and the old child selector matched nothing — which two tests
+#: read as «this world offers one sender chip» and *skipped*. A guard that can
+#: turn a moved element into a silent pass is worse than no guard, so the two
+#: assert their premise now instead.
+SENDER_CHIPS = "#saatja-valik > .chiprow"
 ADDRESSEE_QUICK = '[data-clears="addressee_organisation"]'
 ADDRESSEE_DISCLOSURE = "[data-addressee-disclosure]"
+
+#: The chip standing for a body that does not exist yet. It is the unified
+#: picker's now, rather than something `bindAddresseeDefault` builds for
+#: Adressaat alone: `+` writes the typed spelling into the field that has always
+#: carried one, and each picker draws the chip for its own (docs/adr/0073).
+PROVISIONAL = "[data-orgfind-provisional]"
+
+
+def name_a_new_sender(page, typed: str) -> None:
+    """Name a body the catalogue does not hold, through the control that does it.
+
+    There is no «Uus saatja» box any more. One field answers both halves of the
+    question — search what exists, or press `+` to say this is a body you do not
+    have — so every test here that used to `fill` a second input now types into
+    the one box and presses the button beside it (task §2, §9).
+    """
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.fill(typed)
+    page.locator("#saatja-valik [data-orgfind-add]").click()
 
 
 def create_form(page, base_url) -> None:
@@ -121,7 +148,7 @@ def _pick_some_addressee(page) -> tuple:
     # new sender is being typed, and picking it would be choosing the typed name
     # again rather than choosing a body from the catalogue — which is the
     # opposite of what every caller here means by "by hand".
-    chips = page.locator(f"{ADDRESSEE_QUICK} > label.chip:not([data-provisional-addressee])")
+    chips = page.locator(f"{ADDRESSEE_QUICK} > label.chip:not([data-orgfind-provisional])")
     for index in range(chips.count()):
         chip = chips.nth(index)
         radio = chip.locator("input")
@@ -155,91 +182,6 @@ def _pick_some_addressee(page) -> tuple:
 
 def _tick_sender(page, name: str) -> None:
     page.locator(f"{SENDER_FIELD} label.chip", has_text=name).first.click()
-
-
-def skip_without_a_long_tail(page, base_url) -> None:
-    """The Saatja disclosure only exists once the catalogue outgrows the shortlist.
-
-    The seeded browser world holds two institutions and the sender shortlist is
-    deliberately *filled* to eight from the catalogue rather than left short
-    (`organisations_by_usage`), so there is no tail here and the disclosure is
-    correctly not rendered at all.
-
-    Creating nine more to force one was tried and withdrawn. Every browser test
-    in this suite shares one database, so a test that enlarges the catalogue
-    enlarges it for every test that runs afterwards — including
-    `test_matter_form_ux.py` and `test_sender_free_entry.py`, which measure the
-    sender control on the assumption that it has no tail. A fixture that makes
-    unrelated files fail depending on execution order is worse than a gap in
-    coverage, and this particular gap is small: the *structure* — search inside
-    the disclosure, `Uus saatja` outside it, the count on the summary — is
-    asserted against real server-rendered HTML in
-    `tests/test_counterparty_promotion.py`, and `chipdetails` itself is the
-    component Adressaat has used since it was written
-    (`e2e/test_addressee_free_entry.py`).
-
-    What is genuinely browser-only here is the promotion and the provisional
-    chip below, and those need no tail at all.
-    """
-    if page.locator(f"{SENDER_FIELD} details.chipdetails").count() == 0:
-        pytest.skip(
-            "the seeded catalogue fits inside the sender shortlist, so this world "
-            "renders no Saatja disclosure to measure"
-        )
-
-
-# ---------------------------------------------------------------------------
-# The disclosure
-# ---------------------------------------------------------------------------
-
-
-def test_the_sender_shortlist_is_visible_and_the_catalogue_is_behind_a_door(page, base_url):
-    """The shape, as somebody arriving at the page meets it."""
-    create_form(page, base_url)
-    skip_without_a_long_tail(page, base_url)
-
-    sender = page.locator(SENDER_FIELD)
-    # Chips, immediately, with no interaction.
-    expect(sender.locator("> .chiprow > label.chip").first).to_be_visible()
-    # The catalogue's search is not on the page until the door is opened.
-    expect(sender.locator('input[type="search"]')).to_be_hidden()
-    # And the box for a body that is not in the catalogue is, always.
-    expect(sender.locator('input[name="sender_name"]')).to_be_visible()
-
-
-def test_opening_the_disclosure_reveals_the_search_and_the_rest(page, base_url):
-    create_form(page, base_url)
-    skip_without_a_long_tail(page, base_url)
-
-    sender = page.locator(SENDER_FIELD)
-    summary = sender.locator("summary.chipdetails__summary")
-    expect(summary).to_contain_text("Vali nimekirjast")
-    summary.click()
-
-    expect(sender.locator('input[type="search"]')).to_be_visible()
-
-
-def test_the_search_inside_the_disclosure_filters_the_catalogue(page, base_url):
-    """It filters what exists and posts nothing, which is the whole distinction.
-
-    Typing «Näidis» here must narrow a list; it must never become an institution
-    called «Näidis». That is what `Uus saatja` is for, and the two controls are
-    deliberately separate (app/matters/forms.py `sender_name_field`).
-    """
-    create_form(page, base_url)
-    skip_without_a_long_tail(page, base_url)
-
-    sender = page.locator(SENDER_FIELD)
-    sender.locator("summary.chipdetails__summary").click()
-    box = sender.locator('input[type="search"]')
-    box.fill("zzz-nothing-matches-this")
-
-    catalogue = sender.locator(".chipdetails__body .chiprow > label.chip")
-    expect(catalogue.locator("visible=true")).to_have_count(0)
-
-    # And the filter box is not a form field.
-    expect(box).to_have_attribute("type", "search")
-    assert box.get_attribute("name") is None
 
 
 # ---------------------------------------------------------------------------
@@ -352,9 +294,11 @@ def test_swapping_the_sender_moves_the_answer_with_it(page, base_url):
     """
     create_form(page, base_url)
 
-    chips = page.locator(f"{SENDER_FIELD} > .chiprow > label.chip")
-    if chips.count() < 2:
-        pytest.skip("this world offers one sender chip, so there is nothing to swap to")
+    chips = page.locator(f"{SENDER_CHIPS} > label.chip")
+    assert chips.count() >= 2, (
+        "the seeded world offers two institutions and this needs both — a skip "
+        "here means the selector stopped matching, not that the world shrank"
+    )
     first = (chips.nth(0).inner_text() or "").strip().rstrip("×").strip()
     second = (chips.nth(1).inner_text() or "").strip().rstrip("×").strip()
 
@@ -378,9 +322,11 @@ def test_a_second_sender_does_not_replace_the_answer_the_first_gave(page, base_u
     """
     create_form(page, base_url)
 
-    chips = page.locator(f"{SENDER_FIELD} > .chiprow > label.chip")
-    if chips.count() < 2:
-        pytest.skip("this world offers one sender chip, so there is no second to add")
+    chips = page.locator(f"{SENDER_CHIPS} > label.chip")
+    assert chips.count() >= 2, (
+        "the seeded world offers two institutions and this needs both — a skip "
+        "here means the selector stopped matching, not that the world shrank"
+    )
     first = (chips.nth(0).inner_text() or "").strip().rstrip("×").strip()
     second = (chips.nth(1).inner_text() or "").strip().rstrip("×").strip()
 
@@ -431,14 +377,14 @@ def test_a_newly_typed_sender_becomes_the_addressee_too(page, base_url):
     create_form(page, base_url)
     typed = a_new_name()
 
-    page.locator('input[name="sender_name"]').fill(typed)
+    name_a_new_sender(page, typed)
 
-    provisional = page.locator("[data-provisional-addressee]")
+    provisional = page.locator(f"{ADDRESSEE_QUICK} {PROVISIONAL}")
     expect(provisional).to_have_count(1)
     expect(provisional).to_contain_text(typed)
     assert _addressee_labels(page)[0] == typed
     expect(provisional.locator("input")).to_be_checked()
-    expect(page.locator("#id_addressee_name")).to_have_value(typed)
+    expect(page.locator("#adressaat-uus")).to_have_value(typed)
     # And nothing from the catalogue is selected, because the answer is the name.
     assert _chosen_addressees(page) == 0
     assert _summary(page) == f"Adressaat · {typed}"
@@ -448,15 +394,16 @@ def test_clearing_the_typed_sender_takes_the_answer_away_with_it(page, base_url)
     """And takes back only what it wrote. A name typed by hand is theirs."""
     create_form(page, base_url)
 
-    sender_box = page.locator('input[name="sender_name"]')
     typed = a_new_name()
-    sender_box.fill(typed)
-    expect(page.locator("#id_addressee_name")).to_have_value(typed)
+    name_a_new_sender(page, typed)
+    expect(page.locator("#adressaat-uus")).to_have_value(typed)
 
-    sender_box.fill("")
+    # Taking it back is letting go of the chip, which is the only way there is:
+    # the name lives in a hidden carrier and the chip is what stands for it.
+    page.locator(f"{SENDER_FIELD} {PROVISIONAL}").click()
 
-    expect(page.locator("[data-provisional-addressee]")).to_have_count(0)
-    expect(page.locator("#id_addressee_name")).to_have_value("")
+    expect(page.locator(f"{ADDRESSEE_QUICK} {PROVISIONAL}")).to_have_count(0)
+    expect(page.locator("#adressaat-uus")).to_have_value("")
     assert _summary(page) == "Adressaat"
 
 
@@ -470,25 +417,32 @@ def test_a_typed_sender_that_already_exists_answers_with_the_row(page, base_url)
     """
     create_form(page, base_url)
 
-    page.locator('input[name="sender_name"]').fill(MINISTRY)
+    name_a_new_sender(page, MINISTRY)
 
-    expect(page.locator("[data-provisional-addressee]")).to_have_count(0)
+    expect(page.locator(f"{ADDRESSEE_QUICK} {PROVISIONAL}")).to_have_count(0)
     assert _chosen_addressees(page) == 1
     assert _summary(page) == f"Adressaat · {MINISTRY}"
-    expect(page.locator("#id_addressee_name")).to_have_value("")
+    expect(page.locator("#adressaat-uus")).to_have_value("")
 
 
 def test_choosing_a_real_addressee_releases_the_typed_one(page, base_url):
-    """The two controls answer one question, so only one of them may hold it."""
+    """The two answers are one question, so only one of them may hold it.
+
+    The chip used to stay on the page unchecked, because it was built once and
+    then toggled. It is now drawn from the typed field and exists only while
+    that field holds something — so choosing a real body empties the field and
+    the chip goes with it, which is the same rule stated once instead of twice
+    (docs/adr/0073, static/js/app.js `bindOrganisationPickers`).
+    """
     create_form(page, base_url)
 
-    page.locator('input[name="sender_name"]').fill(a_new_name())
-    expect(page.locator("[data-provisional-addressee] input")).to_be_checked()
+    name_a_new_sender(page, a_new_name())
+    expect(page.locator(f"{ADDRESSEE_QUICK} {PROVISIONAL} input")).to_be_checked()
 
     _pick_some_addressee(page)
 
-    expect(page.locator("[data-provisional-addressee] input")).not_to_be_checked()
-    expect(page.locator("#id_addressee_name")).to_have_value("")
+    expect(page.locator(f"{ADDRESSEE_QUICK} {PROVISIONAL}")).to_have_count(0)
+    expect(page.locator("#adressaat-uus")).to_have_value("")
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +462,7 @@ def test_one_typed_name_used_for_both_saves_as_one_institution(page, base_url):
     typed = a_new_name()
 
     page.get_by_label("Pealkiri").fill("Vastus komisjonile")
-    page.locator('input[name="sender_name"]').fill(typed)
+    name_a_new_sender(page, typed)
     # Nothing is clicked under Adressaat: naming the sender is what answers it,
     # and this test is the journey somebody actually walks.
     page.get_by_role("button", name="Loo teema").click()

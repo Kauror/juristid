@@ -78,7 +78,7 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     create_form(page, base_url)
     page.fill("#id_title", title)
     open_addressee(page)
-    page.fill("#id_addressee_name", addressee)
+    name_a_new_addressee(page, addressee)
     page.fill("#id_next-text", "Kontrollida, kas adressaat vastas")
     # `Millal?` is required with the sentence now, and the quick span is how a
     # date is nearly always chosen (ADR 0052 addendum). The chip carries the day
@@ -86,6 +86,32 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
+
+
+def name_a_new_addressee(page, typed: str) -> None:
+    """Name a body the catalogue does not hold, on whichever form is open.
+
+    `Uus teema` has one control for both halves of the question since
+    docs/adr/0073 — the search box finds what exists, the `+` beside it proposes
+    what was typed — while `Muuda teemat` still renders `sender_control.html`'s
+    pair and keeps its own labelled box. Both are driven here, so this asks
+    which form it is on rather than making the caller know (task §26).
+    """
+    picker = page.locator("#adressaat-otsi")
+    if picker.count():
+        picker.click()
+        picker.fill(typed)
+        page.locator("#adressaat-valik [data-orgfind-add]").click()
+        return
+    page.fill("#id_addressee_name", typed)
+
+
+def typed_addressee_value(page) -> str:
+    """What the form will post as a typed addressee, wherever it is carried."""
+    carrier = page.locator("#adressaat-uus")
+    if carrier.count():
+        return carrier.input_value()
+    return page.locator("#id_addressee_name").input_value()
 
 
 def open_edit(page, base_url) -> None:
@@ -133,10 +159,10 @@ def test_an_addressee_can_be_named_on_uus_teema_and_replaced_on_muuda_teemat(pag
     # what the catalogue is rendered as.
     open_edit(page, base_url)
     assert checked_addressee(page) == TYPED
-    expect(page.locator("#id_addressee_name")).to_have_value("")
+    assert typed_addressee_value(page) == ""
 
     # Now replace it with a body that is not in the catalogue either.
-    page.fill("#id_addressee_name", REPLACEMENT)
+    name_a_new_addressee(page, REPLACEMENT)
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_load_state("networkidle")
 
@@ -144,7 +170,7 @@ def test_an_addressee_can_be_named_on_uus_teema_and_replaced_on_muuda_teemat(pag
 
     open_edit(page, base_url)
     assert checked_addressee(page) == REPLACEMENT
-    expect(page.locator("#id_addressee_name")).to_have_value("")
+    assert typed_addressee_value(page) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -188,10 +214,15 @@ def test_selecting_a_chip_clears_a_name_typed_beside_it(page, base_url):
     create_form(page, base_url)
     open_addressee(page)
 
-    page.fill("#id_addressee_name", "Midagi pooleli kirjutatud")
-    page.locator('input[name="addressee_organisation"]').nth(1).check()
+    name_a_new_addressee(page, "Midagi pooleli kirjutatud")
+    assert typed_addressee_value(page) == "Midagi pooleli kirjutatud"
 
-    expect(page.locator("#id_addressee_name")).to_have_value("")
+    # A real body, chosen from the same control. The typed answer has to let go
+    # in front of the person rather than quietly outranking what they clicked.
+    page.locator("#adressaat-valik label.chip", has_text=MINISTRY).first.click()
+
+    assert typed_addressee_value(page) == ""
+    assert page.locator("#adressaat-valik [data-orgfind-provisional]").count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -249,35 +280,19 @@ def _box(page, selector: str) -> dict:
     return box
 
 
-#: The Adressaat fieldset, addressed through the one input only it contains.
-#: Robust against the chips, the legend and the disclosure all moving, and it
-#: cannot accidentally match the Andmeklass field beside it — which is the whole
-#: subject of the measurements below.
-ADDRESSEE_FIELD = "fieldset.field:has(#id_addressee_name)"
+#: The Adressaat fieldset, addressed through the disclosure only it contains.
+#: Robust against the chips, the legend and the picker all moving, and it cannot
+#: accidentally match the field beside it — which is the whole subject of the
+#: measurements below. It used to be found by `#id_addressee_name`; that box now
+#: exists only inside the `<noscript>` fallback, which a scripted browser never
+#: parses (docs/adr/0073).
+ADDRESSEE_FIELD = "fieldset.field:has([data-addressee-disclosure])"
 
-#: The **long tail's** disclosure, which is now one of two inside that fieldset:
-#: the field itself is folded behind `chipdetails--field` and «Vali nimekirjast»
-#: sits inside it (docs/adr/0069). Named by the modifier the tail has always
-#: carried, so that a bare `details.chipdetails` here cannot silently start
-#: measuring the outer one and reporting that the catalogue is always present.
-ADDRESSEE_TAIL = f"{ADDRESSEE_FIELD} details.chipdetails--stretch"
-
-
-def _ensure_long_tail(page, base_url) -> None:
-    """Make sure `Vali nimekirjast` is on the page before measuring it.
-
-    The seeded world has few enough institutions that every one of them fits in
-    the frequent shortlist and there is no long tail at all. One Teema with an
-    addressee is enough to change that: the shortlist becomes "bodies this
-    department has answered", and everything else moves into the disclosure.
-    """
-    create_form(page, base_url)
-    open_addressee(page)
-    assert page.locator(ADDRESSEE_TAIL).count(), (
-        "no long tail on the Adressaat control: the workflow test above files a "
-        "Teema with an addressee, which is what moves the rest of the catalogue "
-        "out of the frequent shortlist and into the disclosure"
-    )
+#: The search row inside the Adressaat picker — the box and the `+` attached to
+#: it. What used to be measured here was the nested «Vali nimekirjast» panel,
+#: and there is no nested disclosure any more: opening Adressaat opens straight
+#: onto this.
+ADDRESSEE_SEARCH = "#adressaat-valik .orgfind__search"
 
 
 @pytest.mark.parametrize("width", [1024, 768, 420])
@@ -316,36 +331,46 @@ def test_the_addressee_field_takes_the_stacked_row_width(page, base_url, width):
 
 
 @pytest.mark.parametrize("width", [1024, 768, 420])
-def test_the_open_long_tail_uses_the_addressee_width(page, base_url, width):
-    """`Vali nimekirjast`, opened, on a stacked row.
+def test_the_results_panel_stays_under_the_box_and_inside_the_field(page, base_url, width):
+    """The search results, opened, on a stacked row.
 
-    `.chipdetails` is `inline-block` so that a closed disclosure is a chip among
-    chips, and shrink-to-fit is right there. Open and stacked it is wrong: the
-    panel ends up a narrow island in a field with the whole row to spend, which
-    is the second half of the supplied screenshot.
+    This replaces the same measurement taken against «Vali nimekirjast», which
+    no longer exists: the failure it guarded against is unchanged, and it is
+    that the thing which opens ends up a narrow island somewhere other than
+    under the control that opened it. A list that drifted out of the field, or
+    past its right edge, would be a control somebody has to hunt for on the one
+    screen width where the form is already tight.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    _ensure_long_tail(page, base_url)
+    create_form(page, base_url)
+    open_addressee(page)
 
-    assert page.locator(ADDRESSEE_TAIL).count(), "the long tail is not on this page"
-    page.locator(f"{ADDRESSEE_TAIL} > summary").click()
+    box = page.locator("#adressaat-otsi")
+    box.click()
+    box.fill("näidis")
+    expect(page.locator("#adressaat-tulemused")).to_be_visible()
 
     field = _box(page, ADDRESSEE_FIELD)
-    panel = _box(page, f"{ADDRESSEE_TAIL} .chipdetails__body")
+    search = _box(page, ADDRESSEE_SEARCH)
+    panel = _box(page, "#adressaat-tulemused")
 
-    assert panel["width"] >= field["width"] * 0.9, (
-        f"the opened long tail is {panel['width']}px inside a {field['width']}px field at {width}px"
+    assert abs(panel["x"] - search["x"]) <= 2, (
+        f"the results are not under the box at {width}px: {panel['x']} vs {search['x']}"
     )
+    assert panel["x"] + panel["width"] <= field["x"] + field["width"] + 2, (
+        f"the results run past the Adressaat field at {width}px"
+    )
+    assert panel["y"] >= search["y"] + search["height"] - 2
 
 
 @pytest.mark.parametrize("width", [1024, 768, 420])
 def test_naming_an_institution_never_takes_the_page_sideways(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    _ensure_long_tail(page, base_url)
-    page.locator(f"{ADDRESSEE_TAIL} > summary").click()
-    page.fill("#id_addressee_name", "Väga pika nimega näidisasutuse õigusosakond")
+    create_form(page, base_url)
+    open_addressee(page)
+    name_a_new_addressee(page, "Väga pika nimega näidisasutuse õigusosakond")
 
     overflows = page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
