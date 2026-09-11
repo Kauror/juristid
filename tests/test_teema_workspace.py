@@ -1178,3 +1178,61 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
     assert Entry.objects.filter(matter=normal_matter).count() == 0
     assert MatterEngagement.objects.filter(matter=normal_matter).count() == 0
     assert MatterWorkVictory.objects.filter(matter=normal_matter).count() == 0
+
+
+#: The UI-accessible routes outside `LISA TEEMALE` that create one of the
+#: records this rule is about. They are separate doors onto the same file, and
+#: a stale page posting to one of them is the same defect wearing another URL.
+STALE_OTHER_ROUTE_WRITES = [
+    (
+        # `SURVEY`, not `WEB_CALL`. The latter is a valid *stored* value that
+        # `EngagementForm` deliberately no longer offers (Teema redesign §14),
+        # so a payload carrying it is refused by the form on an open Matter too
+        # — and a closed-Matter test written on top of that refusal would be
+        # asserting nothing at all.
+        "matters:add_engagement",
+        {"pk": None},
+        {"kind": "SURVEY", "title": "Hiline kaasamine"},
+        lambda m: m.engagements.count(),
+    ),
+    (
+        "intelligence:add_important_date",
+        {"matter_id": None},
+        {"title": "Hiline tähtaeg", "precision": "YEAR", "year": "2030"},
+        lambda m: m.important_dates.count(),
+    ),
+    (
+        "intelligence:add_effective_date",
+        {"matter_id": None},
+        {"kind": "KNOWN_DATE", "precision": "YEAR", "year": "2030"},
+        lambda m: m.effective_dates.count(),
+    ),
+    (
+        "intelligence:add_work_victory",
+        {"matter_id": None},
+        {"title": "Hiline töövõit", "precision": "YEAR", "year": "2030"},
+        lambda m: m.work_victories.count(),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("route", "kwargs", "payload", "probe"),
+    STALE_OTHER_ROUTE_WRITES,
+    ids=[row[0] for row in STALE_OTHER_ROUTE_WRITES],
+)
+def test_the_other_fact_routes_refuse_a_closed_matter_too(
+    signed_in, specialist, normal_matter, route, kwargs, payload, probe
+):
+    """The workspace is not the only door onto these records.
+
+    `Muuda teemat`'s own date and victory routes and the overview's `Kaasamine`
+    form each write one of them directly, and a page rendered before a closure
+    can post to any of them.
+    """
+    _close_elsewhere(normal_matter, specialist)
+    address = dict.fromkeys(kwargs, normal_matter.pk)
+
+    signed_in.post(reverse(route, kwargs=address), payload)
+
+    assert probe(normal_matter) == 0
