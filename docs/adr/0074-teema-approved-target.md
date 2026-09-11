@@ -326,6 +326,39 @@ and the shell, the navigation and the release identity are not this design's to
 change. The target governs the Matter header, the content column, the composer,
 the strip, the chronology and the rail.
 
+### 23. The approved target *is* the visual baseline, and a missing one fails
+
+Eleven baselines were deleted when this page was rebuilt, because every one of
+them photographed the superseded design. That was right while the new page was
+being built and wrong as a merged state: `compare()` skipped a scenario whose
+baseline was absent, so the visual job reported ten Teema scenarios green for a
+page nothing was comparing.
+
+So the candidates this branch's own CI produced are reviewed against
+`TEEMA_TARGET_1440.png` and committed, and **a missing baseline is now a
+failure**. The first run of a genuinely new scenario is therefore red by design:
+it writes its candidate into the `test-report-visual` upload, somebody looks at
+it, and it is committed on the next push. One round, in exchange for the
+property that a green visual job means every scenario in it actually compared.
+
+Three of the deleted eleven do not come back. `kaasamine-tyhi`,
+`kaasamine-kirjed` and `kaasamine-lisa` clipped `#kaasamine`, and §9 retired that
+section: a clipped baseline of an element the page does not render can only ever
+skip. What they covered is covered — recording a consultation is the composer
+panel `teema-koostaja` photographs, reading one is a chronology row inside
+`teema-ulevaade`, and the behaviour is `e2e/test_engagement.py`'s. Two new ones
+take their place, for the two surfaces this design adds: `teema-kaik` clips the
+derived `.tl-strip` (§12) and `teema-ajajoon` clips the two-kind chronology
+(§14).
+
+**§19 gets a test rather than a baseline.** The corrected 420 px drop area is the
+one place the implementation is deliberately unlike its own reference
+screenshot, so there is no approved picture to compare against — only a rule, and
+a rule is asserted:
+`test_at_420_the_drop_area_leaves_the_corner_and_at_1440_it_keeps_it` measures
+both halves, because a narrow-width rule at the wrong specificity takes the
+desktop corner with it.
+
 ## Consequences
 
 * One additive migration, `matters/0017`: `EngagementKind.MEETING`,

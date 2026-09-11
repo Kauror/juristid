@@ -57,9 +57,14 @@ regeneration. `E2E_UPDATE_BASELINES=1` is for the first baseline of a brand-new
 scenario and nothing else: it rewrites *every* file and skips the comparison, so
 a run with it on refreshes scenarios nobody looked at and reports nothing.
 
-A missing baseline skips rather than fails, so a new scenario does not turn the
-build red before anybody has had a chance to look at what it captured. A missing
-baseline is reported by name.
+A missing baseline **fails**, by name. It used to skip, so that a brand-new
+scenario would not turn the build red before anybody had looked at what it
+captured — and the Teema rebuild then spent a whole round with ten scenarios
+green *because they were skipping*, which is the failure mode this whole step
+exists to prevent. The first run of a new scenario is red by design: it writes
+the candidate into `test-report-visual`, somebody looks at it, and it is
+committed. That costs one round and buys the property that a green visual job
+means every scenario in it actually compared.
 
 What these renderings do and do not depend on
 --------------------------------------------
@@ -782,9 +787,12 @@ def compare(name: str, candidate: bytes) -> None:
         baseline_path.write_bytes(candidate)
         pytest.skip(f"baseline written: {baseline_path.name}")
     if not baseline_path.is_file():
-        pytest.skip(
-            f"no committed baseline for {name!r} — take it from the browser-artifacts "
-            f"upload, or rerun the job with E2E_UPDATE_BASELINES=1"
+        pytest.fail(
+            f"{name}: no committed baseline, so this scenario is not covered. "
+            f"The candidate is in this run's `test-report-visual` upload as "
+            f"`screenshots/visual-{name}.png` — look at it, and commit it to "
+            f"`e2e/baselines/{name}.png`. Do not reach for "
+            f"E2E_UPDATE_BASELINES=1: it rewrites every other baseline too."
         )
 
     expected = Image.open(baseline_path).convert("RGB")
@@ -926,6 +934,15 @@ def test_matter_composer_expanded(page, base_url):
     # section; `+ Manus` is gone entirely (docs/adr/0074 §6, §7, §9).
     for panel in ("#cx-tahtaeg", "#cx-joustumine", "#cx-toovoit", "#cx-kaasamine", "#cx-lopeta"):
         page.locator(f"{panel} > summary").click()
+    # `open_composer` also opens the exact-date box behind «Kuupäev…», because
+    # every functional test that sets a next step types into it. This scenario
+    # is the five panels, and the target's «when» row is that box *closed* —
+    # a chip row beside the corner drop (TEEMA_TARGET_SPEC §C.2.3). Open, the
+    # box claims the row and the chips centre against it, so the baseline would
+    # lock a sixth disclosure's geometry under a name that promises five.
+    date_box = page.locator("details.uxcomp__date")
+    if date_box.evaluate("node => node.open"):
+        date_box.locator("summary").click()
     page.wait_for_timeout(120)
     compare("teema-koostaja", capture(page, "teema-koostaja", clip_to=".composer"))
 
@@ -984,9 +1001,17 @@ def test_the_process_strip_is_the_first_thing_in_the_ajajoon(page, base_url):
     glance (TEEMA_TARGET_SPEC §D).
     """
     signed_in_matter(page, base_url, OPEN_TITLE)
-    strip = page.locator(".tl-strip")
-    if not strip.count():
-        pytest.skip("the seeded Matter carries no milestone")
+    # Asserted rather than skipped past. The strip is drawn from the milestones
+    # this Matter really has, and `seed_e2e_data` gives this one several — so an
+    # absent strip is the projection or the seed having moved, which is the
+    # thing this scenario exists to notice. A skip here would have hidden it
+    # behind a green lane.
+    assert page.locator(".tl-strip").count() == 1, (
+        "the seeded open Matter renders no `.tl-strip`. Either "
+        "`app/matters/process_timeline.py` stopped projecting its milestones or "
+        "the seed stopped creating them; both are regressions in what this "
+        "scenario photographs (TEEMA_TARGET_SPEC §D)."
+    )
     _at_rest(page)
     compare("teema-kaik", capture(page, "teema-kaik", clip_to=".tl-strip"))
 

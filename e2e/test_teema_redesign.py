@@ -340,6 +340,88 @@ def test_at_1024_the_rail_folds_under_and_nothing_scrolls_sideways(page, base_ur
     assert opinion["y"] >= rail["y"] - 1, "the opinion card left the rail at 1024px"
 
 
+def _overlap(a, b) -> bool:
+    """Do two bounding boxes share any area? Half a pixel of slack each way."""
+    return (
+        a["x"] < b["x"] + b["width"] - 0.5
+        and b["x"] < a["x"] + a["width"] - 0.5
+        and a["y"] < b["y"] + b["height"] - 0.5
+        and b["y"] < a["y"] + a["height"] - 0.5
+    )
+
+
+def test_at_420_the_drop_area_leaves_the_corner_and_at_1440_it_keeps_it(page, base_url):
+    """The one clause of the approved design that is deliberately not copied.
+
+    `TEEMA_TARGET_420.png` shows `.cx-drop--corner` still absolutely positioned
+    at 420 px, painted over «+1 nädal» and «+2 nädalat» — and the spec that
+    ships with it names that a prototype defect and asks for the drop to become
+    a normal-flow full-width row under the chips instead (TEEMA_TARGET_SPEC
+    §H, docs/adr/0074 §19). So here the implementation is deliberately better
+    than its own reference screenshot, and that is exactly the claim no baseline
+    can hold: there is no approved picture of the corrected state to compare
+    against, only a rule.
+
+    Both halves, because the fix is conditional. Below 720 px the drop leaves
+    the corner; at 1440 px it must still be in it, which is the half a
+    narrow-width rule written at the wrong specificity would quietly take with
+    it — the defect this round measured and moved the rules to the end of
+    `app.css` to stop (docs/adr/0074 §19).
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": 420, "height": 900})
+    open_matter(page, base_url, OPEN_TITLE)
+
+    # Open on arrival, so the row is on the page without a click
+    # (TEEMA_TARGET_SPEC §C.2).
+    drop = page.locator(".cx-drop--corner")
+    expect(drop).to_be_visible()
+    assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
+        "at 420px the drop area is still absolutely positioned — this is the "
+        "prototype defect the spec asks not to reproduce"
+    )
+
+    box = drop.bounding_box()
+    quick = page.locator("[data-quickdate]")
+    chips = [(chip.inner_text().strip(), chip.bounding_box()) for chip in quick.all()]
+    assert chips, "the quick-date chips are gone from the composer"
+    for label, chip in chips:
+        assert not _overlap(box, chip), f"the drop area is painted over «{label}» at 420px"
+        assert box["y"] >= chip["y"] + chip["height"] - 1, (
+            f"the drop area sits beside or above «{label}» at 420px rather than under the chips"
+        )
+
+    row = page.locator(".uxcomp__row").first.bounding_box()
+    assert box["width"] >= row["width"] * 0.9, (
+        f"the drop area is {box['width']:.0f}px in a {row['width']:.0f}px row — still a "
+        f"corner affordance. Below 720px it is a full-width row of its own"
+    )
+    assert not document_overflows(page), "the Matter page scrolls sideways at 420px"
+
+    # And the rail is last, under the chronology, rather than gone
+    # (TEEMA_TARGET_SPEC §H: nothing is hidden at any width).
+    rail = page.locator(".rail").bounding_box()
+    history = page.locator("#ajajoon").bounding_box()
+    assert rail["y"] >= history["y"] + history["height"] - 1, (
+        "at 420px the rail did not fold under the chronology"
+    )
+
+    # The desktop half, on the same page.
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.wait_for_timeout(120)
+    assert drop.evaluate("n => getComputedStyle(n).position") == "absolute", (
+        "the narrow-width rule took the desktop corner with it"
+    )
+    box = drop.bounding_box()
+    chips = [chip.bounding_box() for chip in page.locator("[data-quickdate]").all()]
+    assert all(not _overlap(box, chip) for chip in chips), (
+        "at 1440px the corner drop overlaps the quick-date chips"
+    )
+    assert box["x"] > max(chip["x"] + chip["width"] for chip in chips), (
+        "at 1440px the drop area is not at the right end of the «Millal?» row"
+    )
+
+
 # ---------------------------------------------------------------------------
 # The QA correction round
 # ---------------------------------------------------------------------------
