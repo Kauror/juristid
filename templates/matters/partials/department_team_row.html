@@ -1,0 +1,27 @@
+{% comment %}
+One row of the Meeskond grid, minus the element around it — which is an `a`
+for a row that opens something and a `div` for the one that does not
+(`department_main.html`).
+
+Three kinds of row reach this, and the difference between them is who carries
+the work: a current member of the department, whose own desk the row opens;
+«Väljaspool osakonda», where the owner is somebody outside the department; and
+«Vastutajata», where there is no owner at all. The last two are not people, so
+they take the exceptional marker rather than a person's initials — and the
+outside row deliberately names nobody: the Matters keep their real owners on the
+register and on their own pages, and this table simply does not present those
+owners as colleagues.
+{% endcomment %}
+<span class="uxteam__who">
+  {% if row.is_unassigned or row.is_outside_department %}
+    <span class="uxav uxav--none" title="{{ row.name }}" aria-hidden="true">!</span>
+  {% else %}
+    <span class="avatar avatar--sm" aria-hidden="true">{{ row.initials }}</span>
+  {% endif %}
+  <span class="uxteam__name{% if row.is_unassigned or row.is_outside_department %} uxteam__name--none{% endif %}">
+    {{ row.name }}{% if row.is_self %} <span class="uxteam__self">· sina</span>{% endif %}
+  </span>
+</span>
+{% for cell in row.cells %}
+  <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
+{% endfor %}

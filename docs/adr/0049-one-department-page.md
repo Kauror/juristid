@@ -290,3 +290,14 @@ undo.
   separate decision the parallel branch owns.
 - Any stored vocabulary. `DigestRow.kind`, `WorkVictoryStatus` and the register
   parameters are read, never renamed.
+
+## Later: who the Meeskond table names
+
+The merge moved the team table; it did not decide its population, which came
+from `/osakonna-too/` unchanged. On 2026-09-11 that population was corrected —
+a named row is now a current `department_workers()` member, and visible work
+owned outside the department is aggregated into one `Väljaspool osakonda` row
+rather than giving its owner a row of their own. The decision, and what it
+deliberately leaves alone, is the amendment at the end of
+[ADR 0036](0036-assignable-department-workers.md). Nothing about the merge, the
+routes, the strip or the boundary above changes with it.

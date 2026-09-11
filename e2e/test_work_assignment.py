@@ -186,24 +186,35 @@ def test_the_register_filter_offers_the_department_and_not_the_administrator(pag
 def test_a_register_filtered_on_a_departed_colleague_still_finds_their_work(page, base_url):
     """The chooser narrowed. The register did not.
 
-    Reached through the department table's own link, which is how such a URL
-    actually occurs — a page that lists a departed colleague's open work and
-    offers to open it.
+    Reached through the register's own `Vastutaja` control, which is how such a
+    URL occurs now. It used to be reached by clicking the departed colleague's
+    row in Osakond's team table; that row is gone, because a named row there
+    means a current member of the department and their open work is counted
+    under «Väljaspool osakonda» instead (docs/adr/0036, amendment of
+    2026-09-11). The route was always incidental — what this proves is that
+    choosing the name does not collapse the list that offered it, so a reader
+    who filters to a departed colleague's seventeen unhandled files has a way
+    back.
     """
     sign_in(page, base_url, HEAD)
-    page.goto(f"{base_url}/osakond/")
+    page.goto(f"{base_url}/teemad/")
     page.wait_for_load_state("networkidle")
 
-    # The team table is a grid of links now, not a <table>: its rows are links,
-    # and a row of cells wrapped in an anchor is not valid table markup
-    # (docs/adr/0043).
-    #
-    # Since the v2 rebuild the row opens the person's *desk*, and the register
-    # is one step further on, from that page's own footer link — which is still
-    # exactly how such a URL occurs (design handoff, Minu asjad §A).
-    page.locator(".uxstat__row").filter(has_text=FORMER_NAME).first.click()
-    page.wait_for_load_state("networkidle")
-    page.locator(".pw-register a").click()
+    panel = page.locator("#tapsem-otsing")
+    panel.locator("summary.filterpanel__trigger").click()
+
+    # By index, from the options as the DOM holds them: the option's text is the
+    # shortest name that is unambiguous among the others on the list, so neither
+    # the display name nor a first name is reliably its label, and the
+    # identifier a value would need is not something a browser test may know.
+    options = _option_names(page, "select[name='vastutaja']")
+    position = next(
+        (index for index, name in enumerate(options) if FORMER_NAME.split()[0] in name), None
+    )
+    assert position is not None, options
+    panel.locator("select[name='vastutaja']").select_option(index=position)
+    panel.get_by_role("button", name="Filtreeri").click()
     page.wait_for_load_state("networkidle")
 
+    assert "vastutaja=" in page.url
     expect(page.locator("select[name='vastutaja']")).to_contain_text(FORMER_NAME.split()[0])

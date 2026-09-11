@@ -16,6 +16,7 @@ in a merge — fails in exactly the place no unit test looks (Stage-2F brief 45)
 
 from __future__ import annotations
 
+import re
 from urllib.parse import quote
 
 import pytest
@@ -29,6 +30,7 @@ from app.core.management.commands.seed_e2e_data import (
     REVIEW_DUE_TITLE,
     SUPERSEDED_DEADLINE_TITLE,
 )
+from app.matters.department_dashboard import OUTSIDE_DEPARTMENT_NAME as OUTSIDE_NAME
 from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
@@ -71,6 +73,59 @@ def late_work(page):
 
 def team_row(page, name: str):
     return page.locator(".uxstat__row").filter(has_text=name).first
+
+
+def meeskond(page):
+    """The Meeskond section, and nothing else on the page.
+
+    Scoped deliberately wherever a name's *absence* is the assertion. A person
+    who is not a member of the department may still legitimately be named
+    elsewhere on a page this reader is authorized to read — on a Matter, in a
+    list — and "not a colleague" is a claim about this table only.
+    """
+    return page.locator("section[aria-label='Meeskond']")
+
+
+def team_names(page) -> list[str]:
+    """Every name the table presents, in the order it presents them."""
+    return [
+        name.replace("· sina", "").strip()
+        for name in meeskond(page).locator(".uxstat__row .uxteam__name").all_inner_texts()
+    ]
+
+
+def cell_value(text: str) -> int:
+    """The number in one grid cell, out of everything the cell renders.
+
+    Three things end up in `inner_text` and only one of them is the figure. Each
+    number carries a visually-hidden label naming its column — the grid is a
+    grid rather than a `<table>`, so nothing associates a header with a cell —
+    and that label can itself hold a year: «Arvamusi välja · 2026: 5». A nought
+    renders as an `aria-hidden` em dash beside a visually-hidden `0`, so the
+    cell reads «Avatud: —0» and splitting on the colon does not parse.
+
+    The last run of digits is the figure in all three shapes.
+    """
+    digits = re.findall(r"\d+", text)
+    assert digits, f"no number in {text!r}"
+    return int(digits[-1])
+
+
+def all_matters(page, figure_caption: str):
+    """Every row behind one Seis figure, rather than its first page.
+
+    The register's default page size is twelve, so "is this Matter in the list"
+    is a question about page one until some other browser file files a
+    thirteenth. `kaupa=koik` is the size control's own «kõik», and it goes in
+    front of the fragment because a query string written after one is part of
+    it (`late_work`).
+    """
+    figure(page, figure_caption).click()
+    page.wait_for_load_state("networkidle")
+    address, _, fragment = page.url.partition("#")
+    page.goto(address + "&kaupa=koik" + (f"#{fragment}" if fragment else ""))
+    page.wait_for_load_state("networkidle")
+    return page.locator(".table--register tbody tr")
 
 
 def reveal_secondary_navigation(page) -> None:
@@ -303,13 +358,10 @@ def test_the_lawyers_are_listed_alphabetically(page, base_url):
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
+    # The three rows that are not people sit last, in that order.
     names = [
-        name.strip()
-        for name in page.locator(".uxstat__row .uxteam__name").all_inner_texts()
-        # The unassigned pile and the total are not people and sit last.
-        if name.strip() not in ("Vastutajata", "Kokku")
+        name for name in team_names(page) if name not in (OUTSIDE_NAME, "Vastutajata", "Kokku")
     ]
-    names = [name.replace("· sina", "").strip() for name in names]
     assert names, "the team table rendered no lawyers at all"
     assert names == sorted(names)
 
@@ -345,14 +397,67 @@ def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
     expect(page.locator(".registercount strong")).to_have_text(str(expected))
 
 
-def test_a_departed_colleague_holding_live_work_is_surfaced_not_hidden(page, base_url):
-    """Dropping the row would take an open file off the page that finds them."""
+def test_a_departed_colleague_is_counted_without_being_named(page, base_url):
+    """Their open file stays on the page; their name comes off the roster.
+
+    Both halves matter and they used to be in tension. Dropping the row outright
+    would take an open file off the one page whose job is to find open files;
+    keeping it named — as this test used to assert, badge and all — put somebody
+    who has left among the people the department's work belongs to. The bucket
+    is how both are true at once (docs/adr/0036, amendment of 2026-09-11).
+    """
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    row = team_row(page, FORMER_NAME)
+    assert FORMER_NAME not in meeskond(page).inner_text()
+    expect(meeskond(page).locator(".badge")).to_have_count(0)
+    expect(team_row(page, OUTSIDE_NAME)).to_be_visible()
+
+
+def test_work_owned_outside_the_department_is_one_anonymous_row(page, base_url):
+    """One row however many people are behind it, and nobody's name on it."""
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    assert team_names(page).count(OUTSIDE_NAME) == 1
+    # `Vastutajata` is a different state and keeps its own row: an owner who is
+    # not one of us is not the same thing as no owner at all.
+    assert "Vastutajata" in team_names(page)
+
+    row = team_row(page, OUTSIDE_NAME)
     expect(row).to_be_visible()
-    expect(row.locator(".badge")).to_be_visible()
+    # A bucket has no desk to open. The register cannot express "owned by
+    # anybody outside the department", so an honest non-link beats a link to a
+    # different set of Matters.
+    assert row.evaluate("node => node.tagName") != "A"
+    expect(row.locator("a")).to_have_count(0)
+    expect(row.locator(".avatar")).to_have_count(0)
+
+
+def test_the_team_table_reconciles_with_its_own_kokku_line(page, base_url):
+    """Named rows + the bucket + Vastutajata = Kokku, column by column.
+
+    The failure this exists to catch is the quiet one: a Matter whose owner is
+    not a colleague dropping out of the rows while Kokku still counts it, so the
+    column adds up to one less than the line under it says.
+    """
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    rows = meeskond(page).locator(".uxstat__row")
+    parts: list[list[int]] = []
+    total: list[int] | None = None
+    for index in range(rows.count()):
+        row = rows.nth(index)
+        numbers = [cell_value(text) for text in row.locator(".uxstat__num").all_inner_texts()]
+        if "uxstat__row--total" in (row.get_attribute("class") or ""):
+            total = numbers
+        else:
+            parts.append(numbers)
+
+    assert total is not None, "the table rendered no Kokku line"
+    assert parts, "the table rendered no rows above it"
+    assert [sum(column) for column in zip(*parts, strict=True)] == total
 
 
 def test_the_departed_colleague_is_not_offered_as_somebody_to_choose(page, base_url):
@@ -546,11 +651,19 @@ def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
 
 
 def test_the_former_owners_matter_reaches_its_own_page(page, base_url):
+    """The file is still findable, by a route that does not name its owner.
+
+    It used to be reached by clicking the departed colleague's row. That row is
+    gone; the guarantee it carried — an open file owned outside the department
+    is not lost to the department — is not. The file carries no next action, so
+    the strip's «järgmise tegevuseta» holds it like any other.
+    """
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    team_row(page, FORMER_NAME).click()
-    page.wait_for_load_state("networkidle")
+    rows = all_matters(page, "järgmise tegevuseta")
+    expect(rows.filter(has_text=FORMER_OWNER_TITLE)).to_have_count(1)
+
     page.get_by_role("link", name=FORMER_OWNER_TITLE).first.click()
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("heading", name=FORMER_OWNER_TITLE)).to_be_visible()

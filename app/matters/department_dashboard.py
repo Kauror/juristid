@@ -6,7 +6,9 @@ are the two read models one page composes, and the composition is
 :mod:`app.matters.department` (docs/adr/0049).
 
 * **Seis** — six risks rather than six counters, each opening exactly its rows.
-* **Mida meeskond teeb** — the Meeskond table, one row per person. Head only.
+* **Mida meeskond teeb** — the Meeskond table, one row per member of the
+  department, plus the work carried outside it and the work carried by
+  nobody. Head only.
 * **Mis on ees** — Eesolev, the department's real deadlines in five windows.
 * **Mis on tehtud** — Tehtud, what came out of a period the reader chooses,
   narrowable by row kind. Head only.
@@ -71,12 +73,11 @@ from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
-from app.accounts.enums import UserRole
-from app.accounts.models import User
+from app.accounts.selectors import department_workers
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
@@ -114,23 +115,11 @@ from app.submissions.models import Submission
 #: review is a fortnightly conversation.
 INCOMING_WINDOW_DAYS = 14
 
-#: Roles whose holders do casework and therefore belong in the team table even
-#: with nothing open. A READER reads and an ADMINISTRATOR administers; neither
-#: carries files, and listing them with a row of dashes would suggest they
-#: should.
-#:
-#: Deliberately *not* `app.accounts.selectors.DEPARTMENT_WORK_ROLES`, despite
-#: naming the same two roles. This is a report population, not a chooser: the
-#: query below unions it with everybody who currently owns something, so a
-#: departed colleague — or a technical account that was handed a file years ago
-#: — keeps their row and their open work stays visible. The assignment rule is
-#: stricter on purpose (it also refuses `is_staff` and `is_superuser`), and
-#: adopting it here would take live work off the page that finds it
-#: (docs/adr/0036 §"What this does not change").
-CASEWORK_ROLES: tuple[str, ...] = (
-    UserRole.SPECIALIST.value,
-    UserRole.DEPARTMENT_HEAD.value,
-)
+#: The one row that carries work the department can see and nobody in the
+#: department holds. A bucket rather than a person: the people behind it are not
+#: colleagues of this department, and a page that lists them by name says they
+#: are (docs/adr/0036, amendment of 2026-09-11).
+OUTSIDE_DEPARTMENT_NAME = "Väljaspool osakonda"
 
 
 def register_url(**params: Any) -> str:
@@ -347,9 +336,13 @@ def seis_figures(
 # ---------------------------------------------------------------------------
 # Meeskond
 #
-# One row per person, and the same refusal the module opens with: this is
-# inventory and attention, never workload and never a ranking. Alphabetical, and
-# that ordering is load-bearing.
+# One row per member of the department — and a name on it says exactly that,
+# which is why the two rows that are not people are not given one
+# (docs/adr/0036, amendment of 2026-09-11).
+#
+# The same refusal the module opens with: this is inventory and attention,
+# never workload and never a ranking. Alphabetical, and that ordering is
+# load-bearing.
 # ---------------------------------------------------------------------------
 
 
@@ -379,14 +372,24 @@ class StatCell:
 
 @dataclass(frozen=True)
 class TeamRow:
-    """One person's row, or the unassigned row, or the total."""
+    """One colleague's row, one of the two exceptional rows, or the total.
+
+    Four states, and they are four rather than one flag with four meanings
+    because they are four different facts about who carries the work:
+
+    * a named row — a current department worker, `department_workers()`;
+    * ``is_outside_department`` — the owner is somebody, and that somebody is
+      not a current department worker. One bucket, never a person;
+    * ``is_unassigned`` — there is no owner at all;
+    * ``is_total`` — the sum of the three above.
+    """
 
     key: str
     name: str
     initials: str
     cells: tuple[StatCell, ...]
     is_self: bool = False
-    is_former: bool = False
+    is_outside_department: bool = False
     is_unassigned: bool = False
     is_total: bool = False
     url: str = ""
@@ -506,12 +509,33 @@ def _sent_by_owner(user: Any, *, since: date, until: date | None = None) -> dict
 def team_rows(
     user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
 ) -> list[TeamRow]:
-    """Every caseworker, the unassigned pile, and the total that reconciles.
+    """Every current department worker, the two exceptional rows, and the total.
+
+    **A named row means "this person is a current member of the department".**
+    It is `app.accounts.selectors.department_workers()` and nothing else — the
+    same rule the persona list and every assignment control read, so the page
+    that says who the team is and the dropdown that hands work to the team
+    cannot drift about who belongs to it.
+
+    Owning a file confers nothing. It used to: the population was the active
+    caseworkers *unioned with everybody appearing in any column*, so a
+    communications colleague, a technical account or a departed lawyer became a
+    named row on the strength of one Matter and read as a member of the legal
+    team (docs/adr/0036, amendment of 2026-09-11).
+
+    Their work does not disappear with their name. Every count whose owner is
+    somebody outside the department is aggregated into one anonymous
+    `Väljaspool osakonda` row — an owner who is not a colleague and no owner at
+    all are two different states, so it is a second row rather than a wider
+    `Vastutajata` — and `Kokku` is still the sum of everything above it.
 
     Nine grouped queries plus one for the people — not one per person per
-    column. The real department is small enough that the naive shape would work
-    and still be wrong: a query count that grows with the number of colleagues is
-    a page that degrades exactly when somebody is hired.
+    column, and not one per outside owner either: the bucket is the
+    already-grouped dictionaries summed in Python over their non-worker keys, so
+    the query count is independent of how many people are in it. The real
+    department is small enough that the naive shape would work and still be
+    wrong: a query count that grows with the number of colleagues is a page that
+    degrades exactly when somebody is hired.
 
     The total row is computed as the sum of the rows above it rather than as a
     tenth set of queries, so the two cannot disagree — and the same figures
@@ -553,16 +577,12 @@ def team_rows(
         "sent_year": _sent_by_owner(user, since=year_start, until=year_end),
     }
 
-    # Everybody who appears in *any* column, not only in the open-work one. A
-    # colleague who sent an opinion in March and carries nothing today still
-    # owns that opinion, and dropping their row would drop it from the Kokku
-    # line that Aruandlus is asserted against.
-    owner_ids = {
-        owner_id for column in counts.values() for owner_id in column if owner_id is not None
-    }
-    people = User.objects.filter(
-        Q(is_active=True, role__in=CASEWORK_ROLES) | Q(pk__in=owner_ids)
-    ).order_by("display_name")
+    # The department's current members, alphabetically, from the one definition
+    # of that the application has. Everybody on it, whether or not they are
+    # carrying anything today: this table is the roster as well as the workload,
+    # and a colleague with an honest row of dashes is a fact about the week.
+    people = list(department_workers())
+    worker_ids = {person.pk for person in people}
 
     def label_of(column_label: str, group: str) -> str:
         if group == "week":
@@ -591,7 +611,6 @@ def team_rows(
                 for column, label, group, sep in TEAM_COLUMNS
             ),
             is_self=person.pk == getattr(user, "pk", None),
-            is_former=not person.is_active,
             # The person's desk, not the register filtered by owner. A register
             # row answers "what is this Matter"; the question a head clicks a
             # name to ask is "what is on this person's desk", and that is a
@@ -611,8 +630,56 @@ def team_rows(
         for person in people
     ]
 
+    # Work the department can see whose owner is not one of the department's
+    # people: a colleague in another unit, a technical account, a lawyer who has
+    # left. One aggregate row rather than a row each, because the fact worth
+    # printing is that the work sits outside the team — not who in particular is
+    # holding it, which this table would be saying is a colleague.
+    #
+    # Summed from the dictionaries the columns were already grouped into, so the
+    # number of people in the bucket costs no query at all.
+    outside = {
+        column: sum(
+            total
+            for owner_id, total in by_owner.items()
+            if owner_id is not None and owner_id not in worker_ids
+        )
+        for column, by_owner in counts.items()
+    }
+    # Only when it has something to say. A row of dashes under the team would
+    # read as a population that exists and is idle; the honest rendering of "no
+    # work sits outside the department" is no row.
+    if any(outside.values()):
+        rows.append(
+            TeamRow(
+                key="valjaspool",
+                name=OUTSIDE_DEPARTMENT_NAME,
+                # No initials and no link. Both would be a person — and the
+                # register has no way to say "owned by anybody who is not in the
+                # department", so a link here could only open some other list.
+                # An honest number with nothing behind it beats a link to the
+                # wrong set of Matters (`_column_url`, master specification
+                # 18.9).
+                initials="",
+                cells=tuple(
+                    StatCell(
+                        value=outside[column],
+                        tone=_COLUMN_TONE.get(column, "") if outside[column] else "",
+                        sep=sep,
+                        label=label_of(label, group),
+                    )
+                    for column, label, group, sep in TEAM_COLUMNS
+                ),
+                is_outside_department=True,
+            )
+        )
+
     # Work nobody carries. Its own row rather than an omission: it is on nobody's
     # personal list by definition, which is exactly why it has to be on this one.
+    #
+    # Never merged with the row above it. «Nobody has this» and «somebody has
+    # this, and they are not one of us» are two different things to do something
+    # about, and one of them has a name to go and ask.
     rows.append(
         TeamRow(
             key="vastutajata",
