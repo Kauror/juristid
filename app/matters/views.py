@@ -24,7 +24,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import F, Q
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -78,6 +78,7 @@ from app.matters import (
     register_filters,
     selectors,
     work_items,
+    workspace,
 )
 from app.matters import person_work as person_workspace
 from app.matters.department_dashboard import SeisFigure
@@ -85,12 +86,19 @@ from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     BriefSummaryForm,
     CloseMatterForm,
+    CompactClosureForm,
+    CompactEffectiveDateForm,
+    CompactEngagementForm,
+    CompactImportantDateForm,
+    CompactWorkVictoryForm,
+    CompleteCurrentActionForm,
     ComposerForm,
     EngagementForm,
     IncomingIntakeForm,
     MatterCreateForm,
     MatterEditForm,
     MatterFieldForm,
+    MatterNoteForm,
     NextActionForm,
     PersonalNoteForm,
     PositionForm,
@@ -117,7 +125,6 @@ from app.matters.my_work import (
 from app.matters.process_timeline import process_steps
 from app.matters.services import (
     acknowledge_assignment_notice,
-    add_engagement,
     assign_matter,
     change_stage,
     change_track,
@@ -125,6 +132,7 @@ from app.matters.services import (
     compose_update,
     create_matter,
     personal_note_record,
+    record_engagement,
     reopen_matter,
     resolve_addressee,
     resolve_source_organisations,
@@ -164,7 +172,9 @@ from app.submissions.opinions import (
     opinion_document_ids,
     opinion_documents,
     sent_submission_by_document,
+    unregistered_opinion_documents,
 )
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
@@ -1089,6 +1099,28 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     return value
 
 
+def _without_dimension(params: Any, name: str) -> str:
+    """The same address, minus one narrowing dimension. The chip `×` contract.
+
+    Every `×` in the chip row means the same thing — *stop narrowing by this
+    one* — so every `×` is built here. It was not always: the free-text chip
+    carried `cleared_query`, the address `Tühjenda kõik` uses, and therefore
+    removed `q`, every structured filter and the sort together (R2-04). A
+    control that says `Otsing: eelnõu ×` and silently clears `Hetkeseis`,
+    `Vastutaja` and `Järjestus` is not a slower way to reach the same place;
+    it is a different answer, and the reader has no way to see it happen.
+
+    `leht` goes with it for the reason every other filter change drops it:
+    widening the population renumbers the pages, so page 4 of the narrower
+    list addresses rows that are no longer there. The page size (`kaupa`) and
+    every dimension the reader did not click stay exactly as they were.
+    """
+    without = params.copy()
+    without.pop(name, None)
+    without.pop("leht", None)
+    return without.urlencode()
+
+
 def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     chips = []
     for name, label in FILTER_LABELS.items():
@@ -1106,15 +1138,12 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
             register_filters.WORK_WINDOW_END_PARAM,
         ) and not params.get(register_filters.WORK_PARAM):
             continue
-        without = params.copy()
-        without.pop(name, None)
-        without.pop("leht", None)
         chips.append(
             {
                 "name": name,
                 "label": label,
                 "value": _filter_display(request, name, value),
-                "remove_query": without.urlencode(),
+                "remove_query": _without_dimension(params, name),
             }
         )
     return chips
@@ -1238,6 +1267,9 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "query": query,
         "query_string": query_without_page.urlencode(),
         "cleared_query": cleared.urlencode(),
+        # The free-text chip's own `×`, built like every sibling chip's rather
+        # than aliased to `Tühjenda kõik` (R2-04).
+        "cleared_search_query": _without_dimension(params, "q"),
         "has_any_filter": bool(chips or query),
         "source_instructions": source_instructions_for(page.object_list),
         "source_snapshot": snapshot_label(),
@@ -1832,7 +1864,11 @@ def _create_context(
     intake_session: Any = None,
 ) -> dict[str, Any]:
     return {
-        **_intake_context(intake_session),
+        # The form's own answers, so a refused save's redisplay does not propose
+        # a sender over one the person has already given. On a GET the form is
+        # unbound and `answered_on` is empty, which is what it was before
+        # (R2-03, `app.matters.intake_suggestions.analysis.CurrentValues`).
+        **_intake_context(intake_session, answered=CurrentValues.answered_on(form)),
         "form": form,
         # The files a refusal is holding, described for the page: the same
         # filename and size the browser's own preview shows, plus the key the
@@ -1888,7 +1924,9 @@ INTAKE_STATE_LABELS: dict[str, tuple[str, str]] = {
 }
 
 
-def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
+def _intake_context(
+    session: Any, *, error: str = "", answered: CurrentValues | None = None
+) -> dict[str, Any]:
     """Everything the intake fragment renders, decided here rather than there.
 
     One read of the staged files answers all three questions the page asks —
@@ -1950,8 +1988,19 @@ def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
         # Pealkiri box — so a strong formal title may fill an empty untouched
         # one, and may never touch anything else
         # (app/matters/intake_suggestions/prefill.py, task §12).
+        #
+        # `answered` is what the *bound* form already says, and it is empty on
+        # every GET and every poll. The browser is the right judge of a live
+        # control it can see somebody typing into; it is not the judge of a page
+        # that has just been re-rendered, because its own record of what has
+        # been touched went with the old document. A refused save used to come
+        # back proposing a sender over the one the person had typed and
+        # committed through `+`, and the next save then persisted both (R2-03).
         _initial, decided = prefill_initial(
-            assisted, base={}, current=CurrentValues(), allow_title=True
+            assisted,
+            base={},
+            current=answered or CurrentValues(),
+            allow_title=True,
         )
         prefill = prefill_controls(decided)
 
@@ -2185,6 +2234,14 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_count": len(items) + (1 if has_more else 0),
         "timeline_only": timeline_only,
         "timeline_filters": TIMELINE_FILTERS,
+        # The eight workspace forms, unbound. `PRAEGUNE TEGEVUS` takes one and
+        # `LISA TEEMALE` takes the rest; a refused save replaces exactly one of
+        # them with its bound self and opens that panel alone
+        # (docs/adr/0075 §2, `workspace_forms`).
+        **workspace_forms(current_action),
+        # The superseded composer, still built for the endpoint that still
+        # accepts it. Nothing on this page renders it any more
+        # (docs/adr/0075 §11).
         "composer_form": ComposerForm(matter=matter, viewer=request.user),
         # `summary_form` and `note_form` are deliberately absent: the header
         # context carries them, it is merged over this one, and reading the
@@ -2262,6 +2319,46 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     return render(request, "matters/matter_detail.html", context)
 
 
+def _legal_instrument_line(matter: Matter) -> list[str]:
+    """`Õigusakt` as the rail reads it: the labels, with `Muu` carrying its text.
+
+    **The fact this application asked for and never once read back.** `Uus
+    teema` asks which instrument a Matter concerns, `Muuda teemat` corrects the
+    answer, the search index carries it and `Seotud materjalid` matches on it —
+    and no surface a lawyer *reads* a Matter from showed it at all. Somebody
+    could file a Matter as a `Määrus`, reopen it the next morning, and find
+    nothing on the page saying they had (post-QA R2-08).
+
+    `Muu` is a real vocabulary row here rather than a checkbox beside one
+    (docs/adr/0070 §8), so `legal_instrument_other` is folded *onto* that row —
+    `["Määrus", "Muu: rohepöörde tegevuskava"]` — rather than appended after it
+    as a fourth nameless value. Deciding that here keeps the vocabulary's own
+    key out of a template, which is the one place a rename would not be found.
+
+    Free text with no `Muu` row is a state both forms refuse and no importer
+    produces. It is still rendered, on a row of its own, because a rendering
+    that silently drops a stored value because its shape was unexpected is how
+    a data problem becomes invisible.
+
+    Ordered by the vocabulary's `sort_order`, so two Matters carrying the same
+    pair list them the same way round. Read here rather than in the template for
+    the reason `matter_policy_areas` is: the rail renders on all three Matter
+    surfaces, and `.all()` inside a loop would be a query per render of each.
+    """
+    other = (matter.legal_instrument_other or "").strip()
+    labels: list[str] = []
+    matched = False
+    for instrument in matter.legal_instruments.all():
+        if instrument.key == OTHER_LEGAL_INSTRUMENT_KEY and other:
+            labels.append(f"{instrument.label_et}: {other}")
+            matched = True
+        else:
+            labels.append(instrument.label_et)
+    if other and not matched:
+        labels.append(f"Muu: {other}")
+    return labels
+
+
 def _header_context(
     request: HttpRequest, matter: Matter, *, milestones: Any = None
 ) -> dict[str, Any]:
@@ -2299,6 +2396,7 @@ def _header_context(
         "policy_area_choices": selectable_policy_areas(),
         "selected_policy_area_ids": {area.pk for area in matter.policy_areas.all()},
         "matter_policy_areas": list(matter.policy_areas.all()),
+        "matter_legal_instruments": _legal_instrument_line(matter),
         # The one deadline the header shows, chosen by the rule in §5.5 rather
         # than by the template picking whichever field is non-empty.
         # `milestones` when the caller has already read them, which the Matter
@@ -2415,6 +2513,52 @@ def _historical_context(matter: Any, user: Any) -> dict:
 #: "Näita rohkem". A file with forty documents is real; forty rows above the
 #: fold is not what somebody opening the tab is looking for.
 DOCUMENT_PAGE_SIZE = 12
+
+
+#: What each Dokumendid filter is called on the chip that removes it.
+DOCUMENT_FILTER_LABELS: dict[str, str] = {
+    "otsi": "Otsing",
+    "roll": "Roll",
+    "aasta": "Aasta",
+}
+
+
+def _document_filter_chips(params: Any, *, roll_labels: dict[str, str]) -> list[dict[str, str]]:
+    """The active Dokumendid filters, each with the link that takes it off.
+
+    **A count under a heading has to say what it counted.** Attaching evidence to
+    an opinion redirects to this page carrying `?roll=arvamus`, so `Failid` came
+    back reading «1 faili» on a Matter holding nine — technically the filtered
+    result count, and visually indistinguishable from the total. Nobody had
+    asked for a filter; the redirect applied one on their behalf, and the only
+    thing on the page admitting it was a `<select>` further up (post-QA R2-13).
+
+    The filter is not removed: landing on the opinion you just filed, with the
+    other eight files out of the way, is what the redirect is *for*. What is
+    added is the sentence saying so, in the chip language the register already
+    uses — name the filter, name its value, and make the chip itself the way
+    back (`_active_filters`, templates/matters/partials/register_results.html).
+
+    `roll` is displayed through the menu's own labels, so the chip reads
+    «Roll: Arvamus» rather than «Roll: arvamus» or, worse, the stored
+    `KODA_SUBMISSION_FINAL` a saved link may still carry.
+    """
+    chips: list[dict[str, str]] = []
+    for name, label in DOCUMENT_FILTER_LABELS.items():
+        value = (params.get(name) or "").strip()
+        if not value:
+            continue
+        without = params.copy()
+        without.pop(name, None)
+        chips.append(
+            {
+                "name": name,
+                "label": label,
+                "value": roll_labels.get(value, value) if name == "roll" else value,
+                "remove_query": without.urlencode(),
+            }
+        )
+    return chips
 
 
 def _role_filter_choices() -> list[tuple[str, str]]:
@@ -2541,6 +2685,15 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     if year.isdigit():
         documents = documents.filter(created_at__year=int(year))
 
+    # The filters as they were actually applied, which is what the chips name
+    # and what their removal links rebuild. `koik` is deliberately not carried:
+    # taking a filter off starts the list again from the top, the same way the
+    # register drops `leht` (`_active_filters`).
+    applied_filters = QueryDict(mutable=True)
+    for name, value in (("otsi", term), ("roll", role), ("aasta", year)):
+        if value:
+            applied_filters[name] = value
+
     rows = list(documents)
     evidence = [document for document in rows if not document.has_working_document]
     working = [document for document in rows if document.has_working_document]
@@ -2558,15 +2711,20 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             else document.get_role_display()
         )
 
-    # Opinion files this Matter holds that no canonical Submission accounts for.
+    # Opinion files this Matter holds that no Submission accounts for at all.
     # They are the candidates for «Registreeri saatmine», and the reason that
     # control exists at all: uploading a file as `Arvamus` records that Koda has
     # it, never that Koda sent it, and only a person can close that gap (§18).
-    unregistered = [
-        document
-        for document in opinion_documents(matter, viewer=request.user)
-        if document.current_version_id and document.pk not in sends
-    ]
+    #
+    # The rule lives in `unregistered_opinion_documents` rather than here,
+    # because it also lived in `app/submissions/views.py` — and a candidate rule
+    # written as two list comprehensions is one that gets fixed in one of them.
+    # A draft's own final evidence is excluded by it: that file's correct
+    # operation is `Märgi saadetuks` on the draft below, and offering it here as
+    # well produced a second, parallel SENT Submission for the same bytes, on a
+    # Matter that then read `1 koostamisel` beside a sent opinion of the same
+    # text (R2-01).
+    unregistered = unregistered_opinion_documents(matter, viewer=request.user)
     drafts = open_drafts(matter, viewer=request.user)
 
     # Historical letters already filed onto this Matter. Imported lazily for the
@@ -2592,8 +2750,35 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "document_years": sorted({document.created_at.year for document in rows}, reverse=True),
             "document_filters": {"otsi": term, "roll": role, "aasta": year},
             "document_filters_active": bool(term or role or year),
+            # Built from the *applied* values rather than from `request.GET`, so
+            # the chip says what actually narrowed the table: a saved
+            # `?roll=KODA_SUBMISSION_FINAL` link was read as the opinion union
+            # above, and a chip echoing the raw parameter would name a filter
+            # the page is not running (post-QA R2-13).
+            "document_filter_chips": _document_filter_chips(
+                applied_filters, roll_labels=dict(_role_filter_choices())
+            ),
             "working_document_form": WorkingDocumentForm(),
             "can_write": may_write_business_content(request.user),
+            # Two different questions, and this page has to ask both.
+            #
+            # `can_write` is about the **reader**: may this person record
+            # business content anywhere. `can_add_content` is about the
+            # **Matter** as well: a closed teema accepts no new canonical
+            # content from normal interactive work — no upload, no new opinion,
+            # no registered send, and no advancing of a draft that is sitting
+            # there. Reopening it is how work continues, and the banner above
+            # the table offers exactly that (docs/adr/0075 §12).
+            #
+            # It hides controls; it decides nothing. Every route behind them
+            # takes the Matter's row lock and refuses a closed one on its own,
+            # because the browser that posts may be holding a page from before
+            # the closure (`app/submissions/services.py`,
+            # `app/documents/services.py`).
+            #
+            # Reading is untouched: the files, the sent opinions, their
+            # details, `Ava`, `↓` and the archive letters are all still here.
+            "can_add_content": may_write_business_content(request.user) and matter.is_open,
             "historical": _historical_context(matter, request.user),
             # The opinion management block under the table. Compact, collapsed
             # unless a draft is waiting for somebody, and never a second listing
@@ -2711,7 +2896,7 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
         return _overview_with_engagement_error(request, matter, form)
 
     try:
-        add_engagement(
+        record_engagement(
             matter=matter,
             kind=form.cleaned_data["kind"],
             title=form.cleaned_data["title"],
@@ -2796,6 +2981,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
         context["action_form"] = form
+        context["open_panel"] = WORKSPACE_PANELS["action_form"]
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
@@ -2803,7 +2989,9 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
-        context["composer_error"] = str(error)
+        context["action_form"] = form
+        context["workspace_error"] = str(error)
+        context["open_panel"] = WORKSPACE_PANELS["action_form"]
         return render(request, "matters/partials/overview.html", context, status=400)
 
     return _render_overview(request, matter)
@@ -3393,7 +3581,13 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 #: where they are now shown. Swapping the header for one of them would leave the
 #: value on screen unchanged while claiming it had saved (Teema redesign §22.1).
 _FIELD_SURFACES = {
-    "policy_area_other": "matters/partials/rail.html",
+    # **`policy_area_other` renders the header now.** It is read in the
+    # `Valdkond` slot beside the canonical areas — the filing decision and the
+    # words qualifying it are one answer and belong in one place — so a save
+    # that swapped the rail would leave the value on screen unchanged while
+    # claiming it had saved, which is the exact failure this mapping exists to
+    # prevent (post-QA R2-07, `templates/matters/partials/header.html`).
+    "policy_area_other": "matters/partials/header.html",
     "track": "matters/partials/rail.html",
     "source_organisations": "matters/partials/rail.html",
     "addressee_organisation": "matters/partials/rail.html",
@@ -3636,3 +3830,281 @@ def matter_url(matter: Matter) -> str:
 
 
 ACTION_KIND_LABELS = dict(ActionKind.choices)
+
+
+# ---------------------------------------------------------------------------
+# The Teema workspace: PRAEGUNE TEGEVUS and LISA TEEMALE
+# ---------------------------------------------------------------------------
+#
+# Eight endpoints where there was one. Each takes one form, calls one use case
+# and re-renders the column; a refused save comes back with its own panel open,
+# its own errors, and every other panel shut and untouched. That last part is
+# the point of splitting them: a single global save meant an invalid `Töövõit`
+# could refuse a note somebody had also typed, and a valid one could write a
+# closure they had merely opened (docs/adr/0075 §2).
+
+
+#: The `<details>` id each operation's panel carries. A refusal reopens exactly
+#: the one it came from — reopening the whole group would answer a refusal by
+#: offering six other forms, and reopening none would print the error inside a
+#: panel nobody can see (brief §33).
+WORKSPACE_PANELS: dict[str, str] = {
+    "matter_note_form": "lisa-marge",
+    "action_form": "lisa-jargmine",
+    "add_engagement_form": "lisa-kaasamine",
+    "important_date_form": "lisa-tahtaeg",
+    "effective_date_form": "lisa-joustumine",
+    "work_victory_form": "lisa-toovoit",
+    "closure_form": "lisa-lopeta",
+}
+
+
+def workspace_forms(current_action: Any = None) -> dict[str, Any]:
+    """One unbound form per write intention, for an ordinary render.
+
+    Built here rather than in the template because a template that constructed
+    its own forms would be a template deciding what may be written.
+
+    `NextActionForm` is prefilled from the open step, because the control that
+    renders it while one exists is `Muuda` — an editor, and an editor that opens
+    empty is asking somebody to retype what is already on the screen. With no
+    open step the same form is `+ Järgmine tegevus` and has nothing to prefill
+    from. A bound form ignores `initial` either way, so a refused save still
+    comes back carrying what was typed (brief §9, §15).
+    """
+    return {
+        "current_action_form": CompleteCurrentActionForm(),
+        "matter_note_form": MatterNoteForm(),
+        "action_form": NextActionForm(
+            initial=(
+                {
+                    "text": current_action.text,
+                    "target_date": current_action.target_date,
+                }
+                if current_action is not None
+                else None
+            )
+        ),
+        "add_engagement_form": CompactEngagementForm(),
+        "important_date_form": CompactImportantDateForm(),
+        "effective_date_form": CompactEffectiveDateForm(),
+        "work_victory_form": CompactWorkVictoryForm(),
+        "closure_form": CompactClosureForm(),
+        "open_panel": "",
+        "workspace_error": "",
+    }
+
+
+def _workspace_refusal(
+    request: HttpRequest,
+    matter: Matter,
+    *,
+    key: str,
+    form: Any,
+    error: str = "",
+) -> HttpResponse:
+    """Re-render the column with one bound form, so nothing typed is lost.
+
+    400 rather than 200, like every other refused write on this page, and the
+    bound form goes back under its own key so the panel that failed is the panel
+    that shows why.
+    """
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context[key] = form
+    context["workspace_error"] = error
+    context["open_panel"] = WORKSPACE_PANELS.get(key, "")
+    return render(request, "matters/partials/overview.html", context, status=400)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`PRAEGUNE TEGEVUS` → `Salvesta`. The result is written and the step is done.
+
+    **One operation.** There is no `Märgi tehtuks` on this page any more and no
+    second confirmation: describing what was done about the current task *is*
+    completing it, which is what a lawyer means by finishing something and what
+    the two-save version could never guarantee (docs/adr/0075 §3).
+
+    The action is fetched through `visible_to` before anything else, so an
+    identifier naming a step this reader may not see answers 404 rather than
+    confirming that it exists — the same rule `complete_action` follows
+    (AUTH-003). Whether it is still *the current one* is a different question,
+    asked inside the service under a row lock (docs/adr/0075 §4).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompleteCurrentActionForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="current_action_form", form=form)
+
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user),
+        pk=form.cleaned_data["action_id"],
+        matter=matter,
+    )
+    try:
+        workspace.complete_current_action(
+            matter=matter,
+            author=request.user,
+            action_id=action.pk,
+            body=form.cleaned_data["body"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="current_action_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Märge` — something happened, and the current step stays exactly as it is."""
+    matter = get_visible_matter(request, pk)
+    form = MatterNoteForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="matter_note_form", form=form)
+    try:
+        workspace.add_matter_note(
+            matter=matter,
+            author=request.user,
+            body=form.cleaned_data["body"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="matter_note_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Kaasamine` — one consultation and the replies that came back with it."""
+    matter = get_visible_matter(request, pk)
+    form = CompactEngagementForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="add_engagement_form", form=form)
+    try:
+        workspace.add_matter_engagement(
+            matter=matter,
+            author=request.user,
+            kind=form.cleaned_data["kind"],
+            audience=form.cleaned_data["audience"],
+            response_count=form.cleaned_data.get("response_count"),
+            occurred_on=timezone.localdate(),
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="add_engagement_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_important_date(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Oluline tähtaeg` — a milestone somebody announced, and its letter."""
+    matter = get_visible_matter(request, pk)
+    form = CompactImportantDateForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="important_date_form", form=form)
+    try:
+        workspace.add_matter_important_date(
+            matter=matter,
+            author=request.user,
+            uploads=form.cleaned_data["attachments"],
+            **form.cleaned_data["important_date_kwargs"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="important_date_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_effective_date(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Jõustumine` — what commences, the day it does, and the act itself."""
+    matter = get_visible_matter(request, pk)
+    form = CompactEffectiveDateForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="effective_date_form", form=form)
+    try:
+        workspace.add_matter_effective_date(
+            matter=matter,
+            author=request.user,
+            uploads=form.cleaned_data["attachments"],
+            **form.cleaned_data["effective_date_kwargs"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="effective_date_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Töövõit` — what changed, with the evidence that it did.
+
+    Closes nothing and completes nothing. A win is its own canonical fact.
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactWorkVictoryForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="work_victory_form", form=form)
+    try:
+        workspace.add_matter_work_victory(
+            matter=matter,
+            author=request.user,
+            title=form.cleaned_data["victory_change"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="work_victory_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Lõpeta teema` — two questions, and the header follows out of band.
+
+    The workspace swaps `#teema-vaade`, which is deliberately not the header
+    band: re-rendering it on every note would rebuild five inline editors. A
+    closure is the one write here that the header states — the state badge said
+    `Avatud` beside an archived Matter until this was added — so the header
+    rides along on this response and on no other (docs/adr/0074 §10).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactClosureForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="closure_form", form=form)
+    try:
+        workspace.close_matter_from_workspace(
+            matter=matter,
+            author=request.user,
+            disposition=form.cleaned_data["disposition"],
+            closing_words=form.cleaned_data.get("closing_words") or "",
+        )
+    except DomainError as error:
+        return _workspace_refusal(request, matter, key="closure_form", form=form, error=str(error))
+
+    matter.refresh_from_db()
+    return _render_overview(request, matter, header_out_of_band=not matter.is_open)

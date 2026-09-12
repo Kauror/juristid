@@ -1,0 +1,76 @@
+{% comment %}
+`Järgmine tegevus` — two questions and one save, in one partial with two hosts.
+
+The same form is `Muuda` inside `PRAEGUNE TEGEVUS` when a step is open, and
+`+ Järgmine tegevus` under `LISA TEEMALE` when none is. One markup, one
+endpoint, one service: `matters:set_action` → `set_next_action_for_new_work`,
+which supersedes whatever it replaces, so *setting* a step and *changing* one
+are the same canonical act and there are never two competing controls for it
+(brief §15).
+
+Rendered in two places rather than reached from one by script, because a
+`<details>` is the disclosure and a button that opens a panel elsewhere on the
+page would do nothing with JavaScript off. The panel that is present is the one
+the situation calls for.
+
+**What and when. Nothing else.** No `TEEN`/`OOTAN`/`JÄLGIN`, no date meaning,
+no precision: a step recorded here is `DO`/`DEADLINE`/`EXACT`, which is exactly
+"the day this gets done" (ADR 0052, brief §14). `NextActionForm` carries no
+field for any of them, so a crafted POST cannot name one either.
+{% endcomment %}
+<form class="addform" data-addform
+      hx-post="{% url 'matters:set_action' pk=matter.pk %}"
+      hx-target="#teema-vaade"
+      hx-swap="outerHTML">
+  {% csrf_token %}
+  <label class="cx-f" for="{{ action_form.text.id_for_label }}">
+    <span class="cx-f__lab">Mida on vaja teha?</span>
+    {{ action_form.text }}
+  </label>
+  {% if action_form.text.errors %}
+    <p class="field__error">{{ action_form.text.errors|first }}</p>
+  {% endif %}
+
+  {% comment %}
+    The quick spans and the exact box behind them. The chips store nothing of
+    their own: each writes the day it names into the date field, which is the
+    field that is submitted and validated — so the server sees one value however
+    it was chosen, and the form works with the chips ignored entirely.
+
+    **Deliberately not `data-uxpopover`.** That contract closes a disclosure on
+    any click outside it, which is right for a menu and wrong for a box somebody
+    is typing a date into (docs/adr/0074 §20).
+  {% endcomment %}
+  <div class="addform__when" data-quickdate-group="{{ action_form.target_date.id_for_label }}">
+    <span class="cx-f__lab" id="lisa-millal">Millal?</span>
+    {% for choice in quick_dates %}
+      <button type="button" class="uxchip" aria-pressed="false"
+              data-quickdate="{{ choice.value }}"
+              data-label-default="{{ choice.label }}"
+              data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+    {% endfor %}
+    <details class="uxcomp__date"
+             {% if action_form.target_date.value or action_form.target_date.errors %}open{% endif %}>
+      <summary class="uxchip">Kuupäev…</summary>
+      <div class="uxcomp__datebody">
+        <label class="visually-hidden" for="{{ action_form.target_date.id_for_label }}">
+          Järgmise tegevuse kuupäev
+        </label>
+        {{ action_form.target_date }}
+      </div>
+    </details>
+  </div>
+  {% comment %}
+    The refusal sits on the row rather than inside the disclosure. «Vali
+    järgmise tegevuse kuupäev» printed inside a closed «Kuupäev…» is an error
+    nobody can see, and the chips are how the date is nearly always chosen
+    (ADR 0052 §5).
+  {% endcomment %}
+  {% if action_form.target_date.errors %}
+    <p class="field__error">{{ action_form.target_date.errors|first }}</p>
+  {% endif %}
+
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">Salvesta</button>
+  </div>
+</form>

@@ -131,8 +131,8 @@ def test_the_refined_matter_page_is_the_one_under_test(composed):
     """
     page = _body(_client_for(composed["owner"]), _detail_url(composed))
 
-    assert 'id="jargmiseks-rida"' in page, "the Järgmiseks row is not on this page"
-    assert "uxnext" in page, "the refined Järgmiseks row is not what rendered"
+    assert 'id="praegune-tegevus"' in page, "the current-action zone is not on this page"
+    assert "curact" in page, "the rebuilt current-action zone is not what rendered"
 
 
 def test_a_restricted_step_changes_nothing_an_unauthorized_reader_sees(composed):
@@ -169,12 +169,12 @@ def test_the_empty_state_is_the_same_empty_state(composed):
     restricted_step(composed)
     page = _body(client, _detail_url(composed))
 
-    assert "uxnext__empty" in page, (
-        "the reader is not being shown the empty Järgmiseks row, so the "
+    assert "curact__empty" in page, (
+        "the reader is not being shown the empty current-action zone, so the "
         "restricted step is changing the shape of what they see"
     )
-    assert "uxnext__text" not in page, "a step's text element rendered for a reader"
-    assert "uxnext__date" not in page, "a step's date element rendered for a reader"
+    assert "curact__text" not in page, "a step's text element rendered for a reader"
+    assert "curact__date" not in page, "a step's date element rendered for a reader"
 
 
 def test_the_owner_still_sees_their_own_restricted_step(composed):
@@ -188,7 +188,7 @@ def test_the_owner_still_sees_their_own_restricted_step(composed):
 
     assert HIDDEN_TEXT in page, "the step's own participant cannot see it"
     assert HIDDEN_DATE in page, "the step's own participant cannot see its date"
-    assert "uxnext__text" in page
+    assert "curact__text" in page
 
 
 def test_no_other_matter_route_answers_what_the_page_refuses(composed):

@@ -21,21 +21,18 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, RESTRICTED_TITLE
-from e2e.conftest import SANDRA, open_composer, sign_in
+from e2e.conftest import SANDRA, open_add_panel, open_composer, sign_in
 
 
 def panel(page):
-    """The `+ Kaasamine` composer panel, closed until it is asked for."""
-    return page.locator("#cx-kaasamine")
+    """The `+ Kaasamine` panel under `LISA TEEMALE`, closed until asked for."""
+    return page.locator("#lisa-kaasamine")
 
 
 def open_panel(page):
     """Open it, and return it. Idempotent, so a test can call it twice."""
-    target = panel(page)
-    if target.evaluate("node => !node.open"):
-        target.locator("> summary").click()
-    target.locator("[name=engagement_audience]").wait_for(state="visible")
-    return target
+    open_add_panel(page, "lisa-kaasamine")
+    return panel(page)
 
 
 def open_scratch_matter(page, base_url: str) -> None:
@@ -79,23 +76,25 @@ def test_the_matter_page_carries_no_standalone_kaasamine_section(page, base_url)
     expect(page.get_by_text("+ Lisa kaasamine")).to_have_count(0)
 
 
-def test_the_panel_opens_from_the_composer_and_asks_three_things(page, base_url):
+def test_the_panel_opens_from_the_launcher_and_asks_three_things(page, base_url):
     """`Liik`, `Keda kaasati`, `Vastuseid` — and not the old five-field form."""
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
-    open_composer(page)
 
     expect(panel(page)).not_to_have_attribute("open", "")
     open_panel(page)
 
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
         expect(panel(page).locator(".uxchip", has_text=label)).to_have_count(1)
-    expect(panel(page).locator("[name=engagement_audience]")).to_be_visible()
-    expect(panel(page).locator("[name=engagement_responses]")).to_be_visible()
+    expect(panel(page).locator("[name=audience]")).to_be_visible()
+    expect(panel(page).locator("[name=response_count]")).to_be_visible()
     # The questions the target does not ask.
     expect(panel(page).locator("[name=url]")).to_have_count(0)
     expect(panel(page).locator("[name=note]")).to_have_count(0)
     expect(panel(page).locator("[name=occurred_on]")).to_have_count(0)
+    # And its own save, which commits this operation and nothing else
+    # (docs/adr/0075 §2).
+    expect(panel(page).locator("button[type=submit]")).to_have_count(1)
 
 
 def test_the_kind_chips_are_single_select_over_the_field_that_is_submitted(page, base_url):
@@ -103,10 +102,9 @@ def test_the_kind_chips_are_single_select_over_the_field_that_is_submitted(page,
     is what the server validates — the same contract the quick dates have."""
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
-    open_composer(page)
     open_panel(page)
 
-    field = panel(page).locator("input[name=engagement_kind]")
+    field = panel(page).locator("input[name=kind]")
     # `Küsitlus` is selected on open, which is what the target shows.
     expect(field).to_have_value("SURVEY")
     expect(panel(page).locator(".uxchip.is-selected")).to_have_count(1)
@@ -118,27 +116,36 @@ def test_the_kind_chips_are_single_select_over_the_field_that_is_submitted(page,
     expect(panel(page).locator(".uxchip.is-selected")).to_have_text("Koosolek")
 
 
-def test_one_save_writes_the_note_and_the_engagement(page, base_url):
-    """The property the composer exists for, in a browser: one `Salvesta`, two
-    canonical records, and the chronology shows both without a reload."""
+def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
+    """Two intentions, two saves, and the chronology shows both.
+
+    This reverses what the composer's single save proved. A note and a
+    consultation are different things somebody chose to record, and the surface
+    now asks which before it asks anything else (docs/adr/0075 §2).
+    """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
-    open_composer(page)
 
-    page.locator(".composer__body").fill("Küsisin liikmetelt tagasisidet.")
+    open_composer(page)
+    page.locator("#lisa-marge .composer__body").fill("Küsisin liikmetelt tagasisidet.")
+    page.locator("#lisa-marge button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
     open_panel(page)
     panel(page).locator(".uxchip", has_text="Kirjade voor").click()
-    panel(page).locator("[name=engagement_audience]").fill("liikmed")
-    panel(page).locator("[name=engagement_responses]").fill("9")
-
-    page.locator("[data-composer-submit]").click()
+    panel(page).locator("[name=audience]").fill("liikmed")
+    panel(page).locator("[name=response_count]").fill("9")
+    panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     # The engagement, as a milestone row carrying its kind and its count.
     milestone = chronology(page).locator(".uxtl__mswhat", has_text="Kaasamine: liikmed")
     expect(milestone).to_have_count(1)
     expect(chronology(page)).to_contain_text("Vastuseid 9")
-    expect(chronology(page)).to_contain_text("E-kiri või kampaania")
+    # The word the chip said, read back unchanged. This line asserted
+    # «E-kiri või kampaania» — the chip that wrote the row said «Kirjade voor»,
+    # so the test was recording the defect R2-06 reports (post-QA R2-06).
+    expect(chronology(page)).to_contain_text("Kirjade voor")
     # The note, as a work row of its own.
     expect(chronology(page).locator(".richtext").first).to_contain_text(
         "Küsisin liikmetelt tagasisidet"
@@ -147,25 +154,24 @@ def test_one_save_writes_the_note_and_the_engagement(page, base_url):
     expect(chronology(page)).not_to_contain_text("lisas kaasamise")
 
     # And it reached the process strip, which is the other half of §F.
-    expect(page.locator(".tl-step__what", has_text="E-kiri või kampaania")).to_have_count(1)
+    expect(page.locator(".tl-step__what", has_text="Kirjade voor")).to_have_count(1)
 
 
 def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, base_url):
     """A refusal inside a panel nobody can see is a refusal nobody reads."""
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
-    open_composer(page)
     open_panel(page)
 
-    panel(page).locator("[name=engagement_responses]").fill("3")
-    page.locator("[data-composer-submit]").click()
+    panel(page).locator("[name=response_count]").fill("3")
+    panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(panel(page)).to_have_attribute("open", "")
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
-    # And the composer is still open with the count still in it.
-    expect(page.locator("details.uxcomp")).to_have_attribute("open", "")
-    expect(panel(page).locator("[name=engagement_responses]")).to_have_value("3")
+    # With the count still in it, and no other panel opened on its behalf.
+    expect(panel(page).locator("[name=response_count]")).to_have_value("3")
+    expect(page.locator("#lisa-marge")).not_to_have_attribute("open", "")
 
 
 def test_an_uncounted_engagement_says_nothing_about_responses(page, base_url):
@@ -173,11 +179,10 @@ def test_an_uncounted_engagement_says_nothing_about_responses(page, base_url):
     states the kind and stops (docs/adr/0074 §5)."""
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
-    open_composer(page)
     open_panel(page)
 
-    panel(page).locator("[name=engagement_audience]").fill("kaubandusvaldkonna töögrupp")
-    page.locator("[data-composer-submit]").click()
+    panel(page).locator("[name=audience]").fill("kaubandusvaldkonna töögrupp")
+    panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     row = chronology(page).locator(

@@ -55,15 +55,26 @@ control on this row: the row itself is the link.
   {% comment %}
     A real disclosure rather than a decorative "⋯". The menu offers only what
     the underlying record actually supports: an Oluline tähtaeg has no
-    completion workflow, so it is never offered a "Märgi tehtuks" that would
+    completion workflow, so it is never offered a completion control that would
     have to be invented here (§6.4).
+
+    **Every item here navigates.** None of them completes anything, and the
+    wording has to say so. `Märgi tehtuks` did not: direct completion is gone
+    (docs/adr/0075 §3), so the click landed on `PRAEGUNE TEGEVUS`, where the
+    person still has to describe what they did and press `Salvesta`. A label
+    that promises the act and delivers a form is the kind of thing somebody
+    clicks, glances at, and walks away from believing the step is closed.
+
+    `Lisa tulemus…` promises what the click does, and the ellipsis is the same
+    one `Vaatasin üle…` already uses beside it for the same reason. `Muuda` is
+    unchanged: it is the task-edit affordance and it always was.
   {% endcomment %}
   <details class="rowmenu">
     <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
     <div class="rowmenu__menu">
       {% if item.is_action %}
-        <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks-rida">Märgi tehtuks</a>
-        <a class="rowmenu__item" href="{{ item.matter_url }}#teema-koostaja">Muuda</a>
+        <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Lisa tulemus…</a>
+        <a class="rowmenu__item" href="{{ item.matter_url }}#lisa-jargmine">Muuda</a>
         {% if item.is_review_ripe %}
           {% comment %}
             "Vaatasin üle" is a real service (app/workflow/services.acknowledge_review)
@@ -71,7 +82,7 @@ control on this row: the row itself is the link.
             default. So the row links to the dated control that already exists
             on the Matter instead of guessing a date here (§7).
           {% endcomment %}
-          <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks-rida">Vaatasin üle…</a>
+          <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Vaatasin üle…</a>
         {% endif %}
       {% endif %}
       <a class="rowmenu__item" href="{{ item.matter_url }}">Ava teema</a>

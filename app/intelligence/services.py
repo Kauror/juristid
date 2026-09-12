@@ -95,6 +95,20 @@ def add_important_date(
     source_text: str = "",
     legacy_source_page: Any = None,
 ) -> MatterImportantDate:
+    # A closed Matter takes no new canonical fact, and the check belongs here
+    # rather than in the three surfaces that reach this — `Muuda`'s own route,
+    # the Teema workspace and the compatibility composer — because a stale
+    # browser posts to a server that cannot tell which page it came from
+    # (R2-02). Under the Matter lock, so a closure committing alongside this
+    # cannot leave a fact on a file that is already shut
+    # (app/matters/locks.py).
+    #
+    # Imported inside the function: `app.matters` reaches this module during
+    # app loading, and `app/matters/workspace.py` imports these services lazily
+    # for the same reason, in the other direction.
+    from app.matters.locks import lock_open_matter_for_business_write
+
+    matter = lock_open_matter_for_business_write(matter.pk)
     title = _require_text(title, "Olulisel tähtajal peab olema kirjeldus.")
     _check_precision(date_precision)
     _check_bounds(date_value, period_end, date_precision)
@@ -288,6 +302,20 @@ def add_effective_date(
     source_text: str = "",
     legacy_source_page: Any = None,
 ) -> MatterEffectiveDate:
+    # A closed Matter takes no new canonical fact, and the check belongs here
+    # rather than in the three surfaces that reach this — `Muuda`'s own route,
+    # the Teema workspace and the compatibility composer — because a stale
+    # browser posts to a server that cannot tell which page it came from
+    # (R2-02). Under the Matter lock, so a closure committing alongside this
+    # cannot leave a fact on a file that is already shut
+    # (app/matters/locks.py).
+    #
+    # Imported inside the function: `app.matters` reaches this module during
+    # app loading, and `app/matters/workspace.py` imports these services lazily
+    # for the same reason, in the other direction.
+    from app.matters.locks import lock_open_matter_for_business_write
+
+    matter = lock_open_matter_for_business_write(matter.pk)
     _validate_effective_date(kind, date_value, period_end, date_precision)
 
     record = MatterEffectiveDate.objects.create(
@@ -550,6 +578,20 @@ def add_confirmed_work_victory(
     ``may_review_work_victory``: that is a judgement about somebody else's
     proposal, which is a different question (app/core/authorization.py).
     """
+    # A closed Matter takes no new canonical fact, and the check belongs here
+    # rather than in the three surfaces that reach this — `Muuda`'s own route,
+    # the Teema workspace and the compatibility composer — because a stale
+    # browser posts to a server that cannot tell which page it came from
+    # (R2-02). Under the Matter lock, so a closure committing alongside this
+    # cannot leave a fact on a file that is already shut
+    # (app/matters/locks.py).
+    #
+    # Imported inside the function: `app.matters` reaches this module during
+    # app loading, and `app/matters/workspace.py` imports these services lazily
+    # for the same reason, in the other direction.
+    from app.matters.locks import lock_open_matter_for_business_write
+
+    matter = lock_open_matter_for_business_write(matter.pk)
     record = _create_work_victory(
         matter=matter,
         status=WorkVictoryStatus.CONFIRMED,

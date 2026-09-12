@@ -20,7 +20,16 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE
-from e2e.conftest import MARTIN, SANDRA, create_matter, open_composer, open_matter, sign_in
+from e2e.conftest import (
+    MARTIN,
+    SANDRA,
+    create_matter,
+    open_add_panel,
+    open_composer,
+    open_matter,
+    open_next_action_form,
+    sign_in,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -51,17 +60,14 @@ def test_a_normal_matter_answers_everything_above_the_fold(page, base_url):
     open_matter(page, base_url, OPEN_TITLE)
 
     fold = page.viewport_size["height"]
-    # The composer is a disclosure, so what has to be above the fold is the row
-    # that opens it. What it opens *into* is measured by the 1024 test below,
-    # where the reading order is what matters (design handoff 1d).
+    # What has to be above the fold is the task and the two zones that act on
+    # it. `LISA TEEMALE` is a chip row rather than a form, so what is measured
+    # is the launcher (docs/adr/0075 §2).
     for selector in (
         ".matterhead__title",
         ".metaline",
-        ".uxnext",
-        # The composer itself, open. It was the collapsed prompt until the
-        # approved target, which is the one-line summary the open box replaced
-        # (docs/adr/0074 §3).
-        "details.composer .composer__body",
+        "#praegune-tegevus",
+        "#lisa-teemale",
     ):
         box = page.locator(selector).first.bounding_box()
         assert box is not None, f"{selector} did not render"
@@ -120,16 +126,21 @@ def test_a_low_data_matter_is_short_and_deliberate(page, base_url):
     ):
         expect(page.get_by_text(absence, exact=False)).to_have_count(0)
 
-    expect(page.locator(".uxnext")).to_contain_text("Järgmine samm on määramata")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
+    # And no completion box under it: there is nothing to complete, and a large
+    # empty `Mida tegid?` with no task above it asks about work nobody has named
+    # (docs/adr/0075 §5).
+    expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
     # `Kaasamine` used to carry the last of the absence sentences in a collapsed
     # summary line, and then a standing section with a label and an add control.
-    # The approved target has neither: recording one is a composer panel, and an
-    # empty Matter says nothing about consultations at all (docs/adr/0074 §9).
+    # The approved target has neither: recording one is a `LISA TEEMALE` panel,
+    # and an empty Matter says nothing about consultations at all
+    # (docs/adr/0074 §9).
     expect(page.locator(".accordion__summary--empty")).to_have_count(0)
     expect(page.get_by_text("Kaasamist ei ole kirja pandud")).to_have_count(0)
     expect(page.locator("#kaasamine")).to_have_count(0)
     expect(page.locator(".factspanel")).to_have_count(0)
-    expect(page.locator("#cx-kaasamine")).to_have_count(1)
+    expect(page.locator("#lisa-kaasamine")).to_have_count(1)
 
     # Generous, and still far below what four labelled absences cost: this
     # catches a regression into the old shape, not a precise budget.
@@ -151,8 +162,10 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     for index in range(12):
         page.goto(url)
         open_composer(page)
-        page.locator(".composer__body").fill(f"Sissekanne number {index} sünteetilises maailmas.")
-        page.locator("[data-composer-submit]").click()
+        page.locator("#lisa-marge .composer__body").fill(
+            f"Sissekanne number {index} sünteetilises maailmas."
+        )
+        page.locator("#lisa-marge button[type=submit]").click()
         page.wait_for_load_state("networkidle")
 
     page.goto(url)
@@ -169,9 +182,10 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     # still opens on what to do next, not on its history. The chronology is
     # below the next step, however many entries it holds.
     fold = page.viewport_size["height"]
-    assert page.locator(".uxnext").bounding_box()["y"] < fold
-    assert timeline.bounding_box()["y"] > page.locator(".uxnext").bounding_box()["y"]
-    assert page.locator("details.composer .composer__body").bounding_box()["y"] < fold
+    current = page.locator("#praegune-tegevus")
+    assert current.bounding_box()["y"] < fold
+    assert timeline.bounding_box()["y"] > current.bounding_box()["y"]
+    assert page.locator("#lisa-teemale").bounding_box()["y"] < fold
 
 
 # ---------------------------------------------------------------------------
@@ -179,51 +193,56 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_url):
+def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_url):
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, "Lõpetatav teema brauserikatsest")
 
     # A next step first, so the closure has something to end.
-    open_composer(page)
-    page.locator(".composer__body").fill("Esitan Koja arvamuse ministeeriumile.")
-    page.locator("[name='next_text']").fill("Esitada arvamus ministeeriumile")
-    page.locator("#id_next_date").fill(_future(5))
-    page.locator("[data-composer-submit]").click()
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill("Esitada arvamus ministeeriumile")
+    page.locator("#id_target_date").fill(_future(5))
+    page.locator("#lisa-jargmine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".uxnext__text")).to_have_text("Esitada arvamus ministeeriumile")
+    expect(page.locator(".curact__text")).to_have_text("Esitada arvamus ministeeriumile")
 
-    # Closing is a composer panel, not a box in the rail.
-    expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
+    # The narrative is its own save now: the closure no longer borrows a body
+    # from another operation (docs/adr/0075 §9).
     open_composer(page)
-    page.locator("#cx-lopeta > summary").click()
-    expect(page.locator("#cx-lopeta")).to_have_attribute("open", "")
+    page.locator("#lisa-marge .composer__body").fill("Menetlus lõppes; töö on tehtud.")
+    page.locator("#lisa-marge button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
 
-    # No confirmation box: answering the section is the request (pilot QA F-02).
+    # Closing is a `LISA TEEMALE` panel, not a box in the rail.
+    expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
+    open_add_panel(page, "lisa-lopeta")
+    expect(page.locator("#lisa-lopeta")).to_have_attribute("open", "")
+
+    # No confirmation box: answering the panel is the request (pilot QA F-02).
     expect(page.locator("#id_close_matter")).to_have_count(0)
-    expect(page.locator("[data-composer-submit]")).to_have_text("Salvesta")
+    expect(page.locator("#lisa-lopeta button[type=submit]")).to_have_text("Salvesta")
 
     # `Kuidas lõppes` is three chips over the field the server validates, and
     # nothing is chosen until somebody chooses (docs/adr/0074 §10).
-    page.locator("#cx-lopeta .uxchip", has_text="Jõustus").click()
-    expect(page.locator("#cx-lopeta input[name=disposition]")).to_have_value("COMPLETED")
+    page.locator("#lisa-lopeta .uxchip", has_text="Jõustus").click()
+    expect(page.locator("#lisa-lopeta input[name=disposition]")).to_have_value("COMPLETED")
     # No confirmation box, no second narrative box, and no work-victory
     # decision: closing a file is not a claim that anything was won, and
     # `+ Töövõit` records a win without closing anything.
     expect(page.locator("#id_closure_reason")).to_have_count(0)
     expect(page.locator("[name=work_victory]")).to_have_count(0)
-    page.locator(".composer__body").fill("Menetlus lõppes; töö on tehtud.")
+    page.locator("#lisa-lopeta [name=closing_words]").fill("Menetlus lõppes; töö on tehtud.")
     # The server's own answer, not what the page looks like afterwards. A save
     # that is refused and a save that quietly did nothing leave an identical
     # screen, and the difference is the whole question here.
     with page.expect_response(
-        lambda response: "/sissekanne/" in response.url and response.request.method == "POST"
+        lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("[data-composer-submit]").click()
+        page.locator("#lisa-lopeta button[type=submit]").click()
     saved = caught.value
     assert saved.status == 200, f"the closure save was refused: {saved.status}"
     page.wait_for_load_state("networkidle")
     expect(page.locator(".formerror")).to_have_count(0)
-    expect(page.locator(".composer .field__error")).to_have_count(0)
+    expect(page.locator(".addzone .field__error")).to_have_count(0)
 
     # The header followed the closure out of band, so the page does not come
     # back from its own save calling an archived Matter `Avatud`
@@ -235,9 +254,10 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     expect(page.locator(".badge--closed")).to_be_visible()
     # The banner quotes the one narrative the save carried, not a second box.
     expect(page.locator(".banner--closed")).to_contain_text("Menetlus lõppes; töö on tehtud.")
-    expect(page.locator(".uxnext")).to_contain_text("teema on suletud")
-    # No writable next step and no composer at all.
-    expect(page.locator("#teema-koostaja")).to_have_count(0)
+    expect(page.locator("#praegune-tegevus")).to_contain_text("teema on suletud")
+    # No writable next step and no workspace at all (docs/adr/0075, brief §31).
+    expect(page.locator("#lisa-teemale")).to_have_count(0)
+    expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
     # The past stays readable, and is open on arrival. The head no longer quotes
     # the newest entry, so the words are on the page exactly once
     # (docs/adr/0074 §16).
@@ -324,11 +344,11 @@ def test_at_1024_the_rail_folds_under_and_nothing_scrolls_sideways(page, base_ur
     assert rail["y"] >= main["y"] + main["height"] - 1, "the rail did not fold under the content"
     assert not document_overflows(page)
 
-    # The reading order of the main column is unchanged: the next step, then
-    # the composer, then the chronology.
+    # The reading order of the main column is unchanged: the current task, then
+    # what else can be added, then the chronology.
     order = [
         page.locator(selector).first.bounding_box()["y"]
-        for selector in (".uxnext", ".composer", "#ajajoon")
+        for selector in ("#praegune-tegevus", "#lisa-teemale", "#ajajoon")
     ]
     assert order == sorted(order), "the reading order changed at 1024px"
 
@@ -350,31 +370,30 @@ def _overlap(a, b) -> bool:
     )
 
 
-def test_at_420_the_drop_area_leaves_the_corner_and_at_1440_it_keeps_it(page, base_url):
-    """The one clause of the approved design that is deliberately not copied.
+def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_url):
+    """The clause of the approved design that was deliberately not copied, and
+    the reason it stopped being conditional.
 
     `TEEMA_TARGET_420.png` shows `.cx-drop--corner` still absolutely positioned
     at 420 px, painted over «+1 nädal» and «+2 nädalat» — and the spec that
     ships with it names that a prototype defect and asks for the drop to become
-    a normal-flow full-width row under the chips instead (TEEMA_TARGET_SPEC
-    §H, docs/adr/0074 §19). So here the implementation is deliberately better
-    than its own reference screenshot, and that is exactly the claim no baseline
-    can hold: there is no approved picture of the corrected state to compare
-    against, only a rule.
+    a normal-flow row instead (TEEMA_TARGET_SPEC §H, docs/adr/0074 §19).
 
-    Both halves, because the fix is conditional. Below 720 px the drop leaves
-    the corner; at 1440 px it must still be in it, which is the half a
-    narrow-width rule written at the wrong specificity would quietly take with
-    it — the defect this round measured and moved the rules to the end of
-    `app.css` to stop (docs/adr/0074 §19).
+    The corner affordance itself went with the composer. Every form that takes
+    files is now a panel body or the completion box, both of which are narrow at
+    every width, and an absolutely positioned box inside one is that defect
+    waiting to happen — so the drop is in normal flow at 1440 px as well as at
+    420 px, and this asserts the property the corner rule existed to protect
+    rather than the rule (docs/adr/0075 §2).
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 420, "height": 900})
     open_matter(page, base_url, OPEN_TITLE)
 
-    # Open on arrival, so the row is on the page without a click
-    # (TEEMA_TARGET_SPEC §C.2).
-    drop = page.locator(".cx-drop--corner")
+    open_next_action_form(page)
+    drop_panel = page.locator("#lisa-marge")
+    drop_panel.locator("summary").first.click()
+    drop = page.locator("#lisa-marge .cx-drop")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 420px the drop area is still absolutely positioned — this is the "
@@ -382,21 +401,20 @@ def test_at_420_the_drop_area_leaves_the_corner_and_at_1440_it_keeps_it(page, ba
     )
 
     box = drop.bounding_box()
-    quick = page.locator("[data-quickdate]")
-    chips = [(chip.inner_text().strip(), chip.bounding_box()) for chip in quick.all()]
-    assert chips, "the quick-date chips are gone from the composer"
-    for label, chip in chips:
-        assert not _overlap(box, chip), f"the drop area is painted over «{label}» at 420px"
-        assert box["y"] >= chip["y"] + chip["height"] - 1, (
-            f"the drop area sits beside or above «{label}» at 420px rather than under the chips"
-        )
-
-    row = page.locator(".uxcomp__row").first.bounding_box()
-    assert box["width"] >= row["width"] * 0.9, (
-        f"the drop area is {box['width']:.0f}px in a {row['width']:.0f}px row — still a "
+    form = page.locator("#lisa-marge form").first.bounding_box()
+    assert box["width"] >= form["width"] * 0.9, (
+        f"the drop area is {box['width']:.0f}px in a {form['width']:.0f}px form — still a "
         f"corner affordance. Below 720px it is a full-width row of its own"
     )
     assert not document_overflows(page), "the Matter page scrolls sideways at 420px"
+
+    # And the current action's own drop area, which shares the save's row at
+    # desktop and takes a line of its own here (brief §38).
+    page.goto(page.url)
+    page.wait_for_load_state("networkidle")
+    completion = page.locator("#praegune-tegevus .cx-drop")
+    if completion.count():
+        assert completion.evaluate("n => getComputedStyle(n).position") == "static"
 
     # And the rail is last, under the chronology, rather than gone
     # (TEEMA_TARGET_SPEC §H: nothing is hidden at any width).
@@ -406,20 +424,26 @@ def test_at_420_the_drop_area_leaves_the_corner_and_at_1440_it_keeps_it(page, ba
         "at 420px the rail did not fold under the chronology"
     )
 
-    # The desktop half, on the same page.
+    # The desktop half, on the same page. In normal flow there too, and
+    # overlapping nothing.
     page.set_viewport_size({"width": 1440, "height": 900})
     page.wait_for_timeout(120)
-    assert drop.evaluate("n => getComputedStyle(n).position") == "absolute", (
-        "the narrow-width rule took the desktop corner with it"
+    open_next_action_form(page)
+    drop_panel.locator("summary").first.click()
+    expect(drop).to_be_visible()
+    assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
+        "at 1440px the drop area is absolutely positioned inside a narrow panel "
+        "body — the prototype defect, at the other end of the range"
     )
     box = drop.bounding_box()
-    chips = [chip.bounding_box() for chip in page.locator("[data-quickdate]").all()]
-    assert all(not _overlap(box, chip) for chip in chips), (
-        "at 1440px the corner drop overlaps the quick-date chips"
+    others = [
+        page.locator("#lisa-marge .composer__body").bounding_box(),
+        page.locator("#lisa-marge button[type=submit]").bounding_box(),
+    ]
+    assert all(not _overlap(box, other) for other in others), (
+        "at 1440px the drop area is painted over another control in its own form"
     )
-    assert box["x"] > max(chip["x"] + chip["width"] for chip in chips), (
-        "at 1440px the drop area is not at the right end of the «Millal?» row"
-    )
+    assert not document_overflows(page), "the Matter page scrolls sideways at 1440px"
 
 
 # ---------------------------------------------------------------------------
@@ -502,8 +526,8 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     url = create_matter(page, base_url, "Klaviatuuri brauserikatse")
 
     open_composer(page)
-    page.locator(".composer__body").fill("Salvestatud klaviatuurilt.")
-    page.locator(".composer__body").press("ControlOrMeta+Enter")
+    page.locator("#lisa-marge .composer__body").fill("Salvestatud klaviatuurilt.")
+    page.locator("#lisa-marge .composer__body").press("ControlOrMeta+Enter")
     page.wait_for_load_state("networkidle")
 
     # Scoped to the entry body: the accordion quotes the newest entry in its own
@@ -518,32 +542,38 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     # the shortcut (TEEMA_TARGET_SPEC §C.5, docs/adr/0074 §3).
     page.goto(url)
     open_composer(page)
-    expect(page.locator(".composer .composer__hint")).to_have_count(0)
-    expect(page.locator("[data-composer-submit]")).to_be_visible()
+    expect(page.locator(".composer__hint")).to_have_count(0)
+    expect(page.locator("#lisa-marge button[type=submit]")).to_be_visible()
 
 
-def test_the_next_step_row_sends_you_to_the_composer(page, base_url):
-    """One place a next step is written, and the row points at it.
+def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, base_url):
+    """One open step, one control for it.
 
-    On a Matter with a step that is «Muuda»; on one without, the row says so
-    quietly and stops there. «Määra allpool ↓» is gone — a button whose entire
-    content was an arrow pointing at the control directly underneath it said
-    what the layout already says, and the composer now asks `Järgmiseks` by
-    name (ADR 0052 §13).
+    On a Matter with no step the launcher offers `+ Järgmine tegevus`; once one
+    exists that chip is gone and `Muuda` beside the task is the way to change
+    it, prefilled with what is there. Two controls both offering to set "the
+    next action" is how a lawyer ends up believing they have two
+    (docs/adr/0075 §10).
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Fookuse brauserikatse")
 
-    expect(page.locator(".uxnext")).to_contain_text("Järgmine samm on määramata")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
     expect(page.get_by_role("button", name="Määra allpool ↓")).to_have_count(0)
+    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(1)
 
-    open_composer(page)
-    page.locator("[name='next_text']").fill("Koostada arvamuse mustand")
-    page.locator("#id_next_date").fill(_future(4))
-    page.locator("[data-composer-submit]").click()
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill("Koostada arvamuse mustand")
+    page.locator("#id_target_date").fill(_future(4))
+    page.locator("#lisa-jargmine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    # Now there is a step, and the row's own control focuses the one box that
-    # writes one rather than opening a second editor beside it.
-    page.get_by_role("button", name="Muuda").click()
-    expect(page.locator(".composer__body")).to_be_focused()
+    # Now there is a step. The launcher chip is gone and `Muuda` is beside the
+    # task, carrying what is already recorded.
+    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
+    # A native `<summary>`, not a button: the disclosure has to work with
+    # scripting off (brief §33).
+    muuda = page.locator("#praegune-tegevus").get_by_text("Muuda", exact=True)
+    expect(muuda).to_have_count(1)
+    muuda.click()
+    expect(page.locator("#lisa-jargmine [name='text']")).to_have_value("Koostada arvamuse mustand")

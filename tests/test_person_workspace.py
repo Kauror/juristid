@@ -313,8 +313,11 @@ def test_no_complete_button(client, specialist, today):
     assert "uxdone" not in body
     assert "data-workdone" not in body
     assert "tehtud" not in body.lower().split("rowmenu")[0]
-    # The ⋯ menu still offers it, as a link to where the follow-up is set.
-    assert "Märgi tehtuks" in body
+    # The ⋯ menu still offers the way there, as a link — and says so. It read
+    # `Märgi tehtuks` while the click only navigated to the form that completes
+    # the step, which promised the act and delivered a page (R2-02 §11).
+    assert "Lisa tulemus…" in body
+    assert "Märgi tehtuks" not in body
 
 
 # ---------------------------------------------------------------------------

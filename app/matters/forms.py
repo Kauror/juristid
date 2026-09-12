@@ -323,6 +323,66 @@ class LegalInstrumentChoicesMixin:
         return any(str(item) == other for item in values)
 
 
+class OrganisationPickerChoicesMixin:
+    """What `organisation_picker.html` needs, on both forms that draw it.
+
+    `organisation_picker.html` renders one control for both counterparty
+    questions, and each of them offers the same two things: a handful of
+    institutions as visible chips, and the rest of the catalogue as entries the
+    search can reach. The split differs underneath — Saatja is two checkbox
+    *fields* because one group cannot be rendered in two places without becoming
+    two, Adressaat is one radio group sliced at `addressee_split` because it
+    holds one value — and neither difference belongs in a template that is
+    supposed to be the same control twice.
+
+    So the slicing is done here, in Python, and the partial receives two plain
+    lists of subwidgets either way (task §23, docs/adr/0073).
+
+    **Shared rather than copied, and that is the point of R2-12.** These four
+    properties were `MatterCreateForm`'s alone while `Muuda teemat` rendered the
+    older three-control shape — popular chips, `Vali nimekirjast`, `Uus saatja`,
+    and no search at all over the catalogue. Same concept, same interaction: a
+    person who learns one Organisation control filing a Teema must not find a
+    different one on the page they correct it from. A second picker built for
+    the edit page would be a second set of these rules to keep in step
+    (post-QA R2-12).
+
+    The forms remain two forms. What they now share is how the one control is
+    *fed*, never what either of them writes: creating a Matter and correcting one
+    are different transactions with different services and different rules about
+    defaults, and §11 of the same brief turns on their staying that way.
+    """
+
+    fields: dict[str, forms.Field]
+
+    #: Where the Adressaat radio group stops being chips and starts being tail.
+    #: `None` on a form with no viewer — no usage to rank by means no shortlist,
+    #: and everything is a chip.
+    addressee_split: int | None = None
+
+    @property
+    def sender_chip_choices(self) -> list[Any]:
+        """The senders offered without being asked."""
+        return list(cast(Any, self)["source_organisations"])
+
+    @property
+    def sender_tail_choices(self) -> list[Any]:
+        """Every other institution, searchable rather than on screen."""
+        return list(cast(Any, self)["source_organisations_other"])
+
+    @property
+    def addressee_chip_choices(self) -> list[Any]:
+        """«Määramata», the chosen senders, and the bodies most often answered."""
+        offered = list(cast(Any, self)["addressee_organisation"])
+        return offered if self.addressee_split is None else offered[: self.addressee_split]
+
+    @property
+    def addressee_tail_choices(self) -> list[Any]:
+        if self.addressee_split is None:
+            return []
+        return list(cast(Any, self)["addressee_organisation"])[self.addressee_split :]
+
+
 def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
     """A box for naming an institution the catalogue may not hold yet.
 
@@ -772,7 +832,7 @@ def _default_addressee(form: Any, senders: list[Organisation]) -> tuple[str, str
     return ("addressee_name", typed)
 
 
-class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
+class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form):
     """Creating a Teema requires a title and nothing else.
 
     Everything else is optional and disclosed under a details panel. Demanding
@@ -1115,46 +1175,6 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
         """
         return bool(self.errors.get("addressee_organisation") or self.errors.get("addressee_name"))
 
-    # ---- the two halves of one picker ------------------------------------
-    #
-    # `organisation_picker.html` renders one control for both counterparty
-    # questions, and each of them offers the same two things: a handful of
-    # institutions as visible chips, and the rest of the catalogue as entries
-    # the search can reach. The split differs underneath — Saatja is two
-    # checkbox *fields* because one group cannot be rendered in two places
-    # without becoming two, Adressaat is one radio group sliced at
-    # `addressee_split` because it holds one value — and neither difference
-    # belongs in a template that is supposed to be the same control twice.
-    #
-    # So the slicing is done here, in Python, and the partial receives two
-    # plain lists of subwidgets either way (task §23, docs/adr/0073).
-
-    @property
-    def sender_chip_choices(self) -> list[Any]:
-        """The senders offered without being asked."""
-        return list(cast(Any, self)["source_organisations"])
-
-    @property
-    def sender_tail_choices(self) -> list[Any]:
-        """Every other institution, searchable rather than on screen."""
-        return list(cast(Any, self)["source_organisations_other"])
-
-    @property
-    def addressee_chip_choices(self) -> list[Any]:
-        """«Määramata», the chosen senders, and the bodies most often answered.
-
-        `addressee_split` is `None` when the form has no viewer — no usage to
-        rank by means no shortlist and no tail, and everything is a chip.
-        """
-        offered = list(cast(Any, self)["addressee_organisation"])
-        return offered if self.addressee_split is None else offered[: self.addressee_split]
-
-    @property
-    def addressee_tail_choices(self) -> list[Any]:
-        if self.addressee_split is None:
-            return []
-        return list(cast(Any, self)["addressee_organisation"])[self.addressee_split :]
-
     @property
     def data_class(self) -> str:
         """Ordinary `Uus teema` creates real work. There is no other answer.
@@ -1329,7 +1349,7 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
                 if organisation.pk not in shortlist
             ]
             self.addressee_offered = [*self.frequent_addressees, *tail]
-            self.addressee_split: int | None = 1 + len(self.frequent_addressees)
+            self.addressee_split = 1 + len(self.frequent_addressees)
             addressees = cast(Any, self.fields["addressee_organisation"])
             # The named blank option, restated. Assigning `choices` replaces
             # Django's iterator, and the iterator is what would otherwise have
@@ -1368,7 +1388,7 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
             self.addressee_tail_count = 0
 
 
-class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
+class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form):
     """`Muuda teemat` — the whole record on one page.
 
     The redesign replaced the edit page with inline controls in the header and
@@ -1456,11 +1476,15 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         required=False,
         widget=TEXT_WIDGET,
     )
+    #: `OrganisationCheckboxSelect`, not a plain one: the widget is what writes
+    #: each institution's recorded spellings onto its own control, and without
+    #: them «MKM» finds nothing on this page while finding the ministry on `Uus
+    #: teema`. One control means one search behaviour (post-QA R2-12).
     source_organisations = forms.ModelMultipleChoiceField(
         label="Kellelt",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     #: The rest of the catalogue, exactly as `Uus teema` splits it. Two fields
     #: rather than one because a checkbox group cannot be split without
@@ -1469,7 +1493,7 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     #: And Saatja's typed half, so correcting a Teema offers what filing one
     #: does. A person who learns one sender workflow must not find a different
@@ -1481,7 +1505,7 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         required=False,
         empty_label="Määramata",
         blank=True,
-        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
+        widget=OrganisationRadioSelect(attrs={"class": "chip__input"}),
     )
     addressee_name = addressee_name_field()
     #: No `initial=timezone.localdate` on either date, unlike every other date
@@ -1589,7 +1613,7 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
         self.addressee_offered = [*shortlist, *addressee_tail]
         # Counting the named blank option Django puts first, which the template
         # slices on rather than comparing primary keys.
-        self.addressee_split: int | None = 1 + len(shortlist)
+        self.addressee_split = 1 + len(shortlist)
         self.addressee_tail_count = len(addressee_tail)
         addressees = cast(Any, self.fields["addressee_organisation"])
         # Assigning `choices` replaces Django's iterator, and the iterator is
@@ -1600,6 +1624,21 @@ class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
             ("", addressees.empty_label),
             *((item.pk, item.name) for item in self.addressee_offered),
         ]
+
+        # The recorded spellings, onto the controls that carry them.
+        #
+        # Read once for the whole catalogue and handed to all three choice
+        # fields, exactly as `Uus teema` does it: the picker searches one pool
+        # of institutions through two questions, and «MKM» has to find the same
+        # ministry whichever of them is being answered — and on whichever of the
+        # two pages is asking (docs/adr/0073 task §13, post-QA R2-12).
+        spellings = organisation_alias_terms()
+        for field_name in (
+            "source_organisations",
+            "source_organisations_other",
+            "addressee_organisation",
+        ):
+            cast(Any, self.fields[field_name].widget).alias_terms = spellings
 
         # Validation accepts the whole vocabulary; only the *offered* list is
         # narrowed. A Matter filed years ago under a since-retired area keeps
@@ -1882,10 +1921,16 @@ HALF_CHOICES: tuple[tuple[str, str], ...] = (("1", "I poolaasta"), ("2", "II poo
 #: department settled on these three words and a fourth option nobody picks is
 #: a fourth way for two people to file the same thing differently
 #: (Teema redesign §14).
+#:
+#: The labels are `EngagementKind`'s, never written out again here. This tuple
+#: decides which kinds are offered; what each is called is the enum's answer, so
+#: this form cannot call `EMAIL_CAMPAIGN` «Otsepostitus» while `+ Kaasamine`
+#: calls it «Kirjade voor» and the chronology calls it something else again
+#: (post-QA R2-06).
 ENGAGEMENT_CHOICES: tuple[tuple[str, str], ...] = (
-    (EngagementKind.SURVEY.value, "Küsitlus"),
-    (EngagementKind.EMAIL_CAMPAIGN.value, "Otsepostitus"),
-    (EngagementKind.OTHER.value, "Muu"),
+    (EngagementKind.SURVEY.value, EngagementKind.SURVEY.label),
+    (EngagementKind.EMAIL_CAMPAIGN.value, EngagementKind.EMAIL_CAMPAIGN.label),
+    (EngagementKind.OTHER.value, EngagementKind.OTHER.label),
 )
 
 #: The closure reasons the composer offers, in the order they are read.
@@ -3153,3 +3198,446 @@ class IncomingIntakeForm(forms.Form):
 
     def clean_sender_name(self) -> str:
         return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
+
+
+# ---------------------------------------------------------------------------
+# The Teema workspace: one intention, one form, one save
+# ---------------------------------------------------------------------------
+#
+# Eight small forms where there was one large one. Each asks only what its own
+# operation needs, refuses on its own fields and posts to its own endpoint, so a
+# save can no longer mean six things at once and there is no longer a single
+# `Salvesta` whose meaning depends on which boxes happened to be filled in
+# (docs/adr/0075 §2, brief §12, §28).
+#
+# They reuse the composer's own helpers rather than restating them: the chip
+# vocabularies, `_period_anchor`, `EstonianDateField`. The composer itself is
+# unchanged and still serves its endpoint (docs/adr/0075 §11).
+
+
+class MultipleFileInput(forms.FileInput):
+    """A file input that accepts more than one file.
+
+    Django refuses `multiple` on the stock widget on purpose — the base field
+    would silently keep the last file and drop the rest — so the opt-in is a
+    subclass and the field below is what makes the list safe to clean. Not
+    `ClearableFileInput`: the clear checkbox describes an existing stored value,
+    and every control here is a fresh upload onto a record being created.
+    """
+
+    allow_multiple_selected = True
+
+
+class MultipleFileField(forms.FileField):
+    """Every file the person chose, each validated like a single upload.
+
+    The brief's requirement is that a note, a consultation, a commencement, a
+    deadline and a win can each carry *several* files; the alternative — one
+    control repeated, or one file per save — is the surface telling somebody to
+    save five times for one act (brief §21).
+
+    ``clean`` runs the ordinary ``FileField`` validation over each item, so the
+    size and emptiness checks that guard a single upload guard all of them. The
+    evidence-format and content-signature checks are ``read_upload``'s and run
+    in the service, where a refusal unwinds the whole operation (brief §24).
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("widget", MultipleFileInput(attrs={"class": "visually-hidden"}))
+        super().__init__(*args, **kwargs)
+
+    def clean(self, data: Any, initial: Any = None) -> list[Any]:
+        single = super().clean
+        if isinstance(data, (list, tuple)):
+            return [single(item, initial) for item in data if item not in (None, "", False)]
+        if data in (None, "", False):
+            return []
+        return [single(data, initial)]
+
+
+def require_written_body(raw: Any, message: str) -> str:
+    """A rich-text box that a person actually wrote something into.
+
+    ``.strip()`` is not enough here. The editor posts markup, so an untouched
+    box arrives as `<p></p>` or `<br>` — non-empty as a string, empty as a
+    sentence — and a form that accepted it would create an `Entry` with no
+    content and then be refused by `add_entry` with a message pinned to nothing.
+    Measured against the plain text, which is what a reader would see.
+    """
+    body = str(raw or "")
+    if not plain_text(body).strip():
+        raise forms.ValidationError(message)
+    return body
+
+
+def workspace_attachments(field_id: str) -> MultipleFileField:
+    """`Lisa failid` — the same control on every operation that takes evidence.
+
+    One factory rather than six declarations: the label is what a screen reader
+    announces for a visually hidden input inside a drop zone, and six copies of
+    it are six chances for one of them to say something else.
+
+    **`field_id` is required, and it is not decoration.** Six of these render on
+    one page and Django would give every one of them `id_attachments`, which is
+    six duplicate ids in one document — invalid, and enough to make
+    `getElementById` and a `<label for>` reach the wrong control. The browser
+    lane caught the same collision on `id_body` between the current-action box
+    and `+ Märge` (docs/adr/0075 §2).
+    """
+    return MultipleFileField(
+        label="Lisa failid",
+        required=False,
+        widget=MultipleFileInput(attrs={"class": "visually-hidden", "id": field_id}),
+    )
+
+
+class ChipChoices:
+    """Chip rendering for a bound-or-unbound hidden choice field.
+
+    The chips write into a hidden input, which is the field that is submitted
+    and validated, so the server sees one value however it was chosen and the
+    form works with the chips ignored entirely. Read from ``self.data`` rather
+    than ``cleaned_data`` for the reason the composer's own version gives: the
+    save that most needs its chips back is the one that did not validate.
+    """
+
+    def chosen_chip(self, name: str, fallback: str) -> str:
+        if getattr(self, "is_bound", False):
+            return str(self.data.get(name) or "")  # type: ignore[attr-defined]
+        return fallback
+
+    def chips(
+        self, name: str, options: Sequence[tuple[str, str]], fallback: str
+    ) -> list[dict[str, Any]]:
+        chosen = self.chosen_chip(name, fallback)
+        return [
+            {"value": value, "label": label, "selected": value == chosen}
+            for value, label in options
+        ]
+
+
+class CompleteCurrentActionForm(forms.Form):
+    """`PRAEGUNE TEGEVUS` — what I did, and the step it finishes.
+
+    **`Mida tegid?` is required.** Completing a task means describing what was
+    done about it: a step marked done with nothing said about it leaves the file
+    saying only that somebody pressed a button. A file is supplementary and
+    never a substitute — the form will not fabricate a body from a filename, the
+    action's own text or the word "Tehtud" (brief §5).
+
+    **`action_id` identifies the exact step the form was rendered against**, and
+    it is the whole of the stale-tab protection. Hidden, not derived: if this
+    form asked the service for "whatever is open", a tab showing a superseded
+    step would complete its replacement — a task somebody else set, marked done
+    by a person who never saw it. The service re-reads under a lock and refuses
+    anything else (brief §6, app/matters/workspace.py).
+    """
+
+    use_required_attribute = False
+
+    action_id = forms.UUIDField(widget=forms.HiddenInput())
+    body = forms.CharField(
+        label="Mida tegid?",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "composer__body",
+                "rows": "3",
+                "placeholder": "Kirjelda, mida sa selle ülesandega tegid…",
+                "data-richtext": "true",
+                # Explicit, because `+ Märge` asks its own question into its own
+                # box and both fields are called `body`.
+                "id": "id_praegune_body",
+            }
+        ),
+    )
+    attachments = workspace_attachments("id_praegune_failid")
+
+    def clean_body(self) -> str:
+        return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mida tegid.")
+
+
+class MatterNoteForm(forms.Form):
+    """`+ Märge` — something happened, and it is not the current task finishing.
+
+    One box and its files. Deliberately no `Järgmiseks` beside it: recording
+    that the ministry rang must not silently complete, replace or create a step,
+    and the surest way to guarantee that is a form with no field that could
+    (brief §13).
+    """
+
+    use_required_attribute = False
+
+    body = forms.CharField(
+        label="Mis juhtus või mida tegid?",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "composer__body",
+                "rows": "3",
+                "placeholder": "Näiteks: ministeerium helistas, uus versioon tuleb reedel.",
+                "data-richtext": "true",
+                "id": "id_marge_body",
+            }
+        ),
+    )
+    attachments = workspace_attachments("id_marge_failid")
+
+    def clean_body(self) -> str:
+        return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mis juhtus.")
+
+
+class CompactEngagementForm(ChipChoices, forms.Form):
+    """`+ Kaasamine` — the kind, who was engaged, how many answered, the replies.
+
+    The business model is untouched this round. `Vastuseid` stays optional and
+    blank still means *nobody counted* rather than *nobody answered*; no response
+    rate is computed here or anywhere else, and the larger «Alustasin arvamuste
+    küsimist» / «Arvamused saabusid» redesign is a separate product round
+    (brief §16).
+
+    ``kind`` validates against the whole stored vocabulary while the panel offers
+    three chips, so a historical `WEB_CALL` row stays editable through every
+    service that takes a kind.
+    """
+
+    use_required_attribute = False
+
+    kind = forms.ChoiceField(
+        label="Liik",
+        choices=EngagementKind.choices,
+        initial=COMPOSER_ENGAGEMENT_KINDS[0][0],
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    audience = forms.CharField(
+        label="Keda kaasati",
+        required=False,
+        max_length=500,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt liikmed, kaubandusvaldkonna töögrupp",
+            }
+        ),
+    )
+    response_count = forms.IntegerField(
+        label="Vastuseid",
+        required=False,
+        min_value=0,
+        max_value=1_000_000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "numeric",
+                "autocomplete": "off",
+                "placeholder": "14",
+            }
+        ),
+    )
+    attachments = workspace_attachments("id_kaasamine_failid")
+
+    @property
+    def kind_chips(self) -> list[dict[str, Any]]:
+        return self.chips("kind", COMPOSER_ENGAGEMENT_KINDS, COMPOSER_ENGAGEMENT_KINDS[0][0])
+
+    def clean_audience(self) -> str:
+        audience = (self.cleaned_data.get("audience") or "").strip()
+        if not audience:
+            raise forms.ValidationError("Kirjuta, keda kaasati.")
+        return audience
+
+    def clean_kind(self) -> str:
+        return self.cleaned_data.get("kind") or COMPOSER_ENGAGEMENT_KINDS[0][0]
+
+
+class CompactImportantDateForm(ChipChoices, forms.Form):
+    """`+ Oluline tähtaeg` — a milestone somebody announced, and its letter.
+
+    The canonical `MatterImportantDate` semantics, unchanged: one date box plus
+    `Täpne päev` / `Kuu` / `Kvartal`, normalised through `app.workflow.dates`
+    so a quarter recorded here is the same stored anchor as a quarter recorded
+    on `Olulised tähtajad`. `HALF_YEAR` and `YEAR` remain stored precisions and
+    still render on the rows that carry them (docs/adr/0074 §11, brief §17).
+
+    Creates no `NextAction`, then or ever: a date the file has to live with is
+    not an instruction to a person.
+    """
+
+    use_required_attribute = False
+
+    deadline_title = forms.CharField(
+        label="Mis tähtaeg",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt kooskõlastusringi lõpp",
+            }
+        ),
+    )
+    attachments = workspace_attachments("id_tahtaeg_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields.update(_precision_fields("deadline", date_label="Kuupäev"))
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        return self.chips(
+            "deadline_precision",
+            (
+                (DatePrecision.EXACT.value, "Täpne päev"),
+                (DatePrecision.MONTH.value, "Kuu"),
+                (DatePrecision.QUARTER.value, "Kvartal"),
+            ),
+            DatePrecision.EXACT.value,
+        )
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        title = (cleaned.get("deadline_title") or "").strip()
+        if not title:
+            self.add_error("deadline_title", "Kirjuta, mis tähtaeg see on.")
+        anchor, end, precision = _period_anchor(self, "deadline")
+        if anchor is None or end is None:
+            if not self.has_error("deadline_date"):
+                self.add_error("deadline_date", "Oluline tähtaeg vajab kuupäeva või perioodi.")
+            return cleaned
+        cleaned["important_date_kwargs"] = {
+            "title": title,
+            "date_value": anchor,
+            "period_end": end,
+            "date_precision": precision,
+        }
+        return cleaned
+
+
+class CompactEffectiveDateForm(forms.Form):
+    """`+ Jõustumine` — what commences and the day it does.
+
+    A door onto the canonical `MatterEffectiveDate`, not a second commencement
+    model and not an `Entry` pretending to be one. Both halves or neither,
+    refused on whichever is missing: a commencement with no date is a sentence,
+    and a date with nothing commencing on it is a number (brief §18).
+
+    Stored at `EXACT`, because the panel asks for a day and takes a day. The
+    approximate and general-order kinds the domain also carries keep their own
+    surfaces and their own rows.
+    """
+
+    use_required_attribute = False
+
+    effective_title = forms.CharField(
+        label="Mis jõustub",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt pakendiseaduse muudatused",
+            }
+        ),
+    )
+    effective_on = EstonianDateField(label="Jõustub", required=False, widget=EstonianDateInput())
+    attachments = workspace_attachments("id_joustumine_failid")
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        title = (cleaned.get("effective_title") or "").strip()
+        when = cleaned.get("effective_on")
+        if not title:
+            self.add_error("effective_title", "Kirjuta, mis jõustub.")
+        if when is None and not self.has_error("effective_on"):
+            self.add_error("effective_on", "Märgi, millal see jõustub.")
+        if self.errors:
+            return cleaned
+        cleaned["effective_date_kwargs"] = {
+            "description": title,
+            "date_value": when,
+            "date_precision": DatePrecision.EXACT.value,
+        }
+        return cleaned
+
+
+class CompactWorkVictoryForm(forms.Form):
+    """`+ Töövõit` — what changed, and the evidence that it did.
+
+    One sentence and its files. A win closes nothing, completes nothing and is
+    recorded on the day it happened rather than on the day the file finishes
+    (brief §19).
+
+    No period. `MatterWorkVictory.period_date` is a *reporting* period, and
+    borrowing today's date for it because a panel happened to be open would file
+    a win into a reporting year nobody chose.
+    """
+
+    use_required_attribute = False
+
+    victory_change = forms.CharField(
+        label="Mis muutus",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt üleminekuaeg väiketootjatele pikendati 2028. aastani",
+            }
+        ),
+    )
+    attachments = workspace_attachments("id_toovoit_failid")
+
+    def clean_victory_change(self) -> str:
+        value = (self.cleaned_data.get("victory_change") or "").strip()
+        if not value:
+            raise forms.ValidationError("Kirjuta, mis muutus.")
+        return value[:2000]
+
+
+class CompactClosureForm(ChipChoices, forms.Form):
+    """`+ Lõpeta teema` — two questions, and nothing invented from them.
+
+    The simplified closure of docs/adr/0074 §10, unchanged. Closing a Matter is
+    not a claim that an opinion was sent: no final evidence, no send date, no
+    recipients, no work-victory question. The six-question flow is not coming
+    back, and the canonical rules behind each of those facts are untouched —
+    `mark_submission_sent` still refuses a submission without its exact final
+    evidence, and a `Töövõit` is still recorded from its own panel (brief §20).
+
+    `Lõppsõna` is optional. The composer used to fall back to its body when it
+    was blank; there is no shared body any more, so a closure with nothing to add
+    stores an empty reason rather than borrowing a sentence from another
+    operation (docs/adr/0075 §9).
+    """
+
+    use_required_attribute = False
+
+    disposition = forms.ChoiceField(
+        label="Kuidas lõppes",
+        choices=(("", "Vali põhjus…"), *CLOSURE_CHOICES),
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    closing_words = forms.CharField(
+        label="Lõppsõna",
+        required=False,
+        max_length=2000,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input field__input--compact",
+                "rows": "2",
+                "placeholder": "Mis sellest teemast lõpuks sai?",
+            }
+        ),
+    )
+
+    @property
+    def closure_chips(self) -> list[dict[str, Any]]:
+        return self.chips("disposition", COMPOSER_CLOSURE_CHOICES, "")
+
+    def clean_disposition(self) -> str:
+        disposition = self.cleaned_data.get("disposition") or ""
+        if not disposition:
+            raise forms.ValidationError("Vali, kuidas teema lõppes.")
+        return disposition

@@ -49,7 +49,7 @@ def _matter_on_sandras_desk(page, base_url: str, title: str) -> str:
     return page.url
 
 
-def test_maara_opens_the_composer_and_puts_the_caret_in_it(page, base_url):
+def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url):
     sign_in(page, base_url, SANDRA)
 
     matter_url = _matter_on_sandras_desk(page, base_url, "UX-003 koostajasse saabumine")
@@ -58,38 +58,37 @@ def test_maara_opens_the_composer_and_puts_the_caret_in_it(page, base_url):
     page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
-    cta = page.locator(f'a.quietrow__cta[href="{matter_path}#teema-koostaja"]')
+    cta = page.locator(f'a.quietrow__cta[href="{matter_path}#lisa-jargmine"]')
     assert cta.count(), "Minu asjad does not offer Määra for a Matter with no next step"
     cta.first.click()
     page.wait_for_url(re.compile(re.escape(matter_path)))
 
-    # The body is only visible once the disclosure is open, so waiting for it is
-    # what makes this free of a race with `DOMContentLoaded` — the assertion
+    # The field is only visible once the disclosure is open, so waiting for it
+    # is what makes this free of a race with `DOMContentLoaded` — the assertion
     # below then reports the state rather than the timing.
-    page.locator(".composer__body").wait_for(state="visible")
+    page.locator("#lisa-jargmine [name='text']").wait_for(state="visible")
 
-    composer = page.locator("details.uxcomp")
+    panel = page.locator("#lisa-jargmine")
     # Open because somebody asked for it by following a control that says so —
-    # not because the page opens it for everybody (ADR 0052 §13, and the pass
-    # that closed it again).
-    assert composer.evaluate("node => node.open") is True
+    # not because the page opens it for everybody. `LISA TEEMALE` is a choice
+    # until one is made (docs/adr/0075 §2).
+    assert panel.evaluate("node => node.open") is True
 
     # And the caret is in the box, so the next thing typed is the next step.
     assert page.evaluate(
-        "() => { const c = document.getElementById('teema-koostaja');"
+        "() => { const c = document.getElementById('lisa-jargmine');"
         " return !!c && c.contains(document.activeElement); }"
-    ), "arrival left focus outside the composer"
+    ), "arrival left focus outside the next-step form"
 
 
-def test_an_ordinary_matter_visit_opens_the_composer(page, base_url):
-    """The invariant the fix must not cost, in the direction the target sets it.
+def test_an_ordinary_matter_visit_opens_no_panel(page, base_url):
+    """The invariant the fix must not cost, in the direction ADR 0075 sets it.
 
-    Same page, no fragment. The composer is **open** on arrival since the
-    approved target: recording what happened is the reason this product exists
-    and must not begin with a click, and the form is short enough to live open
-    (docs/adr/0074 §3). What this test is really guarding is that an ordinary
-    visit and an arrival-by-fragment agree — the fix must not make one of them
-    special.
+    Same page, no fragment. `LISA TEEMALE` is a *choice* of seven operations
+    and nothing is a form until one is chosen, so an ordinary visit must open
+    none of them — and an arrival by fragment must open exactly the one the
+    link named. What this test guards is that the two agree: the fix must not
+    make either of them special (docs/adr/0075 §2).
     """
     sign_in(page, base_url, SANDRA)
     matter_url = _matter_on_sandras_desk(page, base_url, "UX-003 pärisvaate kontroll")
@@ -97,10 +96,10 @@ def test_an_ordinary_matter_visit_opens_the_composer(page, base_url):
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
 
-    composer = page.locator("details.uxcomp")
-    composer.wait_for(state="attached")
+    panel = page.locator("#lisa-jargmine")
+    panel.wait_for(state="attached")
 
-    assert composer.evaluate("node => node.open") is True
-    # And it still closes, which is what makes it a disclosure.
-    page.locator(".uxnext__label").click()
-    assert composer.evaluate("node => node.open") is False
+    assert panel.evaluate("node => node.open") is False
+    # And it opens from its own summary, which is what makes it a disclosure.
+    panel.locator("summary").first.click()
+    assert panel.evaluate("node => node.open") is True

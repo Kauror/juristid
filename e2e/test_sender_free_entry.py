@@ -17,9 +17,10 @@ contain it (docs/adr/0063).
 Since docs/adr/0073 there is no disclosure and no second box on `Uus teema`: one
 field searches the catalogue and the `+` beside it proposes what was typed. The
 rules underneath are untouched, which is why this file kept every assertion
-about them and changed only how the browser reaches them. `Muuda teemat` and
-`Saabunud` still render `sender_control.html`, so the tests below that drive
-those surfaces are untouched as well (task §26).
+about them and changed only how the browser reaches them. `Muuda teemat` asks
+the question through that same control since post-QA R2-12; `Saabunud` still
+renders `sender_control.html`, and the tests below that drive it are untouched
+(task §26).
 """
 
 from __future__ import annotations

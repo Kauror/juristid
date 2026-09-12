@@ -232,10 +232,17 @@ from app.documents.derivatives import (  # noqa: E402
     EmailAttachmentLink,
 )
 
+# The explicit relationship between one document and the exact business record
+# it supports. Its own module for the same readability reason `derivatives` has
+# one, and imported here so the app registry finds it (docs/adr/0075 §6).
+from app.documents.links import DocumentLink, DocumentLinkQuerySet  # noqa: E402
+
 __all__ = [
     "AttachmentDisposition",
     "Document",
     "DocumentDerivative",
+    "DocumentLink",
+    "DocumentLinkQuerySet",
     "DocumentTextFragment",
     "DocumentVersion",
     "EmailAttachmentLink",

@@ -322,10 +322,10 @@ def test_a_quick_span_writes_its_day_into_the_one_date_field(page, base_url, lab
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".uxnext__text")).to_have_text(f"Vaadata eelnõu üle ({label})")
-    # `.uxnext__date` rather than the whole row: the row also carries the
+    expect(page.locator(".curact__text")).to_have_text(f"Vaadata eelnõu üle ({label})")
+    # `.curact__date` rather than the whole row: the row also carries the
     # «Lükka edasi» menu, whose options print dates of their own.
-    expect(page.locator(".uxnext__date")).to_contain_text(expected)
+    expect(page.locator(".curact__date")).to_contain_text(expected)
 
 
 def test_the_exact_box_behind_kuupaev_takes_a_typed_date(page, base_url):
@@ -342,13 +342,13 @@ def test_the_exact_box_behind_kuupaev_takes_a_typed_date(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".uxnext__text")).to_have_text("Vaadata uus eelnõu versioon üle")
+    expect(page.locator(".curact__text")).to_have_text("Vaadata uus eelnõu versioon üle")
     # The date this application writes: exactly what was typed, with no
     # leading zeros added, and read off the step's own element rather than the
     # row — the «Lükka edasi» menu beside it prints zero-padded days of its
     # own (app/core/dates.py). The exhaustive format rule is
     # `tests/test_estonian_dates.py`; what is asserted here is the round trip.
-    expect(page.locator(".uxnext__date")).to_contain_text(wanted)
+    expect(page.locator(".curact__date")).to_contain_text(wanted)
 
 
 def test_a_step_with_no_date_is_refused_and_the_text_survives(page, base_url):
@@ -534,7 +534,7 @@ def test_the_next_action_block_is_still_optional(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".uxnext")).to_contain_text("Järgmine samm on määramata")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
 
 
 def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
@@ -556,7 +556,7 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
     # sentence (Teema redesign §8). The service still assigns one, which is what
     # this test is actually about, so it is checked where it is visible: the
     # step appears in that person's own Minu töö queue.
-    expect(page.locator(".uxnext__text")).to_have_text("Jälgida menetluse käiku")
+    expect(page.locator(".curact__text")).to_have_text("Jälgida menetluse käiku")
     go_to(page, "Minu asjad")
     expect(page.get_by_text("Jälgida menetluse käiku").first).to_be_visible()
 

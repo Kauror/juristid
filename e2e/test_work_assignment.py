@@ -30,7 +30,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import FORMER_NAME, FORMER_OWNER_TITLE
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, open_composer, sign_in
+from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, open_next_action_form, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -143,19 +143,19 @@ def test_saving_the_header_owner_unchanged_is_a_save_and_not_a_refusal(page, bas
 def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page, base_url):
     """Correction 1, where a person actually meets it.
 
-    The composer carries no Vastutaja control, so this Matter's next step would
-    have defaulted to the colleague who left — into the one queue nobody opens.
-    The refusal has to be visible and it has to say what can be done about it,
-    which is a sentence about the Teema's owner and not about the step.
+    `+ Järgmine tegevus` carries no Vastutaja control, so this Matter's next
+    step would have defaulted to the colleague who left — into the one queue
+    nobody opens. The refusal has to be visible and it has to say what can be
+    done about it, which is a sentence about the Teema's owner and not about the
+    step.
     """
     sign_in(page, base_url, MARTIN)
     _open_matter(page, base_url, FORMER_OWNER_TITLE)
 
-    open_composer(page)
-    page.locator(".composer__body").fill("Ministeerium lubas vastata.")
-    page.locator("[name='next_text']").fill("Kontrollida, kas ministeerium vastas")
-    page.locator(".uxcomp__row .uxchip", has_text="+1 nädal").first.click()
-    page.locator("[data-composer-submit]").click()
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill("Kontrollida, kas ministeerium vastas")
+    page.locator("#lisa-jargmine .uxchip", has_text="+1 nädal").first.click()
+    page.locator("#lisa-jargmine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.get_by_text("ei ole enam aktiivne osakonna töötaja")).to_be_visible()

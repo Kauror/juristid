@@ -22,6 +22,7 @@ from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
 from app.matters.locks import (
     lock_matter_for_evidence_integrity,
+    lock_open_matter_for_business_write,
     lock_submission_for_evidence_integrity,
 )
 from app.search.indexing import reindex_submission
@@ -536,9 +537,50 @@ def register_sent_opinion(
     because the exact bytes that were sent are the point and a document's
     current version moves. The caller resolves it under the reader's own
     visibility scope before it gets here.
+
+    **This route never invents the moment.** ``sent_at`` is required and must be
+    a day the person actually supplied, because the act is *record a send that
+    already happened* — not *send this now*. Registering an opinion with the
+    date left blank used to stamp `timezone.now()` through
+    `mark_submission_sent`, so the outbound register and the process timeline
+    reported `Arvamus välja <today>` about a letter whose send date nobody had
+    stated (R2-01). `mark_submission_sent` keeps its "now" default for the
+    separate real-time act — pressing `Märgi saadetuks` on a draft genuinely
+    does mean *now* — and this route refuses to use it.
     """
     if version.document_id != document.pk:
         raise DomainError("Tõend peab kuuluma valitud dokumendi juurde.")
+    if sent_at is None:
+        raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
+    if sent_at_precision != SentAtPrecision.DATE:
+        raise DomainError("Registreeritud saatmise täpsus on kuupäev.")
+    if not recipients:
+        raise DomainError("Saatmise registreerimiseks on vaja vähemalt üht adressaati.")
+
+    # The read model keeps this file out of the select; this keeps a crafted
+    # post from binding it anyway. Unscoped by viewer on purpose: whether these
+    # bytes are already a draft's evidence is a fact about the record, not about
+    # who is looking, and a check that could not see the draft would answer the
+    # question wrongly rather than refuse to answer it.
+    #
+    # Under the Matter lock, taken here rather than left to
+    # `select_final_evidence` further down. It is the first step of the one lock
+    # order (`app/matters/locks.py`), so taking it earlier adds no edge to the
+    # graph — and a check that read before the lock would be exactly the stale
+    # read the lock exists to prevent: a draft binding these same bytes in
+    # another transaction would pass both checks and produce the two records
+    # this refuses.
+    lock_matter_for_evidence_integrity(document.matter_id)
+    owning_draft = Submission.objects.filter(
+        matter=document.matter,
+        status=SubmissionStatus.DRAFT,
+        final_version=version,
+    ).first()
+    if owning_draft is not None:
+        raise DomainError(
+            "See fail on juba koostatava arvamuse lõplik tõend. "
+            "Märgi see arvamus saadetuks selle enda juures."
+        )
 
     submission = create_submission(
         matter=document.matter,
@@ -564,4 +606,185 @@ def register_sent_opinion(
         sent_at_precision=sent_at_precision,
         channel=channel,
         reference=reference,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The interactive boundary
+# ---------------------------------------------------------------------------
+#
+# A closed Matter is read-only for normal business work. A lawyer may read it,
+# browse its chronology, open its files and inspect its opinions; what they may
+# not do is create or advance canonical business content on it. If ordinary
+# work has to continue, the Matter is reopened first — «once closed, forever
+# immutable» is not the rule and never was (docs/adr/0075 §12, R2-02).
+#
+# The services above do not carry that rule, deliberately. They are the
+# canonical primitives, and the archive apply composes them into records of
+# letters Koda really sent about work that finished years ago
+# (`app/legacy_import/opinion_apply.py`); the closing composer calls three of
+# them while the Matter it is about to close is still open
+# (`app/matters/services.py::_closure_final_opinion`). Stating «the Matter must
+# be open» down there would refuse the historical record, which is the one
+# thing this boundary must not do.
+#
+# So it is stated here, in the use cases the Dokumendid surface posts to. Each
+# is the same act with the question asked first, under the Matter's own row
+# lock and against the locked row's state — never against the instance the view
+# arrived with, because between reading that instance and writing the child row
+# another transaction may commit the closure (`app/matters/locks.py`).
+#
+# Every one of them takes the Matter lock as the first step of the one lock
+# order, which is exactly where the services below take it anyway, so nothing
+# here adds an edge to the lock graph. Re-taking the same row at the same
+# strength inside one transaction is free.
+
+
+@transaction.atomic
+def create_opinion_draft_on_open_matter(
+    *,
+    matter: Any,
+    title: str,
+    kind: str = SubmissionKind.FORMAL_OPINION,
+    actor: Any = None,
+    recipients: list[Any] | None = None,
+    joint_submitters: list[Any] | None = None,
+    for_information: list[Any] | None = None,
+    channel: str = "",
+) -> Submission:
+    """`+ Uus arvamus` — start a draft, if there is still work to do here.
+
+    A draft is the beginning of new advocacy, which is the plainest case of the
+    rule: nobody starts writing an opinion about a file that is finished.
+    """
+    locked = lock_open_matter_for_business_write(matter.pk)
+    return create_submission(
+        matter=locked,
+        title=title,
+        kind=kind,
+        actor=actor,
+        recipients=recipients,
+        joint_submitters=joint_submitters,
+        for_information=for_information,
+        channel=channel,
+    )
+
+
+@transaction.atomic
+def attach_final_evidence_on_open_matter(
+    *,
+    submission: Submission,
+    content: bytes,
+    original_filename: str,
+    mime_type: str,
+    actor: Any = None,
+) -> DocumentVersion:
+    """`Lisa fail` on a draft — preparing an opinion is continuing the work.
+
+    Not a correction of a historical fact: this is the ordinary next step of a
+    draft somebody is still writing, and it is refused while the Matter is shut
+    for the same reason the draft could not have been started. Reopen, attach,
+    close again.
+    """
+    lock_open_matter_for_business_write(submission.matter_id)
+    return attach_final_evidence(
+        submission=submission,
+        content=content,
+        original_filename=original_filename,
+        mime_type=mime_type,
+        actor=actor,
+    )
+
+
+@transaction.atomic
+def select_final_evidence_on_open_matter(
+    *, submission: Submission, version: DocumentVersion, actor: Any = None
+) -> Submission:
+    """The other half of `Lisa fail`: a file already on the Matter, chosen.
+
+    Same act, same rule. Which of the two branches the form took is a detail of
+    where the bytes came from, and a boundary that guarded one of them would be
+    a boundary with a door in it.
+    """
+    lock_open_matter_for_business_write(submission.matter_id)
+    return select_final_evidence(submission=submission, version=version, actor=actor)
+
+
+@transaction.atomic
+def mark_submission_sent_on_open_matter(
+    *,
+    submission: Submission,
+    actor: Any = None,
+    channel: str = "",
+    reference: str = "",
+) -> Submission:
+    """`Märgi saadetuks` on a draft — the act that means *now*.
+
+    The clearest thing on this surface that a closed Matter cannot accept: it
+    stamps the current moment onto a file whose work is over. The date is not
+    passed here and must not be — this route means the letter is going out as
+    the button is pressed, and `register_sent_opinion` is the separate act for
+    one that went out earlier.
+    """
+    lock_open_matter_for_business_write(submission.matter_id)
+    return mark_submission_sent(
+        submission=submission,
+        actor=actor,
+        channel=channel,
+        reference=reference,
+    )
+
+
+@transaction.atomic
+def register_sent_opinion_on_open_matter(
+    *,
+    document: Document,
+    version: DocumentVersion,
+    title: str,
+    kind: str = SubmissionKind.FORMAL_OPINION,
+    actor: Any = None,
+    recipients: list[Any] | None = None,
+    for_information: list[Any] | None = None,
+    joint_submitters: list[Any] | None = None,
+    channel: str = "",
+    reference: str = "",
+    sent_at: datetime | None = None,
+    sent_at_precision: str = SentAtPrecision.TIMESTAMP,
+) -> Submission:
+    """`Registreeri saatmine` from Dokumendid, on a Matter that is still open.
+
+    **The one that had to be decided rather than assumed.** Registering a send
+    records something that already happened, which sounds like exactly the
+    retrospective act a closed file should still accept — and at the service
+    below it is, because that is how the register import files two and a half
+    thousand finished letters. What arrives *here* is different: a person on
+    the Dokumendid page, with the file in front of them, creating a canonical
+    Submission, its recipients and its send event on a Matter somebody has
+    declared finished. That is ordinary business work with a backdated field,
+    not an import, and the import's privilege comes from using the import path
+    rather than from being a powerful user of the UI.
+
+    So the surface refuses and `register_sent_opinion` does not. If the send is
+    real and the file is shut, the answer is to reopen it, register, and close
+    it again — which leaves somebody's name on both decisions.
+
+    Every rule the service owns is untouched: `sent_at` is still required and
+    still a day the person supplied, the precision is still DATE, at least one
+    addressee is still required, and a draft's own final evidence is still not
+    a second registration candidate (R2-01).
+    """
+    lock_open_matter_for_business_write(document.matter_id)
+    return register_sent_opinion(
+        document=document,
+        version=version,
+        title=title,
+        kind=kind,
+        actor=actor,
+        recipients=recipients,
+        for_information=for_information,
+        joint_submitters=joint_submitters,
+        channel=channel,
+        reference=reference,
+        sent_at=sent_at,
+        sent_at_precision=sent_at_precision,
     )

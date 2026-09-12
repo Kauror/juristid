@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -368,6 +369,102 @@ def test_a_refused_save_keeps_the_staged_file_and_what_was_found(
 
     open_documents(page)
     expect(page.get_by_role("link", name="kaaskiri.pdf", exact=True)).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# R2-03 — a sender somebody typed is an answer, and a refusal does not forget it
+# ---------------------------------------------------------------------------
+#
+# Only a browser shows this one, because the step that did the damage is the
+# browser's. The server proposes a sender; `static/js/app.js` decides whether to
+# write it, and it declines wherever somebody has already answered. Its record
+# of what has been answered lives in the document — so a refused save, which
+# replaces the document, took the record with it and left the proposal.
+#
+# The person had answered. They typed an institution the catalogue does not
+# hold and pressed `+`, which writes `sender_name` rather than ticking a chip,
+# so the chips were all unticked and the proposal was applied over the top. The
+# next successful save then persisted both: the sender they chose, and the one
+# they had visibly not chosen (task §21–§24).
+
+
+def sender_add(page, name: str) -> None:
+    """Type a sender the catalogue does not hold and commit it with `+`."""
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.type(name, delay=20)
+    page.locator("#saatja-valik [data-orgfind-add]").click()
+
+
+def chosen_senders(page) -> list[str]:
+    """Every institution actually ticked in the Saatja picker."""
+    return page.locator("#saatja-valik label.chip").evaluate_all(
+        "nodes => nodes"
+        ".filter(node => { const i = node.querySelector('input');"
+        " return i && i.checked && i.value !== ''; })"
+        ".map(node => { const n = node.querySelector('.chip__name');"
+        " return (n ? n.textContent : '').replace(/\\s*×$/, '').trim(); })"
+    )
+
+
+def test_a_refused_save_does_not_apply_a_sender_over_one_the_person_typed(
+    page, base_url, screenshots, letter_pdf
+) -> None:
+    """The reported sequence, end to end, in a browser (task §21).
+
+    The letter names «Näidisministeerium» with enough confidence to fill an
+    empty Saatja. It must not fill an answered one — before the refusal or
+    after it — and the Teema that is finally created must carry exactly the
+    institution the person named.
+    """
+    sign_in(page, base_url, SANDRA)
+    title = f"Saatja jääb selleks, mille inimene kirjutas {uuid.uuid4().hex[:6]}"
+    # Unique per run, and it has to be. `+` on a spelling the catalogue already
+    # holds *selects that row* rather than writing the typed field
+    # (docs/adr/0073), so a fixed name would answer Saatja the other way round
+    # on every run after the first — and this test would then pass without
+    # exercising the provisional path at all.
+    typed_sender = f"Kliimakaitse Liit {uuid.uuid4().hex[:8]}"
+
+    open_create(page, base_url)
+    sender_add(page, typed_sender)
+    choose(page, [letter_pdf])
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    # Before the refusal the rule already held: the analysis is offered, and
+    # nothing is applied over an answer. `+` shows the committed name as its own
+    # chip, so the answer is visible as well as posted.
+    expect(page.locator("[data-orgfind-typed][data-sender-name]")).to_have_value(typed_sender)
+    assert chosen_senders(page) == [typed_sender], chosen_senders(page)
+
+    # The ordinary refusal: «Muu» ticked with nothing written beside it.
+    page.locator("#id_title").fill(title)
+    page.locator("#valdkond-muu input").check()
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("domcontentloaded")
+    expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
+
+    # The document is new, so the browser's own record of what was answered is
+    # gone. The answer itself is not, and nothing has been applied over it. This
+    # is the assertion the finding is about: before the fix the ministry the
+    # letter named was ticked here, beside the sender the person had typed.
+    expect(page.locator("[data-orgfind-typed][data-sender-name]")).to_have_value(typed_sender)
+    assert chosen_senders(page) == [typed_sender], chosen_senders(page)
+    # And the suggestion is still offered — declining to apply it is not hiding
+    # it (task §24).
+    expect(page.get_by_role("heading", name="Failist leitud")).to_be_visible()
+    screenshots(page, "43-uus-teema-keeldumine-kasitsi-saatja")
+
+    # Correct the refused field and save. Exactly one sender survives.
+    page.locator("#valdkond-muu-tekst input").fill("Pakendid")
+    name_a_next_step(page)
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+
+    body = page.locator("body").inner_text()
+    assert typed_sender in body, body[:400]
+    assert "Näidisministeerium" not in body, body[:400]
 
 
 # ---------------------------------------------------------------------------

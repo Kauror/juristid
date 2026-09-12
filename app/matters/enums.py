@@ -114,7 +114,15 @@ class EngagementKind(models.TextChoices):
     """
 
     WEB_CALL = "WEB_CALL", "Kaasamiskutse veebis"
-    EMAIL_CAMPAIGN = "EMAIL_CAMPAIGN", "E-kiri või kampaania"
+    #: **`Kirjade voor` is the one name this value has.**
+    #:
+    #: It used to have three. The enum said «E-kiri või kampaania», the chips
+    #: `+ Kaasamine` offers said «Kirjade voor», and `EngagementForm` said
+    #: «Otsepostitus» — so a person chose a mailing by one word and read it back
+    #: under another, on a page that had never shown them the first. The stored
+    #: value is unchanged and no row is rewritten; what moved is the label, to
+    #: the one word the department actually uses (post-QA R2-06).
+    EMAIL_CAMPAIGN = "EMAIL_CAMPAIGN", "Kirjade voor"
     SURVEY = "SURVEY", "Küsitlus"
     MEETING = "MEETING", "Koosolek"
     OTHER = "OTHER", "Muu"
@@ -122,12 +130,16 @@ class EngagementKind(models.TextChoices):
 
 #: What `+ Kaasamine` offers, in the order the approved target lists it.
 #:
-#: Three chips, not five. `Kirjade voor` is the target's name for the mailing
-#: `EMAIL_CAMPAIGN` has always stored, so the label moved and the stored value
-#: did not. `WEB_CALL` and `OTHER` remain valid stored values with no chip
-#: (docs/adr/0074, TEEMA_TARGET_SPEC §C.4).
+#: Three chips, not five. `WEB_CALL` and `OTHER` remain valid stored values with
+#: no chip (docs/adr/0074, TEEMA_TARGET_SPEC §C.4).
+#:
+#: The labels are the enum's own, read through `.label` rather than written out
+#: again. This tuple decides *which* kinds are offered and in what order; what
+#: each one is called is `EngagementKind`'s answer and only its answer, so the
+#: chip somebody clicks and the chronology row they read afterwards cannot say
+#: two different things (post-QA R2-06).
 COMPOSER_ENGAGEMENT_KINDS: tuple[tuple[str, str], ...] = (
-    (EngagementKind.SURVEY.value, "Küsitlus"),
-    (EngagementKind.MEETING.value, "Koosolek"),
-    (EngagementKind.EMAIL_CAMPAIGN.value, "Kirjade voor"),
+    (EngagementKind.SURVEY.value, EngagementKind.SURVEY.label),
+    (EngagementKind.MEETING.value, EngagementKind.MEETING.label),
+    (EngagementKind.EMAIL_CAMPAIGN.value, EngagementKind.EMAIL_CAMPAIGN.label),
 )

@@ -542,11 +542,11 @@ def test_the_composer_panel_asks_no_date_at_all(signed_in, specialist):
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
-    panel = body[body.index('id="cx-kaasamine"') : body.index('id="cx-lopeta"')]
+    panel = body[body.index('id="lisa-kaasamine"') : body.index('id="lisa-tahtaeg"')]
 
-    assert 'name="engagement_kind"' in panel
-    assert 'name="engagement_audience"' in panel
-    assert 'name="engagement_responses"' in panel
+    assert 'name="kind"' in panel
+    assert 'name="audience"' in panel
+    assert 'name="response_count"' in panel
     assert 'name="occurred_on"' not in panel
 
 
@@ -849,7 +849,7 @@ def _is_open(body: str, marker: str) -> bool:
 
 
 SECTION = 'id="kaasamine"'
-PANEL = 'id="cx-kaasamine"'
+PANEL = 'id="lisa-kaasamine"'
 
 
 # The approved Teema target removed the standalone `Kaasamine` section, and with
@@ -863,9 +863,9 @@ PANEL = 'id="cx-kaasamine"'
 # may not write — is asserted below on the surfaces that have it.
 
 
-def test_the_page_offers_one_way_in_and_it_is_the_composer(signed_in, specialist):
+def test_the_page_offers_one_way_in_and_it_is_lisa_teemale(signed_in, specialist):
     """One entry point. ADR 0031 required that and chose the section; the
-    section is gone, so the panel is it rather than a second one."""
+    section is gone, so `+ Kaasamine` is it rather than a second one."""
     matter = factories.MatterFactory(owner=specialist)
 
     body = _rendered(signed_in, matter)
@@ -881,8 +881,8 @@ def test_a_refused_engagement_comes_back_in_an_open_panel(signed_in, specialist)
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
-        reverse("matters:compose", kwargs={"pk": matter.pk}),
-        {"body": "", "next_text": "", "next_date": "", "engagement_responses": "4"},
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        {"kind": "SURVEY", "audience": "", "response_count": "4"},
         headers={"HX-Request": "true"},
     )
     body = response.content.decode()

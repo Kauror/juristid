@@ -88,7 +88,7 @@ from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, OPEN_TITLE
 from e2e.conftest import (
     DESKTOP_VIEWPORT,
     SANDRA,
-    open_composer,
+    open_add_panel,
     pass_the_gate,
     sign_in,
 )
@@ -164,9 +164,9 @@ CLOCK_DEPENDENT = [
     # riding along when the step is late (ADR 0052 §6). Either way it counts
     # from today and changes every morning. The row and the step's own words
     # stay in the baseline.
-    ".uxnext__date",
+    ".curact__date",
     # `Excelist` and the register snapshot label beside an imported instruction.
-    ".uxnext__flag",
+    ".curact__flag",
     # The `Ajajoon` head's entry count, which every functional test that writes
     # a note increments.
     #
@@ -260,7 +260,7 @@ CLOCK_DEPENDENT = [
     #
     # Found by comparing the committed baselines against a CI rendering rather
     # than by walking the DOM: this value lives in an `<input value>`, and a
-    # text-node scan does not see it. `teema-koostaja` had been drifting one
+    # text-node scan does not see it. The composer capture had been drifting one
     # day at a time since the day it was taken.
     #
     # Scoped to the attachment block, not `.composer .dateinput`: the deadline
@@ -269,9 +269,9 @@ CLOCK_DEPENDENT = [
     # what the three disclosures look like when a lawyer opens them all. When
     # the block is shut it is `hidden`, so the input has no box and nothing is
     # painted anywhere else.
-    # `+ Manus` is gone and its date box with it; the composer's own dates are
+    # `+ Manus` is gone and its date box with it; the workspace's own dates are
     # empty at rest and masking an empty control paints out the one thing the
-    # `teema-koostaja` baseline exists to show (docs/adr/0074 §6).
+    # `teema-lisa` baseline exists to show (docs/adr/0074 §6, docs/adr/0075 §2).
     # ---- The department page's ISO-week counts (docs/adr/0039, ADR 0049).
     #
     # These are dates that never render as a date. Each is a plain integer
@@ -915,36 +915,34 @@ def test_matter_opinions(page, base_url):
     compare("teema-arvamused", capture(page, "teema-arvamused"))
 
 
-def test_matter_composer_expanded(page, base_url):
-    """Every progressive panel open at once.
+def test_matter_add_to_matter_zone(page, base_url):
+    """`LISA TEEMALE` with one operation open.
 
-    The one state a screenshot is genuinely better at than an assertion: five
-    panels, each of which is a form, and the question is whether the composer
-    still reads as one surface when a lawyer has opened all of them. An open
-    panel claims the full row, so five of them stack rather than fight for the
-    line — «both are legal, the layout does not break» is exactly the claim a
-    baseline can hold and an assertion cannot (TEEMA_TARGET_SPEC §C.4).
+    The one state a screenshot is genuinely better at than an assertion: a chip
+    row of seven choices with exactly one of them expanded into a form beneath
+    it. An open panel claims the full row while the chips keep their line, and
+    «the layout does not break» is exactly the claim a baseline can hold and an
+    assertion cannot (docs/adr/0075 §2).
+
+    **One open, not seven.** Opening one closes the others, which is the
+    behaviour this zone is defined by — a capture of seven expanded panels would
+    photograph a state the page does not have.
     """
     signed_in_matter(page, base_url, OPEN_TITLE)
-    # Open on arrival since the approved target; this is the no-op that keeps
-    # the scenario honest if it is ever reached from the closed state.
-    open_composer(page)
-    # Five, not three. `+ Jõustumine` and `+ Töövõit` moved here from the
-    # retired facts panel, and `+ Kaasamine` from the retired standalone
-    # section; `+ Manus` is gone entirely (docs/adr/0074 §6, §7, §9).
-    for panel in ("#cx-tahtaeg", "#cx-joustumine", "#cx-toovoit", "#cx-kaasamine", "#cx-lopeta"):
-        page.locator(f"{panel} > summary").click()
-    # `open_composer` also opens the exact-date box behind «Kuupäev…», because
-    # every functional test that sets a next step types into it. This scenario
-    # is the five panels, and the target's «when» row is that box *closed* —
-    # a chip row beside the corner drop (TEEMA_TARGET_SPEC §C.2.3). Open, the
-    # box claims the row and the chips centre against it, so the baseline would
-    # lock a sixth disclosure's geometry under a name that promises five.
-    date_box = page.locator("details.uxcomp__date")
-    if date_box.evaluate("node => node.open"):
-        date_box.locator("summary").click()
-    page.wait_for_timeout(120)
-    compare("teema-koostaja", capture(page, "teema-koostaja", clip_to=".composer"))
+    open_add_panel(page, "lisa-tahtaeg")
+    _at_rest(page)
+    compare("teema-lisa", capture(page, "teema-lisa", clip_to=".addzone"))
+
+
+def test_matter_current_action_zone(page, base_url):
+    """`PRAEGUNE TEGEVUS` — the task, its date, `Muuda`, and the one box that
+    finishes it. A baseline because the claim is a *proportion*: the task has to
+    read as the prominent thing and the answer box as its answer
+    (docs/adr/0075 §3)."""
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    page.locator("#praegune-tegevus").wait_for(state="visible")
+    _at_rest(page)
+    compare("teema-praegune", capture(page, "teema-praegune", clip_to="#praegune-tegevus"))
 
 
 def test_matter_closed(page, base_url):
@@ -982,14 +980,21 @@ def _at_rest(page):
 # `kaasamine-tyhi`, `kaasamine-kirjed` and `kaasamine-lisa` clipped `#kaasamine`
 # — a standing section with its own empty state, its own row list and its own
 # add form. The approved target has none of it: recording a consultation is the
-# composer panel `teema-koostaja` already captures, and reading one is a
-# chronology row inside `teema-ulevaade`. A clipped baseline of an element the
-# page does not render is a baseline that can only ever skip
+# `+ Kaasamine` panel `teema-lisa` captures, and reading one is a chronology row
+# inside `teema-ulevaade`. A clipped baseline of an element the page does not
+# render is a baseline that can only ever skip
 # (TEEMA_TARGET_SPEC §F, docs/adr/0074 §9).
 #
-# What replaced them is covered rather than dropped: the panel is in the
-# composer capture above, and the behaviour those three tests drove is in
-# `e2e/test_engagement.py`, which follows the capability to its new surface.
+# `teema-koostaja` went the same way in the round after it, and for the same
+# reason. It clipped `.composer` — one open form over five panels and one shared
+# `Salvesta` — and that surface is superseded by two zones with one save each.
+# `teema-praegune` and `teema-lisa` above are what replaced it, and neither is a
+# rename: they photograph different elements making different claims
+# (docs/adr/0075 §2, §3).
+#
+# What replaced all four is covered rather than dropped: the behaviour those
+# tests drove is in `e2e/test_engagement.py` and `e2e/test_teema_workspace.py`,
+# which follow the capability to its new surface.
 
 
 def test_the_process_strip_is_the_first_thing_in_the_ajajoon(page, base_url):

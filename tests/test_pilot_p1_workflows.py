@@ -98,16 +98,27 @@ def test_closure_answers_are_never_accepted_and_then_dropped(signed_in, normal_m
     assert normal_matter.disposition_reason == "Seadus jõustus 1. jaanuaril."
 
 
-def test_a_final_word_alone_still_asks_to_close(signed_in, normal_matter):
-    """Either half of the panel is an answer only a closure has, so either half
-    is the request — and the missing one is refused on its own control rather
-    than falling through into an ordinary note."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        body="Teema on lõppenud.",
-        closing_words="Menetlus lõppes.",
+def _close(client, matter, **fields):
+    """One `+ Lõpeta teema` save, through the panel's own endpoint.
+
+    The closure rules below were written against the composer's shared save and
+    they are the same rules; what changed is that closing is now its own
+    operation with its own form, so a refused closure can no longer take an
+    ordinary note down with it (docs/adr/0075 §2).
+    """
+    payload = {"disposition": "", "closing_words": ""}
+    payload.update(fields)
+    return client.post(
+        reverse("matters:close_from_workspace", kwargs={"pk": matter.pk}),
+        payload,
+        headers={"HX-Request": "true"},
     )
+
+
+def test_a_final_word_alone_still_asks_to_close(signed_in, normal_matter):
+    """`Lõppsõna` without `Kuidas lõppes` is refused on the control that is
+    missing, rather than stored as a closure nobody chose a reason for."""
+    response = _close(signed_in, normal_matter, closing_words="Menetlus lõppes.")
 
     assert response.status_code == 400
     assert "Vali, kuidas teema lõppes" in response.content.decode()
@@ -131,10 +142,9 @@ def test_an_unanswered_reason_is_representable_and_refused(signed_in, normal_mat
     """`Kuidas lõppes` had no empty option once, so every POST carried
     `COMPLETED`: its own refusal could never fire, and a reason nobody chose was
     stored as if they had. The chips open on nothing for exactly this reason."""
-    response = _compose(
+    response = _close(
         signed_in,
         normal_matter,
-        body="Teema on lõppenud.",
         disposition="",
         closing_words="Menetlus lõppes.",
     )
@@ -167,15 +177,16 @@ def test_a_partial_closure_refuses_the_whole_save(signed_in, normal_matter):
 
 def test_a_refused_closure_comes_back_with_the_closing_panel_open(signed_in, normal_matter):
     """An error inside a panel nobody can see is an error nobody reads."""
-    response = _compose(
-        signed_in, normal_matter, body="Teema on lõppenud.", closing_words="Menetlus lõppes."
-    )
+    response = _close(signed_in, normal_matter, closing_words="Menetlus lõppes.")
     html = response.content.decode()
 
     assert response.status_code == 400
-    assert 'id="cx-lopeta"' in html
-    opening = html.split('id="cx-lopeta"', 1)[1].split(">", 1)[0]
+    assert 'id="lisa-lopeta"' in html
+    opening = html.split('id="lisa-lopeta"', 1)[1].split(">", 1)[0]
     assert "open" in opening
+    # And no other panel was opened on its behalf (brief §33).
+    for other in ("lisa-marge", "lisa-toovoit"):
+        assert "open" not in html.split(f'id="{other}"', 1)[1].split(">", 1)[0]
 
 
 def test_a_rejected_upload_leaves_nothing_behind(signed_in, normal_matter):
@@ -266,26 +277,29 @@ def test_a_refused_defer_also_answers_inside_the_row(signed_in, normal_matter, s
     assert "kuupäev" in html
 
 
-def test_the_jargmiseks_row_no_longer_carries_the_defer_control(
+def test_the_current_action_zone_no_longer_carries_the_defer_control(
     signed_in, normal_matter, specialist
 ):
-    """The approved target's row is the text, the date, `✓ Tehtud` and `Muuda`.
+    """`PRAEGUNE TEGEVUS` is the text, the date, `Mida tegid?` and `Muuda`.
 
     «Lükka edasi» was a second disclosure holding four POST buttons and a date
     box, inside the one row on the page that has to be readable at a glance
-    (TEEMA_TARGET_SPEC §C.1, docs/adr/0074 §20). The route, the service and the
-    day-counting rules below are untouched, which is what the rest of this
-    section still proves.
+    (TEEMA_TARGET_SPEC §C.1, docs/adr/0074 §20). `✓ Tehtud` went in the round
+    after it, for a stronger reason: completing a task without recording what
+    was done is half of one act (docs/adr/0075 §3). The defer route, the
+    service and the day-counting rules below are untouched, which is what the
+    rest of this section still proves.
     """
     _action(normal_matter, specialist, days=30)
     html = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
 
-    row = html.split('id="jargmiseks-rida"')[1].split("</div>")[0]
+    zone = html.split('id="praegune-tegevus"')[1].split('id="lisa-teemale"')[0]
     assert "Lükka edasi" not in html
-    assert "✓ Tehtud" in row
-    assert "Muuda" in row
+    assert "✓ Tehtud" not in zone
+    assert "Mida tegid?" in zone
+    assert "Muuda" in zone
 
 
 def test_deferring_still_swaps_only_the_row(signed_in, normal_matter, specialist):

@@ -22,6 +22,21 @@ What these functions never do: create a `Submission`, move one between Matters,
 touch evidence, create or remove an `OpinionArchiveMatterLink`, or turn a
 removed relation into a dismissal. Those are different decisions, and a person
 who withdraws a relation has not said the candidate is unrelated.
+
+**That business/preference line is also the closed-Matter line** (R2-02). The
+five functions that write business state take the subject Matter's lock and
+refuse a closed one, because a browser holding the page from before a closure
+can still post to them and the server cannot tell which page a POST came from.
+The two dismissal functions do not: a dismissal is a preference about what to
+suggest, it writes no `ChangeEvent`, and silencing a suggestion on a file that
+is shut takes nothing back and asserts nothing about it.
+
+**Only the subject Matter has to be open.** A relation names two files and both
+get a history line, but the one being *worked on* is the one the write came
+from — and relating an open Matter to a closed predecessor is ordinary and
+common, which is the whole reason `Järglane` exists. Locking both would refuse
+it, and would put two Matter rows in one lock in an order two simultaneous
+links could take opposite ways.
 """
 
 from __future__ import annotations
@@ -37,6 +52,7 @@ from app.audit.services import record_change_event
 from app.core.errors import DomainError
 from app.legacy_import.opinion_binary import OpinionArchiveBinary
 from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Matter
 from app.related_materials.models import (
     MatterBackgroundMaterial,
@@ -91,6 +107,7 @@ def link_related_matters(
     direction is cleared: the person has just said the opposite.
     """
     person = _require_person(actor)
+    matter = lock_open_matter_for_business_write(matter.pk)
     first, second = canonical_pair(matter, other)
     relation, created = MatterRelation.objects.get_or_create(
         matter_a=first,
@@ -127,6 +144,7 @@ def unlink_related_matters(*, matter: Matter, other: Matter, actor: Any) -> bool
     a separate click.
     """
     person = _require_person(actor)
+    matter = lock_open_matter_for_business_write(matter.pk)
     first, second = canonical_pair(matter, other)
     relation = MatterRelation.objects.filter(matter_a=first, matter_b=second).first()
     if relation is None:
@@ -173,6 +191,7 @@ def add_background_submission(
     recipients, its evidence and its status are exactly what they were.
     """
     person = _require_person(actor)
+    matter = lock_open_matter_for_business_write(matter.pk)
     if submission.matter_id == matter.pk:
         raise DomainError("Teema enda arvamus ei ole selle teema taustmaterjal.")
     row, created = MatterBackgroundMaterial.objects.get_or_create(
@@ -212,6 +231,7 @@ def add_background_archive_material(
     thing. Zero rows of the other table are touched (docs/adr/0062 §3).
     """
     person = _require_person(actor)
+    matter = lock_open_matter_for_business_write(matter.pk)
     row, created = MatterBackgroundMaterial.objects.get_or_create(
         matter=matter,
         archive_binary=binary,
@@ -247,6 +267,7 @@ def remove_background_material(
     that happens to name the same letter is a different claim and stays.
     """
     person = _require_person(actor)
+    matter = lock_open_matter_for_business_write(matter.pk)
     if (submission is None) == (archive_binary is None):
         raise DomainError("Taustmaterjalil peab olema täpselt üks allikas.")
     rows = MatterBackgroundMaterial.objects.filter(matter=matter)

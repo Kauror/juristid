@@ -623,85 +623,121 @@ def test_an_approximate_step_is_not_offered_a_one_day_deferral(client, specialis
 # ---------------------------------------------------------------------------
 
 
-def _composer_markup(body: str) -> str:
-    """The composer's own form, cut out of a rendered Matter page."""
-    return body.split('id="teema-koostaja"')[1].split("</form>")[0]
+def _workspace_markup(body: str) -> str:
+    """`PRAEGUNE TEGEVUS` and `LISA TEEMALE`, cut out of a rendered page."""
+    return body.split('id="praegune-tegevus"')[1].split('id="ajajoon"')[0]
 
 
-def _composer_is_open(body: str) -> bool:
-    """Whether the `<details>` carries `open`, read off its own tag only."""
-    tag = body.split('id="teema-koostaja"')[1].split(">")[0]
+def _panel_is_open(body: str, panel_id: str) -> bool:
+    """Whether one `<details>` carries `open`, read off its own tag only."""
+    tag = body.split(f'id="{panel_id}"')[1].split(">")[0]
     return "open" in tag
 
 
 @pytest.mark.django_db
-def test_the_composer_is_open_on_arrival_and_stays_open_on_a_refusal(client, specialist) -> None:
-    """**Open by default**, reversing the 2026-08 decision to close it.
+def test_a_refused_save_comes_back_in_its_own_open_panel(client, specialist) -> None:
+    """**One refusal, one panel**, which is what splitting the composer buys.
 
-    That decision was reasonable on its own terms — a Matter is read far more
-    often than it is written to, and an eight-line form pushed the file's content
-    below the fold. What the approved target does instead is make the form short
-    enough to live open: a 60 px body, a one-row next step, and everything else a
-    chip. Recording what happened is the reason this product exists, and it must
-    not begin with a click (TEEMA_TARGET_SPEC §C.2, docs/adr/0074 §3).
-
-    A refused save comes back open for the same reason an ordinary load does, so
-    nobody loses what they typed either way.
+    The composer was open by default because recording work must not begin with
+    a click — true, and kept: the box that finishes the current task is on the
+    page with nothing to open. What changed is what a refusal does. One global
+    save meant an invalid `Järgmiseks` came back with six other panels beside
+    it and no way to tell which one had failed; now the refused operation's own
+    panel opens, carrying its own message and its own values, and nothing else
+    moves (docs/adr/0075 §2, brief §33).
     """
     matter = factories.MatterFactory(owner=specialist)
     client.force_login(specialist)
     url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
     body = client.get(url).content.decode()
-    assert _composer_is_open(body), "the composer is open on arrival"
-    assert "Mis juhtus?" in body, "and the collapsed prompt is kept for the closed state"
+    assert "Järgmine samm on määramata" in body, "nothing to complete, stated compactly"
+    assert not _panel_is_open(body, "lisa-jargmine"), "the zone is a choice until one is made"
 
-    # A next step with no date: refused, and the composer must come back open
+    # A next step with no date: refused, and its own panel must come back open
     # with the sentence still in it (ADR 0052 §5).
     refused = client.post(
-        reverse("matters:compose", kwargs={"pk": matter.pk}),
-        {"body": "", "next_text": "Saada arvamus", "next_date": ""},
+        reverse("matters:set_action", kwargs={"pk": matter.pk}),
+        {"text": "Saada arvamus", "target_date": ""},
     )
+    html = refused.content.decode()
     assert refused.status_code == 400
-    assert _composer_is_open(refused.content.decode()), (
+    assert _panel_is_open(html, "lisa-jargmine"), (
         "a refused save must not fold the reason away with what was typed"
     )
+    assert "Saada arvamus" in html
+    # And no other panel was opened on its behalf.
+    for other in ("lisa-marge", "lisa-kaasamine", "lisa-toovoit", "lisa-lopeta"):
+        assert not _panel_is_open(html, other), other
 
 
 @pytest.mark.django_db
-def test_folding_the_composer_dropped_none_of_its_fields(client, specialist) -> None:
+def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -> None:
     """The functionality-preservation check for the redesign's largest form.
 
-    Enumerated from the form rather than from a list written beside it, so a
+    Enumerated from the forms rather than from a list written beside them, so a
     field added later is covered without anybody remembering to add it here. A
-    visual pass that quietly loses `Lõpparvamus` or the entry kind is the exact
+    presentation pass that quietly loses `Vastuseid` or `Lõppsõna` is the exact
     failure this asserts against.
+
+    Read off **two** renders. `PRAEGUNE TEGEVUS` only exists while a step is
+    open, and `+ Järgmine tegevus` only appears once none is — the page is
+    deliberately never both at once, and the union of the two states is what
+    "every control is reachable" means here (brief §8, §15).
     """
-    from app.matters.forms import ComposerForm
+    from app.matters.views import workspace_forms
 
-    matter = factories.MatterFactory(owner=specialist)
-    # `Lõpparvamus` offers recipients as a checkbox list, so an empty catalogue
-    # renders no control at all and would hide a genuinely missing field.
-    factories.OrganisationFactory()
     client.force_login(specialist)
-    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
-    composer = _composer_markup(body)
+    with_action = factories.MatterFactory(owner=specialist)
+    set_next_action(
+        matter=with_action,
+        text="Koosta arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate() + timedelta(days=3),
+        actor=specialist,
+    )
+    without_action = factories.MatterFactory(owner=specialist)
 
-    # The four period selects are deliberately not rendered. The approved
-    # target's `+ Oluline tähtaeg` is one `Kuupäev` box plus `Täpne päev` /
-    # `Kuu` / `Kvartal`, and `_period_anchor` derives the month, quarter, half
-    # and year from the day that was picked. The fields stay on the form because
-    # the surfaces that *do* ask those questions post them, and because
-    # `bounds_for` must normalise both routes to one stored anchor
-    # (docs/adr/0074 §11).
-    derived = {"deadline_month", "deadline_quarter", "deadline_half", "deadline_year"}
+    markup = ""
+    for matter in (with_action, without_action):
+        url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+        markup += _workspace_markup(client.get(url).content.decode())
 
-    form = ComposerForm(matter=matter, viewer=specialist)
-    missing = [
-        name for name in form.fields if name not in derived and f'name="{name}"' not in composer
-    ]
-    assert not missing, f"the composer no longer offers: {missing}"
-    assert derived <= set(form.fields), "the period group is derived, not deleted"
+    # The four period selects are deliberately not rendered. `+ Oluline tähtaeg`
+    # is one `Kuupäev` box plus `Täpne päev` / `Kuu` / `Kvartal`, and
+    # `_period_anchor` derives the month, quarter, half and year from the day
+    # that was picked. The fields stay on the form because the surfaces that
+    # *do* ask those questions post them, and because `bounds_for` must
+    # normalise both routes to one stored anchor (docs/adr/0074 §11).
+    #
+    # `responsible` is the same kind of exception and predates this round: no
+    # template renders it, and it stays on `NextActionForm` so an explicit POST
+    # still wins over the owner default (ADR 0036 §5).
+    derived = {
+        "deadline_month",
+        "deadline_quarter",
+        "deadline_half",
+        "deadline_year",
+        "responsible",
+    }
+
+    missing: list[str] = []
+    for key, form in workspace_forms().items():
+        if not hasattr(form, "fields"):
+            continue
+        missing += [
+            f"{key}.{name}"
+            for name in form.fields
+            if name not in derived and f'name="{name}"' not in markup
+        ]
+    assert not missing, f"the workspace no longer offers: {missing}"
+    assert derived <= {
+        name
+        for form in workspace_forms().values()
+        if hasattr(form, "fields")
+        for name in form.fields
+    }, "the period group is derived, not deleted"
 
 
 @pytest.mark.django_db
@@ -719,7 +755,7 @@ def test_the_quick_dates_carry_the_day_the_server_resolved(client, specialist) -
     today = timezone.localdate()
     assert f'data-quickdate="{format_estonian_date(today)}"' in body, "Täna"
     assert f'data-quickdate="{format_estonian_date(today + timedelta(days=7))}"' in body, "+1 nädal"
-    assert 'data-quickdate-group="id_next_date"' in body, "the chips write into the real field"
+    assert 'data-quickdate-group="id_target_date"' in body, "the chips write into the real field"
     # The resolved day is on the element, not worked out in the browser.
     assert "→ " in body
 

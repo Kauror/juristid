@@ -119,7 +119,45 @@ urlpatterns = [
         views.matter_edit_assisted,
         name="matter_edit_assisted",
     ),
+    # -- the Teema workspace ------------------------------------------------
+    #
+    # One route per write intention. The single `sissekanne/` endpoint below is
+    # what these replace on the page: it accepted a note, a next step, a
+    # deadline, a commencement, a win, a consultation and a closure in one POST,
+    # so what a save *meant* depended on which boxes happened to carry a value.
+    # Seven addresses say seven things (docs/adr/0075 §2).
+    #
+    # `praegune/` is the one the page is built around: saving the result of the
+    # current task is what completes it, and there is no second endpoint that
+    # completes one without a result.
+    path(
+        "teemad/<uuid:pk>/praegune/",
+        views.complete_current_action,
+        name="complete_current_action",
+    ),
+    path("teemad/<uuid:pk>/lisa/marge/", views.add_note, name="add_note"),
+    path(
+        "teemad/<uuid:pk>/lisa/kaasamine/",
+        views.add_engagement_compact,
+        name="add_engagement_compact",
+    ),
+    path("teemad/<uuid:pk>/lisa/tahtaeg/", views.add_important_date, name="add_important_date"),
+    path(
+        "teemad/<uuid:pk>/lisa/joustumine/",
+        views.add_effective_date,
+        name="add_effective_date",
+    ),
+    path("teemad/<uuid:pk>/lisa/toovoit/", views.add_work_victory, name="add_work_victory"),
+    path("teemad/<uuid:pk>/lisa/lopeta/", views.close_from_workspace, name="close_from_workspace"),
+    # `+ Järgmine tegevus` and `Muuda` both post here — one endpoint, because
+    # setting a step and replacing one are the same canonical act and
+    # `set_next_action_for_new_work` already supersedes whatever it replaces.
+    # The route predates this round and is unchanged (brief §15).
     # HTMX surfaces
+    #
+    # `sissekanne/` is the superseded composer. Kept because it still serves its
+    # form and its tests, and no longer posted to by any page
+    # (docs/adr/0075 §11, brief §29).
     path("teemad/<uuid:pk>/sissekanne/", views.compose, name="compose"),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),
     path("teemad/<uuid:pk>/kaasamine/", views.add_engagement_view, name="add_engagement"),
