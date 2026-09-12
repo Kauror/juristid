@@ -96,8 +96,45 @@ def labels(page) -> list[str]:
 
 
 def assert_fits(page, width: int) -> None:
-    """No sideways scroll, and every column on the screen."""
+    """No sideways scroll, every column real, and nothing clipped away.
+
+    **The document never scrolls sideways; the rail may scroll itself.** Below
+    720px `grid-auto-columns` takes a 96px floor and `.tl-strip` becomes its own
+    `overflow-x: auto` container, so a file with more milestones than the width
+    holds — five at 420, where four fit — keeps every one of them at a legible
+    width and the reader reaches the rightmost by scrolling the rail: never
+    dropped steps, never abbreviated nonsense, and never a horizontally
+    scrolling page (TEEMA_TARGET_SPEC §H, `static/css/app.css` @media
+    max-width 720).
+
+    So «inside the viewport» is the wrong measurement once the rail scrolls. It
+    is what a three-column strip happened to satisfy, and it fails a five-column
+    one for doing exactly what the design says. What is asserted instead is that
+    nothing is *lost*: every column has a real box, the rail really scrolls when
+    its content is wider than its box rather than clipping it, and the last
+    column is fully inside the rail once it is scrolled to the end.
+    """
     assert not overflows(page), f"the Teema page scrolls sideways at {width}px"
+    rail = strip(page)
+    if not rail.count():
+        return
+
+    geometry = rail.evaluate(
+        "node => ({ overflowX: getComputedStyle(node).overflowX,"
+        " clientWidth: node.clientWidth, scrollWidth: node.scrollWidth,"
+        " left: node.getBoundingClientRect().left,"
+        " right: node.getBoundingClientRect().right })"
+    )
+    scrolls = geometry["scrollWidth"] > geometry["clientWidth"] + 1
+    if scrolls:
+        assert geometry["overflowX"] == "auto", (
+            f"the strip is wider than its box at {width}px and clips instead of "
+            f"scrolling (overflow-x: {geometry['overflowX']})"
+        )
+        assert geometry["right"] <= width + 1, (
+            f"the strip's own box sits outside the {width}px viewport"
+        )
+
     steps = page.locator(".tl-step")
     for index in range(steps.count()):
         box = steps.nth(index).bounding_box()
@@ -105,9 +142,28 @@ def assert_fits(page, width: int) -> None:
         assert box["width"] > 0 and box["height"] > 0, (
             f"strip column {index} collapsed to nothing at {width}px"
         )
-        assert box["x"] >= -1 and box["x"] + box["width"] <= width + 1, (
-            f"strip column {index} sits outside the {width}px viewport"
-        )
+        if not scrolls:
+            assert box["x"] >= -1 and box["x"] + box["width"] <= width + 1, (
+                f"strip column {index} sits outside the {width}px viewport"
+            )
+
+    if not scrolls:
+        return
+
+    # Scrolled to the end, the rightmost column is fully inside the rail. A
+    # column that stayed outside it after this would be one the reader cannot
+    # get to at all, which is the failure «it scrolls» would otherwise hide.
+    rail.evaluate("node => { node.scrollLeft = node.scrollWidth; }")
+    page.wait_for_timeout(120)
+    last = steps.nth(steps.count() - 1).bounding_box()
+    assert last is not None
+    assert last["x"] >= geometry["left"] - 1, (
+        f"the last column is off the left of the rail at {width}px"
+    )
+    assert last["x"] + last["width"] <= geometry["right"] + 1, (
+        f"the last column is unreachable at {width}px even scrolled to the end"
+    )
+    rail.evaluate("node => { node.scrollLeft = 0; }")
 
 
 def et(days: int) -> str:
@@ -133,13 +189,25 @@ def create_matter_with_deadline(page, base_url: str, title: str, *, deadline: st
 
 
 def add_a_commencement(page, *, what: str, when: str) -> None:
-    """Record a `Jõustumine` through the `+ Jõustumine` panel a person uses."""
+    """Record a `Jõustumine` through the `+ Jõustumine` panel a person uses.
+
+    **Every locator is resolved fresh, and the save is awaited on the wire.**
+    Each workspace save swaps `#teema-vaade` wholesale, so a node captured
+    before the swap is detached by the time it is clicked — which is exactly the
+    race `open_add_panel` clicks three times for, one element further along.
+    Three commencements in a row is the first thing here that saves twice, and
+    it found it: `Salvesta` resolved, then «element was detached from the DOM».
+    """
     open_add_panel(page, "lisa-joustumine")
-    panel = page.locator("#lisa-joustumine")
-    expect(panel).to_have_attribute("open", "")
-    panel.locator("#id_effective_title").fill(what)
-    panel.locator("#id_effective_on").fill(when)
-    panel.locator("button[type=submit]").first.click()
+    field = page.locator("#lisa-joustumine #id_effective_on")
+    field.wait_for(state="visible")
+    page.locator("#lisa-joustumine #id_effective_title").fill(what)
+    field.fill(when)
+    with page.expect_response(
+        lambda response: "/lisa/joustumine/" in response.url and response.request.method == "POST"
+    ) as caught:
+        page.locator("#lisa-joustumine button[type=submit]").first.click()
+    assert caught.value.status == 200, f"the commencement was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
 
@@ -349,9 +417,67 @@ def test_a_commencement_is_the_rightmost_destination(page, base_url, width):
     assert_fits(page, width)
 
 
+def test_a_long_strip_scrolls_itself_and_never_the_page(page, base_url):
+    """**420px, §H.** Where the rail stops fitting, and what it does then.
+
+    Four columns are exactly what 420px holds — the seeded Matter's own shape,
+    and `396 / 4` is a whisker over the 96px floor. A **fifth** does not fit, and
+    the design's answer is neither to drop one nor to abbreviate it: below 720px
+    `grid-auto-columns` takes that floor and `.tl-strip` becomes its own
+    `overflow-x: auto` container. Every milestone stays, at a legible width, and
+    the reader reaches the rightmost by scrolling the rail rather than the page
+    (TEEMA_TARGET_SPEC §H).
+
+    Five columns from a deadline and three commencements, which is a real shape
+    — one law commencing in stages against one answer deadline — and needs no
+    file upload to reach.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": 420, "height": 900})
+    create_matter_with_deadline(page, base_url, "Käiguriba kitsas rada", deadline=et(21))
+    add_a_commencement(page, what="põhiosa", when=et(400))
+    add_a_commencement(page, what="osad sätted", when=et(600))
+    add_a_commencement(page, what="register", when=et(800))
+
+    assert labels(page) == [
+        "Alustatud",
+        "Arvamuse tähtaeg",
+        "Jõustumine",
+        "Jõustumine",
+        "Jõustumine",
+    ]
+    narrow = strip(page).evaluate(
+        "node => ({ overflowX: getComputedStyle(node).overflowX,"
+        " clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
+    )
+    assert narrow["overflowX"] == "auto"
+    assert narrow["scrollWidth"] > narrow["clientWidth"], (
+        "the rail is not scrollable, so its fifth column is unreachable"
+    )
+    assert not overflows(page), "the rail took the whole document sideways with it"
+    # Nothing dropped and nothing clipped: every column has a real box, and the
+    # last one is fully inside the rail once it is scrolled to the end.
+    assert_fits(page, 420)
+
+    # And the rule does not fire where it is not needed: the same five columns
+    # fit at 1024, so the rail is not a scroller there.
+    page.set_viewport_size({"width": 1024, "height": 900})
+    page.wait_for_timeout(200)
+    wide = strip(page).evaluate(
+        "node => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
+    )
+    assert wide["scrollWidth"] <= wide["clientWidth"] + 1, (
+        "five columns overflow at 1024, where they are supposed to fit"
+    )
+
+
 @pytest.mark.parametrize("width", WIDTHS)
 def test_a_five_column_file_still_fits_on_one_row(page, base_url, width):
     """**The longest realistic strip.** Everything a file can carry at once.
+
+    «On one row» is the claim at 1440 and 1024, where five columns fit. At 420
+    it is one *scrollable* row: `assert_fits` measures the rail's own scroll
+    box there, and the page still does not move sideways (TEEMA_TARGET_SPEC §H).
 
     Closed while its response deadline is still ahead of it, which puts
     `Arvamuse tähtaeg` to the *right* of `Lõpetatud`. That reads oddly and it is

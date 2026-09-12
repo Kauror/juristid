@@ -998,12 +998,18 @@ def _at_rest(page):
 
 
 def test_the_process_strip_is_the_first_thing_in_the_ajajoon(page, base_url):
-    """`Teema käik` — where the file stands, before anything is scrolled.
+    """`Teema käik` — the course the file is on, before anything is scrolled.
 
     A capture rather than an assertion because what is being locked is a
-    *proportion*: the columns share the width evenly, the accent connector stops
-    at the current dot, and the three dot states have to be told apart at a
-    glance (TEEMA_TARGET_SPEC §D).
+    *proportion*: the columns share the width evenly however many there are, and
+    the accent connector runs from each dot to the next with `:last-child`
+    drawing none, so the rail ends at the rightmost dot (TEEMA_TARGET_SPEC §D).
+
+    **One dot state, not three.** `is-current` and `is-todo` went with the
+    sources that produced them, and a known future milestone — this Matter's two
+    commencements — is drawn exactly like a completed one. What this baseline
+    now has to catch is a future column quietly acquiring a muted state, a ring
+    or an `N p` suffix (docs/adr/0074 §12.2, §12.4).
     """
     signed_in_matter(page, base_url, OPEN_TITLE)
     # Asserted rather than skipped past. The strip is drawn from the milestones
