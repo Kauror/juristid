@@ -10148,16 +10148,26 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* -- the process strip ----------------------------------------------------
  *
- * `Teema käik` — where the file stands, above the chronology it explains. The
- * columns share the width evenly however many there are, so the strip is a
- * proportion rather than a scale: what it says is *how far along*, and a fixed
- * column width would say *how long* instead (TEEMA_TARGET_SPEC §D).
+ * `Teema käik` — the course a file is on: the major acts it has been through
+ * and the next dated point it is known to be heading for, above the chronology
+ * that explains them. The columns share the width evenly however many there
+ * are, so the strip is a proportion rather than a scale: what it says is *how
+ * far along*, and a fixed column width would say *how long* instead
+ * (TEEMA_TARGET_SPEC §D).
  *
  * The connector is the step's own `::before`, running from its dot's right edge
- * to the next column. A completed step draws it in the accent and the current
- * and future ones draw it grey, so the accent line stops at the dot the file has
- * reached. `:last-child` draws none, which is why one milestone renders one dot
- * and no connector. */
+ * to the next column, and `:last-child` draws none — so the accent line ends at
+ * the rightmost dot, and one milestone renders one dot and no connector.
+ *
+ * **One dot state, not three.** `is-current` and `is-todo` are gone with the
+ * sources that produced them. A known future milestone is drawn exactly like a
+ * past one — same dot, same weight, same date line — because the strip states
+ * dated points rather than elapsed ones, and muting the rightmost column would
+ * make the deadline the file is heading for the least legible thing on the
+ * rail. Nothing is ringed as current either: `:last-child` identifies the end
+ * of the rail, which is a statement about the rail and not a claim about where
+ * the Matter stands — that is `Hetkeseis`, in the header (docs/adr/0074
+ * §12.2, §12.4). */
 
 #teema-vaade-wrap .tl-strip {
   display: grid;
@@ -10193,11 +10203,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   background: var(--accent-link);
 }
 
-#teema-vaade-wrap .tl-step.is-current::before,
-#teema-vaade-wrap .tl-step.is-todo::before {
-  background: var(--border-strong);
-}
-
 #teema-vaade-wrap .tl-step:last-child::before {
   display: none;
 }
@@ -10213,16 +10218,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   box-sizing: border-box;
 }
 
-#teema-vaade-wrap .tl-step.is-current .tl-step__dot {
-  background: var(--surface-base);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-
-#teema-vaade-wrap .tl-step.is-todo .tl-step__dot {
-  background: var(--surface-base);
-  border-color: var(--border-strong);
-}
-
 #teema-vaade-wrap .tl-step__what {
   font-size: 12.5px;
   font-weight: var(--typography-weight-semibold);
@@ -10230,20 +10225,11 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-primary);
 }
 
-#teema-vaade-wrap .tl-step.is-todo .tl-step__what {
-  color: var(--text-secondary);
-  font-weight: var(--typography-weight-medium);
-}
-
 #teema-vaade-wrap .tl-step__date {
   font-size: 11.5px;
   line-height: 1.3;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-}
-
-#teema-vaade-wrap .tl-step.is-current .tl-step__date {
-  color: var(--accent-link);
 }
 
 /* -- the chronology's two kinds -------------------------------------------

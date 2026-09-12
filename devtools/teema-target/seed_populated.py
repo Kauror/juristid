@@ -166,6 +166,8 @@ class Command(BaseCommand):
             addressee_organisation=addressee,
             track=Track.DOMESTIC,
             received_date=today - timedelta(days=16),
+            # `Arvamuse tähtaeg` in the header band, and the strip's known
+            # destination three weeks out (docs/adr/0074 §12.4).
             response_deadline=today + timedelta(days=21),
             brief_summary=SUMMARY,
             stage=self._stage(),
@@ -281,6 +283,13 @@ class Command(BaseCommand):
             date_precision=DatePrecision.QUARTER,
             actor=actor,
         )
+        # The one structured fact on this Matter that *is* a `.tl-strip` column:
+        # a canonical commencement with a known date is a real procedural
+        # milestone and the file's rightmost known destination
+        # (docs/adr/0074 §12.4). Deliberately on the same day as the
+        # `Järgmiseks` step below, so the seeded page shows the two apart: the
+        # commencement draws `Jõustumine`, and the lawyer's own target date —
+        # a work plan, not a procedural act — draws nothing.
         add_effective_date(
             matter=matter,
             kind=EffectiveDateKind.KNOWN_DATE,
@@ -290,8 +299,10 @@ class Command(BaseCommand):
             actor=actor,
         )
         # `Keda kaasati` and `Vastuseid`, which is what `+ Kaasamine` asks for
-        # since the approved target (docs/adr/0074 §4, §5). The engagement is
-        # also a `.tl-strip` column, so it has to carry a date.
+        # since the approved target (docs/adr/0074 §4, §5). It is a chronology
+        # row and **not** a `.tl-strip` column: a generic consultation is not
+        # automatically a major procedural act (docs/adr/0074 §12.1). The date
+        # is still real, because the chronology orders by it.
         add_engagement(
             matter=matter,
             kind=EngagementKind.SURVEY,
@@ -300,8 +311,9 @@ class Command(BaseCommand):
             response_count=14,
             actor=actor,
         )
-        # A `Koosolek`, the kind the target added. Two engagements also prove the
-        # strip draws two columns rather than one merged «Kaasamine».
+        # A `Koosolek`, the kind the target added. Two engagements, so the
+        # chronology has both kinds in it and the strip beside it still has
+        # neither.
         add_engagement(
             matter=matter,
             kind=EngagementKind.MEETING,
@@ -439,12 +451,21 @@ class Command(BaseCommand):
     def _progress(self, matter: Matter, actor: User, addressee: Organisation, today: date) -> None:
         """Where the file stands, and the opinion that went out.
 
-        Both are `.tl-strip` columns and both are chronology milestones, and
-        neither is drawn from an invented fact: the stage is a real
-        `MATTER_STAGE_CHANGED` event, so the strip's current step carries a real
-        transition date instead of «praegu» alone, and the sent opinion is a
-        canonical `Submission` with its exact final evidence bound to it
-        (docs/adr/0074 §12).
+        Both are chronology milestones, and neither is drawn from an invented
+        fact: the stage is a real `MATTER_STAGE_CHANGED` event, and the sent
+        opinion is a canonical `Submission` with its exact final evidence bound
+        to it.
+
+        Only the second is a `.tl-strip` column. `Hetkeseis` is stated in the
+        header and nowhere else — the strip drew it until 2026-09-12, which is
+        how a closed Matter came to read «Riigikogus · praegu»
+        (docs/adr/0074 §12.1).
+
+        The send is backdated a week while the Matter was created today, which
+        is the shape `Registreeri saatmine` produces on a file somebody wrote
+        down after the fact. The strip sorts by date and therefore reads
+        `Koja arvamus · Alustatud`, which is deliberate and pinned by a test
+        that says why.
         """
         later = StageVocabulary.objects.filter(is_active=True).order_by("sort_order")[1:2].first()
         if later is not None:

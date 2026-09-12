@@ -65,9 +65,11 @@ PRESENT = [
     'id="teema-markme-seis"',
 ]
 
-#: Only on a Matter that has a milestone. The strip renders what exists and
-#: nothing else, so a Matter with none draws no strip at all rather than an
-#: empty grid under a heading (docs/adr/0074 §12).
+#: Only on a Matter that has a milestone, and there are five it can have:
+#: `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`, `Jõustumine` and
+#: `Lõpetatud`. The strip renders what exists and nothing else, so a Matter with
+#: none draws no strip at all rather than an empty grid under a heading
+#: (docs/adr/0074 §12.1, §12.4).
 PRESENT_WITH_MILESTONES = ["tl-strip", "tl-step__dot"]
 
 #: Everything the approved target removed. Each of these was on the page the

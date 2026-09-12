@@ -2229,9 +2229,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
-        # `Teema käik` — where the file stands, above the chronology. Derived
-        # from the same scoped facts the chronology reads, so a restricted child
-        # cannot change a column, a connector or an ordering
+        # `Teema käik` — the file's course above the chronology that explains
+        # it: `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`, `Jõustumine`,
+        # `Lõpetatud`, and nothing else. The same `intelligence` the chronology
+        # reads is handed over rather than re-read, because `Jõustumine` is a
+        # structured fact with its own visibility and the two surfaces must not
+        # ask differently scoped questions about one Matter. `Oluline tähtaeg`
+        # is deliberately not among them and keeps its own section
         # (app/matters/process_timeline.py, docs/adr/0074 §12).
         "process_steps": process_steps(matter=matter, user=request.user, intelligence=intelligence),
         # No `timeline_rows` and no `timeline_preview`. The approved target has

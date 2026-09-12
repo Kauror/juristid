@@ -2,6 +2,16 @@
 
 **Status:** accepted
 **Date:** 2026-09-11
+**Amended:** 2026-09-12 — §12.1, §12.2 and §12.3 replace §12's process-strip
+source clauses. The strip is a sparse major-process projection, not a
+chronological digest of every dated fact.
+**Amended again:** 2026-09-12 — §12.4 narrows that amendment. The strip carries
+two canonical *known future* milestones as well as the historical ones:
+`Matter.response_deadline` as `Arvamuse tähtaeg`, and a canonical
+`MatterEffectiveDate` as `Jõustumine`. The five sources are
+`Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`, `Jõustumine`, `Lõpetatud`.
+A generic `MatterImportantDate` and a `NextAction` remain excluded. Nothing else
+in this ADR is affected.
 
 **Supersedes the presentation clauses** of ADR 0027 (engagement vocabulary
 constraints), ADR 0031 (`Kaasamine` is not in the composer), ADR 0043 (the
@@ -194,23 +204,194 @@ whose point is that it fits on one row.
 
 `app/matters/process_timeline.py`. There is no `ProcessTimeline` table and no
 `Milestone` model: every column is read off a canonical record that exists for
-its own reasons — the Matter's creation, a `MatterEngagement`, a sent
-`Submission`, the current `StageVocabulary`, a `MatterImportantDate`, a
-`MatterEffectiveDate`.
+its own reasons.
 
 Only milestones that exist are drawn. `Loodud · Küsitlus · Arvamus välja ·
 Valitsuses · I lugemine · Jõustub` is what the design's demonstration Matter
 happened to hold, not a six-stage rail every file is measured against.
 
-`Loodud` is drawn for a Matter this system created and **not** for an imported
-one: `created_at` on a register-archive row is the moment the importer wrote it,
-which for a 2019 file is a fact about a migration. That is also why a bare
-imported Matter draws no strip at all rather than one lonely dot.
+#### 12.1 The strip is a sparse major-process projection (amended 2026-09-12)
 
-A current stage whose transition date nobody recorded is shown without one.
-`Matter.stage` says where the file is, not when it got there.
+**The six-source clause above is superseded.** As first written, this section
+drew a column from the Matter's creation, every `MatterEngagement`, every sent
+`Submission`, the current `StageVocabulary`, every `MatterImportantDate` and
+every `MatterEffectiveDate` — a chronological digest of every dated fact on the
+file. That made the strip a second, shorter copy of the chronology with the
+header's `Hetkeseis` pinned in the middle of it, and it produced sentences the
+record does not support: a closed Matter whose last recorded stage was
+`Riigikogus` read `Riigikogus · praegu`.
+
+The strip is a **sparse procedural story**: only major business milestones. It
+may derive a milestone from exactly five sources — three named here, and two
+added by §12.4, which is where the current table lives.
+
+| Milestone | Source | Rule |
+|---|---|---|
+| `Alustatud` | `Matter.created_at` | `MatterOrigin.NATIVE` only |
+| `Koja arvamus` | a SENT `Submission` with a `sent_at` | one column per genuine send |
+| `Lõpetatud` | `Matter.is_open` and `Matter.closed_at` | current state, never a historical event |
+
+Reserved for later rounds, and **not** drawn today: `Arvamuste kogumine` and
+`Pöördumine`. Both are real procedural acts and neither has a canonical source
+the model can yet identify, so drawing them now would mean guessing — and a
+guessed milestone is indistinguishable, on the page, from a recorded one.
+
+Four clauses carry the reasoning:
+
+* **`Hetkeseis` belongs in the header.** `Matter.stage` is where the file
+  stands *now*. It is stated once, in the metaline, and no stage is
+  whitelisted onto the strip — not `Idee`, not `Riigikogus`, not any other. No
+  `StageVocabulary` row or schema changes; the strip simply stops reading it.
+* **Important dates belong in the facts and the history.**
+  `MatterImportantDate` stays canonical and stays visible in its own fact
+  section, in the chronology once it has passed, and on every work surface
+  under the existing rules. It draws no column, in either direction. With it
+  goes the strip's whole future *grammar* — the `todo` state, the sixty-day
+  horizon and the `N p` countdown; the countdown itself is untouched everywhere
+  it still has a source. **`MatterEffectiveDate` was excluded by this clause
+  and §12.4 puts it back**, as `Jõustumine`, with the grammar still gone: a
+  known future commencement is drawn as a plain dated column, not as a muted
+  one with a day count.
+* **A generic `Kaasamine` is not automatically a process milestone.** A
+  `MatterEngagement` is a canonical record, a chronology row and detail
+  information. `Küsitlus`, `Koosolek`, `Kirjade voor`, a historical `WEB_CALL`
+  and `OTHER` are not evidence of an identifiable consultation round, and
+  treating every one of them as `Arvamuste kogumine` would assert a procedural
+  act nobody recorded.
+* **An imported `Saabus` is not `Alustatud`.** `received_date` is the day Koda
+  received something; `Alustatud` is the day the work started. `created_at` on
+  an imported row is the moment the importer wrote it. `Matter` holds no
+  business-start date besides those, so an imported Matter — `LEGACY_IMPORT`,
+  `LEGACY_ONENOTE`, `PROMOTED_LEGACY`, `OTHER` — gets no `Alustatud` at all.
+  Honest absence over a fabricated milestone standing leftmost on the page.
+
+`Lõpetatud` is the name of the step and stays the name of the step. The
+`Disposition` — `Menetlus lõppes`, `Jõustus`, `Loobuti` — is *why* it ended, it
+is secondary information, and it reads as the column's `title` rather than
+replacing the label. Closure is read off the Matter's current state and never
+by finding a `MATTER_CLOSED` event: a reopened Matter keeps that event forever,
+and a strip that went looking for one would show a currently-open file as
+finished.
+
+**`MatterWorkVictory` remains excluded**, as it always has been: a win is a
+chronology milestone, not a stage of the proceeding.
+
+#### 12.2 No milestone is ever the current one
+
+No column on the strip is marked as the one the Matter is standing on, so the
+`praegu` suffix is gone and no domain state says `current`. The rail still has
+a visible end because `:last-child` draws no connector — a statement about the
+rail, not a claim about the Matter. `is-current` and `is-todo` go with the
+sources that produced them; the dot size, typography and connector geometry are
+untouched. This is a semantic simplification, not a visual redesign.
+
+The `is-todo` half of that is load-bearing after §12.4. A future milestone is
+drawn with the same dot, the same weight and the same date line as a past one:
+muting it would make the destination the file is heading for the least legible
+thing on the rail, and the strip's claim about a future column is only that the
+date is recorded, which is as true of the deadline as of the closure.
+
+#### 12.3 Unchanged
+
+`Loodud` is drawn for a Matter this system created and **not** for an imported
+one — the rule survives the rename to `Alustatud`, and it survives §12.4
+untouched: an imported Matter still gets no `Alustatud` from the moment the
+importer wrote its row. What §12.4 changes is that such a Matter is no longer
+guaranteed an empty strip. Its `response_deadline` and its commencements are
+dates the *source* recorded rather than artefacts of a migration, so an imported
+file may now read `Arvamuse tähtaeg` or `Jõustumine` with no `Alustatud` to
+their left. That is the honest shape of an imported record and not a gap to be
+filled.
+
+The chronology is not touched by this amendment: it may still show stage changes,
+important dates, effective dates, `Töövõit`, engagements, submissions, closure
+and the associated files exactly as it does today, and it keeps its own wording
+`Arvamus välja` for a send — that sentence is about an event, where the strip's
+column names the thing itself. The same holds of `Jõustub`/`Jõustus`, which the
+chronology keeps and the strip does not: a chronology row has a tense and a
+strip column is a name.
+
+#### 12.4 A known beginning and a known destination (amended 2026-09-12)
+
+**§12.1's "historical only" rule is narrowed, not reversed.** A Matter created
+this morning with an answer due on 20.09.2026 drew one dot. The file's first
+phase already had a recorded destination and the strip withheld it, which made
+the sparsest possible strip also the least informative thing on the page. The
+correction is two canonical sources, not a return to the six:
+
+| Milestone | Source | Rule |
+|---|---|---|
+| `Alustatud` | `Matter.created_at` | `MatterOrigin.NATIVE` only |
+| `Koja arvamus` | a SENT `Submission` with a `sent_at` | one column per genuine send |
+| `Arvamuse tähtaeg` | `Matter.response_deadline` | one Matter-level column when the field is set |
+| `Jõustumine` | a `MatterEffectiveDate` that is `ACTIVE` and has a `date_value` | one column per record |
+| `Lõpetatud` | `Matter.is_open` and `Matter.closed_at` | current state, never a historical event |
+
+So a new Matter reads `Alustatud · Arvamuse tähtaeg 20.09.2026`, and a
+long-running one can read `Alustatud · Arvamuse tähtaeg · Koja arvamus ·
+Jõustumine`.
+
+**A future column is not a claim that something happened.** The strip now holds
+two kinds of truthful information — acts that have been performed, and canonical
+dated points the file is known to be heading for. Both are read off a record
+that exists; neither is a prediction. What a future column says is *this is the
+next dated point in the process*, and the grammar says it by saying nothing
+extra: no `praegu`, no `N p`, no muted state, no redesign (§12.2).
+
+**`Arvamuse tähtaeg` is formal, and it is not `Järgmiseks`.** It comes from
+`Matter.response_deadline`, which is a date somebody outside Koda set for the
+answer, and it takes that field's own `verbose_name` as its label. A lawyer's
+`NextAction.target_date` is a self-set work plan; it is `Plaanis` on the
+surfaces that show a plan and it draws **no** process-strip column. Carrying a
+date is not what makes a fact a procedural milestone — whose date it is, is. The
+strip and the `Järgmiseks` wording are independent decisions on independent
+sources and neither depends on the other landing.
+
+**A passed deadline keeps its place.** It is drawn whether it is ahead of us or
+behind us, at its own chronological position either way. A deadline that has
+gone by was a real point in this file's course; dropping it on the day after
+would rewrite the story, and pinning it to one end would misdate it.
+
+**`Jõustumine` does not replace `Arvamuse tähtaeg`.** When a commencement date
+becomes known the rightmost column naturally becomes `Jõustumine`, because its
+date is later — not because the deadline was erased. Both were real.
+
+**No primary commencement is invented.** `MatterEffectiveDate` is several per
+Matter *by design*: one law commences in stages, and nothing in the domain
+elects one of them — there is no `is_primary`, no flag and no selection rule to
+follow. So each genuine record draws its own column at its own date, «mis
+jõustub» reads as that column's `title`, and the strip stays sparse by the
+narrowness of its five sources rather than by collapsing a table that means what
+it says. `KNOWN_DATE` is the only kind a constraint lets carry a date, so
+`date_value is not None` is the kind test; `CANCELLED` and `SUPERSEDED` records
+keep their fact section and their chronology row and draw nothing, because two
+contradicting commencement dates on one rail is not a sparser strip, it is a
+wrong one.
+
+**Ordering is by date, with the proceeding as the tie-break.** Milestones sort
+on their own date. Two recorded on the same day fall back to a fixed place in
+the procedure — `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`, `Jõustumine`,
+`Lõpetatud` — so that an opinion sent *on* the deadline day reads as sent by it,
+and so that two renders of one unchanged Matter cannot disagree. Two of the same
+kind on one day keep their source's own deterministic order: sent opinions are
+read `(sent_at, pk)` rather than on the model's default `-sent_at, -created_at`,
+which would have handed a same-day pair to the stable sort in reverse.
+
+**Closing discharges nothing.** A Matter closed before its response deadline
+still shows that deadline, which places it to the right of `Lõpetatud`. The date
+was set and was never withdrawn; deciding here that a closure cancels an
+external deadline would invent a discharge rule the domain has not recorded.
+That is a separate product seam, and this clause records the scenario rather
+than working around it.
 
 ### 13. The strip and the chronology are scoped before they are derived
+
+The strip reads two child tables through a scope: sent opinions through their
+own `visible_to`, and commencements through the page's single
+`matter_intelligence`, which is built once and handed to the strip and the
+chronology alike (§12.1, §12.4). `Matter.response_deadline` is a column on the
+Matter the reader has already been proven to hold, so it carries no scope of
+its own.
 
 Every source is read through its own `visible_to`, and `matter_intelligence` is
 built once and passed to both. A restricted child must not change milestone

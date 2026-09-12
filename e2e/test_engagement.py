@@ -153,8 +153,16 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # One act, one line: the audit event does not also print a clause.
     expect(chronology(page)).not_to_contain_text("lisas kaasamise")
 
-    # And it reached the process strip, which is the other half of §F.
-    expect(page.locator(".tl-step__what", has_text="Kirjade voor")).to_have_count(1)
+    # And it did **not** reach the process strip. A consultation is a canonical
+    # record, a chronology row and detail information; it is not automatically a
+    # major procedural act, and treating every `Kaasamine` as an identifiable
+    # `Arvamuste kogumine` round would assert one nobody recorded
+    # (docs/adr/0074 §12.1).
+    expect(page.locator(".tl-step__what", has_text="Kirjade voor")).to_have_count(0)
+    # The strip is still drawn, and still says what it always said about this
+    # Matter — so the assertion above is about the source, not about a strip
+    # that stopped rendering.
+    expect(page.locator(".tl-step__what", has_text="Alustatud")).to_have_count(1)
 
 
 def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, base_url):
