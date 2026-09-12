@@ -136,7 +136,7 @@ def test_an_overdue_month_names_the_month_beside_the_count(specialist):
     item = _items(specialist)["Möödas kuu"]
 
     assert item.short_date == "43 p üle"
-    assert item.meaning_line == "TÄHTAEG 06.26"
+    assert item.meaning_line == "PLAANIS 06.26"
     assert "juuni" not in item.meaning_line.lower()
 
 
@@ -273,7 +273,7 @@ def test_the_cell_counts_days_from_the_last_day_of_the_month(specialist):
     after = _items(specialist, today=date(2026, 10, 1))["Kuu täpsusega"]
     assert after.days_late == 1
     assert after.short_date == "1 p üle"
-    assert after.meaning_line == "TÄHTAEG 09.26"
+    assert after.meaning_line == "PLAANIS 09.26"
 
 
 def test_the_page_builder_puts_the_month_where_it_always_was(specialist):
