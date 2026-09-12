@@ -376,7 +376,9 @@ def test_the_first_matter_reaches_its_owners_own_surfaces(client, empty_world):
     department = client.get(reverse("matters:department")).content.decode()
 
     assert "Esimene teema pärast lähtestamist" in mine
-    assert "1 avatud teemat" in department
+    # «1 avatud teema», nominative: the partitive is right from two upwards and
+    # was the QA-12 slip (app/core/templatetags/counts.py).
+    assert "1 avatud teema" in department
 
 
 def test_the_first_matter_is_searchable(client, empty_world):
