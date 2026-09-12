@@ -290,8 +290,10 @@ class Command(BaseCommand):
             actor=actor,
         )
         # `Keda kaasati` and `Vastuseid`, which is what `+ Kaasamine` asks for
-        # since the approved target (docs/adr/0074 §4, §5). The engagement is
-        # also a `.tl-strip` column, so it has to carry a date.
+        # since the approved target (docs/adr/0074 §4, §5). It is a chronology
+        # row and **not** a `.tl-strip` column: a generic consultation is not
+        # automatically a major procedural act (docs/adr/0074 §12.1). The date
+        # is still real, because the chronology orders by it.
         add_engagement(
             matter=matter,
             kind=EngagementKind.SURVEY,
@@ -300,8 +302,9 @@ class Command(BaseCommand):
             response_count=14,
             actor=actor,
         )
-        # A `Koosolek`, the kind the target added. Two engagements also prove the
-        # strip draws two columns rather than one merged «Kaasamine».
+        # A `Koosolek`, the kind the target added. Two engagements, so the
+        # chronology has both kinds in it and the strip beside it still has
+        # neither.
         add_engagement(
             matter=matter,
             kind=EngagementKind.MEETING,
@@ -439,12 +442,15 @@ class Command(BaseCommand):
     def _progress(self, matter: Matter, actor: User, addressee: Organisation, today: date) -> None:
         """Where the file stands, and the opinion that went out.
 
-        Both are `.tl-strip` columns and both are chronology milestones, and
-        neither is drawn from an invented fact: the stage is a real
-        `MATTER_STAGE_CHANGED` event, so the strip's current step carries a real
-        transition date instead of «praegu» alone, and the sent opinion is a
-        canonical `Submission` with its exact final evidence bound to it
-        (docs/adr/0074 §12).
+        Both are chronology milestones, and neither is drawn from an invented
+        fact: the stage is a real `MATTER_STAGE_CHANGED` event, and the sent
+        opinion is a canonical `Submission` with its exact final evidence bound
+        to it.
+
+        Only the second is a `.tl-strip` column. `Hetkeseis` is stated in the
+        header and nowhere else — the strip drew it until 2026-09-12, which is
+        how a closed Matter came to read «Riigikogus · praegu»
+        (docs/adr/0074 §12.1).
         """
         later = StageVocabulary.objects.filter(is_active=True).order_by("sort_order")[1:2].first()
         if later is not None:
