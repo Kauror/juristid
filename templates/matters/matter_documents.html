@@ -323,10 +323,27 @@ finds again (§23.5).
                           exactly as it did.
                         {% endcomment %}
                         <a href="{% url 'documents:document_detail' pk=document.pk %}">
-                          {{ document.title|default:document.current_version.original_filename }}
+                          {% if document.title %}
+                            {{ document.title }}
+                          {% elif document.current_version %}
+                            {{ document.current_version.original_filename }}
+                          {% endif %}
                         </a>
-                        {% if document.current_version and document.title and document.title != document.current_version.original_filename %}
-                          <span class="doctable__filename">{{ document.current_version.original_filename }}</span>
+                        {% comment %}
+                          Spelled as `{% if %}` rather than as
+                          `title|default:current_version.original_filename`:
+                          `default` resolves its argument before it decides
+                          whether it needs it, so a working document — which has
+                          no `current_version` at all — raised
+                          `VariableDoesNotExist` on a page that had rendered fine
+                          for a year. Caught by CI, on five tests of the *filter
+                          chips*, which is the shape of a template failure: the
+                          blame lands nowhere near the change.
+                        {% endcomment %}
+                        {% if document.current_version and document.title %}
+                          {% if document.title != document.current_version.original_filename %}
+                            <span class="doctable__filename">{{ document.current_version.original_filename }}</span>
+                          {% endif %}
                         {% endif %}
                         {% if document.opinion_send %}
                           {% comment %}

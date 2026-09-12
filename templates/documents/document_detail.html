@@ -34,7 +34,7 @@
     {% endcomment %}
     <h1 class="pagehead__title">
       {% if version %}
-        <a href="{% url 'documents:download' pk=version.pk %}">{{ document.title|default:version.original_filename }}</a>
+        <a href="{% url 'documents:download' pk=version.pk %}">{% if document.title %}{{ document.title }}{% else %}{{ version.original_filename }}{% endif %}</a>
       {% else %}{{ document.title }}{% endif %}
     </h1>
     <span class="pagehead__context">

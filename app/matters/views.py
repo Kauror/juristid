@@ -422,7 +422,13 @@ def save_scratchpad(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "matters/partials/scratchpad_meta.html",
-        {"scratchpad": row, "scratchpad_revision": person_workspace.scratchpad_revision(row)},
+        {
+            "scratchpad": row,
+            # `_saved_`, not `scratchpad_revision`: the page's own context carries
+            # that name for the form's hidden field, and one name for both put two
+            # elements with the same id on the first render (QA-09).
+            "scratchpad_saved_revision": person_workspace.scratchpad_revision(row),
+        },
     )
 
 

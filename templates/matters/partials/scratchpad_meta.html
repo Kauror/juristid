@@ -14,11 +14,17 @@ textarea would move the caret out from under the person typing into it.
 {% comment %}
   A save that worked retires the previous refusal, and moves the token on — or
   the *next* autosave would arrive holding the version this one just replaced and
-  conflict with itself. Absent when this fragment renders as part of the page
-  rather than as a save's answer, where the form already carries both (QA-09).
+  conflict with itself.
+
+  Guarded on `scratchpad_saved_revision`, which **only the save view sets** —
+  deliberately not on `scratchpad_revision`, which the page itself carries for the
+  form's own hidden field. Sharing one name put both branches on the first render:
+  two elements with `id="pw-note-revision"`, one of them outside the form and
+  therefore never posted. A browser found it; nothing on the page looked wrong
+  (QA-09).
 {% endcomment %}
-{% if scratchpad_revision %}
+{% if scratchpad_saved_revision %}
   <div class="pw-note__conflict" id="pw-note-conflict" hx-swap-oob="outerHTML"></div>
   <input type="hidden" id="pw-note-revision" name="revision"
-         value="{{ scratchpad_revision }}" hx-swap-oob="outerHTML">
+         value="{{ scratchpad_saved_revision }}" hx-swap-oob="outerHTML">
 {% endif %}
