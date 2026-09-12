@@ -3,17 +3,23 @@
 body and above the chronology. You see which major procedural acts a file has
 been through before you scroll anything (TEEMA_TARGET_SPEC §D).
 
-**Three labels and no more:** `Alustatud`, `Koja arvamus`, `Lõpetatud`. One
-grammar, and it is the one this strip has always had: a filled accent dot with
-an accent connector running to the next column, and `:last-child` drawing none —
-so the line ends at the rightmost dot. Every milestone is historical, so there
-is no `praegu`, no future column and no countdown; where the file stands *now*
-is `Hetkeseis` in the header, which is the one place that is stated.
+**Five labels and no more:** `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`,
+`Jõustumine`, `Lõpetatud`. One grammar, and it is the one this strip has always
+had: a filled accent dot with an accent connector running to the next column,
+and `:last-child` drawing none — so the line ends at the rightmost dot.
+
+A milestone that is still ahead — a response deadline, a commencement — is drawn
+exactly like one behind us, because the strip states dated points and not
+elapsed ones. It carries **no** `praegu` and no `N p`: where the file stands
+*now* is `Hetkeseis` in the header, which is the one place that is stated, and a
+countdown here would be this component judging an urgency nobody asked it for.
 
 **Only the milestones this Matter actually has.** `app/matters/process_timeline.py`
 derives the columns from canonical records and returns nothing at all for a
-Matter that has none. An open Matter with no sent opinion draws one dot and no
-connector.
+Matter that has none. A native Matter with no deadline and no sent opinion draws
+one dot and no connector; give it a response deadline and it reads
+`Alustatud · Arvamuse tähtaeg`, which is a known beginning and a known
+destination.
 
 Rendered only when there is something to render. A strip is a comparison, and a
 heading over an empty grid would read as a data-quality problem.
@@ -22,7 +28,8 @@ heading over an empty grid would read as a data-quality problem.
   <div class="tl-strip" aria-label="Teema käik">
     {% for step in process_steps %}
       {% comment %}
-        `title` carries the closure's `Disposition` and nothing else. *Why* a
+        `title` carries the closure's `Disposition` and a commencement's «mis
+        jõustub», which is what tells two `Jõustumine` columns apart. *Why* a
         file ended is real information, but «Vastus esitatud ja järeltegevus
         tehtud» under a 150px column wraps to three lines and pushes its
         neighbours' dates out of alignment — and `Lõpetatud` has to stay the

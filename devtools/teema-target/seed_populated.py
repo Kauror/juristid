@@ -166,6 +166,8 @@ class Command(BaseCommand):
             addressee_organisation=addressee,
             track=Track.DOMESTIC,
             received_date=today - timedelta(days=16),
+            # `Arvamuse tähtaeg` in the header band, and the strip's known
+            # destination three weeks out (docs/adr/0074 §12.4).
             response_deadline=today + timedelta(days=21),
             brief_summary=SUMMARY,
             stage=self._stage(),
@@ -281,6 +283,13 @@ class Command(BaseCommand):
             date_precision=DatePrecision.QUARTER,
             actor=actor,
         )
+        # The one structured fact on this Matter that *is* a `.tl-strip` column:
+        # a canonical commencement with a known date is a real procedural
+        # milestone and the file's rightmost known destination
+        # (docs/adr/0074 §12.4). Deliberately on the same day as the
+        # `Järgmiseks` step below, so the seeded page shows the two apart: the
+        # commencement draws `Jõustumine`, and the lawyer's own target date —
+        # a work plan, not a procedural act — draws nothing.
         add_effective_date(
             matter=matter,
             kind=EffectiveDateKind.KNOWN_DATE,
@@ -451,6 +460,12 @@ class Command(BaseCommand):
         header and nowhere else — the strip drew it until 2026-09-12, which is
         how a closed Matter came to read «Riigikogus · praegu»
         (docs/adr/0074 §12.1).
+
+        The send is backdated a week while the Matter was created today, which
+        is the shape `Registreeri saatmine` produces on a file somebody wrote
+        down after the fact. The strip sorts by date and therefore reads
+        `Koja arvamus · Alustatud`, which is deliberate and pinned by a test
+        that says why.
         """
         later = StageVocabulary.objects.filter(is_active=True).order_by("sort_order")[1:2].first()
         if later is not None:

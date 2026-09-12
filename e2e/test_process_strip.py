@@ -1,11 +1,17 @@
 """`Teema käik` — the sparse process strip, in a real browser.
 
-Three labels and no more: `Alustatud`, `Koja arvamus`, `Lõpetatud`. The Python
-suite proves the projection; what only a browser can show is that the strip is
-still a strip at every width — one column, two, three, several identical
-`Koja arvamus` columns, or none at all — and that none of the five retired
-sources has left a label behind on the page a person actually opens
-(docs/adr/0074 §12.1).
+Five labels and no more: `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`,
+`Jõustumine`, `Lõpetatud`. The Python suite proves the projection; what only a
+browser can show is that the strip is still a strip at every width — one column,
+two, several identical `Koja arvamus` columns, a five-column file, or none at
+all — and that none of the retired sources has left a label behind on the page a
+person actually opens (docs/adr/0074 §12.1, §12.4).
+
+The two known *future* columns are the reason half of this file exists. A
+`Arvamuse tähtaeg` three weeks out and a `Jõustumine` next year are drawn with
+the same dot and the same weight as a completed act, and the longest label on the
+strip is now a future one — so «does it still fit at 420» is a question about the
+destination rather than about the beginning.
 
 The widths are 1440, 1024 and 420, which is the set the strip has always been
 measured at. The geometry assertion is always the same pair: the document does
@@ -22,7 +28,7 @@ that baseline from three viewports away.
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import expect
@@ -55,7 +61,14 @@ ARCHIVE_TITLE = "Arhiiviteema 2014 sünteetiline registrikirje"
 
 #: Every label the strip used to draw and no longer may. `Kooskõlastusringil` is
 #: the seeded Matter's `Hetkeseis`, `Kaasamiskutse veebis` its engagement kind,
-#: and the rest are its structured facts.
+#: and the two `Eelnõu`/`Eeldatav` rows are its watched `MatterImportantDate`
+#: records, which stayed out when the commencements came back.
+#:
+#: `Jõustub` is the **chronology's** tensed wording for a commencement and is
+#: retired from the strip specifically: the column is the noun `Jõustumine`, so
+#: that a rail does not rename itself on the day a date goes past. «põhiosa» is
+#: that record's «mis jõustub» — real, and secondary, so it reads as the
+#: column's `title` and never as visible text (docs/adr/0074 §12.4).
 RETIRED = [
     "praegu",
     "Loodud",
@@ -95,6 +108,39 @@ def assert_fits(page, width: int) -> None:
         assert box["x"] >= -1 and box["x"] + box["width"] <= width + 1, (
             f"strip column {index} sits outside the {width}px viewport"
         )
+
+
+def et(days: int) -> str:
+    """A date the way a lawyer types one: `7.9.2026` (app/core/dates.py)."""
+    when = date.today() + timedelta(days=days)
+    return f"{when.day}.{when.month}.{when.year}"
+
+
+def create_matter_with_deadline(page, base_url: str, title: str, *, deadline: str) -> str:
+    """`Uus teema` with an `Arvamuse tähtaeg` filled in.
+
+    A local variant of `conftest.create_matter` rather than a new keyword on the
+    shared helper: the deadline is what this file is about and nothing else asks
+    for it, and the form field is the same one `test_lawyer_workflow.py` fills.
+    """
+    page.goto(f"{base_url}/teemad/uus/")
+    page.wait_for_load_state("networkidle")
+    page.fill("#id_title", title)
+    page.fill("#id_response_deadline", deadline)
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    return page.url
+
+
+def add_a_commencement(page, *, what: str, when: str) -> None:
+    """Record a `Jõustumine` through the `+ Jõustumine` panel a person uses."""
+    open_add_panel(page, "lisa-joustumine")
+    panel = page.locator("#lisa-joustumine")
+    expect(panel).to_have_attribute("open", "")
+    panel.locator("#id_effective_title").fill(what)
+    panel.locator("#id_effective_on").fill(when)
+    panel.locator("button[type=submit]").first.click()
+    page.wait_for_load_state("networkidle")
 
 
 def close_the_matter(page, label: str = "Menetlus lõppes") -> None:
@@ -233,6 +279,113 @@ def test_the_whole_vocabulary_fits_on_one_row(page, base_url, width):
     assert_fits(page, width)
 
 
+# ---------------------------------------------------------------------------
+# The known destination — §12.4
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_new_matter_reads_a_beginning_and_a_destination(page, base_url, width):
+    """**Alustatud + Arvamuse tähtaeg.** The shape a file has on the day it is
+    opened, and the one this amendment exists for: a known start and the known
+    dated point its first phase is heading for.
+
+    `Arvamuse tähtaeg` is the longest label the strip can draw, so 420 is where
+    it either fits or wraps into the column beside it.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    create_matter_with_deadline(page, base_url, f"Käiguriba tähtaeg {width}", deadline=et(21))
+
+    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
+    dates = [text.strip() for text in page.locator(".tl-step__date").all_inner_texts()]
+    assert dates[-1] == et(21), dates
+    # A future column claims nothing about the past and counts down to nothing.
+    assert not COUNTDOWN.search(strip(page).inner_text()), "the strip still counts down"
+    for gone in ("praegu", "Lõpp", "Plaanis", "Järgmiseks"):
+        expect(strip(page).get_by_text(gone, exact=False)).to_have_count(0)
+    assert_fits(page, width)
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_deadline_and_a_sent_opinion_read_in_date_order(page, base_url, width):
+    """**Arvamuse tähtaeg + Koja arvamus.** An opinion sent today against a
+    deadline three weeks out puts the send on the left — chronology, not a fixed
+    rail, and no claim either way about whether the answer was on time."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    matter_url = create_matter_with_deadline(
+        page, base_url, f"Käiguriba tähtaeg ja arvamus {width}", deadline=et(21)
+    )
+    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=TODAY_ET)
+
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
+
+    assert labels(page) == ["Alustatud", "Koja arvamus", "Arvamuse tähtaeg"]
+    boxes = [
+        page.locator(".tl-step").nth(index).bounding_box()
+        for index in range(page.locator(".tl-step").count())
+    ]
+    assert boxes[1]["x"] < boxes[2]["x"], "the send and the deadline columns overlap"
+    assert_fits(page, width)
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_commencement_is_the_rightmost_destination(page, base_url, width):
+    """**Arvamuse tähtaeg + Jõustumine.** The rightmost column becomes
+    `Jõustumine` because its date is later — the deadline is not erased by it,
+    and «mis jõustub» is the column's `title` rather than its heading."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    create_matter_with_deadline(page, base_url, f"Käiguriba jõustumine {width}", deadline=et(21))
+    add_a_commencement(page, what="põhiosa", when=et(400))
+
+    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg", "Jõustumine"]
+    expect(page.locator('.tl-step[title="põhiosa"]')).to_have_count(1)
+    # The noun, never the chronology's tensed wording.
+    for tensed in ("Jõustub", "Jõustus"):
+        expect(page.locator(".tl-step__what", has_text=tensed)).to_have_count(0)
+    assert_fits(page, width)
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_five_column_file_still_fits_on_one_row(page, base_url, width):
+    """**The longest realistic strip.** Everything a file can carry at once.
+
+    Closed while its response deadline is still ahead of it, which puts
+    `Arvamuse tähtaeg` to the *right* of `Lõpetatud`. That reads oddly and it is
+    deliberate: the date was set and was never withdrawn, and having the strip
+    decide that closing a file discharges an external deadline would invent a
+    rule the domain has not recorded (docs/adr/0074 §12.4).
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    matter_url = create_matter_with_deadline(
+        page, base_url, f"Käiguriba viis verstaposti {width}", deadline=et(21)
+    )
+    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=TODAY_ET)
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
+    add_a_commencement(page, what="põhiosa", when=et(400))
+    close_the_matter(page)
+
+    assert labels(page) == [
+        "Alustatud",
+        "Koja arvamus",
+        "Lõpetatud",
+        "Arvamuse tähtaeg",
+        "Jõustumine",
+    ]
+    assert_fits(page, width)
+    # Five columns, four connectors, and the rail still ends at the rightmost
+    # dot rather than running off the edge of it.
+    last = page.locator(".tl-step").last.evaluate(
+        "node => getComputedStyle(node, '::before').display"
+    )
+    assert last == "none", "the rightmost column draws a connector to nothing"
+
+
 @pytest.mark.parametrize("width", WIDTHS)
 def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
     """**Several `Koja arvamus` columns.** A supplementary opinion months after
@@ -272,8 +425,8 @@ def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
 @pytest.mark.parametrize("width", WIDTHS)
 def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
     """The seeded open Matter carries a `Hetkeseis`, an engagement, two watched
-    dates, three commencements and a `Töövõit`. Exactly one of those is on the
-    strip, and it is none of them.
+    dates, three commencements and a `Töövõit`. Two of those reach the strip —
+    the commencements that have a date — and the rest draw nothing.
 
     `Hetkeseis` is asserted *present* in the header in the same breath, because
     «the label is gone from the page» and «the label is gone from the strip» are
@@ -284,9 +437,12 @@ def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
     open_matter(page, base_url, OPEN_TITLE)
 
     expect(strip(page)).to_have_count(1)
-    # Two columns, because `seed_e2e_data` also files a sent opinion on this
-    # Matter for the Statistika world. Everything else it carries draws nothing.
-    assert labels(page) == ["Alustatud", "Koja arvamus"]
+    # Four columns. `seed_e2e_data` files a sent opinion on this Matter for the
+    # Statistika world, and records two commencements with known dates plus one
+    # `GENERAL_ORDER` — «jõustub üldises korras», which is a statement about
+    # what is *not* known and therefore has no position on a rail. The two
+    # watched dates, the engagement, the stage and the `Töövõit` draw nothing.
+    assert labels(page) == ["Alustatud", "Koja arvamus", "Jõustumine", "Jõustumine"]
     for gone in RETIRED:
         expect(strip(page).get_by_text(gone, exact=False)).to_have_count(0)
     # No countdown either: the `N p` suffix went with the future sources.
