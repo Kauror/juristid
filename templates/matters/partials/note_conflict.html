@@ -1,0 +1,46 @@
+{% comment %}
+`Märget on muudetud teises aknas` — the autosave that was refused.
+
+Two tabs on one Teema is the ordinary way a lawyer works, and this note is the
+only write in the product that files no history: an autosave that overwrote a
+newer version left nothing anywhere to recover the overwritten one from. So a
+save whose revision is not the stored one writes nothing, and this is what comes
+back instead (adversarial QA 2026-09-12, QA-09).
+
+**The textarea is not in here.** What the person typed stays exactly where it
+was, cursor and selection included, because the swap target is the hint slot and
+nothing else. Their words are not lost and are not silently replaced with the
+server's: both versions are on the screen, and which one wins is theirs to
+decide.
+
+The newer version arrives out of band, so one 409 carries both halves of the
+answer — the sentence in the slot the successful save also writes to, and the
+text under the box where it can be read and copied.
+{% endcomment %}
+<span class="railcard__hint railcard__hint--conflict" id="teema-markme-seis" role="alert">
+  {{ note_conflict }}
+</span>
+
+<div class="railnote__conflict" id="teema-markme-konflikt" hx-swap-oob="outerHTML">
+  <p class="railnote__conflictnote">
+    Teises aknas salvestatud versioon
+    {% if note_server_saved_at %}
+      {% comment %}
+        A `<time>`, so the visual-regression mask that paints over every
+        clock-derived value covers this one too.
+      {% endcomment %}
+      (<time datetime="{{ note_server_saved_at|date:'c' }}">{{ note_server_saved_at|time:"H:i" }}</time>)
+    {% endif %}:
+  </p>
+  {% comment %}
+    Read-only, and a `<pre>` rather than a second textarea: a box somebody can
+    type into is a box they will type into, and this one is not theirs to edit —
+    it is the other tab's saved text, offered so they can reconcile the two.
+    `pre-wrap` in the stylesheet gives back the paragraph breaks they wrote.
+  {% endcomment %}
+  <pre class="railnote__conflictbody">{{ note_server_body }}</pre>
+  <p class="railnote__conflictnote">
+    Kopeeri vajalik osa oma märkmesse või laadi leht uuesti, et serveri versiooniga
+    jätkata. Sinu tekst on ülal alles.
+  </p>
+</div>

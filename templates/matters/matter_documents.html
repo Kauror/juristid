@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load counts %}
 {% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -238,7 +239,7 @@ finds again (§23.5).
             <div class="docsection__head">
               <h2 class="docsection__title" id="failid-heading">Failid</h2>
               <span class="docsection__count">
-                {{ evidence_total }} faili{% if document_filter_chips %} · filtreeritud{% endif %}
+                {{ evidence_total|counted:"fail,faili" }}{% if document_filter_chips %} · filtreeritud{% endif %}
               </span>
             </div>
             {% if document_filter_chips %}
@@ -300,11 +301,50 @@ finds again (§23.5).
                         {% if document.is_restricted %}
                           <span class="badge badge--restricted">Piiratud</span>
                         {% endif %}
+                        {% comment %}
+                          The name the uploader gave it, and the filename under
+                          it when the two differ.
+
+                          It used to be the filename alone. `Document.title` was
+                          stored, reached the `<title>` element and the row's
+                          `aria-label`, and appeared nowhere a sighted reader
+                          could see it — so two uploads of `kiri.pdf` under two
+                          different titles were two rows identical in every
+                          visible column, and the one fact that told them apart
+                          was readable only by a screen reader (adversarial QA
+                          2026-09-12, QA-05).
+
+                          The filename is not hidden: it is what the bytes are
+                          called, it is what somebody looks for in a mail client
+                          or a download folder, and the round that follows it
+                          needs both. When the two are the same string — which is
+                          what an upload with no title typed into it produces —
+                          only one line renders, so the ordinary case reads
+                          exactly as it did.
+                        {% endcomment %}
                         <a href="{% url 'documents:document_detail' pk=document.pk %}">
-                          {% if document.current_version %}
+                          {% if document.title %}
+                            {{ document.title }}
+                          {% elif document.current_version %}
                             {{ document.current_version.original_filename }}
-                          {% else %}{{ document.title }}{% endif %}
+                          {% endif %}
                         </a>
+                        {% comment %}
+                          Spelled as `{% if %}` rather than as
+                          `title|default:current_version.original_filename`:
+                          `default` resolves its argument before it decides
+                          whether it needs it, so a working document — which has
+                          no `current_version` at all — raised
+                          `VariableDoesNotExist` on a page that had rendered fine
+                          for a year. Caught by CI, on five tests of the *filter
+                          chips*, which is the shape of a template failure: the
+                          blame lands nowhere near the change.
+                        {% endcomment %}
+                        {% if document.current_version and document.title %}
+                          {% if document.title != document.current_version.original_filename %}
+                            <span class="doctable__filename">{{ document.current_version.original_filename }}</span>
+                          {% endif %}
+                        {% endif %}
                         {% if document.opinion_send %}
                           {% comment %}
                             Two facts and no more: when it went out and who to.

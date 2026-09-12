@@ -25,6 +25,7 @@ box.
 
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, SANDRA, create_matter, open_add_panel, open_matter, sign_in
@@ -268,3 +269,101 @@ def test_the_register_filter_panel_fits_420px_while_it_is_open(page, base_url):
     assert panel.evaluate("node => node.open"), "the filter panel would not open"
 
     assert not overflows(page), "the open filter panel scrolls Teemad sideways at 420px"
+
+
+# ---------------------------------------------------------------------------
+# Statistika's six-tab nav, which used to take the page with it (QA-08)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("width", [375, 420, 1024, 1440])
+def test_statistika_does_not_scroll_the_document_sideways(page, base_url, width):
+    """The nav is a little over 500 px wide, and at 375 the document was 515.
+
+    Every other wide strip in this product stays inside its own scroller — the
+    Teema process strip sets `overflow-x: auto` below 700 px for exactly this
+    reason — and `.tabs` did not, so the whole page, header and all, slid under
+    the thumb (adversarial QA 2026-09-12, QA-08).
+
+    1024 and 1440 are here so the fix cannot be a narrow-width special case that
+    quietly changed the desktop row.
+    """
+    page.set_viewport_size({"width": width, "height": 812})
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/statistika/")
+    page.wait_for_load_state("networkidle")
+
+    client_width, scroll_width = page.evaluate(
+        "() => [document.documentElement.clientWidth, document.documentElement.scrollWidth]"
+    )
+
+    assert scroll_width <= client_width + 1, (
+        f"/statistika/ at {width}px scrolls the document horizontally: "
+        f"scrollWidth={scroll_width} against clientWidth={client_width}"
+    )
+
+
+@pytest.mark.parametrize("width", [375, 420])
+def test_every_statistika_tab_is_still_reachable_inside_its_own_scroller(page, base_url, width):
+    """Kept, not hidden and not abbreviated.
+
+    The scroll is only the right answer if all six tabs are still there and each
+    one can be brought into view. A fix that dropped a tab, folded the row into
+    two lines or truncated «Andmekvaliteet» would satisfy the assertion above
+    and be worse than the defect.
+    """
+    page.set_viewport_size({"width": width, "height": 812})
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/statistika/")
+    page.wait_for_load_state("networkidle")
+
+    nav = page.locator("nav.tabs")
+    tabs = nav.locator("a")
+    assert tabs.count() >= 6, tabs.count()
+
+    # The row scrolls itself: it is wider than its box, and the box is inside the
+    # viewport.
+    assert nav.evaluate("node => node.scrollWidth > node.clientWidth")
+    box = nav.bounding_box()
+    assert box is not None and box["x"] >= -1 and box["x"] + box["width"] <= width + 1
+
+    # And the last tab can be reached, which is what the scroller is for.
+    last = tabs.last
+    last.scroll_into_view_if_needed()
+    page.wait_for_timeout(120)
+    last_box = last.bounding_box()
+    assert last_box is not None and last_box["width"] > 0
+    assert last_box["x"] + last_box["width"] <= width + 1
+
+    # Not wrapped: one row, so the active tab's underline stays on the heading's
+    # own line.
+    assert (
+        nav.evaluate(
+            "node => { const rows = new Set([...node.querySelectorAll('a')]"
+            ".map(a => Math.round(a.getBoundingClientRect().top))); return rows.size; }"
+        )
+        == 1
+    )
+
+
+def test_the_teema_tabs_keep_the_row_they_had(page, base_url):
+    """`.tabs` is shared, so the other surface using it is asserted too.
+
+    The rule was added to the class rather than to one page, which is the right
+    place for it — and that makes the Teema page's tab row part of the change
+    whether it needed it or not.
+    """
+    page.set_viewport_size(NARROW)
+    sign_in(page, base_url, MARTIN)
+    open_matter(page, base_url, OPEN_TITLE)
+
+    nav = page.locator("nav.tabs").first
+    expect(nav).to_be_visible()
+    assert not overflows(page)
+    assert (
+        nav.evaluate(
+            "node => { const rows = new Set([...node.querySelectorAll('a')]"
+            ".map(a => Math.round(a.getBoundingClientRect().top))); return rows.size; }"
+        )
+        == 1
+    )

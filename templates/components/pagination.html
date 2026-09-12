@@ -1,4 +1,4 @@
-{% load pagination %}{% comment %}
+{% load pagination %}{% load counts %}{% comment %}
 Server-side pagination. The register has to stay usable at years of scale, so no
 screen ever renders the whole set (master specification 13.3).
 
@@ -49,7 +49,7 @@ stays a fixed width whether there are three pages or four hundred.
 
     <span class="pagination__status">
       Leht {{ page.number }} / {{ page.paginator.num_pages }}
-      <span class="muted">({{ page.paginator.count }} kirjet)</span>
+      <span class="muted">({{ page.paginator.count|counted:"kirje,kirjet" }})</span>
     </span>
   </nav>
 {% endif %}

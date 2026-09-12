@@ -1425,3 +1425,138 @@ def test_a_withdrawn_sends_evidence_stays_registrable(signed_in, specialist, org
     response = signed_in.get(_documents_url(matter))
     offered = [str(c.pk) for c in response.context["unregistered_opinions"]]
     assert str(document.pk) in offered
+
+
+# ---------------------------------------------------------------------------
+# The name a person gave the file is the name they see (QA-05, 2026-09-12)
+# ---------------------------------------------------------------------------
+#
+# Ported from the adversarial QA round. `Document.title` was stored, reached the
+# `<title>` element and the row's `aria-label`, and appeared nowhere a sighted
+# reader could see it: two uploads of one filename under two titles were two
+# rows identical in every visible column, and the fact that told them apart was
+# readable only by a screen reader.
+
+
+def _visible(body: str) -> str:
+    """The page with the attributes that already carried the title stripped out.
+
+    So each assertion below is about what is *on* the page rather than about
+    what a screen reader is told — which was the whole finding.
+    """
+    import re
+
+    return re.sub(r'(?:aria-label|title|alt)="[^"]*"', "", body)
+
+
+def _uploaded(matter, *, title: str, filename: str, actor=None):
+    """One document whose title and filename deliberately differ."""
+    document = create_document(
+        matter=matter, title=title, role=DocumentRole.INCOMING_AUTHORITY, created_by=actor
+    )
+    add_evidence_version(
+        document=document,
+        content=f"%PDF-1.4 {title}".encode(),
+        original_filename=filename,
+        mime_type="application/pdf",
+        uploaded_by=actor,
+    )
+    document.refresh_from_db()
+    return document
+
+
+def test_two_files_with_one_filename_are_told_apart_by_their_titles(signed_in, specialist):
+    """The finding itself, as a reader meets it."""
+    matter = factories.MatterFactory(owner=specialist)
+    _uploaded(matter, title="Ministeeriumi saatekiri", filename="kiri.pdf", actor=specialist)
+    _uploaded(
+        matter, title="Sama fail, parandatud saatekiri", filename="kiri.pdf", actor=specialist
+    )
+
+    visible = _visible(_page(signed_in, matter))
+
+    assert "Ministeeriumi saatekiri" in visible
+    assert "Sama fail, parandatud saatekiri" in visible
+
+
+def test_the_filename_stays_on_the_row_beside_the_title(signed_in, specialist):
+    """Not hidden — demoted. It is what the bytes are called and a reader
+    following the file into a mail client or a download folder needs it."""
+    matter = factories.MatterFactory(owner=specialist)
+    _uploaded(matter, title="Ministeeriumi saatekiri", filename="kiri.pdf", actor=specialist)
+
+    visible = _visible(_page(signed_in, matter))
+
+    assert "Ministeeriumi saatekiri" in visible
+    assert "kiri.pdf" in visible
+
+
+def test_a_file_whose_title_is_its_filename_still_reads_as_one_line(signed_in, specialist):
+    """The ordinary case is unchanged.
+
+    An upload with nothing typed into `Pealkiri` is titled after the file, and a
+    row printing the same string twice would be the fix costing every reader a
+    line to gain nothing.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _uploaded(matter, title="kiri.pdf", filename="kiri.pdf", actor=specialist)
+
+    visible = _visible(_page(signed_in, matter))
+
+    assert visible.count("kiri.pdf") == 1
+
+
+def test_the_document_page_is_headed_by_the_title_and_still_names_the_file(signed_in, specialist):
+    """Following a row lands on a page named after the same thing the row was.
+
+    The filename has not gone anywhere: it is `Failinimi` under `Originaal`,
+    beside the type, the size and the checksum, which is where a file's
+    mechanics belong.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _uploaded(
+        matter, title="Ministeeriumi saatekiri", filename="kiri.pdf", actor=specialist
+    )
+
+    body = signed_in.get(
+        reverse("documents:document_detail", kwargs={"pk": document.pk})
+    ).content.decode()
+    heading = body[body.index("pagehead__title") : body.index("pagehead__context")]
+
+    assert "Ministeeriumi saatekiri" in heading
+    assert "kiri.pdf" not in heading
+    assert "Failinimi" in body
+    assert "kiri.pdf" in body
+
+
+def test_the_download_is_still_served_under_the_files_own_name(signed_in, specialist):
+    """The title is a label. It is not what the browser saves the bytes as."""
+    matter = factories.MatterFactory(owner=specialist)
+    document = _uploaded(
+        matter, title="Ministeeriumi saatekiri", filename="kiri.pdf", actor=specialist
+    )
+
+    response = signed_in.get(
+        reverse("documents:download", kwargs={"pk": document.current_version.pk})
+    )
+
+    assert "kiri.pdf" in response.headers["Content-Disposition"]
+    assert "Ministeeriumi saatekiri" not in response.headers["Content-Disposition"]
+
+
+def test_what_a_reader_sees_and_what_a_screen_reader_hears_name_the_same_thing(
+    signed_in, specialist
+):
+    """The accessibility half of the finding, from the other side.
+
+    The row's controls were already labelled with the title while the visible
+    text said the filename, so the two disagreed about what distinguished one
+    row from the next. They now agree.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _uploaded(matter, title="Ministeeriumi saatekiri", filename="kiri.pdf", actor=specialist)
+
+    body = _page(signed_in, matter)
+
+    assert 'aria-label="Laadi alla Ministeeriumi saatekiri"' in body
+    assert "Ministeeriumi saatekiri" in _visible(body)

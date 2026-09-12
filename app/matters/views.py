@@ -16,9 +16,11 @@ Two conventions worth knowing:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Any
 
+from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -124,6 +126,7 @@ from app.matters.my_work import (
 )
 from app.matters.process_timeline import process_steps
 from app.matters.services import (
+    PersonalNoteConflict,
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
@@ -132,6 +135,7 @@ from app.matters.services import (
     compose_update,
     create_matter,
     personal_note_record,
+    personal_note_revision,
     record_engagement,
     reopen_matter,
     resolve_addressee,
@@ -319,6 +323,9 @@ def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) ->
         # does not read it, so the block it feeds is absent from that response
         # rather than hidden in it (01-EHITUSJUHIS §3.5).
         context["scratchpad"] = person_workspace.scratchpad_for(request.user)
+        # Which stored version the box is being filled from, so a second tab's
+        # autosave can be refused rather than allowed to overwrite it (QA-09).
+        context["scratchpad_revision"] = person_workspace.scratchpad_revision(context["scratchpad"])
         # «Uus asi», under the same rule and for the same reason. A colleague's
         # unread hand-overs are their own workflow state: the department head's
         # branch below does not query them, so there is no section, no heading
@@ -389,9 +396,40 @@ def save_scratchpad(request: HttpRequest) -> HttpResponse:
 
     Answers the saved timestamp as a fragment, because the only thing the page
     needs back is the meta line under the textarea.
+
+    **A stale autosave is refused, not applied.** Minu asjad is the page most
+    likely to be open in a second tab all day, and this pad files no history — so
+    a last-write-wins overwrite left nothing anywhere to recover the overwritten
+    version from. 409 with the newer text beside the box, the person's own words
+    untouched in it, and no write at all (QA-09, `_note_conflict`'s sibling).
     """
-    row = person_workspace.save_scratchpad(request.user, request.POST.get("body", ""))
-    return render(request, "matters/partials/scratchpad_meta.html", {"scratchpad": row})
+    try:
+        row = person_workspace.save_scratchpad(
+            request.user,
+            request.POST.get("body", ""),
+            expected_revision=request.POST.get("revision", ""),
+        )
+    except person_workspace.ScratchpadConflict as conflict:
+        return render(
+            request,
+            "matters/partials/scratchpad_conflict.html",
+            {
+                "scratchpad_conflict": str(conflict),
+                "scratchpad_server": conflict.current,
+            },
+            status=409,
+        )
+    return render(
+        request,
+        "matters/partials/scratchpad_meta.html",
+        {
+            "scratchpad": row,
+            # `_saved_`, not `scratchpad_revision`: the page's own context carries
+            # that name for the form's hidden field, and one name for both put two
+            # elements with the same id on the first render (QA-09).
+            "scratchpad_saved_revision": person_workspace.scratchpad_revision(row),
+        },
+    )
 
 
 @login_required
@@ -1659,7 +1697,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     )
     action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
     uploads: list[Any] = []
-    upload_error = ""
+    upload_refusals: tuple[str, ...] = ()
     # What an earlier refusal is holding, and which of it this attempt still
     # wants. A key the session is not holding — a stale form, a second tab, a
     # swept object — is simply not there; it is never a reason to refuse a save
@@ -1681,19 +1719,22 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         # that is no longer there.
         held_keys = [item.key for item in pending_uploads.describe(request.session, asked)]
         resumed = pending_uploads.resume(request.session, held_keys)
-        chosen, upload_error = _read_new_matter_files(request)
+        chosen, upload_refusals = _read_new_matter_files(request)
         # Held first, then chosen: the order somebody offered them in. A file
         # picked again after a refusal is a second file and is filed as one —
         # the preview lists both, so nothing is deduplicated behind their back.
         uploads = [*resumed, *chosen]
 
-        refused = bool(upload_error) or not form.is_valid()
+        refused = bool(upload_refusals) or not form.is_valid()
         if wants_action and not action_form.is_valid():
             refused = True
 
         if refused:
-            if upload_error:
-                messages.error(request, upload_error)
+            # One message per refused file. The messages block renders each as
+            # its own paragraph, so four chosen files with three problems reads
+            # as three named problems rather than as one unnamed one (QA-02).
+            for refusal in upload_refusals:
+                messages.error(request, refusal)
             # Everything that passed validation survives the refusal, including
             # the good half of a batch whose other half was rejected. Files
             # already held stay held — `resume` reads without consuming — so
@@ -1960,7 +2001,7 @@ INTAKE_STATE_LABELS: dict[str, tuple[str, str]] = {
 
 
 def _intake_context(
-    session: Any, *, error: str = "", answered: CurrentValues | None = None
+    session: Any, *, errors: Sequence[str] = (), answered: CurrentValues | None = None
 ) -> dict[str, Any]:
     """Everything the intake fragment renders, decided here rather than there.
 
@@ -2052,19 +2093,22 @@ def _intake_context(
         "intake_files": rows,
         "intake_state": state,
         "intake_prefill": prefill,
-        "intake_error": error,
+        # Every refused file, one line each. A tuple rather than one joined
+        # sentence, because the panel prints them as separate lines and the
+        # create form hands each to `messages.error` on its own (QA-02).
+        "intake_errors": tuple(errors),
         "intake_unreadable": unreadable,
         "assisted": assisted,
     }
 
 
 def _intake_fragment(
-    request: HttpRequest, session: Any, *, error: str = "", status: int = 200
+    request: HttpRequest, session: Any, *, errors: Sequence[str] = (), status: int = 200
 ) -> HttpResponse:
     return render(
         request,
         "matters/partials/intake_region.html",
-        _intake_context(session, error=error),
+        _intake_context(session, errors=errors),
         status=status,
     )
 
@@ -2096,18 +2140,22 @@ def intake_stage(request: HttpRequest) -> HttpResponse:
     gate, in its own process (docs/adr/0014, docs/adr/0064).
     """
     session = _requested_intake_session(request, request.POST)
-    accepted, refusal = _read_new_matter_files(request)
+    accepted, refusals = _read_new_matter_files(request)
     if not accepted and session is None:
         # Nothing to keep and nothing to keep it in. Answered rather than
         # refused, so the page can show why the file was not taken.
-        return _intake_fragment(request, None, error=refusal, status=400 if refusal else 200)
+        return _intake_fragment(request, None, errors=refusals, status=400 if refusals else 200)
 
     result = intake_staging.stage_uploads(owner=request.user, uploads=accepted, session=session)
+    # Both, when there are both: the files this request could not read, and
+    # whatever the staging service then refused — a limit on how many may be
+    # held at once is a different problem from a file that is not a PDF, and a
+    # person holding one of each has to be told about both.
     return _intake_fragment(
         request,
         result.session,
-        error=refusal or result.refusal,
-        status=400 if refusal else 200,
+        errors=refusals + ((result.refusal,) if result.refusal else ()),
+        status=400 if refusals else 200,
     )
 
 
@@ -2147,7 +2195,7 @@ def intake_remove(request: HttpRequest) -> HttpResponse:
     return _intake_fragment(request, session)
 
 
-def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], str]:
+def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], tuple[str, ...]]:
     """Read and validate every attachment before a single row is written.
 
     Reading is what validates: `read_upload` enforces the size, the MIME type
@@ -2155,26 +2203,34 @@ def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], str]:
     of it up front is the whole point — a Matter created with three of four
     files, and an error message about the fourth, is worse than no Matter.
 
-    Returns what passed *and* the first refusal, rather than raising on the bad
-    one and losing the good ones with it. The caller still refuses the save —
-    that rule is unchanged, and the batch is still all or nothing — but it can
-    now hold the three files that were fine while the person replaces the
-    fourth. Every file is read, so the message names the first problem and the
-    person is not told about them one save at a time.
+    Returns what passed *and* **every** refusal, each naming the file it is
+    about. It used to return the first one only, and unnamed: somebody who chose
+    four files, two of them unusable, saw one file in the list and one line of
+    red that did not say which file it meant — so they could not tell that a
+    second one had been dropped, and found out about it one save at a time. That
+    is precisely the failure this function reads everything up front to prevent,
+    and stopping at the first refusal reintroduced it by a different door
+    (adversarial QA 2026-09-12, QA-02).
+
+    The good half of a batch still survives. The caller still refuses the save;
+    what changes is that the person is told about all of what they have to
+    replace, at once.
     """
     from app.documents.uploads import read_upload
 
     accepted: list[Any] = []
-    refusal = ""
+    refusals: list[str] = []
     for handle in request.FILES.getlist("files"):
         if not handle:
             continue
         try:
             accepted.append(read_upload(handle))
         except (DomainError, UploadRejected) as error:
-            if not refusal:
-                refusal = str(error)
-    return accepted, refusal
+            # The filename first, because a refusal that does not name its file
+            # is unactionable the moment there is more than one. An em dash
+            # rather than a colon: the reason is already a sentence of its own.
+            refusals.append(f"{handle.name} — {error}")
+    return accepted, tuple(refusals)
 
 
 def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
@@ -2461,7 +2517,12 @@ def _header_context(
         # Märkmed".
         "note_form": PersonalNoteForm(
             prefix=NOTE_PREFIX,
-            initial={"body": note_record.body if note_record is not None else ""},
+            initial={
+                "body": note_record.body if note_record is not None else "",
+                # Which version this box was filled from, so the autosave can be
+                # refused rather than allowed to overwrite a newer one (QA-09).
+                "revision": personal_note_revision(note_record),
+            },
         ),
         # When this reader's own note was last written, for the `Salvestatud
         # HH:mm` hint. `None` on a Matter they have never made a note on, and the
@@ -3774,14 +3835,54 @@ def save_note(request: HttpRequest, pk: Any) -> HttpResponse:
         return HttpResponse(status=400)
     try:
         record = save_personal_note(
-            matter=matter, author=request.user, body=form.cleaned_data.get("body") or ""
+            matter=matter,
+            author=request.user,
+            body=form.cleaned_data.get("body") or "",
+            expected_revision=form.cleaned_data.get("revision") or "",
         )
+    except PersonalNoteConflict as conflict:
+        return _note_conflict(request, conflict)
     except DomainError:
         return HttpResponse(status=400)
     return render(
         request,
         "matters/partials/note_saved.html",
-        {"note_saved_at": record.updated_at},
+        {
+            "note_saved_at": record.updated_at,
+            "note_revision": personal_note_revision(record),
+            # The hidden field's own name and id, so the out-of-band swap that
+            # moves the token forward addresses the element the form rendered
+            # rather than a spelling of the prefix copied into a template.
+            "note_revision_name": f"{NOTE_PREFIX}-revision",
+            "note_revision_id": f"id_{NOTE_PREFIX}-revision",
+        },
+    )
+
+
+def _note_conflict(request: HttpRequest, conflict: PersonalNoteConflict) -> HttpResponse:
+    """Somebody else's newer note, and the one this tab could not save.
+
+    **409, and nothing was written.** The status is the honest one for a
+    conflict, and `app.js`'s `htmx:beforeSwap` allows it through so that the
+    answer is actually shown — dropping it would leave the box looking as though
+    the autosave had worked.
+
+    What comes back is deliberately *not* the textarea. The person's own words
+    stay exactly where they are, cursor included; what arrives is the hint slot
+    carrying the sentence, and, out of band, the newer version to read. The
+    hidden revision is **not** updated: adopting the newer token here would be
+    this view deciding that the next keystroke may overwrite what the other tab
+    saved, which is the defect with one more step in it (QA-09).
+    """
+    return render(
+        request,
+        "matters/partials/note_conflict.html",
+        {
+            "note_conflict": str(conflict),
+            "note_server_body": conflict.current.body,
+            "note_server_saved_at": conflict.current.pk and conflict.current.updated_at,
+        },
+        status=409,
     )
 
 
@@ -3938,6 +4039,47 @@ def workspace_forms(current_action: Any = None) -> dict[str, Any]:
     }
 
 
+#: Fields that are never the person's own words, and so never worth handing
+#: back in a recovery block.
+#:
+#: A hidden identifier, the CSRF token, a choice made from a fixed list — none of
+#: those is retyped from memory, and a block that printed them would bury the
+#: paragraph that is.
+UNSAVED_CONTENT_SKIP: frozenset[str] = frozenset({"action_id", "attachments"})
+
+
+def unsaved_content(form: Any) -> list[tuple[str, str]]:
+    """What somebody typed into a form whose panel is not coming back.
+
+    A stale-tab refusal on a **closed** Matter is correct and writes nothing —
+    that boundary is not in question and is not moved. What it also did was
+    re-render the workspace without the closed Matter's add panels, so the text
+    went with them, while the message asked the person to reopen the Teema and
+    «salvesta uuesti» something the page was no longer holding. A long note had
+    to be retyped from memory (adversarial QA 2026-09-12, QA-06).
+
+    So the words come back as **content**, not as a form: a labelled, read-only
+    block they can copy. Deliberately not re-rendered controls — a `Salvesta`
+    beside a closed Teema would be the page offering a write the boundary is
+    there to refuse, and somebody would press it.
+
+    Read off `form.data`, not `cleaned_data`: the refusal may be *why* there is no
+    cleaned value, and what has to survive is what they typed rather than what
+    validated. Bound forms only; an unbound one has nothing of anybody's in it.
+    """
+    if not getattr(form, "is_bound", False):
+        return []
+    recovered: list[tuple[str, str]] = []
+    for name, field in form.fields.items():
+        if name in UNSAVED_CONTENT_SKIP or isinstance(field, forms.ChoiceField):
+            continue
+        raw = form.data.get(form.add_prefix(name), "")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        recovered.append((str(field.label or name), raw.strip()))
+    return recovered
+
+
 def _workspace_refusal(
     request: HttpRequest,
     matter: Matter,
@@ -3990,6 +4132,11 @@ def _workspace_refusal(
     else:
         context["workspace_error"] = error
         context["open_panel"] = WORKSPACE_PANELS.get(key, "")
+    if not panel_is_rendered:
+        # The panel that held their words is not on the fresh column, so the
+        # words come back beside the refusal instead — read-only, and labelled
+        # as unsaved (QA-06).
+        context["unsaved_content"] = unsaved_content(form)
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if not matter.is_open:
         context["header_out_of_band"] = True

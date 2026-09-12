@@ -26,6 +26,7 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
+from app.core.templatetags.counts import counted
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
@@ -2287,7 +2288,11 @@ def test_the_count_matches_what_the_reader_can_actually_see(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
 
-    assert f"{len(items)} kirjet" in body
+    # Through the same rule the page renders with, so this asserts the *count*
+    # rather than also pinning a grammatical form: «1 kirje» and «2 kirjet» are
+    # both correct Estonian and the partitive after one was the QA-12 slip
+    # (app/core/templatetags/counts.py).
+    assert counted(len(items), "kirje,kirjet") in body
     assert "Piiratud koosolek" not in body
 
 

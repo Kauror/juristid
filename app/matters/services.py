@@ -1085,7 +1085,41 @@ def personal_note_record(*, matter: Matter, author: Any) -> MatterPersonalNote |
     return MatterPersonalNote.objects.filter(matter=matter, author=author).first()
 
 
-def save_personal_note(*, matter: Matter, author: Any, body: str) -> MatterPersonalNote:
+#: What the reader was told when they were handed the box.
+#:
+#: One sentence, and it says what happened rather than what to do about it —
+#: their own text is still in the textarea and the newer version is under it, so
+#: the choice is theirs to make with both in front of them.
+PERSONAL_NOTE_CONFLICT = "Märget on muudetud teises aknas. Sinu muudatust ei salvestatud."
+
+
+class PersonalNoteConflict(DomainError):
+    """The note changed elsewhere between rendering this box and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see the
+    other side of is a conflict they cannot resolve.
+    """
+
+    def __init__(self, current: MatterPersonalNote) -> None:
+        super().__init__(PERSONAL_NOTE_CONFLICT)
+        self.current = current
+
+
+def personal_note_revision(record: MatterPersonalNote | None) -> str:
+    """Which version of the note a rendered box was filled from.
+
+    `updated_at`, rather than a column of its own. It is set by `auto_now` on
+    every write, it is already what the rail prints as `Salvestatud HH:mm`, and
+    PostgreSQL stores it to the microsecond — so two saves cannot share a token
+    and no migration is needed to have one. A note that has never been saved has
+    no version, and the empty string says so.
+    """
+    return record.updated_at.isoformat() if record is not None else ""
+
+
+def save_personal_note(
+    *, matter: Matter, author: Any, body: str, expected_revision: str | None = None
+) -> MatterPersonalNote:
     """Autosave a private draft.
 
     Writes no `ChangeEvent` on purpose, and is the only write in the product
@@ -1094,15 +1128,47 @@ def save_personal_note(*, matter: Matter, author: Any, body: str) -> MatterPerso
     evidence. Recording every autosave of somebody's scratch paper as
     authoritative history would bury the history it sits beside
     (Teema redesign §22.4).
+
+    **Optimistic concurrency** (adversarial QA 2026-09-12, QA-09). Two tabs on
+    one Teema is the ordinary way a lawyer works. Tab A wrote a note and saved
+    it; tab B, still holding the text as it was before that, autosaved 900 ms
+    after its own next keystroke — and last-write-wins overwrote A silently. No
+    warning, no copy kept, and nothing anywhere from which to recover it: this
+    is the only write in the product that files no history, so the overwritten
+    version was simply gone. That is persisted data loss, and it is the one
+    thing an autosave must not be able to do.
+
+    So a caller that knows which version its box was filled from says so, and a
+    save whose ``expected_revision`` is not the stored one raises
+    :class:`PersonalNoteConflict` and **writes nothing**. What the person typed
+    is theirs to keep; what the other tab saved is theirs to read; which one wins
+    is not this function's decision to make, and it does not silently retry with
+    the newer token either.
+
+    ``expected_revision=None`` means «no opinion», and is not an unchecked
+    door: it is for the caller that is creating a Matter and its first note in
+    one act, where there is no earlier version for a second tab to be holding.
     """
     if author is None or not getattr(author, "is_authenticated", False):
         raise DomainError("Märkmeid saab salvestada ainult sisselogitud kasutaja.")
-    record, _created = MatterPersonalNote.objects.update_or_create(
-        matter=matter,
-        author=author,
-        defaults={"body": body or ""},
-    )
-    return record
+    with transaction.atomic():
+        # `no_key=True` throughout this module: a plain `FOR UPDATE` on a row
+        # other transactions reference by foreign key is how the two deadlock
+        # cycles in this codebase were built (app/matters/locks.py).
+        locked = (
+            MatterPersonalNote.objects.select_for_update(no_key=True)
+            .filter(matter=matter, author=author)
+            .first()
+        )
+        if expected_revision is not None and personal_note_revision(locked) != expected_revision:
+            # Read *after* the lock, so the version compared against is the one
+            # that is committed rather than the one that was on screen.
+            raise PersonalNoteConflict(locked or MatterPersonalNote(matter=matter, author=author))
+        if locked is None:
+            return MatterPersonalNote.objects.create(matter=matter, author=author, body=body or "")
+        locked.body = body or ""
+        locked.save(update_fields=["body", "updated_at"])
+        return locked
 
 
 @transaction.atomic

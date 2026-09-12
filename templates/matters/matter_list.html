@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load people %}
+{% load counts %}
 {% block title %}Teemad · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -18,7 +19,7 @@ localStorage (Stage-2E.1 brief 12).
 <div class="page">
   <div class="pagehead">
     <h1 class="pagehead__title">Teemad</h1>
-    <span class="pagehead__context">{{ total }} teemat</span>
+    <span class="pagehead__context">{{ total|counted:"teema,teemat" }}</span>
   </div>
 
   {% comment %}
@@ -150,11 +151,24 @@ localStorage (Stage-2E.1 brief 12).
           </select>
         </label>
 
+        {% comment %}
+          A free-text box, so a value it cannot read has to say so here rather
+          than downstream. It used to empty the register silently: a range pasted
+          out of a word processor arrives with an en dash, parsed as nothing, and
+          the page answered «Selle filtriga teemasid ei leitud» — a filter that
+          never ran, presented as an answer about the work (QA-07). The dashes
+          are normalised now, and what is genuinely unreadable gets a sentence
+          under its own box in the vocabulary every other refused field uses.
+        {% endcomment %}
         <label class="field">
           <span class="field__label">Aasta</span>
           <input class="field__input" type="text" name="aasta" value="{{ filters.aasta }}"
                  inputmode="numeric" placeholder="2024 või 2018-2024">
-          <span class="field__help">Aruandlusaasta. Vahemik sidekriipsuga.</span>
+          {% if filters.aasta_viga %}
+            <span class="field__error">{{ filters.aasta_viga }}</span>
+          {% else %}
+            <span class="field__help">Aruandlusaasta. Vahemik sidekriipsuga.</span>
+          {% endif %}
         </label>
 
         <label class="field">

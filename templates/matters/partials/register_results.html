@@ -79,6 +79,17 @@ somebody is typing into would move the caret on every keystroke.
       Otsing „{{ query }}” ei andnud selle filtriga tulemusi.
       <a href="?{{ cleared_query }}">Tühjenda otsing ja filtrid</a>
     </p>
+  {% elif filters.aasta_viga %}
+    {% comment %}
+      An empty list produced by a filter that could not be read is not an answer
+      about the work, and must not be printed as one. The sentence names the
+      filter and what it accepts; the box itself carries the same words under it
+      (QA-07).
+    {% endcomment %}
+    <p class="empty">
+      {{ filters.aasta_viga }}
+      <a href="?{{ cleared_query }}">Tühjenda otsing ja filtrid</a>
+    </p>
   {% else %}
     <p class="empty">Selle filtriga teemasid ei leitud.</p>
   {% endif %}

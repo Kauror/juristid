@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load counts %}
 {% block title %}Osakond · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -37,7 +38,7 @@ nothing to hide (app/matters/department.py).
       it. A count of colleagues is not a fact about the work, and the team table
       below lists them by name for the one reader that question is for.
     {% endcomment %}
-    <span class="ovhead__date">{{ page.open_matters }} avatud teemat</span>
+    <span class="ovhead__date">{{ page.open_matters|counted:"avatud teema,avatud teemat" }}</span>
     <nav class="ovtabs" aria-label="Ülevaate ulatus">
       {% for key, label in scopes %}
         <a class="ovtabs__tab{% if key == scope %} is-active{% endif %}"

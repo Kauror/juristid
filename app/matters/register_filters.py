@@ -186,30 +186,74 @@ DATE_FILTERS = {
 }
 
 
-def filter_by_reporting_year(queryset: Any, value: str) -> Any:
-    """Apply `?aasta=`, using the same condition the year chart counted with.
+#: The dash characters a person actually types into a year range.
+#:
+#: `Aasta` is a free-text box, and the range separator in it is whatever the
+#: keyboard, the word processor or the clipboard produced. Word substitutes an
+#: en dash for a hyphen between digits as you type, and a range pasted out of a
+#: document therefore arrives as `2020–2026` — which parsed as nothing, emptied
+#: the register, and was reported as «Selle filtriga teemasid ei leitud»: a
+#: filter that never ran, presented as an answer about the work
+#: (adversarial QA 2026-09-12, QA-07).
+#:
+#: Normalising is the whole fix. All three mean one range, because in the only
+#: place this value is read there is nothing else they could mean.
+YEAR_RANGE_DASHES = "\u2013\u2014\u2212"
 
-    Accepts `YYYY`, `YYYY-YYYY`, or the word that asks for the bucket with no
-    usable year. An unreadable value empties the list rather than being ignored:
-    a filter chip saying "2O24" above the whole register would be a lie the
-    reader has no way to catch.
+#: What went wrong, and then what the box accepts.
+#:
+#: Both halves, in that order. A sentence that only lists the accepted formats
+#: reads as ordinary help text under a box — which is exactly the ambiguity this
+#: finding is about, since the register below it is empty either way. It has to
+#: say that the value was not understood first (QA-07).
+YEAR_FILTER_ERROR = "Aastat ei saanud lugeda. Kirjuta 2026, vahemik 2020-2026 või „teadmata“."
+
+
+def read_reporting_year(value: str) -> tuple[int, int] | None:
+    """`?aasta=` as a closed span of years, or ``None`` if it cannot be read.
+
+    The one reader, so the filter and the message about the filter cannot
+    disagree about what «unreadable» means.
     """
-    if value == selectors.UNKNOWN_YEAR:
-        return queryset.filter(selectors.unknown_register_year_q())
-
-    parts = value.split("-")
+    cleaned = (value or "").strip()
+    for dash in YEAR_RANGE_DASHES:
+        cleaned = cleaned.replace(dash, "-")
+    parts = [part.strip() for part in cleaned.split("-")]
     try:
         if len(parts) == 1:
             first = last = int(parts[0])
         elif len(parts) == 2:
             first, last = int(parts[0]), int(parts[1])
         else:
-            return queryset.none()
+            return None
     except ValueError:
-        return queryset.none()
-
+        return None
     if first > last:
+        return None
+    return first, last
+
+
+def filter_by_reporting_year(queryset: Any, value: str) -> Any:
+    """Apply `?aasta=`, using the same condition the year chart counted with.
+
+    Accepts `YYYY`, `YYYY-YYYY` — with any of the dashes a keyboard or a word
+    processor produces — or the word that asks for the bucket with no usable
+    year. An unreadable value empties the list rather than being ignored: a
+    filter chip saying "2O24" above the whole register would be a lie the reader
+    has no way to catch.
+
+    Emptying is not on its own enough, though, and that was QA-07: the caller
+    now also asks :func:`read_reporting_year` whether the value was readable, so
+    an empty list produced by a filter that never ran is reported as a filter
+    that never ran rather than as «no Teemad match this».
+    """
+    if value == selectors.UNKNOWN_YEAR:
+        return queryset.filter(selectors.unknown_register_year_q())
+
+    span = read_reporting_year(value)
+    if span is None:
         return queryset.none()
+    first, last = span
     return queryset.filter(selectors.register_year_q(start=first, end=last))
 
 
@@ -545,8 +589,14 @@ def apply_register_filters(
         # a register row is `LEGACY_IMPORT` or an archive row somebody activated
         # (`PROMOTED_LEGACY`), and the bar counting both has to open both.
         queryset = queryset.filter(origin__in=origin.split(","))
+    year_error = ""
     if year := params.get("aasta"):
         queryset = filter_by_reporting_year(queryset, year)
+        if year != selectors.UNKNOWN_YEAR and read_reporting_year(year) is None:
+            # The value narrowed the register to nothing *because it could not
+            # be read*, which is a different fact from «no Teema matches» and
+            # has to be said differently (QA-07).
+            year_error = YEAR_FILTER_ERROR
     if closed_year := params.get(CLOSED_YEAR_PARAM):
         # `closed_at`, not the reporting year. "Suletud teemasid 2026" on the
         # Aruandlus rail counts the files the department *finished* this year,
@@ -651,7 +701,11 @@ def apply_register_filters(
     # own reader because it narrows a child table rather than a Matter column,
     # but what it hands back is the same shape and is merged here so the view
     # has one place to look.
-    return queryset, {**echo, **commencement_echo}
+    # `aasta_viga` rides in the echo because the echo is already «what the
+    # controls have to redisplay», and a message under the box somebody typed in
+    # is exactly that. Empty unless the value was unreadable, so nothing renders
+    # on the ordinary path.
+    return queryset, {**echo, **commencement_echo, "aasta_viga": year_error}
 
 
 def register_query(params: Any, **changes: str | None) -> str:
