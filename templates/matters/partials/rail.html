@@ -376,7 +376,14 @@ whose addressee nobody recorded should look short, not incomplete.
     previous `Salvestatud` where it was rather than claiming a save that did not
     happen (docs/adr/0074 §18).
   {% endcomment %}
-  {% if user.is_authenticated %}
+  {% comment %}
+    `can_write`, not `is_authenticated`: `save_note` sits behind the
+    business-write boundary (ADR 0037), so a reader who typed here was
+    autosaving into a 404 that htmx does not swap — no hint, no refusal, and
+    the note gone on the next load. The box is offered to the people whose
+    typing it can keep.
+  {% endcomment %}
+  {% if can_write %}
     <div class="railcard railcard--note">
       <span class="railcard__label">Märkmed</span>
       <form class="railnote"

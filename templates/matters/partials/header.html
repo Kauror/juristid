@@ -150,8 +150,21 @@ rather than read.
   {% endif %}
 
   <div class="metaline">
+    {% comment %}
+      The three editors below are behind `can_write`, like every other inline
+      editor on this page and in the rail. A reader was offered the same
+      disclosures, picked a name, and the `data-autosubmit` posted to a route
+      that answers a non-writer with 404 — which htmx does not swap, so nothing
+      on the page said anything and the select sat showing a choice the record
+      never took. The value is still read either way; only the control that
+      cannot do what it offers is withheld (app/core/decorators.py, ADR 0037).
+    {% endcomment %}
     <span class="metaline__item">
       <span class="metaline__label">Vastutaja</span>
+      {% if not can_write %}
+        {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
+        {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
+      {% else %}
       <details class="inlineedit">
         <summary class="inlineedit__trigger">
           {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
@@ -174,10 +187,16 @@ rather than read.
                   aria-label="Salvesta vastutaja muudatus">Salvesta</button>
         </form>
       </details>
+      {% endif %}
     </span>
 
     <span class="metaline__item">
       <span class="metaline__label">Valdkond</span>
+      {% if not can_write %}
+        {% if matter_policy_areas or matter.policy_area_other %}
+          <span class="metaline__value"{% if matter.policy_area_other %} title="{% for area in matter_policy_areas %}{{ area.name_et }}, {% endfor %}Muu: {{ matter.policy_area_other }}"{% endif %}>{% for area in matter_policy_areas %}{{ area.name_et }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if matter.policy_area_other %}{% if matter_policy_areas %}, {% endif %}Muu: {{ matter.policy_area_other|truncatechars:40 }}{% endif %}</span>
+        {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
+      {% else %}
       <details class="inlineedit">
         {% comment %}
           **`Muu` is read here too, and that is the whole of R2-06's sibling.**
@@ -267,10 +286,15 @@ rather than read.
                   aria-label="Salvesta valdkondade muudatus">Salvesta</button>
         </form>
       </details>
+      {% endif %}
     </span>
 
     <span class="metaline__item">
       <span class="metaline__label">Hetkeseis</span>
+      {% if not can_write %}
+        {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
+        {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
+      {% else %}
       <details class="inlineedit">
         <summary class="inlineedit__trigger">
           {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
@@ -294,6 +318,7 @@ rather than read.
                   aria-label="Salvesta hetkeseisu muudatus">Salvesta</button>
         </form>
       </details>
+      {% endif %}
     </span>
 
     {% comment %}
