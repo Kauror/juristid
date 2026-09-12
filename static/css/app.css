@@ -6665,6 +6665,24 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
+/* The chips saying which filter this count counted under. `.docsection` is
+   already a column with its own gap, so the chip row's standing bottom margin
+   would be counted twice here (post-QA R2-13). */
+.docsection > .filterbar--chips {
+  margin-bottom: 0;
+}
+
+/* `Vali fail` beside the chooser and `Lisa fail` on the button: two controls
+   that had one visible name between them. The label must not be squeezed to
+   one character per line when the row wraps at a narrow width (post-QA R2-14). */
+.draftrow__file {
+  min-width: 0;
+}
+
+.draftrow__file .field__label {
+  white-space: nowrap;
+}
+
 /* An opinion is badged and not tinted. "Which of these forty files is a Koja
    arvamus" is the question this table exists to answer instantly, and one word
    answers it — including for a reader who cannot see the tint, which a row

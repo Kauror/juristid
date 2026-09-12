@@ -199,6 +199,49 @@ whose addressee nobody recorded should look short, not incomplete.
     </div>
 
     {% comment %}
+      ÕIGUSAKT — which instrument this Matter concerns.
+
+      **A fact the application asks for and had never once read back.** `Uus
+      teema` asks the question, `Muuda teemat` corrects the answer, the search
+      index carries it and `Seotud materjalid` matches on it — and no surface a
+      lawyer reads a Matter from showed it at all. Somebody could file a Matter
+      as a `Määrus`, reopen it the next morning and find no way to see that they
+      had (post-QA R2-08).
+
+      It belongs here and in no other slot on the page. It is not an event, so
+      it is not chronology and it is not the process strip: nothing happened on
+      a day, there is nobody who did it and there is no order for it to be in.
+      It is what kind of instrument the file is about — a slow-changing fact
+      looked up mid-sentence, which is the definition of this card.
+
+      **Read-only, and that is the whole of it.** The three rows above are
+      editable because `update_field` names each of them; `legal_instruments`
+      is not in that vocabulary and this change does not add it. `Õigusakt` is
+      one question with two halves — the governed types and the `Muu` text
+      beside them, refused unless both are given — and an inline control that
+      could only ever post the first half would let somebody leave `Muu` ticked
+      with nothing saying which. `Muuda teemat` asks it properly and this points
+      there (app/matters/forms.py `clean_legal_instrument_answer`).
+
+      **Omitted when there is nothing to say**, like `Teemaviide` above and
+      unlike the three editable rows, whose `+ Lisa` is an invitation this one
+      cannot honestly make.
+
+      `Muu` is a real vocabulary row here rather than a checkbox beside one
+      (docs/adr/0070 §8), so the free text is rendered *onto* that row —
+      «Määrus, Muu: rohepöörde tegevuskava» — and not appended after it as a
+      fourth nameless value. That pairing is decided in `_legal_instrument_line`
+      rather than by a template comparing against the string `muu`, which would
+      put the vocabulary's own key in a place nothing would update if it moved.
+    {% endcomment %}
+    {% if matter_legal_instruments %}
+      <div class="railcard__row">
+        <span class="railcard__key">Õigusakt</span>
+        <span class="railcard__value">{% for label in matter_legal_instruments %}{{ label }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+      </div>
+    {% endif %}
+
+    {% comment %}
       **What the approved target's rail does not carry, and why.**
 
       `Muu valdkond`, `Andmeklass` and `Märgi testandmeteks` are gone from this

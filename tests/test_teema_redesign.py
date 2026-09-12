@@ -777,7 +777,10 @@ def test_the_new_engagement_form_offers_exactly_three_types():
 
     labels = [label for _value, label in EngagementForm().fields["kind"].choices]
 
-    assert labels == ["Küsitlus", "Otsepostitus", "Muu"]
+    # The labels are `EngagementKind`'s own. This form used to call
+    # `EMAIL_CAMPAIGN` «Otsepostitus» while the composer called it «Kirjade
+    # voor» and the chronology called it «E-kiri või kampaania» (post-QA R2-06).
+    assert labels == ["Küsitlus", "Kirjade voor", "Muu"]
 
 
 def test_a_legacy_engagement_kind_is_still_readable(signed_in, specialist):

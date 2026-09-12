@@ -142,7 +142,10 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     milestone = chronology(page).locator(".uxtl__mswhat", has_text="Kaasamine: liikmed")
     expect(milestone).to_have_count(1)
     expect(chronology(page)).to_contain_text("Vastuseid 9")
-    expect(chronology(page)).to_contain_text("E-kiri või kampaania")
+    # The word the chip said, read back unchanged. This line asserted
+    # «E-kiri või kampaania» — the chip that wrote the row said «Kirjade voor»,
+    # so the test was recording the defect R2-06 reports (post-QA R2-06).
+    expect(chronology(page)).to_contain_text("Kirjade voor")
     # The note, as a work row of its own.
     expect(chronology(page).locator(".richtext").first).to_contain_text(
         "Küsisin liikmetelt tagasisidet"
@@ -151,7 +154,7 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     expect(chronology(page)).not_to_contain_text("lisas kaasamise")
 
     # And it reached the process strip, which is the other half of §F.
-    expect(page.locator(".tl-step__what", has_text="E-kiri või kampaania")).to_have_count(1)
+    expect(page.locator(".tl-step__what", has_text="Kirjade voor")).to_have_count(1)
 
 
 def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, base_url):

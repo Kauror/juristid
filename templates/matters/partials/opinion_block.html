@@ -32,9 +32,26 @@ error state here to open for.
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
     <h2 class="accordion__title">Arvamused</h2>
+    {% comment %}
+      What is inside, said from outside. `N koostamisel` was already here and
+      is the block's own reason to be open; what was missing is the other state
+      it can be shut over — an opinion file on the record that no canonical
+      Submission accounts for, which is somebody's next step too and which the
+      closed heading described as «Saatmise registreerimine ja koostatavad
+      arvamused» whether or not there was anything to register.
+
+      Both counts come from lists the view has already read for the body below,
+      so this adds no query and can say nothing the block does not contain. The
+      registration count is behind `can_write` because `+ Registreeri saatmine`
+      is, and a heading naming work a reader cannot reach and cannot see inside
+      would be describing somebody else's page
+      (post-QA §14, app/matters/views.py `matter_documents`).
+    {% endcomment %}
     <span class="accordion__summary">
       {% if opinion_drafts %}
-        {{ opinion_drafts|length }} koostamisel
+        {{ opinion_drafts|length }} koostamisel{% if can_write and unregistered_opinions %} · {{ unregistered_opinions|length }} registreerimata{% endif %}
+      {% elif can_write and unregistered_opinions %}
+        {{ unregistered_opinions|length }} registreerimata
       {% else %}
         Saatmise registreerimine ja koostatavad arvamused
       {% endif %}
@@ -66,13 +83,28 @@ error state here to open for.
               </button>
             </form>
           {% else %}
+            {% comment %}
+              **Two controls, two names.** The chooser's label was visually
+              hidden, so the only words next to a file input were `Lisa fail` on
+              the button beside it — and a submit standing alone beside an
+              unlabelled picker reads as the picker. Choosing a file and filing
+              it are two steps here, deliberately: the upload is what makes the
+              draft's `Märgi saadetuks` possible, and it is committed rather
+              than started by picking (post-QA R2-14).
+
+              `Vali fail` is the choosing and `Lisa fail` is the saving, visibly
+              and in the accessible name. The chooser's carries the draft's
+              title because there can be several rows in this list and «Vali
+              fail» four times over names nothing; the button's does not, so it
+              stays the one short name a test and a screen reader both hear.
+            {% endcomment %}
             <form class="draftrow__form" method="post" enctype="multipart/form-data"
                   action="{% url 'submissions:attach_evidence' pk=draft.pk %}">
               {% csrf_token %}
-              <label class="field field--inline">
-                <span class="visually-hidden">Lõplik saadetud fail</span>
+              <label class="field field--inline draftrow__file">
+                <span class="field__label">Vali fail</span>
                 <input class="field__input field__input--compact" type="file" name="upload"
-                       required aria-label="Lõplik saadetud fail – {{ draft.title }}">
+                       required aria-label="Vali lõplik saadetud fail – {{ draft.title }}">
               </label>
               <button class="button button--tiny" type="submit">Lisa fail</button>
             </form>

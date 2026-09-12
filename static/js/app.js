@@ -2160,6 +2160,47 @@
 
       add.addEventListener("click", addTyped);
 
+      /* ---- The list closes when the field is done with ---------------------
+       *
+       * A combobox's list belongs to the control that opened it. This one had
+       * no way to close except Escape or emptying the box, so a reader who
+       * searched `Kliima`, ticked the ministry from the results and tabbed on
+       * to `Valdkonnad` left a panel of institutions standing open over the
+       * next field — and on `Uus teema`, with two of these on one form, over
+       * the other picker as well (post-QA R2-10).
+       *
+       * **Read from `document.activeElement` after the fact, never from
+       * `relatedTarget`.** Clicking a result must still select it, and there
+       * the sequence is `mousedown` (which the option cancels, so focus never
+       * moves) → `mouseup` → `click`; clicking `+` moves focus to a button
+       * inside this picker; clicking a chip moves it to that chip's checkbox.
+       * All three are still inside `picker` on the next task, so none of them
+       * closes the list out from under the click it was starting. Only focus
+       * genuinely leaving does — including focus going nowhere at all, which is
+       * what a click on the page background produces and which `relatedTarget`
+       * reports as `null` indistinguishably from a browser that does not set
+       * it.
+       *
+       * Escape, the arrows and Enter are untouched above; this adds a way out,
+       * it does not replace one. */
+      picker.addEventListener("focusout", function () {
+        window.setTimeout(function () {
+          if (!picker.contains(document.activeElement)) {
+            closeResults();
+          }
+        }, 0);
+      });
+
+      /* And a way back in. Focus returning to a box that still holds a query
+         re-opens the list it would otherwise have to be retyped to see —
+         without it, closing on blur would have turned a search somebody left
+         and came back to into a dead control. */
+      box.addEventListener("focus", function () {
+        if (box.value.trim() && results.hidden) {
+          paint();
+        }
+      });
+
       /* Anything that changes what is ticked repaints, wherever it came from —
          a click on a chip, the intake reader's autofill, «Kasuta» on a
          suggestion, or `bindAddresseeDefault` answering Adressaat from Saatja.
@@ -2656,12 +2697,40 @@
          wholesale, the staged one on every answer from the staging routes
          (static/js/app.js above, app/documents/pending.py). */
       var lists = key === "id_files" ? ["hoitud-failid", "intake-failid"] : [];
+      /* The provisional answers, which are selections like any other.
+       *
+       * A body named through the picker's `+` is on screen as a checked chip,
+       * it is what the form will post, and it is exactly as chosen as a
+       * ministry ticked from the catalogue — but it posts through
+       * `sender_name` rather than through the checkbox group, so a count that
+       * read only the group said «1 valitud» over two visible chips and
+       * nothing at all over one (post-QA R2-11).
+       *
+       * Found through the picker each group input lives in rather than from a
+       * field name written into the template, so the two counterparty
+       * questions and both forms that ask them get this from one rule. A
+       * control that is *not* inside a picker — `Uus saatja` on `Saabunud` —
+       * finds none, and its typed text stays uncounted, which is the other half
+       * of the rule: typing is not selecting, and only `+` commits. */
+      var typedCarriers = [];
+      sources.forEach(function (input) {
+        var picker = input.closest ? input.closest("[data-orgfind]") : null;
+        var carrier = picker ? picker.querySelector("[data-orgfind-typed]") : null;
+        if (carrier && typedCarriers.indexOf(carrier) === -1) {
+          typedCarriers.push(carrier);
+        }
+      });
       var sync = function () {
         var count = single && sources[0] === single
           ? (single.files || []).length
           : sources.filter(function (input) {
               return input.checked && input.value !== "";
             }).length;
+        typedCarriers.forEach(function (carrier) {
+          if (carrier.value.trim()) {
+            count += 1;
+          }
+        });
         lists.forEach(function (id) {
           var list = document.getElementById(id);
           if (list) {
@@ -2672,6 +2741,14 @@
       };
       sources.forEach(function (input) {
         input.addEventListener("change", sync);
+      });
+      /* `+` writes the carrier and says so with `input`; `×` on the provisional
+         chip and `bindExclusiveName` empty it and say so the same way. One
+         listener covers all three, because all three are the same event about
+         the same control (`bindOrganisationPickers` `setTyped`). */
+      typedCarriers.forEach(function (carrier) {
+        carrier.addEventListener("input", sync);
+        carrier.addEventListener("change", sync);
       });
       sync();
     });
