@@ -1,8 +1,8 @@
 {% comment %}
-The five `Kaasamine` fields, shared by the add form and every edit form.
+The `Kaasamine` fields, shared by the add form and every edit form.
 
 One partial rather than two copies, because the add and edit forms are the same
-five fields and a copy is where they would drift. `record` supplies the current
+fields and a copy is where they would drift. `record` supplies the current
 values when editing and is absent when adding.
 
 Rendered by hand rather than through `{{ form }}`: an edit form has to show
@@ -45,6 +45,27 @@ re-renders "so nothing typed is lost" and the template lost it anyway
          value="{% if bound_values %}{{ form.data.url|default:'' }}{% elif record %}{{ record.url }}{% endif %}">
   <span class="field__help">Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.</span>
   {% if bound_values and form.url.errors %}<span class="field__error">{{ form.url.errors|first }}</span>{% endif %}
+</label>
+
+{% comment %}
+  The two provider pointers, beside the generic link rather than instead of it:
+  one consultation routinely has a mailing *and* a questionnaire, and `Link`
+  holds one address (docs/adr/0027, amended 2026-09-12).
+{% endcomment %}
+<label class="field">
+  <span class="field__label">Smaily link</span>
+  <input class="field__input" type="text" name="smaily_url" maxlength="1000"
+         inputmode="url" autocomplete="off" placeholder="https://sendsmaily.net/…"
+         value="{% if bound_values %}{{ form.data.smaily_url|default:'' }}{% elif record %}{{ record.smaily_url }}{% endif %}">
+  {% if bound_values and form.smaily_url.errors %}<span class="field__error">{{ form.smaily_url.errors|first }}</span>{% endif %}
+</label>
+
+<label class="field">
+  <span class="field__label">Alchemer link</span>
+  <input class="field__input" type="text" name="alchemer_url" maxlength="1000"
+         inputmode="url" autocomplete="off" placeholder="https://survey.alchemer.eu/…"
+         value="{% if bound_values %}{{ form.data.alchemer_url|default:'' }}{% elif record %}{{ record.alchemer_url }}{% endif %}">
+  {% if bound_values and form.alchemer_url.errors %}<span class="field__error">{{ form.alchemer_url.errors|first }}</span>{% endif %}
 </label>
 
 {% comment %}

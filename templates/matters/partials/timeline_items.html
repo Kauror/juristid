@@ -55,6 +55,26 @@ record, not professional chronology (master specification 16.5).
           <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
         {% endif %}
         {% comment %}
+          Where a `Kaasamine`'s working material actually lives — the mailing in
+          Smaily, the questionnaire in Alchemer. Named by the tool and never by
+          the address: a campaign URL is mostly tracking parameters and a
+          recipient token, and printing it would put somebody's one-time key on
+          the page in readable text.
+
+          The row renders only when a link exists, so an engagement recorded
+          without one is exactly the row it was before. Nothing here contacts
+          either provider (docs/adr/0027, amended 2026-09-12).
+        {% endcomment %}
+        {% if item.milestone.links %}
+          <span class="uxtl__links">
+            {% for link in item.milestone.links %}
+              <a class="uxtl__link" href="{{ link.url }}"
+                 target="_blank" rel="noopener noreferrer">{{ link.label }}<span
+                 class="visually-hidden"> — avaneb uues aknas</span></a>
+            {% endfor %}
+          </span>
+        {% endif %}
+        {% comment %}
           The files this milestone's own record carries, in the same compact
           link language a work entry uses. **Not a new chronology event**: no dot
           of its own, no line of its own, no contribution to the count — the

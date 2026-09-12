@@ -214,15 +214,23 @@ def add_matter_engagement(
     kind: str,
     audience: str,
     response_count: Any = None,
+    smaily_url: str = "",
+    alchemer_url: str = "",
     occurred_on: Any = None,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
 
-    The business model is exactly the one `add_engagement` already keeps, and
-    this round deliberately does not touch it: `response_count` stays nullable,
-    blank still means *nobody counted* rather than *nobody answered*, and no
-    response rate is computed anywhere (brief §16).
+    The business model is exactly the one `add_engagement` already keeps:
+    `response_count` stays nullable, blank still means *nobody counted* rather
+    than *nobody answered*, and no response rate is computed anywhere
+    (brief §16).
+
+    The two provider links are optional, external and inert — where the mailing
+    and the questionnaire for this round live, kept so a colleague can open them
+    later. They do not weaken what makes an engagement an engagement: `audience`
+    is still required, and a panel holding two links and no audience is a
+    refusal, not a row (docs/adr/0027, amended 2026-09-12).
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
@@ -233,6 +241,8 @@ def add_matter_engagement(
             title=audience,
             occurred_on=occurred_on,
             response_count=response_count,
+            smaily_url=smaily_url,
+            alchemer_url=alchemer_url,
             actor=author,
         )
         result.documents = capture_supporting_evidence(

@@ -388,3 +388,64 @@ def test_the_manager_view_says_whose_desk_it_is(client, specialist, department_h
     # The heading names the colleague; «Minu asjad» is only the nav item.
     heading = body.split('workhead__title">', 1)[1].split("</h1>", 1)[0]
     assert "Minu asjad" not in heading
+
+
+# -- the register link out (2026-09-12) --------------------------------------
+
+
+def test_your_own_desk_does_not_link_to_your_own_teemad_in_the_register(client, specialist, today):
+    """**A.** «Ava minu teemad registris» pointed at the list directly above it.
+
+    Aktiivsed teemad already *is* this person's open files. A link promising to
+    open them somewhere else is a second door onto the room the reader is
+    standing in, and the count beside it made it look like a different
+    population.
+    """
+    _matter(specialist, "Pakendiseaduse muutmise seaduse eelnou")
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert "Ava minu teemad registris" not in body
+    # Absent, not emptied: no wrapper left behind holding its own top margin.
+    assert 'class="pw-register"' not in body
+
+
+def test_the_portfolio_itself_is_untouched(client, specialist, today):
+    """**B.** The list, the count and the chips are exactly what they were."""
+    _matter(specialist, "Pakendiseaduse muutmise seaduse eelnou")
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert "Aktiivsed teemad" in body
+    assert "Pakendiseaduse muutmise seaduse eelnou" in body
+    assert 'class="pw-matters"' in body
+
+
+def test_a_colleagues_desk_keeps_the_link_that_widens_the_question(
+    client, specialist, department_head
+):
+    """**C.** The other branch is not the same link with a different label.
+
+    On somebody else's desk it goes from *this person's open files* to *every
+    open file*, which is a different population and a reason to click. Removing
+    it because its sibling was redundant would take away the one place the two
+    words «kõik teemad» actually mean something.
+    """
+    _matter(specialist, "Pakendiseaduse muutmise seaduse eelnou")
+
+    client.force_login(department_head)
+    body = client.get(_person_url(specialist)).content.decode()
+
+    assert "Ava kõik teemad registris" in body
+    assert 'class="pw-register"' in body
+
+
+def test_an_empty_desk_leaves_no_gap_where_the_link_was(client, specialist):
+    """**D.** Nothing to list and nothing to link to, and no spacing either."""
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert "Selles vaates ei ole ühtegi teemat." in body
+    assert 'class="pw-register"' not in body

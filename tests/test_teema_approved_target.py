@@ -775,7 +775,7 @@ def test_a_native_matter_starts_with_alustatud(signed_in, specialist):
     assert steps[0].display == format_estonian_date(timezone.localdate())
 
     body = _detail(signed_in, matter)
-    assert body.count('class="tl-step"') == 1
+    assert body.count('class="tl-step tl-step--') == 1
     # `Loodud` was the old wording, and it named the database row rather than
     # the act. It is gone from the strip entirely.
     assert "Loodud" not in body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
@@ -1269,7 +1269,7 @@ def test_a_new_matter_reads_a_beginning_and_a_destination(signed_in, specialist)
 
     body = _detail(signed_in, matter)
     strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
-    assert body.count('class="tl-step"') == 2
+    assert body.count('class="tl-step tl-step--') == 2
     assert "Arvamuse tähtaeg" in strip
     # A future column claims nothing about the past and asserts no urgency.
     for gone in ("praegu", "Lõpp", "Plaanis", "Järgmiseks", "8 p"):
@@ -1710,6 +1710,315 @@ def test_a_restricted_opinion_changes_no_geometry(
     ]
 
 
+# -- Q: reached, today and ahead (2026-09-12 amendment) ----------------------
+#
+# Every fixture here is dated *relative to the application's own today*, and
+# where a specific day matters the day is injected rather than waited for. A
+# test that hard-coded 30.09.2026 would pass until the first of October and
+# then start asserting the opposite of what it was written to assert — which is
+# the failure mode this whole section exists to catch.
+
+
+def _commencement(matter, actor, when, *, visibility=""):
+    """One canonical `Jõustumine`, built the way this file builds them."""
+    return MatterEffectiveDate.objects.create(
+        matter=matter,
+        date_value=when,
+        period_end=when,
+        date_precision=DatePrecision.EXACT,
+        description="Pakendiseadus",
+        status=FactStatus.ACTIVE,
+        created_by=actor,
+        visibility_override=visibility,
+    )
+
+
+def _labelled(steps):
+    return [(step.label, step.state) for step in steps]
+
+
+def test_a_new_matter_does_not_read_as_three_things_that_already_happened(signed_in, specialist):
+    """**Q1.** The screenshot this amendment came from.
+
+    A Matter created today, an answer due at the end of the month, a
+    commencement in October: three filled accent dots in a row, which reads as a
+    file that has been through all three. Today is the leftmost column and the
+    two dated points ahead of it are drawn as ahead.
+    """
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.NATIVE,
+        stage=None,
+        response_deadline=today + timedelta(days=18),
+    )
+    _commencement(matter, specialist, today + timedelta(days=47))
+
+    steps = process_steps(matter=matter, user=specialist, today=today)
+    assert _labelled(steps) == [
+        ("Alustatud", "today"),
+        ("Arvamuse tähtaeg", "future"),
+        ("Jõustumine", "future"),
+    ]
+    # Nothing has been reached, so no segment of rail is filled.
+    assert [step.reach_percent for step in steps] == ["0%", "0%", "0%"]
+
+    body = _detail(signed_in, matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert strip.count("tl-step--future") == 2
+    assert strip.count("tl-step--today") == 1
+    assert 'aria-current="date"' in strip
+    # The words did not change. This amendment is about ink.
+    for gone in ("praegu", "Tänane", "18 p"):
+        assert gone not in strip
+
+
+def test_the_rail_stops_between_a_past_start_and_a_future_deadline(specialist):
+    """**Q2.** Today is inside the segment, so the segment is part-filled.
+
+    Ten days into a twenty-day span reads as half way along, which is the only
+    honest thing an evenly spaced column can say about the time inside it.
+    """
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.NATIVE,
+        stage=None,
+        response_deadline=today + timedelta(days=10),
+    )
+    _started(matter, days_ago=10)
+
+    steps = process_steps(matter=matter, user=specialist, today=today)
+    assert _labelled(steps) == [("Alustatud", "past"), ("Arvamuse tähtaeg", "future")]
+    assert steps[0].reach_percent == "50%"
+
+
+def test_a_sent_opinion_is_reached_and_the_deadline_after_it_is_not(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    """**Q3.** The rail behind the send is full; from the send on, it is not."""
+    today = timezone.localdate()
+    _started(normal_matter, days_ago=30)
+    normal_matter.response_deadline = today + timedelta(days=20)
+    normal_matter.save(update_fields=["response_deadline"])
+    _sent(
+        normal_matter,
+        capture_evidence,
+        organisation,
+        when=timezone.now() - timedelta(days=10),
+    )
+
+    steps = process_steps(matter=normal_matter, user=specialist, today=today)
+    assert _labelled(steps) == [
+        ("Alustatud", "past"),
+        ("Koja arvamus", "past"),
+        ("Arvamuse tähtaeg", "future"),
+    ]
+    assert steps[0].reach_percent == "100%"
+    # Ten of the thirty days between the send and the deadline have gone.
+    assert steps[1].reach_percent == "33.33%"
+
+
+def test_a_passed_deadline_is_reached_and_a_future_commencement_is_not(specialist):
+    """**Q4.** A deadline behind us keeps its place *and* reads as behind us."""
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.NATIVE,
+        stage=None,
+        response_deadline=today - timedelta(days=5),
+    )
+    _started(matter, days_ago=40)
+    _commencement(matter, specialist, today + timedelta(days=30))
+
+    assert _labelled(process_steps(matter=matter, user=specialist, today=today)) == [
+        ("Alustatud", "past"),
+        ("Arvamuse tähtaeg", "past"),
+        ("Jõustumine", "future"),
+    ]
+
+
+def test_a_wholly_historical_file_fills_its_whole_rail(specialist):
+    """**Q5.** Every milestone behind us, every connector accent."""
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.NATIVE,
+        stage=None,
+        response_deadline=today - timedelta(days=10),
+    )
+    _started(matter, days_ago=60)
+
+    steps = process_steps(matter=matter, user=specialist, today=today)
+    assert {step.state for step in steps} == {"past"}
+    # The last column draws no connector, so its own value is never painted.
+    assert [step.reach_percent for step in steps] == ["100%", "0%"]
+
+
+def test_a_file_whose_every_dated_point_is_ahead_claims_nothing_reached(specialist):
+    """**Q6.** No fake completion, and no rail behind a file that has not moved."""
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.LEGACY_IMPORT,
+        stage=None,
+        response_deadline=today + timedelta(days=10),
+    )
+    _commencement(matter, specialist, today + timedelta(days=40))
+
+    steps = process_steps(matter=matter, user=specialist, today=today)
+    assert {step.state for step in steps} == {"future"}
+    assert [step.reach_percent for step in steps] == ["0%", "0%"]
+
+
+def test_a_milestone_dated_today_says_so_without_relying_on_colour(signed_in, specialist):
+    """**Q7.** `aria-current="date"`, and «Tulevikus» on what is still ahead.
+
+    A strip that distinguished reached from ahead only by colour would be five
+    identical milestones to a screen reader, which is the same defect this
+    amendment fixes for everybody else.
+    """
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.NATIVE,
+        stage=None,
+        response_deadline=today + timedelta(days=12),
+    )
+
+    body = _detail(signed_in, matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert strip.count('aria-current="date"') == 1
+    assert strip.count(">Tulevikus<") == 1
+    # And the visible labels are untouched by either.
+    assert ">Alustatud<" in strip and ">Arvamuse tähtaeg<" in strip
+
+
+def test_two_milestones_on_one_day_divide_nothing(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    """**Q8.** A zero-length segment is answered whole, never divided.
+
+    A `NaN` here would reach the stylesheet as an unparseable gradient stop and
+    take the rail's colour with it — silently, because a dropped declaration
+    renders as a page that merely looks a little flat.
+    """
+    today = timezone.localdate()
+    normal_matter.response_deadline = today
+    normal_matter.save(update_fields=["response_deadline"])
+    _sent(normal_matter, capture_evidence, organisation, when=timezone.now())
+
+    steps = process_steps(matter=normal_matter, user=specialist, today=today)
+    assert [step.state for step in steps] == ["today", "today", "today"]
+    for step in steps:
+        assert "nan" not in step.reach_percent.lower()
+        assert step.reach_percent in {"0%", "100%"}
+
+
+def test_one_milestone_alone_still_draws_no_connector(specialist):
+    """**Q9.** The single-column case keeps answering 0, never a rail off the end."""
+    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=None)
+
+    steps = process_steps(matter=matter, user=specialist)
+    assert len(steps) == 1
+    assert steps[0].reach_percent == "0%"
+
+
+def test_a_closure_before_a_future_deadline_still_shows_both(specialist):
+    """**Q10.** Closing discharges nothing — and the deadline now reads as ahead.
+
+    The business rule is untouched: the deadline is still drawn, still at its own
+    chronological position, still to the right of `Lõpetatud`. What changed is
+    that it no longer looks like something that has already happened.
+    """
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.NATIVE,
+        stage=None,
+        response_deadline=today + timedelta(days=15),
+    )
+    _started(matter, days_ago=20)
+    # Through the service, because `matters_closure_fields_consistent` is a
+    # check constraint: a row closed by hand is a shape the product cannot make.
+    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
+    matter.refresh_from_db()
+
+    assert _labelled(process_steps(matter=matter, user=specialist, today=today)) == [
+        ("Alustatud", "past"),
+        ("Lõpetatud", "today"),
+        ("Arvamuse tähtaeg", "future"),
+    ]
+
+
+def test_a_reader_who_cannot_see_a_commencement_gets_the_same_geometry(
+    client, normal_matter, specialist, reader
+):
+    """**Q12.** The temporal reading is derived from the scoped list, so a
+    restricted child cannot move a state, a fill or a single byte of the strip.
+
+    This is the AUTH-003 oracle again, aimed at what the amendment added: a
+    hidden `Jõustumine` that changed one column's `state` or one segment's
+    `--tl-reach` would be a disclosure exactly as a changed dot count is.
+    """
+    today = timezone.localdate()
+    _started(normal_matter, days_ago=20)
+    normal_matter.response_deadline = today + timedelta(days=10)
+    normal_matter.save(update_fields=["response_deadline"])
+    client.force_login(reader)
+    url = reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
+
+    def strip_of() -> str:
+        body = client.get(url).content.decode()
+        return body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+
+    before = strip_of()
+    _commencement(
+        normal_matter,
+        specialist,
+        today + timedelta(days=90),
+        visibility=Visibility.RESTRICTED,
+    )
+    after = strip_of()
+
+    assert before == after
+    assert "Jõustumine" not in after
+    # Not vacuous: the owner sees three columns and the last of them is ahead.
+    assert _labelled(process_steps(matter=normal_matter, user=specialist, today=today)) == [
+        ("Alustatud", "past"),
+        ("Arvamuse tähtaeg", "future"),
+        ("Jõustumine", "future"),
+    ]
+
+
+def test_the_reading_is_taken_in_tallinn_and_not_in_utc(specialist):
+    """**Q.** The date that decides «reached» is the application's own day.
+
+    The containers run UTC and the department works in Tallinn, so for three
+    hours every evening the two are different days — and a deadline that reads
+    as reached in one and ahead in the other is the CORR-03 defect in a new
+    place. `today` is injected here to prove the seam exists; production takes
+    `timezone.localdate()`, which is Tallinn.
+    """
+    deadline = timezone.localdate() + timedelta(days=3)
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.LEGACY_IMPORT,
+        stage=None,
+        response_deadline=deadline,
+    )
+
+    ahead = process_steps(matter=matter, user=specialist, today=deadline - timedelta(days=1))
+    arrived = process_steps(matter=matter, user=specialist, today=deadline)
+    behind = process_steps(matter=matter, user=specialist, today=deadline + timedelta(days=1))
+
+    assert [ahead[0].state, arrived[0].state, behind[0].state] == ["future", "today", "past"]
+    # And the wording is identical in all three, because only the ink moved.
+    assert {step.date_line for step in (ahead[0], arrived[0], behind[0])} == {
+        format_estonian_date(deadline)
+    }
+
+
 # ===========================================================================
 # CHRONOLOGY — §33 – §38
 # ===========================================================================
@@ -2121,7 +2430,7 @@ def test_a_matter_with_nothing_on_it_renders_a_short_deliberate_page(signed_in, 
 
     assert 'id="ajajoon"' in body, "the section still exists"
     # One dot and no connector: `Alustatud`, and nothing else has happened yet.
-    assert body.count('class="tl-step"') == 1
+    assert body.count('class="tl-step tl-step--') == 1
     assert "factspanel" not in body
     assert 'id="kaasamine"' not in body
 

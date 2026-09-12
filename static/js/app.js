@@ -337,8 +337,16 @@
       });
 
       /* «Kasuta» is a choice, and it is made outside the field it writes into,
-         so the listener above cannot see it. Pressing it settles that field:
-         a later answer must not take back what somebody has just accepted. */
+         so the listener above cannot see it. Pressing it settles that field: a
+         later answer must not take back what somebody has just accepted.
+
+         **Pressing it a second time settles it just as firmly.** Withdrawing a
+         suggestion is a decision too — «not that one» — and a poll that
+         re-applied it a second later would be the reader overruling a person,
+         which is the one thing this island may never do. Both presses land
+         here, both set `touched`, and neither blocks the button itself: an
+         explicit click always writes, whatever this flag says
+         (task §1.3, docs/adr/0064 amended 2026-09-12). */
       createForm.addEventListener(
         "click",
         function (event) {
@@ -406,6 +414,14 @@
           if (checked.length && !sameSet(checked, previous)) {
             return;
           }
+          /* What the browser fills reads as chosen, because that is what
+             happened: something put those values there and the page knows what.
+             Recorded before the write, so the baseline underneath is the
+             person's own empty field and not this answer
+             (static/js/app.js `suggestionAdopt`). */
+          if (values.length) {
+            suggestionAdopt(createForm, name, values, true);
+          }
           boxes.forEach(function (box) {
             var wanted = values.indexOf(box.value) !== -1;
             if (box.checked === wanted) {
@@ -428,6 +444,9 @@
         var current = (text.value || "").trim();
         if (current && current !== (previous[0] || "")) {
           return;
+        }
+        if (values.length && values[0]) {
+          suggestionAdopt(createForm, name, [values[0]], true);
         }
         text.value = values[0] || "";
         text.dispatchEvent(new Event("input", { bubbles: true }));
@@ -857,6 +876,289 @@
     }
     element.dataset[key] = "1";
     return true;
+  }
+
+  /* ---- Which suggestions are in use, and what was there before them -------
+   * «Kasuta» is a two-state control: pressing it puts a suggestion into the
+   * form, pressing it again takes it back out. That needs two things the old
+   * apply-only button did not have — a record of *which* suggestion is in use,
+   * and a record of what the control held before it went in.
+   *
+   * **Why the state is stored rather than derived.** The button used to read
+   * its own state off the control: selected if the box happened to hold the
+   * suggested value. That is cheap and it is wrong in both directions. It calls
+   * a value somebody typed by hand «Kasutusel», which claims a decision they
+   * did not make; and after a refused save it cannot tell an accepted
+   * suggestion from a coincidence, so the page comes back having forgotten what
+   * was chosen. What the control holds and what the person chose are two
+   * different facts and only one of them is a choice.
+   *
+   * **Where it lives.** On the form node, so it survives every intake fragment
+   * swap — the poller replaces `#intake-panel` inside the form, never the form
+   * — and dies with the document, because none of it is a stored fact about
+   * anything. There is no model for «accepted suggestion» and there must not be:
+   * this is a decision about an unsaved form, and once the Teema is saved the
+   * fields carry the answer themselves (docs/adr/0064, amended 2026-09-12).
+   *
+   * A refused POST *is* a new document, which is what the hidden
+   * `suggestion_state` field is for: the browser writes this store into it on
+   * every change, the server hands it straight back, and the choices survive a
+   * validation round trip without being written anywhere.
+   */
+  var SUGGESTION_STATE_FIELD = "suggestion_state";
+
+  function suggestionStore(form) {
+    if (!form.suggestionStore) {
+      form.suggestionStore = restoredSuggestions(form);
+    }
+    return form.suggestionStore;
+  }
+
+  /* Whatever survived the round trip, and an empty store if anything at all is
+     off. This is our own value coming back to us, but it arrives as text in a
+     document and is read as such: a shape that is not two objects of arrays is
+     discarded rather than trusted. */
+  function restoredSuggestions(form) {
+    var empty = { chosen: {}, baseline: {} };
+    var field = form.querySelector('input[name="' + SUGGESTION_STATE_FIELD + '"]');
+    if (!field || !field.value) {
+      return empty;
+    }
+    try {
+      var parsed = JSON.parse(field.value);
+      if (!parsed || typeof parsed !== "object") {
+        return empty;
+      }
+      return { chosen: plainLists(parsed.chosen), baseline: plainLists(parsed.baseline) };
+    } catch (error) {
+      return empty;
+    }
+  }
+
+  function plainLists(value) {
+    var out = {};
+    if (!value || typeof value !== "object") {
+      return out;
+    }
+    Object.keys(value).forEach(function (key) {
+      if (Array.isArray(value[key])) {
+        out[key] = value[key].map(String);
+      }
+    });
+    return out;
+  }
+
+  function rememberSuggestions(form) {
+    var field = form.querySelector('input[name="' + SUGGESTION_STATE_FIELD + '"]');
+    if (field) {
+      field.value = JSON.stringify(suggestionStore(form));
+    }
+  }
+
+  function suggestionControls(form, name) {
+    return Array.prototype.slice.call(
+      form.querySelectorAll('[name="' + name + '"], [name="' + name + '_other"]')
+    );
+  }
+
+  /* A checkbox group holds several answers at once; a text box and a radio group
+     hold exactly one. That is the whole difference, and it decides both what
+     «use this one instead» means and what taking one back restores. */
+  function suggestionIsMulti(controls) {
+    return controls.some(function (control) {
+      return control.type === "checkbox";
+    });
+  }
+
+  /* The field's answer as the form would submit it — the ticked values, or the
+     text. Never the visible label: restoring has to put back the control's own
+     value, or an organisation comes back as its name and submits as nothing. */
+  function suggestionValue(controls) {
+    if (suggestionIsMulti(controls)) {
+      return controls
+        .filter(function (control) {
+          return control.checked && control.value !== "";
+        })
+        .map(function (control) {
+          return control.value;
+        });
+    }
+    var radios = controls.filter(function (control) {
+      return control.type === "radio";
+    });
+    if (radios.length) {
+      var picked = radios.filter(function (radio) {
+        return radio.checked;
+      });
+      return picked.length ? [picked[0].value] : [];
+    }
+    var text = controls.filter(function (control) {
+      return control.type !== "checkbox" && control.type !== "radio";
+    })[0];
+    return text ? [(text.value || "").trim()] : [];
+  }
+
+  /* Write a whole logical value back into whatever kind of control holds it,
+     and answer with the control worth putting the cursor on. */
+  function writeSuggestionValue(controls, values) {
+    var wanted = values.filter(function (value) {
+      return value !== "";
+    });
+    var boxes = controls.filter(function (control) {
+      return control.type === "checkbox" || control.type === "radio";
+    });
+    if (boxes.length) {
+      var landed = null;
+      boxes.forEach(function (box) {
+        var on = wanted.indexOf(box.value) !== -1;
+        if (on) {
+          landed = box;
+          /* A long-tail chip sits behind a closed disclosure; open it so the
+             tick is visible where it was made. */
+          var details = box.closest("details");
+          if (details) {
+            details.open = true;
+          }
+        }
+        if (box.checked !== on) {
+          box.checked = on;
+          box.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      return landed;
+    }
+    var text = controls.filter(function (control) {
+      return control.type !== "checkbox" && control.type !== "radio";
+    })[0];
+    if (!text) {
+      return null;
+    }
+    text.value = wanted[0] || "";
+    text.dispatchEvent(new Event("input", { bubbles: true }));
+    text.dispatchEvent(new Event("change", { bubbles: true }));
+    return text;
+  }
+
+  /* Tick one box without disturbing the field's other answers. A `Valdkond` or
+     a `Kellelt` holds several at once, so choosing one suggestion there is an
+     addition and never a replacement. */
+  function suggestionTick(controls, value) {
+    var landed = null;
+    controls.forEach(function (box) {
+      if (box.value !== value) {
+        return;
+      }
+      landed = box;
+      if (!box.checked) {
+        box.checked = true;
+        box.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      var details = box.closest("details");
+      if (details) {
+        details.open = true;
+      }
+    });
+    return landed;
+  }
+
+  /* Record that `values` are now in use for this field, capturing what the
+     person had first. Called by «Kasuta» and by the reader's own autofill, so
+     that a control the browser filled reads as chosen for the same reason a
+     clicked one does — because something put it there and the page knows what.
+
+     **The baseline is captured once per sequence.** Suggestion A, then B, then B
+     off must return to what the person had before A — not to A, which is a
+     machine value they never chose. So the capture happens only when nothing is
+     in use for the field yet. */
+  function suggestionAdopt(form, name, values, replace) {
+    var store = suggestionStore(form);
+    var held = store.chosen[name] || [];
+    if (!held.length) {
+      store.baseline[name] = suggestionValue(suggestionControls(form, name));
+    }
+    if (replace) {
+      /* The reader replacing its own earlier answer. One poll's proposal is not
+         added to the previous poll's — it supersedes it — and the baseline
+         underneath both of them is still the person's. */
+      store.chosen[name] = values.slice();
+    } else if (suggestionIsMulti(suggestionControls(form, name))) {
+      store.chosen[name] = held.concat(
+        values.filter(function (value) {
+          return held.indexOf(value) === -1;
+        })
+      );
+    } else {
+      /* One answer, one active suggestion. Choosing B where A was active
+         replaces it rather than adding to it, because the control it writes
+         into can only hold one of them. */
+      store.chosen[name] = values.slice(0, 1);
+    }
+    rememberSuggestions(form);
+    syncSuggestionButtons(form, name);
+  }
+
+  /* Take one suggestion back out, and put the field back the way it was. */
+  function suggestionWithdraw(form, name, value) {
+    var store = suggestionStore(form);
+    var controls = suggestionControls(form, name);
+    var baseline = store.baseline[name] || [];
+    var held = (store.chosen[name] || []).filter(function (each) {
+      return each !== value;
+    });
+    if (suggestionIsMulti(controls)) {
+      /* Only this one's box, and only if the person did not already have it
+         ticked: withdrawing a suggestion must not remove an answer that was
+         theirs before it arrived. */
+      if (baseline.indexOf(value) === -1) {
+        controls.forEach(function (box) {
+          if (box.value === value && box.checked) {
+            box.checked = false;
+            box.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        });
+      }
+    } else {
+      writeSuggestionValue(controls, baseline);
+    }
+    if (held.length) {
+      store.chosen[name] = held;
+    } else {
+      delete store.chosen[name];
+      delete store.baseline[name];
+    }
+    rememberSuggestions(form);
+    syncSuggestionButtons(form, name);
+  }
+
+  /* The person now owns this field. Their value stays exactly as it is — this
+     only stops the page claiming a suggestion is in use, and drops the baseline
+     with it, because what was there before a suggestion they have since typed
+     over is no longer anything to return to. */
+  function suggestionRelease(form, name) {
+    var store = suggestionStore(form);
+    if (!store.chosen[name] && !store.baseline[name]) {
+      return;
+    }
+    delete store.chosen[name];
+    delete store.baseline[name];
+    rememberSuggestions(form);
+    syncSuggestionButtons(form, name);
+  }
+
+  function suggestionIsChosen(form, name, value) {
+    return (suggestionStore(form).chosen[name] || []).indexOf(value) !== -1;
+  }
+
+  function syncSuggestionButtons(form, name) {
+    form.querySelectorAll('[data-suggest-for="' + name + '"]').forEach(function (button) {
+      var on = suggestionIsChosen(form, name, button.getAttribute("data-suggest-value") || "");
+      button.classList.toggle("is-selected", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+      /* The state in words as well as in colour. A screen reader has
+         `aria-pressed`; everybody else has a button that stops saying «use
+         this» once it has been used (task §1.6). */
+      button.textContent = on ? "Kasutusel" : "Kasuta";
+    });
   }
 
   function bind(root) {
@@ -2855,84 +3157,102 @@
    * A suggestion the person chooses is written into the real form control
    * beside it — the title box, the deadline box, the Menetlusliik radio, a
    * Valdkond or Kellelt checkbox — and nothing else. The control is what is
-   * submitted and validated, exactly as it is when typed; the button stores
-   * nothing of its own.
+   * submitted and validated, exactly as it is when typed.
    *
-   * Progressive enhancement: with scripting off the suggestion and its
-   * evidence are still on the page and the value is still typed by hand.
-   * A checkbox group may be rendered in two places (the frequent chips and
-   * the long tail behind «Vali nimekirjast»), so a value is looked up by name
-   * and by the `_other` twin (app/matters/forms.py).
+   * **And a second press takes it back out.** «Kasuta» was apply-only: once it
+   * had been pressed it stayed blue for the rest of the session whatever
+   * happened to the field, and there was no way to say «actually, not that one»
+   * except by clearing the control by hand and leaving the button lying about
+   * it. It is now a two-state control — `Kasuta` / `Kasutusel`, `aria-pressed`
+   * either way — and withdrawing one restores exactly what the field held
+   * before that suggestion went in (docs/adr/0064, amended 2026-09-12).
+   *
+   * Progressive enhancement: with scripting off the suggestion and its evidence
+   * are still on the page and the value is still typed by hand. A checkbox
+   * group may be rendered in two places (the frequent chips and the long tail
+   * behind «Vali nimekirjast»), so a value is looked up by name and by the
+   * `_other` twin (app/matters/forms.py).
    */
   function bindSuggestionUse(scope) {
     (scope || document).querySelectorAll("[data-suggest-for]").forEach(function (button) {
-      if (!once(button, "SuggestionUse")) {
-        return;
-      }
       var form = button.closest("form");
       if (!form) {
         return;
       }
       var name = button.getAttribute("data-suggest-for");
+      /* Bound once per button, but synced every time. The poller replaces the
+         whole panel, so the buttons after a swap are new elements that have to
+         be told what the form already knows — and that is also what restores
+         the choices after a refused save, from the hidden field. */
+      syncSuggestionButtons(form, name);
+      /* Reached through the button rather than by looking for forms inside
+         `scope`, and that is the whole reason it is here. The panel arrives as
+         a fragment *inside* the form, so a swap's scope contains no `<form>` at
+         all — and on the first page load the panel holds no suggestions yet, so
+         a scan at `DOMContentLoaded` finds none either. Attached from the
+         button, the watch exists exactly when there is something to watch. */
+      watchSuggestionEdits(form);
+      if (!once(button, "SuggestionUse")) {
+        return;
+      }
       var value = button.getAttribute("data-suggest-value") || "";
-      var controls = Array.prototype.slice.call(
-        form.querySelectorAll('[name="' + name + '"], [name="' + name + '_other"]')
-      );
-      var boxes = controls.filter(function (control) {
-        return control.type === "checkbox" || control.type === "radio";
-      });
-      var text = controls.filter(function (control) {
-        return control.type !== "checkbox" && control.type !== "radio";
-      })[0];
-      var chosen = function () {
-        if (boxes.length) {
-          return boxes.some(function (box) {
-            return box.value === value && box.checked;
-          });
-        }
-        return !!text && text.value.trim() === value;
-      };
-      var sync = function () {
-        var on = chosen();
-        button.classList.toggle("is-selected", on);
-        button.setAttribute("aria-pressed", on ? "true" : "false");
-      };
       button.addEventListener("click", function () {
-        var target = null;
-        if (boxes.length) {
-          boxes.forEach(function (box) {
-            if (box.value !== value) {
-              return;
-            }
-            target = box;
-            if (!box.checked) {
-              box.checked = true;
-              box.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-            /* A long-tail chip sits behind a closed disclosure; open it so
-               the tick is visible where it was made. */
-            var details = box.closest("details");
-            if (details) {
-              details.open = true;
-            }
-          });
-        } else if (text) {
-          target = text;
-          text.value = value;
-          text.dispatchEvent(new Event("input", { bubbles: true }));
-          text.dispatchEvent(new Event("change", { bubbles: true }));
+        if (suggestionIsChosen(form, name, value)) {
+          suggestionWithdraw(form, name, value);
+          return;
         }
-        sync();
+        /* Recorded before it is written, so the baseline is what the person had
+           and not what this is about to put there. */
+        suggestionAdopt(form, name, [value]);
+        var controls = suggestionControls(form, name);
+        var target = suggestionIsMulti(controls)
+          ? suggestionTick(controls, value)
+          : writeSuggestionValue(controls, [value]);
         if (target && target.focus) {
           target.focus({ preventScroll: false });
         }
       });
-      controls.forEach(function (control) {
-        control.addEventListener("change", sync);
-        control.addEventListener("input", sync);
-      });
-      sync();
     });
+  }
+
+  /* The person's own edits, watched once per form rather than once per control:
+     the controls a suggestion writes into are re-rendered by other parts of
+     this file, and a listener on the form survives that. Capture phase and
+     `isTrusted`, so the synthetic events the writes above dispatch are not
+     mistaken for somebody typing.
+
+     Generously, like the intake island's own `markTouched`: any real
+     interaction anywhere inside the field counts — a chip, its label, the date
+     picker's own day button — because being wrong in this direction costs a
+     blue button going quiet, and being wrong in the other direction is the page
+     insisting somebody chose a value they have since typed over.
+
+     A click on «Kasuta» is not an edit of the field it writes into, so it is
+     excluded: otherwise the press would release the state that same press just
+     set. */
+  function watchSuggestionEdits(form) {
+    if (once(form, "SuggestionEdits")) {
+      var watch = function (event) {
+        if (!event.isTrusted || !event.target.closest) {
+          return;
+        }
+        if (event.target.closest("[data-suggest-for]")) {
+          return;
+        }
+        var within = event.target.closest(".field, fieldset");
+        if (!within) {
+          return;
+        }
+        Object.keys(suggestionStore(form).chosen).forEach(function (name) {
+          if (within.querySelector('[name="' + name + '"], [name="' + name + '_other"]')) {
+            suggestionRelease(form, name);
+          }
+        });
+      };
+      ["input", "change", "click"].forEach(function (type) {
+        form.addEventListener(type, watch, true);
+      });
+    }
   }
 
   /* ---- The persona popover -----------------------------------------------

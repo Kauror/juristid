@@ -37,10 +37,11 @@ from app.legacy_import.source_pages import (
 )
 from app.matters.activity import ActivityBasis, activity_of
 from app.matters.enums import EngagementKind, MatterDataClass, MatterOrigin
+from app.matters.forms import ComposerForm
 from app.matters.models import Entry, Matter, MatterEngagement
 from app.matters.selectors import matter_list_queryset
 from app.matters.services import add_engagement, update_engagement
-from app.matters.timeline import TIMELINE_EVENT_TYPES
+from app.matters.timeline import TIMELINE_EVENT_TYPES, matter_timeline
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -912,3 +913,340 @@ def test_a_reader_reads_the_records_and_gets_no_way_to_write_one(client, special
     assert PANEL not in body
     assert SECTION not in body
     assert "+ Lisa kaasamine" not in body
+
+
+# -- the provider pointers (2026-09-12) --------------------------------------
+#
+# `url` was one address for an engagement that routinely has two — the mailing
+# that asked and the questionnaire that collected — so somebody had to drop one
+# of them or keep it where nobody can click it. These are pointers and nothing
+# else: no provider is contacted, no campaign is created, no response is read
+# back (docs/adr/0027, amended).
+
+SMAILY_URL = "https://sendsmaily.net/api/campaigns/9182"
+ALCHEMER_URL = "https://survey.alchemer.eu/s3/7710021/pakendiseadus"
+
+
+def test_an_engagement_with_neither_provider_link_is_exactly_what_it_was(normal_matter, specialist):
+    """**A.** The columns are additive and nothing is required to fill them."""
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Liikmete teavituskiri",
+        actor=specialist,
+    )
+
+    engagement.refresh_from_db()
+    assert engagement.smaily_url == ""
+    assert engagement.alchemer_url == ""
+    assert engagement.url == ""
+
+
+@pytest.mark.parametrize("field", ["smaily_url", "alchemer_url"])
+def test_one_provider_link_on_its_own_persists_and_reads_back(normal_matter, specialist, field):
+    """**B, C.** Either alone, and the other stays empty."""
+    other = "alchemer_url" if field == "smaily_url" else "smaily_url"
+    value = SMAILY_URL if field == "smaily_url" else ALCHEMER_URL
+
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.SURVEY,
+        title="Liikmete küsitlus",
+        actor=specialist,
+        **{field: value},
+    )
+
+    engagement.refresh_from_db()
+    assert getattr(engagement, field) == value
+    assert getattr(engagement, other) == ""
+
+
+def test_both_provider_links_are_stored_independently(normal_matter, specialist):
+    """**D, H.** Three addresses, three columns, none overwriting another.
+
+    This is the whole reason the two columns exist: one round, a mailing *and* a
+    questionnaire, and the generic `url` still meaning what it always meant.
+    """
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Liikmed",
+        url=KODA_URL,
+        smaily_url=SMAILY_URL,
+        alchemer_url=ALCHEMER_URL,
+        actor=specialist,
+    )
+
+    engagement.refresh_from_db()
+    assert (engagement.url, engagement.smaily_url, engagement.alchemer_url) == (
+        KODA_URL,
+        SMAILY_URL,
+        ALCHEMER_URL,
+    )
+
+
+@pytest.mark.parametrize("field", ["smaily_url", "alchemer_url"])
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "ftp://example.invalid/f", "kampaania"])
+def test_a_provider_link_goes_through_the_same_allow_list(normal_matter, specialist, field, url):
+    """**E.** One rule for every address on this record, and no row survives it."""
+    with pytest.raises(DomainError):
+        add_engagement(
+            matter=normal_matter,
+            kind=EngagementKind.OTHER,
+            title="Muu",
+            actor=specialist,
+            **{field: url},
+        )
+    assert not MatterEngagement.objects.exists()
+
+
+def test_a_provider_link_does_not_make_an_engagement_valid_on_its_own(normal_matter, specialist):
+    """**F.** `Keda kaasati` is what identifies the record, links or no links."""
+    with pytest.raises(DomainError):
+        add_engagement(
+            matter=normal_matter,
+            kind=EngagementKind.SURVEY,
+            title="   ",
+            smaily_url=SMAILY_URL,
+            actor=specialist,
+        )
+    assert not MatterEngagement.objects.exists()
+
+
+def test_an_engagement_recorded_before_the_columns_existed_still_reads(normal_matter, specialist):
+    """**G.** No backfill, so every historical row answers `''` — which renders
+    as the row it always was rather than as an empty link."""
+    add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.SURVEY,
+        title="Vana küsitlus",
+        url=KODA_URL,
+        occurred_on=dt.date(2023, 4, 1),
+        actor=specialist,
+    )
+
+    rows = [
+        item
+        for item in matter_timeline(matter=normal_matter, user=specialist)[0]
+        if item.is_milestone and item.milestone.what.startswith("Kaasamine:")
+    ]
+    assert len(rows) == 1
+    assert rows[0].milestone.links == ()
+
+
+def test_a_correction_round_trips_the_provider_links(normal_matter, specialist):
+    """**I.** The edit path carries them, and says which fields moved."""
+    engagement = add_engagement(
+        matter=normal_matter, kind=EngagementKind.SURVEY, title="Liikmed", actor=specialist
+    )
+
+    update_engagement(
+        engagement=engagement,
+        smaily_url=SMAILY_URL,
+        alchemer_url=ALCHEMER_URL,
+        actor=specialist,
+    )
+
+    engagement.refresh_from_db()
+    assert engagement.smaily_url == SMAILY_URL
+    assert engagement.alchemer_url == ALCHEMER_URL
+    event = ChangeEvent.objects.filter(event_type=ChangeEventType.ENGAGEMENT_CHANGED).latest(
+        "created_at"
+    )
+    # The field names, and not the addresses. Same rule the generic `url` has
+    # had since 0027: the audit says a link changed, the record says to what.
+    assert event.payload["fields"] == ["alchemer_url", "smaily_url"]
+    assert SMAILY_URL not in str(event.payload)
+
+
+def test_an_update_that_names_no_provider_link_leaves_both_alone(normal_matter, specialist):
+    """`_UNSET`, not `''`. The register importer names only `url`, so a mapping
+    refresh must not quietly erase an address somebody typed on the Teema page.
+    """
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.SURVEY,
+        title="Liikmed",
+        smaily_url=SMAILY_URL,
+        actor=specialist,
+    )
+
+    update_engagement(engagement=engagement, url=KODA_URL, actor=specialist)
+
+    engagement.refresh_from_db()
+    assert engagement.smaily_url == SMAILY_URL
+    assert engagement.url == KODA_URL
+
+
+def test_the_chronology_names_the_provider_and_never_the_address(signed_in, specialist):
+    """**J (read).** `Smaily`, `Alchemer` — and no tracking parameters on the page.
+
+    A campaign URL is mostly a recipient token. It is the anchor's `href`, which
+    is where a link goes, and it is not text, which is what a reader and a
+    screen reader get read out to them.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    add_engagement(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Liikmed",
+        smaily_url=SMAILY_URL,
+        alchemer_url=ALCHEMER_URL,
+        actor=specialist,
+    )
+
+    body = _rendered(signed_in, matter)
+    assert f'href="{SMAILY_URL}"' in body
+    assert f'href="{ALCHEMER_URL}"' in body
+    assert ">Smaily<" in body
+    assert ">Alchemer<" in body
+    assert 'rel="noopener noreferrer"' in body
+    # The address is never printed as copy.
+    assert ">" + SMAILY_URL not in body
+
+
+def test_an_engagement_with_no_links_renders_no_link_row(signed_in, specialist):
+    """An empty container is a row that says «Lingid» and then nothing."""
+    matter = factories.MatterFactory(owner=specialist)
+    add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Liikmed", actor=specialist)
+
+    body = _rendered(signed_in, matter)
+    assert "Kaasamine: Liikmed" in body
+    assert "uxtl__links" not in body
+
+
+def test_a_restricted_engagements_links_do_not_reach_a_reader_who_cannot_see_it(client, specialist):
+    """**J (visibility).** The links inherit the engagement's scope exactly.
+
+    Nothing new is needed for this — every read already goes through
+    `visible_to` — and that is the point of the test: it proves the new columns
+    did not open a second door beside the one that is guarded.
+    """
+    reader = factories.ReaderFactory()
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Salajane küsitlus",
+        smaily_url=SMAILY_URL,
+        alchemer_url=ALCHEMER_URL,
+        actor=specialist,
+    )
+    MatterEngagement.objects.filter(pk=engagement.pk).update(
+        visibility_override=Visibility.RESTRICTED
+    )
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "Salajane küsitlus" not in body
+    assert SMAILY_URL not in body
+    assert ALCHEMER_URL not in body
+
+
+def test_the_search_projection_indexes_the_provider_and_not_the_query_string(
+    normal_matter, specialist
+):
+    """The host and its labels, exactly as the generic `url` has always been.
+
+    Never the query string: a campaign address carries recipient ids and
+    one-time tokens after the `?`, and indexing those would put somebody's
+    unsubscribe key into a search field.
+    """
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Liikmed",
+        smaily_url="https://sendsmaily.net/c/9182?token=SECRET-ONE-TIME-KEY",
+        alchemer_url=ALCHEMER_URL,
+        actor=specialist,
+    )
+
+    terms = engagement.link_search_terms
+    assert "sendsmaily.net" in terms
+    assert "sendsmaily" in terms
+    assert "survey.alchemer.eu" in terms
+    assert "alchemer" in terms
+    assert not any("SECRET-ONE-TIME-KEY" in term for term in terms)
+    assert not any("token" in term for term in terms)
+
+
+def test_the_panel_saves_both_links_through_the_route_a_person_uses(signed_in, specialist):
+    """`+ Kaasamine`, end to end."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        {
+            "kind": "SURVEY",
+            "audience": "liikmed",
+            "response_count": "",
+            "smaily_url": SMAILY_URL,
+            "alchemer_url": ALCHEMER_URL,
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    engagement = MatterEngagement.objects.get()
+    assert engagement.title == "liikmed"
+    assert engagement.smaily_url == SMAILY_URL
+    assert engagement.alchemer_url == ALCHEMER_URL
+
+
+def test_a_typed_link_with_no_audience_is_refused_rather_than_discarded(signed_in, specialist):
+    """**F (route), task §6.** The panel reopens, the message names the box, and
+    the address the person typed comes back with it.
+
+    Silently dropping a URL somebody pasted is the worst of the three possible
+    answers: no row, no error, and no link.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        {"kind": "SURVEY", "audience": "", "smaily_url": SMAILY_URL},
+        headers={"HX-Request": "true"},
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.exists()
+    assert "Kirjuta, keda kaasati" in body
+    assert _is_open(body, PANEL)
+    assert f'value="{SMAILY_URL}"' in body
+
+
+def test_a_refused_provider_link_says_so_under_its_own_box(signed_in, specialist):
+    """The service's sentence, reported where it was typed rather than as a 400."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        {"kind": "SURVEY", "audience": "liikmed", "alchemer_url": "javascript:alert(1)"},
+        headers={"HX-Request": "true"},
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.exists()
+    assert "Link peab algama" in body
+    assert 'id="id_alchemer_url_error"' in body
+
+
+def test_the_composer_counts_a_typed_link_as_attempted_work(specialist):
+    """It used to count for nothing: a pasted Smaily address with nothing else
+    filled in was answered «Kirjelda tegevust või vali, mida veel salvestada»
+    and thrown away with the response."""
+    matter = factories.MatterFactory(owner=specialist)
+    form = ComposerForm(
+        data={"body": "", "engagement_smaily_url": SMAILY_URL},
+        matter=matter,
+        viewer=specialist,
+    )
+
+    assert not form.is_valid()
+    # The panel was recognised, so the answer is about the box that is missing
+    # rather than about the save being empty.
+    assert "engagement_audience" in form.errors
+    assert "Kirjelda tegevust" not in str(form.errors)

@@ -293,31 +293,118 @@
     });
   }
 
-  /* ---- A refused workspace save puts the cursor where the problem is -----
-   * Every save on this page swaps `#teema-vaade`, and a swap leaves focus on
-   * `<body>` — so a keyboard or screen-reader user who pressed `Salvesta` and
-   * was refused lands at the top of the document with the explanation somewhere
-   * below them. The message is announced by its `role="alert"`; this is the
-   * other half, and it is what «errors move focus appropriately» means (§33).
+  /* ---- A refused save takes the person to the thing that needs fixing ----
+   * A save can be refused correctly and still leave nobody any the wiser. Two
+   * ways it happened:
    *
-   * The first error on the swapped surface, and the control it belongs to —
-   * never a control in a different form, and never anything at all when the
-   * save succeeded.
+   *   * On the Teema page every save swaps `#teema-vaade`, and a swap leaves
+   *     focus on `<body>` — so somebody who pressed `Salvesta` landed at the
+   *     top of the document with the explanation somewhere below them.
+   *   * On `Uus teema` the refusal is a full-page render, and the first
+   *     genuinely invalid field is often `Järgmiseks`, eleven blocks down. The
+   *     page came back looking unchanged, with the reason off-screen.
+   *
+   * The message is announced by its `role="alert"`; this is the other half, and
+   * it is what «errors move focus appropriately» means (§33).
+   *
+   * **The control that is wrong, not the first control on the form.** This used
+   * to focus whatever the form's first field happened to be, which on a long
+   * form is a different field from the one that was refused — so it scrolled
+   * somebody to the top of a form to look at a box that was perfectly fine.
    */
+  var FOCUSABLE = "textarea:not([hidden]), select:not([hidden]), " +
+    "input:not([type=hidden]):not([hidden])";
+
+  /* The container conventions this application renders an error inside. The
+     error is written *after* the control it belongs to everywhere, so the
+     container is the reliable way back to it. */
+  var FIELD_CONTAINERS = "label, .field, fieldset, .cx-f, .nextpanel, .uxcomp__row, " +
+    ".createform__row, .addform";
+
+  function controlForError(problem, form) {
+    /* Inside the same field wrapper, which is the common case and the exact
+       answer: one label, one control, one message under it. */
+    var container = problem.closest(FIELD_CONTAINERS);
+    if (container) {
+      var owned = container.querySelector(FOCUSABLE);
+      if (owned) {
+        return owned;
+      }
+    }
+    /* Otherwise the nearest control *above* the message. `Millal?` puts its
+       refusal on the row rather than inside the «Kuupäev…» disclosure, so the
+       message and the box are siblings rather than parent and child. */
+    var previous = null;
+    Array.prototype.some.call(form.querySelectorAll(FOCUSABLE), function (control) {
+      if (problem.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_PRECEDING) {
+        previous = control;
+        return false;
+      }
+      return true;
+    });
+    return previous;
+  }
+
+  function revealAndFocus(target, anchor) {
+    /* Every closed disclosure between here and the surface, opened outermost
+       first: a field inside a closed `<details>` has no box to scroll to and
+       cannot take focus at all. */
+    var node = target;
+    var closed = [];
+    while (node) {
+      var details = node.closest ? node.closest("details:not([open])") : null;
+      if (!details) {
+        break;
+      }
+      closed.unshift(details);
+      node = details.parentElement;
+    }
+    closed.forEach(function (details) {
+      details.open = true;
+    });
+
+    /* Immediate, not smooth: this is a correction, not a tour. The clearance
+       under the sticky bar is `scroll-margin-top` in the stylesheet rather than
+       an offset computed here, so the bar's height lives in one place. */
+    (anchor || target).scrollIntoView({ block: "start", behavior: "auto" });
+    if (target && target.focus) {
+      focusQuietly(target);
+    }
+  }
+
   function focusFirstRefusal(scope) {
-    var problem = scope.querySelector ? scope.querySelector(".field__error") : null;
+    var root = scope && scope.querySelector ? scope : document;
+    /* Nothing at all when the save succeeded — this must never take the cursor
+       off an ordinary page load. */
+    var problem = root.querySelector(".field__error");
     if (!problem) {
+      /* A form-level refusal with no field of its own: «Kirjelda tegevust või
+         vali, mida veel salvestada» names no box, so guessing one would put the
+         cursor somewhere the message is not about. The summary itself takes it.
+
+         `tabindex` is set here rather than written into twenty-one templates.
+         A paragraph is not focusable, and `-1` makes it focusable to script
+         without putting it in the tab order — so the announcement is reachable
+         and nothing new appears between two fields for a keyboard user. Set at
+         the moment of use, so the attribute only ever exists on a message that
+         is actually on the page. */
+      var summary = root.querySelector(".formerror");
+      if (summary) {
+        summary.setAttribute("tabindex", "-1");
+        revealAndFocus(summary, summary);
+      }
       return;
     }
     var form = problem.closest("form");
     if (!form) {
       return;
     }
-    var field = form.querySelector(
-      "textarea:not([hidden]), select:not([hidden]), input:not([type=hidden]):not([hidden])"
-    );
+    var field = controlForError(problem, form);
     if (field) {
-      focusQuietly(field);
+      revealAndFocus(field, field.closest(FIELD_CONTAINERS) || field);
+    } else {
+      problem.setAttribute("tabindex", "-1");
+      revealAndFocus(problem, problem);
     }
   }
 
@@ -679,6 +766,21 @@
      reopen a box the reader had just closed. See the note above for why this
      waits for `load` rather than joining the handler above. */
   window.addEventListener("load", arriveAtNextStep);
+
+  /* A refused full-page POST — `Uus teema`, `Muuda teemat` — arrives as an
+     ordinary render, so there is no swap to hang this off. Registered after
+     `arriveAtNextStep` and on the same event, so that on the rare page which is
+     both a refusal and a fragment arrival the refusal wins: the reader followed
+     a link, but the save they pressed did not happen, and that is the more
+     urgent of the two things to look at.
+
+     On `load` rather than `DOMContentLoaded` for the reason spelled out above
+     `arriveAtNextStep` — the browser's own fragment focusing steps run in
+     between and would undo it. Pages with no error are untouched, because
+     `focusFirstRefusal` returns without doing anything when it finds none. */
+  window.addEventListener("load", function () {
+    focusFirstRefusal(document);
+  });
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     bindAll(event.target);

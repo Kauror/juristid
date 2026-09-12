@@ -1370,6 +1370,8 @@ def record_engagement(
     kind: str,
     title: str,
     url: str = "",
+    smaily_url: str = "",
+    alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
     response_count: Any = None,
@@ -1395,6 +1397,8 @@ def record_engagement(
         kind=kind,
         title=title,
         url=url,
+        smaily_url=smaily_url,
+        alchemer_url=alchemer_url,
         note=note,
         occurred_on=occurred_on,
         response_count=response_count,
@@ -1408,6 +1412,8 @@ def add_engagement(
     kind: str,
     title: str,
     url: str = "",
+    smaily_url: str = "",
+    alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
     response_count: Any = None,
@@ -1423,6 +1429,13 @@ def add_engagement(
     the older five-field form asked as `Pealkiri`. One column, one meaning — the
     line that identifies this engagement to a reader — and the question printed
     above it is the surface's to choose (docs/adr/0074 §4).
+
+    ``smaily_url`` and ``alchemer_url`` are pointers and nothing more. They go
+    through the same scheme allow-list as ``url``, nothing here contacts either
+    provider, and a link on its own has never been enough to make an
+    engagement: ``title`` is still required, so a row cannot come into
+    existence as two addresses and no statement of who was engaged
+    (docs/adr/0027, amended 2026-09-12).
     """
     clean_title = title.strip()
     if not clean_title:
@@ -1433,6 +1446,8 @@ def add_engagement(
         kind=_engagement_kind(kind),
         title=clean_title[:500],
         url=normalize_engagement_url(url),
+        smaily_url=normalize_engagement_url(smaily_url),
+        alchemer_url=normalize_engagement_url(alchemer_url),
         note=note.strip(),
         occurred_on=occurred_on,
         response_count=_engagement_response_count(response_count),
@@ -1448,6 +1463,8 @@ def add_engagement(
             "kind": engagement.kind,
             "occurred_on": engagement.occurred_on.isoformat() if engagement.occurred_on else None,
             "has_url": bool(engagement.url),
+            "has_smaily_url": bool(engagement.smaily_url),
+            "has_alchemer_url": bool(engagement.alchemer_url),
             # Whether it was counted, not what the count was. The number is on
             # the record where a reader can correct it; the audit row says a
             # question was answered (brief 26).
@@ -1464,6 +1481,8 @@ def update_engagement(
     kind: str = _UNSET,
     title: str = _UNSET,
     url: Any = _UNSET,
+    smaily_url: Any = _UNSET,
+    alchemer_url: Any = _UNSET,
     note: Any = _UNSET,
     occurred_on: Any = _UNSET,
     actor: Any = None,
@@ -1485,6 +1504,13 @@ def update_engagement(
         proposed["title"] = clean_title[:500]
     if url is not _UNSET:
         proposed["url"] = normalize_engagement_url(url)
+    # `_UNSET`, not `""`. A caller that does not mention a provider link leaves
+    # it exactly as it was: the importer names only `url`, so a mapping refresh
+    # cannot silently erase a Smaily address somebody typed on the Teema page.
+    if smaily_url is not _UNSET:
+        proposed["smaily_url"] = normalize_engagement_url(smaily_url)
+    if alchemer_url is not _UNSET:
+        proposed["alchemer_url"] = normalize_engagement_url(alchemer_url)
     if note is not _UNSET:
         proposed["note"] = (note or "").strip()
     if occurred_on is not _UNSET:

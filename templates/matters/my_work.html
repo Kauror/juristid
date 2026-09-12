@@ -238,11 +238,24 @@ The rail holds only what has no honest place on a timeline.
           </details>
         {% endif %}
 
-        <p class="pw-register">
-          <a href="{{ work.portfolio.register_url }}">
-            {% if is_self %}Ava minu teemad registris{% else %}Ava kõik teemad registris{% endif %} ({{ work.portfolio.total }}) →
-          </a>
-        </p>
+        {% comment %}
+          The way out to the register, and only where it widens the question.
+          On a colleague's desk it does: from *this person's open files* to
+          *every open file*, which is a different population and a reason to
+          click. On your own it did not — «Ava minu teemad registris» pointed at
+          the same Matters listed directly above it, so the link was a second
+          door onto the room the reader was already standing in.
+
+          Absent rather than emptied: no count, no arrow, and no wrapper left
+          holding its own top margin under the last row.
+        {% endcomment %}
+        {% if not is_self %}
+          <p class="pw-register">
+            <a href="{{ work.portfolio.register_url }}">
+              Ava kõik teemad registris ({{ work.portfolio.total }}) →
+            </a>
+          </p>
+        {% endif %}
       </section>
 
       <section class="workband workband--entries" aria-label="Viimased sissekanded">

@@ -1118,3 +1118,105 @@ def test_a_manual_addressee_override_survives_the_sender_rule(
 
     matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
     assert matter.addressee_organisation == other
+
+
+# -- «Kasuta» is reversible, and the choice survives a refusal ---------------
+#
+# The toggle itself is browser behaviour and is tested in
+# `e2e/test_uus_teema_reading.py`. What the server owes it is one thing: a
+# refused save must hand back the selection state it was given, because the
+# browser is the only thing that knows which offered suggestions were chosen —
+# and deriving it here from «does the field equal the suggestion» is exactly the
+# guess that made «Kasutusel» a lie about a value somebody typed themselves
+# (docs/adr/0064, amended 2026-09-12).
+
+
+def _state_value(body: str) -> str:
+    """The hidden `suggestion_state` field's value, as rendered."""
+    import re
+
+    found = re.search(r'name="suggestion_state" value="([^"]*)"', body)
+    assert found is not None, "the create form renders no suggestion_state field"
+    return found.group(1)
+
+
+def test_the_create_form_carries_an_empty_selection_state_on_a_fresh_get(signed_in):
+    """A GET has nothing to remember, and says so with an empty box."""
+    body = signed_in.get(CREATE).content.decode()
+    assert _state_value(body) == ""
+
+
+def test_a_refused_save_hands_the_selection_state_straight_back(signed_in, evidence_root, ministry):
+    """**F.** The unrelated refusal does not also forget what was chosen.
+
+    Escaped on the way out — it is JSON in an HTML attribute — and identical
+    once the browser has parsed it, which is all the browser needs to paint the
+    buttons the way it left them.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+    chosen = '{"chosen":{"title":["Pakendiseaduse eeln\\u00f5u"]},"baseline":{"title":[""]}}'
+
+    refused = _refused_create(signed_in, session, suggestion_state=chosen)
+
+    assert refused.context["suggestion_state"] == chosen
+    assert "&quot;chosen&quot;" in refused.content.decode()
+
+
+def test_the_server_never_reads_the_selection_state_it_echoes(signed_in, evidence_root, ministry):
+    """It is form state, not a fact. Nothing parses it, nothing validates it
+    against the analysis and nothing stores it — so a nonsense value costs a
+    repainted button and never a 500."""
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    refused = _refused_create(signed_in, session, suggestion_state="not json at all {{{")
+
+    assert refused.status_code == 400
+    assert refused.context["suggestion_state"] == "not json at all {{{"
+    assert not Matter.objects.exists()
+
+
+def test_an_oversized_selection_state_is_dropped_rather_than_echoed(
+    signed_in, evidence_root, ministry
+):
+    """A hand-made POST cannot make the next render enormous. Over the limit the
+    page comes back with no remembered choices, which is what it did before this
+    existed and costs a click."""
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    refused = _refused_create(signed_in, session, suggestion_state="x" * 5000)
+
+    assert refused.context["suggestion_state"] == ""
+
+
+def test_the_selection_state_is_not_a_matter_field(signed_in, evidence_root, ministry):
+    """A successful save ignores it entirely. There is no «accepted suggestion»
+    anywhere in the schema and there must not be: once the Teema exists its own
+    fields carry the answer."""
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    created = signed_in.post(
+        CREATE,
+        {
+            "title": "Pakendiseaduse muutmise seaduse eelnõu",
+            "intake": str(session.pk),
+            "suggestion_state": '{"chosen":{"title":["midagi muud"]},"baseline":{}}',
+        },
+    )
+
+    assert created.status_code == 302, created.status_code
+    matter = Matter.objects.get()
+    assert matter.title == "Pakendiseaduse muutmise seaduse eelnõu"
+
+
+def test_the_state_field_sits_outside_the_panel_the_poller_replaces(signed_in):
+    """The status poll swaps `#intake-panel` every 1.2 s. A field inside it would
+    be reset to the server's copy on every swap, which is the whole selection
+    thrown away a second after it was made."""
+    body = signed_in.get(CREATE).content.decode()
+
+    assert 'name="suggestion_state"' in body
+    assert body.index('name="suggestion_state"') < body.index('id="intake-panel"')

@@ -50,6 +50,25 @@ must never read `praegu` either. The connector already stops at the rightmost do
 because `:last-child` draws none, so the strip ends somewhere visible without any
 milestone claiming to be the current one.
 
+**Reached, today, ahead — drawn, never written (amended 2026-09-12).** Until now
+a future column was drawn with the same dot and the same weight as a past one,
+on the reasoning that muting the destination would make it the least legible
+thing on the rail. In use that turned out to cost more than it saved: a Matter
+created this morning, with an answer due at the end of the month and a
+commencement in October, drew three identical filled dots and read as a file
+that had already been through all three. The strip's own sparseness made the
+misreading worse, because there was nothing else on it to correct the
+impression.
+
+So each column now carries a `state` and each segment of rail a `reach`, and the
+grammar says *where we are* by drawing rather than by writing: reached columns
+and the rail behind today stay accent, what is still ahead is muted, and a
+column dated today is marked as such. What is **not** back is the vocabulary
+§12.1 retired — no `praegu` suffix, no `N p` countdown, no sixty-day horizon, no
+`is-current` and no `is-todo`, and no claim anywhere that a milestone is the step
+the file is standing on. The words on the strip are byte-for-byte what they were;
+only the ink changed (docs/adr/0074 §12.2, amended).
+
 **Scoped before it is derived, not filtered afterwards.** The sent opinions are
 read through their own `visible_to`, and the commencements arrive already scoped
 from `matter_intelligence`, so a restricted child cannot change the number of
@@ -61,7 +80,7 @@ reopen (AUTH-003, docs/adr/0074 §13).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
@@ -129,6 +148,18 @@ PHASE_EFFECTIVE = 3
 PHASE_CLOSED = 4
 
 
+#: The three presentation states a column can be in, and the CSS modifier each
+#: one names. They are *presentational*: `state` says where a dated point sits
+#: relative to today and nothing else. No milestone changes source, membership,
+#: order, label or date because of it, and none of them is the retired
+#: `is-current` / `is-todo` grammar coming back — nothing is marked as the step
+#: the file is standing on, and no countdown is printed
+#: (docs/adr/0074 §12.2, amended 2026-09-12).
+STATE_REACHED = "past"
+STATE_TODAY = "today"
+STATE_AHEAD = "future"
+
+
 @dataclass(frozen=True)
 class ProcessStep:
     """One column of the strip.
@@ -139,6 +170,13 @@ class ProcessStep:
     than as a second visible line, because «Vastus esitatud ja järeltegevus
     tehtud» under a 150 px column is a three-line wrap that pushes its
     neighbours' dates out of alignment.
+
+    ``state`` and ``reach`` carry the temporal reading. ``state`` is this
+    column's own position relative to today; ``reach`` is how much of the
+    connector running from *this* column to the next one is behind us, which is
+    what puts today on the rail when it falls between two milestones. Both are
+    derived from the already-built, already-scoped list — never from a second
+    read — so a restricted child cannot move either of them.
     """
 
     label: str
@@ -146,27 +184,111 @@ class ProcessStep:
     detail: str
     sort_on: date
     phase: int
+    #: Every step defaults to reached with a full connector, which is what a
+    #: strip of purely historical milestones is. `process_steps` decides all of
+    #: them against the application's own today before returning.
+    state: str = STATE_REACHED
+    reach: float = 1.0
 
     @property
     def date_line(self) -> str:
         """``12.5.2026`` — the day, and nothing appended.
 
-        No `praegu` and no `N p`. A future milestone is drawn as its date
-        exactly like a past one: the strip states the dated point the record
-        holds, and a countdown beside it would be this component asserting an
-        urgency it was not asked to judge. The countdown is untouched where it
-        already has a home — the header band and the work lists.
+        No `praegu` and no `N p`. A future milestone carries its date exactly
+        like a past one: the strip states the dated point the record holds, and
+        a countdown beside it would be this component asserting an urgency it
+        was not asked to judge. The countdown is untouched where it already has
+        a home — the header band and the work lists.
+
+        What *did* change on 2026-09-12 is the drawing, not the wording: a
+        column that has not been reached is muted, and the words are identical.
         """
         return self.display
 
+    @property
+    def reach_percent(self) -> str:
+        """``reach`` as a CSS length — ``0%``, ``37.2%``, ``100%``.
 
-def process_steps(*, matter: Matter, user: Any, intelligence: Any = None) -> list[ProcessStep]:
+        Formatted here rather than interpolated as a number, because the
+        application runs in Estonian and Django would localise ``0.372`` to
+        ``0,372`` in the template. A decimal comma inside a `linear-gradient`
+        stop is not a CSS parse error that shows up anywhere: the declaration is
+        dropped, the rail silently loses its colour, and every viewport looks
+        fine in the developer's own locale.
+        """
+        return f"{self.reach * 100:.4g}%"
+
+
+def _reach_to_next(step: ProcessStep, following: ProcessStep | None, today: date) -> float:
+    """How much of the connector leaving ``step`` today has covered, 0 to 1.
+
+    The columns share the width evenly however many there are, so the rail is a
+    proportion and not a scale. Within one segment, though, the fraction *is*
+    calendar days: a file whose deadline is a fortnight past its start reads as
+    half way between the two on the seventh day, which is the only honest thing
+    a segment of fixed width can say about the time inside it.
+
+    ``:last-child`` draws no connector, so the last step's value is never used;
+    it answers 0.0 rather than 1.0 so that nothing downstream can paint a rail
+    running off the right-hand end.
+
+    **Two milestones on one day divide nothing.** The whole-segment answers are
+    taken first and they are exhaustive for a zero-length segment — today is
+    either on or after that shared date, or before it — so the division is
+    reached only when the two dates genuinely differ. A `NaN` here would reach
+    the stylesheet as an unparseable gradient stop and take the rail's colour
+    with it.
+    """
+    if following is None:
+        return 0.0
+    if today >= following.sort_on:
+        return 1.0
+    if today <= step.sort_on:
+        return 0.0
+    span = (following.sort_on - step.sort_on).days
+    if span <= 0:  # pragma: no cover - unreachable while the list is sorted
+        return 0.0
+    return (today - step.sort_on).days / span
+
+
+def _read_against_today(steps: list[ProcessStep], today: date) -> list[ProcessStep]:
+    """Give every column its temporal reading. Presentation only.
+
+    Nothing here adds, removes, reorders or relabels a milestone. It runs over
+    the list the sources already produced, after it is sorted, so the reading is
+    a function of the same scoped data the columns themselves are — which is why
+    a restricted child a reader may not see cannot change one column's state,
+    one segment's fill, or a single byte of the rendered strip (AUTH-003,
+    docs/adr/0074 §13).
+    """
+    decided: list[ProcessStep] = []
+    for index, step in enumerate(steps):
+        if step.sort_on < today:
+            state = STATE_REACHED
+        elif step.sort_on == today:
+            state = STATE_TODAY
+        else:
+            state = STATE_AHEAD
+        following = steps[index + 1] if index + 1 < len(steps) else None
+        decided.append(replace(step, state=state, reach=_reach_to_next(step, following, today)))
+    return decided
+
+
+def process_steps(
+    *, matter: Matter, user: Any, intelligence: Any = None, today: date | None = None
+) -> list[ProcessStep]:
     """The strip for one Matter, earliest first, or an empty list.
 
     ``intelligence`` is the page's single scoped read of the structured facts,
     passed in so the Matter page cannot ask two differently scoped questions
     about one file. It falls back to a read of its own for callers that have
     none — the same seam `matter_timeline` uses.
+
+    ``today`` is the application's own day, injected the way every other
+    selector in this codebase takes it. `timezone.localdate()`, never
+    `date.today()`: the containers run UTC and the department works in Tallinn,
+    so for three hours every evening the two are different days — and this is
+    the date that decides whether a deadline reads as reached (CORR-03).
     """
     from app.intelligence.enums import FactStatus
     from app.intelligence.selectors import matter_intelligence
@@ -337,4 +459,7 @@ def process_steps(*, matter: Matter, user: Any, intelligence: Any = None) -> lis
     # be read in, and two of one kind on one day keep their source's own order,
     # which `list.sort` being stable preserves.
     steps.sort(key=lambda step: (step.sort_on, step.phase))
-    return steps
+
+    # Decided last, and over the sorted list: `reach` is about a column and the
+    # one drawn to its right, which is not knowable until the order is.
+    return _read_against_today(steps, today or timezone.localdate())

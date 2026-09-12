@@ -947,3 +947,27 @@ def test_transitions_are_short_and_reduced_motion_is_honoured(page, base_url):
         }"""
     )
     assert not long_running, f"transitions longer than 150ms: {long_running[:5]}"
+
+
+def test_minu_asjad_does_not_offer_a_second_door_onto_its_own_list(page, base_url):
+    """«Ava minu teemad registris» pointed at the list directly above it.
+
+    Aktiivsed teemad already *is* this person's open files, so the link went
+    from a list of them to a list of them. It is absent rather than emptied —
+    no count, no arrow, and no paragraph left behind holding its own top margin
+    under the last row.
+
+    The colleague variant is a different promise and is deliberately still
+    there: on somebody else's desk «Ava kõik teemad registris» widens the
+    question from *their* open files to *every* open file, which is a population
+    the page is not showing.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.goto(f"{base_url}/minu-asjad/")
+    page.wait_for_load_state("networkidle")
+
+    expect(page.get_by_role("link", name=re.compile("Ava minu teemad registris"))).to_have_count(0)
+    expect(page.locator(".pw-register")).to_have_count(0)
+    # The band it was under is untouched.
+    expect(page.get_by_role("heading", name="Aktiivsed teemad")).to_be_visible()
+    assert not document_overflows(page), "removing the link broke the layout"

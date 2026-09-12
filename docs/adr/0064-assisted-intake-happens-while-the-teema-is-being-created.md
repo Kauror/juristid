@@ -9,7 +9,15 @@
 > being decided server-side and applied by the browser only to an empty
 > untouched control — stands exactly as written.
 
-- Status: accepted (amended by ADR 0072)
+> **Amended 2026-09-12 — §«Kasuta» is reversible until save.** Pressing
+> «Kasuta» still settles the field against later automatic replacement, and the
+> human-over-machine rule below is untouched. What changes is that the press can
+> be taken back, that the button states which of the two it is, and that the
+> button's state is *stored* rather than read off the control's value. The
+> clause amended is the one that says the button «is bound to the live control»;
+> see «A choice that can be taken back» at the end of this ADR.
+
+- Status: accepted (amended by ADR 0072, amended 2026-09-12)
 - Date: 2026-09-08
 - Stage: pre-QA (shared-gate development phase)
 - Amends: ADR 0060 (which put the same analyser on the *edit* surface, and
@@ -189,6 +197,11 @@ outright. Being wrong in that direction costs one suggestion nobody was
 offered. Being wrong in the other direction costs somebody's typing, which is
 the failure this whole feature must not have.
 
+*(Amended 2026-09-12: pressing «Kasuta» a second time — withdrawing the
+suggestion — settles the field just as firmly. «Not that one» is a decision, and
+a poll that re-applied it a second later would be the reader overruling a
+person.)*
+
 **And the panel renders the *unannotated* analysis**, which is the visible half
 of the same distinction. `prefill_initial` marks the candidates it chose so the
 edit page can print «vormil eeltäidetud» beside exactly those — true there,
@@ -197,8 +210,13 @@ browser decides, and it declines wherever somebody has already typed. Printing
 «vormil eeltäidetud» over a box holding a person's own value would be the page
 stating something it cannot know, and it would take away the «Kasuta» they need
 to change their mind. So every candidate is offered, and the button itself says
-what happened: it is bound to the live control, so one the browser filled reads
-as chosen and one it declined reads as available.
+what happened: one the browser filled reads as chosen and one it declined reads
+as available.
+
+*(Amended 2026-09-12. The button no longer reads its state off the live control
+— see «A choice that can be taken back» below. What it says is unchanged for
+every case this paragraph describes; what changed is that it is now also right
+in the two cases reading the control got wrong.)*
 
 `CurrentValues()` is therefore empty on this surface, and that is honest rather
 than lazy: on an existing Matter the record is the thing a suggestion must not
@@ -276,6 +294,57 @@ reach evidence: it imports neither store nor either canonical model.
 
 **Nothing schedules it, deliberately.** Putting a deletion loop into a
 production timer is a decision of its own and is not made by writing one.
+
+## Amendment, 2026-09-12 — «Kasuta» is a choice that can be taken back
+
+This came from use. Somebody pressed «Kasuta», and then could not tell whether
+the suggestion was in use, or undo it.
+
+**The button is a two-state control.** `Kasuta` / `Kasutusel`, with
+`aria-pressed` either way, so the state is available without colour. Pressing
+the selected one withdraws the suggestion and restores the field.
+
+**Restores it to what the person had, not to empty.** When a suggestion is
+applied, the control's pre-suggestion value is remembered, and withdrawing puts
+that value back. The baseline is captured once per sequence, so
+
+    the person's value → use A → use B → withdraw B
+
+returns to *the person's value* and never to A: A is a machine value they never
+chose, and stopping there would be the feature inventing an answer at the exact
+moment somebody said no to one. An empty field returns to empty.
+
+**Editing the field ends the suggestion's claim on it.** A typed value is
+ownership. The active state clears immediately, what was typed is neither erased
+nor restored over, and the baseline goes with it — what was there before a
+suggestion somebody has since typed over is no longer anything to return to.
+
+**One answer, one active suggestion; several answers, several.** A text box and
+a radio group hold one value, so choosing B where A was active replaces it. A
+checkbox group holds many, so choosing a second `Valdkond` adds to the first and
+withdrawing one unticks only its own box — and not even that, if the person had
+ticked it themselves before any suggestion arrived.
+
+**The state is stored, not derived — and this is the substantive change.**
+The button used to be selected exactly when the control held the suggested
+value. That is wrong in both directions. It calls a value somebody typed by hand
+«Kasutusel», which claims a decision they did not make; and it cannot tell an
+accepted suggestion from a coincidence after a refused save, so the page came
+back having forgotten what was chosen. What the control holds and what the
+person chose are two different facts.
+
+**It is form state, and it stops existing at save.** The browser keeps it on the
+form node, writes it into a hidden `suggestion_state` field, and the server
+echoes that field back verbatim on a refusal — it does not parse it, validate it
+against the analysis, or store it. There is no «accepted suggestion» model and
+there must not be: accepting a suggestion is a step in filling in a form that
+does not exist yet, and once the Teema is saved its own fields carry the answer.
+The echo is length-capped so a hand-made POST cannot make the next render
+enormous.
+
+**The safety property is unchanged.** A suggestion still never overwrites a
+person, `fill()` still refuses a touched or answered control, and an explicit
+click still always writes — because an explicit click is the person.
 
 ## Consequences
 

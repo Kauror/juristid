@@ -76,8 +76,17 @@ def test_the_matter_page_carries_no_standalone_kaasamine_section(page, base_url)
     expect(page.get_by_text("+ Lisa kaasamine")).to_have_count(0)
 
 
-def test_the_panel_opens_from_the_launcher_and_asks_three_things(page, base_url):
-    """`Liik`, `Keda kaasati`, `Vastuseid` — and not the old five-field form."""
+def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, base_url):
+    """`Liik`, `Keda kaasati`, `Vastuseid`, and the two provider pointers.
+
+    It asked three things until 2026-09-12. The two links are the round's one
+    addition and they are additions in the weakest sense — optional, external,
+    contacting nothing — because one consultation routinely has a mailing *and*
+    a questionnaire and `url` held one address (docs/adr/0027, amended).
+
+    The old five-field form is still not back: no generic `Link`, no `Märkus`,
+    no `Kuupäev`.
+    """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
@@ -88,7 +97,10 @@ def test_the_panel_opens_from_the_launcher_and_asks_three_things(page, base_url)
         expect(panel(page).locator(".uxchip", has_text=label)).to_have_count(1)
     expect(panel(page).locator("[name=audience]")).to_be_visible()
     expect(panel(page).locator("[name=response_count]")).to_be_visible()
-    # The questions the target does not ask.
+    expect(panel(page).locator("[name=smaily_url]")).to_be_visible()
+    expect(panel(page).locator("[name=alchemer_url]")).to_be_visible()
+    # The questions the target does not ask. `url` in particular: the two named
+    # pointers are beside the generic one, not a rename of it.
     expect(panel(page).locator("[name=url]")).to_have_count(0)
     expect(panel(page).locator("[name=note]")).to_have_count(0)
     expect(panel(page).locator("[name=occurred_on]")).to_have_count(0)
@@ -198,3 +210,95 @@ def test_an_uncounted_engagement_says_nothing_about_responses(page, base_url):
     )
     expect(row.first).to_be_visible()
     expect(row.first).not_to_contain_text("Vastuseid")
+
+
+# -- the provider pointers (2026-09-12) --------------------------------------
+
+SMAILY_URL = "https://sendsmaily.net/api/campaigns/9182"
+ALCHEMER_URL = "https://survey.alchemer.eu/s3/7710021/pakendiseadus"
+
+
+def test_both_provider_links_are_saved_and_read_back_by_their_provider_name(page, base_url):
+    """`+ Kaasamine` with a mailing and a questionnaire, end to end.
+
+    The chronology names the tool and not the address. A campaign URL is mostly
+    a recipient token; the link is where it goes, and «Smaily» is what a reader
+    and a screen reader get.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_scratch_matter(page, base_url)
+    open_panel(page)
+
+    audience = "toiduainetööstuse liikmed"
+    panel(page).locator("[name=audience]").fill(audience)
+    panel(page).locator("[name=smaily_url]").fill(SMAILY_URL)
+    panel(page).locator("[name=alchemer_url]").fill(ALCHEMER_URL)
+    panel(page).locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    row = chronology(page).locator(".uxtl__item", has_text=f"Kaasamine: {audience}").first
+    expect(row).to_be_visible()
+
+    smaily = row.get_by_role("link", name="Smaily")
+    alchemer = row.get_by_role("link", name="Alchemer")
+    expect(smaily).to_have_attribute("href", SMAILY_URL)
+    expect(alchemer).to_have_attribute("href", ALCHEMER_URL)
+    expect(smaily).to_have_attribute("rel", "noopener noreferrer")
+    # The address is never printed as copy beside the name.
+    assert SMAILY_URL not in row.inner_text()
+
+
+def test_a_link_typed_with_no_audience_is_answered_where_the_answer_belongs(page, base_url):
+    """The two changes of this round meeting each other (task §6).
+
+    Somebody pastes a Smaily address, forgets `Keda kaasati`, and saves. Three
+    things have to happen and the old behaviour managed none of them: the panel
+    stays open, the refusal names the box that is missing, and the cursor goes
+    there. The address they typed comes back with it — silently dropping a URL
+    somebody pasted is the worst of the available answers.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_scratch_matter(page, base_url)
+    open_panel(page)
+
+    panel(page).locator("[name=smaily_url]").fill(SMAILY_URL)
+    panel(page).locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
+    expect(panel(page).locator("[name=smaily_url]")).to_have_value(SMAILY_URL)
+
+    focused = page.evaluate("() => document.activeElement && document.activeElement.name")
+    assert focused == "audience", f"the cursor went to {focused!r} rather than the empty box"
+
+
+def test_a_link_that_is_not_a_web_address_is_refused_under_its_own_box(page, base_url):
+    """The service's rule, reported where it was typed rather than as a 400."""
+    sign_in(page, base_url, SANDRA)
+    open_scratch_matter(page, base_url)
+    open_panel(page)
+
+    panel(page).locator("[name=audience]").fill("liikmed")
+    panel(page).locator("[name=alchemer_url]").fill("javascript:alert(1)")
+    panel(page).locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_contain_text("Link peab algama")
+
+
+def test_an_engagement_with_no_links_shows_no_empty_link_row(page, base_url):
+    """A record that has neither reads exactly as it read before this round."""
+    sign_in(page, base_url, SANDRA)
+    open_scratch_matter(page, base_url)
+    open_panel(page)
+
+    audience = "linkideta kaasamine"
+    panel(page).locator("[name=audience]").fill(audience)
+    panel(page).locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    row = chronology(page).locator(".uxtl__item", has_text=f"Kaasamine: {audience}").first
+    expect(row).to_be_visible()
+    expect(row.locator(".uxtl__links")).to_have_count(0)
