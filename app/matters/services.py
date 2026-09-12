@@ -1619,7 +1619,11 @@ def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Mat
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
 
-    matter = locked
+    # Written through the instance the caller passed, as it always was. The
+    # row is this transaction's whichever Python object the UPDATE goes
+    # through, and the callers that reopen and then keep reading their own
+    # instance — the register cutover reactivating an archive record among
+    # them — must see the fields they just changed.
     matter.is_open = True
     matter.disposition = ""
     matter.disposition_reason = ""
