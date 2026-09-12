@@ -19,7 +19,7 @@ textarea would move the caret out from under the person typing into it.
   Guarded on `scratchpad_saved_revision`, which **only the save view sets** —
   deliberately not on `scratchpad_revision`, which the page itself carries for the
   form's own hidden field. Sharing one name put both branches on the first render:
-  two elements with `id="pw-note-revision"`, one of them outside the form and
+  two elements answering to `pw-note-revision`, one of them outside the form and
   therefore never posted. A browser found it; nothing on the page looked wrong
   (QA-09).
 {% endcomment %}
