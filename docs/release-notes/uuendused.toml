@@ -8,6 +8,36 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-13
+basis = "deployment"
+# Üks väljalase: 12. septembri ühendusvoor. Viis kasutamisest tulnud muudatust
+# (#199) koos nende turvaparandustega, seitse järgmisel päeval tehtud
+# kasutusuuringu parandust (#200), ning kaks operaatoripoolset tööd —
+# varunduskomplekti täpne koosseis (#197) ja hostile pääsemise juhend (#196) —,
+# millest kummalgi ei ole lugeja jaoks midagi teisiti, nii et neil punkti ei ole.
+#
+# Väljalaske liitmisrevisjon a9669227 on kogu koorem peale selle kirje enda;
+# see, mis päriselt toodangusse jõuab, sünnib alles siis, kui see fail
+# ühendatakse, ja on kirjas väljalaske raportis — täpselt nagu 9. ja
+# 11. septembri kirjete puhul.
+revisions = ["a9669227c16a867c64256e7e409477ad9444aea7"]
+prs = [196, 197, 199, 200]
+changes = [
+  "Uue teema vormil saab failist pakutud väärtuse «Kasuta» järel ka tagasi võtta: nupp ütleb «Kasutusel» ja teine vajutus toob tagasi selle, mis väljal enne oli.",
+  "Kui salvestamine lükatakse tagasi, viib Juristid kohe selle välja juurde, mida parandada tuleb — ka siis, kui see jääb lehel tublisti allapoole.",
+  "Teema käigu ribal on nüüd näha, mis on juba toimunud, mis on täna ja mis alles ees. Sõnastus ei muutunud, ainult see, kuidas riba joonistatakse.",
+  "Kaasamise juurde saab salvestada Smaily ja Alchemeri lingi. Ajajoonel on näha, kummale need viivad, aadressi ennast lehel ei näidata.",
+  "Minu asjadest kadus dubleeriv link, mis viis samade teemade juurde registris.",
+  "Kui uue teema juurde valitud failidest jääb mitu vastu võtmata, öeldakse iga faili kohta eraldi, mis tal viga on. Korras failid jäävad alles.",
+  "Dokumentide loetelus on esimesena kirjas pealkiri, mille faili lisaja talle andis, ja failinimi selle all. Kaks ühenimelist faili on nüüd teineteisest eristatavad.",
+  "Kui teema on vahepeal teises aknas suletud, ei salvestata midagi — aga kirjutatud tekst jääb lehele alles, et selle saaks endale kopeerida.",
+  "Teemade Aasta filter mõistab nii sidekriipsu kui mõttekriipsu. Väärtust, mida lugeda ei saa, ei esitata enam nii, nagu ei oleks ühtegi teemat.",
+  "Statistika mahub telefoniekraanile: vahelehtede riba kerib ise ega venita kogu lehte laiaks.",
+  "Isiklik märge ei kirjuta enam vaikides üle seda, mis on vahepeal teises aknas salvestatud. Juristid ütleb, et märget on muudetud, ja näitab mõlemat teksti.",
+  "Ühe kirje kohta öeldakse nüüd «1 teema», mitte «1 teemat».",
+]
+
+[[day]]
 date = 2026-09-12
 basis = "deployment"
 # Üks väljalase: viie ettevalmistuse ühendus (teema töölaud, otsingu ×,
