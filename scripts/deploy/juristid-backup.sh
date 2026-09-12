@@ -62,6 +62,10 @@ DATA_ROOT=""
 BACKUP_ROOT=""
 DB_NAME="juristid"
 DB_USER="juristid"
+# Trees the operator has stated are empty on purpose. Space-separated labels,
+# matching the ones `sync_tree` is called with. Empty by default, which is the
+# behaviour every backup before 2026-09-12 had.
+ALLOW_EMPTY=""
 # Refuse rather than fill the disk. A dump that runs out of space mid-write is
 # the failure this whole script exists to make impossible.
 MINIMUM_FREE_MIB=2048
@@ -73,12 +77,16 @@ Usage:
   juristid-backup.sh --compose-file PATH --data-root DIR --backup-root DIR
                      [--project NAME] [--db-name NAME] [--db-user NAME]
                      [--minimum-free-mib N] [--no-toc-check]
+                     [--allow-empty evidence|legacy-source]
 
   --compose-file   the deployment's compose.yml, named explicitly
   --data-root      the appdata tree holding evidence/ and legacy-source/
   --backup-root    where the mirrors and the backup sets live
   --project        juristid-main (default) or juristid-recovery-rehearsal
   --no-toc-check   skip the pg_restore --list pass (it needs the db container)
+  --allow-empty    this tree is empty on purpose, not because its storage is
+                   missing. Name one tree per flag; repeat it for both. Every
+                   tree not named keeps the guard. Recorded in the manifest.
 
 Exits non-zero on any failure, and leaves no artifact that could be mistaken
 for a complete backup set.
@@ -95,6 +103,12 @@ while [ $# -gt 0 ]; do
     --db-user) DB_USER="${2:-}"; shift 2 ;;
     --minimum-free-mib) MINIMUM_FREE_MIB="${2:-}"; shift 2 ;;
     --no-toc-check) RUN_TOC_CHECK=0; shift ;;
+    --allow-empty)
+      case "${2:-}" in
+        evidence | legacy-source) ALLOW_EMPTY="$ALLOW_EMPTY ${2}" ;;
+        *) usage >&2; die "--allow-empty takes 'evidence' or 'legacy-source', not '${2:-}'" ;;
+      esac
+      shift 2 ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "unknown argument '$1'" ;;
   esac
@@ -153,6 +167,28 @@ note "  backup set   $SET_DIR"
 # copies nothing, and every command in this script succeeds. That is the one way
 # a backup can report success while recording that the Chamber has no evidence
 # at all, so it is checked rather than assumed.
+#
+# The guard cannot tell that case apart from a tree somebody emptied on purpose,
+# because from here the two look identical: no files, and a mirror that still
+# holds the corpus because these mirrors never delete. On 2026-09-12 an
+# operational reset emptied the evidence tree, and this script then refused
+# every backup of the resulting deployment — the mirror still held 20068
+# pre-reset files, so the guard fired on a true condition with a false
+# conclusion, and the empty production it was protecting had no backup at all.
+#
+# So the operator states it. `--allow-empty evidence` is a claim about the
+# world, made by the person who knows a reset happened, named per tree so an
+# unexpectedly empty *other* tree still stops the backup. It is recorded in the
+# manifest for the same reason the release manifest records a note waiver: a
+# set taken with a guard relaxed should say so, in the artifact that outlives
+# the shell it was typed into.
+
+allows_empty() {
+  case " $ALLOW_EMPTY " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 sync_tree() {
   local label="$1" source="$2" mirror="$3"
@@ -161,7 +197,15 @@ sync_tree() {
   mirror_count="$(count_files "$mirror")"
 
   if [ "$source_count" -eq 0 ] && [ "$mirror_count" -gt 0 ]; then
-    die "$label at $source is empty but its mirror holds $mirror_count file(s). That is a missing mount, not an empty tree. Nothing has been changed."
+    if allows_empty "$label"; then
+      note "  $label is empty and --allow-empty says so on purpose; its mirror keeps $mirror_count file(s)"
+    else
+      die "$label at $source is empty but its mirror holds $mirror_count file(s). That is a missing mount, not an empty tree. Nothing has been changed. If the tree really was emptied on purpose, say so with --allow-empty $label."
+    fi
+  elif [ "$source_count" -gt 0 ] && allows_empty "$label"; then
+    # The flag disarms a guard, so a stale one left in a runbook after the tree
+    # filled up again would disarm it silently and for good. Say it did nothing.
+    note "  --allow-empty $label was given but $label holds $source_count file(s); the flag changed nothing and can be dropped"
   fi
 
   # No --delete, deliberately. These trees are append-only, so there is nothing
@@ -227,6 +271,15 @@ LEGACY_FILES="$(count_files "$LEGACY_MIRROR")"
 EVIDENCE_BYTES="$(tree_bytes "$EVIDENCE_MIRROR")"
 LEGACY_BYTES="$(tree_bytes "$LEGACY_MIRROR")"
 
+# Which guards this set was taken with relaxed, as a JSON array — built here
+# rather than inside the heredoc below, which interpolates and is no place for
+# a loop.
+ALLOW_EMPTY_JSON=""
+for tree in $ALLOW_EMPTY; do
+  [ -z "$ALLOW_EMPTY_JSON" ] || ALLOW_EMPTY_JSON="$ALLOW_EMPTY_JSON, "
+  ALLOW_EMPTY_JSON="$ALLOW_EMPTY_JSON\"$tree\""
+done
+
 # Best effort. The application's own view of itself is worth recording, and a
 # database that cannot answer must not stop a dump that already succeeded.
 APP_REVISION="$(juristid_compose exec -T web sh -c 'cat /app/GIT_SHA 2>/dev/null || true' 2>/dev/null | tr -d '\r\n' || true)"
@@ -255,6 +308,7 @@ cat >"$PARTIAL_DIR/manifest.json" <<MANIFEST
     "file_count": $LEGACY_FILES,
     "total_bytes": $LEGACY_BYTES
   },
+  "empty_source_allowed_for": [$ALLOW_EMPTY_JSON],
   "not_included": [
     "derivatives — rebuildable from evidence",
     "search projection — rebuildable from the database",
