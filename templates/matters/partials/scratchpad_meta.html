@@ -11,3 +11,14 @@ textarea would move the caret out from under the person typing into it.
   </span>
   <span>nähtav ainult sulle</span>
 </span>
+{% comment %}
+  A save that worked retires the previous refusal, and moves the token on — or
+  the *next* autosave would arrive holding the version this one just replaced and
+  conflict with itself. Absent when this fragment renders as part of the page
+  rather than as a save's answer, where the form already carries both (QA-09).
+{% endcomment %}
+{% if scratchpad_revision %}
+  <div class="pw-note__conflict" id="pw-note-conflict" hx-swap-oob="outerHTML"></div>
+  <input type="hidden" id="pw-note-revision" name="revision"
+         value="{{ scratchpad_revision }}" hx-swap-oob="outerHTML">
+{% endif %}

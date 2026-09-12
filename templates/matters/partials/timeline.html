@@ -1,3 +1,4 @@
+{% load counts %}
 {% comment %}
 `Ajajoon` — the process strip, then the chronology. Open by default.
 
@@ -31,7 +32,7 @@ when somebody asks for it.
       moved when a restricted record was added would be a disclosure in itself
       (AUTH-003, app/matters/timeline.py).
     {% endcomment %}
-    <span class="uxtl__count">{{ timeline_count }} kirjet{% if timeline_has_more %}+{% endif %}</span>
+    <span class="uxtl__count">{{ timeline_count|counted:"kirje,kirjet" }}{% if timeline_has_more %}+{% endif %}</span>
     <span class="accordion__spacer"></span>
   </summary>
 

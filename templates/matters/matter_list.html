@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load people %}
+{% load counts %}
 {% block title %}Teemad · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -18,7 +19,7 @@ localStorage (Stage-2E.1 brief 12).
 <div class="page">
   <div class="pagehead">
     <h1 class="pagehead__title">Teemad</h1>
-    <span class="pagehead__context">{{ total }} teemat</span>
+    <span class="pagehead__context">{{ total|counted:"teema,teemat" }}</span>
   </div>
 
   {% comment %}

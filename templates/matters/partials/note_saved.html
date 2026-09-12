@@ -24,3 +24,22 @@ The time is Europe/Tallinn, from the row's own `updated_at`, so it says when the
     Salvestatud <time datetime="{{ note_saved_at|date:'c' }}">{{ note_saved_at|time:"H:i" }}</time>
   {% endif %}
 </span>
+{% comment %}
+  A save that worked retires the previous refusal: the newer version has been
+  read, reconciled and saved over, so leaving the old server text under the box
+  would be the page still arguing about a conflict that is settled. Out of band
+  and unconditional, because clearing nothing costs nothing.
+
+  `note_revision` is absent when this fragment renders as part of the page rather
+  than as a save's answer, and the hidden field then keeps whatever the form
+  rendered — which is the same value (QA-09).
+{% endcomment %}
+{% if note_revision %}
+  <div class="railnote__conflict" id="teema-markme-konflikt" hx-swap-oob="outerHTML"></div>
+  {% comment %}
+    And the token moves on, or the *next* autosave would arrive holding the
+    version this one just replaced and conflict with itself.
+  {% endcomment %}
+  <input type="hidden" name="{{ note_revision_name }}" id="{{ note_revision_id }}"
+         value="{{ note_revision }}" hx-swap-oob="outerHTML">
+{% endif %}

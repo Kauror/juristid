@@ -1,3 +1,4 @@
+{% load counts %}
 {% comment %}
 The main `Teema` view: three zones, in the order a lawyer reads them.
 
@@ -74,6 +75,36 @@ next step and no history renders as a short, deliberate page.
       <p class="formerror workspace__error" role="alert">{{ composer_error }}</p>
     {% endif %}
 
+    {% comment %}
+      What they typed, when the panel that held it is not on this column any more.
+
+      A stale-tab save on a Teema another tab has closed is refused, correctly,
+      and writes nothing — that boundary is not moved here. What it used to do
+      as well was hand back a workspace with no add panels in it, so the text
+      went with them while the message asked the person to reopen the Teema and
+      «salvesta uuesti» something the page was no longer holding. A long note had
+      to be retyped from memory (adversarial QA 2026-09-12, QA-06).
+
+      Content, not a form. There is deliberately no textarea, no `Salvesta` and
+      no control of any kind: a write control beside a closed Teema would be the
+      page offering exactly what the refusal above it just refused, and somebody
+      would press it. It is text to read and copy, and the sentence says so.
+    {% endcomment %}
+    {% if unsaved_content %}
+      <section class="unsaved" aria-labelledby="salvestamata-heading">
+        <h2 class="rowlabel" id="salvestamata-heading">Salvestamata sisu</h2>
+        <p class="unsaved__note">
+          Seda ei salvestatud. Kopeeri see endale enne, kui lehe uuesti laadid.
+        </p>
+        <dl class="unsaved__body">
+          {% for label, value in unsaved_content %}
+            <dt class="unsaved__label">{{ label }}</dt>
+            <dd class="unsaved__value">{{ value }}</dd>
+          {% endfor %}
+        </dl>
+      </section>
+    {% endif %}
+
     {% include "matters/partials/current_action.html" %}
 
     {% if matter.is_open and can_write %}
@@ -90,7 +121,7 @@ next step and no history renders as a short, deliberate page.
         <h2 class="rowlabel" id="ajalooline-materjal-heading">Ajalooline materjal</h2>
         <span class="historicalrow__summary">
           {{ historical.page_count }} OneNote'i lehte
-          · {{ historical.file_count }} faili
+          · {{ historical.file_count|counted:"fail,faili" }}
           {% if historical.sections %}· {{ historical.sections|join:", " }}{% endif %}
         </span>
         <span class="historicalrow__spacer"></span>

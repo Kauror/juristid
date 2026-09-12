@@ -1,0 +1,38 @@
+{% comment %}
+`Märkmeid on muudetud teises aknas` — the desk pad autosave that was refused.
+
+The sibling of `note_conflict.html`, for the same reason. Minu asjad is the page
+most likely to be open in a second tab all day, and this pad files no history
+either: an autosave that overwrote a newer version left nothing anywhere to
+recover the overwritten one from (adversarial QA 2026-09-12, QA-09).
+
+**The textarea is not in here.** What the person typed stays exactly where it
+was, caret included, because the swap target is the meta line and nothing else.
+The newer version arrives out of band, read-only, under the box — so one 409
+carries both halves of the answer and neither version is chosen for them.
+{% endcomment %}
+<span class="pw-note__meta" id="pw-note-meta">
+  <span class="pw-note__conflictline" role="alert">{{ scratchpad_conflict }}</span>
+  <span>nähtav ainult sulle</span>
+</span>
+
+<div class="pw-note__conflict" id="pw-note-conflict" hx-swap-oob="outerHTML">
+  <p class="pw-note__conflictnote">
+    Teises aknas salvestatud versioon
+    {% if scratchpad_server %}
+      {% comment %}
+        A `<time>`, so the visual-regression mask that paints over every
+        clock-derived value covers this one too.
+      {% endcomment %}
+      (<time datetime="{{ scratchpad_server.updated_at|date:'c' }}">{{ scratchpad_server.updated_at|time:"H:i" }}</time>)
+    {% endif %}:
+  </p>
+  {% comment %}
+    Read-only, and a `<pre>` rather than a second textarea: a box somebody can
+    type into is a box they will type into, and this one is not theirs to edit.
+  {% endcomment %}
+  <pre class="pw-note__conflictbody">{{ scratchpad_server.body|default:"" }}</pre>
+  <p class="pw-note__conflictnote">
+    Kopeeri vajalik osa oma märkmetesse või laadi leht uuesti. Sinu tekst on ülal alles.
+  </p>
+</div>

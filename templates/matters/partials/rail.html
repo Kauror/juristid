@@ -393,9 +393,24 @@ whose addressee nobody recorded should look short, not incomplete.
         {% csrf_token %}
         <label class="visually-hidden" for="{{ note_form.body.id_for_label }}">Märkmed</label>
         {{ note_form.body }}
+        {% comment %}
+          Which stored version this box was filled from. Inside the form, so the
+          autosave posts it with the text it describes: a save arriving with a
+          revision the row has moved past is refused rather than allowed to
+          overwrite what another tab saved (docs/adr/0077, QA-09).
+        {% endcomment %}
+        {{ note_form.revision }}
         <div class="railnote__foot">
           {% include "matters/partials/note_saved.html" %}
         </div>
+        {% comment %}
+          Empty, and present. The conflict answer arrives out of band and
+          replaces this element by id, so it has to exist before the first
+          refused save — and an out-of-band swap at an id that is not on the page
+          is silently dropped, which would make a refused autosave look like a
+          successful one.
+        {% endcomment %}
+        <div class="railnote__conflict" id="teema-markme-konflikt"></div>
       </form>
     </div>
   {% endif %}

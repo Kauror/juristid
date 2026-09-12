@@ -3061,6 +3061,14 @@ class PersonalNoteForm(forms.Form):
             }
         ),
     )
+    #: Which stored version this box was filled from.
+    #:
+    #: The half of optimistic concurrency the browser owns. A hidden field rather
+    #: than a header, because it has to travel with the textarea it describes and
+    #: an autosave posts the form — and `required=False` because a note that has
+    #: never been saved has no version, which is a real state and not a missing
+    #: value (docs/adr/0077, QA-09).
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
 
 
 class WorkingDocumentForm(forms.Form):

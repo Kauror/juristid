@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load counts %}
 {% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -238,7 +239,7 @@ finds again (§23.5).
             <div class="docsection__head">
               <h2 class="docsection__title" id="failid-heading">Failid</h2>
               <span class="docsection__count">
-                {{ evidence_total }} faili{% if document_filter_chips %} · filtreeritud{% endif %}
+                {{ evidence_total|counted:"fail,faili" }}{% if document_filter_chips %} · filtreeritud{% endif %}
               </span>
             </div>
             {% if document_filter_chips %}

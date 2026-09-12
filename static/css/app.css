@@ -1572,6 +1572,30 @@ th[aria-sort="descending"] .colhead__mark::after {
 .tabs {
   display: flex;
   gap: var(--spacing-6);
+  /* The strip scrolls itself rather than the page.
+     Statistika's nav is six tabs and measures a little over 500px, which at
+     375px made the *document* 515px wide: the whole page, header and all, slid
+     under the thumb, and a horizontally scrolling document is the one thing no
+     surface here may produce (adversarial QA 2026-09-12, QA-08). The same
+     answer the Teema process strip already gives at narrow widths — local
+     overflow, every tab kept, nothing abbreviated and nothing hidden.
+
+     `auto`, not `scroll`: no bar appears at a width where all six fit.
+     `-webkit-overflow-scrolling` is not set, because the tab row is short
+     enough that momentum scrolling inside it reads as a stuck page. */
+  overflow-x: auto;
+  /* Nothing wraps. A six-tab nav that folded into two rows moved the active
+     tab's underline to a different line from the heading it belongs to, and the
+     row's height then changed with the width. */
+  flex-wrap: nowrap;
+  /* A tab is a phrase and a count; breaking «Andmekvaliteet» over two lines to
+     avoid a scrollbar is the unreadable outcome the scroll exists to prevent. */
+  white-space: nowrap;
+  /* Deliberately no padding, no `scrollbar-width` and no momentum scrolling.
+     `overflow-x: auto` on its own changes nothing at a width where all six tabs
+     fit — no bar is drawn and no box grows — so the fix costs the desktop
+     layouts nothing and moves no baseline. Anything that added height here would
+     move every viewport's rendering of a row that is currently correct. */
 }
 
 .tabs__tab {
@@ -9108,6 +9132,49 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
+/* The refused autosave, beside the pad whose text it could not replace.
+ *
+ * The Teema rail's `.railnote__conflict` in this surface's own class names,
+ * because the two pads are two components and one shared class would tie their
+ * layouts together for no reason other than that the sentence is the same. The
+ * tone is warning rather than danger: nothing is lost — the person's words are
+ * still in the box and the other tab's version is right here (QA-09). */
+.pw-note__conflictline {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.pw-note__conflict:empty {
+  display: none;
+}
+
+.pw-note__conflict {
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-2);
+  background: var(--status-warning-soft);
+  border: 1px solid var(--status-warning-border);
+  border-radius: var(--radius-control);
+}
+
+.pw-note__conflictnote {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-label);
+  color: var(--text-secondary);
+}
+
+/* `pre-wrap`, because it is the other tab's note as it was written; the page's
+ * own font rather than a monospace, because it is prose. `anywhere` so a pasted
+ * URL cannot widen the rail. */
+.pw-note__conflictbody {
+  margin: 0 0 var(--spacing-15);
+  max-height: 14rem;
+  overflow-y: auto;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
 /* ---- Viimati muudetud ------------------------------------------------ */
 
 .pw-events {
@@ -10785,8 +10852,93 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin: var(--spacing-3) var(--spacing-8) 0;
 }
 
+/* The refused autosave, beside the box whose text it could not replace.
+ *
+ * Quiet rather than alarming: nothing is lost — their words are still in the
+ * textarea above and the other tab's version is right here — so a red panel
+ * would be the page overstating what happened. The hint takes the warning tone
+ * every other refused field on this page uses (QA-09). */
+.railcard__hint--conflict {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.railnote__conflict:empty {
+  display: none;
+}
+
+.railnote__conflict {
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-2);
+  background: var(--status-warning-soft);
+  border: 1px solid var(--status-warning-border);
+  border-radius: var(--radius-control);
+}
+
+.railnote__conflictnote {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+/* `pre-wrap`, because it is the other tab's note as it was written and a block
+ * offered for copying has to give back the paragraph breaks. The font is the
+ * page's, not a monospace: it is prose, not code. `anywhere` so a pasted URL in
+ * somebody's note cannot widen the rail. */
+.railnote__conflictbody {
+  margin: 0 0 var(--spacing-15);
+  max-height: 14rem;
+  overflow-y: auto;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+/* `Salvestamata sisu` — the words a refusal could not save, given back to be
+ * copied.
+ *
+ * It takes the refusal's own inset so the two read as one answer to one save,
+ * and it is deliberately quiet: a bordered panel in the accent colour would
+ * compete with the sentence above it for the reader's first look, and the
+ * sentence is the part that says why. No control lives in here — see the
+ * template's comment for why that is a rule and not a layout choice (QA-06). */
+#teema-vaade-wrap .unsaved {
+  margin: var(--spacing-3) var(--spacing-8) 0;
+  padding: var(--spacing-25) var(--spacing-3);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.unsaved__note {
+  margin: var(--spacing-1) 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.unsaved__body {
+  margin: 0;
+}
+
+.unsaved__label {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* `pre-wrap`, because a note is written with paragraph breaks in it and a block
+ * offered for copying has to give back what was typed rather than a reflowed
+ * approximation of it. `anywhere` so a pasted URL cannot widen the column. */
+.unsaved__value {
+  margin: 0 0 var(--spacing-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
 @media (max-width: 720px) {
-  #teema-vaade-wrap .workspace__error {
+  #teema-vaade-wrap .workspace__error,
+  #teema-vaade-wrap .unsaved {
     margin-left: var(--layout-gutter);
     margin-right: var(--layout-gutter);
   }

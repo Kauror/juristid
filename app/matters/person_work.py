@@ -31,11 +31,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from django.db import transaction
 from django.db.models import QuerySet
 
 from app.accounts.models import User
 from app.accounts.selectors import department_workers
 from app.core.authorization import is_department_head
+from app.core.errors import DomainError
 from app.matters.models import Matter, MatterAssignmentNotice, PersonalScratchpad
 
 #: How much a person may keep on the desk pad. Generous, and a bound: an
@@ -112,6 +114,11 @@ def build_switcher(subject: User) -> Switcher:
 # ---------------------------------------------------------------------------
 
 
+#: What the reader is told when their autosave was refused. The same sentence
+#: shape the per-Matter note uses, about the surface they are on.
+SCRATCHPAD_CONFLICT = "Märkmeid on muudetud teises aknas. Sinu muudatust ei salvestatud."
+
+
 def scratchpad_for(user: Any) -> PersonalScratchpad | None:
     """This person's own notepad, or nothing if they have never written one.
 
@@ -123,7 +130,34 @@ def scratchpad_for(user: Any) -> PersonalScratchpad | None:
     return PersonalScratchpad.objects.filter(user=user).first()
 
 
-def save_scratchpad(user: Any, body: str) -> PersonalScratchpad:
+class ScratchpadConflict(DomainError):
+    """The desk pad changed elsewhere between rendering this box and saving it.
+
+    The sibling of :class:`app.matters.services.PersonalNoteConflict`, for the
+    same reason and with the same rule: the same person in two tabs, and an
+    autosave that must not overwrite a version it never saw. Carries the row as
+    it now stands, because a conflict a person cannot see the other side of is a
+    conflict they cannot resolve.
+    """
+
+    def __init__(self, current: PersonalScratchpad | None) -> None:
+        super().__init__(SCRATCHPAD_CONFLICT)
+        self.current = current
+
+
+def scratchpad_revision(row: PersonalScratchpad | None) -> str:
+    """Which version of the desk pad a rendered box was filled from.
+
+    `updated_at`, for the reasons `personal_note_revision` gives: `auto_now` sets
+    it on every write, PostgreSQL keeps it to the microsecond, and it needs no
+    column of its own. A pad that has never been written has no version.
+    """
+    return row.updated_at.isoformat() if row is not None else ""
+
+
+def save_scratchpad(
+    user: Any, body: str, *, expected_revision: str | None = None
+) -> PersonalScratchpad:
     """Write the signed-in person's own notepad. There is no other signature.
 
     Deliberately not `save_scratchpad(subject, body)`. A subject parameter is
@@ -131,10 +165,27 @@ def save_scratchpad(user: Any, body: str) -> PersonalScratchpad:
     somebody else's private notes, so the parameter does not exist — the
     refusal is structural rather than a check that could be edited out
     (03-BACKEND §2).
+
+    **Optimistic concurrency**, exactly as the per-Matter note has it: a save
+    whose ``expected_revision`` is not the stored one writes nothing and raises
+    :class:`ScratchpadConflict`. Minu asjad is the page most likely to be open in
+    a second tab all day, which makes this pad the most exposed of the two, and
+    it files no history either — so a silent overwrite left nothing anywhere to
+    recover from (adversarial QA 2026-09-12, QA-09).
     """
     text = (body or "")[:SCRATCHPAD_MAX_LENGTH]
-    row, _ = PersonalScratchpad.objects.update_or_create(user=user, defaults={"body": text})
-    return row
+    with transaction.atomic():
+        # `no_key=True`, as everywhere in this codebase: a plain `FOR UPDATE` on
+        # a row other transactions reference by foreign key is how both of its
+        # deadlock cycles were built (app/matters/locks.py).
+        locked = PersonalScratchpad.objects.select_for_update(no_key=True).filter(user=user).first()
+        if expected_revision is not None and scratchpad_revision(locked) != expected_revision:
+            raise ScratchpadConflict(locked)
+        if locked is None:
+            return PersonalScratchpad.objects.create(user=user, body=text)
+        locked.body = text
+        locked.save(update_fields=["body", "updated_at"])
+        return locked
 
 
 # ---------------------------------------------------------------------------

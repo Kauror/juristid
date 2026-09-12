@@ -19,6 +19,11 @@ a file that says how much it is hiding has not hidden it (brief 49).
 mark, because a comma-delimited UTF-8 file opens in Tallinn as one column of
 mojibake, and an export nobody can open is an export nobody uses. The encoding
 is still plain UTF-8 for any machine reader.
+
+**And it opens as text, not as a program.** Every cell goes through
+`app.core.csv_safety`, which makes a value a spreadsheet would evaluate inert.
+Applied at the writer rather than per column, because a per-column decision is
+one somebody adding a column next year has to remember to make (QA-15).
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from urllib.parse import urlencode
 from django.http import StreamingHttpResponse
 from django.urls import reverse
 
+from app.core.csv_safety import csv_safe_row
 from app.core.http import content_disposition
 from app.reporting.context import ReportingContext
 from app.reporting.selectors import historical, quality
@@ -61,7 +67,10 @@ def _stream(rows: Iterator[list[Any]], filename: str) -> StreamingHttpResponse:
     def encoded() -> Iterator[bytes]:
         yield BYTE_ORDER_MARK
         for row in rows:
-            yield writer.writerow(row).encode("utf-8")
+            # Every cell, including the header: a column name is not
+            # person-supplied today, and a rule with an exception in it is a rule
+            # somebody has to check before adding a column.
+            yield writer.writerow(csv_safe_row(row)).encode("utf-8")
 
     response = StreamingHttpResponse(encoded(), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = content_disposition("attachment", filename)

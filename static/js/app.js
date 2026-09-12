@@ -3730,10 +3730,14 @@
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
-   * place. HTMX drops non-2xx responses unless told otherwise, which would make
-   * a validation failure look like nothing happened at all. */
+   * place, and a refused autosave returns 409 with the conflict beside the box.
+   * HTMX drops non-2xx responses unless told otherwise, which would make a
+   * validation failure look like nothing happened at all — and would make a
+   * personal note that was *not* saved look exactly like one that was
+   * (app/matters/views.py `_note_conflict`, QA-09). */
   document.body.addEventListener("htmx:beforeSwap", function (event) {
-    if (event.detail.xhr && event.detail.xhr.status === 400) {
+    var status = event.detail.xhr && event.detail.xhr.status;
+    if (status === 400 || status === 409) {
       event.detail.shouldSwap = true;
       event.detail.isError = false;
     }

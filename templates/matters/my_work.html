@@ -346,8 +346,24 @@ The rail holds only what has no honest place on a timeline.
                         aria-label="Isiklikud märkmed"
                         maxlength="20000"
                         placeholder="Kirjuta siia meeldetuletusi endale…">{{ scratchpad.body|default:"" }}</textarea>
+              {% comment %}
+                Which stored version this box was filled from. Inside the form,
+                so the autosave posts it with the text it describes: a save
+                arriving with a revision the row has moved past is refused rather
+                than allowed to overwrite what another tab wrote
+                (docs/adr/0077, QA-09).
+              {% endcomment %}
+              <input type="hidden" id="pw-note-revision" name="revision"
+                     value="{{ scratchpad_revision }}">
             </form>
             {% include "matters/partials/scratchpad_meta.html" with scratchpad=scratchpad %}
+            {% comment %}
+              Empty, and present: the conflict answer arrives out of band and
+              replaces this element by id, and an out-of-band swap at an id that
+              is not on the page is silently dropped — which would make a refused
+              autosave look exactly like a successful one.
+            {% endcomment %}
+            <div class="pw-note__conflict" id="pw-note-conflict"></div>
           </div>
         </section>
       {% else %}
