@@ -118,50 +118,50 @@ finds again (§23.5).
           and stays available. Uploading evidence is inside it.
         {% endcomment %}
         {% if can_add_content %}
-        <div class="uploadpanel" id="lae-dokument" hidden>
-          <form class="stackform" method="post" enctype="multipart/form-data"
-                action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
-            {% csrf_token %}
-            <div class="formgrid">
-              <label class="field">
-                <span class="field__label">Fail</span>
-                <input class="field__input" type="file" name="upload" required>
-                <span class="field__help">
-                  Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.
-                </span>
-              </label>
-              <label class="field">
-                <span class="field__label">Roll</span>
-                {% comment %}
-                  `upload_roles`, not `document_roles`. This select posts a
-                  stored `Document.role`, so every value in it is a real one and
-                  only the words change — `Arvamus` where the database keeps
-                  `KODA_SUBMISSION_FINAL`. The filter above may invent a value
-                  because it only has to survive a round trip through the query
-                  string; this one may not (app/matters/views.py).
+          <div class="uploadpanel" id="lae-dokument" hidden>
+            <form class="stackform" method="post" enctype="multipart/form-data"
+                  action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
+              {% csrf_token %}
+              <div class="formgrid">
+                <label class="field">
+                  <span class="field__label">Fail</span>
+                  <input class="field__input" type="file" name="upload" required>
+                  <span class="field__help">
+                    Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Roll</span>
+                  {% comment %}
+                    `upload_roles`, not `document_roles`. This select posts a
+                    stored `Document.role`, so every value in it is a real one and
+                    only the words change — `Arvamus` where the database keeps
+                    `KODA_SUBMISSION_FINAL`. The filter above may invent a value
+                    because it only has to survive a round trip through the query
+                    string; this one may not (app/matters/views.py).
 
-                  Uploading a file as `Arvamus` records that Koda holds it. It
-                  does not claim Koda sent it — that is «Registreeri saatmine»
-                  in the Arvamused block, and it needs a person (docs/adr/0061).
-                {% endcomment %}
-                <select class="field__input" name="role" required>
-                  {% for value, label in upload_roles %}
-                    <option value="{{ value }}">{{ label }}</option>
-                  {% endfor %}
-                </select>
-                <span class="field__help">Vali enne salvestamist — pärast on see parandus.</span>
-              </label>
-              <label class="field">
-                <span class="field__label">Pealkiri</span>
-                <input class="field__input" type="text" name="title" maxlength="400"
-                       placeholder="Jäta tühjaks, et kasutada failinime">
-              </label>
-            </div>
-            <div class="form__actions">
-              <button class="button button--primary" type="submit">Salvesta dokument</button>
-            </div>
-          </form>
-        </div>
+                    Uploading a file as `Arvamus` records that Koda holds it. It
+                    does not claim Koda sent it — that is «Registreeri saatmine»
+                    in the Arvamused block, and it needs a person (docs/adr/0061).
+                  {% endcomment %}
+                  <select class="field__input" name="role" required>
+                    {% for value, label in upload_roles %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <span class="field__help">Vali enne salvestamist — pärast on see parandus.</span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Pealkiri</span>
+                  <input class="field__input" type="text" name="title" maxlength="400"
+                         placeholder="Jäta tühjaks, et kasutada failinime">
+                </label>
+              </div>
+              <div class="form__actions">
+                <button class="button button--primary" type="submit">Salvesta dokument</button>
+              </div>
+            </form>
+          </div>
         {% endif %}
 
         <div class="uploadpanel" id="sharepointi-viide" hidden>

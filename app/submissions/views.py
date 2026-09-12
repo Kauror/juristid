@@ -200,6 +200,15 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
     is one form and one transaction now, and every rule it touches is still
     decided in the service that owns it (`register_sent_opinion`).
 
+    **One rule is decided a layer above it**, and only for this route: the
+    Matter must still be open. `register_sent_opinion` deliberately accepts a
+    closed one, because that is how the archive apply files a letter really sent
+    in 2019 onto a Matter closed in 2019 — but what arrives here is a person
+    creating a canonical send on a file somebody has declared finished, which is
+    ordinary business work with a backdated field rather than an import. So this
+    view posts to `register_sent_opinion_on_open_matter`, which asks the
+    question under the Matter's row lock and then delegates (docs/adr/0076).
+
     **The document is resolved twice on purpose.** The form's `document` choices
     come from the same selector as this — opinion files on this Matter, visible
     to this reader, with no canonical send yet — but a browser submits whatever
