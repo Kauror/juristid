@@ -946,15 +946,22 @@ operator's memory, is what keeps the contract.
 
 ### A. Build the release image — off the host
 
-`.github/workflows/release-image.yml` is the build. It takes one input, the full
-40-character commit, checks out exactly that commit, refuses a dirty tree,
-builds `linux/amd64` with `GIT_SHA` baked in, asks the image which commit it is
-and refuses one that answers wrongly, proves the application imports inside it,
-and saves it. Run it from the Actions tab, or:
+`.github/workflows/release-image.yml` is the build. It takes two commits — the
+full 40-character one to build, and the full 40-character one production runs
+now — checks out exactly the first, refuses a dirty tree, refuses a payload the
+Chamber's lawyers will notice that has no entry in
+`docs/release-notes/uuendused.toml` (see `docs/release-notes/README.md` for the
+rule and the waiver), builds `linux/amd64` with `GIT_SHA` baked in, asks the
+image which commit it is and refuses one that answers wrongly, proves the
+application imports inside it, and saves it. Run it from the Actions tab, or:
 
 ```bash
-gh workflow run release-image.yml -f sha=<full-40-char-sha>
+gh workflow run release-image.yml -f sha=<full-40-char-sha> -f previous_sha=<the full commit production runs now>
 ```
+
+`previous_sha` is the revision in the footer of the running instance, or
+`cat /app/GIT_SHA` in the running `web` container. Both commits are recorded in
+the manifest, with the release-note verdict beside them.
 
 The artifact it uploads is named `release-image-<sha12>` and holds three files,
 where `<sha12>` is the first twelve characters of the commit:

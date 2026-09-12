@@ -11,12 +11,20 @@ name: Release image
 #
 # Run it from the Actions tab, or:
 #
-#   gh workflow run release-image.yml -f sha=<full-40-char-sha>
+#   gh workflow run release-image.yml \
+#     -f sha=<full-40-char-sha> \
+#     -f previous_sha=<the full 40-char commit production runs now>
 #
 # The artifact holds the gzipped image and a manifest naming the revision, the
 # image id, the archive size and the archive's SHA-256. Check that digest again
 # after the transfer: it is the only thing that proves the bytes the host loads
 # are the bytes this job built.
+#
+# `previous_sha` is what makes this a release rather than a build: the two
+# commits bound the payload that reaches the Chamber's lawyers, and the gate
+# below refuses a payload they will notice that has no entry on /uuendused/.
+# That rule lives here and only here — a pull request still owes no release
+# note (docs/release-notes/README.md).
 
 on:
   workflow_dispatch:
@@ -24,6 +32,21 @@ on:
       sha:
         description: The full 40-character commit to build. Not a branch, not a tag.
         required: true
+        type: string
+      previous_sha:
+        description: >-
+          The full 40-character commit production runs now (the footer's
+          revision, or /app/GIT_SHA in the running web container). The release
+          note is checked over everything between it and `sha`.
+        required: true
+        type: string
+      release_note_waiver:
+        description: >-
+          Release without a release note, for this stated reason. Only for a
+          payload that touches the application yet changes nothing a reader
+          meets. Recorded in the release manifest.
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -55,6 +78,31 @@ jobs:
           test -z "$(git status --porcelain)" || { echo "the tree is dirty"; git status --porcelain; exit 1; }
           echo "SHORT=${head:0:12}" >> "$GITHUB_ENV"
           echo "FULL=$head" >> "$GITHUB_ENV"
+
+      # The release carries its release note — or is internal only, or says
+      # why not. Decided over the paths between what production runs and what
+      # is being built, before a single layer is built: a release refused here
+      # costs a minute, not an image somebody has to remember not to load.
+      #
+      # `previous_sha` has to be a real commit this repository holds and an
+      # ancestor of `sha`; otherwise the diff describes nothing a deployment
+      # will do. The decision itself is `scripts/ci/assert_release_note.py`,
+      # which reads the list and nothing else, so every answer it can give is
+      # held in tests/test_release_note_gate.py.
+      - name: The release carries its release note
+        env:
+          PREVIOUS: ${{ inputs.previous_sha }}
+          TARGET: ${{ inputs.sha }}
+          WAIVER: ${{ inputs.release_note_waiver }}
+        run: |
+          set -euo pipefail
+          [[ "$PREVIOUS" =~ ^[0-9a-f]{40}$ ]] || { echo "previous_sha must be a full 40-character commit: $PREVIOUS"; exit 1; }
+          git cat-file -e "$PREVIOUS^{commit}" || { echo "previous_sha $PREVIOUS is not a commit in this repository"; exit 1; }
+          git merge-base --is-ancestor "$PREVIOUS" "$TARGET" || { echo "the release must descend from what production runs: $PREVIOUS is not an ancestor of $TARGET"; exit 1; }
+          git diff --name-only "$PREVIOUS" "$TARGET" > changed-files.txt
+          echo "paths changed since production: $(wc -l < changed-files.txt)"
+          echo "PREVIOUS=$PREVIOUS" >> "$GITHUB_ENV"
+          python3 scripts/ci/assert_release_note.py --changed-files changed-files.txt --waiver "$WAIVER" --env-file "$GITHUB_ENV"
 
       # linux/amd64 explicitly, because the runner's default architecture is a
       # property of the runner and the host's is a property of the host, and a
@@ -107,6 +155,8 @@ jobs:
           digest="$(sha256sum "$archive" | cut -d' ' -f1)"
           {
             echo "revision:      $FULL"
+            echo "previous:      $PREVIOUS"
+            echo "release_note:  $RELEASE_NOTE${RELEASE_NOTE_DETAIL:+ — $RELEASE_NOTE_DETAIL}"
             echo "image_tag:     juristid-main-web:$SHORT"
             echo "image_id:      $image_id"
             echo "platform:      linux/amd64"

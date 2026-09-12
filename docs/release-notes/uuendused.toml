@@ -8,6 +8,32 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-12
+basis = "deployment"
+# Üks väljalase: viie ettevalmistuse ühendus (teema töölaud, otsingu ×,
+# saatmise registreerimine, uue saatja alleshoidmine, lugemispindade
+# parandused) koos suletud teema Dokumentide lugemisrežiimiga, mille
+# ühendamise kontroll ise leidis.
+revisions = ["ca50d53e7576bdf1a82445217d62e482a6a36547"]
+prs = [180, 181, 182, 183, 184, 185]
+changes = [
+  "Teema lehe ülaosas on Praegune tegevus: kirjuta, mida sa selle ülesandega tegid, ja salvesta — see ongi sammu lõpetamine. Eraldi «Tehtud» nuppu enam ei ole.",
+  "Lisa teemale pakub seitset valikut — märge, järgmine tegevus, kaasamine, oluline tähtaeg, jõustumine, töövõit ja teema lõpetamine. Igaühel on oma väike vorm ja oma Salvesta; korraga on lahti üks.",
+  "Fail lisatakse täpselt sellele kandele, mille juurde ta kuulub, ja ajajoonel on ta sama rea juures.",
+  "Kui kolleeg on vahepeal sama sammu lõpetanud või teema sulgenud, salvestust vastu ei võeta ja midagi ei kirjutata.",
+  "Suletud teema Dokumendid on lugemiseks: faile ja arvamusi juurde ei lisa ega saatmist ei registreeri enne, kui teema on uuesti avatud. Lugeda, avada ja alla laadida saab kõike endiselt.",
+  "Saatmise registreerimine nõuab saatmise kuupäeva ja vähemalt ühte adressaati; tänast kuupäeva enam ise ei panda.",
+  "Teemade otsingusõna × võtab maha ainult otsingusõna, mitte teisi filtreid ega järjestust.",
+  "Uue teema vormile kirjutatud uus saatja jääb alles ka siis, kui vorm mõne muu välja pärast tagasi lükatakse.",
+  "Kaasamise liigil on igal lehel sama nimi: Kirjade voor.",
+  "Valdkond «Muu» koos selgitusega on teema päises näha, mitte enam «Määramata».",
+  "Õigusakti liik on teema andmete hulgas loetav.",
+  "Uue teema Arvamuse tähtaeg algab tühjana, mitte tänase kuupäevaga.",
+  "Muuda teemat küsib saatjat ja adressaati sama otsinguga nagu Uus teema.",
+  "Kui teema failide loetelu on filtreeritud, ütleb pealkiri seda ja filtri saab sealtsamast maha võtta.",
+]
+
+[[day]]
 date = 2026-09-11
 basis = "deployment"
 # Kaks väljalaset ühel päeval, üks kirje — nii nagu reegel ütleb.
