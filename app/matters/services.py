@@ -39,6 +39,7 @@ from app.matters.locks import (
     lock_open_matter_for_business_write,
 )
 from app.matters.models import (
+    ENGAGEMENT_URL_MAX_LENGTH,
     Entry,
     EntryRevision,
     Matter,
@@ -1322,17 +1323,51 @@ ENGAGEMENT_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
 def normalize_engagement_url(value: str | None) -> str:
-    """Trim it, allow it to be empty, and refuse anything not http(s)."""
+    """Trim it, allow it to be empty, refuse anything not http(s), bound it.
+
+    The one door every writer of the three engagement link columns passes
+    through — `add_engagement`, `update_engagement`, the composer, the
+    correction form, and `app.legacy_import.register_outreach` — so it is where
+    the column's own width has to be enforced.
+
+    **Refused, never truncated** (red-team finding F-1). A link cut off at a
+    thousand characters is a link that no longer resolves, and storing one
+    leaves a reader following a dead address in the belief that it is what was
+    recorded — a stored pointer that is quietly wrong is worse than a refusal
+    naming the row. Without this the value reached PostgreSQL, which answered
+    `StringDataRightTruncation`: a `DataError` with no row reference that aborts
+    the surrounding transaction, so an importer lost a whole batch to one long
+    URL and a route answered 500 where every other bad link on it answers 400.
+
+    **A host, not merely an authority.** `https://user:pw@/path` has a
+    non-empty `netloc` and no host at all, which is not an address anybody can
+    follow and is the one shape whose «host» is nothing but credentials
+    (red-team finding F-2, and `MatterEngagement._hostname` is its other half).
+    """
     from urllib.parse import urlsplit
 
     url = (value or "").strip()
     if not url:
         return ""
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        raise DomainError("Link peab sisaldama veebiaadressi.") from None
     if parts.scheme.lower() not in ENGAGEMENT_URL_SCHEMES:
         raise DomainError("Link peab algama http:// või https:// aadressiga.")
-    if not parts.netloc:
+    try:
+        hostname = parts.hostname
+    except ValueError:
+        # A malformed authority — an unbracketed IPv6 literal, a port that is
+        # not a number. A refusal, not an unhandled exception from a parser.
+        hostname = None
+    if not hostname:
         raise DomainError("Link peab sisaldama veebiaadressi.")
+    if len(url) > ENGAGEMENT_URL_MAX_LENGTH:
+        raise DomainError(
+            f"Link on liiga pikk — kuni {ENGAGEMENT_URL_MAX_LENGTH} tähemärki. "
+            "Lühenda aadressi või salvesta see märkusesse."
+        )
     return url
 
 

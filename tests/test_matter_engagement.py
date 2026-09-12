@@ -1250,3 +1250,290 @@ def test_the_composer_counts_a_typed_link_as_attempted_work(specialist):
     # rather than about the save being empty.
     assert "engagement_audience" in form.errors
     assert "Kirjelda tegevust" not in str(form.errors)
+
+
+# -- what a link may be, and what a "host" is (red team, 2026-09-12) ---------
+#
+# These three columns are the only persistent, person-supplied strings on this
+# model that are copied into the search projection *and* rendered back into
+# HTML, so they are the ones worth attacking. Two boundaries were open when the
+# provider columns landed, and both are stated here about *a provider link*
+# rather than about one column: whatever holds for `url` has to hold for every
+# link field this model grows.
+#
+# The fixes live at the one door every writer passes through —
+# `normalize_engagement_url` for the length, `MatterEngagement._hostname` for
+# the host — because the writers are five and growing: `+ Kaasamine`, the
+# composer, the correction form, `register_outreach` and whatever comes next.
+
+#: One character past the column, which is the boundary worth naming: 1000
+#: saves, 1001 is the first value that cannot. A provider preview URL carrying
+#: UTM parameters and a signed token is the ordinary way something gets here.
+TOO_LONG_URL = "https://survey.example.com/f?token=" + "a" * 966
+
+#: A password in an address, which providers' dashboards do hand out. `netloc`
+#: is the URL's *authority* — `userinfo@host:port` — so a "host" taken from it
+#: brings the credentials along into a rendered label and into `alias_text`.
+CREDENTIAL = "P4ssw0rd-NAHTAV"
+CREDENTIALED_URL = (
+    f"https://kampaania:{CREDENTIAL}@uudiskiri.example.com:8443/loend/8842?token=UTM-9931"
+)
+
+PROVIDER_FIELDS = ["url", "smaily_url", "alchemer_url"]
+
+
+@pytest.mark.parametrize("field", PROVIDER_FIELDS)
+def test_a_link_the_length_of_the_column_is_kept(normal_matter, specialist, field):
+    """Half of the boundary, so no fix can be a blanket shortening of the field."""
+    value = TOO_LONG_URL[:1000]
+    assert len(value) == 1000
+
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Uudiskirja saatmine liikmetele",
+        actor=specialist,
+        **{field: value},
+    )
+
+    engagement.refresh_from_db()
+    assert getattr(engagement, field) == value
+
+
+@pytest.mark.parametrize("field", PROVIDER_FIELDS)
+def test_a_link_one_character_past_the_column_is_refused_before_postgresql(
+    normal_matter, specialist, field
+):
+    """The importer's door, which is the live one.
+
+    `register_outreach` hands `add_engagement` whatever the Smaily export and the
+    approved mapping say, with no length of its own. A `DomainError` here names
+    the row; `StringDataRightTruncation` aborts the surrounding transaction with
+    a PostgreSQL sentence and no reference, which is the failure mode every
+    refusal in this service exists to avoid.
+    """
+    assert len(TOO_LONG_URL) == 1001
+
+    with pytest.raises(DomainError):
+        add_engagement(
+            matter=normal_matter,
+            kind=EngagementKind.EMAIL_CAMPAIGN,
+            title="Uudiskirja saatmine liikmetele",
+            actor=specialist,
+            **{field: TOO_LONG_URL},
+        )
+
+    assert not MatterEngagement.objects.filter(matter=normal_matter).exists()
+
+
+@pytest.mark.parametrize("field", PROVIDER_FIELDS)
+def test_correcting_a_link_to_one_too_long_leaves_the_stored_one_alone(
+    normal_matter, specialist, field
+):
+    """A refused correction is a correction that did not happen."""
+    kept = "https://survey.example.com/f?token=lyhike"
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.SURVEY,
+        title="Küsitlus liikmetele",
+        actor=specialist,
+        **{field: kept},
+    )
+
+    with pytest.raises(DomainError):
+        update_engagement(
+            engagement=engagement,
+            kind=EngagementKind.SURVEY,
+            title="Küsitlus liikmetele",
+            actor=specialist,
+            **{field: TOO_LONG_URL},
+        )
+
+    engagement.refresh_from_db()
+    assert getattr(engagement, field) == kept
+
+
+@pytest.mark.parametrize("field", PROVIDER_FIELDS)
+def test_the_route_answers_a_too_long_link_the_way_it_answers_every_bad_link(
+    signed_in, specialist, field
+):
+    """400 with a sentence beside the box, never 500 from a parser."""
+    matter = factories.MatterFactory(owner=specialist)
+    payload = {
+        "kind": EngagementKind.SURVEY.value,
+        "title": "Küsitlus liikmetele",
+        "url": "",
+        "smaily_url": "",
+        "alchemer_url": "",
+        "note": "",
+        "occurred_on": "",
+    }
+    payload[field] = TOO_LONG_URL
+
+    response = signed_in.post(reverse("matters:add_engagement", kwargs={"pk": matter.pk}), payload)
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.filter(matter=matter).exists()
+
+
+def test_the_import_path_fails_as_a_domain_refusal_and_writes_nothing(specialist):
+    """The approved mapping is not a trusted length.
+
+    `apply_mapping` is `@transaction.atomic` and documented as «write the
+    approved pointers, or none of them», so the right answer to one overlong
+    address is a named refusal and an untouched database — not a `DataError`
+    from inside a batch that has already written half of it.
+    """
+    from app.legacy_import.models import OutreachChannel
+    from app.legacy_import.register_outreach import apply_mapping, mapping_digest, read_mapping
+
+    matter = factories.MatterFactory(owner=specialist, reference_number=7731)
+    links = read_mapping(
+        [
+            {
+                "reference": matter.display_reference,
+                "channel": OutreachChannel.EMAIL_CAMPAIGN,
+                "source_key": "https://sendsmaily.net/t/9182",
+                "title": "Uudiskiri liikmetele",
+                "url": TOO_LONG_URL,
+                "occurred_on": "2026-03-05",
+                "note": "",
+            }
+        ]
+    )
+
+    with pytest.raises(DomainError):
+        apply_mapping(links=links, expect_mapping_sha256=mapping_digest(links))
+
+    assert not MatterEngagement.objects.exists()
+
+
+@pytest.mark.parametrize("field", PROVIDER_FIELDS)
+def test_a_link_with_no_host_at_all_is_refused(normal_matter, specialist, field):
+    """`https://user:pw@/path` has an authority and no host.
+
+    Nobody can follow it, and its "host" would be nothing but the credentials —
+    the one shape where a fallback label leaks what the label exists to hide.
+    """
+    with pytest.raises(DomainError):
+        add_engagement(
+            matter=normal_matter,
+            kind=EngagementKind.OTHER,
+            title="Muu",
+            actor=specialist,
+            **{field: f"https://kampaania:{CREDENTIAL}@/loend"},
+        )
+
+    assert not MatterEngagement.objects.exists()
+
+
+@pytest.fixture
+def credentialed_engagement(db, specialist):
+    matter = factories.MatterFactory(owner=specialist, title="Avalik teema")
+    return add_engagement(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Uudiskirja saatmine liikmetele",
+        url=CREDENTIALED_URL,
+        smaily_url=f"https://saatja:{CREDENTIAL}@sendsmaily.net:8443/c/9182?token=SECRET-ONE",
+        alchemer_url=f"https://vastaja:{CREDENTIAL}@survey.alchemer.eu:9443/s3/77?k=SECRET-TWO",
+        actor=specialist,
+    )
+
+
+def test_the_link_label_is_the_host_and_not_the_authority(credentialed_engagement):
+    """What the docstring always promised: the host, not `userinfo@host:port`."""
+    assert credentialed_engagement.link_label == "uudiskiri.example.com"
+
+
+def test_no_search_term_carries_credentials_a_port_or_a_token(credentialed_engagement):
+    terms = credentialed_engagement.link_search_terms
+
+    for term in terms:
+        assert CREDENTIAL not in term
+        assert "kampaania" not in term
+        assert "saatja" not in term
+        assert "vastaja" not in term
+        assert "SECRET-ONE" not in term
+        assert "SECRET-TWO" not in term
+        assert "8443" not in term
+        assert "9443" not in term
+        assert "token" not in term
+    # And the vendor is still findable, which is the whole reason the column
+    # exists.
+    assert "uudiskiri.example.com" in terms
+    assert "sendsmaily.net" in terms
+    assert "sendsmaily" in terms
+    assert "survey.alchemer.eu" in terms
+    assert "alchemer" in terms
+
+
+def test_the_projection_row_carries_no_credentials(credentialed_engagement):
+    """What a fix has to reach: the stored row, not only the property.
+
+    An engagement is indexed from `post_save` (app/search/signals.py), so the row
+    exists without anything here asking for it — which is also why a label
+    computed at render time would not have been enough.
+    """
+    from app.search.models import SearchDocument
+
+    rows = SearchDocument.objects.filter(engagement=credentialed_engagement)
+    assert rows.exists()
+    for row in rows:
+        for haystack in (row.alias_text, row.title, row.body_text):
+            assert CREDENTIAL not in haystack
+            assert "SECRET-ONE" not in haystack
+            assert "SECRET-TWO" not in haystack
+
+
+def test_nothing_a_reader_is_shown_prints_the_credentials(signed_in, credentialed_engagement):
+    """The visible text, which is what a reader and a screen reader get.
+
+    The `href` is a different question and deliberately unchanged: it is the
+    address that was stored, it has to be that address for the link to work, and
+    it is readable by exactly the people who may read the engagement it belongs
+    to. What must not carry the machinery is the **text** — the label a reader
+    sees and a screen reader reads out — and, separately, the search projection,
+    which is a copy readable through a different door
+    (`test_the_projection_row_carries_no_credentials`).
+    """
+    import re
+
+    body = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": credentialed_engagement.matter_id})
+    ).content.decode()
+    visible = re.sub(r"<[^>]*>", " ", body)
+
+    assert CREDENTIAL not in visible
+    assert "SECRET-ONE" not in visible
+    assert "SECRET-TWO" not in visible
+    # The provider is named, and that is the whole label.
+    assert "Smaily" in visible
+    assert "Alchemer" in visible
+
+
+def test_the_rendered_host_label_carries_no_credentials(credentialed_engagement):
+    """`link_label` is the one place a host is printed as copy.
+
+    No live template includes `engagement.html` today, which is why this is
+    asserted on the property rather than on a page — and it is precisely the
+    markup a future provider-link surface would revive, so the property is where
+    the contract has to hold.
+    """
+    label = credentialed_engagement.link_label
+
+    assert label == "uudiskiri.example.com"
+    assert CREDENTIAL not in label
+    assert "8443" not in label
+
+
+def test_a_stored_row_that_is_not_a_url_still_yields_no_userinfo():
+    """The fallback, for the historical row that never passed the validator.
+
+    Unsaved on purpose: the validator now refuses this shape on the way in, so
+    the only way to hold one is to already have it in the column.
+    """
+    engagement = MatterEngagement(url=f"kampaania:{CREDENTIAL}@uudiskiri.example.com/loend")
+
+    assert CREDENTIAL not in engagement.link_label
+    assert all(CREDENTIAL not in term for term in engagement.link_search_terms)

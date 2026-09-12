@@ -49,6 +49,8 @@ from app.accounts.enums import UserRole
 from app.core.enums import Visibility
 from app.documents.models import Document
 from app.intelligence.enums import FactStatus
+from app.matters.enums import EngagementKind
+from app.matters.models import MatterEngagement
 from app.submissions.enums import SubmissionStatus
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from tests import factories
@@ -65,6 +67,19 @@ HIDDEN_PHRASE = "SALAJANE-FRAAS-2261"
 HIDDEN_ORGANISATION = "Salaamet SALA-ORG-7731"
 HIDDEN_ACTION = "SALAJANE-SAMM-4471"
 HIDDEN_REFERENCE_NUMBER = 9913
+
+#: `Kaasamine` joined this list on 2026-09-12, when the record grew two external
+#: provider addresses. It had been missing from `_children` — the visibility
+#: itself held, but nothing here was proving it, and a child that now carries a
+#: campaign host and a one-time token is exactly the kind whose *existence* is
+#: worth an oracle. The hosts are distinctive because `link_search_terms` copies
+#: them into `alias_text`, where they become matchable tokens; the tokens are
+#: distinctive because nothing may ever index them.
+HIDDEN_ENGAGEMENT = "SALAJANE-KAASAMINE-8842"
+HIDDEN_SMAILY_HOST = "salakiri-7731.example"
+HIDDEN_ALCHEMER_HOST = "salakysitlus-7731.example"
+HIDDEN_SMAILY_URL = f"https://{HIDDEN_SMAILY_HOST}/c/8842?token=SALA-VOTI-ESIMENE"
+HIDDEN_ALCHEMER_URL = f"https://{HIDDEN_ALCHEMER_HOST}/s3/8842?k=SALA-VOTI-TEINE"
 
 #: A word the visible and the hidden records share, so a hidden row that was
 #: counted or ranked would move the visible rows around it.
@@ -140,6 +155,17 @@ def world(db, capture_evidence, extract):
     factories.ImportantDateFactory(matter=first, title="Avalik tähtaeg", date_value=today)
     factories.EffectiveDateFactory(matter=first, date_value=today + timedelta(days=30))
     factories.WorkVictoryFactory(matter=first, title="Avalik töövõit")
+    # Undated on purpose: an engagement with a date becomes the Matter's
+    # `Viimane tegevus`, and this one is here to make the chronology's link row
+    # render in *both* worlds rather than to move any ordering.
+    MatterEngagement.objects.create(
+        matter=first,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title=f"Avalik kaasamine {SHARED_WORD}",
+        smaily_url="https://avalik-kiri.example/c/1",
+        alchemer_url="https://avalik-kysitlus.example/s3/1",
+        created_by=owner,
+    )
 
     return {
         "today": today,
@@ -212,6 +238,22 @@ def _children(matter, world, capture_evidence, extract, *, override: str):
         matter=matter, date_value=today + timedelta(days=10), visibility_override=override
     )
     factories.WorkVictoryFactory(matter=matter, title=HIDDEN_PHRASE, visibility_override=override)
+    # Dated, unlike the visible one: an engagement with a date is a candidate
+    # for `Viimane tegevus`, so a hidden one that was counted would move a
+    # register row's date and its ordering. Both provider addresses carry a host
+    # that appears nowhere else and a token that must reach no index.
+    MatterEngagement.objects.create(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title=f"{HIDDEN_ENGAGEMENT} {SHARED_WORD}",
+        url=f"https://{HIDDEN_SMAILY_HOST}/avalik/8842",
+        smaily_url=HIDDEN_SMAILY_URL,
+        alchemer_url=HIDDEN_ALCHEMER_URL,
+        occurred_on=today,
+        response_count=17,
+        created_by=world["owner"],
+        visibility_override=override,
+    )
     return {"submission": submission, "document": version.document, "version": version}
 
 
@@ -291,6 +333,8 @@ def surfaces(world) -> list[str]:
         register + f"?q={SHARED_WORD}",
         register + f"?q={HIDDEN_TITLE}",
         register + f"?q={HIDDEN_PHRASE}",
+        register + f"?q={HIDDEN_ENGAGEMENT}",
+        register + f"?q={HIDDEN_SMAILY_HOST}",
         register + f"?vastutaja={owner.pk}",
         register + f"?asutus={hidden_org.pk}",
         register + f"?saatja={hidden_org.pk}",
@@ -345,6 +389,13 @@ def surfaces(world) -> list[str]:
         HIDDEN_TITLE,
         HIDDEN_PHRASE,
         HIDDEN_ACTION,
+        HIDDEN_ENGAGEMENT,
+        HIDDEN_SMAILY_HOST,
+        HIDDEN_ALCHEMER_HOST,
+        "salakiri",
+        "salakysitlus",
+        "SALA-VOTI-ESIMENE",
+        "SALA-VOTI-TEINE",
         "Salaamet",
         "SALA-ORG-7731",
         f"2099_{HIDDEN_REFERENCE_NUMBER}",
