@@ -186,8 +186,8 @@ docker load < juristid-main-web-${JURISTID_IMAGE_TAG}.tar.gz
 
 That redirect hands `docker load` the archive, not the rest of the script, and
 it is correct precisely because the script is not itself arriving on stdin. The
-same distinction is why every `docker compose exec` in these runbooks carries
-`-T`: without it Compose allocates a TTY and reads from the terminal, which in a
+same distinction is why every `docker compose exec` in the real-data
+runbooks carries `-T`: without it Compose allocates a TTY and reads from the terminal, which in a
 non-interactive run is not what anybody wants.
 
 The rule is therefore about the *transport*, not about Docker. Do not walk the
@@ -221,8 +221,9 @@ read them.
 
 ## What a release replaces, and what it leaves alone
 
-Three services run the release image and move together: `web`, `intake-reader`
-and `searchindex`. The replacement command names none of them — it is
+The services that run the release image move together: `web`,
+`intake-reader` and `searchindex`. The replacement command names none of
+them — it is
 unqualified, so Compose starts what the file defines and a fourth application
 service added later moves with the other three rather than being forgotten.
 
