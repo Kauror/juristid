@@ -280,6 +280,22 @@ def test_uus_teema_is_reachable_when_there_are_no_teemad(client, empty_world):
     assert reverse("matters:matter_create") in body
 
 
+def test_a_colleagues_desk_answers_when_they_have_no_matters(client, empty_world):
+    """Person and team views are keyed on an id, not on having work.
+
+    Left out of the parametrised sweep because it is the one principal surface
+    that takes an argument, and the argument is the point: the page has to exist
+    for somebody who has never been given anything (app/matters/views.py,
+    `person_work`).
+    """
+    client.force_login(empty_world.head)
+
+    response = client.get(reverse("matters:person_work", kwargs={"pk": empty_world.colleague.pk}))
+
+    assert response.status_code == 200
+    assert empty_world.colleague.display_name in response.content.decode()
+
+
 def test_the_reference_pickers_are_populated_before_any_matter_exists(client, empty_world):
     """Uus teema's institutions and valdkonnad come from reference data.
 
