@@ -384,13 +384,24 @@ class NextAction(VisibilityInheritingModel):
     def date_label(self) -> str:
         """How this date should be described to a reader.
 
-        The same 14 March is a deadline, a reminder or a guess depending on the
+        The same 14 March is a plan, a reminder or a guess depending on the
         semantics, and the UI must never present all three identically.
+
+        **A `DEADLINE` reads as «Plaanis», not «Tähtaeg».** The stored value is
+        untouched and still means what it meant — the day the step is due, and
+        the only combination that can go overdue — but the word a lawyer reads
+        is a product decision, and this product already has two things called a
+        tähtaeg: `Arvamuse tähtaeg`, which Koda owes an outside body, and
+        `Oluline tähtaeg`, an externally meaningful milestone somebody is
+        watching. A date a lawyer chose for their own next step is neither.
+        Printing all three with one word made the two that carry an outside
+        obligation indistinguishable from the one that does not
+        (docs/adr/0054 §Amendment).
         """
         if self.target_date is None:
             return ""
         labels: dict[str, str] = {
-            DateSemantics.DEADLINE.value: "Tähtaeg",
+            DateSemantics.DEADLINE.value: "Plaanis",
             DateSemantics.REVIEW_ON.value: "Vaatan üle",
             DateSemantics.EXPECTED_AROUND.value: "Oodatav",
         }

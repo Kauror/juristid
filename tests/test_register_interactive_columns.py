@@ -384,7 +384,7 @@ def test_the_next_action_menu_offers_the_existing_tegevus_semantics(signed_in, a
 
 
 def test_the_menu_states_match_the_registers_own_definitions(signed_in, specialist):
-    """Puudub, Tähtaeg möödas and Ülevaatus käes, each exactly as `?tegevus=`
+    """Puudub, Üle aja and Ülevaatus käes, each exactly as `?tegevus=`
     already means them — no second definition, and no alphabetical text sort."""
     from app.matters.selectors import REVIEW_DUE
 

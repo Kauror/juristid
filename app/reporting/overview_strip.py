@@ -19,6 +19,14 @@ docs/design-v2-compatibility.md DS-19).
 ``register_population``, the catalogued metrics through their own selectors, the
 tracking counts through ``MatterFact.objects.visible_to`` — so a reader without
 an entitlement sees a smaller number and never a placeholder.
+
+And the corollary of the first rule, for the catalogued half: **a metric the
+catalogue has declined is not printed here either.** ``SUBMISSIONS_SENT`` is
+``minimum_population=1`` precisely so that nobody reads "0 arvamust välja" as
+the claim that Koda sent none; a strip that printed ``result.value`` regardless
+of ``result.status`` made exactly that claim on a page whose Tegevus tab was
+saying "Ebapiisavad andmed" about the same metric, over the same period, one
+click away.
 """
 
 from __future__ import annotations
@@ -110,7 +118,7 @@ def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) 
         ("SUBMISSIONS_SENT", f"arvamust välja {period_label}"),
     ):
         result = results.get(key)
-        if result is None:
+        if result is None or not result.has_value:
             continue
         figures.append(Figure(result.value, caption, result.drillthrough_url))
     # Counted through the register, in the register's own parameters, because
@@ -162,7 +170,7 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
 
     reporting_rows: list[Figure] = []
     sent = results.get("SUBMISSIONS_SENT")
-    if sent is not None:
+    if sent is not None and sent.has_value:
         reporting_rows.append(Figure(sent.value, "arvamusi välja", sent.drillthrough_url))
     # Both counted and both linked through the register, for the reason
     # `strip` above states: the lists these two used to open are retired, so the

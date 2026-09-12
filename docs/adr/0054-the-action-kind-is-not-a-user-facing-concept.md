@@ -140,6 +140,97 @@ classification as a category the reader needs to understand.
   were already dead before this branch — `work_row.html` had no caller either —
   and removing a legacy component block is a separate cleanup.
 
+## Amendment — 2026-09-12: a self-set date is *Plaanis*, not a *Tähtaeg*
+
+**Status:** proposed, on a feature branch
+**Amends:** the paragraph *Date meaning stays, and is a different thing* above,
+and the label this record gave `?tegevus=hilinenud`.
+
+### Why
+
+That paragraph got the principle right and one of the five words wrong. It kept
+`TÄHTAEG` as the displayed meaning of a `DEADLINE` alongside `OLULINE TÄHTAEG`
+and `ARVAMUSE TÄHTAEG`, on the reasoning that the date's meaning is not the
+action's classification. It is not — but three of those five words were the same
+noun, and the product has three genuinely different things behind them:
+
+* `Arvamuse tähtaeg` — `Matter.response_deadline`. Koda owes an opinion to an
+  outside body by that day. Missing it is a failure somebody outside notices.
+* `Oluline tähtaeg` — `MatterImportantDate`. An externally meaningful milestone
+  somebody chose to watch.
+* The date on a lawyer's own `Järgmiseks` step. Nobody outside this desk was
+  promised it; it is when its author intends to do the thing.
+
+Calling the third a *tähtaeg* made the two real obligations indistinguishable
+from a plan somebody wrote for themselves five minutes ago and may move again
+this afternoon.
+
+### Decision
+
+**The displayed meaning of a `DateSemantics.DEADLINE` on a `NextAction` is
+«Plaanis».** `NextAction.date_label` returns it, and `work_items.MEANING_DEADLINE`
+is `PLAANIS`. `Arvamuse tähtaeg` and `Oluline tähtaeg` keep their words exactly.
+
+**The next-action-specific overdue filter is «Üle aja».**
+`?tegevus=hilinenud` selects one thing — an open `DO` + `DEADLINE` past its own
+date — so the label this record gave it, *Tähtaeg möödas*, was naming a tähtaeg
+that is not one. Nothing about the condition changes.
+
+**Storage is untouched, and this is why there is no migration.**
+`ActionKind`, `DateSemantics`, `DatePrecision`, `DO`, `DEADLINE`, `EXACT`,
+`target_date` and every check constraint keep their values and their behaviour.
+`DateSemantics.DEADLINE.label` is still *Tähtaeg* — it is Django's own storage
+vocabulary, it is rendered by no product screen, and renaming it would have been
+a migration for a word nobody reads. `Plaanis` is presentation; `DEADLINE` is
+storage; `date_label` and `MEANING_DEADLINE` are the seam, and both were already
+there.
+
+**Mixed populations keep the word, and were checked one by one.** A heading over
+a list that genuinely holds all three kinds of date is not describing anybody's
+self-set plan, so `Üle tähtaja`, `Tähtaeg sel nädalal`, `Tähtaeg järgmisel
+nädalal`, `Tähtaeg 30 päeva jooksul`, `Tähtaeg kaugemal` and `Tähtaeg ees`
+(`work_items.WORK_POPULATION_LABELS`) are unchanged — every one of them resolves
+through `real_deadlines` or `overdue_items`, which admit `Oluline tähtaeg` and
+`Arvamuse tähtaeg` as well. So are Osakond's `ÜLE TÄHTAJA` and `TÄHTAEG SEL
+NÄD` columns, which count those same populations, and the register's
+`?tahtaeg_alates=` / `?tahtaeg_kuni=` pair and *Tähtaeg sel kuul* saved view,
+which read `response_deadline` and nothing else.
+
+**The Teema page gains nothing.** Its `Järgmiseks` row has printed the bare date
+with no meaning word in front of it since ADR 0052 §6, and the header's
+`Tähtaeg` metaline is `Arvamuse tähtaeg` and must stay that (ADR 0050,
+ADR 0059). Adding *Plaanis* there for symmetry would re-introduce the qualifier
+that record removed.
+
+**Historical rows are untouched.** `REVIEW_ON` still reads *Vaatan üle*,
+`EXPECTED_AROUND` still reads *Oodatav* / `OODATAV AEG`, and an imported `WAIT`
+or `MONITOR` still renders as what it is.
+
+### Consequences
+
+- Visual baselines covering `teemad`, `minu-asjad` and `osakond` change by
+  exactly these words.
+- No migration, no backfill, no row rewritten. `makemigrations --check` is clean,
+  which is the check that proves the claim.
+- One surface is deliberately left alone and is a known residual: the Statistika
+  metric `OVERDUE_DO_DEADLINE` still publishes as *Tähtaeg möödas*, and its
+  drill-through now lands on a register chip reading *Üle aja*. The catalogue is
+  a governed artefact whose entries carry reviewed Estonian prose and a version
+  (docs/adr/0007, docs/adr/0017); renaming a published figure is a reporting
+  decision rather than a work-surface wording fix, and it is left to be taken as
+  one.
+- `dashboard.MEANING_ACTION` (*Tegevuse tähtaeg*) and
+  `dashboard.AttentionRow.date_label` keep the old word. Both were inspected:
+  neither is reachable from any template — Osakond reads
+  `department_dashboard.upcoming_groups` and `overview.intervention_rows`
+  instead — so changing an unrendered constant would have widened the diff
+  without changing anything a reader sees.
+
+### Reversibility
+
+Total. Three string literals and their tests; nothing stored, nothing derived,
+nothing to undo in the database.
+
 ## Reversibility
 
 High. Nothing was deleted from the domain: restoring any chip is a template line
