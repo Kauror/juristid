@@ -40,8 +40,9 @@ from app.matters.enums import EngagementKind, MatterDataClass, MatterOrigin
 from app.matters.forms import ComposerForm
 from app.matters.models import Entry, Matter, MatterEngagement
 from app.matters.selectors import matter_list_queryset
-from app.matters.services import add_engagement, update_engagement
+from app.matters.services import add_engagement, close_matter, update_engagement
 from app.matters.timeline import TIMELINE_EVENT_TYPES, matter_timeline
+from app.workflow.enums import Disposition
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -1537,3 +1538,168 @@ def test_a_stored_row_that_is_not_a_url_still_yields_no_userinfo():
 
     assert CREDENTIAL not in engagement.link_label
     assert all(CREDENTIAL not in term for term in engagement.link_search_terms)
+
+
+# -- the routes that write a link, attacked rather than used ------------------
+#
+# Everything above goes through the service. These go through the wire, with
+# crafted values rather than rendered controls, because the two new columns are
+# reachable from three routes and each one has its own way of being wrong.
+
+
+def _compact_payload(**fields) -> dict:
+    payload = {
+        "kind": EngagementKind.SURVEY.value,
+        "title": "Liikmed",
+        "smaily_url": "",
+        "alchemer_url": "",
+    }
+    payload.update(fields)
+    return payload
+
+
+def test_a_provider_link_post_without_a_csrf_token_is_refused(specialist):
+    """The write routes are behind the global middleware, and nothing exempts them."""
+    from django.test import Client
+
+    matter = factories.MatterFactory(owner=specialist)
+    client = Client(enforce_csrf_checks=True)
+    client.force_login(specialist)
+
+    response = client.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        _compact_payload(smaily_url=SMAILY_URL),
+    )
+
+    assert response.status_code == 403
+    assert not MatterEngagement.objects.exists()
+
+
+def test_an_engagement_id_from_another_matter_is_not_correctable_through_this_one(
+    signed_in, specialist
+):
+    """The id is scoped by the Matter in the URL, so a foreign one is a 404.
+
+    Not «refused»: a 404 is what tells the crafted request nothing about whether
+    the id exists at all (AUTH-003).
+    """
+    mine = factories.MatterFactory(owner=specialist)
+    theirs = factories.MatterFactory(owner=specialist)
+    elsewhere = add_engagement(
+        matter=theirs,
+        kind=EngagementKind.SURVEY,
+        title="Teise teema kaasamine",
+        smaily_url=SMAILY_URL,
+        actor=specialist,
+    )
+
+    response = signed_in.post(
+        reverse(
+            "matters:update_engagement",
+            kwargs={"pk": mine.pk, "engagement_id": elsewhere.pk},
+        ),
+        {"kind": EngagementKind.SURVEY.value, "title": "Ümber kirjutatud", "smaily_url": ""},
+    )
+
+    assert response.status_code == 404
+    elsewhere.refresh_from_db()
+    assert elsewhere.title == "Teise teema kaasamine"
+    assert elsewhere.smaily_url == SMAILY_URL
+
+
+def test_a_restricted_engagements_id_answers_a_non_participant_like_a_random_one(
+    client, specialist, reader
+):
+    """A crafted correction at a hidden row must not confirm that the row exists."""
+    import uuid as _uuid
+
+    matter = factories.MatterFactory(owner=specialist)
+    hidden = add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Salajane küsitlus",
+        smaily_url=SMAILY_URL,
+        actor=specialist,
+    )
+    hidden.visibility_override = Visibility.RESTRICTED
+    hidden.save(update_fields=["visibility_override", "updated_at"])
+
+    client.force_login(reader)
+    real = client.post(
+        reverse("matters:update_engagement", kwargs={"pk": matter.pk, "engagement_id": hidden.pk}),
+        {"kind": EngagementKind.SURVEY.value, "title": "x", "smaily_url": ""},
+    )
+    invented = client.post(
+        reverse(
+            "matters:update_engagement", kwargs={"pk": matter.pk, "engagement_id": _uuid.uuid4()}
+        ),
+        {"kind": EngagementKind.SURVEY.value, "title": "x", "smaily_url": ""},
+    )
+
+    assert real.status_code == invented.status_code
+    hidden.refresh_from_db()
+    assert hidden.title == "Salajane küsitlus"
+
+
+@pytest.mark.parametrize("field", ["smaily_url", "alchemer_url"])
+def test_an_address_carrying_markup_cannot_break_out_of_the_attribute(signed_in, specialist, field):
+    """It renders as an `href`, so the escaping is what stands between the two."""
+    matter = factories.MatterFactory(owner=specialist)
+    crafted = 'https://sendsmaily.net/c/1?x="><script>window.__paha=1</script>'
+    add_engagement(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Liikmed",
+        actor=specialist,
+        **{field: crafted},
+    )
+
+    body = _rendered(signed_in, matter)
+
+    assert "<script>window.__paha" not in body
+    assert "&quot;&gt;&lt;script&gt;" in body
+
+
+def test_the_audit_row_says_a_link_was_given_and_never_which_one(normal_matter, specialist):
+    """The change event is a different audience and a different retention.
+
+    It records that the field was answered, exactly as it does for the response
+    count — storing the address there would put a one-time token in a row that
+    outlives every correction of the record it describes.
+    """
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Liikmed",
+        smaily_url="https://sendsmaily.net/c/9182?token=SALA-AUDIT-VOTI",
+        alchemer_url=ALCHEMER_URL,
+        actor=specialist,
+    )
+    event = ChangeEvent.objects.get(event_type=ChangeEventType.ENGAGEMENT_ADDED)
+
+    assert event.payload["has_smaily_url"] is True
+    assert event.payload["has_alchemer_url"] is True
+    serialised = str(event.payload) + event.summary
+    assert "SALA-AUDIT-VOTI" not in serialised
+    assert engagement.smaily_url not in serialised
+    assert ALCHEMER_URL not in serialised
+
+
+def test_a_stale_post_after_the_matter_was_closed_elsewhere_is_refused(signed_in, specialist):
+    """The boundary as it stands today, measured rather than assumed.
+
+    `+ Kaasamine` is a `LISA TEEMALE` panel, so a save arriving after another tab
+    closed the Matter reaches a column that no longer renders the panel. What is
+    asserted here is the invariant: no row is written. Whether the refusal hands
+    the typed address back is the QA-06 question and a separate round's work.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    close_matter(matter=matter, actor=specialist, disposition=Disposition.COMPLETED)
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        _compact_payload(smaily_url=SMAILY_URL),
+    )
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.filter(matter=matter).exists()

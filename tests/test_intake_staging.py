@@ -19,16 +19,19 @@ nothing is a checked-in binary.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
+from app.core.enums import Visibility
 from app.documents.enums import DocumentRole, ExtractionState, MalwareScanState
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import evidence_storage
 from app.matters import intake_extraction, intake_staging
+from app.matters.enums import MatterDataClass
 from app.matters.intake_suggestions import SuggestedField, analyse_intake
 from app.matters.models import Matter
 from app.matters.staging import MatterIntakeFile, MatterIntakeSession
@@ -1220,3 +1223,101 @@ def test_the_state_field_sits_outside_the_panel_the_poller_replaces(signed_in):
 
     assert 'name="suggestion_state"' in body
     assert body.index('name="suggestion_state"') < body.index('id="intake-panel"')
+
+
+# -- and it is form state even when it is crafted (red team, 2026-09-12) -----
+#
+# `suggestion_state` is the one new field on this route that a browser owns and
+# a server hands back, so the question worth asking is whether a hand-made POST
+# can turn it into something the server acts on. It cannot — nothing parses it —
+# and these four state that as a property rather than as a reading of the view.
+
+
+def test_a_crafted_selection_state_cannot_close_the_attribute_it_sits_in(
+    signed_in, evidence_root, ministry
+):
+    """It is echoed into an HTML attribute, so the escaping is the boundary."""
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+    crafted = '"><script>window.__pahalane=1</script><input value="'
+
+    refused = _refused_create(signed_in, session, suggestion_state=crafted)
+    body = refused.content.decode()
+
+    assert "<script>window.__pahalane" not in body
+    assert "&lt;script&gt;" in body
+    # Round-tripped intact for the browser that will parse it, which is the
+    # whole contract; escaping is about the wire, not about the value.
+    assert refused.context["suggestion_state"] == crafted
+
+
+@pytest.mark.parametrize(
+    "forged",
+    [
+        '{"chosen":{"owner":["9999"]},"baseline":{}}',
+        '{"chosen":{"visibility":["RESTRICTED"]},"baseline":{}}',
+        '{"chosen":{"reference_number":["1"],"data_class":["TEST"]},"baseline":{}}',
+        '{"chosen":{"__proto__":{"title":["x"]}},"baseline":{}}',
+    ],
+)
+def test_a_forged_selection_state_changes_nothing_about_the_saved_teema(
+    signed_in, evidence_root, ministry, forged
+):
+    """Names that mean something elsewhere mean nothing here.
+
+    The save reads the form's own fields; this field is not one of them, so a
+    crafted value naming an owner, a visibility or a data class is a string that
+    goes back out with the response and touches no column.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    created = signed_in.post(
+        CREATE,
+        {
+            "title": "Pakendiseaduse muutmise seaduse eelnõu",
+            "intake": str(session.pk),
+            "suggestion_state": forged,
+        },
+    )
+
+    assert created.status_code == 302, created.status_code
+    matter = Matter.objects.get()
+    assert matter.title == "Pakendiseaduse muutmise seaduse eelnõu"
+    assert matter.visibility == Visibility.NORMAL
+    assert matter.data_class == MatterDataClass.REAL
+
+
+def test_a_selection_state_naming_another_persons_session_is_still_just_a_string(
+    signed_in, evidence_root, ministry
+):
+    """There is no cross-session read here to attack, and this says so.
+
+    The staging session is identified by `intake`, which *is* scoped to the
+    person; `suggestion_state` is not an identifier and resolves to nothing.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+    forged = f'{{"chosen":{{"intake":["{uuid.uuid4()}"]}},"baseline":{{}}}}'
+
+    refused = _refused_create(signed_in, session, suggestion_state=forged)
+
+    assert refused.context["suggestion_state"] == forged
+    assert refused.context["intake_session"].pk == session.pk
+
+
+def test_the_selection_state_is_not_remembered_across_a_fresh_get(
+    signed_in, evidence_root, ministry
+):
+    """Unsaved browser state, and a new page is a new browser state.
+
+    A POST echoes it; a GET after that POST must not, or a value crafted once
+    would keep being served back on a surface nobody posted to.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+    _refused_create(signed_in, session, suggestion_state='{"chosen":{"title":["x"]}}')
+
+    body = signed_in.get(CREATE).content.decode()
+
+    assert _state_value(body) == ""
