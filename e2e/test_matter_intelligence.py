@@ -227,11 +227,17 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
     form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
-    # It landed, and the route brought the reader back to the Matter — where the
-    # milestone reads on the process strip (docs/adr/0074 §12).
+    # It landed, and the route brought the reader back to the Matter.
     assert page.url.startswith(matter_url(page))
-    expect(page.get_by_text("Kooskõlastusringi lõpp").first).to_be_visible()
+    # **Not onto the process strip.** That strip draws major procedural acts —
+    # `Alustatud`, `Koja arvamus`, `Lõpetatud` — and a watched date is not one
+    # of them in either direction. It reads in its own fact section, which is
+    # what the second half of this scenario opens (docs/adr/0074 §12.1).
     expect(page.locator(".tl-strip")).to_be_visible()
+    expect(page.locator(".tl-step__what", has_text="Kooskõlastusringi lõpp")).to_have_count(0)
+
+    open_the_facts(page, base_url)
+    expect(page.get_by_text("Kooskõlastusringi lõpp").first).to_be_visible()
 
 
 def test_a_quarter_is_captured_and_rendered_as_a_quarter(page, base_url, screenshots):
@@ -256,7 +262,10 @@ def test_a_quarter_is_captured_and_rendered_as_a_quarter(page, base_url, screens
     page.wait_for_load_state("networkidle")
 
     # «I kvartal 2027», never «1.1.2027»: rendering the stored anchor would
-    # manufacture a day nobody named (master specification 3.5).
+    # manufacture a day nobody named (master specification 3.5). Read in the
+    # fact section, which is where a date still ahead of us reads now that the
+    # process strip draws major procedural acts only (docs/adr/0074 §12.1).
+    open_the_facts(page, base_url)
     expect(page.get_by_text("I kvartal 2027").first).to_be_visible()
 
 

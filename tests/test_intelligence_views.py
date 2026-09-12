@@ -80,13 +80,16 @@ def test_a_populated_section_still_renders(signed_in, specialist):
         period_end=timezone.localdate() + timedelta(days=10),
         actor=specialist,
     )
-    # **The Teema page carries no facts panel.** A dated milestone reads on the
-    # process strip and, once it has happened, in the chronology — projected
-    # from this same record (docs/adr/0074 §15).
+    # **The Teema page carries no facts panel**, and a date still ahead of us
+    # is not on it at all: the process strip draws major procedural acts, not
+    # every dated fact, so this record reads in the fact section below and on
+    # the work surfaces until the day it has happened
+    # (docs/adr/0074 §12, §15).
     page = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
     assert 'id="teema-faktid"' not in page
     assert "tl-strip" in page
-    assert "Kooskõlastusringi lõpp" in page
+    strip = page[page.index("tl-strip") : page.index('id="ajalugu-loend"')]
+    assert "Kooskõlastusringi lõpp" not in strip
 
     # The fragment route still serves the section, with its own scoped read.
     body = _text(signed_in.get(_add_effective(matter), headers={"HX-Request": "true"}))
@@ -122,12 +125,16 @@ def test_the_matter_page_marks_a_cancelled_milestone(signed_in, specialist):
 
 
 def test_a_reader_sees_the_facts_and_none_of_the_controls(client, specialist):
+    # A day behind us, so the fact reads on this page at all. What the test is
+    # about is the *controls*, and a date nobody has reached yet is no longer
+    # printed on the Teema tab now that the process strip draws only major
+    # procedural acts (docs/adr/0074 §12).
     matter = factories.MatterFactory(owner=specialist)
     add_important_date(
         matter=matter,
         title="Nähtav tähtaeg",
-        date_value=date(2030, 5, 1),
-        period_end=date(2030, 5, 1),
+        date_value=date(2020, 5, 1),
+        period_end=date(2020, 5, 1),
         actor=specialist,
     )
     reader = factories.UserFactory(role="READER")

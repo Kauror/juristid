@@ -21,7 +21,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
+from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
@@ -30,10 +32,13 @@ from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, Ma
 from app.matters.enums import COMPOSER_ENGAGEMENT_KINDS, EngagementKind, MatterOrigin
 from app.matters.forms import ComposerForm
 from app.matters.models import Entry, MatterEngagement
-from app.matters.process_timeline import STATE_CURRENT, STATE_DONE, STATE_TODO, process_steps
-from app.matters.services import add_engagement, change_stage
+from app.matters.process_timeline import process_steps
+from app.matters.services import add_engagement, change_stage, close_matter, reopen_matter
 from app.matters.timeline import matter_timeline
+from app.submissions.enums import SentAtPrecision
+from app.submissions.services import register_sent_opinion
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics, Disposition
+from app.workflow.models import StageVocabulary
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -711,9 +716,71 @@ def test_no_facts_panel_and_no_standalone_kaasamine(signed_in, normal_matter, sp
 # ===========================================================================
 
 
-def test_a_bare_imported_matter_draws_no_strip(signed_in, specialist):
-    """**§68.** Zero milestones, no `.tl-strip` at all — and an imported row's
-    `created_at` is a fact about a migration, not about the proceeding."""
+def _sent(matter, capture_evidence, organisation, *, when, title="Koja arvamus", visibility=""):
+    """A sent opinion, recorded through the door a person actually uses.
+
+    `register_sent_opinion` rather than a factory row, for two reasons.
+    `submissions_sent_requires_timestamp_and_evidence` is a check constraint and
+    not a convention, so a fixture that set the status directly would be testing
+    a row the product cannot produce — and the send event this service writes is
+    what puts `Arvamus välja` in the chronology, which is half of what the
+    rename below has to leave alone.
+    """
+    version = capture_evidence(
+        matter,
+        b"%PDF-1.4 synthetic evidence",
+        "koja-arvamus.pdf",
+        "application/pdf",
+        title=title,
+        role=DocumentRole.KODA_SUBMISSION_FINAL,
+        visibility_override=visibility,
+    )
+    return register_sent_opinion(
+        document=version.document,
+        version=version,
+        title=title,
+        recipients=[organisation],
+        sent_at=when,
+        sent_at_precision=SentAtPrecision.DATE,
+    )
+
+
+def _started(matter, *, days_ago: int):
+    """Backdate the Matter's creation, since `created_at` is `auto_now_add`.
+
+    Without this every fixture below would have a Matter created *today* and an
+    opinion sent in the past, which is a shape the product does not produce and
+    which sorts `Koja arvamus` ahead of `Alustatud`.
+    """
+    from app.matters.models import Matter
+
+    Matter.objects.filter(pk=matter.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
+    matter.refresh_from_db()
+    return matter
+
+
+# -- A, B, C: Alustatud ------------------------------------------------------
+
+
+def test_a_native_matter_starts_with_alustatud(signed_in, specialist):
+    """**A.** The Matter this system created says when the work started."""
+    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=None)
+
+    steps = process_steps(matter=matter, user=specialist)
+    assert [step.label for step in steps] == ["Alustatud"]
+    assert steps[0].display == format_estonian_date(timezone.localdate())
+
+    body = _detail(signed_in, matter)
+    assert body.count('class="tl-step"') == 1
+    # `Loodud` was the old wording, and it named the database row rather than
+    # the act. It is gone from the strip entirely.
+    assert "Loodud" not in body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+
+
+def test_an_imported_matter_takes_no_alustatud_from_created_at(signed_in, specialist):
+    """**B.** `created_at` on a register-archive row is the moment the importer
+    wrote it, which for a 2019 file is a fact about a migration. A bare imported
+    Matter therefore draws no strip at all rather than one lonely dot."""
     matter = factories.MatterFactory(
         owner=specialist, origin=MatterOrigin.LEGACY_IMPORT, stage=None
     )
@@ -722,106 +789,385 @@ def test_a_bare_imported_matter_draws_no_strip(signed_in, specialist):
     assert "tl-strip" not in _detail(signed_in, matter)
 
 
-def test_a_new_matter_draws_one_dot_and_no_connector(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=None)
+def test_a_promoted_archive_row_takes_no_alustatud_either(specialist):
+    """The origin test is the exact value, not «not LEGACY_IMPORT».
 
-    steps = process_steps(matter=matter, user=specialist)
-    assert len(steps) == 1
-    assert steps[0].label == "Loodud"
-    assert steps[0].state == STATE_DONE
+    `PROMOTED_LEGACY` is an archive row somebody activated, and its `created_at`
+    is the same import timestamp — so a rule written as an exclusion would have
+    fabricated an `Alustatud` for every promoted file.
+    """
+    matter = factories.MatterFactory(
+        owner=specialist, origin=MatterOrigin.PROMOTED_LEGACY, stage=None
+    )
+
+    assert process_steps(matter=matter, user=specialist) == []
+
+
+def test_saabus_is_not_alustatud(signed_in, specialist):
+    """**C.** `Saabus` is when Koda received something; `Alustatud` is when the
+    work started. They are different facts, and an imported Matter carrying only
+    the first still gets no milestone from it."""
+    matter = factories.MatterFactory(
+        owner=specialist,
+        origin=MatterOrigin.LEGACY_IMPORT,
+        stage=None,
+        received_date=date(2019, 3, 14),
+    )
+
+    assert process_steps(matter=matter, user=specialist) == []
+    body = _detail(signed_in, matter)
+    # The fact itself is untouched: it reads in the header, where it belongs.
+    assert "14.3.2019" in body
+    assert "tl-strip" not in body
+
+
+# -- D, E: Hetkeseis ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["idea", "parliament"])
+def test_a_stage_draws_no_milestone_whatever_it_is(signed_in, specialist, key):
+    """**D, E.** No stage is whitelisted, and the two ends of the vocabulary
+    are the parametrised cases: `Idee` is the earliest and `Riigikogus` the one
+    a closed Matter used to be left reading as `Riigikogus · praegu`.
+
+    `Hetkeseis` is where the file stands *now*, it is stated in the header, and
+    a strip column repeating it is what made that sentence possible
+    (docs/adr/0074 §12).
+    """
+    stage = StageVocabulary.objects.get(key=key)
+    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=stage)
+    change_stage(matter=matter, stage=stage, actor=specialist)
+
+    assert [step.label for step in process_steps(matter=matter, user=specialist)] == ["Alustatud"]
 
     body = _detail(signed_in, matter)
-    assert body.count('class="tl-step ') == 1
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert stage.label_et not in strip
+    # And it is still in the header, which is the one place it is stated.
+    assert stage.label_et in body[: body.index("tl-strip")]
 
 
-def test_the_strip_is_derived_from_real_facts_in_date_order(signed_in, specialist, stage):
-    """No fixed six stages, no placeholders: only milestones that exist."""
-    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=None)
-    today = timezone.localdate()
-    add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="liikmed",
-        occurred_on=today,
-        actor=specialist,
-    )
-    change_stage(matter=matter, stage=stage, actor=specialist)
-    MatterImportantDate.objects.create(
-        matter=matter,
-        title="Riigikogu I lugemine",
-        date_value=today + timedelta(days=21),
-        period_end=today + timedelta(days=21),
-        date_precision=DatePrecision.EXACT,
-        status=FactStatus.ACTIVE,
-        created_by=specialist,
-    )
+def test_the_strip_never_says_praegu(signed_in, specialist, stage):
+    """**§10.** Every milestone is historical, so no column is the current one
+    and none carries the `praegu` suffix."""
+    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=stage)
+
+    assert all(step.date_line != "praegu" for step in process_steps(matter=matter, user=specialist))
+
+    body = _detail(signed_in, matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert "praegu" not in strip
+    for gone in ("is-current", "is-todo"):
+        assert gone not in body
+
+
+# -- F, G: the structured facts ---------------------------------------------
+
+
+def test_an_important_date_draws_no_milestone(signed_in, normal_matter, specialist):
+    """**F.** `Oluline tähtaeg` stays canonical and keeps its fact section, its
+    chronology row once it has passed, and every work surface — it is not a
+    major procedural act and no longer draws a column, in either direction."""
+    ahead = timezone.localdate() + timedelta(days=21)
+    behind = timezone.localdate() - timedelta(days=21)
+    for title, when in (("Tulevane tähtaeg", ahead), ("Möödunud tähtaeg", behind)):
+        MatterImportantDate.objects.create(
+            matter=normal_matter,
+            title=title,
+            date_value=when,
+            period_end=when,
+            date_precision=DatePrecision.EXACT,
+            status=FactStatus.ACTIVE,
+            created_by=specialist,
+        )
+
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
+        "Alustatud"
+    ]
+
+    body = _detail(signed_in, normal_matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert "Tulevane tähtaeg" not in strip
+    assert "Möödunud tähtaeg" not in strip
+    # Not deleted: both rows are still there, and the one that has happened
+    # still reads in the chronology.
+    assert MatterImportantDate.objects.filter(matter=normal_matter).count() == 2
+    assert "Möödunud tähtaeg" in body[body.index('id="ajalugu-loend"') :]
+
+
+def test_an_effective_date_draws_no_milestone(signed_in, normal_matter, specialist):
+    """**G.** `Jõustumine` is the same: canonical, readable, and not a step."""
+    ahead = timezone.localdate() + timedelta(days=120)
     MatterEffectiveDate.objects.create(
-        matter=matter,
-        date_value=today + timedelta(days=120),
-        period_end=today + timedelta(days=120),
+        matter=normal_matter,
+        date_value=ahead,
+        period_end=ahead,
         date_precision=DatePrecision.EXACT,
         description="Pakendiseadus",
         status=FactStatus.ACTIVE,
         created_by=specialist,
     )
 
-    steps = process_steps(matter=matter, user=specialist)
-    labels = [step.label for step in steps]
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
+        "Alustatud"
+    ]
+    assert MatterEffectiveDate.objects.filter(matter=normal_matter).count() == 1
 
-    assert "Loodud" in labels
-    assert "Küsitlus" in labels
-    assert stage.label_et in labels
-    assert "Riigikogu I lugemine" in labels
-    assert "Pakendiseadus" in labels
-    assert [step.sort_on for step in steps] == sorted(step.sort_on for step in steps)
-
-    states = {step.label: step.state for step in steps}
-    assert states["Loodud"] == STATE_DONE
-    assert states["Küsitlus"] == STATE_DONE
-    assert states[stage.label_et] == STATE_CURRENT
-    assert states["Riigikogu I lugemine"] == STATE_TODO
-    assert states["Pakendiseadus"] == STATE_TODO
-
-    # Exactly one current step, which is what makes the accent line stop.
-    assert sum(1 for step in steps if step.is_current) == 1
-    # The future deadline carries its day count; the far one does not.
-    future = {step.label: step.suffix for step in steps}
-    assert future["Riigikogu I lugemine"] == "21 p"
-    assert future["Pakendiseadus"] == ""
+    body = _detail(signed_in, normal_matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    for gone in ("Pakendiseadus", "Jõustub"):
+        assert gone not in strip
 
 
-def test_a_current_stage_with_no_recorded_transition_invents_no_date(specialist, stage):
-    """`Matter.stage` says where the file is, not when it got there. A Matter
-    whose stage came from an importer that wrote no event genuinely has no
-    transition date (TEEMA_TARGET_SPEC §D)."""
-    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=stage)
+def test_the_strip_has_no_future_grammar_left(signed_in, normal_matter, specialist):
+    """**§11.** With both dated facts gone the strip has no future source, so
+    the day count and the horizon go with them.
 
-    current = [step for step in process_steps(matter=matter, user=specialist) if step.is_current]
-
-    assert len(current) == 1
-    assert current[0].display == ""
-    assert current[0].date_line == "praegu"
-
-
-def test_an_approximate_milestone_keeps_its_honest_precision(specialist):
-    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=None)
+    Asserted on a date inside the old sixty-day horizon, which is exactly where
+    the retired `N p` suffix used to appear. The countdown itself is not
+    retired — it still reads on the header deadline and on every work surface.
+    """
+    ahead = timezone.localdate() + timedelta(days=21)
     MatterImportantDate.objects.create(
-        matter=matter,
-        title="Kooskõlastusring",
-        date_value=date(2027, 7, 1),
-        period_end=date(2027, 9, 30),
-        date_precision=DatePrecision.QUARTER,
+        matter=normal_matter,
+        title="Riigikogu I lugemine",
+        date_value=ahead,
+        period_end=ahead,
+        date_precision=DatePrecision.EXACT,
         status=FactStatus.ACTIVE,
         created_by=specialist,
     )
 
-    steps = {step.label: step.display for step in process_steps(matter=matter, user=specialist)}
+    strip_module = __import__("app.matters.process_timeline", fromlist=["x"])
+    for dead in ("STATE_CURRENT", "STATE_TODO", "CURRENT_SUFFIX", "DAYS_HORIZON", "DAYS_UNIT"):
+        assert not hasattr(strip_module, dead), dead
 
-    assert steps["Kooskõlastusring"] == "III kvartal 2027"
+    body = _detail(signed_in, normal_matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert "21 p" not in strip
+
+
+# -- H: generic engagement ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        EngagementKind.SURVEY,
+        EngagementKind.MEETING,
+        EngagementKind.EMAIL_CAMPAIGN,
+        EngagementKind.WEB_CALL,
+        EngagementKind.OTHER,
+    ],
+)
+def test_a_generic_engagement_draws_no_milestone(signed_in, normal_matter, specialist, kind):
+    """**H.** A `Kaasamine` is a canonical record, a chronology row and detail
+    information — it is not automatically a procedural milestone.
+
+    A future `Arvamuste kogumine` round will be a specifically identifiable
+    thing with a start and received batches, and *that* will earn a column.
+    Guessing today that every consultation is one would draw a milestone the
+    domain cannot yet distinguish.
+    """
+    add_engagement(
+        matter=normal_matter,
+        kind=kind,
+        title="liikmed",
+        occurred_on=timezone.localdate(),
+        actor=specialist,
+    )
+
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
+        "Alustatud"
+    ]
+
+    body = _detail(signed_in, normal_matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert "liikmed" not in strip
+    # Still a record, and still a chronology row.
+    assert MatterEngagement.objects.filter(matter=normal_matter).count() == 1
+    assert "Kaasamine: liikmed" in body[body.index('id="ajalugu-loend"') :]
+
+
+# -- I, J, K: Koja arvamus ---------------------------------------------------
+
+
+def test_a_sent_submission_is_koja_arvamus(
+    signed_in, normal_matter, specialist, organisation, capture_evidence
+):
+    """**I.** The one milestone that names an act rather than a stored title —
+    and it is `Koja arvamus`, not `Arvamus välja`."""
+    _started(normal_matter, days_ago=30)
+    _sent(normal_matter, capture_evidence, organisation, when=timezone.now() - timedelta(days=3))
+
+    steps = process_steps(matter=normal_matter, user=specialist)
+    assert [step.label for step in steps] == ["Alustatud", "Koja arvamus"]
+
+    body = _detail(signed_in, normal_matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert "Koja arvamus" in strip
+    assert "Arvamus välja" not in strip
+    # The chronology keeps its own wording, which is a sentence about an event.
+    assert "Arvamus välja" in body[body.index('id="ajalugu-loend"') :]
+
+
+def test_two_sent_opinions_draw_two_milestones(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    """**J.** A supplementary opinion months after the first is a second real
+    procedural act, and collapsing the two would lose it."""
+    _started(normal_matter, days_ago=200)
+    first = timezone.now() - timedelta(days=120)
+    second = timezone.now() - timedelta(days=20)
+    _sent(normal_matter, capture_evidence, organisation, when=first, title="Koja arvamus")
+    _sent(normal_matter, capture_evidence, organisation, when=second, title="Koja täiendav arvamus")
+
+    steps = process_steps(matter=normal_matter, user=specialist)
+
+    assert [step.label for step in steps] == ["Alustatud", "Koja arvamus", "Koja arvamus"]
+    assert [step.display for step in steps[1:]] == [
+        format_estonian_date(timezone.localtime(first).date()),
+        format_estonian_date(timezone.localtime(second).date()),
+    ]
+
+
+def test_a_draft_submission_is_not_a_milestone(normal_matter, specialist):
+    """**K.** A draft is work in progress, not a send. Neither is a file: the
+    canonical record of a send is a SENT `Submission` (post-QA R2-01)."""
+    factories.SubmissionFactory(matter=normal_matter, title="Koostamisel")
+
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
+        "Alustatud"
+    ]
+
+
+# -- L, M, N: Lõpetatud ------------------------------------------------------
+
+
+def test_a_closed_matter_ends_with_lopetatud(signed_in, normal_matter, specialist):
+    """**L.** The milestone is named for the step, not for its outcome."""
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.RESPONSE_COMPLETE,
+        actor=specialist,
+        reason="Arvamus esitatud.",
+    )
+    normal_matter.refresh_from_db()
+
+    steps = process_steps(matter=normal_matter, user=specialist)
+    assert [step.label for step in steps] == ["Alustatud", "Lõpetatud"]
+    assert steps[-1].display == format_estonian_date(timezone.localdate())
+    # The disposition is secondary information and reads as the column's title.
+    assert steps[-1].detail == "Vastus esitatud ja järeltegevus tehtud"
+
+    body = _detail(signed_in, normal_matter)
+    strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+    assert "Lõpetatud" in strip
+    assert 'title="Vastus esitatud ja järeltegevus tehtud"' in strip
+    # And the outcome has not replaced the name of the step.
+    for gone in (">Menetlus lõppes<", ">Jõustus<", ">Loobuti<"):
+        assert gone not in strip
+
+
+def test_an_open_matter_has_no_lopetatud(normal_matter, specialist):
+    """**M.**"""
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
+        "Alustatud"
+    ]
+
+
+def test_a_reopened_matter_is_not_shown_as_finished(normal_matter, specialist):
+    """**N.** The `MATTER_CLOSED` event survives forever and is true history —
+    a strip that went looking for one would call a currently-open file finished.
+
+    Read off the Matter's current state instead: `reopen_matter` clears
+    `closed_at`, and `matters_closure_fields_consistent` makes the database
+    refuse `is_open=True` beside a `closed_at`.
+    """
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.INITIATIVE_WITHDRAWN,
+        actor=specialist,
+        reason="",
+    )
+    normal_matter.refresh_from_db()
+    reopen_matter(matter=normal_matter, actor=specialist, reason="Menetlus jätkub.")
+    normal_matter.refresh_from_db()
+
+    assert ChangeEvent.objects.filter(
+        matter=normal_matter, event_type=ChangeEventType.MATTER_CLOSED
+    ).exists(), "the closure is still history"
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
+        "Alustatud"
+    ]
+
+
+def test_a_closed_archive_row_with_no_closure_day_draws_no_column(specialist):
+    """`matters_closure_fields_consistent` exempts an ARCHIVE row from carrying
+    a `closed_at`, because an imported register row is not made to invent a day
+    it never had. A milestone with no date is not a position in a process."""
+    matter = factories.ArchiveMatterFactory(is_open=False)
+
+    assert process_steps(matter=matter, user=specialist) == []
+
+
+def test_the_three_milestones_read_in_procedural_order(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    """The whole vocabulary on one Matter, oldest first — and a send on the day
+    of closure keeps the order it was read in rather than reshuffling."""
+    _sent(normal_matter, capture_evidence, organisation, when=timezone.now())
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="",
+    )
+    normal_matter.refresh_from_db()
+
+    steps = process_steps(matter=normal_matter, user=specialist)
+
+    assert [step.label for step in steps] == ["Alustatud", "Koja arvamus", "Lõpetatud"]
+    assert [step.sort_on for step in steps] == sorted(step.sort_on for step in steps)
+
+
+def test_the_strip_is_ordered_by_date_even_when_a_send_predates_its_matter(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    """A back-filled send sorts before `Alustatud`, and that is deliberate.
+
+    A native Matter created today can register an opinion that went out in June
+    — `Registreeri saatmine` exists precisely to record a send that already
+    happened. Its `created_at` is then a fact about when somebody wrote the file
+    down, not about when the work started, and the two dates disagree.
+
+    The strip sorts by date, which is the one rule that does not misstate a day
+    it is showing. Pinning `Alustatud` leftmost instead would print the dates out
+    of order, and suppressing it would invent a credibility rule this round did
+    not decide. **Flagged rather than solved**: whether `Alustatud` is the right
+    source for a back-filled Matter at all is the kind of question the reserved
+    `Arvamuste kogumine` and `Pöördumine` sources are also waiting on
+    (docs/adr/0074 §12.1).
+    """
+    _sent(
+        normal_matter,
+        capture_evidence,
+        organisation,
+        when=timezone.now() - timedelta(days=100),
+    )
+
+    steps = process_steps(matter=normal_matter, user=specialist)
+
+    assert [step.label for step in steps] == ["Koja arvamus", "Alustatud"]
+    assert [step.sort_on for step in steps] == sorted(step.sort_on for step in steps)
+
+
+# -- O: Töövõit --------------------------------------------------------------
 
 
 def test_a_work_victory_is_not_a_procedural_step(specialist):
-    """**§31.** A win is a chronology milestone, not a stage of the proceeding."""
+    """**O, §31.** A win is a chronology milestone, not a stage of the
+    proceeding. Kept from the previous round, and still true."""
     matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=None)
     MatterWorkVictory.objects.create(
         matter=matter,
@@ -834,22 +1180,54 @@ def test_a_work_victory_is_not_a_procedural_step(specialist):
 
     labels = [step.label for step in process_steps(matter=matter, user=specialist)]
 
-    assert labels == ["Loodud"]
+    assert labels == ["Alustatud"]
 
 
-def test_a_cancelled_expectation_is_not_a_step(specialist):
-    matter = factories.MatterFactory(owner=specialist, origin=MatterOrigin.NATIVE, stage=None)
-    MatterImportantDate.objects.create(
-        matter=matter,
-        title="Ärajäänud kooskõlastusring",
-        date_value=date(2027, 1, 1),
-        period_end=date(2027, 1, 1),
-        date_precision=DatePrecision.EXACT,
-        status=FactStatus.CANCELLED,
-        created_by=specialist,
+# -- P: authorization --------------------------------------------------------
+
+
+def test_a_restricted_opinion_changes_no_geometry(
+    client, normal_matter, specialist, reader, organisation, capture_evidence
+):
+    """**P, §18.** Scoped before it is derived, not filtered afterwards.
+
+    Sent opinions are the only source this strip still reads through a
+    `visible_to`, so they are the only source that can leak — and a reader who
+    may not see one must not learn it exists from the dot count, the connector
+    count, the labels, the dates or the strip's width.
+
+    A READER, not a second lawyer. Both lawyer roles read RESTRICTED content by
+    design, so a specialist is the wrong oracle for «cannot see it»
+    (`ROLES_WITH_RESTRICTED_ACCESS`, docs/adr/0042).
+    """
+    _started(normal_matter, days_ago=30)
+    client.force_login(reader)
+    url = reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
+
+    def strip_of() -> str:
+        body = client.get(url).content.decode()
+        if "tl-strip" not in body:
+            return ""
+        return body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
+
+    before = strip_of()
+    _sent(
+        normal_matter,
+        capture_evidence,
+        organisation,
+        when=timezone.now() - timedelta(days=2),
+        title="Salajane arvamus",
+        visibility=Visibility.RESTRICTED,
     )
+    after = strip_of()
 
-    assert [step.label for step in process_steps(matter=matter, user=specialist)] == ["Loodud"]
+    assert before == after
+    assert "Koja arvamus" not in after
+    # And the owner does see it, so the fixture is not vacuous.
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
+        "Alustatud",
+        "Koja arvamus",
+    ]
 
 
 # ===========================================================================
@@ -953,28 +1331,39 @@ def test_the_chronology_is_newest_first(signed_in, normal_matter, specialist):
     assert chronology.index("Teine.") < chronology.index("Esimene.")
 
 
-def test_a_future_milestone_is_on_the_strip_and_not_in_the_chronology(
+def test_a_dated_fact_reaches_the_chronology_only_once_it_has_happened(
     signed_in, normal_matter, specialist
 ):
-    """The chronology answers what has happened; where the file is going is the
-    strip's question."""
+    """The chronology answers what has *happened*, and that rule is unchanged.
+
+    What changed around it is that the strip no longer answers «where is this
+    going»: it is a sparse list of major procedural acts, all of them
+    historical. So an `Oluline tähtaeg` still ahead of us is on neither surface
+    of the Teema tab — it reads in its own fact section and on the work
+    surfaces, which is where a date somebody is waiting for belongs
+    (docs/adr/0074 §12, §15).
+    """
     ahead = timezone.localdate() + timedelta(days=30)
-    MatterImportantDate.objects.create(
-        matter=normal_matter,
-        title="Riigikogu I lugemine",
-        date_value=ahead,
-        period_end=ahead,
-        date_precision=DatePrecision.EXACT,
-        status=FactStatus.ACTIVE,
-        created_by=specialist,
-    )
+    behind = timezone.localdate() - timedelta(days=30)
+    for title, when in (("Riigikogu I lugemine", ahead), ("Kooskõlastusring", behind)):
+        MatterImportantDate.objects.create(
+            matter=normal_matter,
+            title=title,
+            date_value=when,
+            period_end=when,
+            date_precision=DatePrecision.EXACT,
+            status=FactStatus.ACTIVE,
+            created_by=specialist,
+        )
 
     body = _detail(signed_in, normal_matter)
     chronology = body[body.index('id="ajalugu-loend"') :]
     strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
 
-    assert "Riigikogu I lugemine" in strip
+    assert "Riigikogu I lugemine" not in strip
     assert "Riigikogu I lugemine" not in chronology
+    assert "Kooskõlastusring" not in strip
+    assert "Kooskõlastusring" in chronology
 
 
 # ===========================================================================
@@ -1001,10 +1390,10 @@ def _page_regions(client, matter) -> tuple[str, str, str]:
 
 @pytest.mark.parametrize(
     "restricted",
-    ["engagement", "important_date", "effective_date", "work_victory"],
+    ["engagement", "important_date", "effective_date", "work_victory", "submission"],
 )
 def test_a_restricted_child_changes_nothing_for_an_unauthorized_reader(
-    client, normal_matter, reader, specialist, restricted
+    client, normal_matter, reader, specialist, organisation, capture_evidence, restricted
 ):
     """**§56, the strong oracle.** The page before adding a RESTRICTED child and
     the page after it must be identical for a reader who may not see it — text,
@@ -1051,7 +1440,7 @@ def test_a_restricted_child_changes_nothing_for_an_unauthorized_reader(
             status=FactStatus.ACTIVE,
             created_by=specialist,
         )
-    else:
+    elif restricted == "work_victory":
         record = MatterWorkVictory.objects.create(
             matter=normal_matter,
             title="Piiratud võit",
@@ -1059,6 +1448,20 @@ def test_a_restricted_child_changes_nothing_for_an_unauthorized_reader(
             confirmed_by=specialist,
             confirmed_at=timezone.now(),
             created_by=specialist,
+        )
+    else:
+        # The one source the strip still reads through a `visible_to`, and
+        # therefore the one that can still leak. Its restriction is inherited
+        # from the file it was sent as, which is how `register_sent_opinion`
+        # arranges it — a submission may not be less restricted than its own
+        # evidence.
+        record = _sent(
+            normal_matter,
+            capture_evidence,
+            organisation,
+            when=timezone.now() - timedelta(days=1),
+            title="Piiratud arvamus",
+            visibility=Visibility.RESTRICTED,
         )
     record.visibility_override = Visibility.RESTRICTED
     record.save(update_fields=["visibility_override"])
@@ -1237,7 +1640,8 @@ def test_a_matter_with_nothing_on_it_renders_a_short_deliberate_page(signed_in, 
     body = _detail(signed_in, matter)
 
     assert 'id="ajajoon"' in body, "the section still exists"
-    assert "tl-strip" not in body or body.count('class="tl-step ') == 1
+    # One dot and no connector: `Alustatud`, and nothing else has happened yet.
+    assert body.count('class="tl-step"') == 1
     assert "factspanel" not in body
     assert 'id="kaasamine"' not in body
 

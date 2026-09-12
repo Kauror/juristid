@@ -29,7 +29,15 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-FUTURE = date(2030, 6, 1)
+#: A day behind us, so the fact reads on the Matter page at all.
+#:
+#: It used to be `date(2030, 6, 1)`, and the page printed it because the
+#: process strip projected every `MatterImportantDate` in both directions. The
+#: strip now draws major procedural acts only, so a date nobody has reached yet
+#: reads in its own fact section and on the work surfaces rather than on this
+#: tab — and the seam these tests exist for is *both stages' data on one page*,
+#: which a past date serves exactly as well (docs/adr/0074 §12).
+PASSED = date(2020, 6, 1)
 
 
 def _matter_with_everything(owner):
@@ -38,8 +46,8 @@ def _matter_with_everything(owner):
     add_important_date(
         matter=matter,
         title="Sünteetiline tähtaeg",
-        date_value=FUTURE,
-        period_end=FUTURE,
+        date_value=PASSED,
+        period_end=PASSED,
         actor=owner,
     )
     add_confirmed_work_victory(matter=matter, title="Sünteetiline võit", actor=owner)
@@ -55,10 +63,10 @@ def test_a_matter_shows_structured_facts_and_submissions_together(client, specia
 
     assert response.status_code == 200
     body = response.content.decode()
-    # The deadline is ahead of us, so it is where the file is *going* — a
-    # `.tl-strip` column. The win has happened, so it is a chronology milestone.
-    # Both are projected from their own canonical record; neither has a standing
-    # section any more (docs/adr/0074 §12, §15).
+    # Both have happened, so both are chronology milestones, projected from
+    # their own canonical record — and neither has a standing section any more.
+    # The strip beside them holds `Alustatud` and nothing either record put
+    # there (docs/adr/0074 §12, §15).
     assert "Sünteetiline tähtaeg" in body
     assert "Sünteetiline võit" in body
     assert "tl-strip" in body
