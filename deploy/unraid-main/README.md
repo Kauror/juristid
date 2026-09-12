@@ -18,6 +18,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Source corpus | `/mnt/user/juristid-main/source/` — **read-only**, mounted `:ro` |
 | Secrets | `/mnt/user/appdata/juristid-main/config/juristid.env`, mode 600, never in Git |
 | Backup and recovery | [`RECOVERY.md`](RECOVERY.md) — how to back up, verify, restore and roll back |
+| Reaching the host, and running commands on it | [`OPERATOR.md`](OPERATOR.md) — access paths, proving which host answered, and why a deploy script is never piped into `ssh` |
 
 The synthetic rehearsal at `juristid-test` keeps running, on its own project,
 network, database and appdata tree. Nothing here touches it, and it must not be
@@ -980,6 +981,12 @@ land in is the operator's; nothing below depends on it.
 ### B. Deploy the release — on the Unraid host
 
 Everything from here runs on the host, in **one shell**, in this order.
+
+How to get that shell — which address, how to prove the host that answered is
+this one, and why the steps below are typed or run from a file rather than piped
+into `ssh` — is [`OPERATOR.md`](OPERATOR.md). Read it once before the first
+release you run; the one shell this section depends on is the subject of one of
+its rules.
 
 ### 1. Write down what is running now
 

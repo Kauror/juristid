@@ -89,7 +89,13 @@ pass() {
   printf 'ok   %s\n' "$*"
 }
 
+# The host names itself in the transcript. `ssh` succeeding proves only that *a*
+# host accepted the key, and this one runs the synthetic rehearsal beside the
+# real instance — so a preflight whose output cannot be told apart from the same
+# preflight run somewhere else is a record of nothing. Non-secret by
+# construction: a node name, not an address and not a credential.
 note "Juristid deployment preflight"
+note "  host         $(uname -n)"
 note "  project      $JURISTID_PROJECT"
 note "  checkout     $REPO"
 note "  target       $TARGET"
