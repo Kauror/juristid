@@ -437,6 +437,21 @@ def grade(
     if population_count < definition.minimum_population:
         return MetricStatus.INSUFFICIENT_DATA
 
+    # A share of nothing is not zero per cent. ``coverage_percentage`` above
+    # already returns ``None`` for an empty denominator, and one selector —
+    # ``opinion_archive_link_coverage`` — already declines by hand before it
+    # divides. Deciding it here instead means every percentage declines the
+    # same way rather than depending on which selector remembered: on an
+    # application holding no archive at all, two cards asking the same question
+    # sat side by side on Andmekvaliteet, one reading "Ebapiisavad andmed" and
+    # the other "0%".
+    #
+    # Only a denominator that is *present and zero*. ``None`` means the metric
+    # has no coverage dimension at all, which is a different thing and has to
+    # keep grading as it did.
+    if definition.unit == Unit.PERCENT and coverage_denominator == 0:
+        return MetricStatus.INSUFFICIENT_DATA
+
     if definition.minimum_coverage is None or not coverage_denominator:
         return MetricStatus.AVAILABLE
 
