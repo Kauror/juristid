@@ -453,7 +453,7 @@
       /* One answer, two places. The staging routes render both halves and this
          puts each where it belongs by id — the file rows inside the dropzone,
          the suggestions above the fields they are about. */
-      var applyFragment = function (source) {
+      var applyFragment = function (source, options) {
         /* Either the answer's text or a document already parsed from it. The
            upload path parses first, because it has to look at what the server
            kept before deciding whether to empty the file input; the poll and
@@ -464,10 +464,32 @@
           typeof source === "string"
             ? new DOMParser().parseFromString(source, "text/html")
             : source;
+        /* A refusal outlives the poll. The stage response says which file
+           was not taken and why, and the file input has been emptied of the
+           ones that were — so that sentence is the only trace the refused
+           file leaves. The status poll a second later renders the same panel
+           from the session, which knows nothing of a file it never held, and
+           replacing the panel wholesale wiped the sentence before anybody had
+           read it: the page then said «1 valitud» about two files chosen and
+           nothing else. So the poll and the remove path carry a standing
+           warning over; only a new upload's own answer replaces it. */
+        var keepWarning = !!(options && options.keepWarning);
         ["intake-failid", "intake-panel"].forEach(function (id) {
           var incoming = parsed.getElementById(id);
           var existing = document.getElementById(id);
           if (incoming && existing) {
+            if (keepWarning && id === "intake-panel") {
+              var standing = existing.querySelector(".intakepanel__state--warn");
+              if (standing && !incoming.querySelector(".intakepanel__state--warn")) {
+                var uploadingNotice = incoming.querySelector(".intakepanel__uploading");
+                var kept = standing.cloneNode(true);
+                if (uploadingNotice && uploadingNotice.parentNode) {
+                  uploadingNotice.parentNode.insertBefore(kept, uploadingNotice.nextSibling);
+                } else {
+                  incoming.insertBefore(kept, incoming.firstChild);
+                }
+              }
+            }
             existing.replaceWith(document.importNode(incoming, true));
           }
         });
@@ -549,7 +571,7 @@
             })
             .then(function (html) {
               failures = 0;
-              applyFragment(html);
+              applyFragment(html, { keepWarning: true });
               schedule();
             })
             .catch(function () {
@@ -715,8 +737,9 @@
             /* The server decides what is left, what it now suggests and what
                `Loo teema` would file, all from one read — so the list and the
                suggestions cannot end up disagreeing about a file that is half
-               gone (task §17). */
-            applyFragment(html);
+               gone (task §17). Taking one file off says nothing about the one
+               that was refused, so that sentence stays. */
+            applyFragment(html, { keepWarning: true });
             schedule();
           })
           .catch(function () {});

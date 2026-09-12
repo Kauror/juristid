@@ -1598,9 +1598,28 @@ def close_matter(
 
 @transaction.atomic
 def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Matter:
-    if matter.is_open:
+    """Make a closed Matter current work again.
+
+    The row is locked and re-read before the question is answered, exactly as
+    `close_matter` does on the way in. Reading ``matter.is_open`` off the
+    instance the caller arrived with answers a question about a moment that
+    has passed: two tabs both showing the closed banner, both pressing «Ava
+    uuesti…», would both find their copy closed and both record that the
+    Matter was reopened — one act, two `MATTER_REOPENED` events, and an audit
+    trail that cannot say which of them happened. Whichever transaction takes
+    the row first reopens; the other is told «Teema on juba avatud.» and
+    writes nothing.
+
+    `no_key=True` for the reason `app/matters/locks.py` gives: this transaction
+    goes on to insert a `ChangeEvent` that references the Matter, and the
+    weaker mode still conflicts with the plain `FOR UPDATE` a concurrent
+    `close_matter` takes, so the two cannot interleave.
+    """
+    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    if locked.is_open:
         raise DomainError("Teema on juba avatud.")
 
+    matter = locked
     matter.is_open = True
     matter.disposition = ""
     matter.disposition_reason = ""

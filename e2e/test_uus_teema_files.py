@@ -140,6 +140,44 @@ def test_a_file_taken_back_off_does_not_arrive(page, base_url, tmp_path):
     expect(file_row(page, "eemaldatud.pdf")).to_have_count(0)
 
 
+def test_a_refused_file_is_still_reported_after_the_reading_has_been_polled(
+    page, base_url, tmp_path
+):
+    """Choose a letter and an `.exe` together. The `.exe` is refused.
+
+    The stage response says so, and that sentence is the only trace the refused
+    file leaves: the browser empties the file input of the letter the server
+    kept, so nothing else on the page names the `.exe` at all. The status poll
+    that follows a second later renders the same panel from the staging
+    session — which never held the refused file — and used to replace the
+    panel wholesale, taking the sentence with it before anybody could read it.
+    A lawyer who looked up after two seconds saw «1 valitud» about two files
+    they had chosen (static/js/app.js, `applyFragment`).
+    """
+    sign_in(page, base_url, MARTIN)
+
+    kept = tmp_path / "kaaskiri.pdf"
+    kept.write_bytes(PDF_BYTES)
+    refused = tmp_path / "paha.exe"
+    refused.write_bytes(b"MZ" + b"\x00" * 64)
+
+    open_create(page, base_url)
+    page.locator("#id_title").fill("Tagasilükatud failiga teema")
+    page.locator("#id_files").set_input_files([str(kept), str(refused)])
+
+    warning = page.locator(".intakepanel__state--warn")
+    expect(warning).to_be_visible()
+    expect(warning).to_contain_text(".exe")
+    expect(page.locator(".dropzone__file")).to_have_count(1)
+
+    # Three status polls at 1200 ms go by. The refusal is still on the page,
+    # and the letter is still the one staged file.
+    page.wait_for_timeout(4000)
+    expect(warning).to_be_visible()
+    expect(warning).to_contain_text(".exe")
+    expect(page.locator(".dropzone__file")).to_have_count(1)
+
+
 # -- the defect ---------------------------------------------------------------
 
 

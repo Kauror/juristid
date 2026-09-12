@@ -3908,13 +3908,50 @@ def _workspace_refusal(
     400 rather than 200, like every other refused write on this page, and the
     bound form goes back under its own key so the panel that failed is the panel
     that shows why.
+
+    **Unless that panel is not on the page any more.** The column is re-rendered
+    from the Matter as it is *now*, and two stale-tab refusals arrive at a page
+    that no longer holds the form they came from: `PRAEGUNE TEGEVUS` →
+    `Salvesta` after a colleague finished the step and set no new one — the
+    fresh column has no open step, so no completion form and no paragraph to
+    print the sentence in — and any `LISA TEEMALE` save, `+ Lõpeta teema`
+    included, after the Matter was closed elsewhere, where `overview.html`
+    renders no launcher at all. Put the sentence in the panel and the browser
+    swaps in a 400 that looks exactly like somebody else's successful save,
+    with what the person typed gone and not a word about why. So the refusal
+    goes to the workspace-level slot `overview.html` already keeps for «a
+    refusal no panel owns», and it is shown there, above the fresh state.
+
+    `is_open` is re-read for that decision rather than trusted from the
+    instance the view fetched before the lock: the closure this refusal is
+    about may have committed between the two.
+
+    **And a closed Matter's header rides along**, out of band, exactly as it
+    does on the one successful save that closes a Matter
+    (`close_from_workspace`). The refusal is telling the stale tab that the
+    file is shut; leaving its header saying `Avatud` beside a column with no
+    workspace would be the page contradicting itself about the one fact the
+    refusal is about (docs/adr/0074 §10).
     """
+    matter.refresh_from_db(fields=["is_open"])
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
-    context["workspace_error"] = error
-    context["open_panel"] = WORKSPACE_PANELS.get(key, "")
-    return render(request, "matters/partials/overview.html", context, status=400)
+    panel_is_rendered = matter.is_open and (
+        key != "current_action_form" or context["current_action"] is not None
+    )
+    if error and not panel_is_rendered:
+        context["composer_error"] = error
+        context["workspace_error"] = ""
+        context["open_panel"] = ""
+    else:
+        context["workspace_error"] = error
+        context["open_panel"] = WORKSPACE_PANELS.get(key, "")
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    if not matter.is_open:
+        context["header_out_of_band"] = True
+        body += render_to_string("matters/partials/header.html", context, request=request)
+    return HttpResponse(body, status=400)
 
 
 @login_required
