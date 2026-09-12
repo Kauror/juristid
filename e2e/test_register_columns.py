@@ -22,6 +22,18 @@ in the other.
 
 **Assert the geometry.** «VIIMANE TEGEVUS» is wider than its column used to be,
 which is why the arrow that says which way it is sorted has a test of its own.
+
+**Read the whole register, and bring your own row.** The browser suite runs
+against one seeded database per shard, shared by every file in that shard and
+never reset between them (`ci_sharding.py`), so by the time this file runs some
+number of Matters it did not file are already in the register — and every one of
+them sorts *above* the seeded rows, because the default ordering is
+`-reference_year, -reference_number` and a new reference is a higher number.
+Page one is twelve rows deep. So a test here asks for `?kaupa=koik` rather than
+page one, and a test about a value *inside* a row files the row it is going to
+click. What neither may do is count page one twice: `min(12, N)` is not a
+population, and «the filter narrowed the list» asserted against it is true of a
+seeded world and false of a shared one.
 """
 
 from __future__ import annotations
@@ -31,11 +43,24 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
 REGISTER = "/teemad/"
+
+#: Every row, every status. `?olek=koik` is the scope this file has always read;
+#: `?kaupa=koik` is the page-size control's own «kõik», and it is what makes an
+#: assertion about the register a statement about the register rather than about
+#: how many Matters the files before this one happened to file (02-EKRAANID §C).
+ALL_ROWS = "?olek=koik&kaupa=koik"
+
+#: A stage the seeded world gives nobody. `seed_e2e_data` files every one of its
+#: Matters on `Kooskõlastusringil`, so a row this file gives «Riigikogus» is a
+#: row whose Hetkeseis link selects a population this file knows the shape of.
+#: Nothing below depends on it being the *only* such row, which a later test
+#: file could take away without meaning to.
+ROW_STAGE = "Riigikogus"
 
 #: The three headings that open a menu, and the four that do not need one.
 FILTER_HEADINGS = ["Hetkeseis", "Vastutaja", "Järgmiseks"]
@@ -54,9 +79,14 @@ def document_overflows(page) -> bool:
 
 
 def column_index(page, heading: str) -> int:
-    headings = page.locator(".table--register thead th")
-    for index in range(headings.count()):
-        if headings.nth(index).inner_text().strip().startswith(heading.upper()):
+    """Which column carries this heading, read in one round trip.
+
+    `all_inner_texts()` rather than a loop of `nth(i).inner_text()`: since these
+    tests read the whole register rather than its first page, a call per cell is
+    a round trip per cell. The text is the same — both read `element.innerText`.
+    """
+    for index, text in enumerate(page.locator(".table--register thead th").all_inner_texts()):
+        if text.strip().startswith(heading.upper()):
             return index
     raise AssertionError(f"no register column called {heading!r}")
 
@@ -65,7 +95,26 @@ def column_text(page, heading: str) -> list[str]:
     """One column's rendered cells, top to bottom."""
     index = column_index(page, heading)
     cells = page.locator(f".table--register tbody tr td:nth-child({index + 1})")
-    return [cells.nth(row).inner_text().strip() for row in range(cells.count())]
+    return [text.strip() for text in cells.all_inner_texts()]
+
+
+def row_count(page) -> int:
+    return page.locator(".table--register tbody tr").count()
+
+
+def row_titled(page, title: str):
+    """The one register row whose title is `title`.
+
+    Strict on purpose. A row found by a title this file generated is the one
+    thing in a shared database that cannot be something another file filed, and
+    two matches would mean the title was not unique after all — so the
+    assertions after it would be about somebody else's Matter.
+    """
+    row = page.locator(".table--register tbody tr").filter(
+        has=page.get_by_role("link", name=title, exact=False)
+    )
+    expect(row).to_have_count(1)
+    return row
 
 
 DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
@@ -165,9 +214,17 @@ def test_the_stage_heading_opens_its_menu(page, base_url):
 
 
 def test_choosing_a_stage_filters_the_register_and_marks_the_heading(page, base_url):
+    """The heading narrows the register, and says that it did.
+
+    `?kaupa=koik` is what makes «narrowed» mean anything. Both counts below are
+    of rendered rows and page one holds twelve, so the moment the world carries
+    twelve Matters on this stage — the seeded ten, plus two any earlier file
+    filed — the unfiltered page and the filtered page are both twelve rows long
+    and the register is asserted to have narrowed from 12 to 12.
+    """
     sign_in(page, base_url, SANDRA)
-    open_register(page, base_url, "?olek=koik")
-    before = page.locator(".table--register tbody tr").count()
+    open_register(page, base_url, ALL_ROWS)
+    before = row_count(page)
 
     control = heading(page, "Hetkeseis")
     control.locator("summary").click()
@@ -178,22 +235,44 @@ def test_choosing_a_stage_filters_the_register_and_marks_the_heading(page, base_
     assert "olek=koik" in page.url, "the status somebody had chosen was dropped"
     stages = set(column_text(page, "Hetkeseis"))
     assert stages == {"Kooskõlastusringil"}, stages
-    assert page.locator(".table--register tbody tr").count() < before
+    assert row_count(page) < before
     # The ordinary chip, above the table, where it can be removed.
     expect(page.locator(".filterchip", has_text="Hetkeseis")).to_have_count(1)
     assert "is-filtered" in (heading(page, "Hetkeseis").get_attribute("class") or "")
 
 
 def test_a_rows_stage_applies_the_same_filter(page, base_url):
-    sign_in(page, base_url, SANDRA)
-    open_register(page, base_url, "?olek=koik")
+    """The value in a row is the filter that selects it — on *this* row.
 
-    index = column_index(page, "Hetkeseis")
-    page.locator(f".table--register tbody tr td:nth-child({index + 1}) a").first.click()
+    The row is one this test filed, found by its own title and checked against
+    the stage this test gave it, because neither half of that can be read off
+    page one of a shared register. A Matter filed through Uus teema has no
+    Hetkeseis unless somebody picks one, so every Matter an earlier browser file
+    left behind renders an em dash in this column and carries no link at all —
+    and all of them sort above the seeded rows that do. Twelve such Matters and
+    page one offers nothing to click: `test_matter_form_ux.py` and
+    `test_matter_intelligence.py` file exactly twelve between them.
+    """
+    sign_in(page, base_url, SANDRA)
+    title = unique_title("Hetkeseisu rida")
+    create_matter(page, base_url, title, stage=ROW_STAGE)
+
+    open_register(page, base_url, ALL_ROWS)
+    before = row_count(page)
+
+    link = row_titled(page, title).locator("td.table__stage a")
+    assert link.inner_text().strip() == ROW_STAGE
+    link.click()
     page.wait_for_load_state("networkidle")
 
     assert "hetkeseis=" in page.url
-    assert set(column_text(page, "Hetkeseis")) == {"Kooskõlastusringil"}
+    # Every row the filter kept reads the value that was clicked, the row that
+    # set it is one of them, and the list is shorter than it was. The third is
+    # what the first two cannot say on their own: a link that filtered on
+    # nothing at all would satisfy both.
+    assert set(column_text(page, "Hetkeseis")) == {ROW_STAGE}
+    expect(page.get_by_role("link", name=title, exact=False)).to_have_count(1)
+    assert row_count(page) < before
 
 
 # ---------------------------------------------------------------------------
@@ -218,17 +297,33 @@ def test_choosing_a_responsible_person_filters_the_register(page, base_url):
 
 
 def test_a_rows_owner_applies_the_filter(page, base_url):
-    sign_in(page, base_url, SANDRA)
-    open_register(page, base_url, "?olek=koik")
+    """The same promise one column to the right, and the same reason it has to
+    bring its own row.
 
-    index = column_index(page, "Vastutaja")
-    owner = page.locator(f".table--register tbody tr td:nth-child({index + 1}) a.table__quietlink")
-    chosen = owner.first.inner_text().strip()
-    owner.first.click()
+    Vastutaja is `required=False` on Uus teema, so an unclaimed Matter renders
+    «Määra ▾» here — a `<details>`, not the quiet link this test clicks. Eleven
+    of those above the seeded rows and page one holds no owner link either. It
+    survived on `main` only because one of the twelve Matters those two files
+    file does pick an owner, which is a fact about that test and not about this
+    one.
+    """
+    sign_in(page, base_url, SANDRA)
+    title = unique_title("Vastutaja rida")
+    create_matter(page, base_url, title, owner=SANDRA)
+
+    open_register(page, base_url, ALL_ROWS)
+    before = row_count(page)
+
+    link = row_titled(page, title).locator("td.table__owner a.table__quietlink")
+    chosen = link.inner_text().strip()
+    assert chosen == SANDRA.short_name
+    link.click()
     page.wait_for_load_state("networkidle")
 
     assert "vastutaja=" in page.url
     assert set(column_text(page, "Vastutaja")) == {chosen}
+    expect(page.get_by_role("link", name=title, exact=False)).to_have_count(1)
+    assert row_count(page) < before
 
 
 # ---------------------------------------------------------------------------
@@ -341,15 +436,22 @@ def test_viimane_tegevus_second_activation_puts_the_oldest_first(page, base_url)
 @pytest.mark.parametrize(
     ("column", "query"),
     [
-        ("Kuupäev", "?olek=koik&jarjestus=kuupaev_asc"),
-        ("Kuupäev", "?olek=koik&jarjestus=kuupaev_desc"),
-        ("Viimane tegevus", "?olek=koik&jarjestus=viimane_uusim"),
-        ("Viimane tegevus", "?olek=koik&jarjestus=viimane_vanim"),
+        ("Kuupäev", f"{ALL_ROWS}&jarjestus=kuupaev_asc"),
+        ("Kuupäev", f"{ALL_ROWS}&jarjestus=kuupaev_desc"),
+        ("Viimane tegevus", f"{ALL_ROWS}&jarjestus=viimane_uusim"),
+        ("Viimane tegevus", f"{ALL_ROWS}&jarjestus=viimane_vanim"),
     ],
 )
 def test_a_row_with_no_date_is_always_last(page, base_url, column, query):
     """In both directions. PostgreSQL's own default would open «hiliseim enne»
-    on a page of em dashes."""
+    on a page of em dashes.
+
+    `?kaupa=koik`, because the rows this is about are the ones the ordering puts
+    at the *end*. On page one of a shared register they are off the page, the
+    skip below fires, and four parametrisations that hold the nulls-last
+    contract report as skipped — green, silent, and checking nothing. With the
+    whole register in view the skip can only mean what it says.
+    """
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url, query)
 
