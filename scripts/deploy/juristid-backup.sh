@@ -23,13 +23,32 @@
 #
 # LAYOUT
 #
-#   <backup-root>/evidence/         append-only mirror of the evidence tree
-#   <backup-root>/legacy-source/    append-only mirror of the OneNote page XML
-#   <backup-root>/sets/<stamp>/     database.dump, manifest.json, SHA256SUMS
+#   <backup-root>/evidence/         shared byte pool, append-only
+#   <backup-root>/legacy-source/    shared byte pool, append-only
+#   <backup-root>/sets/<stamp>/     database.dump, manifest.json, SHA256SUMS,
+#                                   evidence.files0, legacy-source.files0
 #
-# The two mirrors are shared rather than copied per set, because evidence is
+# The two pools are shared rather than copied per set, because evidence is
 # immutable and 4 GiB of it copied nightly fills a disk without adding a single
-# recoverable byte. What each set records is which mirror state it belongs with.
+# recoverable byte.
+#
+# MEMBERSHIP
+#
+# A pool is not a statement about any one set. Which objects were *active* when
+# a set was taken is a separate fact, and until 2026-09-12 nothing recorded it:
+# a set meant "the database, plus whatever the pool holds", which is the same
+# thing as the active tree only while nothing has ever been removed from one.
+#
+# The operational reset made them different things. Active evidence went to zero
+# while the pool kept 20068 pre-reset objects, so the clean state's set would
+# have restored a register with no rows beside twenty thousand orphaned files —
+# not the state it was taken from.
+#
+# So each set carries one NUL-delimited membership inventory per pooled tree,
+# naming the relative paths that were active when it was sealed. The bytes stay
+# in the pool, once. The membership is the set's own, and it is what a restore
+# reads. An empty inventory is a first-class answer: it says this set's tree held
+# nothing, and restoring the set has to produce nothing (scripts/deploy/lib.sh).
 #
 # CONSISTENCY
 #
@@ -81,12 +100,22 @@ Usage:
 
   --compose-file   the deployment's compose.yml, named explicitly
   --data-root      the appdata tree holding evidence/ and legacy-source/
-  --backup-root    where the mirrors and the backup sets live
+  --backup-root    where the shared byte pools and the backup sets live
   --project        juristid-main (default) or juristid-recovery-rehearsal
-  --no-toc-check   skip the pg_restore --list pass (it needs the db container)
+  --no-toc-check   skip the structural verification this script otherwise runs
+                   before it seals the set. That pass reads the archive with
+                   pg_restore --list, which needs the db container — and with
+                   it goes the membership check, so a set produced this way has
+                   never been checked against the byte pool it names.
   --allow-empty    this tree is empty on purpose, not because its storage is
                    missing. Name one tree per flag; repeat it for both. Every
-                   tree not named keeps the guard. Recorded in the manifest.
+                   tree not named keeps the guard. Recorded in the manifest as
+                   an audit note about the flag, never as a measurement — what
+                   the tree held is the set's membership inventory.
+
+Each set carries one membership inventory per shared tree, naming the objects
+that were active when it was taken. The bytes live once in the shared pool; the
+membership is the set's, and a restore obeys it.
 
 Exits non-zero on any failure, and leaves no artifact that could be mistaken
 for a complete backup set.
@@ -135,6 +164,7 @@ require_directory "$LEGACY_SOURCE" "legacy-source tree"
 
 require_command docker "a Compose deployment cannot be backed up without it"
 require_command rsync "the evidence mirror is built with it"
+require_nul_tools
 
 free_mib=$(( $(free_kib "$BACKUP_ROOT") / 1024 ))
 if [ "$free_mib" -lt "$MINIMUM_FREE_MIB" ]; then
@@ -242,6 +272,43 @@ DUMP_SHA="$(sha256_of "$DUMP")"
 note "  database.dump  ${DUMP_BYTES} bytes"
 note "  sha256         ${DUMP_SHA}"
 
+# --------------------------------------------------------------------------
+# What belongs to this set
+# --------------------------------------------------------------------------
+#
+# Between the dump and the second sync, and both halves of that are the point.
+#
+# After the dump, because bytes are written before the row describing them
+# commits: anything the dump refers to was on disk before the dump began, so an
+# inventory taken now names it. And before the second sync, because every path
+# named here is therefore present in the source when the next pass runs — so the
+# pass guarantees its bytes reach the pool. Objects appearing after this moment
+# may still enter the pool and are simply not members of this set, which is the
+# harmless direction: a pool with extras, never a set with gaps.
+#
+# Measured against the source tree rather than the pool, because the source is
+# what this set is a backup *of*. The verifier recomputes the same totals against
+# the pool, and a disagreement is exactly the truncation worth catching.
+
+step "Membership of this set"
+
+EVIDENCE_INVENTORY="$(inventory_name_for evidence)"
+LEGACY_INVENTORY="$(inventory_name_for legacy-source)"
+
+capture_inventory "$EVIDENCE_SOURCE" "$PARTIAL_DIR/$EVIDENCE_INVENTORY"
+capture_inventory "$LEGACY_SOURCE" "$PARTIAL_DIR/$LEGACY_INVENTORY"
+
+EVIDENCE_MEMBERS="$(inventory_count "$PARTIAL_DIR/$EVIDENCE_INVENTORY")"
+LEGACY_MEMBERS="$(inventory_count "$PARTIAL_DIR/$LEGACY_INVENTORY")"
+EVIDENCE_MEMBER_BYTES="$(inventory_selected_bytes "$EVIDENCE_SOURCE" "$PARTIAL_DIR/$EVIDENCE_INVENTORY")"
+LEGACY_MEMBER_BYTES="$(inventory_selected_bytes "$LEGACY_SOURCE" "$PARTIAL_DIR/$LEGACY_INVENTORY")"
+
+# Counts only. The paths themselves stay in the inventory file: they are object
+# names from the Chamber's corpus and there is no reason for them to be in a
+# deployment log.
+note "  evidence       $EVIDENCE_MEMBERS active file(s), $EVIDENCE_MEMBER_BYTES byte(s)"
+note "  legacy-source  $LEGACY_MEMBERS active file(s), $LEGACY_MEMBER_BYTES byte(s)"
+
 step "Evidence and page XML, second pass"
 # Catches any object whose row entered the dump while the first pass was
 # running. Safe to repeat because the objects are immutable.
@@ -258,10 +325,17 @@ sync_tree "legacy-source" "$LEGACY_SOURCE" "$LEGACY_MIRROR"
 
 step "Manifest"
 
-# The mirror figures the verifier reads back (`juristid-verify-backup.sh`).
+# The pool figures the verifier reads back (`juristid-verify-backup.sh`).
+#
+# These are about the shared byte pool, not about this set: they say how much
+# history was sitting beside it, and they may legitimately be far larger than
+# what the set itself names. The `*_snapshot` blocks above are the set's own
+# membership, and they are the ones a restore obeys. Both are written because
+# they answer different questions, and naming them differently is what stops a
+# reader answering one with the other.
 #
 # `total_bytes` is the sum of the files' own sizes, not `du`. `du` answers in
-# allocated blocks, so the same mirror on a destination with a different block
+# allocated blocks, so the same pool on a destination with a different block
 # size reports a different number — which would make the check fail on a good
 # off-host copy and pass on a truncated same-host one. Manifest version 2 is
 # what says the field means this; version 1 sets carry the `du` figure and the
@@ -274,6 +348,12 @@ LEGACY_BYTES="$(tree_bytes "$LEGACY_MIRROR")"
 # Which guards this set was taken with relaxed, as a JSON array — built here
 # rather than inside the heredoc below, which interpolates and is no place for
 # a loop.
+#
+# This is an audit field about the *operator's flags*, and nothing else may read
+# it as a claim about the world. A `--allow-empty evidence` left in a runbook
+# after the tree filled up again is recorded here exactly the same way, which is
+# why the script says out loud that the flag changed nothing. What the tree
+# actually held is `evidence_snapshot`, measured rather than asserted.
 ALLOW_EMPTY_JSON=""
 for tree in $ALLOW_EMPTY; do
   [ -z "$ALLOW_EMPTY_JSON" ] || ALLOW_EMPTY_JSON="$ALLOW_EMPTY_JSON, "
@@ -287,7 +367,7 @@ PG_VERSION="$(juristid_compose exec -T db psql --no-password -U "$DB_USER" -d "$
 
 cat >"$PARTIAL_DIR/manifest.json" <<MANIFEST
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "project": "$JURISTID_PROJECT",
   "application_revision": "${APP_REVISION:-unknown}",
@@ -297,6 +377,16 @@ cat >"$PARTIAL_DIR/manifest.json" <<MANIFEST
     "file": "database.dump",
     "size_bytes": $DUMP_BYTES,
     "sha256": "$DUMP_SHA"
+  },
+  "evidence_snapshot": {
+    "inventory_file": "$EVIDENCE_INVENTORY",
+    "file_count": $EVIDENCE_MEMBERS,
+    "total_bytes": $EVIDENCE_MEMBER_BYTES
+  },
+  "legacy_source_snapshot": {
+    "inventory_file": "$LEGACY_INVENTORY",
+    "file_count": $LEGACY_MEMBERS,
+    "total_bytes": $LEGACY_MEMBER_BYTES
   },
   "evidence_mirror": {
     "path_relative_to_backup_root": "evidence",
@@ -321,12 +411,17 @@ MANIFEST
 
 # Relative names, so the file verifies from inside the set wherever the set
 # ends up — including on the machine it is restored to.
+#
+# The inventories are covered too, and that is not housekeeping. They are what a
+# restore reads to decide which objects to write; a set where the dump is
+# protected and the membership can be edited in place is a set whose restore can
+# be steered without breaking a single checksum.
 (
   cd "$PARTIAL_DIR"
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum database.dump manifest.json
+    sha256sum database.dump manifest.json "$EVIDENCE_INVENTORY" "$LEGACY_INVENTORY"
   else
-    shasum -a 256 database.dump manifest.json
+    shasum -a 256 database.dump manifest.json "$EVIDENCE_INVENTORY" "$LEGACY_INVENTORY"
   fi
 ) >"$PARTIAL_DIR/SHA256SUMS"
 
@@ -346,8 +441,9 @@ mv "$PARTIAL_DIR" "$SET_DIR"
 
 step "Done"
 note "Backup set:      $SET_DIR"
-note "Evidence mirror: $EVIDENCE_MIRROR ($EVIDENCE_FILES files)"
-note "Page XML mirror: $LEGACY_MIRROR ($LEGACY_FILES files)"
+note "  this set names $EVIDENCE_MEMBERS evidence and $LEGACY_MEMBERS page-XML object(s) as its own"
+note "Evidence pool:   $EVIDENCE_MIRROR ($EVIDENCE_FILES files, this set's and every earlier set's)"
+note "Page XML pool:   $LEGACY_MIRROR ($LEGACY_FILES files, this set's and every earlier set's)"
 note ""
 note "This is a local recovery copy. It protects against an operator mistake and"
 note "a bad deployment. It is NOT disaster recovery until a copy of it lives on"

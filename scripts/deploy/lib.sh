@@ -148,11 +148,25 @@ PLAN
 # `ls -ln` rather than `find -printf`, which is GNU-only, and in batches rather
 # than one process per file, because these trees hold tens of thousands of
 # objects. Column five is the size whatever the name contains.
+#
+# A directory that is not there holds no files, and says so with status 0. That
+# is not pedantry: `find missing | wc -l` prints `0` and *fails*, `pipefail`
+# carries the failure out to the command substitution every caller assigns from,
+# and `set -e` then kills the script with no message at all. The restore asks
+# this about a storage tree that a destroyed deployment has not recreated yet,
+# so the answer has to be a number rather than a silent exit.
+#
+# A directory that exists and cannot be read still fails, which is the
+# distinction worth keeping: absent is zero, unreadable is an error. Both
+# functions carry the guard, because both are `find | …` and both are read
+# through a command substitution.
 count_files() {
+  [ -d "$1" ] || { printf '0\n'; return 0; }
   find "$1" -type f 2>/dev/null | wc -l | tr -d ' '
 }
 
 tree_bytes() {
+  [ -d "$1" ] || { printf '0\n'; return 0; }
   find "$1" -type f -exec ls -ln {} + 2>/dev/null | awk '$5 ~ /^[0-9]+$/ { total += $5 } END { print total + 0 }'
 }
 
@@ -183,4 +197,144 @@ looks_like_custom_dump() {
   local path="$1"
   [ -s "$path" ] || return 1
   [ "$(head -c 5 "$path")" = "$PGDMP_MAGIC" ]
+}
+
+# --------------------------------------------------------------------------
+# Set-local membership inventories
+# --------------------------------------------------------------------------
+#
+# The mirrors under a backup root are a BYTE POOL: shared between every set,
+# append-only, and holding every object that has ever existed. They are not a
+# statement about any one set, and for a long time nothing else was, which made
+# "restore this set" mean "copy the pool" — a distinction with no difference
+# while the pool and the live tree were the same thing.
+#
+# The 2026-09-12 operational reset made them different things. Active evidence
+# went to zero while the pool kept 20068 pre-reset objects, so restoring the
+# clean set reconstructed a deployment with no rows and twenty thousand orphaned
+# files. The set had no way to say which objects were its own.
+#
+# So each set now carries one MEMBERSHIP INVENTORY per shared tree: the exact
+# relative paths that were active when the set was taken. The bytes stay in the
+# pool, once; the membership is written down per set, and it is the inventory
+# rather than the pool that a restore reads.
+#
+# The format is NUL-delimited relative paths, sorted. NUL because it is the one
+# byte a Unix filename cannot contain, so a list delimited by it is right for
+# exactly the names — spaces, tabs, newlines — that a line-based list gets
+# wrong. Sorted so that the same tree produces the same file, which is what
+# makes the inventory's own checksum mean something.
+
+#: What a membership inventory is called inside a set. The suffix says the
+#: format: NUL-separated ("files0", after `find -print0` and `rsync --from0`).
+readonly INVENTORY_SUFFIX=".files0"
+
+inventory_name_for() {
+  printf '%s%s' "$1" "$INVENTORY_SUFFIX"
+}
+
+# `sort -z` and `xargs -0 -r` are what make a NUL-delimited list survive being
+# read back. Both are GNU, both are on this host, on the CI runner and in the
+# Git for Windows toolchain — and a system without them has to be told so,
+# because the alternative is an inventory that is silently unordered or a byte
+# total silently taken over the wrong thing.
+require_nul_tools() {
+  printf 'b\0a\0' | LC_ALL=C sort -z >/dev/null 2>&1 ||
+    die "this sort does not support -z. A membership inventory is NUL-delimited because a filename may contain any byte but NUL; writing one without it would produce a list that is wrong for exactly the names it exists to survive."
+  printf '' | xargs -0 -r true >/dev/null 2>&1 ||
+    die "this xargs does not support -0 -r. Without -r an empty inventory would run 'ls' with no arguments, which lists the whole directory — so an empty set would measure the entire byte pool and call it its own."
+}
+
+# The active membership of one tree, written where the set can carry it.
+#
+# Taken from inside the tree, so every entry is relative to it: an inventory
+# that recorded absolute paths would be a set that only restores onto the host
+# it came from, and the point of a set is that it restores somewhere else.
+capture_inventory() {
+  local source="$1" destination="$2" entry
+  ( cd -- "$source" && find . -type f -print0 ) |
+    LC_ALL=C sort -z |
+    while IFS= read -r -d '' entry; do
+      printf '%s\0' "${entry#./}"
+    done >"$destination"
+}
+
+# How many paths an inventory names. Counting NUL bytes rather than lines is
+# the whole reason for the format: a filename containing a newline would make
+# `wc -l` disagree with every consumer of the same file.
+#
+# The readability guard is not ceremony. `tr <missing | wc -c` prints `0` — the
+# shell reports the failed redirect on stderr and the pipeline's last command
+# succeeds on no input — so an unreadable inventory would otherwise measure as
+# a set that names nothing, which is the one answer that must never be guessed.
+inventory_count() {
+  [ -r "$1" ] || die "membership inventory cannot be read: $1"
+  tr -dc '\000' <"$1" | wc -c | tr -d ' '
+}
+
+# How many of those paths are repeats. A set's membership is a set; a list that
+# names one object twice was not written by the backup.
+inventory_duplicate_count() {
+  local total unique
+  total="$(inventory_count "$1")"
+  unique="$(LC_ALL=C sort -zu <"$1" | tr -dc '\000' | wc -c | tr -d ' ')"
+  # Either side coming back empty means the file could not be read partway
+  # through, and the subtraction below would turn that into a confident wrong
+  # statement about duplicates — a misleading refusal at the one moment the
+  # message is what an operator has to act on.
+  { [ -n "$total" ] && [ -n "$unique" ]; } ||
+    die "membership inventory could not be measured: $1"
+  printf '%s' "$(( total - unique ))"
+}
+
+# The first entry that must never be acted on, printed, with status 0 when there
+# was one.
+#
+# Backup sets are trusted operational artifacts, and this check is here anyway:
+# a restore reads these paths and writes to them, so a corrupt inventory must
+# not become arbitrary filesystem writes. Everything an inventory may contain is
+# a plain relative path inside its own tree.
+inventory_first_unsafe() {
+  local entry
+  while IFS= read -r -d '' entry; do
+    case "$entry" in
+      "") printf '(an empty path)'; return 0 ;;
+      /*) printf '%s' "$entry"; return 0 ;;
+      .. | ../* | */.. | */../*) printf '%s' "$entry"; return 0 ;;
+      . | ./* | */. | */./*) printf '%s' "$entry"; return 0 ;;
+      *) : ;;
+    esac
+  done <"$1"
+  return 1
+}
+
+# The first member that is not a regular file in the tree, printed, with status
+# 0 when there was one. `[ -f ]` is a builtin, so this walks tens of thousands
+# of entries without forking once.
+inventory_first_missing() {
+  local tree="$1" inventory="$2" entry
+  while IFS= read -r -d '' entry; do
+    [ -f "$tree/$entry" ] || { printf '%s' "$entry"; return 0; }
+  done <"$inventory"
+  return 1
+}
+
+# What the members add up to, in the tree they are being checked against.
+#
+# Only the listed files, which is the entire point: the pool around them may
+# hold any amount of history, and a total that included it would be satisfied by
+# objects this set never named. Batched through `xargs`, for the same reason
+# `tree_bytes` is, and `-r` so an empty inventory measures nothing at all.
+#
+# Call `inventory_first_missing` first. This one is arithmetic over `ls`, and it
+# has nothing useful to say about an entry that is not there.
+#
+# The inventory is redirected into the *subshell* rather than into `xargs`, so
+# it is opened in the caller's directory before the `cd` rather than after it.
+# Attached to the inner command, a relative --backup-root would be resolved
+# against the tree being measured and the file would not be found.
+inventory_selected_bytes() {
+  local tree="$1" inventory="$2"
+  ( cd -- "$tree" && xargs -0 -r ls -ln ) <"$inventory" |
+    awk '$5 ~ /^[0-9]+$/ { total += $5 } END { print total + 0 }'
 }
