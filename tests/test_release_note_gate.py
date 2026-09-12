@@ -32,6 +32,10 @@ def _load():
     spec = importlib.util.spec_from_file_location("assert_release_note", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # Registered before it runs: the script's dataclass carries string
+    # annotations (`from __future__ import annotations`), and `dataclasses`
+    # resolves those through `sys.modules[cls.__module__]`.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 

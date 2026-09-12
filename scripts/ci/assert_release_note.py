@@ -134,9 +134,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # UTF-8 on the way out whatever the locale says: the detail may carry a
+    # waiver written in Estonian, and the runner reads this as UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     verdict = decide(_read_paths(args.changed_files), waiver=args.waiver)
 
-    print(f"release note: {verdict.kind} — {verdict.detail}")
+    print(f"release note: {verdict.kind} - {verdict.detail}")
     if args.env_file:
         with Path(args.env_file).open("a", encoding="utf-8") as handle:
             handle.write(f"RELEASE_NOTE={verdict.kind}\n")
