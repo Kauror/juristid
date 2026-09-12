@@ -329,11 +329,12 @@ LEGACY_SOURCE_ROOT = Path(env("LEGACY_SOURCE_ROOT", str(BASE_DIR / "legacy-sourc
 #
 # It does need a *shared* volume in production, which is a different question
 # from being worth keeping. Since docs/adr/0064 two containers use this path —
-# `web` writes a staged file and the `extractor` container opens it to parse it
-# — and a container's writable layer is private, so an unmounted default leaves
+# `web` writes a staged file and the reader container opens it to parse it —
+# and a container's writable layer is private, so an unmounted default leaves
 # the worker looking for a file that only exists in another container. The
 # production stack mounts one project-scoped named volume here, read-write for
-# `web` and read-only for `extractor` (deploy/unraid-main/compose.yml). Being on
+# `web` and read-only for `intake-reader`, which replaced `extractor` in
+# docs/adr/0072 (deploy/unraid-main/compose.yml). Being on
 # a volume does not promote it: expiry and `prune_intake_staging` still bound it,
 # and it stays out of every backup set.
 PENDING_UPLOAD_STORAGE_ALIAS = "pending_uploads"

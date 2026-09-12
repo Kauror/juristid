@@ -485,7 +485,46 @@ def test_every_production_up_that_starts_the_application_says_no_build(runbook: 
     }
     assert {"web", "intake-reader", "searchindex"} <= application
 
-    examined = 0
+    for line in _lines_that_start_the_application(runbook, application):
+        assert "--no-build" in line.split(), (
+            f"{runbook.name}: starts the application image without forbidding a build\n  {line}"
+        )
+
+
+def test_the_production_runbooks_do_start_the_application_somewhere() -> None:
+    """Guards the guard above, at the directory rather than at each file.
+
+    Asserted per file, this said that every document in `deploy/unraid-main/`
+    has to contain a release command — which made the directory unable to hold
+    an operator document about anything else, and `OPERATOR.md` (access, host
+    identity, safe remote execution) is exactly such a document. The property
+    worth keeping is that the scan is not vacuous: somewhere in these runbooks
+    the application is started, so the assertion above has something to be true
+    about.
+    """
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "deploy" / "unraid-main" / "compose.yml").read_text())
+    web_image = compose["services"]["web"]["image"]
+    application = {
+        name for name, service in compose["services"].items() if service.get("image") == web_image
+    }
+
+    examined = sum(
+        len(_lines_that_start_the_application(runbook, application))
+        for runbook in PRODUCTION_RUNBOOKS
+    )
+    assert examined, "no production runbook line starts the application at all"
+
+
+def _lines_that_start_the_application(runbook: Path, application: set[str]) -> list[str]:
+    """`docker compose … up …` lines that resolve the release image.
+
+    `up -d db` and `up -d tunnel` run pinned upstream images that no `build:`
+    stanza can touch, so they are not among them. An unqualified `up` is,
+    because Compose then starts whatever the file defines.
+    """
+    lines = []
     for line in command_lines(runbook.read_text(encoding="utf-8")):
         if "docker compose" not in line or " up " not in line:
             continue
@@ -493,11 +532,8 @@ def test_every_production_up_that_starts_the_application_says_no_build(runbook: 
         named = [token for token in tail if not token.startswith("-")]
         if named and not application & set(named):
             continue
-        examined += 1
-        assert "--no-build" in tail, (
-            f"{runbook.name}: starts the application image without forbidding a build\n  {line}"
-        )
-    assert examined, f"{runbook.name}: no line starts the application at all"
+        lines.append(line)
+    return lines
 
 
 def test_the_production_runbook_documents_the_release_artifact_contract() -> None:
