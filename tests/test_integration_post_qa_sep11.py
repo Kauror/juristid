@@ -21,11 +21,18 @@ the combination the reported incident actually had: a lawyer describing what
 they did, attaching the file that proves it, into a tab that no longer matches
 the world.
 
-**A closed Matter against the opinion routes (#180 x #182).** Recorded rather
-than changed: `register_sent_opinion` deliberately does not take the
+**A closed Matter against the opinion routes (#180 x #182).** Pinned here
+first, then decided. `register_sent_opinion` deliberately does not take the
 closed-Matter guard, because filing a historical send onto finished work is
-what the register import does. The test pins the behaviour so that a later
-decision to guard it is a decision, not a discovery.
+what the register import does — and that half is unchanged and asserted below.
+What was *also* true, and should not have been, is that a lawyer could reach
+the same service from the Dokumendid page and create canonical business content
+on a Matter somebody had declared finished. That is now refused at the
+interactive use case above these services, which is the layer the import does
+not go through; the surface's own contract is
+`tests/test_closed_matter_documents.py` and the import's is
+`tests/test_opinion_apply_hardening.py`. The tests below are what says the
+services themselves kept their generality.
 
 **Register state against the workspace (#181 x #180).** The chip row is built
 from the request's own query string, and #180 added no register parameter - so
@@ -60,6 +67,7 @@ from app.submissions.services import (
     create_submission,
     mark_submission_sent,
     register_sent_opinion,
+    register_sent_opinion_on_open_matter,
     select_final_evidence,
 )
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
@@ -304,19 +312,25 @@ def test_the_same_completion_succeeds_whole_while_the_matter_is_open(
 
 
 def test_registering_a_historical_send_still_works_on_a_closed_matter(normal_matter, specialist):
-    """Pinned, not decided.
+    """The generality the import depends on, now that the surface has lost it.
 
     `register_sent_opinion` takes `lock_matter_for_evidence_integrity` and not
     `lock_open_matter_for_business_write`, so a closed Matter accepts the
     registration of a send that already happened. That is deliberate and has
     precedent - `add_engagement` is unguarded at the leaf for the same reason,
     because the register import files finished work onto Matters that are
-    closed - but the reachable *surface* is `Dokumendid`, whose `can_write` asks
-    only about the reader's role.
+    closed.
 
-    Whether a person should be able to do this from the page is a product
-    question. This test states today's answer so that changing it is a decision
-    somebody made rather than a behaviour that drifted.
+    The reachable *surface* used to inherit that, which was the defect: a
+    lawyer on Dokumendid could create a canonical Submission, its recipients and
+    its send event on a file somebody had declared finished. The boundary is now
+    `register_sent_opinion_on_open_matter`, one layer up, and the import does
+    not go through it.
+
+    So this test changed meaning without changing a line. It is no longer
+    «today's answer, pinned»; it is the contract the importer holds, and a
+    failure here means somebody pushed the interactive rule down into the
+    service and broke the archive apply with it.
     """
     document = _opinion_file(normal_matter, name="Koja_arvamus.pdf", actor=specialist)
     _close_elsewhere(normal_matter, specialist)
@@ -335,6 +349,37 @@ def test_registering_a_historical_send_still_works_on_a_closed_matter(normal_mat
     assert submission.status == SubmissionStatus.SENT
     assert submission.sent_at_precision == SentAtPrecision.DATE
     assert submission.sent_at.date() != timezone.localdate()
+
+
+def test_the_two_layers_answer_the_same_call_differently_on_purpose(normal_matter, specialist):
+    """The whole architecture, on one Matter and one file.
+
+    Same document, same version, same recipient, same backdated day. The
+    service files it, because that is what an import of finished work needs;
+    the use case the Dokumendid page posts to refuses it, because a person
+    creating a canonical send on a closed file is ordinary business work with a
+    backdated field and not an import. Import privilege comes from using the
+    import path, never from being a powerful user of the UI.
+    """
+    document = _opinion_file(normal_matter, name="Koja_arvamus.pdf", actor=specialist)
+    _close_elsewhere(normal_matter, specialist)
+    recipient = factories.OrganisationFactory()
+    fields = {
+        "document": document,
+        "version": document.current_version,
+        "title": "Koja arvamus",
+        "actor": specialist,
+        "recipients": [recipient],
+        "sent_at": timezone.now() - datetime.timedelta(days=30),
+        "sent_at_precision": SentAtPrecision.DATE,
+    }
+
+    with pytest.raises(DomainError) as refusal:
+        register_sent_opinion_on_open_matter(**fields)
+    assert str(refusal.value) == CLOSED_MATTER_REFUSAL
+    assert not Submission.objects.filter(matter=normal_matter).exists()
+
+    assert register_sent_opinion(**fields).status == SubmissionStatus.SENT
 
 
 def test_a_drafts_final_evidence_is_still_refused_on_a_closed_matter(normal_matter, specialist):

@@ -89,7 +89,15 @@ finds again (§23.5).
           <a class="quietlink" href="{% url 'matters:matter_documents' pk=matter.pk %}">Tühjenda</a>
         {% endif %}
         <span class="doctoolbar__spacer"></span>
-        {% if can_write %}
+        {% comment %}
+          `can_add_content`, not `can_write`: on a closed teema this page is a
+          reading surface. The upload route refuses a stale post anyway — that
+          is the boundary and it is in `app/documents/services.py` — but a
+          reader should not be shown a button whose only answer is a refusal,
+          and the banner above already offers the thing that would make it work
+          (app/matters/views.py).
+        {% endcomment %}
+        {% if can_add_content %}
           <button class="button button--primary" type="button" data-reveals="lae-dokument">
             ↑ Lae dokument
           </button>
@@ -103,7 +111,13 @@ finds again (§23.5).
           Töödokumendid accordion — one panel per thing to add, however many
           controls point at it. Rendering the SharePoint form inside the
           accordion made the empty state's button hide a form nobody could see.
+
+          The evidence panel is `can_add_content` within that: a SharePoint
+          reference is a link to a living file and not a canonical record of
+          anything, so it is outside the closed-Matter business-write boundary
+          and stays available. Uploading evidence is inside it.
         {% endcomment %}
+        {% if can_add_content %}
         <div class="uploadpanel" id="lae-dokument" hidden>
           <form class="stackform" method="post" enctype="multipart/form-data"
                 action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
@@ -148,6 +162,7 @@ finds again (§23.5).
             </div>
           </form>
         </div>
+        {% endif %}
 
         <div class="uploadpanel" id="sharepointi-viide" hidden>
           <form class="stackform" method="post"
@@ -180,9 +195,11 @@ finds again (§23.5).
             <p class="docempty__text">Sellel teemal ei ole veel dokumente.</p>
             {% if can_write %}
               <div class="docempty__actions">
-                <button class="button button--primary" type="button" data-reveals="lae-dokument">
-                  ↑ Lae dokument
-                </button>
+                {% if can_add_content %}
+                  <button class="button button--primary" type="button" data-reveals="lae-dokument">
+                    ↑ Lae dokument
+                  </button>
+                {% endif %}
                 <button class="button button--quiet" type="button" data-reveals="sharepointi-viide">
                   + SharePointi viide
                 </button>

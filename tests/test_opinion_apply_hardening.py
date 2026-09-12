@@ -59,8 +59,10 @@ from app.legacy_import.opinion_enums import (
 from app.legacy_import.opinion_plan import build_plan
 from app.legacy_import.parser import SOURCE_SYSTEM
 from app.matters.models import Matter
+from app.matters.services import close_matter
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission, SubmissionRecipient
+from app.workflow.enums import Disposition
 from tests import factories
 from tests import synthetic_opinions as syn
 
@@ -911,3 +913,65 @@ def test_no_matter_field_is_touched_by_a_recipient_backfill(archive_path):
     resolve_recipients(apply=True)
 
     assert Matter.objects.get(pk=matter.pk).updated_at == before
+
+
+# ---------------------------------------------------------------------------
+# The historical apply against a closed Matter
+# ---------------------------------------------------------------------------
+#
+# The Dokumendid surface stopped accepting new canonical business content on a
+# closed Matter (`tests/test_closed_matter_documents.py`). This is the other
+# half of that boundary, and the half a browser test cannot see: the rule lives
+# in the interactive use cases and *not* in the primitives this importer
+# composes, because most of the register is finished work and nearly every
+# Matter it files onto is shut.
+#
+# If somebody ever moves «the Matter must be open» down into `create_document`,
+# `add_evidence_version`, `create_submission` or `mark_submission_sent`, this is
+# the test that says what it cost.
+
+
+def test_a_reviewed_letter_is_still_filed_onto_a_closed_matter(archive_path, administrator):
+    """The archive apply writes the whole record onto a Matter that is shut.
+
+    A `Document`, its immutable `DocumentVersion` with the archive's bytes, the
+    canonical `Submission` marked SENT, and the `OpinionSubmissionImport` row
+    that carries the provenance — all four, on a closed register Matter, exactly
+    as before the interactive boundary existed.
+    """
+    matter, item = strict_pair(number=421, sent=None)
+    close_matter(
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=administrator,
+        reason="Registri kanne on lõpetatud.",
+    )
+    matter.refresh_from_db()
+    assert not matter.is_open
+
+    archive = archive_path([item])
+    approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 5, 2),
+        administrator=administrator,
+    )
+
+    plan = plan_for(archive)
+    report = apply_plan(plan, batch=open_batch(plan))
+
+    assert report.submissions_created == 1
+    assert report.documents_created == 1
+    assert report.versions_created == 1
+
+    submission = Submission.objects.get(matter=matter)
+    assert submission.status == SubmissionStatus.SENT
+    assert submission.final_version_id is not None
+    assert submission.final_version.document.matter_id == matter.pk
+    assert OpinionSubmissionImport.objects.filter(submission=submission).exists()
+
+    # And the Matter is still closed: an import files onto the record, it does
+    # not reopen it on somebody's behalf.
+    matter.refresh_from_db()
+    assert not matter.is_open

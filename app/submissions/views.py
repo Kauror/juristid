@@ -42,11 +42,11 @@ from app.submissions.forms import (
 from app.submissions.models import Submission
 from app.submissions.opinions import unregistered_opinion_documents
 from app.submissions.services import (
-    attach_final_evidence,
-    create_submission,
-    mark_submission_sent,
-    register_sent_opinion,
-    select_final_evidence,
+    attach_final_evidence_on_open_matter,
+    create_opinion_draft_on_open_matter,
+    mark_submission_sent_on_open_matter,
+    register_sent_opinion_on_open_matter,
+    select_final_evidence_on_open_matter,
     withdraw_submission,
 )
 
@@ -91,16 +91,25 @@ def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
         messages.error(request, "Arvamuse loomine ebaõnnestus. Kontrolli välju.")
         return redirect(opinions_url(matter))
 
-    submission = create_submission(
-        matter=matter,
-        title=form.cleaned_data["title"],
-        kind=form.cleaned_data["kind"],
-        actor=request.user,
-        recipients=list(form.cleaned_data["recipients"]),
-        for_information=list(form.cleaned_data["for_information"]),
-        joint_submitters=list(form.cleaned_data["joint_submitters"]),
-        channel=form.cleaned_data["channel"],
-    )
+    try:
+        submission = create_opinion_draft_on_open_matter(
+            matter=matter,
+            title=form.cleaned_data["title"],
+            kind=form.cleaned_data["kind"],
+            actor=request.user,
+            recipients=list(form.cleaned_data["recipients"]),
+            for_information=list(form.cleaned_data["for_information"]),
+            joint_submitters=list(form.cleaned_data["joint_submitters"]),
+            channel=form.cleaned_data["channel"],
+        )
+    except DomainError as error:
+        # A closed Matter, most often — the panel this posted from is not
+        # rendered on one, so the page that carried it was stale. Nothing was
+        # written: the refusal happens under the Matter lock before the
+        # Submission row exists (app/submissions/services.py).
+        messages.error(request, str(error))
+        return redirect(opinions_url(matter))
+
     messages.success(request, f"Arvamus „{submission.title}“ on loodud.")
     return _back(submission)
 
@@ -137,10 +146,12 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
                 ),
                 pk=version_id,
             )
-            select_final_evidence(submission=submission, version=version, actor=request.user)
+            select_final_evidence_on_open_matter(
+                submission=submission, version=version, actor=request.user
+            )
         else:
             upload = read_upload(form.cleaned_data["upload"])
-            attach_final_evidence(
+            attach_final_evidence_on_open_matter(
                 submission=submission,
                 content=upload.content,
                 original_filename=upload.filename,
@@ -164,7 +175,7 @@ def mark_sent(request: HttpRequest, pk: Any) -> HttpResponse:
     form.is_valid()
 
     try:
-        mark_submission_sent(
+        mark_submission_sent_on_open_matter(
             submission=submission,
             actor=request.user,
             channel=form.cleaned_data.get("channel", "") if form.is_bound else "",
@@ -233,7 +244,7 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
     sent_on = form.cleaned_data.get("sent_on")
     try:
-        register_sent_opinion(
+        register_sent_opinion_on_open_matter(
             document=document,
             version=version,
             title=form.cleaned_data["title"],

@@ -26,6 +26,19 @@ The block itself opens when a draft is waiting and is shut otherwise. Both forms
 are unbound — a refused write redirects with a message rather than re-rendering,
 which is how every full-page post in this application answers — so there is no
 error state here to open for.
+
+**On a closed teema this whole block is a reading surface.** `can_add_content`
+rather than `can_write` gates every control in it — the draft's `Lisa fail` and
+`Märgi saadetuks`, `+ Registreeri saatmine`, `+ Uus arvamus` — because a closed
+Matter takes no new canonical business content and advancing a draft that was
+left behind is the ordinary continuation of the work, not a correction of a
+historical fact. The drafts themselves stay listed, with the step each is
+waiting for named, so the file still says what is unfinished about it; reopening
+the teema is what makes those steps possible again (docs/adr/0075 §12).
+
+Every route behind these controls refuses a closed Matter on its own, under the
+Matter's row lock — hiding them is courtesy, not the boundary
+(`app/submissions/services.py`).
 {% endcomment %}
 <details class="accordion accordion--opinions" id="arvamuste-haldus"
          {% if opinion_drafts %}open{% endif %}>
@@ -42,15 +55,16 @@ error state here to open for.
 
       Both counts come from lists the view has already read for the body below,
       so this adds no query and can say nothing the block does not contain. The
-      registration count is behind `can_write` because `+ Registreeri saatmine`
-      is, and a heading naming work a reader cannot reach and cannot see inside
-      would be describing somebody else's page
+      registration count is behind `can_add_content` because `+ Registreeri
+      saatmine` is, and a heading naming work a reader cannot reach and cannot
+      see inside would be describing somebody else's page — as true of a closed
+      teema, where the control is gone, as of a reader who may not write at all
       (post-QA §14, app/matters/views.py `matter_documents`).
     {% endcomment %}
     <span class="accordion__summary">
       {% if opinion_drafts %}
-        {{ opinion_drafts|length }} koostamisel{% if can_write and unregistered_opinions %} · {{ unregistered_opinions|length }} registreerimata{% endif %}
-      {% elif can_write and unregistered_opinions %}
+        {{ opinion_drafts|length }} koostamisel{% if can_add_content and unregistered_opinions %} · {{ unregistered_opinions|length }} registreerimata{% endif %}
+      {% elif can_add_content and unregistered_opinions %}
         {{ unregistered_opinions|length }} registreerimata
       {% else %}
         Saatmise registreerimine ja koostatavad arvamused
@@ -68,7 +82,7 @@ error state here to open for.
       <div class="draftrow" id="arvamus-{{ draft.pk }}">
         <span class="draftrow__title">{{ draft.title }}</span>
         <span class="muted">· {{ draft.get_kind_display }}</span>
-        {% if can_write %}
+        {% if can_add_content %}
           {% if draft.final_version_id %}
             <form class="draftrow__form" method="post"
                   action="{% url 'submissions:mark_sent' pk=draft.pk %}">
@@ -117,7 +131,7 @@ error state here to open for.
       </div>
     {% endfor %}
 
-    {% if can_write %}
+    {% if can_add_content %}
       {% if unregistered_opinions %}
         <details class="disclosure">
           <summary class="disclosure__summary">+ Registreeri saatmine</summary>

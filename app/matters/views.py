@@ -2760,6 +2760,25 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             ),
             "working_document_form": WorkingDocumentForm(),
             "can_write": may_write_business_content(request.user),
+            # Two different questions, and this page has to ask both.
+            #
+            # `can_write` is about the **reader**: may this person record
+            # business content anywhere. `can_add_content` is about the
+            # **Matter** as well: a closed teema accepts no new canonical
+            # content from normal interactive work — no upload, no new opinion,
+            # no registered send, and no advancing of a draft that is sitting
+            # there. Reopening it is how work continues, and the banner above
+            # the table offers exactly that (docs/adr/0075 §12).
+            #
+            # It hides controls; it decides nothing. Every route behind them
+            # takes the Matter's row lock and refuses a closed one on its own,
+            # because the browser that posts may be holding a page from before
+            # the closure (`app/submissions/services.py`,
+            # `app/documents/services.py`).
+            #
+            # Reading is untouched: the files, the sent opinions, their
+            # details, `Ava`, `↓` and the archive letters are all still here.
+            "can_add_content": may_write_business_content(request.user) and matter.is_open,
             "historical": _historical_context(matter, request.user),
             # The opinion management block under the table. Compact, collapsed
             # unless a draft is waiting for somebody, and never a second listing

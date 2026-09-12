@@ -34,6 +34,7 @@ from app.core.errors import DomainError
 from app.core.ids import uuid7
 from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document, DocumentVersion
+from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Matter
 
 logger = logging.getLogger(__name__)
@@ -455,3 +456,98 @@ def capture_supporting_evidence(
         link_document_to_record(document=document, record=record, actor=actor)
         captured.append(document)
     return captured
+
+
+# ---------------------------------------------------------------------------
+# The interactive boundary
+# ---------------------------------------------------------------------------
+#
+# Everything above this line is a *primitive*: the supported way to bring bytes
+# into the evidence store, whoever is bringing them and whatever state the
+# Matter is in. That generality is load-bearing. `app.legacy_import.opinion_apply`
+# files real historical letters onto archive Matters, `historical_apply` puts
+# OneNote material there, `email_intake` lands what arrived in the mailbox, and
+# the intake staging commits what somebody dropped on a Matter weeks ago. Most
+# of those Matters are closed — the register is full of finished work — and a
+# leaf that refused a closed Matter would break the import rather than protect
+# anything (R2-02, and the same reasoning `record_engagement` states for
+# `add_engagement`).
+#
+# The two functions below are what a *person* posts to. They are the same acts
+# with one question asked first, and the question is asked under the Matter's
+# row lock rather than off the instance the view arrived with, because a page
+# is not a boundary: a browser that had Dokumendid open before somebody else
+# closed the Matter still has the upload panel on it, and its POST reaches a
+# server with no memory of which page it came from.
+
+
+@transaction.atomic
+def capture_evidence_on_open_matter(
+    *,
+    matter: Matter,
+    title: str,
+    role: str,
+    content: bytes,
+    original_filename: str,
+    mime_type: str,
+    actor: Any = None,
+) -> Document:
+    """`↑ Lae dokument` — a new file on a Matter that is still open.
+
+    One transaction over the two primitives, so a refusal leaves neither a
+    ``Document`` without its bytes nor a stored object without its row. The
+    lock is taken before either of them runs, which is what makes «a refusal
+    leaves nothing behind» true rather than probable.
+
+    `Matter → Document` is a prefix of the one lock order
+    (`app/matters/locks.py`): this takes the Matter's row and
+    ``add_evidence_version`` takes the Document's, in that order and never the
+    other way round.
+    """
+    locked = lock_open_matter_for_business_write(matter.pk)
+    document = create_document(
+        matter=locked,
+        title=title,
+        role=role,
+        created_by=actor,
+    )
+    add_evidence_version(
+        document=document,
+        content=content,
+        original_filename=original_filename,
+        mime_type=mime_type,
+        uploaded_by=actor,
+    )
+    document.refresh_from_db()
+    return document
+
+
+@transaction.atomic
+def add_version_on_open_matter(
+    *,
+    document: Document,
+    content: bytes,
+    original_filename: str,
+    mime_type: str,
+    uploaded_by: Any = None,
+) -> DocumentVersion:
+    """A further version of an existing document, filed by a person.
+
+    A new version is new evidence — new bytes, a new checksum, a new row that
+    the Matter's file list will show — so it is the same act as an upload as
+    far as closure is concerned, and it is guarded the same way. The importer's
+    own re-versioning keeps ``add_evidence_version``.
+
+    The Matter is read from the document rather than taken as an argument: the
+    caller resolved the document through the reader's visibility scope, and a
+    Matter passed alongside it would be a second answer to the question of
+    which file this belongs to.
+    """
+    lock_open_matter_for_business_write(document.matter_id)
+    return add_evidence_version(
+        document=document,
+        content=content,
+        original_filename=original_filename,
+        mime_type=mime_type,
+        uploaded_by=uploaded_by,
+    )

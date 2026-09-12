@@ -83,7 +83,19 @@ what somebody managing an opinion is asking about (§12, §28, §29).
         never that Koda sent it, and only a person can close that gap (§18).
       {% endcomment %}
       <p class="opinionmenu__label">Saatmist ei ole registreeritud.</p>
-      {% if can_write %}
+      {% comment %}
+        `can_add_content`, because the hint points at a control: on a closed
+        teema `+ Registreeri saatmine` is not in the Arvamused block, and a
+        sentence sending somebody to look for it would be directions to a place
+        that is not there. The fact above it — that no send is recorded — stays
+        either way; it is the useful part and it is true on a finished file too.
+
+        `Võta tagasi` above is deliberately still `can_write`. Withdrawing a
+        send that was recorded is a correction of a historical fact rather than
+        new business content, and that is a separate product question this
+        round does not answer.
+      {% endcomment %}
+      {% if can_add_content %}
         <p class="opinionmenu__hint">
           Registreeri saatmine <a class="quietlink" href="#arvamuste-haldus">Arvamused</a> plokis.
         </p>
