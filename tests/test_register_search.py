@@ -839,7 +839,9 @@ def test_a_year_the_box_cannot_read_is_not_reported_as_a_result(signed_in, speci
 
     assert response.context["filters"]["aasta_viga"]
     assert "Selle filtriga teemasid ei leitud" not in body
-    assert "Aasta: kirjuta 2026" in body
+    assert "Aastat ei saanud lugeda" in body
+    # And it says what it does accept, so the sentence is actionable.
+    assert "2020-2026" in body
 
 
 def test_the_word_for_the_unknown_bucket_is_still_read(signed_in, specialist):

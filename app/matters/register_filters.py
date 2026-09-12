@@ -200,8 +200,13 @@ DATE_FILTERS = {
 #: place this value is read there is nothing else they could mean.
 YEAR_RANGE_DASHES = "\u2013\u2014\u2212"
 
-#: What the box accepts, in the words the box uses.
-YEAR_FILTER_HELP = "Aasta: kirjuta 2026, vahemik 2020-2026 või „teadmata“."
+#: What went wrong, and then what the box accepts.
+#:
+#: Both halves, in that order. A sentence that only lists the accepted formats
+#: reads as ordinary help text under a box — which is exactly the ambiguity this
+#: finding is about, since the register below it is empty either way. It has to
+#: say that the value was not understood first (QA-07).
+YEAR_FILTER_ERROR = "Aastat ei saanud lugeda. Kirjuta 2026, vahemik 2020-2026 või „teadmata“."
 
 
 def read_reporting_year(value: str) -> tuple[int, int] | None:
@@ -591,7 +596,7 @@ def apply_register_filters(
             # The value narrowed the register to nothing *because it could not
             # be read*, which is a different fact from «no Teema matches» and
             # has to be said differently (QA-07).
-            year_error = YEAR_FILTER_HELP
+            year_error = YEAR_FILTER_ERROR
     if closed_year := params.get(CLOSED_YEAR_PARAM):
         # `closed_at`, not the reporting year. "Suletud teemasid 2026" on the
         # Aruandlus rail counts the files the department *finished* this year,
