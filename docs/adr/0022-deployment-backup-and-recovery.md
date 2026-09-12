@@ -161,6 +161,44 @@ than something plausible.
 **Nothing deletes.** No retention rule has been agreed, and creating backups
 safely is the more urgent half.
 
+### The pool holds the bytes; the set holds the membership (addendum, 2026-09-12)
+
+The two mirrors above are a shared, append-only **byte pool**. They are not a
+description of any one set, and for a long time nothing else was one either — so
+"restore this set" meant "copy the pool", which is the same thing only while
+nothing has ever left the active tree.
+
+The operational reset of 12.09.2026 made them different things. Active evidence
+went to zero; the pool kept its 20 068 pre-reset objects, because these pools
+never delete. The set taken that day is an accurate record of a deployment
+holding no evidence at all, and restoring it would have produced an empty
+register beside twenty thousand orphaned files — a state that has never existed.
+
+So from **manifest version 3** each set carries one membership inventory per
+pooled tree, `evidence.files0` and `legacy-source.files0`: the relative paths
+that were active when the set was sealed, NUL-delimited and sorted, covered by
+`SHA256SUMS`. Level 2 proves every path in them is still a regular file in the
+pool and that their sizes total exactly what the set recorded; the restore
+copies those paths and nothing else. The bytes still live once.
+
+Three things this deliberately is not:
+
+* **Not a per-set copy of the bytes.** 8 GB duplicated per set fills a disk
+  without adding a recoverable byte, which is why the pool exists at all.
+* **Not a reading of `empty_source_allowed_for`.** That field records that the
+  operator passed `--allow-empty`, and a stale flag left in a runbook after the
+  tree filled up again is recorded identically. It is an audit note about a
+  flag; the inventory is a measurement of the tree.
+* **Not `rsync --delete`.** Exact membership needs a target that holds nothing
+  else, and the way to get one is to refuse and let the operator decide — not
+  for a recovery script to delete files it did not put there.
+
+Sets at version 1 or 2 record no membership and nothing can invent one for them
+afterwards. They stay verifiable and restorable, with the pool-wide copy said
+out loud; the one refused case is a pre-membership set whose own manifest shows
+the empty-tree guard was relaxed, where the pool-wide copy is *known* to be
+wrong rather than merely unproven.
+
 ### Database and evidence are made consistent by ordering
 
 `pg_dump` is transactionally consistent with itself and with nothing else. This
@@ -172,6 +210,13 @@ The mirrors are therefore synchronised **twice**, once before the dump and once
 after. Any object whose row is in the dump had its bytes written before the dump
 began, so one of the two passes holds it. The reverse — an object with no row —
 is an orphan, which is harmless and already has a command.
+
+The membership inventory is captured **between** the dump and the second pass,
+which preserves the same argument from both sides: anything the dump refers to
+existed before the dump began and is therefore named, and anything named is
+present in the source when the second pass runs and is therefore in the pool.
+Objects appearing after that moment may enter the pool and are simply not
+members of this set — a pool with extras, never a set with gaps.
 
 This argument depends on evidence being append-only, which it is: existing
 evidence is immutable through a database trigger, and removal goes through

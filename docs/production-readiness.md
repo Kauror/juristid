@@ -83,8 +83,15 @@ already exists, and refuses outright on any conflict (ADR 0029).
 | 2.1 | A fresh set exists | `scripts/deploy/juristid-backup.sh` |
 | 2.2 | It is a set, not a directory of hopes | `scripts/deploy/juristid-verify-backup.sh --set DIR --level 2 --compose-file …` (level 1 is checksums only) |
 | 2.3 | The evidence tree is in it | The backup refuses a data root with no evidence tree — that refusal is the check |
-| 2.4 | Canonical state is recorded | `manage.py recovery_fingerprint --out before.json` |
-| 2.5 | Restore has been rehearsed | The CI "Backup and restore rehearsal" job, on every commit |
+| 2.4 | The set says which objects are its own | Manifest version 3 and later writes `evidence.files0` / `legacy-source.files0`; level 2 proves every path in them is still in the shared pool |
+| 2.5 | Canonical state is recorded | `manage.py recovery_fingerprint --out before.json` |
+| 2.6 | Restore has been rehearsed | The CI "Backup and restore rehearsal" job, on every commit |
+
+`evidence/` and `legacy-source/` under the backup root are a shared, append-only
+**byte pool**, not a description of any one set: they hold every object that has
+ever existed. What a set restores is its own membership inventory, which is why
+2.4 is a separate row from 2.3 — a pool that is present says nothing about
+whether *this* set's objects are (`deploy/unraid-main/RECOVERY.md`).
 
 `recovery_fingerprint` covers **every** canonical holder of evidence bytes:
 `DocumentVersion` and `OpinionArchiveBinary` alike, plus the legacy source tree
