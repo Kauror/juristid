@@ -127,13 +127,52 @@ It produces:
 
 ```
 /mnt/user/backups/juristid-main/
-  evidence/                     append-only mirror
-  legacy-source/                append-only mirror
+  evidence/                     shared byte pool, append-only
+  legacy-source/                shared byte pool, append-only
   sets/20260822T190000Z/
     database.dump               PostgreSQL custom format
     manifest.json               what this set is, in non-secret metadata
     SHA256SUMS
+    evidence.files0             which evidence objects are this set's
+    legacy-source.files0        which page-XML files are this set's
 ```
+
+### The pool is bytes; the set is membership
+
+Those two directories are a **byte pool**. They are shared between every set,
+they never delete, and they hold every object that has ever existed. They are
+not a statement about any one backup.
+
+Which objects were *active* when a set was taken is a different fact, and until
+12.09.2026 nothing wrote it down. "Restore this set" therefore meant "copy the
+pool", which is the same thing only while nothing has ever left the active tree.
+
+The operational reset made them different things. Active evidence went to zero;
+the pool kept its 20 068 pre-reset objects, because these pools never delete. So
+the set taken that day — an accurate record of a deployment holding no evidence
+at all — would have restored an empty register beside twenty thousand orphaned
+files, a state the system has never been in.
+
+From **manifest version 3** each set carries one **membership inventory** per
+pooled tree: `evidence.files0` and `legacy-source.files0`, listing the relative
+paths that were active when the set was sealed. NUL-delimited and sorted, so the
+list is right for exactly the filenames a line-based list gets wrong, and so the
+same tree always produces the same bytes. They are covered by `SHA256SUMS`,
+because a set whose dump is protected and whose membership can be edited is a
+set whose restore can be steered without breaking a checksum.
+
+The bytes still live once, in the pool. The membership is the set's own, and it
+is what verification and restore obey.
+
+**An empty inventory is an ordinary answer**, not a special case: it says this
+set's tree held nothing, and restoring the set produces nothing. No sentinel
+file, no invented row. Zero is a real production state now.
+
+`empty_source_allowed_for` is unchanged and keeps its old meaning: an audit note
+recording that the operator relaxed the empty-tree guard with `--allow-empty`.
+It is **not** evidence that a tree was empty — a stale flag left in a runbook
+after the tree filled up again is recorded identically, and the backup says so
+out loud when that happens. What the tree held is the inventory, measured.
 
 ### Why the format changed
 
@@ -200,7 +239,7 @@ only the last one means much.
 | Level | Proves | Cost |
 | --- | --- | --- |
 | 1 | the files are present, non-empty, and hash to what the set recorded | seconds |
-| 2 | the archive is a PostgreSQL dump whose contents list the right tables, **and** both mirrors still hold what the manifest recorded | seconds |
+| 2 | the archive is a PostgreSQL dump whose contents list the right tables, **and** both byte pools still hold what the manifest recorded, **and** every object this set names is still in them | seconds |
 | 3 | the set restores and the application reads the register back out of it | minutes |
 
 Levels 1 and 2:
@@ -212,28 +251,47 @@ scripts/deploy/juristid-verify-backup.sh --project juristid-main --compose-file 
 The backup script runs both before it renames a set into place, so a set that
 exists has already passed them.
 
-### The mirror check, and what it is not
+### Two questions about the same directory
 
-A set is `database.dump` plus the two mirrors it names. The manifest has always
-recorded how many files each mirror held and how many bytes they came to;
-nothing read those numbers back, so a set could pass every check it had while
-the evidence it depends on had been emptied — and the way that gets discovered
-is by needing it.
-
-Level 2 now recomputes both and compares:
+**Is the pool still there?** The manifest has always recorded how many files
+each pool held and how many bytes they came to; nothing read those numbers back,
+so a set could pass every check it had while the evidence it depends on had been
+emptied — and the way that gets discovered is by needing it. Level 2 recomputes
+both and compares:
 
 * **fewer files than recorded** is a failure. Objects are gone.
 * **fewer bytes with the right file count** is a failure. Something was
   truncated in place.
-* **more of either** is reported and is not a failure. The mirrors are shared
+* **more of either** is reported and is not a failure. The pools are shared
   between sets rather than copied per set, and evidence is append-only, so an
   older set verified today is *supposed* to find more than it recorded.
 
-It runs before the compose file is even required, because there is no reason to
-make somebody start a container to be told the evidence is missing. Pass
-`--backup-root` if a set has been moved away from its mirrors, and
+**Does this set still have its own objects?** From manifest version 3, level 2
+also reads the set's membership inventory and proves every path in it is a
+regular file in the pool, and that the members' sizes add up to **exactly** the
+byte total the set recorded. Exactly, not at least: the pool grows, membership
+does not — which is what lets a member truncated in place be caught by
+arithmetic rather than by hashing 7.4 GB.
+
+A pool-wide count cannot answer the second question. "The pool holds at least N
+files" is satisfiable entirely by history that has nothing to do with this set —
+a set naming zero objects beside a pool of twenty thousand is complete, and a
+set naming one object that is gone is not, however large the pool is.
+
+The inventory is also checked for shape before it is read for content: an entry
+that is absolute, that contains `..`, or that repeats is refused rather than
+followed. These are trusted operational artifacts and the check is there anyway,
+because a restore turns each of those strings into a path it writes to.
+
+It all runs before the compose file is even required, because there is no reason
+to make somebody start a container to be told the evidence is missing. Pass
+`--backup-root` if a set has been moved away from its pools, and
 `--no-mirror-check` to verify a set as a file rather than as a backup — which is
-what a set copied without its mirrors is.
+what a set copied without its pools is.
+
+**A set at manifest version 1 or 2 records no membership**, and nothing can
+invent one for it after the fact. Those sets stay verifiable on pool counts, and
+the verifier names what it is not proving rather than passing quietly.
 
 **It hashes nothing.** The evidence tree is ~7.4 GB and a routine check that
 reads all of it is a check somebody switches off. Proving the bytes is
@@ -495,6 +553,38 @@ and there is no flag for it. Restoring over live data replaces every row written
 since the dump and nothing brings those back. If replacing them really is the
 intention, drop and recreate the database by hand, deliberately, and run the
 script again.
+
+#### What it copies
+
+For a **manifest version 3** set, the objects that set's inventories name and
+nothing else — `rsync --files-from`, driven by the set rather than by the
+directory. Objects the pool holds and the set never named do not come back. A
+set that named none restores none.
+
+That exactness is only available onto empty storage, so a version 3 restore
+**refuses when `evidence/` or `legacy-source/` under the data root already
+contains files**, names the count, and changes nothing. It does not empty them
+for you: `rsync --delete` would make any target exact by deleting whatever it
+found, which is the one thing a recovery script must never do to a tree it did
+not put there. Move or remove those files deliberately, then run it again.
+`--database-only` is exempt — it touches no storage at all.
+
+For a **version 1 or 2** set there is no membership to obey, so the filesystem
+restore is the old pool-wide copy and the script says so on the line where it
+does it. One case is refused outright: a pre-membership set whose manifest
+records `empty_source_allowed_for`. That flag means the operator relaxed the
+empty-tree guard, so the pool-wide copy for that tree is not merely unproven but
+*known* to produce objects the set never described. Restore the database alone
+with `--database-only`, or pass `--accept-legacy-pool-restore` to say you have
+read this and want the pool-wide copy anyway.
+
+**The clean-state set taken on 12.09.2026 is one of those.** It is a good
+database snapshot and a valuable historical artifact and it should be kept — but
+it is manifest version 2, so it cannot prove exact filesystem restore fidelity,
+and restoring its evidence tree would produce the 20 068 pre-reset objects.
+Once this change is deployed, **take a new backup and run level 2 on it**: that
+set will be the first one whose clean state is provable. Nothing needs to be
+deleted for that to happen.
 
 ### Then verify, before anything is published
 

@@ -1,6 +1,7 @@
 """What ordinary backup verification proves, and whether one was taken lately.
 
-Two gaps the pilot backup/DR audit found, neither of them in the backup itself:
+Three gaps, none of them in the backup itself. The first two came from the pilot
+backup/DR audit; the third from the operational reset of 12.09.2026.
 
 **The manifest recorded the mirrors and nothing read it back.** Every set names
 how many files each mirror held and how many bytes they came to. A set could
@@ -11,6 +12,12 @@ emptied — and the way that gets discovered is by needing it.
 schedule behind any of them, every one taken by hand before a deployment, worst
 observed gap about 41 hours. A backup regime nobody measures is
 indistinguishable, from outside, from one that stopped last week.
+
+**No set said which objects were its own.** The mirrors are a shared,
+append-only byte pool holding everything that has ever existed, so a restore
+that copied them reconstructed the *pool* rather than the set. That is the same
+thing only while nothing has ever left the active tree, and on 12.09.2026
+something did.
 
 These run the real scripts against real directories. The successful *backup*
 path still belongs to the `recovery` job in CI, which has Docker; everything
@@ -41,6 +48,14 @@ AGE = SCRIPTS / "juristid-check-backup-age.sh"
 #: toolchain, so a missing one is a broken environment rather than a reason to
 #: pass quietly.
 BASH = shutil.which("bash") or "bash"
+
+RESTORE = SCRIPTS / "juristid-restore.sh"
+COMPOSE = ROOT / "deploy" / "recovery-rehearsal" / "compose.yml"
+REHEARSAL_PROJECT = "juristid-recovery-rehearsal"
+
+#: The manifest version from which a set names its own objects rather than
+#: leaning on whatever the shared pool happens to hold.
+MEMBERSHIP_VERSION = 3
 
 
 def run(script: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -236,14 +251,14 @@ def test_a_version_one_manifest_is_checked_on_count_and_not_on_bytes(tmp_path: P
     assert "manifest version 1" in result.stdout
 
 
-def test_the_backup_writes_a_version_two_manifest_measured_the_portable_way() -> None:
+def test_the_backup_writes_a_versioned_manifest_measured_the_portable_way() -> None:
     """The version is what says `total_bytes` means the sum of file sizes.
 
     Changing the field's meaning without changing the version is how a verifier
     ends up comparing two different measurements of the same tree.
     """
     text = BACKUP.read_text(encoding="utf-8")
-    assert '"manifest_version": 2' in text
+    assert f'"manifest_version": {MEMBERSHIP_VERSION}' in text
     assert "tree_bytes" in text
     assert "du -sk" not in text
 
@@ -259,6 +274,426 @@ def test_level_one_does_not_read_the_mirrors() -> None:
     before_level_two = body.split("# -- level 2 ", 1)[0]
     assert "check_mirrors" not in before_level_two
     assert "exit 0" in before_level_two, "level 1 must still be able to stop here"
+
+
+# ---------------------------------------------------------------------------
+# Set-local membership
+# ---------------------------------------------------------------------------
+#
+# The pool under a backup root is shared and append-only: it holds every object
+# any set has ever named. Until manifest version 3 that was the only record of
+# what a set's filesystem half contained, which made "restore this set" mean
+# "copy the pool" — the same thing only while nothing has ever left the active
+# tree.
+#
+# On 12.09.2026 something did. The reset emptied active evidence and the pool
+# kept 20068 pre-reset objects, so the set taken that day — a true record of a
+# deployment with no evidence at all — restored twenty thousand orphans.
+#
+# These prove the two halves of the fix: a set now says which objects are its
+# own, and both the verifier and the restore obey that rather than the pool.
+
+
+def _inventory(*paths: str) -> bytes:
+    """A membership inventory as the backup writes one: NUL-delimited, sorted."""
+    return b"".join(path.encode("utf-8") + b"\0" for path in sorted(paths))
+
+
+def _seal_v3(
+    root: Path,
+    *,
+    evidence: tuple[str, ...] = ("aa/one.bin", "aa/two.bin"),
+    legacy: tuple[str, ...] = ("page.xml",),
+    stamp: str = "20260912T000000Z",
+    evidence_inventory: bytes | None = None,
+    recorded_files: int | None = None,
+    recorded_bytes: int | None = None,
+    recorded_inventory_name: str = "evidence.files0",
+) -> Path:
+    """A version 3 set over the pool `_backup_root` built.
+
+    Every default is the honest one, so each test states the single thing it is
+    making wrong.
+    """
+    pool = root / "evidence"
+    set_dir = root / "sets" / stamp
+    set_dir.mkdir(parents=True, exist_ok=True)
+    (set_dir / "database.dump").write_bytes(b"PGDMP0123456789")
+    (set_dir / "evidence.files0").write_bytes(
+        _inventory(*evidence) if evidence_inventory is None else evidence_inventory
+    )
+    (set_dir / "legacy-source.files0").write_bytes(_inventory(*legacy))
+
+    members = sum((pool / member).stat().st_size for member in evidence if (pool / member).exists())
+    legacy_dir = root / "legacy-source"
+    legacy_bytes = sum(
+        (legacy_dir / member).stat().st_size for member in legacy if (legacy_dir / member).exists()
+    )
+    (set_dir / "manifest.json").write_text(
+        "{\n"
+        f'  "manifest_version": {MEMBERSHIP_VERSION},\n'
+        '  "database": {\n'
+        '    "file": "database.dump",\n'
+        '    "size_bytes": 15,\n'
+        '    "sha256": "not-read-by-these-tests"\n'
+        "  },\n"
+        '  "evidence_snapshot": {\n'
+        f'    "inventory_file": "{recorded_inventory_name}",\n'
+        f'    "file_count": {len(evidence) if recorded_files is None else recorded_files},\n'
+        f'    "total_bytes": {members if recorded_bytes is None else recorded_bytes}\n'
+        "  },\n"
+        '  "legacy_source_snapshot": {\n'
+        '    "inventory_file": "legacy-source.files0",\n'
+        f'    "file_count": {len(legacy)},\n'
+        f'    "total_bytes": {legacy_bytes}\n'
+        "  },\n"
+        '  "evidence_mirror": {\n'
+        '    "path_relative_to_backup_root": "evidence",\n'
+        f'    "file_count": {_tree_files(pool)},\n'
+        f'    "total_bytes": {_tree_bytes(pool)}\n'
+        "  },\n"
+        '  "legacy_source_mirror": {\n'
+        '    "path_relative_to_backup_root": "legacy-source",\n'
+        f'    "file_count": {_tree_files(legacy_dir)},\n'
+        f'    "total_bytes": {_tree_bytes(legacy_dir)}\n'
+        "  },\n"
+        '  "empty_source_allowed_for": []\n'
+        "}\n",
+        encoding="utf-8",
+    )
+    subprocess.run(  # noqa: S603 - a fixed interpreter and a temporary directory
+        [
+            BASH,
+            "-c",
+            "sha256sum database.dump manifest.json evidence.files0 legacy-source.files0"
+            " > SHA256SUMS",
+        ],
+        cwd=set_dir,
+        check=True,
+        capture_output=True,
+    )
+    return set_dir
+
+
+def test_a_set_that_names_its_objects_says_so_and_passes(tmp_path: Path) -> None:
+    result = _verify(_seal_v3(_backup_root(tmp_path)))
+
+    assert "evidence: 2 member(s), 18 byte(s), every one present." in result.stdout
+    assert "legacy-source: 1 member(s), 7 byte(s), every one present." in result.stdout
+
+
+def test_a_set_that_names_nothing_verifies_beside_a_pool_full_of_history(
+    tmp_path: Path,
+) -> None:
+    """Zero is a real production state, and it needs no sentinel to express it.
+
+    This is the clean reset: the deployment held no evidence at all, the pool
+    still holds every pre-reset object, and the set is complete.
+    """
+    result = _verify(_seal_v3(_backup_root(tmp_path), evidence=()))
+
+    assert result.returncode != 0  # only because --compose-file was not given
+    assert "evidence: 0 member(s), 0 byte(s), every one present." in result.stdout
+    assert "--compose-file is required" in result.stderr
+
+
+def test_a_pool_that_satisfies_the_counts_with_other_objects_is_not_a_complete_set(
+    tmp_path: Path,
+) -> None:
+    """The point of membership, in one assertion.
+
+    The pool has as many files as the manifest recorded and more bytes than it
+    recorded, so every check that reads the pool as a whole passes. One of this
+    set's own objects is gone, and only a check that reads the set's list can
+    see it.
+    """
+    root = _backup_root(tmp_path)
+    set_dir = _seal_v3(root)
+    (root / "evidence" / "aa" / "two.bin").unlink()
+    (root / "evidence" / "aa" / "historic-z.bin").write_bytes(b"unrelated and larger")
+
+    result = _verify(set_dir)
+
+    assert result.returncode != 0
+    assert "evidence: 2 file(s), exactly as recorded." in result.stdout
+    assert "evidence member 'aa/two.bin' belongs to this set" in result.stderr
+    assert "is not a regular file" in result.stderr
+
+
+def test_a_member_truncated_in_place_is_refused(tmp_path: Path) -> None:
+    """Membership is fixed, so its byte total is an equality rather than a floor
+    — which is what lets level 2 catch a truncation without hashing anything.
+
+    The pool is left larger than it was sealed against, so the whole-pool
+    comparison is satisfied and only the members' own arithmetic is not.
+    """
+    root = _backup_root(tmp_path)
+    set_dir = _seal_v3(root)
+    (root / "evidence" / "aa" / "two.bin").write_bytes(b"")
+    (root / "evidence" / "aa" / "historic-z.bin").write_bytes(b"unrelated")
+
+    result = _verify(set_dir)
+
+    assert result.returncode != 0
+    assert "at least the 18 recorded" in result.stdout, "the pool check has to pass here"
+    assert "come to 14 byte(s)" in result.stderr
+    assert "sealed against 18" in result.stderr
+    assert "changed in place rather than removed" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [b"/absolute/path.bin\0", b"../escape.bin\0", b"aa/../../escape.bin\0", b"\0"],
+)
+def test_an_inventory_that_leaves_its_own_tree_is_refused(tmp_path: Path, entry: bytes) -> None:
+    """A restore turns each of these strings into a path it writes to."""
+    set_dir = _seal_v3(_backup_root(tmp_path), evidence_inventory=entry, recorded_files=1)
+
+    result = _verify(set_dir)
+
+    assert result.returncode != 0
+    assert "not a relative path inside the tree" in result.stderr
+
+
+def test_an_inventory_that_names_one_object_twice_is_refused(tmp_path: Path) -> None:
+    """Membership is a set, and the backup writes each path once."""
+    set_dir = _seal_v3(
+        _backup_root(tmp_path),
+        evidence_inventory=_inventory("aa/one.bin") + _inventory("aa/one.bin"),
+        recorded_files=2,
+    )
+
+    result = _verify(set_dir)
+
+    assert result.returncode != 0
+    assert "more than once" in result.stderr
+    assert "not written by the backup" in result.stderr
+
+
+def test_an_inventory_the_manifest_miscounts_is_refused(tmp_path: Path) -> None:
+    set_dir = _seal_v3(_backup_root(tmp_path), recorded_files=3)
+
+    result = _verify(set_dir)
+
+    assert result.returncode != 0
+    assert "names 2 object(s); the manifest says this set has 3" in result.stderr
+
+
+def test_an_edited_inventory_fails_level_one(tmp_path: Path) -> None:
+    """The inventory decides which objects a restore writes, so a set where the
+    dump is protected and the membership is not is a set whose restore can be
+    steered without breaking a checksum."""
+    set_dir = _seal_v3(_backup_root(tmp_path))
+    (set_dir / "evidence.files0").write_bytes(_inventory("aa/one.bin"))
+
+    result = run(VERIFY, "--set", str(set_dir), "--level", "1")
+
+    assert result.returncode != 0
+    assert "checksums do not match" in result.stderr
+
+
+def test_a_manifest_that_names_a_path_as_its_inventory_is_refused(tmp_path: Path) -> None:
+    set_dir = _seal_v3(_backup_root(tmp_path), recorded_inventory_name="../evidence.files0")
+
+    result = _verify(set_dir)
+
+    assert result.returncode != 0
+    assert "That is a path, and a membership inventory is a plain file" in result.stderr
+
+
+def test_a_set_from_before_membership_is_verified_without_it_and_says_so(
+    tmp_path: Path,
+) -> None:
+    """Version 1 and 2 sets are real production artifacts and stay verifiable.
+
+    What they cannot do is claim a membership they never recorded, so the
+    verifier names the thing it is not proving rather than passing quietly.
+    """
+    result = _verify(_seal(_backup_root(tmp_path), version=2))
+
+    assert "evidence: 2 file(s), exactly as recorded." in result.stdout
+    assert "Manifest version 2 records no membership" in result.stdout
+    assert "member(s)" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# What the restore does with a membership
+# ---------------------------------------------------------------------------
+#
+# Every test here is a refusal, and deliberately so: they run before the script
+# requires Docker or rsync, which is what makes them runnable on a laptop. The
+# copy itself is the `recovery` job's — it needs a real rsync and a real
+# database, and a filesystem restore proved against a stub proves the stub.
+
+
+def _restore(set_dir: Path, root: Path, data_root: Path, *arguments: str):
+    return run(
+        RESTORE,
+        "--project",
+        REHEARSAL_PROJECT,
+        "--compose-file",
+        str(COMPOSE),
+        "--set",
+        str(set_dir),
+        "--backup-root",
+        str(root),
+        "--data-root",
+        str(data_root),
+        *arguments,
+    )
+
+
+def _empty_target(tmp_path: Path) -> Path:
+    target = tmp_path / "restored"
+    (target / "evidence").mkdir(parents=True)
+    (target / "legacy-source").mkdir(parents=True)
+    return target
+
+
+def test_the_restore_refuses_storage_that_is_not_empty_and_leaves_it_alone(
+    tmp_path: Path,
+) -> None:
+    """Exact membership is only exact onto empty storage, and the way to get
+    there is not `rsync --delete`: a recovery script that deletes what it finds
+    in a tree it did not put there is the accident this whole file is about."""
+    root = _backup_root(tmp_path)
+    set_dir = _seal_v3(root)
+    target = _empty_target(tmp_path)
+    intruder = target / "evidence" / "unexpected.txt"
+    intruder.write_text("not from any backup", encoding="utf-8")
+
+    result = _restore(set_dir, root, target)
+
+    assert result.returncode != 0
+    assert "already holds 1 file(s)" in result.stderr
+    assert "will not delete them for you" in result.stderr
+    assert intruder.read_text(encoding="utf-8") == "not from any backup"
+    assert _tree_files(target / "evidence") == 1, "nothing may have been copied in"
+
+
+def test_the_restore_refuses_an_inventory_that_leaves_its_tree_before_writing(
+    tmp_path: Path,
+) -> None:
+    root = _backup_root(tmp_path)
+    set_dir = _seal_v3(root, evidence_inventory=b"../../escape.bin\0", recorded_files=1)
+    target = _empty_target(tmp_path)
+
+    result = _restore(set_dir, root, target)
+
+    assert result.returncode != 0
+    assert "not a relative path inside the tree" in result.stderr
+    assert "Nothing has been written" in result.stderr
+    assert _tree_files(target / "evidence") == 0
+
+
+def test_the_restore_refuses_a_manifest_that_names_a_path_as_its_inventory(
+    tmp_path: Path,
+) -> None:
+    """The field decides which file the restore opens, so it is checked.
+
+    It also pins a subtlety: the refusal happens inside a command substitution,
+    where `die` exits only the subshell — the script stops because `set -e`
+    fails the assignment around it. Move that call into a condition and this
+    refusal silently becomes a warning.
+    """
+    root = _backup_root(tmp_path)
+    set_dir = _seal_v3(root, recorded_inventory_name="../evidence.files0")
+    target = _empty_target(tmp_path)
+
+    result = _restore(set_dir, root, target)
+
+    assert result.returncode != 0
+    assert "That is a path, and a membership inventory is a plain file" in result.stderr
+    assert _tree_files(target / "evidence") == 0
+
+
+def test_the_restore_refuses_an_inventory_that_names_one_object_twice(tmp_path: Path) -> None:
+    root = _backup_root(tmp_path)
+    set_dir = _seal_v3(
+        root,
+        evidence_inventory=_inventory("aa/one.bin") + _inventory("aa/one.bin"),
+        recorded_files=2,
+    )
+
+    result = _restore(set_dir, root, _empty_target(tmp_path))
+
+    assert result.returncode != 0
+    assert "more than once" in result.stderr
+
+
+def test_a_legacy_set_that_relaxed_the_empty_guard_is_not_restored_as_if_exact(
+    tmp_path: Path,
+) -> None:
+    """The one case where the old whole-pool copy is *known* to be wrong.
+
+    `empty_source_allowed_for` is an audit note about a flag, not a measurement
+    — a stale `--allow-empty` left in a runbook is recorded identically — so it
+    is never read as proof the tree was empty. What it does mark is a set whose
+    filesystem restore cannot be trusted, and the script says so rather than
+    quietly copying twenty thousand objects.
+    """
+    root = _backup_root(tmp_path)
+    set_dir = _seal(root, version=2)
+    manifest = set_dir / "manifest.json"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            '  "legacy_source_mirror"',
+            '  "empty_source_allowed_for": ["evidence"],\n  "legacy_source_mirror"',
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(  # noqa: S603 - a fixed interpreter and a temporary directory
+        [BASH, "-c", "sha256sum database.dump manifest.json > SHA256SUMS"],
+        cwd=set_dir,
+        check=True,
+        capture_output=True,
+    )
+
+    result = _restore(set_dir, root, _empty_target(tmp_path))
+
+    assert result.returncode != 0
+    assert "carries no membership" in result.stderr
+    assert "--accept-legacy-pool-restore" in result.stderr
+    assert "--database-only" in result.stderr
+
+
+def test_the_restore_reads_the_membership_before_it_needs_a_container() -> None:
+    """Ordering, read from the script rather than from an environment.
+
+    Whether Docker happens to be installed decides which error a wrong call
+    produces, so the property is asserted where it is written: the refusals that
+    need nothing but the filesystem come before the tools are required. The
+    backup states the same rule as "paths before tools".
+    """
+    text = RESTORE.read_text(encoding="utf-8")
+    membership = text.index("# 1. What this set says it contains")
+    target_guard = text.index("already holds $present file(s)")
+    needs_docker = text.index('require_command docker "the database is restored')
+
+    assert membership < target_guard < needs_docker
+    assert text.index('require_command rsync "the evidence tree') > target_guard
+
+
+def test_the_restore_never_reaches_for_delete_to_make_a_target_exact() -> None:
+    """Exactness by deletion would be exactness at the price of the one thing a
+    recovery script must not do to files it did not put there."""
+    text = RESTORE.read_text(encoding="utf-8")
+    rsync_lines = [line for line in text.splitlines() if line.strip().startswith("rsync ")]
+
+    assert rsync_lines, "the restore no longer copies anything"
+    assert all("--delete" not in line for line in rsync_lines)
+    assert all("--ignore-existing" in line for line in rsync_lines)
+
+
+def test_the_restore_drives_the_copy_from_the_set_rather_than_the_pool() -> None:
+    """`--files-from` with `--from0` is what makes the copy obey the set.
+
+    Without it the command is "copy this directory", and the directory is shared
+    history rather than this set's contents.
+    """
+    text = RESTORE.read_text(encoding="utf-8")
+
+    assert '--from0 --files-from="$inventory"' in text
 
 
 # ---------------------------------------------------------------------------

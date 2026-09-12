@@ -955,6 +955,192 @@ jobs:
             echo "verification passed a truncated archive"; exit 1
           fi
 
+      # -- exact membership -------------------------------------------------
+      #
+      # A backup root's evidence/ and legacy-source/ are a shared byte pool:
+      # append-only, holding every object any set has ever named. Until manifest
+      # version 3 that was the only record of a set's filesystem half, so
+      # "restore this set" meant "copy the pool" — the same thing only while
+      # nothing has ever left the active tree.
+      #
+      # On 12.09.2026 something did. An operational reset emptied active
+      # evidence and the pool kept its 20068 pre-reset objects, so the set taken
+      # that day — a true record of a deployment holding no evidence at all —
+      # would have restored twenty thousand orphans beside an empty register.
+      #
+      # These steps are that scenario, at three objects instead of twenty
+      # thousand, against the real scripts. Their own data root, backup root and
+      # databases throughout, so the restore rehearsal below is untouched.
+
+      - name: Populated source, and a set that records what it holds
+        run: |
+          set -euo pipefail
+          root=/tmp/juristid-rehearsal/membership
+          mkdir -p "$root/source/evidence/aa" "$root/source/legacy-source" "$root/backups"
+          printf 'old-a' > "$root/source/evidence/aa/old-a.bin"
+          printf 'old-bb' > "$root/source/evidence/aa/old-b.bin"
+          printf '<page id="m"/>' > "$root/source/legacy-source/page.xml"
+
+          scripts/deploy/juristid-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --data-root "$root/source" --backup-root "$root/backups" --minimum-free-mib 64
+          set_a="$(find "$root/backups/sets" -mindepth 1 -maxdepth 1 -type d -not -name '*.partial' | sort | tail -1)"
+          echo "MEMBERSHIP_SET_A=$set_a" >> "$GITHUB_ENV"
+
+          test "$(tr -dc '\000' < "$set_a/evidence.files0" | wc -c)" = 2 \
+            || { echo "set A did not record its two evidence objects"; exit 1; }
+          grep -q '"manifest_version": 3' "$set_a/manifest.json" \
+            || { echo "the backup did not write a membership manifest"; exit 1; }
+          grep -q 'evidence.files0' "$set_a/SHA256SUMS" \
+            || { echo "the inventory is not covered by the set's checksums"; exit 1; }
+
+      - name: The deployment is reset, and its set records an empty tree
+        run: |
+          set -euo pipefail
+          root=/tmp/juristid-rehearsal/membership
+
+          # A reset deployment: the schema is there and nothing business-shaped
+          # is. Its own database, so the restore rehearsal's seeded one — which
+          # a fingerprint below still has to match exactly — is never touched.
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d postgres -c 'CREATE DATABASE membership_clean OWNER juristid'
+          POSTGRES_DB=membership_clean uv run python manage.py migrate --noinput
+
+          find "$root/source/evidence" -type f -delete
+          sleep 1
+          scripts/deploy/juristid-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --db-name membership_clean \
+            --data-root "$root/source" --backup-root "$root/backups" --minimum-free-mib 64 \
+            --allow-empty evidence
+          set_b="$(find "$root/backups/sets" -mindepth 1 -maxdepth 1 -type d -not -name '*.partial' | sort | tail -1)"
+          echo "MEMBERSHIP_SET_B=$set_b" >> "$GITHUB_ENV"
+
+          # The shared pool keeps the history. The set says it owns none of it.
+          test "$(find "$root/backups/evidence" -type f | wc -l)" = 2 \
+            || { echo "the pool did not keep the pre-reset objects"; exit 1; }
+          test "$(tr -dc '\000' < "$set_b/evidence.files0" | wc -c)" = 0 \
+            || { echo "the empty tree produced a non-empty inventory"; exit 1; }
+          grep -q '"file_count": 0' "$set_b/manifest.json" \
+            || { echo "the manifest does not record an empty evidence snapshot"; exit 1; }
+
+          # And the two numbers stay distinguishable: the pool's count is about
+          # the pool, and reading it as the set's is the whole defect.
+          sed -n '/"evidence_mirror"/,/}/p' "$set_b/manifest.json" | grep -q '"file_count": 2' \
+            || { echo "the manifest lost the pool's own state"; exit 1; }
+
+          # Level 2 passes: nothing is missing, because nothing is claimed.
+          scripts/deploy/juristid-verify-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" --set "$set_b" --level 2
+
+      - name: Restoring the clean set gives back a clean deployment
+        run: |
+          set -euo pipefail
+          root=/tmp/juristid-rehearsal/membership
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d postgres -c 'CREATE DATABASE membership_b OWNER juristid'
+          mkdir -p "$root/restored-b/evidence" "$root/restored-b/legacy-source"
+
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --db-name membership_b \
+            --set "$MEMBERSHIP_SET_B" --backup-root "$root/backups" --data-root "$root/restored-b"
+
+          restored="$(find "$root/restored-b/evidence" -type f | wc -l)"
+          test "$restored" = 0 || {
+            echo "the clean set restored $restored evidence file(s); it recorded none"
+            find "$root/restored-b/evidence" -type f; exit 1; }
+          test ! -e "$root/restored-b/evidence/aa/old-a.bin" || { echo "old-a came back"; exit 1; }
+          test ! -e "$root/restored-b/evidence/aa/old-b.bin" || { echo "old-b came back"; exit 1; }
+          test "$(find "$root/restored-b/legacy-source" -type f | wc -l)" = 1 \
+            || { echo "the page XML this set did name was not restored"; exit 1; }
+
+      - name: The older populated set still restores its own objects
+        run: |
+          set -euo pipefail
+          # Membership does not cost an earlier set its bytes: they live once in
+          # the shared pool, and each set names the ones that are its own.
+          root=/tmp/juristid-rehearsal/membership
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d postgres -c 'CREATE DATABASE membership_a OWNER juristid'
+          mkdir -p "$root/restored-a/evidence" "$root/restored-a/legacy-source"
+
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --db-name membership_a \
+            --set "$MEMBERSHIP_SET_A" --backup-root "$root/backups" --data-root "$root/restored-a"
+
+          test -s "$root/restored-a/evidence/aa/old-a.bin" || { echo "old-a did not come back"; exit 1; }
+          test -s "$root/restored-a/evidence/aa/old-b.bin" || { echo "old-b did not come back"; exit 1; }
+          test "$(find "$root/restored-a/evidence" -type f | wc -l)" = 2 \
+            || { echo "set A restored something it never named"; exit 1; }
+
+      - name: A set whose membership is a subset restores the subset only
+        run: |
+          set -euo pipefail
+          # The general property, so the fix cannot be "if the count is zero,
+          # skip the pool". The pool holds three objects; this set names one.
+          root=/tmp/juristid-rehearsal/membership
+          printf 'new-ccc' > "$root/source/evidence/aa/new-c.bin"
+          sleep 1
+          scripts/deploy/juristid-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --data-root "$root/source" --backup-root "$root/backups" --minimum-free-mib 64
+          set_c="$(find "$root/backups/sets" -mindepth 1 -maxdepth 1 -type d -not -name '*.partial' | sort | tail -1)"
+          echo "MEMBERSHIP_SET_C=$set_c" >> "$GITHUB_ENV"
+          test "$(find "$root/backups/evidence" -type f | wc -l)" = 3 \
+            || { echo "the pool is not the three-object pool this step needs"; exit 1; }
+
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d postgres -c 'CREATE DATABASE membership_c OWNER juristid'
+          mkdir -p "$root/restored-c/evidence" "$root/restored-c/legacy-source"
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --db-name membership_c \
+            --set "$set_c" --backup-root "$root/backups" --data-root "$root/restored-c"
+
+          test -s "$root/restored-c/evidence/aa/new-c.bin" || { echo "the member was not restored"; exit 1; }
+          test "$(find "$root/restored-c/evidence" -type f | wc -l)" = 1 \
+            || { echo "the pool's other objects were resurrected"; find "$root/restored-c/evidence" -type f; exit 1; }
+
+      - name: Storage that is not empty is refused, not emptied
+        run: |
+          set -euo pipefail
+          # Exactness by `rsync --delete` would be exactness at the price of the
+          # one thing a recovery script must never do to files it did not put
+          # there. So the answer is a refusal and the operator decides.
+          root=/tmp/juristid-rehearsal/membership
+          mkdir -p "$root/dirty/evidence" "$root/dirty/legacy-source"
+          printf 'not from any backup' > "$root/dirty/evidence/unexpected.txt"
+          if scripts/deploy/juristid-restore.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --db-name membership_c \
+               --set "$MEMBERSHIP_SET_C" --backup-root "$root/backups" --data-root "$root/dirty"; then
+            echo "the restore wrote into storage that already held something"; exit 1
+          fi
+          test "$(cat "$root/dirty/evidence/unexpected.txt")" = "not from any backup" \
+            || { echo "the refused restore changed the file it refused over"; exit 1; }
+          test "$(find "$root/dirty/evidence" -type f | wc -l)" = 1 \
+            || { echo "the refused restore copied objects in anyway"; exit 1; }
+
+      - name: A member missing from the pool fails verification
+        run: |
+          set -euo pipefail
+          # And it fails on membership rather than on the pool's own totals: the
+          # pool is left with as many files and more bytes than the manifest
+          # recorded, which every whole-pool check is satisfied by.
+          root=/tmp/juristid-rehearsal/membership
+          rm "$root/backups/evidence/aa/new-c.bin"
+          printf 'unrelated and larger' > "$root/backups/evidence/aa/historic-z.bin"
+          if scripts/deploy/juristid-verify-backup.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --set "$MEMBERSHIP_SET_C" --level 2; then
+            echo "verification passed a set whose own object is gone"; exit 1
+          fi
+          # Put it back: later steps share this pool.
+          printf 'new-ccc' > "$root/backups/evidence/aa/new-c.bin"
+          rm "$root/backups/evidence/aa/historic-z.bin"
+
       # -- the destructive part --------------------------------------------
 
       - name: Destroy the database and the storage trees
