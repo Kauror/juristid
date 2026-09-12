@@ -322,6 +322,14 @@ def test_the_first_matter_after_a_reset_gets_the_years_first_reference(empty_wor
     over the Matters, which is what makes this work; the test is here because
     the two are indistinguishable in every world that already has data in it
     (app/matters/services.py, `allocate_matter_reference`).
+
+    **`1` here is a fact about a migrated database, not about a reset one.** The
+    counter row is what carries sequence continuity, so an instance that has
+    ever imported the register keeps issuing from wherever that import reserved
+    to, and an operational reset that preserves the counter — as the intended
+    one does — continues from there rather than reopening numbers a
+    re-ingestion would re-create. What this test fixes is the narrower
+    guarantee: that allocation needs nothing but the year.
     """
     from app.matters.services import create_matter
 
