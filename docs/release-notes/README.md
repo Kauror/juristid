@@ -65,6 +65,17 @@ waiver outlives the run.
 Every answer the gate can give is held in `tests/test_release_note_gate.py`,
 over lists of paths and no repository.
 
+**What the gate proves, and what it does not.** The gate answers one mechanical
+question: did `uuendused.toml` change in a payload a reader will notice? It does
+not read the entry, and it cannot tell whether every user-facing change in the
+payload is described, described accurately, or described under the right day.
+That judgement stays with release review: before running the workflow, read the
+payload (`git diff --stat <previous_sha> <sha> -- app templates static config`)
+against the day's `changes` and add what is missing. A semantic changelog check
+in CI — the code diffed against the prose — is deliberately not attempted: it
+would be either wrong often enough to be ignored or strict enough to fill this
+file with noise, which is the failure the per-PR rule above already refuses.
+
 ## Adding to it
 
 A new day, at the top of the file (order in the file does not matter — the

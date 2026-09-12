@@ -14,8 +14,18 @@ basis = "deployment"
 # saatmise registreerimine, uue saatja alleshoidmine, lugemispindade
 # parandused) koos suletud teema Dokumentide lugemisrežiimiga, mille
 # ühendamise kontroll ise leidis.
+#
+# Sama päeva teine väljalase: töölaua keeldumiste nähtavus, lugeja õigusega
+# kasutaja muutmisväljad ja tagasilükatud faili hoiatus (#190), koos
+# lugemispoole kontrollitestidega (#189), väljalaskeväravaga (#191) ja
+# brauseritestide eraldusega (#188), mis lugejale midagi ei muuda. Selle
+# liitmisrevisjon sünnib alles pärast selle faili kirjutamist ja on kirjas
+# väljalaske raportis — täpselt nagu 11. septembri kirje puhul. Kolm viimast
+# punkti kuuluvad sellele päevale ainult siis, kui see väljalase jõuab
+# toodangusse 12. septembril; kui hiljem, tuleb nad enne väljalaset tõsta
+# tegeliku päeva kirje alla.
 revisions = ["ca50d53e7576bdf1a82445217d62e482a6a36547"]
-prs = [180, 181, 182, 183, 184, 185]
+prs = [180, 181, 182, 183, 184, 185, 188, 189, 190, 191]
 changes = [
   "Teema lehe ülaosas on Praegune tegevus: kirjuta, mida sa selle ülesandega tegid, ja salvesta — see ongi sammu lõpetamine. Eraldi «Tehtud» nuppu enam ei ole.",
   "Lisa teemale pakub seitset valikut — märge, järgmine tegevus, kaasamine, oluline tähtaeg, jõustumine, töövõit ja teema lõpetamine. Igaühel on oma väike vorm ja oma Salvesta; korraga on lahti üks.",
@@ -31,6 +41,9 @@ changes = [
   "Uue teema Arvamuse tähtaeg algab tühjana, mitte tänase kuupäevaga.",
   "Muuda teemat küsib saatjat ja adressaati sama otsinguga nagu Uus teema.",
   "Kui teema failide loetelu on filtreeritud, ütleb pealkiri seda ja filtri saab sealtsamast maha võtta.",
+  "Kui teema või tegevus on teises aknas vahepeal muutunud — kolleeg lõpetas sammu või sulges teema —, näitab Juristid nüüd selgelt, miks salvestamine ebaõnnestus, ja suletud teema päis uueneb samas aknas.",
+  "Lugeja õigusega kasutajale ei näidata enam Vastutaja, Valdkonna, Hetkeseisu ega Märkmete muutmisvälju, mida tal ei ole õigust kasutada. Väärtused on endiselt loetavad.",
+  "Kui uue teema juurde valitud faili ei saa vastu võtta, jääb veateade nähtavaks ka pärast teiste failide lugemise lõppu.",
 ]
 
 [[day]]
