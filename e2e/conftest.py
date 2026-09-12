@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from dataclasses import dataclass
 
 import pytest
@@ -237,17 +238,52 @@ def go_to(page, name: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def create_matter(page, base_url: str, title: str) -> str:
+def unique_title(prefix: str) -> str:
+    """A title no other row in this world can be carrying.
+
+    The browser suite runs against **one seeded database per shard**, shared by
+    every file the shard was given and never reset between them
+    (`ci_sharding.py`, .github/workflows/ci.yml). So a fixed title is not an
+    identity: a file that runs twice against the same world — a rerun, a local
+    loop — files a second Matter under the same name, and every locator that
+    asks for it by name then resolves to two and raises in strict mode.
+
+    A test that has to find its own row afterwards asks for one of these instead
+    of writing a constant. Short on purpose: the register's title column clips,
+    and the token has to survive being read back out of a cell.
+    """
+    return f"{prefix} {uuid.uuid4().hex[:8]}"
+
+
+def create_matter(
+    page,
+    base_url: str,
+    title: str,
+    *,
+    stage: str | None = None,
+    owner: Persona | None = None,
+) -> str:
     """Create a Matter through the real form and return its detail URL.
 
     Four browser files had this verbatim. It stays a plain function rather than
     becoming a fixture for the same reason `sign_in` and `go_to` do: a fixture
     is implicit, and a test that navigates should say so on the line where it
     navigates.
+
+    `stage` and `owner` are the two columns the register renders as a *link* —
+    the value in the row is also the filter that selects it — so a test about
+    those links has to be able to file a row that carries one. Both are chips on
+    the form, named by what the page shows: the stage's own label, and the
+    owner's short name. Left unset they stay unset, which is what the form
+    defaults to and what every existing caller goes on getting.
     """
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", title)
+    if stage is not None:
+        page.get_by_role("radio", name=stage, exact=True).check()
+    if owner is not None:
+        page.get_by_role("radio", name=owner.short_name, exact=True).check()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
