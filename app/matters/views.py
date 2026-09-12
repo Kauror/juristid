@@ -729,9 +729,17 @@ OPINION_LABELS = {
 #: Wording matters here: a review date that has arrived is "ülevaatus käes",
 #: never "hilinenud". Neither option names the stored kind — the classification
 #: is not something a reader is asked to hold (ADR 0054).
+#:
+#: `hilinenud` reads «Üle aja» and not «Tähtaeg möödas». This filter selects
+#: exactly one thing — an open `DO` + `DEADLINE` whose own date has passed
+#: (`selectors._open_action_condition`) — and that date is the lawyer's own
+#: plan, which the product no longer calls a tähtaeg anywhere it is displayed.
+#: The register's *mixed* deadline populations keep the word, because they
+#: genuinely hold `Arvamuse tähtaeg` and `Oluline tähtaeg` as well
+#: (`work_items.WORK_POPULATION_LABELS`, docs/adr/0054 §Amendment).
 NEXT_ACTION_LABELS = {
     "puudub": "Puudub",
-    "hilinenud": "Tähtaeg möödas",
+    "hilinenud": "Üle aja",
     selectors.REVIEW_DUE: "Ülevaatus käes",
 }
 

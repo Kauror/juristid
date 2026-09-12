@@ -14,9 +14,11 @@ wrong:
   test that proved the labels were gone by proving the kinds were gone would have
   proved the wrong thing, so every rendering assertion below is paired with one
   that reads the record back out of the database.
-* **Date meaning is not classification.** TÄHTAEG, VAATAN ÜLE, OODATAV AEG and
+* **Date meaning is not classification.** PLAANIS, VAATAN ÜLE, OODATAV AEG and
   OLULINE TÄHTAEG say what the *date* is, which is the one thing a bare `27.08`
-  cannot. Those stay, and the tests assert they stay.
+  cannot. Those stay, and the tests assert they stay. (The first of them read
+  `TÄHTAEG` when this record was written; the word changed on 2026-09-12 and
+  the concept did not — see `tests/test_next_action_plaanis_wording.py`.)
 """
 
 from __future__ import annotations
@@ -185,7 +187,12 @@ def test_a_lawyers_own_words_survive_even_when_they_are_the_retired_verbs(
 
 
 def test_the_date_cell_still_says_what_the_date_means(signed_in, three_steps):
-    """TÄHTAEG and VAATAN ÜLE are about the date, and they stay (ADR 0054)."""
+    """PLAANIS and VAATAN ÜLE are about the date, and they stay (ADR 0054).
+
+    Through the constants, not the words: the DEADLINE meaning became `PLAANIS`
+    in the 2026-09-12 amendment, and a test spelling the string here would have
+    asserted the seam and the label agree by writing the label out twice.
+    """
     body = body_of(signed_in.get(reverse("matters:my_work")))
 
     assert wi.MEANING_DEADLINE in body
@@ -193,10 +200,20 @@ def test_the_date_cell_still_says_what_the_date_means(signed_in, three_steps):
 
 
 def test_the_register_row_still_qualifies_its_date(signed_in, three_steps):
-    body = body_of(signed_in.get(reverse("matters:matter_list")))
+    """And it qualifies it in the cell, which is the only place that counts.
 
-    assert "Tähtaeg" in body
-    assert "Vaatan üle" in body
+    `assert "Plaanis" in body` would be satisfied by any of a dozen strings
+    elsewhere on this page — it was, for «Tähtaeg», by the `?tahtaeg_alates=`
+    control and the *Tähtaeg sel kuul* saved view, both of which are about
+    `Arvamuse tähtaeg` and neither of which is the Kuupäev cell. So the
+    assertion reads the rendered cell (docs/adr/0054 §Amendment).
+    """
+    body = body_of(signed_in.get(reverse("matters:matter_list")))
+    meanings = re.findall(r'<span class="datemeaning">([^<]*)</span>', body)
+
+    assert "Plaanis" in meanings
+    assert "Vaatan üle" in meanings
+    assert "Tähtaeg" not in meanings, "a self-set Järgmiseks date is not a tähtaeg"
     for retired in RETIRED:
         assert retired not in body, retired
 

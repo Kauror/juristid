@@ -338,7 +338,7 @@ def test_the_next_action_heading_filters_by_work_state(page, base_url):
 
     control = heading(page, "Järgmiseks")
     control.locator("summary").click()
-    for label in ("Puudub", "Tähtaeg möödas", "Ülevaatus käes"):
+    for label in ("Puudub", "Üle aja", "Ülevaatus käes"):
         expect(control.get_by_role("link", name=label, exact=True)).to_be_visible()
     control.get_by_role("link", name="Puudub", exact=True).click()
     page.wait_for_load_state("networkidle")

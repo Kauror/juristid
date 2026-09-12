@@ -108,7 +108,15 @@ SOURCE_RESPONSE_DEADLINE = "RESPONSE_DEADLINE"
 #: ``OODATAV AEG`` rather than the stored enum's *Oodatav umbes*: the label a
 #: lawyer reads is a product decision and the column value is a storage one, and
 #: this is the seam between them. Nothing here renames anything stored.
-MEANING_DEADLINE = "TÄHTAEG"
+
+#: A lawyer's own next step, on the day they chose for it. ``PLAANIS`` and not
+#: ``TÄHTAEG``: the two constants below are the deadlines this department
+#: actually owes — one to an outside body, one to a watched milestone — and a
+#: date somebody set for their own next action is a plan, not a promise made to
+#: anybody else. The stored ``DateSemantics.DEADLINE`` is untouched and still
+#: decides what can go overdue; this is the seam, and only the seam
+#: (docs/adr/0054 §Amendment).
+MEANING_DEADLINE = "PLAANIS"
 MEANING_EXPECTED = "OODATAV AEG"
 MEANING_REVIEW = "VAATAN ÜLE"
 MEANING_IMPORTANT = "OLULINE TÄHTAEG"
@@ -385,7 +393,7 @@ class WorkItem:
     def meaning_line(self) -> str:
         """The meaning, carrying the original date when the value replaced it.
 
-        ``TÄHTAEG 14.08`` rather than a bare ``TÄHTAEG``, because the cell above
+        ``PLAANIS 14.08`` rather than a bare ``PLAANIS``, because the cell above
         it is showing *10 p üle* and the reader still needs the day it was.
 
         The same compact month as the line above it: the two halves of one cell
