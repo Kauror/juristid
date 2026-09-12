@@ -248,12 +248,12 @@
 
         `sender_control.html` still exists and still renders the shortlist, the
         «Vali nimekirjast» disclosure and a separate «Uus saatja» box — on
-        `Muuda teemat` and `Saabunud`, which were not part of this decision and
-        whose interaction contract is not identical to this one (a form that
-        edits a saved Matter arrives with its answer already given). Changing
-        the shared partial would have redesigned two surfaces nobody reviewed,
-        so `Uus teema` renders its own picker and the other two are untouched
-        (task §26, docs/adr/0073).
+        `Saabunud`, which was not part of this decision. `Muuda teemat` was not
+        either, and has since joined this control rather than that one: the
+        argument for leaving it behind was that a form editing a saved Matter
+        arrives with its answer already given, and that turned out to be an
+        argument for prepopulating this picker rather than for keeping a second
+        one (task §26, docs/adr/0073, post-QA R2-12).
 
         `data-sender-chips` marks the row the Adressaat default reads: ticking a
         sender here *is* answering Adressaat, because it is the same

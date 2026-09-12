@@ -58,8 +58,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.errors import DomainError
 from app.matters.models import Matter
 from app.submissions.models import Submission
+
+#: What a closed Matter says to a write that arrived too late. Named because
+#: several surfaces print it and the tests assert on it.
+CLOSED_MATTER_REFUSAL = (
+    "Teema on suletud ja uusi kandeid vastu ei võta. "
+    "Kui töö jätkub, taasava teema ja salvesta uuesti."
+)
 
 #: The global order, as table names, for anything that needs to state it.
 EVIDENCE_INTEGRITY_LOCK_ORDER = (
@@ -93,3 +101,46 @@ def lock_submission_for_evidence_integrity(submission_pk: Any) -> Submission:
     module docstring for why the weaker mode is the correct one here.
     """
     return Submission.objects.select_for_update(no_key=True).get(pk=submission_pk)
+
+
+def lock_open_matter_for_business_write(matter_id: Any) -> Matter:
+    """The same row, the same strength, plus the question closure answers.
+
+    A closed Matter accepts no new business content, and «the form was not
+    rendered» is not how that rule is kept. A browser holding a page from before
+    the closure still has every field and every button on it, and its POST
+    arrives at a server that has no memory of which page it came from — so the
+    only place the rule can be enforced is here, where the write happens
+    (R2-02).
+
+    **Not a pre-flight check.** Reading ``matter.is_open`` off the instance the
+    caller arrived with answers a question about a moment that has already
+    passed: between that read and the write, another transaction may commit the
+    closure, and then the child row lands on a Matter that is shut. So the row
+    is locked first and the state is read *from the locked row* — the same
+    discipline, and the same sentence, as
+    :func:`lock_matter_for_evidence_integrity`, whose result callers must also
+    use instead of the instance they came with.
+
+    Whichever transaction reaches the Matter row first wins, and both orderings
+    are correct: a closure that commits first makes the write refuse, and a
+    write that commits first is simply part of the file the closure then shuts.
+    There is no interleaving in which both succeed, which is the whole point.
+
+    `close_matter` takes the same row at plain `FOR UPDATE`, and the two
+    strengths conflict with each other — so the exclusion this needs holds even
+    though this side takes the weaker mode. It takes the weaker mode because
+    these transactions go on to *insert rows that reference the Matter*: an
+    `Entry`, a `Document`, a `ChangeEvent`. Such an insert acquires `FOR KEY
+    SHARE` on the parent, which `FOR UPDATE` blocks and `FOR NO KEY UPDATE`
+    does not — the reasoning in this module's opening note, and the reason
+    `complete_current_action` was written this way from the start.
+
+    Must be called inside `transaction.atomic`, like everything else here, and
+    at the start of the operation rather than after some of it has been written:
+    a refusal must leave nothing behind.
+    """
+    matter = lock_matter_for_evidence_integrity(matter_id)
+    if not matter.is_open:
+        raise DomainError(CLOSED_MATTER_REFUSAL)
+    return matter

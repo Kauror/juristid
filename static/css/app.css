@@ -6665,6 +6665,24 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
+/* The chips saying which filter this count counted under. `.docsection` is
+   already a column with its own gap, so the chip row's standing bottom margin
+   would be counted twice here (post-QA R2-13). */
+.docsection > .filterbar--chips {
+  margin-bottom: 0;
+}
+
+/* `Vali fail` beside the chooser and `Lisa fail` on the button: two controls
+   that had one visible name between them. The label must not be squeezed to
+   one character per line when the row wraps at a narrow width (post-QA R2-14). */
+.draftrow__file {
+  min-width: 0;
+}
+
+.draftrow__file .field__label {
+  white-space: nowrap;
+}
+
 /* An opinion is badged and not tinted. "Which of these forty files is a Koja
    arvamus" is the question this table exists to answer instantly, and one word
    answers it — including for a reader who cannot see the tint, which a row
@@ -10391,4 +10409,283 @@ section:has(.pw-more[open]) tbody.uxextra {
     grid-auto-columns: minmax(96px, 1fr);
     overflow-x: auto;
   }
+}
+
+/* -- PRAEGUNE TEGEVUS ------------------------------------------------------
+ *
+ * The task this file is waiting on, and the one box that finishes it. It takes
+ * the ground, the 3px accent edge and the 32px left edge the `Järgmiseks` row
+ * and the composer used to share, because it is the same zone doing the same
+ * job with one interaction instead of two (docs/adr/0075 §3).
+ *
+ * `.curact` is deliberately *not* a card: no radius, no second border, no
+ * shadow. The approved target's one rule for this column is that everything
+ * starts at the same x on the page's own ground, and a box around the busiest
+ * thing on the page is the card-on-card clutter §32 of the brief rules out. */
+
+#teema-vaade-wrap .curact,
+#teema-vaade-wrap .addzone {
+  padding-left: var(--spacing-8);
+  padding-right: var(--spacing-8);
+}
+
+.teemamain .curact {
+  background: var(--surface-capture);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: inset 3px 0 0 var(--accent-border);
+  padding-top: 14px;
+  padding-bottom: var(--spacing-3);
+}
+
+/* Lateness is the state of the zone, not a word beside it — the same ring
+ * `.uxnext--overdue` drew, with the accent edge riding inside it. */
+.teemamain .curact--overdue {
+  box-shadow:
+    inset 3px 0 0 var(--accent-border),
+    0 0 0 3px var(--status-danger-halo);
+}
+
+.teemamain .curact .rowlabel {
+  display: block;
+  margin: 0 0 var(--spacing-2);
+  font-size: 12px;
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* The task itself: the sentence, then the date, on one baseline. */
+.curact__task {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-2);
+}
+
+.curact__text {
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-body);
+}
+
+.curact__text--source {
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-secondary);
+}
+
+.curact__date {
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.curact__date--overdue {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.curact__flag {
+  font-size: 11px;
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.curact__empty {
+  margin: 0;
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+}
+
+/* `Muuda` — quiet, beside the task, and the one control that changes what the
+ * current task is. It is a `<details>` in the same `.cx-panel` language as the
+ * LISA TEEMALE panels, so the one-open-at-a-time behaviour covers it and a
+ * no-JS reader gets a native disclosure (brief §9, §11). */
+
+.teemamain .curact__edit {
+  display: block;
+  margin: 0 0 var(--spacing-3);
+}
+
+.disclosure-chip--quiet {
+  border-color: transparent;
+  color: var(--text-secondary);
+  background: none;
+}
+
+.disclosure-chip--quiet:hover {
+  color: var(--accent-link);
+}
+
+/* The completion form. Two lines at rest, growing on focus — the same treatment
+ * the composer's body had, because it is the same act of writing. */
+.teemamain .curact__form .composer__body {
+  width: 100%;
+  box-sizing: border-box;
+  height: 60px;
+  min-height: 60px;
+}
+
+.curact__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+}
+
+.curact__spacer {
+  flex: 1 1 auto;
+}
+
+/* -- LISA TEEMALE ----------------------------------------------------------
+ *
+ * A choice of actions, not a form. Until a chip is pressed this whole zone is a
+ * heading and seven closed disclosures on the page's own ground: no panel, no
+ * border, no reserved space for fields nobody asked for (brief §32).
+ *
+ * The panels themselves reuse `.cx-panels` / `.cx-panel` unchanged — the same
+ * chip row, the same open-body treatment, the same `order: 1` that lets an open
+ * panel take the next line instead of pushing its neighbours sideways. That is
+ * the point of reusing them: the zone is new, the visual language is not. */
+
+.teemamain .addzone {
+  padding-top: var(--spacing-3);
+  padding-bottom: var(--spacing-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.teemamain .addzone .rowlabel {
+  display: block;
+  margin: 0 0 var(--spacing-2);
+  font-size: 12px;
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+#teema-vaade-wrap .addzone .cx-panels {
+  margin-top: 0;
+}
+
+/* Each panel's own form: fields, its file area, and its own `Salvesta`. The
+ * gap is the panel body's, so a one-field panel and a four-field panel read as
+ * the same component. */
+.addform {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.addform__when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-15);
+}
+
+/* The save sits at the right end of its own row. One button per panel, and it
+ * is the only thing that commits that panel — there is no global save left on
+ * this page to confuse it with (brief §12). */
+.addform__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-1);
+}
+
+/* The drop area in a panel is a normal-flow full-width row, never the desktop
+ * corner affordance: a panel body is already narrow, and an absolutely
+ * positioned box inside one is the 420px defect waiting to happen
+ * (docs/adr/0074 §19). */
+.addform .cx-drop,
+.curact__form .cx-drop {
+  position: static;
+  box-sizing: border-box;
+}
+
+/* **`flex-basis` is the main axis, and the two hosts have different ones.**
+ * `.addform` is a flex *column*, so a basis there is a HEIGHT: `1 1 240px`
+ * painted a 240px-tall dashed box over half the panel. In `.curact__row`,
+ * which is a flex row, the same value is the width it was written for. One
+ * declaration cannot serve both, and the CI rendering is what said so. */
+.addform > .cx-drop {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.curact__row .cx-drop {
+  flex: 1 1 240px;
+}
+
+/* -- the workspace at narrow widths ---------------------------------------
+ *
+ * At the end of the file, beside the rules it overrides, for the reason the
+ * block above it gives: a media query is a condition, not a specificity boost,
+ * and these selectors carry an id (docs/adr/0074 §19). */
+
+@media (max-width: 720px) {
+  #teema-vaade-wrap .curact,
+  #teema-vaade-wrap .addzone {
+    padding-left: var(--layout-gutter);
+    padding-right: var(--layout-gutter);
+  }
+
+  /* Full width, in normal flow, and the save under them rather than beside
+     them: at 420px a button sharing a line with a drop zone leaves neither
+     reachable (brief §38). */
+  .curact__row {
+    flex-wrap: wrap;
+  }
+
+  /* The row host only: in the column host the box is already full width, and
+     `flex-basis: 100%` there would be 100% of the panel's height. */
+  .curact__row .cx-drop {
+    flex: 1 1 100%;
+  }
+
+  .addform > .cx-drop,
+  .curact__row .cx-drop {
+    justify-content: center;
+  }
+
+  .curact__spacer {
+    display: none;
+  }
+
+  .curact__row .button {
+    flex: 1 1 100%;
+  }
+
+  /* An open panel stays inside the viewport. `.cx-panels` already wraps; this
+     keeps a chip row of seven from forcing the page wider than the screen. */
+  #teema-vaade-wrap .addzone .cx-panels {
+    row-gap: var(--spacing-2);
+  }
+}
+
+/* A refusal that belongs to no panel, at the top of the workspace. One route
+ * can still produce one — the superseded composer's endpoint, which no page
+ * posts to (docs/adr/0075 §11) — and a 400 with nothing on the page saying why
+ * is worse than a sentence. */
+#teema-vaade-wrap .workspace__error {
+  margin: var(--spacing-3) var(--spacing-8) 0;
+}
+
+@media (max-width: 720px) {
+  #teema-vaade-wrap .workspace__error {
+    margin-left: var(--layout-gutter);
+    margin-right: var(--layout-gutter);
+  }
+}
+
+/* A refused upload takes a line of its own inside the completion row rather
+ * than squeezing between the drop area and the save. */
+.curact__row .field__error {
+  flex: 1 1 100%;
+  margin: 0;
 }

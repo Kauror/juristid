@@ -612,6 +612,7 @@ def test_registering_a_send_writes_the_audit_events_the_services_own(
             "saadetud-title": "Koja arvamus",
             "saadetud-kind": SubmissionKind.FORMAL_OPINION,
             "saadetud-recipients": [str(organisation.pk)],
+            "saadetud-sent_on": "2026-06-01",
         },
     )
 
@@ -1172,3 +1173,255 @@ def test_neither_search_index_version_moves():
 
     assert INDEX_VERSION == "AUTH003.1"
     assert ARCHIVE_INDEX_VERSION == "1"
+
+
+# ---------------------------------------------------------------------------
+# R2-01 — «Registreeri saatmine» states a fact, and refuses to invent one
+# ---------------------------------------------------------------------------
+#
+# QA filled in a title, left `Saadetud`, `Adressaat` and `Kanal` empty, and
+# pressed the button. A canonical SENT Submission appeared, its empty date
+# became `timezone.now()`, and the outbound register and the process timeline
+# then reported `Arvamus välja <today>` about a letter whose send date nobody
+# had supplied. The same file was already the final evidence of a DRAFT, so the
+# Matter read `1 koostamisel` beside a sent opinion of the same bytes.
+#
+# Two different acts, and only one of them may mean *now*:
+#
+#   Märgi saadetuks      acting on a draft — this is going out now
+#   Registreeri saatmine recording a send that already happened
+#
+# The first keeps its `timezone.now()` default. The second must ask.
+
+
+REGISTER_SENT = "submissions:register_sent"
+
+
+def _register_payload(document, organisation, **overrides):
+    """A complete, valid «Registreeri saatmine» post. Fields removed per test."""
+    payload = {
+        "saadetud-document": str(document.pk),
+        "saadetud-title": "Koja arvamus",
+        "saadetud-kind": SubmissionKind.FORMAL_OPINION,
+        "saadetud-recipients": [str(organisation.pk)],
+        "saadetud-sent_on": "01.06.2026",
+    }
+    payload.update(overrides)
+    return {name: value for name, value in payload.items() if value is not None}
+
+
+def _register(client, matter, document, organisation, **overrides):
+    return client.post(
+        reverse(REGISTER_SENT, kwargs={"matter_id": matter.pk}),
+        _register_payload(document, organisation, **overrides),
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "missing"),
+    [
+        ("no date", {"saadetud-sent_on": None}),
+        ("no recipient", {"saadetud-recipients": None}),
+        ("neither", {"saadetud-sent_on": None, "saadetud-recipients": None}),
+        ("future date", {"saadetud-sent_on": "01.06.2099"}),
+    ],
+)
+def test_registering_a_send_without_the_facts_it_records_is_refused(
+    signed_in, specialist, organisation, label, missing
+):
+    """No Submission, no send, no milestone, no `Arvamus välja` (R2-01, §19).
+
+    A future date is in the same table on purpose: it was already refused, and
+    making the field required must not quietly replace that refusal with a
+    different one.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+
+    _register(signed_in, matter, document, organisation, **missing)
+
+    assert Submission.objects.filter(matter=matter).count() == 0, label
+
+
+def test_registering_a_send_names_the_fields_it_refused(signed_in, specialist, organisation):
+    """A refusal the reader can act on, rather than a disappearance (§19)."""
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+
+    response = _register(
+        signed_in,
+        matter,
+        document,
+        organisation,
+        **{"saadetud-sent_on": None, "saadetud-recipients": None},
+    )
+
+    # The message itself, not the page it lands on: that page renders the form,
+    # so every field label is in its body whether or not anything refused.
+    from django.contrib.messages import get_messages
+
+    said = " ".join(str(message) for message in get_messages(response.wsgi_request))
+    assert "Saadetud" in said
+    assert "Adressaadid" in said
+
+
+def test_a_registered_send_stores_the_supplied_day_and_never_today(
+    signed_in, specialist, organisation
+):
+    """The one thing the whole finding is about."""
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+
+    _register(signed_in, matter, document, organisation, **{"saadetud-sent_on": "01.06.2026"})
+
+    submission = Submission.objects.get(matter=matter)
+    assert submission.status == SubmissionStatus.SENT
+    assert submission.sent_at_precision == SentAtPrecision.DATE
+    assert timezone.localtime(submission.sent_at).date() == datetime.date(2026, 6, 1)
+    assert timezone.localtime(submission.sent_at).date() != timezone.localdate()
+
+
+def test_a_valid_registration_creates_exactly_one_sent_submission(
+    signed_in, specialist, organisation
+):
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+
+    _register(signed_in, matter, document, organisation)
+
+    assert Submission.objects.filter(matter=matter, status=SubmissionStatus.SENT).count() == 1
+
+
+def test_the_service_refuses_a_blank_send_date_on_this_route(specialist, organisation):
+    """The route is not the only door. `sent_at=None` is not a user answer here.
+
+    `mark_submission_sent` may still default to now — that is the real-time act
+    — but the composition that *registers* a historical send may not reach it
+    without a date.
+    """
+    from app.core.errors import DomainError
+    from app.submissions.services import register_sent_opinion
+
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+
+    with pytest.raises(DomainError):
+        register_sent_opinion(
+            document=document,
+            version=document.current_version,
+            title="Koja arvamus",
+            actor=specialist,
+            recipients=[organisation],
+            sent_at=None,
+        )
+    assert Submission.objects.filter(matter=matter).count() == 0
+
+
+# -- a draft already owns these bytes ---------------------------------------
+
+
+def _draft_owning(matter, document, *, actor, organisation=None):
+    """A DRAFT whose final evidence is this document's current version."""
+    submission = create_submission(
+        matter=matter,
+        title="Koostamisel arvamus",
+        actor=actor,
+        recipients=[organisation] if organisation else None,
+    )
+    select_final_evidence(submission=submission, version=document.current_version, actor=actor)
+    submission.refresh_from_db()
+    return submission
+
+
+def test_a_drafts_final_evidence_is_not_offered_as_a_registration_candidate(
+    signed_in, specialist, organisation
+):
+    """The read model. Its correct operation is `Märgi saadetuks` on the draft."""
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+    _draft_owning(matter, document, actor=specialist, organisation=organisation)
+
+    response = signed_in.get(_documents_url(matter))
+    offered = [str(candidate.pk) for candidate in response.context["unregistered_opinions"]]
+
+    assert str(document.pk) not in offered
+
+
+def test_a_crafted_post_cannot_register_a_drafts_final_evidence(
+    signed_in, specialist, organisation
+):
+    """And the write boundary, because a browser submits whatever it likes.
+
+    Hiding the candidate is not the fix; it is half of it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+    draft = _draft_owning(matter, document, actor=specialist, organisation=organisation)
+
+    _register(signed_in, matter, document, organisation)
+
+    draft.refresh_from_db()
+    assert draft.status == SubmissionStatus.DRAFT
+    assert Submission.objects.filter(matter=matter, status=SubmissionStatus.SENT).count() == 0
+    assert Submission.objects.filter(matter=matter).count() == 1
+
+
+def test_the_service_itself_refuses_a_drafts_final_evidence(specialist, organisation):
+    """Stated where it is decided, not only where it is posted."""
+    from app.core.errors import DomainError
+    from app.submissions.services import register_sent_opinion
+
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+    _draft_owning(matter, document, actor=specialist, organisation=organisation)
+
+    with pytest.raises(DomainError):
+        register_sent_opinion(
+            document=document,
+            version=document.current_version,
+            title="Koja arvamus",
+            actor=specialist,
+            recipients=[organisation],
+            sent_at=timezone.make_aware(datetime.datetime(2026, 6, 1)),
+            sent_at_precision=SentAtPrecision.DATE,
+        )
+    assert Submission.objects.filter(matter=matter, status=SubmissionStatus.SENT).count() == 0
+
+
+def test_the_draft_path_that_replaces_it_still_works(signed_in, specialist, organisation):
+    """The operation the refusal points at must exist and must still mean *now*.
+
+    `Märgi saadetuks` is the real-time act, so its `timezone.now()` default is
+    correct and is deliberately untouched by R2-01.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+    draft = _draft_owning(matter, document, actor=specialist, organisation=organisation)
+
+    signed_in.post(reverse("submissions:mark_sent", kwargs={"pk": draft.pk}), {})
+
+    draft.refresh_from_db()
+    assert draft.status == SubmissionStatus.SENT
+    assert draft.sent_at_precision == SentAtPrecision.TIMESTAMP
+    assert timezone.localtime(draft.sent_at).date() == timezone.localdate()
+    assert Submission.objects.filter(matter=matter).count() == 1
+
+
+def test_a_withdrawn_sends_evidence_stays_registrable(signed_in, specialist, organisation):
+    """§18: the fix is narrow on DRAFT, and this is the line it must not cross.
+
+    `withdraw_submission` only accepts a SENT submission, so a withdrawn one was
+    genuinely sent once and there is no draft to open instead. Blocking its
+    evidence would remove the only way to record a later send of those bytes.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+    sent = _send(matter, document, actor=specialist, recipients=[organisation])
+
+    from app.submissions.services import withdraw_submission
+
+    withdraw_submission(submission=sent, actor=specialist)
+
+    response = signed_in.get(_documents_url(matter))
+    offered = [str(c.pk) for c in response.context["unregistered_opinions"]]
+    assert str(document.pk) in offered

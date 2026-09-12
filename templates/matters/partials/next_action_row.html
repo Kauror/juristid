@@ -47,9 +47,12 @@ the first textarea (static/js/ux.js, `data-koostaja-toggle`).
   `jargmiseks-rida` is a duplicate id on every render, whichever branch happens
   to be taken (tests/test_templates.py).
 
-  It is also where `Märgi tehtuks` lands from a work row on another page: the
-  control it names — «✓ Tehtud» — is inside this row, so the row is the
-  destination. `tabindex="-1"` is what
+  A work row's menu no longer lands here. It used to: `Märgi tehtuks` named
+  «✓ Tehtud», which is inside this row. Direct completion is gone
+  (docs/adr/0075 §3), the menu item is `Lisa tulemus…`, and it lands on
+  `PRAEGUNE TEGEVUS` — where describing the result *is* the completion. This
+  row keeps its anchor for the addresses that still carry it.
+  `tabindex="-1"` is what
   lets the arrival focus it without making it a tab stop, the same way
   `#tulemused` accepts a drill-down on the register (static/js/ux.js,
   templates/matters/matter_list.html).

@@ -150,8 +150,21 @@ rather than read.
   {% endif %}
 
   <div class="metaline">
+    {% comment %}
+      The three editors below are behind `can_write`, like every other inline
+      editor on this page and in the rail. A reader was offered the same
+      disclosures, picked a name, and the `data-autosubmit` posted to a route
+      that answers a non-writer with 404 — which htmx does not swap, so nothing
+      on the page said anything and the select sat showing a choice the record
+      never took. The value is still read either way; only the control that
+      cannot do what it offers is withheld (app/core/decorators.py, ADR 0037).
+    {% endcomment %}
     <span class="metaline__item">
       <span class="metaline__label">Vastutaja</span>
+      {% if not can_write %}
+        {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
+        {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
+      {% else %}
       <details class="inlineedit">
         <summary class="inlineedit__trigger">
           {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
@@ -174,14 +187,43 @@ rather than read.
                   aria-label="Salvesta vastutaja muudatus">Salvesta</button>
         </form>
       </details>
+      {% endif %}
     </span>
 
     <span class="metaline__item">
       <span class="metaline__label">Valdkond</span>
+      {% if not can_write %}
+        {% if matter_policy_areas or matter.policy_area_other %}
+          <span class="metaline__value"{% if matter.policy_area_other %} title="{% for area in matter_policy_areas %}{{ area.name_et }}, {% endfor %}Muu: {{ matter.policy_area_other }}"{% endif %}>{% for area in matter_policy_areas %}{{ area.name_et }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if matter.policy_area_other %}{% if matter_policy_areas %}, {% endif %}Muu: {{ matter.policy_area_other|truncatechars:40 }}{% endif %}</span>
+        {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
+      {% else %}
       <details class="inlineedit">
+        {% comment %}
+          **`Muu` is read here too, and that is the whole of R2-06's sibling.**
+
+          `Matter.policy_area_other` is a filing decision somebody made — they
+          ticked `Muu` on `Uus teema` and wrote what the area actually is — and
+          this slot used to ignore it completely. A Matter filed under `Muu`
+          alone therefore read «Valdkond: Määramata», which is not an omission
+          in the rendering but a false statement about the record: the question
+          *was* answered, and the page said it was not.
+
+          So the value is the canonical areas and the free text, in that order,
+          and `Määramata` is reserved for the state it actually names — neither
+          answered. The free text is truncated with the whole of it in `title`,
+          because 400 characters in a metaline would push `Hetkeseis` and
+          `Saabus` off the band (post-QA R2-07).
+
+          It is *read* here and edited on `Muuda teemat`. This disclosure posts
+          to `update_field/policy_areas`, which is one field per URL by
+          construction, and widening it to carry a second field would make the
+          one endpoint that names what it edits stop naming it. The note inside
+          says so rather than leaving somebody clicking checkboxes looking for
+          the box that holds the words they can see.
+        {% endcomment %}
         <summary class="inlineedit__trigger">
-          {% if matter_policy_areas %}
-            <span class="metaline__value">{% for area in matter_policy_areas %}{{ area.name_et }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+          {% if matter_policy_areas or matter.policy_area_other %}
+            <span class="metaline__value"{% if matter.policy_area_other %} title="{% for area in matter_policy_areas %}{{ area.name_et }}, {% endfor %}Muu: {{ matter.policy_area_other }}"{% endif %}>{% for area in matter_policy_areas %}{{ area.name_et }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if matter.policy_area_other %}{% if matter_policy_areas %}, {% endif %}Muu: {{ matter.policy_area_other|truncatechars:40 }}{% endif %}</span>
           {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
         </summary>
         {% comment %}
@@ -222,14 +264,37 @@ rather than read.
               {% endif %}
             {% endfor %}
           </fieldset>
+          {% if matter.policy_area_other %}
+            {% comment %}
+              What the value above says that no checkbox in this list explains.
+              Only when there is one — an empty `Muu` needs no sentence, and a
+              standing caption about a field nobody used is the kind of
+              explanation this band had removed from it (Teema redesign §5.5).
+
+              The link is behind `can_write`, because `Muuda teemat` is: a
+              reader who cannot edit would be sent to a page that refuses them,
+              and the sentence would be advice they cannot take. The words
+              themselves stay either way — knowing what the `Muu` value is does
+              not depend on being able to change it.
+            {% endcomment %}
+            <span class="field__help">
+              Muu: {{ matter.policy_area_other }}{% if can_write %} —
+              <a href="{% url 'matters:matter_edit' pk=matter.pk %}">muuda teemat</a>{% endif %}
+            </span>
+          {% endif %}
           <button class="button button--quiet button--tiny" type="submit"
                   aria-label="Salvesta valdkondade muudatus">Salvesta</button>
         </form>
       </details>
+      {% endif %}
     </span>
 
     <span class="metaline__item">
       <span class="metaline__label">Hetkeseis</span>
+      {% if not can_write %}
+        {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
+        {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
+      {% else %}
       <details class="inlineedit">
         <summary class="inlineedit__trigger">
           {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
@@ -253,6 +318,7 @@ rather than read.
                   aria-label="Salvesta hetkeseisu muudatus">Salvesta</button>
         </form>
       </details>
+      {% endif %}
     </span>
 
     {% comment %}
@@ -369,14 +435,29 @@ rather than read.
             <label class="field">
               <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
               {% comment %}
-                Pre-filled with today, like every other new date control. It is
-                a suggestion in an unsaved box: nothing is written until this
-                form is submitted (Teema QA §5).
+                **Empty, and never today.**
+
+                This box used to open pre-filled with today's date, defended as
+                "a suggestion in an unsaved box" (Teema QA §5). The defence does
+                not survive what the field means. `Arvamuse tähtaeg` is an
+                asserted business fact — the day somebody *else* set for Koda's
+                answer — and today is never a plausible reading of it; a
+                suggestion is only harmless where the suggested value could be
+                right. What it actually bought was one Enter away from a
+                deadline nobody had been given, on a Matter whose whole defect
+                was that nobody knew the date.
+
+                `MatterCreateForm`, `MatterEditForm` and `IncomingIntakeForm`
+                had already stopped defaulting this field for exactly this
+                reason; this is the one control that had been missed
+                (app/matters/forms.py, post-QA R2-09).
+
+                An existing deadline still prefills — that is the branch above,
+                where the value in the box is the record's own.
               {% endcomment %}
               <input class="field__input field__input--compact dateinput" type="text"
                      inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                     data-datepicker="true" name="response_deadline"
-                     value="{{ today|date:'j.n.Y' }}">
+                     data-datepicker="true" name="response_deadline" value="">
             </label>
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta tähtaeg">Salvesta</button>

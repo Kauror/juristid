@@ -1388,3 +1388,119 @@ def test_the_preview_command_does_not_distinguish_hidden_from_missing(specialist
         call_command("related_materials_preview", "2026_9999", viewer=reader.upn)
     assert str(hidden.value) == str(missing.value)
     assert restricted.title not in str(hidden.value)
+
+
+# ---------------------------------------------------------------------------
+# R2-02 — a closed Matter takes no new or changed relation
+# ---------------------------------------------------------------------------
+#
+# The business/preference line this module already draws is also the
+# closed-Matter line. Relations and background selections record an actor, a
+# time and a `ChangeEvent`: they are content on the file, and a file that is
+# shut takes no more of it — whatever page the POST came from. A dismissal
+# writes no event and asserts nothing about the Matter, so it is left alone.
+
+
+def _closed(owner: Any, title: str, *, number: int) -> Matter:
+    matter = _matter(owner, title, number=number)
+    close_matter(matter=matter, disposition="COMPLETED", actor=owner, reason="QA")
+    matter.refresh_from_db()
+    return matter
+
+
+def test_a_closed_matter_accepts_no_new_relation(specialist):
+    """F. Refused, and nothing written — not even the half that is symmetric."""
+    closed = _closed(specialist, "Suletud jäätmeseadus", number=931)
+    open_matter = _matter(specialist, "Avatud pakendiseadus", number=932)
+
+    with pytest.raises(DomainError):
+        services.link_related_matters(matter=closed, other=open_matter, actor=specialist)
+
+    assert MatterRelation.objects.count() == 0
+    assert not ChangeEvent.objects.filter(event_type=ChangeEventType.MATTER_RELATION_ADDED).exists()
+
+
+def test_a_closed_matter_accepts_no_removal_of_one_either(specialist):
+    """Withdrawing an assertion is still changing the file's content."""
+    first = _matter(specialist, "Jäätmeseadus", number=933)
+    second = _matter(specialist, "Pakendiseadus", number=934)
+    services.link_related_matters(matter=first, other=second, actor=specialist)
+    close_matter(matter=first, disposition="COMPLETED", actor=specialist, reason="QA")
+    first.refresh_from_db()
+
+    with pytest.raises(DomainError):
+        services.unlink_related_matters(matter=first, other=second, actor=specialist)
+
+    assert MatterRelation.objects.count() == 1
+
+
+def test_an_open_matter_may_still_be_related_to_a_closed_one(specialist):
+    """Only the subject has to be open, and that is the common case.
+
+    A file continuing work that finished elsewhere is what `Järglane` is for.
+    Requiring both ends open would refuse it.
+    """
+    open_matter = _matter(specialist, "Uus pakendiseadus", number=935)
+    closed = _closed(specialist, "Eelmine pakendiseadus", number=936)
+
+    relation, created = services.link_related_matters(
+        matter=open_matter, other=closed, actor=specialist
+    )
+
+    assert created and relation.pk is not None
+    assert [item.other for item in related_materials_for(open_matter, specialist).relations] == [
+        closed
+    ]
+
+
+def test_a_closed_matter_accepts_no_new_background_material(specialist, ministry):
+    closed = _closed(specialist, "Suletud teema taustaga", number=937)
+    other = _matter(specialist, "Arvamuse allikas", number=938)
+    opinion = _sent_opinion(other, "Koja arvamus")
+
+    with pytest.raises(DomainError):
+        services.add_background_submission(matter=closed, submission=opinion, actor=specialist)
+
+    assert MatterBackgroundMaterial.objects.filter(matter=closed).count() == 0
+
+
+def test_a_dismissal_is_not_a_business_write_and_still_works(specialist):
+    """The classification, asserted rather than assumed.
+
+    `Ei ole seotud` writes no `ChangeEvent` and says nothing about the file — it
+    stops a suggestion being offered. Refusing it on a closed Matter would be
+    the broadening this deliberately did not do.
+    """
+    closed = _closed(specialist, "Suletud teema soovitustega", number=939)
+    candidate = _matter(specialist, "Soovitatud teema", number=940)
+
+    dismissal, created = services.dismiss_related_suggestion(
+        matter=closed, candidate_matter=candidate, actor=specialist
+    )
+
+    assert created and dismissal.pk is not None
+
+
+def test_a_closed_matter_does_not_advertise_the_write_controls(signed_in, specialist):
+    """And the fresh page stops offering what the services would refuse.
+
+    Hiding is the courtesy, not the rule — but a page that renders `Eemalda
+    seos` on a file that cannot accept it is a page that teaches people the
+    application is broken.
+    """
+    first = _matter(specialist, "Suletud seosega teema", number=941)
+    second = _matter(specialist, "Seotud teema", number=942)
+    services.link_related_matters(matter=first, other=second, actor=specialist)
+
+    url = reverse("related_materials:section", kwargs={"pk": first.pk})
+    while_open = signed_in.get(url).content.decode()
+    assert "Eemalda seos" in while_open
+
+    close_matter(matter=first, disposition="COMPLETED", actor=specialist, reason="QA")
+    after = signed_in.get(url)
+
+    assert after.context["can_write"] is False
+    body = after.content.decode()
+    assert "Eemalda seos" not in body
+    # The read-only display is untouched: the row, its title and its «Ava».
+    assert second.title in body

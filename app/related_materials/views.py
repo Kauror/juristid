@@ -139,7 +139,17 @@ def section_context(
     notice: str = "",
     notice_is_error: bool = False,
 ) -> dict[str, Any]:
-    can_write = may_write_business_content(request.user)
+    # Two questions, and both have to be yes. `may_write_business_content` asks
+    # whether this *person* may author content; `is_open` asks whether this
+    # *file* still takes any. A closed Matter's section is a reading surface —
+    # every row, its label, its date and its «Ava» are exactly as they were, and
+    # what goes is the `Eemalda seos`, the `Eemalda` and the `Lisa` disclosure
+    # holding the picker (R2-02 §9).
+    #
+    # Hiding is the courtesy, not the rule: the services refuse these writes
+    # under the Matter lock whether or not a page ever offered them
+    # (app/related_materials/services.py).
+    can_write = may_write_business_content(request.user) and matter.is_open
     suggestions = None
     if open_suggestions:
         suggestions = engine.suggestions_for(
@@ -212,7 +222,12 @@ def section(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_GET
 def picker(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Matters for «Lisa seotud teema». A write affordance, so writers only."""
+    """Matters for «Lisa seotud teema». A write affordance, so writers only.
+
+    And only on a file that still takes writes. The section does not render the
+    control that opens this on a closed Matter, but the route is an address like
+    any other (R2-02 §9).
+    """
     matter = _visible_matter(request, pk)
     query = clean_query(request.GET.get("q") or "")
     return render(
@@ -220,7 +235,7 @@ def picker(request: HttpRequest, pk: Any) -> HttpResponse:
         PICKER_TEMPLATE,
         {
             "matter": matter,
-            "can_write": True,
+            "can_write": matter.is_open,
             "picker_query": query,
             "picker_results": _picker_results(request, matter, query),
             "hidden_shown": False,

@@ -44,7 +44,11 @@ from app.documents.enums import DerivativeKind, DerivativeStatus, DocumentRole
 from app.documents.extraction.orchestrator import derivative_storage
 from app.documents.models import Document, DocumentDerivative, DocumentVersion
 from app.documents.preview import build_preview
-from app.documents.services import add_evidence_version, create_document, evidence_storage
+from app.documents.services import (
+    add_version_on_open_matter,
+    capture_evidence_on_open_matter,
+    evidence_storage,
+)
 from app.documents.uploads import UploadRejected, read_upload
 from app.matters.views import get_visible_matter
 
@@ -125,18 +129,19 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
     try:
         upload = read_upload(form.cleaned_data["upload"])
-        document = create_document(
+        # Through the interactive use case, which asks under the Matter's own
+        # row lock whether the file is still open. The panel this posted from
+        # is not rendered on a closed Matter, and that decides nothing: a
+        # browser holding the page from before the closure still has it
+        # (app/documents/services.py).
+        capture_evidence_on_open_matter(
             matter=matter,
             title=form.cleaned_data["title"].strip() or upload.filename,
             role=form.cleaned_data["role"],
-            created_by=request.user,
-        )
-        add_evidence_version(
-            document=document,
             content=upload.content,
             original_filename=upload.filename,
             mime_type=upload.mime_type,
-            uploaded_by=request.user,
+            actor=request.user,
         )
         messages.success(request, "Tõend on salvestatud.")
     except (DomainError, UploadRejected) as error:
@@ -168,7 +173,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
 
     try:
         upload = read_upload(request.FILES.get("upload"))
-        add_evidence_version(
+        add_version_on_open_matter(
             document=document,
             content=upload.content,
             original_filename=upload.filename,

@@ -71,23 +71,74 @@ SUBJECT_HIGH_SCORE = 3
 
 @dataclass(frozen=True)
 class CurrentValues:
-    """What the Matter already says, so nothing of it is ever overwritten."""
+    """What the person has already answered, so nothing of it is ever overwritten.
+
+    "Already answered" is not the same question as "already stored", and
+    conflating them is what R2-03 was. On `Uus teema` there is no Matter yet:
+    the answers live in the form, and one of the two ways to answer Saatja does
+    not touch ``source_organisations`` at all.
+    """
 
     title: str = ""
     source_organisation_ids: frozenset[Any] = frozenset()
+    #: A sender the catalogue does not hold, typed and committed through `+`.
+    #: It is a *provisional* Organisation — `resolve_source_organisations`
+    #: decides inside the save's own transaction whether it reuses a row or
+    #: creates one — but it is not a provisional **answer**. The person has said
+    #: who the sender is; the catalogue simply has no id for them yet.
+    sender_name: str = ""
     response_deadline: date | None = None
     track: str = ""
     policy_area_ids: frozenset[Any] = frozenset()
 
+    @property
+    def has_sender(self) -> bool:
+        """Whether Saatja has been answered, by either of the two controls.
+
+        The one definition, because it was nearly two: the pre-fill rule asked
+        only about ``source_organisations``, so a typed sender read as *no
+        answer* and a HIGH suggestion was applied straight over it (R2-03).
+        """
+        return bool(self.source_organisation_ids) or bool(self.sender_name.strip())
+
     @classmethod
     def of(cls, matter: Any) -> CurrentValues:
-        """Read the Matter once."""
+        """Read the Matter once.
+
+        No ``sender_name``: a saved Matter has resolved its typed sender into
+        real ``source_organisations`` rows, so the column does not exist and
+        there is nothing provisional left to preserve.
+        """
         return cls(
             title=matter.title,
             source_organisation_ids=frozenset(matter.source_organisation_ids),
             response_deadline=matter.response_deadline,
             track=matter.track or "",
             policy_area_ids=frozenset(area.pk for area in matter.policy_areas.all()),
+        )
+
+    @classmethod
+    def answered_on(cls, form: Any) -> CurrentValues:
+        """What a **bound** form's own data says the person has answered.
+
+        The unsaved-form counterpart of :meth:`of`, and the authoritative
+        reading after a refused POST: the record cannot be asked, because there
+        is no record. Read from ``form.data`` rather than ``cleaned_data``,
+        because a form that refused may have no cleaned data for the very
+        fields this is about — and what the person typed is an answer whether
+        or not some other field validated.
+
+        Only the sender is read. The remaining fields keep the behaviour they
+        have: the browser declines to write into a control somebody has filled
+        in, and it can see the live page, which no server render can.
+        """
+        data = getattr(form, "data", None)
+        if not getattr(form, "is_bound", False) or data is None:
+            return cls()
+        chosen = data.getlist("source_organisations") if hasattr(data, "getlist") else []
+        return cls(
+            source_organisation_ids=frozenset(value for value in chosen if value),
+            sender_name=(data.get("sender_name") or "").strip(),
         )
 
 

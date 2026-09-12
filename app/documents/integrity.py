@@ -49,7 +49,7 @@ from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Count, Max
+from django.db.models import Count, F, Max
 from django.utils import timezone
 
 from app.core.enums import Visibility, most_restrictive
@@ -73,6 +73,7 @@ UNREADABLE_OBJECT = "unreadable-object"
 ORPHAN_OBJECT = "orphan-object"
 UNREADABLE_PREFIX = "unreadable-prefix"
 FOREIGN_CURRENT_VERSION = "foreign-current-version"
+CROSS_MATTER_LINK = "cross-matter-link"
 FOREIGN_FINAL_EVIDENCE = "foreign-final-evidence"
 EVIDENCE_LESS_RESTRICTED = "evidence-less-restricted"
 VERSION_NUMBER_GAP = "version-number-gap"
@@ -89,6 +90,7 @@ INTEGRITY_FAILURES: frozenset[str] = frozenset(
         UNREADABLE_OBJECT,
         FOREIGN_CURRENT_VERSION,
         FOREIGN_FINAL_EVIDENCE,
+        CROSS_MATTER_LINK,
         EVIDENCE_LESS_RESTRICTED,
     }
 )
@@ -188,6 +190,7 @@ def check_evidence(*, verify_sha: bool = False, scan_storage: bool = True) -> In
 
     _check_versions(storage, report, verify_sha=verify_sha)
     _check_current_versions(report)
+    _check_document_links(report)
     _check_final_evidence(report)
     _check_version_numbering(report)
     _check_stuck_extractions(report)
@@ -442,3 +445,35 @@ def _check_orphans(storage: Any, report: IntegrityReport) -> None:
     for key in keys:
         if key not in referenced:
             report.findings.append(Finding(ORPHAN_OBJECT, key, "no canonical row refers to it"))
+
+
+def _check_document_links(report: IntegrityReport) -> None:
+    """A document may only support a record on its own Matter.
+
+    The one invariant of `DocumentLink` that PostgreSQL is structurally unable
+    to hold. A `CHECK` constraint sees a single row and cannot follow a foreign
+    key, so "these two ends belong to the same file" is enforced at
+    `link_document_to_record` and reported here — the same division of labour
+    the rest of this module already uses for what the database cannot see
+    (app/documents/links.py, docs/adr/0075 §6).
+
+    One query per target column rather than five joins in one: each is an
+    indexed foreign key compared against the document's own Matter, and a
+    report that runs on a schedule should be readable when it fails.
+    """
+    from app.documents.links import TARGET_FIELDS, DocumentLink
+
+    for column in TARGET_FIELDS:
+        rows = (
+            DocumentLink.objects.filter(**{f"{column}__isnull": False})
+            .exclude(**{f"{column}__matter_id": F("document__matter_id")})
+            .values_list("id", f"{column}__matter_id", "document__matter_id")
+        )
+        for link_id, record_matter, document_matter in rows:
+            report.findings.append(
+                Finding(
+                    CROSS_MATTER_LINK,
+                    str(link_id),
+                    f"{column} on {record_matter}, document on {document_matter}",
+                )
+            )

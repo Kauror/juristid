@@ -254,6 +254,11 @@ class TimelineItem:
     #: Files this save captured, attached after the page is assembled in one
     #: query, like ``next_step``.
     files: tuple[ChronologyFile, ...] = ()
+    #: The canonical record a projected milestone stands for — the engagement,
+    #: the deadline, the commencement, the win. Carried so the explicitly
+    #: associated files can be read off it in one query for the whole page; a
+    #: row projected from a `ChangeEvent` has none (docs/adr/0075 §10).
+    record: Any = None
 
     @property
     def is_milestone(self) -> bool:
@@ -593,6 +598,7 @@ def projected_milestones(
                 sort_key=str(record.pk),
                 item_type=type(record).__name__,
                 milestone=milestone,
+                record=record,
             )
         )
 
@@ -756,6 +762,21 @@ def matter_timeline(
     }
     renderable = [event for event in events if event.event_type not in SUPPRESSED_WHEN_ENTRY_SHOWN]
 
+    # A file that supports a structured fact reads on that fact's own row and
+    # nowhere else. Its evidence event would otherwise become a row of its own —
+    # the operation that wrote it has no `Entry` to be grouped onto — which is a
+    # second line, and a second dot, for one act (brief §25).
+    shown_on_their_record = _versions_shown_on_their_record(matter)
+    if shown_on_their_record:
+        renderable = [
+            event
+            for event in renderable
+            if not (
+                event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+                and event.object_id in shown_on_their_record
+            )
+        ]
+
     groups: dict[uuid.UUID, _Group] = {}
     items: list[TimelineItem] = []
 
@@ -858,7 +879,7 @@ def matter_timeline(
 
     page = items[offset : offset + limit]
     has_more = len(items) > offset + limit
-    return _with_files(_with_next_steps(page, user), user), has_more
+    return _with_linked_files(_with_files(_with_next_steps(page, user), user), user), has_more
 
 
 def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
@@ -947,4 +968,111 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     for item in page:
         step = steps.get(action_of(item))
         resolved.append(replace(item, next_step=step) if step is not None else item)
+    return resolved
+
+
+def _versions_shown_on_their_record(matter: Matter) -> set[Any]:
+    """Evidence versions that read on a structured fact's own chronology row.
+
+    **A file is not a chronology event.** Attaching two PDFs to a `Töövõit` is
+    one act and takes one row — the win's — with the files under it. Without
+    this, each of those uploads would *also* produce an
+    `EVIDENCE_VERSION_ADDED` row of its own, because the operation it belongs
+    to has no `Entry` for the projection to group it onto: two rows for one act,
+    one of them a file with its own dot (brief §25).
+
+    So a version whose document is explicitly linked to a record that is **not**
+    an `Entry` is dropped from the event stream and rendered by
+    :func:`_with_linked_files` on the row that record already draws. Entry links
+    are deliberately left alone: a note's attachment has always read as a clause
+    on the note's own row and still does.
+
+    Unscoped on purpose — this decides *where* a file reads, never *whether*.
+    Visibility is applied twice over, by `scope_change_events` on the event
+    stream and by `DocumentLink.visible_to` on the links, and this can only ever
+    remove a row.
+    """
+    from app.documents.links import DocumentLink
+    from app.documents.models import DocumentVersion
+
+    documents = set(
+        DocumentLink.objects.filter(document__matter=matter, entry__isnull=True).values_list(
+            "document_id", flat=True
+        )
+    )
+    if not documents:
+        return set()
+    return set(
+        DocumentVersion.objects.filter(document_id__in=documents).values_list("id", flat=True)
+    )
+
+
+def _with_linked_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
+    """Attach the files explicitly associated with each row's own record.
+
+    One query for the whole page, like ``_with_files`` and ``_with_next_steps``,
+    and read through ``DocumentLink.visible_to`` — which is the *conjunction* of
+    the document's visibility and the record's, so neither end can be repeated
+    to somebody who may not see it (app/documents/links.py).
+
+    **This adds no rows and no dots.** A file lands under the line its record
+    already draws, using the existing compact document-link language, and the
+    chronology count is unchanged. The Documents tab continues to list the
+    document normally as well (brief §25).
+
+    Deduplicated against whatever ``_with_files`` already attached from the
+    evidence events: a note's attachment is both an event on the note's
+    operation and a link to the note, and printing it twice under one line is
+    the defect that would look like a double upload.
+    """
+    from django.urls import reverse
+
+    from app.documents.links import DocumentLink
+    from app.documents.services import LINK_FIELD_BY_MODEL
+
+    keyed: list[tuple[int, str, Any]] = []
+    wanted: dict[str, set[Any]] = {}
+    for index, item in enumerate(page):
+        record = item.entry if item.entry is not None else item.record
+        if record is None:
+            continue
+        field = LINK_FIELD_BY_MODEL.get(type(record)._meta.label)
+        if field is None:
+            continue
+        wanted.setdefault(field, set()).add(record.pk)
+        keyed.append((index, field, record.pk))
+    if not keyed:
+        return page
+
+    condition = models.Q()
+    for field, keys in wanted.items():
+        condition |= models.Q(**{f"{field}__in": keys})
+
+    found: dict[tuple[str, Any], list[ChronologyFile]] = {}
+    for link in (
+        DocumentLink.objects.filter(condition)
+        .visible_to(user)
+        .select_related("document", "document__current_version")
+        .order_by("created_at", "pk")
+    ):
+        version = link.document.current_version
+        field = link.target_field
+        if version is None or not field:
+            continue
+        found.setdefault((field, getattr(link, f"{field}_id")), []).append(
+            ChronologyFile(
+                label=version.original_filename,
+                url=reverse("documents:download", kwargs={"pk": version.pk}),
+            )
+        )
+    if not found:
+        return page
+
+    linked = {index: found.get((field, key), []) for index, field, key in keyed}
+    resolved = []
+    for index, item in enumerate(page):
+        extra = [
+            file for file in linked.get(index, []) if file.url not in {f.url for f in item.files}
+        ]
+        resolved.append(replace(item, files=(*item.files, *extra)) if extra else item)
     return resolved

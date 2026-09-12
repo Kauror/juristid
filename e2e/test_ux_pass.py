@@ -20,7 +20,14 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     UNASSIGNED_TITLE,
 )
-from e2e.conftest import HEAD, SANDRA, open_composer, sign_in
+from e2e.conftest import (
+    HEAD,
+    SANDRA,
+    open_add_panel,
+    open_composer,
+    open_next_action_form,
+    sign_in,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -57,56 +64,58 @@ def open_matter_by_clicking(page, base_url: str, title: str) -> None:
 # =========================================================================
 
 
-def test_the_composer_opens_with_l_and_never_while_somebody_is_typing(page, base_url):
-    """`L` is a shortcut, not the only way in: the closed row is its own
-    <summary> and opens on a click (design handoff 1d)."""
+def test_l_puts_the_caret_in_the_box_that_records_what_happened(page, base_url):
+    """`L` for «lisa», and a shortcut with an obvious click equivalent.
+
+    It used to open the composer, which was both *what happened* and *what
+    happens next*. Those are two operations now, so `L` reaches the box that
+    records something being written down: `Mida tegid?` on a Matter with a
+    current task, and `+ Märge` on one without (docs/adr/0075 §3).
+    """
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    composer = page.locator("details.uxcomp")
-    expect(composer).to_have_count(1)
-    # Open on arrival (docs/adr/0074 §3). `L` still has to work from the closed
-    # state, which is what the row click above puts it in.
-    assert composer.evaluate("node => node.open") is True
-    page.locator(".uxnext__label").click()
-    assert composer.evaluate("node => node.open") is False
-
-    page.keyboard.press("l")
-    assert composer.evaluate("node => node.open") is True
-    expect(page.locator("textarea.composer__body")).to_be_focused()
+    current = page.locator("#praegune-tegevus textarea.composer__body")
+    if current.count():
+        page.keyboard.press("l")
+        expect(current).to_be_focused()
+        box = current
+    else:
+        note = page.locator("#lisa-marge")
+        assert note.evaluate("node => node.open") is False
+        page.keyboard.press("l")
+        assert note.evaluate("node => node.open") is True
+        box = page.locator("#lisa-marge textarea.composer__body")
+        expect(box).to_be_focused()
 
     # And the same key inside the box types a letter rather than doing anything.
     page.keyboard.type("l")
-    assert page.locator("textarea.composer__body").input_value().endswith("l")
+    assert box.input_value().endswith("l")
 
 
 def test_a_quick_date_fills_the_field_that_is_actually_submitted(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    # The composer is open on arrival since the approved target, so the
-    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
-    # this honest if it is ever reached from the closed state
-    # (docs/adr/0074 §3).
-    open_composer(page)
-    chip = page.locator("[data-quickdate]").filter(has_text="+1 nädal").first
+    open_next_action_form(page)
+    chip = page.locator("#lisa-jargmine [data-quickdate]").filter(has_text="+1 nädal").first
     expected = chip.get_attribute("data-quickdate")
     chip.click()
 
-    page.locator("details.uxcomp__date > summary").click()
-    expect(page.locator("#id_next_date")).to_have_value(expected)
+    expect(page.locator("#id_target_date")).to_have_value(expected)
     # The chip now says the day it means, not just the span.
     expect(chip).to_contain_text("→")
     assert "is-selected" in (chip.get_attribute("class") or "")
 
 
-def test_the_composer_still_saves_with_ctrl_enter(page, base_url):
+def test_a_marge_still_saves_with_ctrl_enter(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    page.keyboard.press("l")
-    page.locator("textarea.composer__body").fill("Sünteetiline kiirsissekanne klaviatuurilt.")
-    page.keyboard.press("Control+Enter")
+    open_composer(page)
+    box = page.locator("#lisa-marge textarea.composer__body")
+    box.fill("Sünteetiline kiirsissekanne klaviatuurilt.")
+    box.press("Control+Enter")
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#teema-vaade")).to_contain_text("Sünteetiline kiirsissekanne")
@@ -125,8 +134,9 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     # The next step asks two things and nothing else.
-    expect(page.locator("[name='next_text']")).to_be_visible()
-    expect(page.locator("#id_next_date")).to_have_count(1)
+    open_next_action_form(page)
+    expect(page.locator("#lisa-jargmine [name='text']")).to_be_visible()
+    expect(page.locator("#id_target_date")).to_have_count(1)
     expect(page.locator("details.uxcomp__more")).to_have_count(0)
     expect(page.locator("#id_next_date_semantics")).to_have_count(0)
     expect(page.locator("input[name=next_precision]")).to_have_count(0)
@@ -137,15 +147,17 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     # from that day. The «Ligikaudne aeg» disclosure and its four selects are
     # gone from this surface and still serve `Olulised tähtajad`
     # (docs/adr/0074 §11).
-    page.locator("#cx-tahtaeg > summary").click()
-    expect(page.locator("#cx-tahtaeg [name=deadline_date]")).to_be_visible()
+    open_add_panel(page, "lisa-tahtaeg")
+    expect(page.locator("#lisa-tahtaeg [name=deadline_date]")).to_be_visible()
     for label in ("Täpne päev", "Kuu", "Kvartal"):
-        expect(page.locator("#cx-tahtaeg .uxchip", has_text=label)).to_have_count(1)
-    expect(page.locator("#cx-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
+        expect(page.locator("#lisa-tahtaeg .uxchip", has_text=label)).to_have_count(1)
+    expect(page.locator("#lisa-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
-    page.locator("#cx-lopeta > summary").click()
-    expect(page.locator("#cx-lopeta")).to_have_attribute("open", "")
-    expect(page.locator("#cx-lopeta [name=closing_words]")).to_be_visible()
+    open_add_panel(page, "lisa-lopeta")
+    expect(page.locator("#lisa-lopeta")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-lopeta [name=closing_words]")).to_be_visible()
+    # Opening the last one closed the one before it (docs/adr/0075 §2).
+    expect(page.locator("#lisa-tahtaeg")).not_to_have_attribute("open", "")
 
 
 # =========================================================================
@@ -159,22 +171,26 @@ def test_the_next_action_row_says_the_step_and_its_date_and_nothing_else(page, b
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    row = page.locator(".uxnext").first
-    expect(row).to_be_visible()
-    expect(row).to_contain_text("Järgmiseks")
+    zone = page.locator("#praegune-tegevus").first
+    expect(zone).to_be_visible()
+    expect(zone).to_contain_text("Praegune tegevus")
 
-    text = row.inner_text()
+    text = zone.inner_text()
     for retired in ("TEEN", "OOTAN", "JÄLGIN", "TÄHTAEG", "VAATAN ÜLE", "OODATAV"):
-        assert retired not in text, f"the row still says «{retired}»"
+        assert retired not in text, f"the zone still says «{retired}»"
 
 
 def test_deferring_moves_the_date_and_says_which_day_it_lands_on(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
+    # «Lükka edasi» is not on this page: the row it lived on is superseded and
+    # the control went with it (docs/adr/0074 §20). The route, the service and
+    # the day-counting rule are untouched and still reached from a work row
+    # elsewhere, which is where this behaviour is now driven.
     defer = page.locator("details.uxnext__defer")
     if not defer.count():
-        pytest.skip("this Matter's step carries no exact date to defer")
+        pytest.skip("«Lükka edasi» is not offered on the Teema page")
 
     defer.locator("summary").click()
     option = defer.locator("button[name=paevad][value='7']")
@@ -190,23 +206,29 @@ def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):
 
     # «Lükka edasi» left the Järgmiseks row with the approved target, and with
     # it the only `[data-uxpopover]` this page had (docs/adr/0074 §20). The
-    # composer's `Kuupäev…` deliberately does **not** join that contract: it
-    # closes on a click outside, which is right for a menu and wrong for a box
-    # somebody is typing a date into. So what is asserted here is the disclosure
-    # the page does have — it opens and closes by its own summary, and typing
-    # into it survives a click elsewhere in the composer.
-    popover = page.locator("details.uxcomp__date")
+    # `Kuupäev…` box deliberately does **not** join that contract: it closes on
+    # a click outside, which is right for a menu and wrong for a box somebody is
+    # typing a date into. So what is asserted here is the disclosure the page
+    # does have — it opens and closes by its own summary, and typing into it
+    # survives a click elsewhere in the same form.
+    open_add_panel(page, "lisa-jargmine")
+    popover = page.locator("#lisa-jargmine details.uxcomp__date")
     trigger = popover.locator("summary")
+    # `Muuda` prefills the form from the open step, and the box renders open
+    # whenever it holds a value — so a refused save never hides the field the
+    # reader has to correct. Start from closed whichever state this Matter is in.
+    if popover.evaluate("node => node.open"):
+        trigger.click()
     trigger.click()
     assert popover.evaluate("node => node.open") is True
 
-    page.locator("#id_next_date").fill("30.09.2026")
-    page.locator(".composer__body").click()
+    page.locator("#id_target_date").fill("30.09.2026")
+    page.locator("#lisa-jargmine [name='text']").click()
 
     assert popover.evaluate("node => node.open") is True, (
         "a date box must not close under the cursor mid-entry"
     )
-    assert page.locator("#id_next_date").input_value() == "30.09.2026"
+    assert page.locator("#id_target_date").input_value() == "30.09.2026"
 
     trigger.click()
     assert popover.evaluate("node => node.open") is False
@@ -340,6 +362,26 @@ def test_an_owner_can_be_set_from_the_register_row(page, base_url):
         f"files it with no owner and nothing else here assigns it."
     )
 
+    # **Put the row in the middle of the viewport before clicking into it**, and
+    # the two failures that got here are why it has to be the middle rather than
+    # either end.
+    #
+    # At the top, the register's column head — `position: sticky; top: 48px`
+    # beneath a sticky top bar — covers the row, and the click on the trigger
+    # waits out its full actionability timeout against a header it cannot see
+    # through (`e2e/conftest.py` `open_matter` documents the same hazard).
+    #
+    # At the bottom, the trigger is clickable and the *menu* is not: it is
+    # `position: fixed` and `static/js/ux.js` `place()` puts it four pixels under
+    # the trigger, so a row near the fold opens a menu below it.
+    #
+    # Latent until it was not. This file shares a browser shard with whichever
+    # files the partition puts beside it, and adding one file to the suite moved
+    # two Matter-creating ones in front of this test — more unassigned Matters,
+    # this row further down the list than it has ever been, and both ends of
+    # that scroll wrong for the first time (ci_sharding.py).
+    row.evaluate("node => node.scrollIntoView({block: 'center', behavior: 'instant'})")
+
     row.locator("summary.uxassign__trigger").click()
     menu = row.locator(".uxassign__menu")
     expect(menu).to_be_visible()
@@ -388,9 +430,9 @@ def test_the_matter_workspace_holds_its_width(page, base_url, width):
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     assert not overflows(page), f"the Matter page overflows at {width}px"
-    # The composer and the Järgmiseks row are both reachable and readable.
-    expect(page.locator("details.uxcomp")).to_be_visible()
-    expect(page.locator(".uxnext").first).to_be_visible()
+    # Both zones of the workspace are reachable and readable.
+    expect(page.locator("#praegune-tegevus").first).to_be_visible()
+    expect(page.locator("#lisa-teemale").first).to_be_visible()
 
 
 @pytest.mark.parametrize("width", (480, 375))

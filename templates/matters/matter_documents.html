@@ -89,7 +89,15 @@ finds again (§23.5).
           <a class="quietlink" href="{% url 'matters:matter_documents' pk=matter.pk %}">Tühjenda</a>
         {% endif %}
         <span class="doctoolbar__spacer"></span>
-        {% if can_write %}
+        {% comment %}
+          `can_add_content`, not `can_write`: on a closed teema this page is a
+          reading surface. The upload route refuses a stale post anyway — that
+          is the boundary and it is in `app/documents/services.py` — but a
+          reader should not be shown a button whose only answer is a refusal,
+          and the banner above already offers the thing that would make it work
+          (app/matters/views.py).
+        {% endcomment %}
+        {% if can_add_content %}
           <button class="button button--primary" type="button" data-reveals="lae-dokument">
             ↑ Lae dokument
           </button>
@@ -103,51 +111,58 @@ finds again (§23.5).
           Töödokumendid accordion — one panel per thing to add, however many
           controls point at it. Rendering the SharePoint form inside the
           accordion made the empty state's button hide a form nobody could see.
-        {% endcomment %}
-        <div class="uploadpanel" id="lae-dokument" hidden>
-          <form class="stackform" method="post" enctype="multipart/form-data"
-                action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
-            {% csrf_token %}
-            <div class="formgrid">
-              <label class="field">
-                <span class="field__label">Fail</span>
-                <input class="field__input" type="file" name="upload" required>
-                <span class="field__help">
-                  Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.
-                </span>
-              </label>
-              <label class="field">
-                <span class="field__label">Roll</span>
-                {% comment %}
-                  `upload_roles`, not `document_roles`. This select posts a
-                  stored `Document.role`, so every value in it is a real one and
-                  only the words change — `Arvamus` where the database keeps
-                  `KODA_SUBMISSION_FINAL`. The filter above may invent a value
-                  because it only has to survive a round trip through the query
-                  string; this one may not (app/matters/views.py).
 
-                  Uploading a file as `Arvamus` records that Koda holds it. It
-                  does not claim Koda sent it — that is «Registreeri saatmine»
-                  in the Arvamused block, and it needs a person (docs/adr/0061).
-                {% endcomment %}
-                <select class="field__input" name="role" required>
-                  {% for value, label in upload_roles %}
-                    <option value="{{ value }}">{{ label }}</option>
-                  {% endfor %}
-                </select>
-                <span class="field__help">Vali enne salvestamist — pärast on see parandus.</span>
-              </label>
-              <label class="field">
-                <span class="field__label">Pealkiri</span>
-                <input class="field__input" type="text" name="title" maxlength="400"
-                       placeholder="Jäta tühjaks, et kasutada failinime">
-              </label>
-            </div>
-            <div class="form__actions">
-              <button class="button button--primary" type="submit">Salvesta dokument</button>
-            </div>
-          </form>
-        </div>
+          The evidence panel is `can_add_content` within that: a SharePoint
+          reference is a link to a living file and not a canonical record of
+          anything, so it is outside the closed-Matter business-write boundary
+          and stays available. Uploading evidence is inside it.
+        {% endcomment %}
+        {% if can_add_content %}
+          <div class="uploadpanel" id="lae-dokument" hidden>
+            <form class="stackform" method="post" enctype="multipart/form-data"
+                  action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
+              {% csrf_token %}
+              <div class="formgrid">
+                <label class="field">
+                  <span class="field__label">Fail</span>
+                  <input class="field__input" type="file" name="upload" required>
+                  <span class="field__help">
+                    Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Roll</span>
+                  {% comment %}
+                    `upload_roles`, not `document_roles`. This select posts a
+                    stored `Document.role`, so every value in it is a real one and
+                    only the words change — `Arvamus` where the database keeps
+                    `KODA_SUBMISSION_FINAL`. The filter above may invent a value
+                    because it only has to survive a round trip through the query
+                    string; this one may not (app/matters/views.py).
+
+                    Uploading a file as `Arvamus` records that Koda holds it. It
+                    does not claim Koda sent it — that is «Registreeri saatmine»
+                    in the Arvamused block, and it needs a person (docs/adr/0061).
+                  {% endcomment %}
+                  <select class="field__input" name="role" required>
+                    {% for value, label in upload_roles %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <span class="field__help">Vali enne salvestamist — pärast on see parandus.</span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Pealkiri</span>
+                  <input class="field__input" type="text" name="title" maxlength="400"
+                         placeholder="Jäta tühjaks, et kasutada failinime">
+                </label>
+              </div>
+              <div class="form__actions">
+                <button class="button button--primary" type="submit">Salvesta dokument</button>
+              </div>
+            </form>
+          </div>
+        {% endif %}
 
         <div class="uploadpanel" id="sharepointi-viide" hidden>
           <form class="stackform" method="post"
@@ -180,9 +195,11 @@ finds again (§23.5).
             <p class="docempty__text">Sellel teemal ei ole veel dokumente.</p>
             {% if can_write %}
               <div class="docempty__actions">
-                <button class="button button--primary" type="button" data-reveals="lae-dokument">
-                  ↑ Lae dokument
-                </button>
+                {% if can_add_content %}
+                  <button class="button button--primary" type="button" data-reveals="lae-dokument">
+                    ↑ Lae dokument
+                  </button>
+                {% endif %}
                 <button class="button button--quiet" type="button" data-reveals="sharepointi-viide">
                   + SharePointi viide
                 </button>
@@ -199,10 +216,48 @@ finds again (§23.5).
       {% else %}
         {% if evidence_documents %}
           <section class="docsection" aria-labelledby="failid-heading">
+            {% comment %}
+              **The count says whether it counted everything.**
+
+              Filing evidence against an opinion redirects here carrying
+              `?roll=arvamus`, so this heading came back reading «Failid · 1
+              faili» on a Matter holding nine. The number was right and the
+              sentence was not: nobody had asked for a filter, one had been
+              applied on their behalf, and the only thing on the page saying so
+              was a `<select>` in the toolbar above — which is not where
+              somebody reading a count is looking (post-QA R2-13).
+
+              The filter stays. Landing on the file you just attached with the
+              other eight out of the way is what the redirect is *for*, and
+              removing it would answer a labelling defect by taking away a
+              useful view. What is added is the word `filtreeritud` beside the
+              number and the chips that name each filter and take it off —
+              `filterchip`, which is the language the register already uses for
+              exactly this (templates/matters/partials/register_results.html).
+            {% endcomment %}
             <div class="docsection__head">
               <h2 class="docsection__title" id="failid-heading">Failid</h2>
-              <span class="docsection__count">{{ evidence_total }} faili</span>
+              <span class="docsection__count">
+                {{ evidence_total }} faili{% if document_filter_chips %} · filtreeritud{% endif %}
+              </span>
             </div>
+            {% if document_filter_chips %}
+              <div class="filterbar filterbar--chips">
+                {% for chip in document_filter_chips %}
+                  <a class="filterchip" href="?{{ chip.remove_query }}"
+                     title="Eemalda filter: {{ chip.label }}">
+                    <span class="filterchip__label">{{ chip.label }}:</span>
+                    <span>{{ chip.value }}</span>
+                    <span class="filterchip__remove" aria-hidden="true">×</span>
+                    <span class="visually-hidden">Eemalda filter</span>
+                  </a>
+                {% endfor %}
+                {% if document_filter_chips|length > 1 %}
+                  <a class="filterchip filterchip--clear"
+                     href="{% url 'matters:matter_documents' pk=matter.pk %}">Näita kõiki faile</a>
+                {% endif %}
+              </div>
+            {% endif %}
             <div class="tablewrap tablewrap--evidence">
               <table class="table doctable">
                 <thead>

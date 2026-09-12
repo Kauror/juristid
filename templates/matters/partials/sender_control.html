@@ -8,18 +8,23 @@ that is no longer true. A person should not learn one sender workflow filing a
 Teema, a second correcting it and a third at intake, so there is one control and
 it lives here (§2E).
 
-**`Uus teema` no longer renders this, and that is deliberate rather than a
-drift.** Since docs/adr/0073 it asks the question through one control — a box
-reading «Otsi või lisa asutus…» with a `+` attached to it — and
-`matters/partials/organisation_picker.html` is what draws it. The reasoning for
-splitting rather than changing this partial is in the ADR and in
-`matter_create.html`: `Muuda teemat` and `Saabunud` arrive with the answer
-already given, which is a different interaction, and neither was part of that
-review. So the shape below is still the shape those two surfaces have, and
-everything this comment says about it is still true of them. What is *not* true
-any more is that it is the only sender control in the application — and the
-«Two controls, on purpose» paragraph below is the one decision 0073 supersedes.
-The distinction it protects survives; what changed is that an *action* now
+**`Saabunud` is the one surface that still renders this.** Since docs/adr/0073
+`Uus teema` asks the question through one control — a box reading «Otsi või lisa
+asutus…» with a `+` attached to it — drawn by
+`matters/partials/organisation_picker.html`; since post-QA R2-12 `Muuda teemat`
+asks it with that same control, because same concept means same interaction and
+the page somebody reaches for when a Matter was filed wrongly was the weaker of
+the two. What was said in defence of keeping this shape on the edit page — that
+a form editing a saved Matter arrives with its answer already given, and is
+therefore a different interaction — turned out to argue for a *prepopulated*
+picker rather than for a second control: the answer being present is a fact
+about the form's initial state, not about how somebody changes it.
+
+`Saabunud` is untouched and not part of that review. Everything this comment
+says below is still true of it. What is no longer true is that this is the only
+sender control in the application — and the «Two controls, on purpose»
+paragraph below is the one decision 0073 supersedes for the surfaces that moved.
+The distinction it protects survives; what changed there is that an *action*
 expresses it instead of a second box.
 
 **The shape, and why it is this one again.**

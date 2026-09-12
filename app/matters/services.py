@@ -34,7 +34,10 @@ from app.matters.enums import (
     RecordMode,
     TagAssignmentSource,
 )
-from app.matters.locks import lock_matter_for_evidence_integrity
+from app.matters.locks import (
+    lock_matter_for_evidence_integrity,
+    lock_open_matter_for_business_write,
+)
 from app.matters.models import (
     Entry,
     EntryRevision,
@@ -1360,6 +1363,45 @@ def _engagement_response_count(value: Any) -> int | None:
     return count
 
 
+@transaction.atomic
+def record_engagement(
+    *,
+    matter: Matter,
+    kind: str,
+    title: str,
+    url: str = "",
+    note: str = "",
+    occurred_on: Any = None,
+    response_count: Any = None,
+    actor: Any = None,
+) -> MatterEngagement:
+    """`Kaasamine`, recorded by a person on a Matter that is open. The UI's door.
+
+    A thin use case over :func:`add_engagement`, and it exists for one reason:
+    the leaf below has a second, legitimate writer that must *not* be held to
+    this rule. `app.legacy_import.register_outreach` files consultations onto
+    imported Matters, and most of those are closed — the register is full of
+    finished work, and refusing to record what was already done to it would
+    break the import rather than protect anything.
+
+    So the closed-Matter rule is stated where a *person* writes, not where the
+    row is created (R2-02). The Teema overview's `Kaasamine` form posts here;
+    the workspace's `+ Kaasamine` takes the same lock itself in
+    `app/matters/workspace.py`; the importer keeps the leaf.
+    """
+    locked = lock_open_matter_for_business_write(matter.pk)
+    return add_engagement(
+        matter=locked,
+        kind=kind,
+        title=title,
+        url=url,
+        note=note,
+        occurred_on=occurred_on,
+        response_count=response_count,
+        actor=actor,
+    )
+
+
 def add_engagement(
     *,
     matter: Matter,
@@ -1556,9 +1598,32 @@ def close_matter(
 
 @transaction.atomic
 def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Matter:
-    if matter.is_open:
+    """Make a closed Matter current work again.
+
+    The row is locked and re-read before the question is answered, exactly as
+    `close_matter` does on the way in. Reading ``matter.is_open`` off the
+    instance the caller arrived with answers a question about a moment that
+    has passed: two tabs both showing the closed banner, both pressing «Ava
+    uuesti…», would both find their copy closed and both record that the
+    Matter was reopened — one act, two `MATTER_REOPENED` events, and an audit
+    trail that cannot say which of them happened. Whichever transaction takes
+    the row first reopens; the other is told «Teema on juba avatud.» and
+    writes nothing.
+
+    `no_key=True` for the reason `app/matters/locks.py` gives: this transaction
+    goes on to insert a `ChangeEvent` that references the Matter, and the
+    weaker mode still conflicts with the plain `FOR UPDATE` a concurrent
+    `close_matter` takes, so the two cannot interleave.
+    """
+    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    if locked.is_open:
         raise DomainError("Teema on juba avatud.")
 
+    # Written through the instance the caller passed, as it always was. The
+    # row is this transaction's whichever Python object the UPDATE goes
+    # through, and the callers that reopen and then keep reading their own
+    # instance — the register cutover reactivating an archive record among
+    # them — must see the fields they just changed.
     matter.is_open = True
     matter.disposition = ""
     matter.disposition_reason = ""
@@ -2087,6 +2152,18 @@ def compose_update(
     **One operation identifier ties the audit rows together**, so the human
     timeline can render one line for one action without a single canonical
     record being suppressed or merged (``app/audit/operations.py``).
+
+    **Nothing on the Teema page posts here any more, and that is exactly why
+    the closed-Matter guard matters.** docs/adr/0075 kept this route working on
+    purpose, for the browsers still holding a page that posts to it. A page
+    rendered before a closure is the stale tab R2-02 is about, and this is the
+    route it posts to — so the rule cannot live in whether the new workspace
+    renders a form. It is taken here, at the start, under the Matter lock, like
+    every operation in `app/matters/workspace.py`.
+
+    ``closure`` is unaffected: it is still the last thing this does, and closing
+    an open Matter is still allowed. What is refused is a composer save arriving
+    at a Matter somebody has already closed.
     """
     wants_something = bool(
         body.strip()
@@ -2100,6 +2177,8 @@ def compose_update(
     )
     if not wants_something:
         raise DomainError("Täida sissekanne või vali, mida veel salvestada.")
+
+    matter = lock_open_matter_for_business_write(matter.pk)
 
     with composer_operation() as operation_id:
         result = ComposerResult(operation_id=operation_id)

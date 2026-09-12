@@ -91,26 +91,36 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
 def name_a_new_addressee(page, typed: str) -> None:
     """Name a body the catalogue does not hold, on whichever form is open.
 
-    `Uus teema` has one control for both halves of the question since
-    docs/adr/0073 — the search box finds what exists, the `+` beside it proposes
-    what was typed — while `Muuda teemat` still renders `sender_control.html`'s
-    pair and keeps its own labelled box. Both are driven here, so this asks
-    which form it is on rather than making the caller know (task §26).
+    One control for both halves of the question — the search box finds what
+    exists, the `+` beside it proposes what was typed — on `Uus teema` since
+    docs/adr/0073 and on `Muuda teemat` since post-QA R2-12.
+
+    Found by the picker holding this field's carrier rather than by a fixed id:
+    the two pages number their pickers differently (`adressaat` and
+    `muuda-adressaat`), and a helper that knew both ids would have to be edited
+    again the next time a third surface asks the question. The labelled box is
+    still the fallback for a surface that has not moved — `Saabunud` has not.
     """
-    picker = page.locator("#adressaat-otsi")
+    picker = addressee_picker(page)
     if picker.count():
-        picker.click()
-        picker.fill(typed)
-        page.locator("#adressaat-valik [data-orgfind-add]").click()
+        box = picker.locator("[data-orgfind-input]")
+        box.click()
+        box.fill(typed)
+        picker.locator("[data-orgfind-add]").click()
         return
     page.fill("#id_addressee_name", typed)
 
 
+def addressee_picker(page):
+    """The unified picker carrying `addressee_name`, wherever it is rendered."""
+    return page.locator('[data-orgfind]:has([data-orgfind-typed][name="addressee_name"])')
+
+
 def typed_addressee_value(page) -> str:
     """What the form will post as a typed addressee, wherever it is carried."""
-    carrier = page.locator("#adressaat-uus")
-    if carrier.count():
-        return carrier.input_value()
+    picker = addressee_picker(page)
+    if picker.count():
+        return picker.locator("[data-orgfind-typed]").input_value()
     return page.locator("#id_addressee_name").input_value()
 
 

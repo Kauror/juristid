@@ -43,6 +43,39 @@ one of its own.
 Blocking a one-line internal fix on a release note nobody would read is how a
 file like this fills up with noise.
 
+**There is a release-time rule instead.** A pull request is not what reaches a
+lawyer; a release is, and it is the one moment every change passes through. So
+`.github/workflows/release-image.yml` — the only channel to production — takes
+the commit production runs now (`previous_sha`) beside the commit being built,
+lists the paths between them, and asks `scripts/ci/assert_release_note.py` one
+question: does this payload need an entry here, and does it have one?
+
+| the payload | the answer |
+| --- | --- |
+| `uuendused.toml` changed | `note-present` — build |
+| nothing under `app/`, `templates/`, `static/`, `config/` or `manage.py` changed | `internal-only` — build; no note is owed, which is the per-PR rule kept at release size. A rebuild of the running revision is this case. |
+| the application changed and this file did not | `missing` — the build stops and names the paths |
+| the same, with `release_note_waiver` set | `waived` — build; the reason is written into the release manifest beside the digest |
+
+The waiver is for a payload that touches the application and changes nothing a
+reader meets — a logging line, a query made cheaper. It is not for «I will
+write it later»: the entry takes a minute, and the manifest that names the
+waiver outlives the run.
+
+Every answer the gate can give is held in `tests/test_release_note_gate.py`,
+over lists of paths and no repository.
+
+**What the gate proves, and what it does not.** The gate answers one mechanical
+question: did `uuendused.toml` change in a payload a reader will notice? It does
+not read the entry, and it cannot tell whether every user-facing change in the
+payload is described, described accurately, or described under the right day.
+That judgement stays with release review: before running the workflow, read the
+payload (`git diff --stat <previous_sha> <sha> -- app templates static config`)
+against the day's `changes` and add what is missing. A semantic changelog check
+in CI — the code diffed against the prose — is deliberately not attempted: it
+would be either wrong often enough to be ignored or strict enough to fill this
+file with noise, which is the failure the per-PR rule above already refuses.
+
 ## Adding to it
 
 A new day, at the top of the file (order in the file does not matter — the

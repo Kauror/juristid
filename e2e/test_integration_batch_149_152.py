@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, open_composer, sign_in
+from e2e.conftest import SANDRA, open_add_panel, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -198,24 +198,21 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
         page, base_url, "Lugemise kaudu loodud teema kahe perioodikontrolliga", letter_pdf
     )
 
-    # The composer's own approximate-period control, open and visible.
-    # The composer is open on arrival since the approved target, so the
-    # collapsed prompt is hidden and `open_composer` is the no-op that keeps
-    # this honest if it is ever reached from the closed state
-    # (docs/adr/0074 §3).
-    open_composer(page)
+    # `+ Oluline tähtaeg`'s own approximate-period control.
+    #
     # `Täpsus` is three chips over a hidden field since the approved target: the
     # panel asks for the day somebody was told about and says how precisely it
     # was meant, and `_period_anchor` derives the period from that day
-    # (docs/adr/0074 §11).
-    page.locator("#cx-tahtaeg > summary").click()
-    composer_precision = page.locator("#cx-tahtaeg .cx-when .uxchip").first
-    expect(composer_precision).to_be_visible()
+    # (docs/adr/0074 §11, docs/adr/0075 §2).
+    open_add_panel(page, "lisa-tahtaeg")
+    panel_precision = page.locator("#lisa-tahtaeg .cx-when .uxchip").first
+    expect(panel_precision).to_be_visible()
 
     # Now the inline commencement form, and the answer that removes its own
     # date control entirely. Reached through the fragment route, because the
-    # Teema page's own `+ Jõustumine` is a composer panel now and this test is
-    # about the *other* form keeping its date control (docs/adr/0074 §7).
+    # Teema page's own `+ Jõustumine` is a `LISA TEEMALE` panel now and this
+    # test is about the *other* form keeping its date control
+    # (docs/adr/0074 §7, docs/adr/0075 §2).
     page.goto(f"{page.url.split('#')[0].rstrip('/')}/joustumine/lisa/")
     page.wait_for_load_state("networkidle")
     form = page.locator("form").filter(has=page.get_by_label("Jõustub üldises korras")).first
@@ -223,8 +220,8 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
     form.get_by_label("Jõustub üldises korras").check()
 
     expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
-    # The composer is a different form on a different page and keeps its own.
+    # The panel is a different form on a different page and keeps its own.
     page.go_back()
     page.wait_for_load_state("networkidle")
-    page.locator("#cx-tahtaeg > summary").click()
-    expect(page.locator("#cx-tahtaeg .cx-when .uxchip").first).to_be_visible()
+    open_add_panel(page, "lisa-tahtaeg")
+    expect(page.locator("#lisa-tahtaeg .cx-when .uxchip").first).to_be_visible()

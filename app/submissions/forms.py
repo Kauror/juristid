@@ -118,11 +118,23 @@ class RegisterSentOpinionForm(SubmissionCreateForm):
     treating it as a permission check is how a crafted post binds a document
     somebody may not see (`app/submissions/views.py`).
 
-    `sent_on` is optional and is a **day**. A person recording that an opinion
-    went out on the 12th knows the day and not the hour, so a supplied date is
+    `sent_on` is **required** and is a **day**. A person recording that an
+    opinion went out on the 12th knows the day and not the hour, so the date is
     stored as aware midnight with `SentAtPrecision.DATE` and the UI never reads
-    that anchor back as «00:00». Left empty means *now*, which is a real moment
-    and is stored as one (`app/submissions/enums.py`).
+    that anchor back as «00:00» (`app/submissions/enums.py`).
+
+    It used to be optional, and blank meant *now*. That is the right reading for
+    `Märgi saadetuks`, where pressing the button is the send — and the wrong one
+    here, where the whole act is recording a send that already happened. Blank
+    produced a canonical SENT Submission stamped with today, and the outbound
+    register and the process timeline then reported `Arvamus välja <today>`
+    about a letter whose date nobody had supplied (R2-01). There is no answer
+    this form can infer, so it asks.
+
+    `recipients` is required for the same reason and is required *here only*:
+    `SubmissionCreateForm` opens a draft, where "who this goes to" is a question
+    still being worked out. A registered send is a statement that Koda wrote to
+    somebody, and a send with no addressee is not a fact anybody can check.
     """
 
     document = forms.ChoiceField(
@@ -145,9 +157,9 @@ class RegisterSentOpinionForm(SubmissionCreateForm):
     #: (app/core/widgets.py).
     sent_on = EstonianDateField(
         label="Saadetud",
-        required=False,
+        required=True,
         widget=EstonianDateInput(),
-        help_text="Jäta tühjaks, kui arvamus läheb välja praegu.",
+        help_text="Kuupäev, mil arvamus välja saadeti.",
     )
 
     #: The order the panel renders in: what went out, what it was, who got it,
@@ -167,6 +179,12 @@ class RegisterSentOpinionForm(SubmissionCreateForm):
 
     def __init__(self, *args: Any, documents: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        # Narrowed from the parent rather than redeclared, so the queryset,
+        # widget and label `SubmissionCreateForm.__init__` sets up still apply.
+        recipients = self.fields["recipients"]
+        recipients.required = True
+        recipients.label = "Adressaadid"
+        recipients.help_text = "Kellele arvamus saadeti. Vähemalt üks."
         # `cast` rather than a runtime check: the field is declared on this class
         # three lines up, and a `TypedChoiceField` it demonstrably is.
         cast(forms.ChoiceField, self.fields["document"]).choices = [
@@ -175,7 +193,12 @@ class RegisterSentOpinionForm(SubmissionCreateForm):
         self.order_fields(self.field_order)
 
     def clean_sent_on(self) -> date | None:
-        """A send is never in the future. The record says what happened."""
+        """A send is never in the future. The record says what happened.
+
+        Unchanged by the required-field correction above: a date that is present
+        and in the future is still a different refusal from one that is absent,
+        and both still refuse.
+        """
         value = self.cleaned_data.get("sent_on")
         if value is not None and value > timezone.localdate():
             raise forms.ValidationError("Saatmise kuupäev ei saa olla tulevikus.")

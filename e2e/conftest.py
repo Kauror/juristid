@@ -155,29 +155,69 @@ def sign_out(page, base_url: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def open_composer(page) -> None:
-    """Make sure the Matter composer is open before typing into it.
+def open_add_panel(page, panel_id: str) -> None:
+    """Open one `LISA TEEMALE` operation and wait for its form.
 
-    **It is open on arrival** since the approved Teema target (docs/adr/0074 §3),
-    so this is normally a no-op — it stays because the disclosure still closes,
-    by the `L` shortcut, by its summary and by clicking the Järgmiseks row, and
-    a test that reaches it after one of those must not depend on which.
-
-    Every test that types into the composer goes through here, so the day it
-    stops being a disclosure this is the only line that changes.
+    The zone is a choice of seven until one is picked, and opening one closes
+    whichever was open (docs/adr/0075 §2). Every browser test that writes
+    anything other than the current action's result goes through here, so the
+    day a panel stops being a `<details>` this is the only line that changes.
     """
-    composer = page.locator("details.uxcomp")
-    if composer.count() and composer.evaluate("node => !node.open"):
-        composer.locator("summary.uxcomp__collapsed").click()
-    page.locator(".composer__body").wait_for(state="visible")
+    panel = page.locator(f"#{panel_id}")
+    panel.wait_for(state="attached")
+    # **Clicked until it is open, not once.** Every workspace save swaps
+    # `#teema-vaade`, and `wait_for_load_state("networkidle")` can return while
+    # HTMX is still replacing the node — so a click lands on the element that is
+    # about to be thrown away and the replacement arrives closed. Measured: the
+    # `+ Kaasamine` form stayed hidden for the full 30s locator timeout after a
+    # `+ Märge` save immediately before it.
+    for _ in range(3):
+        if panel.evaluate("node => node.open"):
+            break
+        panel.locator("summary").first.click()
+        page.wait_for_timeout(120)
+    panel.locator("form").first.wait_for(state="visible")
 
-    # And the exact-date box behind «Kuupäev…». The quick chips write into it,
-    # so it is closed at rest — but it is still the field every test that sets a
-    # next step fills, and it is still what the server validates.
-    date_box = page.locator("details.uxcomp__date")
+
+def open_next_action_form(page) -> None:
+    """`Muuda` or `+ Järgmine tegevus`, whichever this Matter is showing.
+
+    One form, two hosts: while a step is open it is the `Muuda` disclosure
+    beside the task, and once none is it is the launcher chip. A test that sets
+    a next step should not have to know which, and the exact-date box behind
+    «Kuupäev…» is opened here too — the quick chips write into it, so it is
+    closed at rest, but it is the field every test fills and the one the server
+    validates (docs/adr/0075 §10).
+    """
+    open_add_panel(page, "lisa-jargmine")
+    date_box = page.locator("#lisa-jargmine details.uxcomp__date")
     if date_box.count() and date_box.evaluate("node => !node.open"):
         date_box.locator("summary").click()
-        page.locator("#id_next_date").wait_for(state="visible")
+    page.locator("#id_target_date").wait_for(state="visible")
+
+
+def open_composer(page) -> None:
+    """`+ Märge` — where something that happened gets written down.
+
+    The composer this replaces asked *what happened* and *what happens next* in
+    one form over one `Salvesta`; those are two intentions and two saves now.
+    A test that used to type a body into the composer is recording a note, so
+    that is what this opens (docs/adr/0075 §2).
+    """
+    open_add_panel(page, "lisa-marge")
+    page.locator("#lisa-marge .composer__body").wait_for(state="visible")
+
+
+def finish_current_action(page, text: str) -> None:
+    """Record what was done about the current task, which completes it.
+
+    One operation and one button: there is no `Märgi tehtuks` on this page
+    (docs/adr/0075 §3).
+    """
+    zone = page.locator("#praegune-tegevus")
+    zone.locator(".composer__body").fill(text)
+    zone.locator("button[type=submit]").last.click()
+    page.wait_for_load_state("networkidle")
 
 
 def go_to(page, name: str) -> None:

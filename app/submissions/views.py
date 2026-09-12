@@ -40,13 +40,13 @@ from app.submissions.forms import (
     SubmissionCreateForm,
 )
 from app.submissions.models import Submission
-from app.submissions.opinions import opinion_documents, sent_submission_by_document
+from app.submissions.opinions import unregistered_opinion_documents
 from app.submissions.services import (
-    attach_final_evidence,
-    create_submission,
-    mark_submission_sent,
-    register_sent_opinion,
-    select_final_evidence,
+    attach_final_evidence_on_open_matter,
+    create_opinion_draft_on_open_matter,
+    mark_submission_sent_on_open_matter,
+    register_sent_opinion_on_open_matter,
+    select_final_evidence_on_open_matter,
     withdraw_submission,
 )
 
@@ -91,16 +91,25 @@ def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
         messages.error(request, "Arvamuse loomine ebaõnnestus. Kontrolli välju.")
         return redirect(opinions_url(matter))
 
-    submission = create_submission(
-        matter=matter,
-        title=form.cleaned_data["title"],
-        kind=form.cleaned_data["kind"],
-        actor=request.user,
-        recipients=list(form.cleaned_data["recipients"]),
-        for_information=list(form.cleaned_data["for_information"]),
-        joint_submitters=list(form.cleaned_data["joint_submitters"]),
-        channel=form.cleaned_data["channel"],
-    )
+    try:
+        submission = create_opinion_draft_on_open_matter(
+            matter=matter,
+            title=form.cleaned_data["title"],
+            kind=form.cleaned_data["kind"],
+            actor=request.user,
+            recipients=list(form.cleaned_data["recipients"]),
+            for_information=list(form.cleaned_data["for_information"]),
+            joint_submitters=list(form.cleaned_data["joint_submitters"]),
+            channel=form.cleaned_data["channel"],
+        )
+    except DomainError as error:
+        # A closed Matter, most often — the panel this posted from is not
+        # rendered on one, so the page that carried it was stale. Nothing was
+        # written: the refusal happens under the Matter lock before the
+        # Submission row exists (app/submissions/services.py).
+        messages.error(request, str(error))
+        return redirect(opinions_url(matter))
+
     messages.success(request, f"Arvamus „{submission.title}“ on loodud.")
     return _back(submission)
 
@@ -137,10 +146,12 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
                 ),
                 pk=version_id,
             )
-            select_final_evidence(submission=submission, version=version, actor=request.user)
+            select_final_evidence_on_open_matter(
+                submission=submission, version=version, actor=request.user
+            )
         else:
             upload = read_upload(form.cleaned_data["upload"])
-            attach_final_evidence(
+            attach_final_evidence_on_open_matter(
                 submission=submission,
                 content=upload.content,
                 original_filename=upload.filename,
@@ -164,7 +175,7 @@ def mark_sent(request: HttpRequest, pk: Any) -> HttpResponse:
     form.is_valid()
 
     try:
-        mark_submission_sent(
+        mark_submission_sent_on_open_matter(
             submission=submission,
             actor=request.user,
             channel=form.cleaned_data.get("channel", "") if form.is_bound else "",
@@ -189,6 +200,15 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
     is one form and one transaction now, and every rule it touches is still
     decided in the service that owns it (`register_sent_opinion`).
 
+    **One rule is decided a layer above it**, and only for this route: the
+    Matter must still be open. `register_sent_opinion` deliberately accepts a
+    closed one, because that is how the archive apply files a letter really sent
+    in 2019 onto a Matter closed in 2019 — but what arrives here is a person
+    creating a canonical send on a file somebody has declared finished, which is
+    ordinary business work with a backdated field rather than an import. So this
+    view posts to `register_sent_opinion_on_open_matter`, which asks the
+    question under the Matter's row lock and then delegates (docs/adr/0076).
+
     **The document is resolved twice on purpose.** The form's `document` choices
     come from the same selector as this — opinion files on this Matter, visible
     to this reader, with no canonical send yet — but a browser submits whatever
@@ -203,18 +223,23 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
     binary the page offered.
     """
     matter = get_visible_matter(request, matter_id)
-    sends = sent_submission_by_document(matter, viewer=request.user)
     candidates = {
         str(document.pk): document
-        for document in opinion_documents(matter, viewer=request.user)
-        if document.current_version_id and document.pk not in sends
+        for document in unregistered_opinion_documents(matter, viewer=request.user)
     }
     form = RegisterSentOpinionForm(
         request.POST, prefix=REGISTER_PREFIX, documents=candidates.values()
     )
 
     if not form.is_valid():
-        messages.error(request, "Saatmise registreerimine ebaõnnestus. Kontrolli välju.")
+        # Named rather than counted. `Saadetud` and `Adressaat` are now required
+        # — a registered send with neither used to succeed and stamp today's
+        # date onto a letter nobody had dated (R2-01) — and «Kontrolli välju»
+        # above a panel of nine fields does not say which two (§19).
+        messages.error(
+            request,
+            "Saatmise registreerimine ebaõnnestus: " + _refusal_detail(form),
+        )
         return redirect(opinions_url(matter))
 
     document = candidates[form.cleaned_data["document"]]
@@ -228,7 +253,7 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
     sent_on = form.cleaned_data.get("sent_on")
     try:
-        register_sent_opinion(
+        register_sent_opinion_on_open_matter(
             document=document,
             version=version,
             title=form.cleaned_data["title"],
@@ -242,8 +267,11 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
             # A day the sender typed is a day, and midnight in the department's
             # timezone is the honest reading of it. Empty means now, which is a
             # real moment and is stored as one (app/submissions/enums.py).
+            # Always a supplied day, never `timezone.now()`: the form requires
+            # `Saadetud` and the service refuses a call without it, so this
+            # route has no path to a fabricated send date (R2-01).
             sent_at=_as_midnight(sent_on),
-            sent_at_precision=SentAtPrecision.DATE if sent_on else SentAtPrecision.TIMESTAMP,
+            sent_at_precision=SentAtPrecision.DATE,
         )
         messages.success(request, "Arvamus on märgitud saadetuks.")
     except DomainError as error:
@@ -251,6 +279,23 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
         return redirect(opinions_url(matter))
 
     return redirect(opinions_url(matter, anchor=f"dokument-{document.pk}"))
+
+
+def _refusal_detail(form: RegisterSentOpinionForm) -> str:
+    """Which fields refused, in the words the panel labels them with.
+
+    A full-page POST that lands back on Dokumendid cannot redisplay the bound
+    form — the page is rendered by another view, from an unbound one — so the
+    message is the only thing carrying the refusal. Listing the labels is what
+    that architecture allows; it is the difference between a reader who fixes
+    the form and one who tries the same thing again (§19).
+    """
+    labels = [str(form.fields[name].label or name) for name in form.fields if name in form.errors]
+    if not labels:
+        # A non-field error, or a `document` the browser invented. Nothing to
+        # point at, so say so rather than printing an empty list.
+        return "kontrolli välju."
+    return "täida " + ", ".join(labels) + "."
 
 
 def _as_midnight(value: Any) -> Any:

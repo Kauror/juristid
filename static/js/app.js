@@ -350,12 +350,39 @@
         true
       );
 
+      /* The other control that answers the same question.
+
+         Saatja and Adressaat each have two: the chips, which are the real form
+         controls for every institution in the catalogue, and a hidden field
+         carrying a body the catalogue does not hold — what `+` writes. They sit
+         inside one picker, so the pairing is already in the document and does
+         not need a second list here to keep in step.
+
+         A typed name is an answer. It used to read as none, because emptiness
+         was asked of the chips alone: a person who typed a sender, pressed `+`
+         and was then refused by some other field came back to a page whose
+         chips were all unticked, and the suggestion was applied over the top
+         (R2-03, app/matters/intake_suggestions/analysis.py `has_sender`). */
+      var answeredElsewhere = function (controls) {
+        return controls.some(function (control) {
+          var picker = control.closest ? control.closest("[data-orgfind]") : null;
+          if (!picker) {
+            return false;
+          }
+          var typedField = picker.querySelector("[data-orgfind-typed]");
+          return !!(typedField && (typedField.value || "").trim());
+        });
+      };
+
       var fill = function (name, values) {
         if (touched[name]) {
           return;
         }
         var controls = controlsFor(name);
         if (!controls.length) {
+          return;
+        }
+        if (answeredElsewhere(controls)) {
           return;
         }
         var boxes = controls.filter(function (control) {
@@ -426,7 +453,7 @@
       /* One answer, two places. The staging routes render both halves and this
          puts each where it belongs by id — the file rows inside the dropzone,
          the suggestions above the fields they are about. */
-      var applyFragment = function (source) {
+      var applyFragment = function (source, options) {
         /* Either the answer's text or a document already parsed from it. The
            upload path parses first, because it has to look at what the server
            kept before deciding whether to empty the file input; the poll and
@@ -437,10 +464,32 @@
           typeof source === "string"
             ? new DOMParser().parseFromString(source, "text/html")
             : source;
+        /* A refusal outlives the poll. The stage response says which file
+           was not taken and why, and the file input has been emptied of the
+           ones that were — so that sentence is the only trace the refused
+           file leaves. The status poll a second later renders the same panel
+           from the session, which knows nothing of a file it never held, and
+           replacing the panel wholesale wiped the sentence before anybody had
+           read it: the page then said «1 valitud» about two files chosen and
+           nothing else. So the poll and the remove path carry a standing
+           warning over; only a new upload's own answer replaces it. */
+        var keepWarning = !!(options && options.keepWarning);
         ["intake-failid", "intake-panel"].forEach(function (id) {
           var incoming = parsed.getElementById(id);
           var existing = document.getElementById(id);
           if (incoming && existing) {
+            if (keepWarning && id === "intake-panel") {
+              var standing = existing.querySelector(".intakepanel__state--warn");
+              if (standing && !incoming.querySelector(".intakepanel__state--warn")) {
+                var uploadingNotice = incoming.querySelector(".intakepanel__uploading");
+                var kept = standing.cloneNode(true);
+                if (uploadingNotice && uploadingNotice.parentNode) {
+                  uploadingNotice.parentNode.insertBefore(kept, uploadingNotice.nextSibling);
+                } else {
+                  incoming.insertBefore(kept, incoming.firstChild);
+                }
+              }
+            }
             existing.replaceWith(document.importNode(incoming, true));
           }
         });
@@ -522,7 +571,7 @@
             })
             .then(function (html) {
               failures = 0;
-              applyFragment(html);
+              applyFragment(html, { keepWarning: true });
               schedule();
             })
             .catch(function () {
@@ -688,8 +737,9 @@
             /* The server decides what is left, what it now suggests and what
                `Loo teema` would file, all from one read — so the list and the
                suggestions cannot end up disagreeing about a file that is half
-               gone (task §17). */
-            applyFragment(html);
+               gone (task §17). Taking one file off says nothing about the one
+               that was refused, so that sentence stays. */
+            applyFragment(html, { keepWarning: true });
             schedule();
           })
           .catch(function () {});
@@ -2133,6 +2183,47 @@
 
       add.addEventListener("click", addTyped);
 
+      /* ---- The list closes when the field is done with ---------------------
+       *
+       * A combobox's list belongs to the control that opened it. This one had
+       * no way to close except Escape or emptying the box, so a reader who
+       * searched `Kliima`, ticked the ministry from the results and tabbed on
+       * to `Valdkonnad` left a panel of institutions standing open over the
+       * next field — and on `Uus teema`, with two of these on one form, over
+       * the other picker as well (post-QA R2-10).
+       *
+       * **Read from `document.activeElement` after the fact, never from
+       * `relatedTarget`.** Clicking a result must still select it, and there
+       * the sequence is `mousedown` (which the option cancels, so focus never
+       * moves) → `mouseup` → `click`; clicking `+` moves focus to a button
+       * inside this picker; clicking a chip moves it to that chip's checkbox.
+       * All three are still inside `picker` on the next task, so none of them
+       * closes the list out from under the click it was starting. Only focus
+       * genuinely leaving does — including focus going nowhere at all, which is
+       * what a click on the page background produces and which `relatedTarget`
+       * reports as `null` indistinguishably from a browser that does not set
+       * it.
+       *
+       * Escape, the arrows and Enter are untouched above; this adds a way out,
+       * it does not replace one. */
+      picker.addEventListener("focusout", function () {
+        window.setTimeout(function () {
+          if (!picker.contains(document.activeElement)) {
+            closeResults();
+          }
+        }, 0);
+      });
+
+      /* And a way back in. Focus returning to a box that still holds a query
+         re-opens the list it would otherwise have to be retyped to see —
+         without it, closing on blur would have turned a search somebody left
+         and came back to into a dead control. */
+      box.addEventListener("focus", function () {
+        if (box.value.trim() && results.hidden) {
+          paint();
+        }
+      });
+
       /* Anything that changes what is ticked repaints, wherever it came from —
          a click on a chip, the intake reader's autofill, «Kasuta» on a
          suggestion, or `bindAddresseeDefault` answering Adressaat from Saatja.
@@ -2629,12 +2720,40 @@
          wholesale, the staged one on every answer from the staging routes
          (static/js/app.js above, app/documents/pending.py). */
       var lists = key === "id_files" ? ["hoitud-failid", "intake-failid"] : [];
+      /* The provisional answers, which are selections like any other.
+       *
+       * A body named through the picker's `+` is on screen as a checked chip,
+       * it is what the form will post, and it is exactly as chosen as a
+       * ministry ticked from the catalogue — but it posts through
+       * `sender_name` rather than through the checkbox group, so a count that
+       * read only the group said «1 valitud» over two visible chips and
+       * nothing at all over one (post-QA R2-11).
+       *
+       * Found through the picker each group input lives in rather than from a
+       * field name written into the template, so the two counterparty
+       * questions and both forms that ask them get this from one rule. A
+       * control that is *not* inside a picker — `Uus saatja` on `Saabunud` —
+       * finds none, and its typed text stays uncounted, which is the other half
+       * of the rule: typing is not selecting, and only `+` commits. */
+      var typedCarriers = [];
+      sources.forEach(function (input) {
+        var picker = input.closest ? input.closest("[data-orgfind]") : null;
+        var carrier = picker ? picker.querySelector("[data-orgfind-typed]") : null;
+        if (carrier && typedCarriers.indexOf(carrier) === -1) {
+          typedCarriers.push(carrier);
+        }
+      });
       var sync = function () {
         var count = single && sources[0] === single
           ? (single.files || []).length
           : sources.filter(function (input) {
               return input.checked && input.value !== "";
             }).length;
+        typedCarriers.forEach(function (carrier) {
+          if (carrier.value.trim()) {
+            count += 1;
+          }
+        });
         lists.forEach(function (id) {
           var list = document.getElementById(id);
           if (list) {
@@ -2645,6 +2764,14 @@
       };
       sources.forEach(function (input) {
         input.addEventListener("change", sync);
+      });
+      /* `+` writes the carrier and says so with `input`; `×` on the provisional
+         chip and `bindExclusiveName` empty it and say so the same way. One
+         listener covers all three, because all three are the same event about
+         the same control (`bindOrganisationPickers` `setTyped`). */
+      typedCarriers.forEach(function (carrier) {
+        carrier.addEventListener("input", sync);
+        carrier.addEventListener("change", sync);
       });
       sync();
     });

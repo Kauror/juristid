@@ -19,8 +19,29 @@ from django.utils import timezone
 from app.accounts import shared_gate
 from app.accounts.models import SharedGateThrottle
 from app.core.errors import DomainError
+from app.documents.enums import DocumentRole
+from app.documents.models import Document, DocumentVersion
+from app.documents.services import (
+    add_evidence_version,
+    add_version_on_open_matter,
+    capture_evidence_on_open_matter,
+    create_document,
+)
+from app.matters import workspace
 from app.matters.models import Entry, EntryRevision, Matter
-from app.matters.services import add_entry, close_matter, edit_entry
+from app.matters.services import add_entry, close_matter, compose_update, edit_entry
+from app.related_materials.models import MatterRelation
+from app.related_materials.services import link_related_matters
+from app.submissions.enums import SentAtPrecision, SubmissionStatus
+from app.submissions.models import Submission
+from app.submissions.services import (
+    attach_final_evidence_on_open_matter,
+    create_opinion_draft_on_open_matter,
+    create_submission,
+    mark_submission_sent_on_open_matter,
+    register_sent_opinion_on_open_matter,
+    select_final_evidence_on_open_matter,
+)
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
@@ -563,3 +584,266 @@ def test_a_row_deleted_by_a_successful_sign_in_does_not_break_the_attempt(gate_l
     assert wait == 0
     # The attempt was counted on a fresh row rather than lost or raised.
     assert SharedGateThrottle.objects.get(client_key=key).failures == 1
+
+
+# ---------------------------------------------------------------------------
+# R2-02 — a closure and a business write cannot both land
+# ---------------------------------------------------------------------------
+
+
+def test_closing_while_adding_content_cannot_leave_the_content(specialist):
+    """The race the guard exists for, not the check it replaced.
+
+    ``if not matter.is_open: refuse`` on the instance a request arrived with
+    answers a question about a moment that has already passed. This is the
+    interleaving that makes the difference visible: one transaction takes the
+    Matter row and then writes an `Entry`, while another closes the file and
+    queues behind it. Whichever reaches the row first wins, and both orderings
+    are correct — a closure that lands first makes the write refuse, and a write
+    that lands first is simply part of the file the closure then shuts.
+
+    What cannot happen is both: an `Entry` committed against a Matter that was
+    already closed when it committed.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    holder_ready = threading.Event()
+    closer_started = threading.Event()
+    failures: list[BaseException] = []
+    outcomes: list[str] = []
+
+    def hold_then_write() -> None:
+        try:
+            with transaction.atomic():
+                Matter.objects.select_for_update().get(pk=matter.pk)
+                holder_ready.set()
+                closer_started.wait(timeout=LOCK_WAIT_TIMEOUT)
+                wait_for_a_blocked_backend()
+                workspace.add_matter_note(
+                    matter=matter, author=specialist, body="<p>Võidujooksu märge.</p>"
+                )
+            outcomes.append("note-written")
+        except DomainError:
+            outcomes.append("note-refused")
+        except BaseException as exc:  # pragma: no cover - reported, not swallowed
+            failures.append(exc)
+
+    def close() -> None:
+        try:
+            holder_ready.wait(timeout=LOCK_WAIT_TIMEOUT)
+            closer_started.set()
+            close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+            outcomes.append("closed")
+        except DomainError:
+            outcomes.append("close-refused")
+        except BaseException as exc:  # pragma: no cover
+            failures.append(exc)
+
+    threads = [run_in_thread(hold_then_write), run_in_thread(close)]
+    for thread in threads:
+        thread.join(timeout=40)
+
+    assert failures == [], failures
+    matter.refresh_from_db()
+
+    entries = Entry.objects.filter(matter=matter)
+    # Exactly one serialisation won, and the pair is consistent: an entry exists
+    # only if it was written before the closure committed.
+    assert "closed" in outcomes, outcomes
+    if "note-refused" in outcomes:
+        assert entries.count() == 0, outcomes
+    else:
+        assert "note-written" in outcomes, outcomes
+        assert entries.count() == 1, outcomes
+
+
+def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
+    """The ordering the lock produces, stated on its own.
+
+    Every UI-accessible business write, through the service that decides it —
+    so a surface added later inherits the rule rather than restating it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+
+    for call in (
+        lambda: workspace.add_matter_note(matter=matter, author=specialist, body="<p>Hiline.</p>"),
+        lambda: workspace.add_matter_engagement(
+            matter=matter, author=specialist, kind="SURVEY", audience="Liikmed"
+        ),
+        lambda: workspace.add_matter_important_date(
+            matter=matter,
+            author=specialist,
+            title="Hiline tähtaeg",
+            date_value=timezone.localdate(),
+            period_end=timezone.localdate(),
+            date_precision="EXACT",
+        ),
+        lambda: workspace.add_matter_work_victory(
+            matter=matter, author=specialist, title="Hiline võit"
+        ),
+        lambda: compose_update(matter=matter, author=specialist, body="<p>Hiline.</p>"),
+        lambda: link_related_matters(
+            matter=matter, other=factories.MatterFactory(owner=specialist), actor=specialist
+        ),
+    ):
+        with pytest.raises(DomainError):
+            call()
+
+    assert Entry.objects.filter(matter=matter).count() == 0
+    assert MatterRelation.objects.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# The same race on the Dokumendid surface
+# ---------------------------------------------------------------------------
+
+
+def test_closing_while_uploading_evidence_cannot_leave_the_file(specialist):
+    """The upload half of R2-02, and the one with bytes in it.
+
+    A `Document` and a `DocumentVersion` are not the whole write: an evidence
+    version also puts an object in the store, and it is written *before* the row
+    that describes it (`app/documents/services.py`). So a refusal that arrived
+    late could leave a blob no row points at — invisible to every constraint in
+    the schema, and findable only by `prune_orphaned_evidence`.
+
+    The interleaving is the same as the workspace's: one transaction holds the
+    Matter row, the other queues behind it to close the file. Whichever reaches
+    the row first wins, and both orderings are correct. What cannot happen is a
+    document committed against a Matter that was already closed — or a stored
+    object with no document at all.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    holder_ready = threading.Event()
+    closer_started = threading.Event()
+    failures: list[BaseException] = []
+    outcomes: list[str] = []
+
+    def hold_then_upload() -> None:
+        try:
+            with transaction.atomic():
+                Matter.objects.select_for_update().get(pk=matter.pk)
+                holder_ready.set()
+                closer_started.wait(timeout=LOCK_WAIT_TIMEOUT)
+                wait_for_a_blocked_backend()
+                capture_evidence_on_open_matter(
+                    matter=matter,
+                    title="Võidujooksu tõend",
+                    role=DocumentRole.INCOMING_AUTHORITY,
+                    content=b"%PDF-1.4 race",
+                    original_filename="race.pdf",
+                    mime_type="application/pdf",
+                    actor=specialist,
+                )
+            outcomes.append("file-written")
+        except DomainError:
+            outcomes.append("file-refused")
+        except BaseException as exc:  # pragma: no cover - reported, not swallowed
+            failures.append(exc)
+
+    def close() -> None:
+        try:
+            holder_ready.wait(timeout=LOCK_WAIT_TIMEOUT)
+            closer_started.set()
+            close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+            outcomes.append("closed")
+        except DomainError:
+            outcomes.append("close-refused")
+        except BaseException as exc:  # pragma: no cover
+            failures.append(exc)
+
+    threads = [run_in_thread(hold_then_upload), run_in_thread(close)]
+    for thread in threads:
+        thread.join(timeout=40)
+
+    assert failures == [], failures
+
+    documents = Document.objects.filter(matter=matter)
+    versions = DocumentVersion.objects.filter(document__matter=matter)
+    assert "closed" in outcomes, outcomes
+    if "file-refused" in outcomes:
+        assert documents.count() == 0, outcomes
+        assert versions.count() == 0, outcomes
+    else:
+        assert "file-written" in outcomes, outcomes
+        assert documents.count() == 1, outcomes
+        assert versions.count() == 1, outcomes
+
+
+def test_a_closure_that_commits_first_refuses_every_dokumendid_write(specialist, organisation):
+    """The ordering the lock produces, across the whole Dokumendid surface.
+
+    Each of the five interactive use cases, so a control added to this page
+    later inherits the rule from the layer rather than restating it. The draft
+    and the file both exist before the closure, which is the realistic shape:
+    work was under way and then somebody finished the Matter.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = create_document(
+        matter=matter,
+        title="Koja_arvamus.pdf",
+        role=DocumentRole.KODA_SUBMISSION_FINAL,
+        created_by=specialist,
+    )
+    version = add_evidence_version(
+        document=document,
+        content=b"%PDF-1.4 arvamus",
+        original_filename="Koja_arvamus.pdf",
+        mime_type="application/pdf",
+        uploaded_by=specialist,
+    )
+    draft = create_submission(matter=matter, title="Koostatav arvamus", actor=specialist)
+
+    close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+
+    for call in (
+        lambda: capture_evidence_on_open_matter(
+            matter=matter,
+            title="Hiline tõend",
+            role=DocumentRole.INCOMING_AUTHORITY,
+            content=b"%PDF-1.4 hiline",
+            original_filename="hiline.pdf",
+            mime_type="application/pdf",
+            actor=specialist,
+        ),
+        lambda: add_version_on_open_matter(
+            document=document,
+            content=b"%PDF-1.4 teine",
+            original_filename="teine.pdf",
+            mime_type="application/pdf",
+            uploaded_by=specialist,
+        ),
+        lambda: create_opinion_draft_on_open_matter(
+            matter=matter, title="Hiline arvamus", actor=specialist
+        ),
+        lambda: select_final_evidence_on_open_matter(
+            submission=draft, version=version, actor=specialist
+        ),
+        lambda: attach_final_evidence_on_open_matter(
+            submission=draft,
+            content=b"%PDF-1.4 hiline",
+            original_filename="hiline.pdf",
+            mime_type="application/pdf",
+            actor=specialist,
+        ),
+        lambda: mark_submission_sent_on_open_matter(submission=draft, actor=specialist),
+        lambda: register_sent_opinion_on_open_matter(
+            document=document,
+            version=version,
+            title="Hiline registreering",
+            actor=specialist,
+            recipients=[organisation],
+            sent_at=timezone.now() - timedelta(days=1),
+            sent_at_precision=SentAtPrecision.DATE,
+        ),
+    ):
+        with pytest.raises(DomainError):
+            call()
+
+    # Exactly what was there before the closure, and nothing else.
+    assert Document.objects.filter(matter=matter).count() == 1
+    assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
+    assert Submission.objects.filter(matter=matter).count() == 1
+    draft.refresh_from_db()
+    assert draft.status == SubmissionStatus.DRAFT
+    assert draft.final_version_id is None
