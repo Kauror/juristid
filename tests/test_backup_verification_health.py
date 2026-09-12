@@ -550,6 +550,29 @@ def _empty_target(tmp_path: Path) -> Path:
     return target
 
 
+def test_counting_a_tree_that_is_not_there_is_zero_rather_than_a_silent_exit(
+    tmp_path: Path,
+) -> None:
+    """The restore asks this about storage a destroyed deployment has not
+    recreated, which is the ordinary case for a recovery.
+
+    `find missing | wc -l` prints `0` and *fails*; `pipefail` carries that out
+    to the command substitution the caller assigns from, and `set -e` then ends
+    the script with no message. It killed the rehearsal's own restore step —
+    after the header, before any check could say anything.
+    """
+    script = f'set -euo pipefail; . "{SCRIPTS / "lib.sh"}"; count_files "{tmp_path / "gone"}"'
+    result = subprocess.run(  # noqa: S603 - a fixed interpreter and a temporary path
+        [BASH, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "0"
+
+
 def test_the_restore_refuses_storage_that_is_not_empty_and_leaves_it_alone(
     tmp_path: Path,
 ) -> None:

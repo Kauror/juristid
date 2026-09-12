@@ -148,11 +148,25 @@ PLAN
 # `ls -ln` rather than `find -printf`, which is GNU-only, and in batches rather
 # than one process per file, because these trees hold tens of thousands of
 # objects. Column five is the size whatever the name contains.
+#
+# A directory that is not there holds no files, and says so with status 0. That
+# is not pedantry: `find missing | wc -l` prints `0` and *fails*, `pipefail`
+# carries the failure out to the command substitution every caller assigns from,
+# and `set -e` then kills the script with no message at all. The restore asks
+# this about a storage tree that a destroyed deployment has not recreated yet,
+# so the answer has to be a number rather than a silent exit.
+#
+# A directory that exists and cannot be read still fails, which is the
+# distinction worth keeping: absent is zero, unreadable is an error. Both
+# functions carry the guard, because both are `find | …` and both are read
+# through a command substitution.
 count_files() {
+  [ -d "$1" ] || { printf '0\n'; return 0; }
   find "$1" -type f 2>/dev/null | wc -l | tr -d ' '
 }
 
 tree_bytes() {
+  [ -d "$1" ] || { printf '0\n'; return 0; }
   find "$1" -type f -exec ls -ln {} + 2>/dev/null | awk '$5 ~ /^[0-9]+$/ { total += $5 } END { print total + 0 }'
 }
 
@@ -314,8 +328,13 @@ inventory_first_missing() {
 #
 # Call `inventory_first_missing` first. This one is arithmetic over `ls`, and it
 # has nothing useful to say about an entry that is not there.
+#
+# The inventory is redirected into the *subshell* rather than into `xargs`, so
+# it is opened in the caller's directory before the `cd` rather than after it.
+# Attached to the inner command, a relative --backup-root would be resolved
+# against the tree being measured and the file would not be found.
 inventory_selected_bytes() {
   local tree="$1" inventory="$2"
-  ( cd -- "$tree" && xargs -0 -r ls -ln <"$inventory" ) |
+  ( cd -- "$tree" && xargs -0 -r ls -ln ) <"$inventory" |
     awk '$5 ~ /^[0-9]+$/ { total += $5 } END { print total + 0 }'
 }
