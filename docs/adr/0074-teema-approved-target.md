@@ -13,6 +13,13 @@ two canonical *known future* milestones as well as the historical ones:
 A generic `MatterImportantDate` and a `NextAction` remain excluded. Nothing else
 in this ADR is affected.
 
+**Amended a third time:** 2026-09-12 — §12.2's sentence «a future milestone is
+drawn with the same dot, the same weight and the same date line as a past one»
+is superseded by §12.5 below. Milestone membership, sources, ordering, labels
+and dates are **unchanged**; only the drawing of them is. §9's «`+ Kaasamine`
+asks three things» is likewise narrowed by §9.1: it asks those three, and two
+optional provider pointers beside them.
+
 **Supersedes the presentation clauses** of ADR 0027 (engagement vocabulary
 constraints), ADR 0031 (`Kaasamine` is not in the composer), ADR 0043 (the
 composer is collapsed by default), ADR 0065 (structured facts are added from a
@@ -163,6 +170,24 @@ The composer offers three kinds — `Küsitlus`, `Koosolek`, `Kirjade voor`.
 write surface has stopped offering is not a vocabulary the database has stopped
 accepting.
 
+#### 9.1 And two optional provider pointers (amended 2026-09-12)
+
+`Liik`, `Keda kaasati`, `Vastuseid` — and, beneath them, `Smaily link` and
+`Alchemer link`. Both optional, both external, both inert.
+
+The reason is the one thing a single `MatterEngagement.url` cannot express: one
+consultation round routinely has a mailing *and* a questionnaire, so somebody had
+to drop one of the two addresses or keep it in a note nobody can click. The
+generic `url` is unchanged and means what it always meant; these sit beside it.
+See ADR 0027, amended, for why two vendor-named columns are the smaller wrong
+than a lost address.
+
+Neither makes a `Kaasamine` valid on its own — `Keda kaasati` is still what
+identifies the record — but a typed link **does** count as attempted work, so a
+panel holding an address and no audience is refused with a message rather than
+silently discarded. The larger «Alustasin arvamuste küsimist» / «Arvamused
+saabusid» redesign is still a separate round and is still not begun.
+
 The engagement's date is today, in Europe/Tallinn. The target deliberately does
 not ask for one, and the application's convention for «this happened as part of
 the work I am writing down now» is the clock `add_entry` stamps with.
@@ -291,6 +316,11 @@ muting it would make the destination the file is heading for the least legible
 thing on the rail, and the strip's claim about a future column is only that the
 date is recorded, which is as true of the deadline as of the closure.
 
+> **Superseded 2026-09-12 by §12.5.** The first sentence of this paragraph no
+> longer holds: a future milestone *is* muted. The rest of §12.2 stands — no
+> column is marked as the one the Matter is standing on, `is-current` and
+> `is-todo` remain retired, and `praegu` is still gone.
+
 #### 12.3 Unchanged
 
 `Loodud` is drawn for a Matter this system created and **not** for an imported
@@ -383,6 +413,66 @@ was set and was never withdrawn; deciding here that a closure cancels an
 external deadline would invent a discharge rule the domain has not recorded.
 That is a separate product seam, and this clause records the scenario rather
 than working around it.
+
+#### 12.5 Reached, today and ahead (amended 2026-09-12)
+
+**§12.2's «same dot, same weight» is superseded. Nothing else is.**
+
+The reasoning for drawing a future column exactly like a past one was that
+muting the destination would make it the least legible thing on the rail. In use
+it cost more than it saved. A Matter created on 12.09, with an answer due on
+30.09 and a commencement on 29.10, drew three identical filled dots joined by a
+solid accent line — which reads as a file that has already been through all
+three. The strip's own sparseness made it worse: there is nothing else on it to
+correct the impression.
+
+So the strip now says *where we are* by drawing, and it still says nothing extra
+in words:
+
+| state | test against the application's own today | drawn as |
+|---|---|---|
+| reached | `sort_on < today` | accent dot, accent rail behind it |
+| today | `sort_on == today` | accent dot, ringed with `--accent-glow` |
+| ahead | `sort_on > today` | muted dot, muted rail, quieter label |
+
+**The connector carries today's position.** Each segment of rail is a two-colour
+gradient with one hard stop at `--tl-reach` — the fraction of *that segment's*
+calendar days that have gone. The columns are evenly spaced rather than
+time-scaled, so the rail is a proportion and not a scale; within one segment the
+fraction is real days, which is the only honest thing a fixed-width column can
+say about the time inside it. Two milestones on one day take the
+whole-segment answer and never a division, because a `NaN` would reach the
+stylesheet as an unparseable gradient stop and silently take the rail's colour
+with it.
+
+**This is presentation, and the word is load-bearing.** `state` and `reach` are
+computed from the already-built, already-scoped step list, after it is sorted.
+No milestone changes source, membership, order, label or date because of them,
+and the AUTH-003 oracle of §13 covers them by construction: a restricted child a
+reader may not see cannot move a state, a fill, or a byte of the strip.
+
+**And it is not the retired grammar coming back.** §12.1 removed a *domain*
+grammar — a step the file was standing on, a sixty-day horizon, an `N p`
+countdown, `is-current`, `is-todo`, `praegu` — all read off sources the strip no
+longer has. These three states are read off the calendar alone, nothing is named
+as the current step, and every visible word on the strip is byte-for-byte what
+it was.
+
+**Colour is not the only signal.** A column dated today carries
+`aria-current="date"`; one still ahead carries a visually hidden «Tulevikus».
+A strip that distinguished reached from ahead by colour alone would read as
+identical milestones to a screen reader, which is the same defect for the
+readers least able to work around it.
+
+**The mobile contract is unchanged.** The fill is the step's own `::before`, so
+it moves with the column when the rail scrolls at narrow widths. No new grid
+column, no viewport-relative geometry, and the 420px scroller behaves exactly as
+§H requires.
+
+**The response-deadline discharge question is untouched.** A Matter closed
+before its deadline still shows that deadline to the right of `Lõpetatud`
+(§12.4). What this amendment does is make it visibly *ahead*, which is what it
+is; whether a closure should discharge it remains a separate product seam.
 
 ### 13. The strip and the chronology are scoped before they are derived
 

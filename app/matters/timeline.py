@@ -192,6 +192,21 @@ class TimelineNextStep:
 
 
 @dataclass(frozen=True)
+class ChronologyLink:
+    """One external address, named by what it is rather than by where it goes.
+
+    `Smaily`, `Alchemer` — the provider, not the URL. A campaign address is
+    mostly tracking parameters and a recipient token; printing it would push the
+    row apart and put somebody's one-time key on the page in readable text. The
+    label says which tool holds the material, and the address is where the link
+    goes (docs/adr/0027, amended 2026-09-12).
+    """
+
+    label: str
+    url: str
+
+
+@dataclass(frozen=True)
 class ChronologyMilestone:
     """A 12 px accent row: something that happened to the file.
 
@@ -202,6 +217,11 @@ class ChronologyMilestone:
     Milestones carry a **date, never a clock time**. A work entry says when
     somebody wrote it because two notes on one afternoon need separating; a
     commencement or a stage change happened on a day (TEEMA_TARGET_SPEC §E).
+
+    ``links`` is empty for every milestone but a `Kaasamine` that was given one.
+    A record whose working material lives in a mailing tool is only useful if a
+    colleague can still reach it, and the chronology row is where that
+    engagement is read.
     """
 
     what: str
@@ -209,6 +229,7 @@ class ChronologyMilestone:
     sub: str = ""
     file_url: str = ""
     file_label: str = ""
+    links: tuple[ChronologyLink, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -688,6 +709,17 @@ def projected_milestones(
         sub = engagement.get_kind_display()
         if engagement.response_count is not None:
             sub = f"{sub} · Vastuseid {engagement.response_count}"
+        # Read off the row already in hand — no second query, and nothing here
+        # for an engagement that carries neither address, so a row that has no
+        # links renders no empty container for them.
+        links = tuple(
+            ChronologyLink(label=label, url=url)
+            for label, url in (
+                ("Smaily", engagement.smaily_url),
+                ("Alchemer", engagement.alchemer_url),
+            )
+            if url
+        )
         add(
             engagement,
             _end_of_day(when),
@@ -695,6 +727,7 @@ def projected_milestones(
                 what=f"Kaasamine: {engagement.title}",
                 display_date=format_estonian_date(when),
                 sub=sub,
+                links=links,
             ),
         )
 

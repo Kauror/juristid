@@ -1900,8 +1900,35 @@ def _create_context(
         # own timezone, and doing it twice would let the two surfaces drift
         # (`quick_date_choices`, ADR 0052 §4).
         "quick_dates": quick_date_choices(timezone.localdate()),
+        # Which offered suggestions the person had explicitly chosen, handed
+        # back untouched so a save refused for some *other* reason does not also
+        # forget their decisions.
+        #
+        # **Echoed, never interpreted.** The server does not read this, does not
+        # validate it against the analysis and does not store it: whether a
+        # suggestion is in use is a fact about an unsaved form, and the browser
+        # is the only thing that knows it. Deriving it here from «does the field
+        # equal the suggestion» is exactly the guess this exists to avoid — a
+        # person may have typed the same words by hand
+        # (docs/adr/0064 amended 2026-09-12, static/js/app.js).
+        "suggestion_state": _echoed_suggestion_state(request),
         "nav_active": "teemad",
     }
+
+
+#: Long enough for five fields of chosen values and their baselines, short
+#: enough that a hand-made POST cannot make the next render enormous. Over the
+#: limit the page comes back with no remembered choices, which is the behaviour
+#: before this existed and costs a click.
+SUGGESTION_STATE_LIMIT = 4000
+
+
+def _echoed_suggestion_state(request: HttpRequest) -> str:
+    """The browser's own unsaved selection state, on its way back to it."""
+    if request.method != "POST":
+        return ""
+    value = request.POST.get("suggestion_state", "")
+    return value if len(value) <= SUGGESTION_STATE_LIMIT else ""
 
 
 # ---------------------------------------------------------------------------
@@ -2913,6 +2940,8 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             kind=form.cleaned_data["kind"],
             title=form.cleaned_data["title"],
             url=form.cleaned_data.get("url") or "",
+            smaily_url=form.cleaned_data.get("smaily_url") or "",
+            alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             note=form.cleaned_data.get("note") or "",
             occurred_on=form.cleaned_data.get("occurred_on"),
             actor=request.user,
@@ -2946,6 +2975,8 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             kind=form.cleaned_data["kind"],
             title=form.cleaned_data["title"],
             url=form.cleaned_data.get("url") or "",
+            smaily_url=form.cleaned_data.get("smaily_url") or "",
+            alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             note=form.cleaned_data.get("note") or "",
             occurred_on=form.cleaned_data.get("occurred_on"),
             actor=request.user,
@@ -4047,6 +4078,8 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             kind=form.cleaned_data["kind"],
             audience=form.cleaned_data["audience"],
             response_count=form.cleaned_data.get("response_count"),
+            smaily_url=form.cleaned_data.get("smaily_url") or "",
+            alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             occurred_on=timezone.localdate(),
             uploads=form.cleaned_data["attachments"],
         )

@@ -773,3 +773,204 @@ def read_staged_files_is_a_noop() -> None:
     # nothing for the reader to have found.
     assert "Ootel: 0 faili" in result.stdout, result.stdout
     assert "Loetud 0 faili" in result.stdout, result.stdout
+
+
+# -- «Kasuta» is a choice that can be taken back -----------------------------
+#
+# The button was apply-only: once pressed it stayed blue for the rest of the
+# session whatever happened to the field, and «not that one» meant clearing the
+# control by hand and leaving the button lying about it. These are the nine
+# cases the toggle has to get right, and every one of them is about a *field*
+# rather than about a button, because the field is what gets submitted
+# (docs/adr/0064, amended 2026-09-12).
+
+DEADLINE_USE = 'button[data-suggest-for="response_deadline"]'
+TITLE_USE = 'button[data-suggest-for="title"]'
+
+
+def test_a_suggestion_can_be_taken_back_out_again(page, base_url, letter_pdf) -> None:
+    """**A, B.** Press, and the value is in. Press again, and the box is empty.
+
+    The letter's deadline is a strong unopposed answer, so the browser fills it
+    of its own accord — which is the first state to check, because a button that
+    reads «Kasutusel» has to mean the value beside it is actually in use.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    use = page.locator(DEADLINE_USE).first
+    expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
+    expect(use).to_have_attribute("aria-pressed", "true")
+    expect(use).to_have_text("Kasutusel")
+
+    use.click()
+
+    expect(use).to_have_attribute("aria-pressed", "false")
+    expect(use).to_have_text("Kasuta")
+    # Back to what it was before the suggestion arrived, which was nothing.
+    expect(page.locator("#id_response_deadline")).to_have_value("")
+
+    use.click()
+    expect(use).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
+
+
+def test_taking_a_suggestion_back_restores_what_the_person_had_typed(
+    page, base_url, letter_pdf
+) -> None:
+    """**C.** Not «empty» — *theirs*.
+
+    Somebody types a deadline, decides to try the document's instead, then
+    changes their mind. What comes back is the date they typed, because that is
+    what the field held before the suggestion went into it. Restoring to empty
+    would lose a value the machine never had any business touching.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    wait_for_reading(page)
+    page.locator("#id_response_deadline").fill("30.9.2026")
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    use = page.locator(DEADLINE_USE).first
+    # Declined, because the box was not empty. The page says so.
+    expect(use).to_have_attribute("aria-pressed", "false")
+    expect(page.locator("#id_response_deadline")).to_have_value("30.9.2026")
+
+    use.click()
+    expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
+    expect(use).to_have_attribute("aria-pressed", "true")
+
+    use.click()
+    expect(page.locator("#id_response_deadline")).to_have_value("30.9.2026")
+    expect(use).to_have_attribute("aria-pressed", "false")
+
+
+def test_editing_the_field_hands_it_back_to_the_person(page, base_url, letter_pdf) -> None:
+    """**D, I.** A typed value ends the suggestion's claim on the field.
+
+    Two halves. The button stops saying «Kasutusel» the moment somebody types
+    over what it wrote — because it is no longer in use, whatever it looks like
+    — and what they typed is neither erased by that nor replaced by a poll that
+    lands afterwards.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    use = page.locator(DEADLINE_USE).first
+    expect(use).to_have_attribute("aria-pressed", "true")
+
+    page.locator("#id_response_deadline").fill("2.10.2026")
+    page.locator("#id_title").click()
+
+    expect(use).to_have_attribute("aria-pressed", "false")
+    expect(use).to_have_text("Kasuta")
+    expect(page.locator("#id_response_deadline")).to_have_value("2.10.2026")
+
+    # And a later answer does not take it back. The poller is still running, so
+    # this is the real race rather than a simulated one.
+    page.wait_for_timeout(2500)
+    expect(page.locator("#id_response_deadline")).to_have_value("2.10.2026")
+
+
+def test_a_value_somebody_typed_themselves_is_not_claimed_as_a_suggestion(
+    page, base_url, letter_pdf
+) -> None:
+    """**G.** Matching text is not a decision.
+
+    Typing exactly what the document proposed is a coincidence, not an
+    acceptance, and a button that read its state off the value would call it
+    «Kasutusel» and claim a choice nobody made. It is also what made the state
+    unrecoverable after a refused save, since the page could no longer tell the
+    two apart.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    wait_for_reading(page)
+    page.locator("#id_response_deadline").fill("18.9.2026")
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    use = page.locator(DEADLINE_USE).first
+    expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
+    expect(use).to_have_attribute("aria-pressed", "false")
+    expect(use).to_have_text("Kasuta")
+
+
+def test_a_chosen_suggestion_survives_a_save_refused_for_something_else(
+    page, base_url, letter_pdf
+) -> None:
+    """**F.** The page comes back remembering what was chosen.
+
+    A refusal on some unrelated field is not a reason to forget a decision. The
+    selection rides back in a hidden field, because the value alone cannot say
+    whether it was chosen or typed (app/matters/views.py `_echoed_suggestion_state`).
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    read_staged_files()
+    wait_for_suggestions(page)
+    expect(page.locator(DEADLINE_USE).first).to_have_attribute("aria-pressed", "true")
+
+    # The ordinary refusal this page is tested with elsewhere: «Muu» ticked
+    # with nothing written beside it. Not an empty title — the submit button
+    # carries `data-needs="id_title"` and will not post one, so that refusal
+    # never reaches the server at all.
+    page.locator("#id_title").fill("Teema, mille salvestus keeldub")
+    page.locator("#valdkond-muu input").check()
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("domcontentloaded")
+    expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
+    expect(page.locator(".field__error").first).to_be_visible()
+
+    use = page.locator(DEADLINE_USE).first
+    expect(use).to_have_attribute("aria-pressed", "true")
+    expect(use).to_have_text("Kasutusel")
+    expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
+
+
+def test_a_checkbox_suggestion_is_added_and_removed_without_touching_the_rest(
+    page, base_url, letter_pdf
+) -> None:
+    """**E, H.** A multi-value target, where apply and unapply mean something
+    narrower: this box, and never the field.
+
+    `Kellelt` is a checkbox group that may be rendered in two places, so the
+    logical value is what matters rather than the visible chip — and a
+    withdrawal must leave every other answer exactly as it was.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    use = page.locator('button[data-suggest-for="source_organisations"]').first
+    expect(use).to_be_visible()
+
+    # The letter names the ministry strongly enough to be applied without being
+    # asked, so the starting state is «in use» — which is what makes this the
+    # interesting direction to test first.
+    expect(use).to_have_attribute("aria-pressed", "true")
+    assert chosen_senders(page) == ["Näidisministeerium"], chosen_senders(page)
+
+    use.click()
+    expect(use).to_have_attribute("aria-pressed", "false")
+    expect(use).to_have_text("Kasuta")
+    # Unticked, because the person had not ticked it themselves. The picker is
+    # back to the empty state it was in before the letter was read.
+    assert chosen_senders(page) == [], chosen_senders(page)
+
+    use.click()
+    expect(use).to_have_attribute("aria-pressed", "true")
+    expect(use).to_have_text("Kasutusel")
+    assert chosen_senders(page) == ["Näidisministeerium"], chosen_senders(page)

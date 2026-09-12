@@ -577,3 +577,141 @@ def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
     expect(page.locator(".metaline")).to_contain_text("Hetkeseis")
     expect(page.locator(".metaline")).to_contain_text("Kooskõlastusringil")
     assert_fits(page, width)
+
+
+# ---------------------------------------------------------------------------
+# Reached, today, ahead
+# ---------------------------------------------------------------------------
+#
+# The reported reading: a Matter created this morning, with an answer due later
+# in the month and a commencement in October, drew three identical filled dots
+# and looked like a file that had already been through all three. The words are
+# unchanged — this is entirely about how the rail and the dots are drawn
+# (docs/adr/0074 §12.2, amended 2026-09-12).
+
+
+def states(page) -> list[str]:
+    """Each column's drawn temporal state, in the order they are drawn."""
+    return page.locator(".tl-step").evaluate_all(
+        "nodes => nodes.map(node => (node.className.match(/tl-step--(\w+)/) || [null, 'none'])[1])"
+    )
+
+
+def reaches(page) -> list[str]:
+    """Each column's `--tl-reach`, as the stylesheet actually resolves it."""
+    return page.locator(".tl-step").evaluate_all(
+        "nodes => nodes.map(node => getComputedStyle(node).getPropertyValue('--tl-reach').trim())"
+    )
+
+
+def test_a_new_matter_does_not_read_as_two_things_that_already_happened(page, base_url):
+    """`Alustatud` today and a deadline ahead are drawn differently.
+
+    Before this, the two dots were identical and the rail between them was solid
+    accent — which says the deadline has been reached, on the day the file was
+    opened.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter_with_deadline(page, base_url, "Alustatud täna, tähtaeg ees", deadline=et(18))
+
+    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
+    assert states(page) == ["today", "future"]
+    # Nothing reached, so no accent rail between them.
+    assert reaches(page)[0] == "0%"
+
+
+def test_a_future_column_is_visibly_quieter_than_a_reached_one(page, base_url):
+    """Not merely a different class — a different colour, resolved by the browser.
+
+    A rule that never matched, or a token that resolved to nothing, would leave
+    the classes on the page and the two dots identical. This is the assertion a
+    stylesheet change cannot pass by accident.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter_with_deadline(page, base_url, "Saavutatud ja tulevane", deadline=et(30))
+
+    dots = page.locator(".tl-step__dot")
+    colours = dots.evaluate_all(
+        "nodes => nodes.map(node => getComputedStyle(node).backgroundColor)"
+    )
+    assert colours[0] != colours[1], (
+        f"the reached dot and the future dot are drawn the same: {colours}"
+    )
+    borders = dots.evaluate_all("nodes => nodes.map(node => getComputedStyle(node).borderColor)")
+    assert borders[0] != borders[1], f"the two dots share a border colour: {borders}"
+
+
+def test_the_rail_is_two_colours_with_the_boundary_where_today_is(page, base_url):
+    """The connector says how far along today has got, not merely which side.
+
+    A deadline a month out, on a Matter started today, puts the boundary at the
+    very beginning of the segment; what matters is that the rail is a gradient
+    with a hard stop at all rather than one flat accent line.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter_with_deadline(page, base_url, "Rööbas kahes värvis", deadline=et(30))
+
+    rail = page.locator(".tl-step").first.evaluate(
+        "node => getComputedStyle(node, '::before').backgroundImage"
+    )
+    assert "gradient" in rail, f"the connector is not a two-colour rail: {rail}"
+
+
+def test_a_column_dated_today_says_so_without_relying_on_colour(page, base_url):
+    """`aria-current="date"` on today, «Tulevikus» on what is ahead.
+
+    A screen reader gets neither the blue nor the grey, so a strip that carried
+    the distinction only in colour would read as identical milestones — the same
+    defect, for the readers least able to work around it.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter_with_deadline(page, base_url, "Täna ja tulevikus", deadline=et(21))
+
+    expect(page.locator('.tl-step[aria-current="date"]')).to_have_count(1)
+    expect(page.locator(".tl-step--future .visually-hidden")).to_have_text("Tulevikus")
+    # And the visible labels are untouched by either.
+    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
+
+
+def test_the_retired_countdown_grammar_has_not_come_back_with_the_colour(page, base_url):
+    """`praegu`, `N p` and «the current step» stay retired.
+
+    This amendment is presentation over the same five milestones. What ADR 0074
+    §12.1 removed was a *domain* grammar — a step the file was standing on, a
+    sixty-day horizon, a countdown — and none of it is what a muted dot is.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter_with_deadline(page, base_url, "Ilma loenduseta", deadline=et(9))
+
+    text = strip(page).inner_text()
+    assert not COUNTDOWN.search(text), text
+    for gone in ("praegu", "is-current", "is-todo"):
+        assert gone not in strip(page).inner_html()
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_the_temporal_rail_survives_the_narrow_scroller(page, base_url, width):
+    """420px is the case the two-colour rail could break.
+
+    The fill is the step's own `::before`, so it moves with the column when the
+    rail scrolls — nothing is positioned against the viewport, and there is no
+    extra grid column. The existing geometry oracle still has to pass, scrolled
+    to the end and back.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    url = create_matter_with_deadline(page, base_url, f"Kitsas rööbas {width}", deadline=et(24))
+    add_a_commencement(page, what="põhiosa", when=et(60))
+    add_a_commencement(page, what="osad sätted", when=et(200))
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+
+    assert states(page) == ["today", "future", "future", "future"]
+    assert_fits(page, width)
+
+    # Scrolled to the end, the last column is still drawn as a future one: the
+    # state travels with the column rather than with its position on screen.
+    rail = strip(page)
+    rail.evaluate("node => { node.scrollLeft = node.scrollWidth; }")
+    page.wait_for_timeout(120)
+    assert states(page)[-1] == "future"

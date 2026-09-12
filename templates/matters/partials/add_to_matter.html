@@ -115,11 +115,42 @@ row of controls that refuse (brief §30, §31).
               {{ add_engagement_form.response_count }}
             </label>
           </div>
+          {% comment %}
+            Where this round's material lives. Both optional, both inert: the
+            form validates the scheme and nothing else, no request is made to
+            either provider, and neither link makes a `Kaasamine` valid on its
+            own — `Keda kaasati` is still what identifies the record, so a panel
+            holding two addresses and no audience is refused rather than
+            silently discarded (docs/adr/0027, amended 2026-09-12).
+
+            The `_error` ids are what Django's own `aria-describedby` on a
+            refused control already points at; without them the pointer dangles.
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f">
+              <span class="cx-f__lab">Smaily link</span>
+              {{ add_engagement_form.smaily_url }}
+            </label>
+            <label class="cx-f">
+              <span class="cx-f__lab">Alchemer link</span>
+              {{ add_engagement_form.alchemer_url }}
+            </label>
+          </div>
           {% if add_engagement_form.audience.errors %}
-            <p class="field__error">{{ add_engagement_form.audience.errors|first }}</p>
+            <p class="field__error" id="{{ add_engagement_form.audience.auto_id }}_error">
+              {{ add_engagement_form.audience.errors|first }}</p>
           {% endif %}
           {% if add_engagement_form.response_count.errors %}
-            <p class="field__error">{{ add_engagement_form.response_count.errors|first }}</p>
+            <p class="field__error" id="{{ add_engagement_form.response_count.auto_id }}_error">
+              {{ add_engagement_form.response_count.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.smaily_url.errors %}
+            <p class="field__error" id="{{ add_engagement_form.smaily_url.auto_id }}_error">
+              {{ add_engagement_form.smaily_url.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.alchemer_url.errors %}
+            <p class="field__error" id="{{ add_engagement_form.alchemer_url.auto_id }}_error">
+              {{ add_engagement_form.alchemer_url.errors|first }}</p>
           {% endif %}
           {% include "matters/partials/add_files.html" with field=add_engagement_form.attachments %}
           <div class="addform__actions">

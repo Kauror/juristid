@@ -268,7 +268,7 @@ field with no visible focus at all (static/css/app.css).
         rather than the second one (docs/adr/0074 §9).
       {% endcomment %}
       <details class="cx-panel" id="cx-kaasamine"
-               {% if composer_form.engagement_audience.errors or composer_form.engagement_responses.errors %}open{% endif %}>
+               {% if composer_form.engagement_audience.errors or composer_form.engagement_responses.errors or composer_form.engagement_smaily_url.errors or composer_form.engagement_alchemer_url.errors %}open{% endif %}>
         <summary class="disclosure-chip">+ Kaasamine</summary>
         <div class="cx-panel__body">
           <div class="cx-when" data-chipgroup="{{ composer_form.engagement_kind.html_name }}">
@@ -289,11 +289,37 @@ field with no visible focus at all (static/css/app.css).
               {{ composer_form.engagement_responses }}
             </label>
           </div>
+          {% comment %}
+            The same two optional pointers `+ Kaasamine` asks for. One act must
+            not be recordable in two shapes that disagree about which facts it
+            can hold, and this route is kept rather than deleted
+            (docs/adr/0075 §11, docs/adr/0027 amended 2026-09-12).
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f">
+              <span class="cx-f__lab">Smaily link</span>
+              {{ composer_form.engagement_smaily_url }}
+            </label>
+            <label class="cx-f">
+              <span class="cx-f__lab">Alchemer link</span>
+              {{ composer_form.engagement_alchemer_url }}
+            </label>
+          </div>
           {% if composer_form.engagement_audience.errors %}
-            <p class="field__error">{{ composer_form.engagement_audience.errors|first }}</p>
+            <p class="field__error" id="{{ composer_form.engagement_audience.auto_id }}_error">
+              {{ composer_form.engagement_audience.errors|first }}</p>
           {% endif %}
           {% if composer_form.engagement_responses.errors %}
-            <p class="field__error">{{ composer_form.engagement_responses.errors|first }}</p>
+            <p class="field__error" id="{{ composer_form.engagement_responses.auto_id }}_error">
+              {{ composer_form.engagement_responses.errors|first }}</p>
+          {% endif %}
+          {% if composer_form.engagement_smaily_url.errors %}
+            <p class="field__error" id="{{ composer_form.engagement_smaily_url.auto_id }}_error">
+              {{ composer_form.engagement_smaily_url.errors|first }}</p>
+          {% endif %}
+          {% if composer_form.engagement_alchemer_url.errors %}
+            <p class="field__error" id="{{ composer_form.engagement_alchemer_url.auto_id }}_error">
+              {{ composer_form.engagement_alchemer_url.errors|first }}</p>
           {% endif %}
         </div>
       </details>

@@ -735,6 +735,20 @@ class EntryRevision(AppendOnlyModel):
         return f"{self.entry_id} v{self.revision_number}"
 
 
+#: How long a stored engagement link may be, in characters.
+#:
+#: One number, named once, because three columns and one validator have to
+#: agree about it. `URLField(max_length=1000)` is the column; a value past it
+#: reaches PostgreSQL as `StringDataRightTruncation`, which surfaces as a
+#: `django.db.utils.DataError` with no row reference and an aborted
+#: transaction — the failure shape every refusal in
+#: `app.matters.services` exists to avoid. So the bound is enforced in
+#: `normalize_engagement_url`, which every writer of these three columns
+#: already passes through, and the column stays as the defence behind it
+#: rather than the first validator (red-team finding F-1, 2026-09-12).
+ENGAGEMENT_URL_MAX_LENGTH = 1000
+
+
 class MatterEngagementQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterEngagementQuerySet:
         """The only supported entry point for reading engagements."""
@@ -801,7 +815,30 @@ class MatterEngagement(VisibilityInheritingModel):
     #: Optional, and that is the point. An e-mail campaign frequently has no
     #: durable address a colleague could open later; requiring one would make
     #: the commonest kind of engagement unrecordable (brief 12).
-    url = models.URLField(max_length=1000, blank=True, verbose_name="link")
+    url = models.URLField(max_length=ENGAGEMENT_URL_MAX_LENGTH, blank=True, verbose_name="link")
+    #: The two provider pointers, beside the generic one rather than instead of
+    #: it.
+    #:
+    #: ADR 0027 kept vendors out of the schema — «`SendSmaily`, `Alchemer` and
+    #: `koda.ee` are this year's tools», and a column naming one of them is
+    #: wrong the day a contract changes. That reasoning was about the *channel*,
+    #: which is still `kind` and still names no vendor. What it did not
+    #: anticipate is that one consultation round routinely has **two** working
+    #: links at once — the mailing that asked and the questionnaire that
+    #: collected — and a single `url` forces somebody to drop one of them or to
+    #: keep it in a note nobody can click. Two optional columns is the smaller
+    #: wrong than a lost address, and neither is required, derived from, or
+    #: counted (docs/adr/0027, amended 2026-09-12).
+    #:
+    #: Pointers only. Nothing here is fetched, no campaign is created, no
+    #: response is read back, and the day Koda changes supplier these stay as
+    #: the historical record of where that round's material lived.
+    smaily_url = models.URLField(
+        max_length=ENGAGEMENT_URL_MAX_LENGTH, blank=True, verbose_name="Smaily link"
+    )
+    alchemer_url = models.URLField(
+        max_length=ENGAGEMENT_URL_MAX_LENGTH, blank=True, verbose_name="Alchemer link"
+    )
     #: `Vastuseid` — how many responses this engagement actually drew.
     #:
     #: Null, not zero, for every row that predates the question and for every
@@ -865,23 +902,70 @@ class MatterEngagement(VisibilityInheritingModel):
     def parent_visibility(self) -> str:
         return self.matter.visibility
 
+    @staticmethod
+    def _hostname(url: str) -> str:
+        """The host an address points at, and nothing else about the address.
+
+        `urlsplit(url).netloc` is the URL's **authority**, which is
+        ``userinfo@host:port`` — so a link pasted out of a provider dashboard
+        that carries basic-auth credentials yields a "host" with a username and
+        a password in it, and this model copies its hosts into a rendered label
+        and into the search projection's `alias_text`. `parsed.hostname` is the
+        host: it drops the userinfo and the port, and lowercases what is left
+        (red-team finding F-2, 2026-09-12).
+
+        The port goes with the userinfo deliberately. "Host" in this model
+        means the name that tells a reader which provider a link runs to, and
+        `:8443` is transport machinery of exactly the kind the label exists to
+        leave out; no product contract here asks for host and port.
+
+        The fallback is for the historical row that is not a parseable address
+        at all, and it drops anything before an ``@`` before bounding what is
+        left: ``https://user:pw@/path`` has a non-empty authority and *no*
+        hostname, so a fallback that printed the stored string would put the
+        credentials back exactly where this method exists to keep them out of.
+        `normalize_engagement_url` now refuses that shape on the way in as well.
+        """
+        if not url:
+            return ""
+        from urllib.parse import urlsplit
+
+        try:
+            host = urlsplit(url).hostname or ""
+        except ValueError:
+            # A malformed authority — an unbracketed IPv6 literal, a port that
+            # is not a number. Unparseable is not a crash on a read path.
+            host = ""
+        if host:
+            return host
+        remainder = url.split("://", 1)[-1]
+        if "@" in remainder:
+            remainder = remainder.rsplit("@", 1)[-1]
+        return remainder[:60]
+
     @property
     def link_label(self) -> str:
         """A link's host, for a control that must not print a tracking URL.
 
         Campaign and survey links routinely run to hundreds of characters of
         query string. The host is what tells a reader where the link goes; the
-        rest is machinery (brief 35).
+        rest is machinery (brief 35) — including any credentials the address
+        carries, which is why this is the parsed hostname and not the authority.
         """
-        if not self.url:
-            return ""
-        from urllib.parse import urlsplit
+        return self._hostname(self.url)
 
-        return urlsplit(self.url).netloc or self.url[:60]
+    @classmethod
+    def _host_terms(cls, url: str) -> list[str]:
+        """A single address, reduced to the words somebody would search for."""
+        host = cls._hostname(url)
+        if not host:
+            return []
+        labels = [part for part in host.split(".") if part and part != "www"]
+        return [host, *labels[:-1]] if len(labels) > 1 else [host]
 
     @property
     def link_search_terms(self) -> list[str]:
-        """The host, and each of its labels, for the search projection.
+        """Every stored address's host, and each of its labels.
 
         The host alone is not enough. PostgreSQL tokenises
         ``survey.alchemer.example`` as one ``host`` token, so somebody typing
@@ -889,12 +973,23 @@ class MatterEngagement(VisibilityInheritingModel):
         column exists to answer. The labels are indexed beside the whole host
         so both work, and ``www`` and the public suffix are dropped because
         they match everything (Agent-F brief 47).
+
+        **The host, and never the query string.** A campaign address carries
+        recipient ids and one-time tokens after the ``?``; indexing those would
+        put somebody's unsubscribe key into a search field and answer queries
+        nobody meant to ask. The three columns are read the same way for the
+        same reason, so a provider link is findable by its provider's name and
+        by nothing else (docs/adr/0027, amended 2026-09-12).
+
+        **Nor the userinfo, nor the port.** Both live in the URL's authority
+        beside the host, and `_hostname` is what separates them; before it, this
+        list was built from `netloc` and a link carrying basic-auth credentials
+        indexed the password as a matchable token (red-team finding F-2).
         """
-        host = self.link_label
-        if not host:
-            return []
-        labels = [part for part in host.split(".") if part and part != "www"]
-        return [host, *labels[:-1]] if len(labels) > 1 else [host]
+        terms: list[str] = []
+        for url in (self.url, self.smaily_url, self.alchemer_url):
+            terms.extend(self._host_terms(url))
+        return list(dict.fromkeys(terms))
 
 
 class MatterPersonalNote(BaseModel):

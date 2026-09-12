@@ -145,6 +145,39 @@ TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
 
 
+def provider_link_field(label: str, placeholder: str) -> forms.CharField:
+    """One optional external pointer, validated exactly like `Kaasamine.url`.
+
+    A `CharField` rather than a `URLField`: the scheme allow-list belongs to
+    `normalize_engagement_url`, which is what the service enforces, and running
+    Django's own validator first would answer a refused `javascript:` link with
+    a different sentence depending on which layer caught it.
+    """
+    return forms.CharField(
+        label=label,
+        required=False,
+        max_length=1000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "url",
+                "autocomplete": "off",
+                "placeholder": placeholder,
+            }
+        ),
+    )
+
+
+def clean_provider_link(form: forms.Form, field: str) -> str:
+    """The service's own rule, reported under the box somebody typed it in."""
+    from app.matters.services import normalize_engagement_url
+
+    try:
+        return normalize_engagement_url(form.cleaned_data.get(field))
+    except DomainError as error:
+        raise forms.ValidationError(str(error)) from error
+
+
 def assignable_users() -> Any:
     """Who a person may be handed work on this form.
 
@@ -2373,6 +2406,12 @@ class ComposerForm(forms.Form):
             }
         ),
     )
+    #: The same two optional pointers `+ Kaasamine` grew, on the superseded
+    #: composer as well — one act must not be recordable in two shapes that
+    #: disagree about which facts it can hold (docs/adr/0027, amended
+    #: 2026-09-12; docs/adr/0075 §11).
+    engagement_smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
+    engagement_alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
 
     # -- + Lõpeta teema ----------------------------------------------------
     #: **Two questions.** `Kuidas lõppes`, and an optional `Lõppsõna`.
@@ -2574,9 +2613,17 @@ class ComposerForm(forms.Form):
             or cleaned.get("effective_on") is not None
         )
         wants_victory = bool((cleaned.get("victory_change") or "").strip())
+        # A typed provider link is attempted work too. It used to count for
+        # nothing: somebody who pasted a Smaily address and pressed Salvesta
+        # was told «Kirjelda tegevust või vali, mida veel salvestada» and the
+        # address went out with the response. Asking the panel «does this hold
+        # anything at all» has to mean every box in it
+        # (docs/adr/0027, amended 2026-09-12).
         wants_engagement = bool(
             (cleaned.get("engagement_audience") or "").strip()
             or cleaned.get("engagement_responses") is not None
+            or (cleaned.get("engagement_smaily_url") or "").strip()
+            or (cleaned.get("engagement_alchemer_url") or "").strip()
         )
         # Closure-specific input *is* closure intent. There is no second box to
         # tick and therefore no way to fill this section in, be told the save
@@ -2710,7 +2757,13 @@ class ComposerForm(forms.Form):
         }
 
     def _clean_engagement(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
-        """`+ Kaasamine` — the kind, who was engaged, and how many answered.
+        """`+ Kaasamine` — the kind, who was engaged, how many answered, and where.
+
+        The two provider links are supplementary and never sufficient. A panel
+        holding an address and no `Keda kaasati` is refused here rather than
+        ignored: the link is what made this count as attempted work at all, so
+        the answer owed to the person is a sentence under the audience box, not
+        silence and a discarded URL.
 
         `Keda kaasati` is required because `MatterEngagement.title` is: the
         database refuses an empty one and so does `add_engagement`, and a
@@ -2734,6 +2787,8 @@ class ComposerForm(forms.Form):
             "kind": kind,
             "title": audience,
             "response_count": cleaned.get("engagement_responses"),
+            "smaily_url": (cleaned.get("engagement_smaily_url") or "").strip(),
+            "alchemer_url": (cleaned.get("engagement_alchemer_url") or "").strip(),
             # The day the work is being recorded. The target deliberately does
             # not ask for an engagement date, and the application's convention
             # for «this happened as part of the work I am writing down now» is
@@ -2906,6 +2961,11 @@ class EngagementForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
         help_text="Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.",
     )
+    #: The same two provider pointers the workspace panel asks for, so a
+    #: correction made through this form round-trips them rather than dropping
+    #: what `+ Kaasamine` stored (docs/adr/0027, amended 2026-09-12).
+    smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
+    alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
     #: Today. The original argument against it was that a record may be about a
     #: consultation from 2019 and a pre-filled box is answered by pressing save
     #: (Agent-F brief 38). Hands-on QA settled it the other way: the overwhelming
@@ -2934,6 +2994,12 @@ class EngagementForm(forms.Form):
             return normalize_engagement_url(self.cleaned_data.get("url"))
         except DomainError as error:
             raise forms.ValidationError(str(error)) from error
+
+    def clean_smaily_url(self) -> str:
+        return clean_provider_link(self, "smaily_url")
+
+    def clean_alchemer_url(self) -> str:
+        return clean_provider_link(self, "alchemer_url")
 
     def clean_title(self) -> str:
         title = (self.cleaned_data.get("title") or "").strip()
@@ -3396,6 +3462,14 @@ class CompactEngagementForm(ChipChoices, forms.Form):
     küsimist» / «Arvamused saabusid» redesign is a separate product round
     (brief §16).
 
+    **Two optional pointers, and they are the only thing this round adds.** One
+    consultation routinely has a mailing *and* a questionnaire, so the single
+    generic `url` made somebody drop one of the two addresses or keep it
+    somewhere nobody can click. `Smaily link` and `Alchemer link` are where
+    those live. Both are optional; neither makes an engagement valid on its own,
+    because `Keda kaasati` is still what identifies the record
+    (docs/adr/0027, amended 2026-09-12).
+
     ``kind`` validates against the whole stored vocabulary while the panel offers
     three chips, so a historical `WEB_CALL` row stays editable through every
     service that takes a kind.
@@ -3435,6 +3509,8 @@ class CompactEngagementForm(ChipChoices, forms.Form):
             }
         ),
     )
+    smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
+    alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
     attachments = workspace_attachments("id_kaasamine_failid")
 
     @property
@@ -3446,6 +3522,12 @@ class CompactEngagementForm(ChipChoices, forms.Form):
         if not audience:
             raise forms.ValidationError("Kirjuta, keda kaasati.")
         return audience
+
+    def clean_smaily_url(self) -> str:
+        return clean_provider_link(self, "smaily_url")
+
+    def clean_alchemer_url(self) -> str:
+        return clean_provider_link(self, "alchemer_url")
 
     def clean_kind(self) -> str:
         return self.cleaned_data.get("kind") or COMPOSER_ENGAGEMENT_KINDS[0][0]

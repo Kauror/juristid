@@ -24,7 +24,7 @@
 }
 
 .topbar {
-  height: 48px;
+  height: var(--layout-topbar);
   flex: none;
   background: var(--surface-nav);
   border-bottom: 1px solid var(--border-default);
@@ -5406,6 +5406,23 @@ a.barchart__row:hover {
 
 /* -- a refused save --------------------------------------------------------- */
 
+/* Whatever this application scrolls somebody to after a refusal has to arrive
+ * *below* the sticky bar. The clearance is declared here rather than computed
+ * as a pixel offset in JavaScript: `scroll-margin-top` is what the platform
+ * offers for exactly this, it applies to the browser's own fragment navigation
+ * as well, and a magic viewport number in a script is a second copy of the
+ * bar's height that nothing keeps in step (static/js/ux.js
+ * `focusFirstRefusal`). */
+.field,
+fieldset,
+.nextpanel,
+.cx-f,
+.uxcomp__row,
+.createform__row,
+.formerror {
+  scroll-margin-top: calc(var(--layout-topbar) + var(--spacing-6));
+}
+
 /* The field that was refused, marked on the box as well as under it. Colour is
    never the only signal: the message below the field says what is wrong in
    words (Uus teema redesign §7). */
@@ -9819,6 +9836,13 @@ section:has(.pw-more[open]) tbody.uxextra {
   gap: 9px var(--spacing-3);
 }
 
+/* Two equal halves. The pair above is a wide field beside a fixed-width date;
+ * the two provider links are the same kind of thing as each other and want the
+ * same room. The narrow-viewport rule below collapses both to one column. */
+#teema-vaade-wrap .cx-grid--links {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 #teema-vaade-wrap .cx-f {
   display: flex;
   flex-direction: column;
@@ -10159,15 +10183,27 @@ section:has(.pw-more[open]) tbody.uxextra {
  * to the next column, and `:last-child` draws none — so the accent line ends at
  * the rightmost dot, and one milestone renders one dot and no connector.
  *
- * **One dot state, not three.** `is-current` and `is-todo` are gone with the
- * sources that produced them. A known future milestone is drawn exactly like a
- * past one — same dot, same weight, same date line — because the strip states
- * dated points rather than elapsed ones, and muting the rightmost column would
- * make the deadline the file is heading for the least legible thing on the
- * rail. Nothing is ringed as current either: `:last-child` identifies the end
- * of the rail, which is a statement about the rail and not a claim about where
- * the Matter stands — that is `Hetkeseis`, in the header (docs/adr/0074
- * §12.2, §12.4). */
+ * **Reached, today, ahead (2026-09-12).** Three drawn states and no fourth. A
+ * column behind us keeps the filled accent dot; one still ahead is muted, dot
+ * and rail alike; one dated today is ringed with `--accent-glow`. The previous
+ * rule drew a future milestone exactly like a past one, on the reasoning that
+ * muting the destination would make it the least legible thing on the rail —
+ * which was true, and cost less than a new Matter reading as though its
+ * deadline and its commencement had both already happened.
+ *
+ * This is not `is-current` / `is-todo` coming back. Those were a *domain*
+ * grammar — a step the file was standing on, a sixty-day horizon and an `N p`
+ * countdown, all read off sources the strip no longer has. These three are
+ * presentation over the same five milestones, decided against the calendar
+ * alone: nothing is named as the current step, and no text changes
+ * (docs/adr/0074 §12.2, amended).
+ *
+ * The connector is a two-colour rail rather than a flat one. `--tl-reach` is
+ * how far today has come *inside this segment*, in per cent, computed on the
+ * server from the two milestone dates and handed down per column; the hard stop
+ * between the two colours is where today sits. Because it is the step's own
+ * `::before`, it scrolls with the rail at narrow widths and needs no geometry
+ * of its own. */
 
 #teema-vaade-wrap .tl-strip {
   display: grid;
@@ -10184,6 +10220,13 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step {
+  /* How far along this column's own segment today has come. The template
+     overrides it per step from `ProcessStep.reach_percent`; the default here is
+     what the rail looked like before the reached/today/ahead amendment, so a
+     strip rendered without the value is a flat accent line rather than a
+     colourless one — and so the token has a definition in the stylesheet, which
+     is the house rule for every `var()` read (tests/test_ui_contract.py). */
+  --tl-reach: 100%;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -10200,7 +10243,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   right: 0;
   top: 5px;
   height: 2px;
-  background: var(--accent-link);
+  /* One hard stop at `--tl-reach`, so the rail is accent as far as today has
+     come and muted after it. A segment wholly behind us gets 100%, one wholly
+     ahead 0%, and neither needs a rule of its own. The fallback-free `var()`
+     is the house rule; `--tl-reach` is written by the template on every step. */
+  background: linear-gradient(
+    to right,
+    var(--accent-link) var(--tl-reach),
+    var(--border-strong) var(--tl-reach)
+  );
 }
 
 #teema-vaade-wrap .tl-step:last-child::before {
@@ -10216,6 +10267,30 @@ section:has(.pw-more[open]) tbody.uxextra {
   background: var(--accent-link);
   border: 2px solid var(--accent-link);
   box-sizing: border-box;
+}
+
+/* Still ahead: the dot is hollow-muted and the label drops to the body weight,
+   so the eye reads the reached part of the rail first. The date line is already
+   muted and stays exactly as it is — the date is as true of a future column as
+   of a past one, and dimming it twice would make it unreadable. */
+#teema-vaade-wrap .tl-step--future .tl-step__dot {
+  background: var(--surface-base);
+  border-color: var(--border-strong);
+}
+
+#teema-vaade-wrap .tl-step--future .tl-step__what {
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-medium);
+}
+
+/* Today: the accent dot, ringed. `--accent-glow` exists for exactly this and
+   has been unused since the `is-current` ring went — a third accent alpha
+   rather than a reuse of `--accent-halo`, because that one sits behind a
+   focused input at 4px and this is a 3px marker on a 12px dot. The ring is
+   `box-shadow` rather than a border so the dot keeps its 12px box and the
+   columns stay aligned. */
+#teema-vaade-wrap .tl-step--today .tl-step__dot {
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 #teema-vaade-wrap .tl-step__what {
@@ -10307,6 +10382,37 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .uxtl__file:hover {
+  text-decoration: underline;
+}
+
+/* A `Kaasamine`'s provider pointers, on a row of their own under the record
+ * rather than mixed in with its attachments: a file is bytes this application
+ * holds and these are addresses somewhere else, and the arrow is the only thing
+ * that has to say so. Same size and colour as the file links, because they are
+ * the same weight of information. */
+#teema-vaade-wrap .uxtl__links {
+  display: block;
+  margin-top: 3px;
+}
+
+#teema-vaade-wrap .uxtl__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-right: var(--spacing-3);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+#teema-vaade-wrap .uxtl__link::after {
+  content: "97";
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+#teema-vaade-wrap .uxtl__link:hover {
   text-decoration: underline;
 }
 

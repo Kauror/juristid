@@ -111,10 +111,10 @@ task above it is a form asking about work nobody has named. The route to work is
         </label>
         {{ current_action_form.body }}
         {% if current_action_form.body.errors %}
-          <p class="field__error">{{ current_action_form.body.errors|first }}</p>
+          <p class="field__error" id="{{ current_action_form.body.auto_id }}_error">{{ current_action_form.body.errors|first }}</p>
         {% endif %}
         {% if current_action_form.action_id.errors %}
-          <p class="field__error">{{ current_action_form.action_id.errors|first }}</p>
+          <p class="field__error" id="{{ current_action_form.action_id.auto_id }}_error">{{ current_action_form.action_id.errors|first }}</p>
         {% endif %}
 
         <div class="curact__row">

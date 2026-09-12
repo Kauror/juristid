@@ -4,15 +4,25 @@ body and above the chronology. You see which major procedural acts a file has
 been through before you scroll anything (TEEMA_TARGET_SPEC §D).
 
 **Five labels and no more:** `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`,
-`Jõustumine`, `Lõpetatud`. One grammar, and it is the one this strip has always
-had: a filled accent dot with an accent connector running to the next column,
-and `:last-child` drawing none — so the line ends at the rightmost dot.
+`Jõustumine`, `Lõpetatud`. Membership, sources and ordering are untouched by the
+2026-09-12 amendment; what changed is how time is drawn.
 
-A milestone that is still ahead — a response deadline, a commencement — is drawn
-exactly like one behind us, because the strip states dated points and not
-elapsed ones. It carries **no** `praegu` and no `N p`: where the file stands
-*now* is `Hetkeseis` in the header, which is the one place that is stated, and a
-countdown here would be this component judging an urgency nobody asked it for.
+**Reached, today, ahead.** A column behind us keeps the filled accent dot and
+the accent rail; a column still ahead is muted, and one dated today is ringed.
+The connector is a two-colour rail rather than a flat one — accent as far as
+today has come inside that segment, muted the rest of the way — so a file whose
+deadline is a fortnight off shows the boundary sitting between the two columns
+instead of implying the deadline has passed. `:last-child` still draws no
+connector, so the rail still ends at the rightmost dot.
+
+The *words* are exactly what they were. No `praegu`, no `N p`, no countdown and
+no column marked as the step the file is standing on: where it stands now is
+`Hetkeseis` in the header, and a countdown here would be this component judging
+an urgency nobody asked it for. Colour is not the only signal either — a column
+dated today carries `aria-current="date"` and one still ahead says «Tulevikus»
+to a screen reader, because a strip that reads as five identical milestones with
+the stylesheet off is the same defect this amendment exists to fix
+(docs/adr/0074 §12.2, amended 2026-09-12).
 
 **Only the milestones this Matter actually has.** `app/matters/process_timeline.py`
 derives the columns from canonical records and returns nothing at all for a
@@ -36,9 +46,26 @@ heading over an empty grid would read as a data-quality problem.
         name of the step, not be replaced by its outcome. Secondary
         information, in the one place this component already has for it.
       {% endcomment %}
-      <span class="tl-step"{% if step.detail %} title="{{ step.detail }}"{% endif %}>
+      {% comment %}
+        `--tl-reach` is how far into *this* column's segment today has come, as
+        a CSS length the server formatted. It is interpolated rather than
+        class-driven because it is a measurement and not a state: there is no
+        sensible set of classes for "37.2% of the way along".
+
+        It is a string from `ProcessStep.reach_percent` and not a number on
+        purpose — the application runs in Estonian, and Django would render a
+        raw float as `0,372`, which drops the gradient silently
+        (app/matters/process_timeline.py).
+      {% endcomment %}
+      <span class="tl-step tl-step--{{ step.state }}"
+            style="--tl-reach: {{ step.reach_percent }}"
+            {% if step.state == "today" %}aria-current="date"{% endif %}
+            {% if step.detail %} title="{{ step.detail }}"{% endif %}>
         <span class="tl-step__dot" aria-hidden="true"></span>
         <span class="tl-step__what">{{ step.label }}</span>
+        {% if step.state == "future" %}
+          <span class="visually-hidden">Tulevikus</span>
+        {% endif %}
         {% if step.date_line %}
           <span class="tl-step__date">{{ step.date_line }}</span>
         {% endif %}

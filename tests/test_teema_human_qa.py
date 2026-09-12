@@ -730,11 +730,20 @@ def test_lisa_teemale_is_the_one_kaasamine_path(signed_in, normal_matter):
     assert "+ Lisa kaasamine" not in body
 
 
-def test_the_composer_form_asks_the_three_target_engagement_questions():
+def test_the_composer_form_asks_the_target_engagement_questions():
+    """`Liik`, `Keda kaasati`, `Vastuseid` — and, since 2026-09-12, the two
+    optional provider pointers beside them (docs/adr/0074 §9.1).
+
+    Pinned as an exact list rather than a containment check: the point of the
+    assertion is that the old five-field form has not crept back, and a
+    containment check would not notice `note` or `occurred_on` returning.
+    """
     assert [name for name in ComposerForm().fields if name.startswith("engagement")] == [
         "engagement_kind",
         "engagement_audience",
         "engagement_responses",
+        "engagement_smaily_url",
+        "engagement_alchemer_url",
     ]
 
     # An ordinary save that answered none of them sends the service nothing.

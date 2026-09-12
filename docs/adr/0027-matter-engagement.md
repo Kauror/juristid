@@ -2,6 +2,10 @@
 
 - **Status:** Accepted — implemented on the `feat/matter-engagement` branch
 - **Date:** 2026-08-23
+- **Amended:** 2026-09-12 — two optional provider pointers, `smaily_url` and
+  `alchemer_url`, are added beside the generic `url`. This narrows «Channels,
+  not vendors» below; it does not reverse it. `MEETING` was separately restored
+  by ADR 0074 §9.
 - **Builds on** ADR 0003 (immutable evidence), ADR 0005 (authorization and visibility inheritance), ADR 0011 (NextAction and Submission modelling), ADR 0018 (structured Matter facts), ADR 0026 (source-aware activity).
 
 ## Context
@@ -42,6 +46,30 @@ naming one of them is wrong the day a contract changes, and every historical row
 then describes a service nobody recognises. The channel survives that; which
 concrete service was used is in the title and the link, where a person can read
 and correct it.
+
+> **Amended 2026-09-12 — narrowed, for the links only.**
+>
+> `kind` still names a channel and still names no vendor, and that is what this
+> clause was about. What it did not anticipate is that one consultation round
+> routinely has **two** working addresses at once — the mailing that asked and
+> the questionnaire that collected — and a single `url` forces somebody to drop
+> one of them or keep it in a note nobody can click. A lost address is a worse
+> outcome than a column with a supplier's name on it.
+>
+> So `smaily_url` and `alchemer_url` join `url`, which is unchanged and means
+> exactly what it always meant. Both are optional, neither is required for a
+> valid engagement, nothing is derived or counted from either, and nothing
+> contacts either provider. The day Koda changes supplier they stay as the
+> historical record of where that round's material lived — which is the same
+> thing an old `url` pointing at a service nobody recognises already is.
+>
+> The anti-pattern this clause warned about was a schema that grows `url_2`.
+> Two named columns is the narrow version of that risk taken deliberately: a
+> third provider is a decision somebody has to make on purpose, which is the
+> property a generic list of links would not have.
+
+*(`MEETING` was restored by ADR 0074 §9; the paragraph below records why it was
+excluded here.)*
 
 There is deliberately **no `MEETING`**. `Entry` already records a meeting with a
 date, an author and a body. Adding it here would create two places to write down
@@ -122,6 +150,14 @@ true record of what the Chamber did.
 The row prints the title as the link and the **host** beside it, never the
 address: campaign URLs are mostly tracking parameters and would push the title
 off the row.
+
+*(2026-09-12: all three addresses go through the same allow-list, in the same
+two places. The chronology names a provider link by its provider — `Smaily`,
+`Alchemer` — and never prints the address, for the same reason and one more: a
+campaign URL carries a recipient id and a one-time token after the `?`, and that
+is not something to put on a page in readable text. The search projection
+indexes the host and its labels, never the query string, so a provider link is
+findable by its provider's name and by nothing else.)*
 
 ## Consequences
 

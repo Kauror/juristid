@@ -28,7 +28,7 @@ field for any of them, so a crafted POST cannot name one either.
     {{ action_form.text }}
   </label>
   {% if action_form.text.errors %}
-    <p class="field__error">{{ action_form.text.errors|first }}</p>
+    <p class="field__error" id="{{ action_form.text.auto_id }}_error">{{ action_form.text.errors|first }}</p>
   {% endif %}
 
   {% comment %}
@@ -67,7 +67,7 @@ field for any of them, so a crafted POST cannot name one either.
     (ADR 0052 §5).
   {% endcomment %}
   {% if action_form.target_date.errors %}
-    <p class="field__error">{{ action_form.target_date.errors|first }}</p>
+    <p class="field__error" id="{{ action_form.target_date.auto_id }}_error">{{ action_form.target_date.errors|first }}</p>
   {% endif %}
 
   <div class="addform__actions">

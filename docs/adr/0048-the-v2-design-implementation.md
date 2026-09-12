@@ -51,6 +51,17 @@ repository decides what the code is.** Concretely:
    department head reading a colleague's desk therefore sees it through their
    own entitlement and never through the colleague's.
 
+   **Amended 2026-09-12 — the way out to the register exists only where it
+   widens the question.** Nothing pinned this link before, which is how it came
+   to be rendered in both modes with the label swapped. On a colleague's desk it
+   earns its place: «Ava kõik teemad registris» goes from *this person's open
+   files* to *every open file*, a population the page is not showing. On your
+   own it did not — «Ava minu teemad registris» pointed at the same Matters
+   listed directly above it, with a count beside it that made them look like a
+   different set. The self branch renders nothing at all: no link, no count, and
+   no wrapper left behind holding its own top margin. The Aktiivsed teemad band,
+   its chips and `Portfolio.total` are untouched.
+
 4. **The bands were redefined once, in `work_items.py`.** Four instead of five:
    *Üle tähtaja*, *Sel nädalal*, *Järgmised 30 päeva*, *Hiljem*. Reviews that
    have come round are ordinary dated work and are merged into *Sel nädalal*
