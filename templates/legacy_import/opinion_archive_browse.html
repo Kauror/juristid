@@ -237,8 +237,19 @@
         {% endif %}
       </nav>
     {% endif %}
-  {% else %}
+  {% elif counts.total %}
     <p class="empty">Ükski arhiivi kiri ei vasta nendele tingimustele.</p>
+  {% else %}
+    {% comment %}
+      Nothing is held at all, which is not the same statement as "your filters
+      excluded everything" — the view says as much about a refused query, and
+      an empty corpus deserves the same care. On an application whose archive
+      has never been catalogued, the filtered wording sends an operator off to
+      loosen filters that were never narrowing anything. The Arvamused
+      workspace's own archive tab already splits these two
+      (templates/submissions/archive.html).
+    {% endcomment %}
+    <p class="empty">Arhiivis ei ole ühtegi kirja.</p>
   {% endif %}
 </div>
 {% endblock %}
