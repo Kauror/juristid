@@ -16,6 +16,7 @@ Two conventions worth knowing:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Any
 
@@ -1659,7 +1660,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     )
     action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
     uploads: list[Any] = []
-    upload_error = ""
+    upload_refusals: tuple[str, ...] = ()
     # What an earlier refusal is holding, and which of it this attempt still
     # wants. A key the session is not holding — a stale form, a second tab, a
     # swept object — is simply not there; it is never a reason to refuse a save
@@ -1681,19 +1682,22 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         # that is no longer there.
         held_keys = [item.key for item in pending_uploads.describe(request.session, asked)]
         resumed = pending_uploads.resume(request.session, held_keys)
-        chosen, upload_error = _read_new_matter_files(request)
+        chosen, upload_refusals = _read_new_matter_files(request)
         # Held first, then chosen: the order somebody offered them in. A file
         # picked again after a refusal is a second file and is filed as one —
         # the preview lists both, so nothing is deduplicated behind their back.
         uploads = [*resumed, *chosen]
 
-        refused = bool(upload_error) or not form.is_valid()
+        refused = bool(upload_refusals) or not form.is_valid()
         if wants_action and not action_form.is_valid():
             refused = True
 
         if refused:
-            if upload_error:
-                messages.error(request, upload_error)
+            # One message per refused file. The messages block renders each as
+            # its own paragraph, so four chosen files with three problems reads
+            # as three named problems rather than as one unnamed one (QA-02).
+            for refusal in upload_refusals:
+                messages.error(request, refusal)
             # Everything that passed validation survives the refusal, including
             # the good half of a batch whose other half was rejected. Files
             # already held stay held — `resume` reads without consuming — so
@@ -1960,7 +1964,7 @@ INTAKE_STATE_LABELS: dict[str, tuple[str, str]] = {
 
 
 def _intake_context(
-    session: Any, *, error: str = "", answered: CurrentValues | None = None
+    session: Any, *, errors: Sequence[str] = (), answered: CurrentValues | None = None
 ) -> dict[str, Any]:
     """Everything the intake fragment renders, decided here rather than there.
 
@@ -2052,19 +2056,22 @@ def _intake_context(
         "intake_files": rows,
         "intake_state": state,
         "intake_prefill": prefill,
-        "intake_error": error,
+        # Every refused file, one line each. A tuple rather than one joined
+        # sentence, because the panel prints them as separate lines and the
+        # create form hands each to `messages.error` on its own (QA-02).
+        "intake_errors": tuple(errors),
         "intake_unreadable": unreadable,
         "assisted": assisted,
     }
 
 
 def _intake_fragment(
-    request: HttpRequest, session: Any, *, error: str = "", status: int = 200
+    request: HttpRequest, session: Any, *, errors: Sequence[str] = (), status: int = 200
 ) -> HttpResponse:
     return render(
         request,
         "matters/partials/intake_region.html",
-        _intake_context(session, error=error),
+        _intake_context(session, errors=errors),
         status=status,
     )
 
@@ -2096,18 +2103,22 @@ def intake_stage(request: HttpRequest) -> HttpResponse:
     gate, in its own process (docs/adr/0014, docs/adr/0064).
     """
     session = _requested_intake_session(request, request.POST)
-    accepted, refusal = _read_new_matter_files(request)
+    accepted, refusals = _read_new_matter_files(request)
     if not accepted and session is None:
         # Nothing to keep and nothing to keep it in. Answered rather than
         # refused, so the page can show why the file was not taken.
-        return _intake_fragment(request, None, error=refusal, status=400 if refusal else 200)
+        return _intake_fragment(request, None, errors=refusals, status=400 if refusals else 200)
 
     result = intake_staging.stage_uploads(owner=request.user, uploads=accepted, session=session)
+    # Both, when there are both: the files this request could not read, and
+    # whatever the staging service then refused — a limit on how many may be
+    # held at once is a different problem from a file that is not a PDF, and a
+    # person holding one of each has to be told about both.
     return _intake_fragment(
         request,
         result.session,
-        error=refusal or result.refusal,
-        status=400 if refusal else 200,
+        errors=refusals + ((result.refusal,) if result.refusal else ()),
+        status=400 if refusals else 200,
     )
 
 
@@ -2147,7 +2158,7 @@ def intake_remove(request: HttpRequest) -> HttpResponse:
     return _intake_fragment(request, session)
 
 
-def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], str]:
+def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], tuple[str, ...]]:
     """Read and validate every attachment before a single row is written.
 
     Reading is what validates: `read_upload` enforces the size, the MIME type
@@ -2155,26 +2166,34 @@ def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], str]:
     of it up front is the whole point — a Matter created with three of four
     files, and an error message about the fourth, is worse than no Matter.
 
-    Returns what passed *and* the first refusal, rather than raising on the bad
-    one and losing the good ones with it. The caller still refuses the save —
-    that rule is unchanged, and the batch is still all or nothing — but it can
-    now hold the three files that were fine while the person replaces the
-    fourth. Every file is read, so the message names the first problem and the
-    person is not told about them one save at a time.
+    Returns what passed *and* **every** refusal, each naming the file it is
+    about. It used to return the first one only, and unnamed: somebody who chose
+    four files, two of them unusable, saw one file in the list and one line of
+    red that did not say which file it meant — so they could not tell that a
+    second one had been dropped, and found out about it one save at a time. That
+    is precisely the failure this function reads everything up front to prevent,
+    and stopping at the first refusal reintroduced it by a different door
+    (adversarial QA 2026-09-12, QA-02).
+
+    The good half of a batch still survives. The caller still refuses the save;
+    what changes is that the person is told about all of what they have to
+    replace, at once.
     """
     from app.documents.uploads import read_upload
 
     accepted: list[Any] = []
-    refusal = ""
+    refusals: list[str] = []
     for handle in request.FILES.getlist("files"):
         if not handle:
             continue
         try:
             accepted.append(read_upload(handle))
         except (DomainError, UploadRejected) as error:
-            if not refusal:
-                refusal = str(error)
-    return accepted, refusal
+            # The filename first, because a refusal that does not name its file
+            # is unactionable the moment there is more than one. An em dash
+            # rather than a colon: the reason is already a sentence of its own.
+            refusals.append(f"{handle.name} — {error}")
+    return accepted, tuple(refusals)
 
 
 def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:

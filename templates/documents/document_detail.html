@@ -21,12 +21,21 @@
 
   <header class="pagehead">
     {% comment %}
-      The file's own name, and it is the way to the bytes. Through the
+      What this document is called, and it is the way to the bytes. Through the
       authorization-checked download route exactly as the button was — the
       control moved, the check did not (app/documents/views.py).
+
+      The **title** rather than the filename, when somebody gave it one. The
+      filename has not gone anywhere — it is `Failinimi` in `Originaal` below,
+      beside the type, the size and the checksum, which is where the file's
+      mechanics belong — and the heading now says the same thing the list says,
+      so following a row does not land on a page named after something else
+      (adversarial QA 2026-09-12, QA-05).
     {% endcomment %}
     <h1 class="pagehead__title">
-      {% if version %}<a href="{% url 'documents:download' pk=version.pk %}">{{ version.original_filename }}</a>{% else %}{{ document.title }}{% endif %}
+      {% if version %}
+        <a href="{% url 'documents:download' pk=version.pk %}">{{ document.title|default:version.original_filename }}</a>
+      {% else %}{{ document.title }}{% endif %}
     </h1>
     <span class="pagehead__context">
       {{ document.get_role_display }}

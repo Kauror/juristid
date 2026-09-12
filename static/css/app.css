@@ -6722,6 +6722,23 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
+/* The filename, under the title somebody gave the document.
+
+   The same meta line `.doctable__sent` uses, for the same reason: it is
+   secondary metadata about the row above it rather than a second heading. It
+   renders only when the title and the filename differ, so a file uploaded
+   without a title of its own still shows one line (QA-05). */
+.doctable__filename {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  /* A long filename with no spaces in it — the ordinary shape of an exported
+     one — would otherwise widen the cell past the table and take the page
+     sideways with it. */
+  overflow-wrap: anywhere;
+}
+
 /* The per-row `...` disclosure.
 
    In flow, not a floating popup, and that is not a style preference: every

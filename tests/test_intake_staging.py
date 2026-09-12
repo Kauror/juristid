@@ -734,7 +734,7 @@ def test_the_upload_validator_is_the_same_one_the_save_uses(signed_in, evidence_
     answer = signed_in.post(STAGE, {"files": upload("pilt.exe", b"MZ not a document")})
 
     assert answer.status_code == 400
-    assert answer.context["intake_error"]
+    assert answer.context["intake_errors"]
     assert not MatterIntakeFile.objects.exists()
 
 
@@ -746,7 +746,7 @@ def test_a_good_file_beside_a_bad_one_is_still_kept(signed_in, evidence_root):
     )
 
     assert answer.status_code == 400
-    assert answer.context["intake_error"]
+    assert answer.context["intake_errors"]
     assert [row["filename"] for row in answer.context["intake_files"]] == ["hea.pdf"]
 
 
@@ -1321,3 +1321,119 @@ def test_the_selection_state_is_not_remembered_across_a_fresh_get(
     body = signed_in.get(CREATE).content.decode()
 
     assert _state_value(body) == ""
+
+
+# -- several unusable files, several named refusals (QA-02, 2026-09-12) -------
+#
+# Ported from the adversarial QA round. Choosing four files with three problems
+# used to print one unnamed refusal: the person could see one file in the list
+# and had no way to tell that two more had been dropped, so they found out one
+# save at a time — the exact failure this route reads everything up front to
+# prevent.
+
+
+def _refusals(response) -> tuple[str, ...]:
+    return tuple(response.context["intake_errors"])
+
+
+def test_every_refused_file_is_named_with_its_own_reason(signed_in, evidence_root):
+    """One good file and three bad ones: all three bad ones are reported, by name."""
+    answer = signed_in.post(
+        STAGE,
+        {
+            "files": [
+                upload("hea.pdf", letter_pdf()),
+                upload("paha.exe", b"MZ\x90\x00", content_type="application/octet-stream"),
+                upload("tyhi.pdf", b""),
+                upload("vale.pdf", b"See ei ole PDF."),
+            ]
+        },
+    )
+
+    assert answer.status_code == 400
+    reported = _refusals(answer)
+    assert len(reported) == 3, reported
+    for refused in ("paha.exe", "tyhi.pdf", "vale.pdf"):
+        assert any(line.startswith(f"{refused} — ") for line in reported), reported
+    # Each line carries a reason of its own, not just a filename.
+    assert all(len(line.split(" — ", 1)[1].strip()) > 0 for line in reported)
+
+
+def test_the_good_file_in_a_part_refused_batch_is_still_staged(signed_in, evidence_root):
+    """A partial-good batch does not become all-or-nothing.
+
+    The save is still refused — that rule is unchanged — but the file that was
+    fine is held, so replacing the bad ones does not mean choosing all four
+    again.
+    """
+    answer = signed_in.post(
+        STAGE,
+        {
+            "files": [
+                upload("hea.pdf", letter_pdf()),
+                upload("paha.exe", b"MZ", content_type="application/octet-stream"),
+                upload("tyhi.pdf", b""),
+            ]
+        },
+    )
+
+    assert [row["filename"] for row in answer.context["intake_files"]] == ["hea.pdf"]
+
+
+def test_every_refusal_reaches_the_page_and_none_of_them_twice(signed_in, evidence_root):
+    """Rendered, and each exactly once.
+
+    One `role="alert"` around the set rather than one per line: three alerts
+    announce three times and the last one wins, so a screen-reader user would
+    hear only the final file's problem.
+    """
+    answer = signed_in.post(
+        STAGE,
+        {
+            "files": [
+                upload("paha.exe", b"MZ", content_type="application/octet-stream"),
+                upload("tyhi.pdf", b""),
+            ]
+        },
+    )
+    body = answer.content.decode()
+
+    assert body.count("paha.exe") == 1
+    assert body.count("tyhi.pdf") == 1
+    assert body.count('role="alert"') == 1
+
+
+def test_a_refused_batch_on_the_create_form_names_each_file_once(
+    signed_in, evidence_root, ministry
+):
+    """The other door onto the same helper: `Loo teema` with bad files.
+
+    Each refusal is its own message, because the messages block renders one
+    paragraph per message and a newline inside one would collapse.
+    """
+    answer = signed_in.post(
+        CREATE,
+        {
+            "title": "Pakendiseaduse muutmise seaduse eelnõu",
+            "source_organisations": [str(ministry.pk)],
+            "files": [
+                upload("paha.exe", b"MZ", content_type="application/octet-stream"),
+                upload("tyhi.pdf", b""),
+            ],
+        },
+    )
+
+    assert answer.status_code == 400
+    reported = [str(message) for message in answer.context["messages"]]
+    assert sum(1 for line in reported if line.startswith("paha.exe — ")) == 1, reported
+    assert sum(1 for line in reported if line.startswith("tyhi.pdf — ")) == 1, reported
+    assert not Matter.objects.exists()
+
+
+def test_one_refused_file_still_reads_as_one_sentence(signed_in, evidence_root):
+    """The commonest case did not become a list of one with punctuation round it."""
+    answer = signed_in.post(STAGE, {"files": [upload("tyhi.pdf", b"")]})
+
+    reported = _refusals(answer)
+    assert len(reported) == 1
+    assert reported[0].startswith("tyhi.pdf — ")

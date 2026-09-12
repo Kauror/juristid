@@ -300,11 +300,33 @@ finds again (§23.5).
                         {% if document.is_restricted %}
                           <span class="badge badge--restricted">Piiratud</span>
                         {% endif %}
+                        {% comment %}
+                          The name the uploader gave it, and the filename under
+                          it when the two differ.
+
+                          It used to be the filename alone. `Document.title` was
+                          stored, reached the `<title>` element and the row's
+                          `aria-label`, and appeared nowhere a sighted reader
+                          could see it — so two uploads of `kiri.pdf` under two
+                          different titles were two rows identical in every
+                          visible column, and the one fact that told them apart
+                          was readable only by a screen reader (adversarial QA
+                          2026-09-12, QA-05).
+
+                          The filename is not hidden: it is what the bytes are
+                          called, it is what somebody looks for in a mail client
+                          or a download folder, and the round that follows it
+                          needs both. When the two are the same string — which is
+                          what an upload with no title typed into it produces —
+                          only one line renders, so the ordinary case reads
+                          exactly as it did.
+                        {% endcomment %}
                         <a href="{% url 'documents:document_detail' pk=document.pk %}">
-                          {% if document.current_version %}
-                            {{ document.current_version.original_filename }}
-                          {% else %}{{ document.title }}{% endif %}
+                          {{ document.title|default:document.current_version.original_filename }}
                         </a>
+                        {% if document.current_version and document.title and document.title != document.current_version.original_filename %}
+                          <span class="doctable__filename">{{ document.current_version.original_filename }}</span>
+                        {% endif %}
                         {% if document.opinion_send %}
                           {% comment %}
                             Two facts and no more: when it went out and who to.

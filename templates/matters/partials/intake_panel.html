@@ -41,8 +41,24 @@
     Laen faili üles…
   </p>
 
-  {% if intake_error %}
-    <p class="intakepanel__state intakepanel__state--warn" role="alert">{{ intake_error }}</p>
+  {% comment %}
+    Every refused file, each naming itself.
+
+    One line per file rather than one sentence about the first of them: choosing
+    four files with three problems used to print a single unnamed refusal, and a
+    person who could see one file in the list below had no way to tell that two
+    more had been dropped — they found out one save at a time, which is the
+    failure `_read_new_matter_files` reads everything up front to prevent
+    (adversarial QA 2026-09-12, QA-02).
+
+    One `role="alert"` around the whole set, not one per line: three alerts
+    announce themselves three times and the last one wins, so a screen-reader
+    user would hear only the final file's problem.
+  {% endcomment %}
+  {% if intake_errors %}
+    <p class="intakepanel__state intakepanel__state--warn" role="alert">
+      {% for refusal in intake_errors %}{{ refusal }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
+    </p>
   {% endif %}
 
   {% comment %}

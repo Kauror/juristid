@@ -763,3 +763,119 @@ def test_a_malformed_id_in_any_organisation_or_person_filter_is_survivable(signe
     # The chip is honest about it rather than inventing a name.
     values = {chip["name"]: chip["value"] for chip in response.context["active_filters"]}
     assert values[parameter] == "mitte-uuid"
+
+
+# -- the Aasta box, and what it cannot read (QA-07, 2026-09-12) --------------
+#
+# Ported from the adversarial QA round. `?aasta=2020-2026` returned the range;
+# `?aasta=2020–2026`, the same range with the dash a word processor substitutes
+# while you type, emptied the register and was reported as «Selle filtriga
+# teemasid ei leitud» — a filter that never ran, presented as an answer about
+# the work. A lawyer checking whether anything is outstanding was told there was
+# nothing.
+
+
+@pytest.mark.parametrize("dash", ["-", "\u2013", "\u2014", "\u2212"])
+def test_a_year_range_means_the_same_range_whichever_dash_was_typed(signed_in, specialist, dash):
+    """Hyphen-minus, en dash, em dash, true minus: one range."""
+    factories.MatterFactory(
+        owner=specialist,
+        title="Pakendiseadus 2024",
+        reporting_year=2024,
+        origin=MatterOrigin.LEGACY_IMPORT,
+    )
+    factories.MatterFactory(
+        owner=specialist,
+        title="Vana teema 2015",
+        reporting_year=2015,
+        origin=MatterOrigin.LEGACY_IMPORT,
+    )
+
+    response = signed_in.get(REGISTER, {"aasta": f"2020{dash}2026", "olek": "koik"})
+
+    titles = {matter.title for matter in response.context["page"].object_list}
+    assert titles == {"Pakendiseadus 2024"}
+    assert not response.context["filters"]["aasta_viga"]
+
+
+def test_whitespace_around_a_year_range_is_not_a_syntax_error(signed_in, specialist):
+    """A pasted range brings its spaces with it."""
+    factories.MatterFactory(
+        owner=specialist,
+        title="Pakendiseadus 2024",
+        reporting_year=2024,
+        origin=MatterOrigin.LEGACY_IMPORT,
+    )
+
+    response = signed_in.get(REGISTER, {"aasta": " 2020 – 2026 ", "olek": "koik"})
+
+    assert [m.title for m in response.context["page"].object_list] == ["Pakendiseadus 2024"]
+    assert not response.context["filters"]["aasta_viga"]
+
+
+@pytest.mark.parametrize("typed", ["2026/2026", "eelmine aasta", "2O24", "2020-2021-2022", ""])
+def test_a_year_the_box_cannot_read_is_not_reported_as_a_result(signed_in, specialist, typed):
+    """An unreadable filter says it is unreadable, and does not claim a count.
+
+    The list still empties — a chip reading «2O24» above the whole register would
+    be a lie the reader has no way to catch — but the page no longer presents
+    that emptiness as an answer about the work.
+    """
+    factories.MatterFactory(
+        owner=specialist,
+        title="Pakendiseadus 2024",
+        reporting_year=2024,
+        origin=MatterOrigin.LEGACY_IMPORT,
+    )
+
+    response = signed_in.get(REGISTER, {"aasta": typed, "olek": "koik"})
+    body = response.content.decode()
+
+    if not typed:
+        # An empty box is a cleared filter, not a bad one.
+        assert not response.context["filters"]["aasta_viga"]
+        assert "Pakendiseadus 2024" in body
+        return
+
+    assert response.context["filters"]["aasta_viga"]
+    assert "Selle filtriga teemasid ei leitud" not in body
+    assert "Aasta: kirjuta 2026" in body
+
+
+def test_the_word_for_the_unknown_bucket_is_still_read(signed_in, specialist):
+    """`teadmata` is a value, not a typo, and must not be reported as one."""
+    factories.MatterFactory(
+        owner=specialist, title="Aastata teema", reporting_year=None, origin=MatterOrigin.NATIVE
+    )
+
+    response = signed_in.get(REGISTER, {"aasta": "teadmata", "olek": "koik"})
+
+    assert [m.title for m in response.context["page"].object_list] == ["Aastata teema"]
+    assert not response.context["filters"]["aasta_viga"]
+
+
+def test_a_reversed_range_is_unreadable_rather_than_silently_empty(signed_in, specialist):
+    """`2026-2020` is not a span, and the box says so instead of showing nothing."""
+    factories.MatterFactory(
+        owner=specialist,
+        title="Pakendiseadus 2024",
+        reporting_year=2024,
+        origin=MatterOrigin.LEGACY_IMPORT,
+    )
+
+    response = signed_in.get(REGISTER, {"aasta": "2026-2020", "olek": "koik"})
+
+    assert response.context["filters"]["aasta_viga"]
+    assert "Selle filtriga teemasid ei leitud" not in response.content.decode()
+
+
+def test_the_reader_is_the_same_one_the_filter_uses(specialist):
+    """One parser, so the message about the filter cannot disagree with it."""
+    from app.matters.register_filters import read_reporting_year
+
+    assert read_reporting_year("2026") == (2026, 2026)
+    assert read_reporting_year("2020–2026") == (2020, 2026)
+    assert read_reporting_year(" 2020 - 2026 ") == (2020, 2026)
+    assert read_reporting_year("2026-2020") is None
+    assert read_reporting_year("eelmine aasta") is None
+    assert read_reporting_year("") is None
