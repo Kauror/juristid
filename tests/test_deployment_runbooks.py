@@ -667,3 +667,337 @@ def test_every_production_snapshot_says_when_and_says_it_is_not_current() -> Non
         assert re.match(r"^# .*\b20\d{2}-\d{2}-\d{2}\b", text), (
             f"{snapshot.relative_to(root)} does not date itself in its own title"
         )
+
+
+# ---------------------------------------------------------------------------
+# The operator contract — reaching the host, and running commands on it
+#
+# Two September 2026 releases produced operational knowledge that lived only in
+# a shell history. Both failures were silent: a script fed to the host over
+# stdin lost the commands after the first Docker call and still exited zero,
+# and an unavailable tailnet read as an unreachable host when the LAN address
+# and the same key worked. `deploy/unraid-main/OPERATOR.md` is where those rules
+# live now, and these are the properties that make it a contract rather than a
+# note somebody can quietly soften.
+# ---------------------------------------------------------------------------
+
+OPERATOR = DEPLOY / "unraid-main" / "OPERATOR.md"
+
+
+def flat(text: str) -> str:
+    """The prose with its line wrapping taken out, lowercased.
+
+    Every assertion below about a *sentence* runs through this. These files are
+    hard-wrapped at seventy-six columns, so any phrase long enough to be worth
+    asserting is one word away from spanning a newline — and a test that a
+    reflowed paragraph breaks is a test that makes copyediting expensive, which
+    is how a runbook stops being edited. The assertions on *commands* are not
+    routed through it: those are single lines by construction.
+    """
+    return " ".join(text.split()).lower()
+
+
+@pytest.fixture
+def operator() -> str:
+    return OPERATOR.read_text(encoding="utf-8")
+
+
+def test_the_deployment_runbook_sends_the_operator_to_the_access_contract() -> None:
+    """A rule nobody is routed to is a rule nobody reads.
+
+    The release procedure begins with "everything from here runs on the host",
+    and how an operator *gets* that host is the half that was never written
+    down — so the file that answers it has to be reachable from the file that
+    assumes it.
+    """
+    readme = (DEPLOY / "unraid-main" / "README.md").read_text(encoding="utf-8")
+    assert OPERATOR.exists(), "deploy/unraid-main/OPERATOR.md is gone"
+    assert "OPERATOR.md" in readme, "the release runbook does not link the access contract"
+
+
+def test_the_operator_runbook_prohibits_feeding_a_script_over_stdin(operator: str) -> None:
+    """The exact shapes, because the rule is about a shape and not about a tool.
+
+    `ssh host 'bash -s'`, a `cat … | ssh host bash` and a heredoc piped into a
+    remote shell are the same defect written three ways, and an operator who
+    reads a prohibition on one of them will write another.
+    """
+    assert "bash -s" in operator, "the prohibited shape is not named"
+    assert "| ssh" in operator, "the pipe form of the same shape is not named"
+    lowered = flat(operator)
+    assert "do not feed a multi-step script to the host over stdin" in lowered, (
+        "the prohibition is not stated as one"
+    )
+    # And the reason, because a rule without one gets worked around by somebody
+    # who is sure their case is different.
+    assert "standard input" in lowered
+    assert "exits zero" in lowered or "exited zero" in lowered, (
+        "the runbook does not say that the run still looks successful, which is "
+        "the property that makes this dangerous rather than merely annoying"
+    )
+
+
+def test_the_operator_runbook_gives_a_way_to_run_a_multi_step_sequence(operator: str) -> None:
+    """A prohibition with no alternative is a prohibition that gets ignored.
+
+    Two of them have to survive: the reviewed script that already exists, and —
+    for the sequence that genuinely does not — copying a file to the host and
+    running the file rather than piping it.
+    """
+    assert "scripts/deploy/juristid-deploy-preflight.sh" in operator, (
+        "the runbook does not point at the reviewed scripts as the first answer"
+    )
+    lines = command_lines(operator)
+    assert any(line.startswith("scp ") for line in lines), "no copy-the-file alternative"
+    assert any(line.startswith("ssh ") and "bash /" in line for line in lines), (
+        "the runbook does not show running the remote file"
+    )
+
+
+def test_the_operator_runbook_explains_which_stdin_reads_are_legitimate(operator: str) -> None:
+    """Otherwise the fix for the rule above is `</dev/null` on every Docker line.
+
+    `docker load < archive` reads stdin on purpose and is correct once the
+    script is a file, and `docker compose exec -T` exists for the same reason.
+    The distinction is the difference between fixing the transport and breaking
+    the release.
+    """
+    assert "docker load" in operator
+    assert "-T" in operator, "the runbook does not explain `exec -T`"
+    assert "/dev/null" in operator, (
+        "the runbook does not warn against blanket-redirecting every Docker command"
+    )
+
+
+def test_the_operator_runbook_keeps_both_access_paths(operator: str) -> None:
+    """Tailscale normally, the host's known LAN address when it is unavailable.
+
+    Written because the absence of the second one cost a release window: the
+    tailnet being down read as the host being unreachable, and it was not.
+    """
+    assert "Tailscale" in operator
+    assert "LAN" in operator
+    assert "is not evidence that the production host is" in flat(operator), (
+        "the runbook no longer says that an unavailable tailnet is not an "
+        "unreachable host, which is the thing that was actually believed"
+    )
+    # And the fallback is a known address, not a search for one that answers.
+    assert "answers on port 22" in flat(operator), (
+        "the runbook does not rule out reaching for whatever responds"
+    )
+
+
+def test_no_deployment_runbook_records_a_host_address() -> None:
+    """This repository is public, and an address is not a thing it needs.
+
+    `deploy/unraid-test/` publishes a host port and names it, which is a
+    separate, older decision about the synthetic stack. The real-data runbooks
+    describe a deployment with no host port at all, reached over a tunnel or
+    over a channel the operator already has configured — so an address appearing
+    in one of them is a new disclosure and never a necessary one.
+    """
+    for runbook in sorted((DEPLOY / "unraid-main").glob("*.md")):
+        text = runbook.read_text(encoding="utf-8")
+        found = re.findall(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", text)
+        assert not found, f"{runbook.name} records a host address: {found}"
+
+
+def test_the_operator_runbook_makes_the_operator_prove_which_host_answered(
+    operator: str,
+) -> None:
+    """`ssh` succeeding proves a host accepted the key, and nothing else.
+
+    The synthetic rehearsal runs on the same machine, so "it connected" is not
+    an answer. The checks have to be things only *this* deployment can produce,
+    and they have to be read-only.
+    """
+    lines = command_lines(operator)
+    assert any("uname -n" in line for line in lines), "nothing asks the host its name"
+    assert any("/mnt/user/appdata/juristid-main/repo" in line for line in lines), (
+        "nothing checks the production layout"
+    )
+    assert any("com.docker.compose.project=juristid-main" in line for line in lines), (
+        "nothing identifies the stack by its own project, so `juristid-test` could answer for it"
+    )
+    assert any("healthz" in line for line in lines), "nothing reads the running revision"
+
+
+def test_the_preflight_names_the_host_it_ran_on() -> None:
+    """The same property, in the one command a release always runs.
+
+    A preflight transcript that could have been produced anywhere is a record of
+    nothing. A node name is not an address and not a credential, so this costs
+    no disclosure.
+    """
+    text = (SCRIPTS / "juristid-deploy-preflight.sh").read_text(encoding="utf-8")
+    assert "uname -n" in text, "the preflight does not say which host it ran on"
+
+
+def test_no_runbook_tells_an_operator_to_stop_checking_the_host_key() -> None:
+    """A changed host key is the check working, not the check being in the way.
+
+    Prose is exempt, as everywhere else here: the operator runbook has to be
+    able to print the two flags in order to forbid them. What must not exist is
+    a copyable line carrying one.
+    """
+    for runbook in RUNBOOKS:
+        for line in command_lines(runbook.read_text(encoding="utf-8")):
+            for forbidden in ("StrictHostKeyChecking=no", "UserKnownHostsFile=/dev/null"):
+                assert forbidden not in line, (
+                    f"{runbook.name}: `{forbidden}` disables the only check that "
+                    f"notices a different host answering\n  {line}"
+                )
+
+
+def test_the_operator_runbook_says_what_to_do_when_the_host_key_changes(
+    operator: str,
+) -> None:
+    """Including the part that is not a command: verify out of band first."""
+    assert "StrictHostKeyChecking=no" in operator, "the workaround is not named to be forbidden"
+    assert "known_hosts" in operator
+    lowered = flat(operator)
+    assert "out of band" in lowered or "not the one in doubt" in lowered, (
+        "the runbook does not say to confirm the host through another channel"
+    )
+
+
+def test_the_operator_runbook_keeps_the_secrets_out_of_the_transcript(operator: str) -> None:
+    """Three rules, one reason: a deployment transcript is a published document.
+
+    `docker compose config` is the one that looks harmless — it is read-only and
+    it is about configuration — and it inlines every value from `env_file`.
+    """
+    assert "docker compose config" in operator
+    assert "env_file" in operator, "the runbook does not say why `config` is the dangerous one"
+    assert "set -x" in operator
+    assert "public" in operator, "the runbook does not say the repository is public"
+
+
+def test_no_runbook_tells_an_operator_to_resolve_the_compose_file_into_the_open() -> None:
+    """The preflight resolves it and captures the result; nothing prints it.
+
+    A copyable `docker compose … config` would put the database password, the
+    shared gate password and the tunnel credential into whatever is recording
+    the session — which on a release is routinely a report somebody pastes.
+    """
+    for runbook in RUNBOOKS:
+        for line in command_lines(runbook.read_text(encoding="utf-8")):
+            if "docker compose" not in line:
+                continue
+            assert not re.search(r"\bconfig\b", line), (
+                f"{runbook.name}: resolves the Compose file into the transcript, "
+                f"inlining every value from env_file\n  {line}"
+            )
+
+
+def test_the_operator_runbook_keeps_the_exact_image_contract(operator: str) -> None:
+    """Restated only as far as an operator needs it here, and never contradicted.
+
+    The reason the identity has to survive into this file at all is the fallback
+    tag: it is what a second shell silently resolves, and the transport rules
+    above are precisely about when a second shell happens.
+    """
+    assert "JURISTID_GIT_SHA" in operator and "JURISTID_IMAGE_TAG" in operator
+    assert "juristid-main-web:local" in operator, (
+        "the runbook does not name the fallback tag, which is the concrete thing "
+        "a lost export resolves to"
+    )
+    assert "/app/GIT_SHA" in operator
+    assert "archive_sha256" in operator, (
+        "the runbook does not distinguish the release archive's digest from the "
+        "digest GitHub shows for the ZIP it wraps it in"
+    )
+
+
+def test_the_operator_runbook_does_not_become_a_second_release_procedure(
+    operator: str,
+) -> None:
+    """One deployment sequence, in one file.
+
+    This one owns the channel: which host, proven how, and how a command gets
+    there. The moment it grows a Compose invocation it has started to be a
+    second procedure, and two procedures that drift is the failure mode the
+    whole single-source arrangement exists to avoid.
+    """
+    for line in command_lines(operator):
+        assert "docker compose" not in line, (
+            "the operator runbook has started to carry the release sequence; it "
+            f"belongs in README.md\n  {line}"
+        )
+    assert "README.md" in operator, "it no longer points at the procedure it defers to"
+    assert "RECOVERY.md" in operator, "it no longer points at recovery"
+
+
+def test_the_operator_runbook_states_when_to_stop(operator: str) -> None:
+    """The list matters less than the instruction beside it.
+
+    Every item on it is a moment where continuing is cheap and wrong, and the
+    failure it guards against is not ignorance of the condition — it is the
+    reflex to re-run the command until it agrees.
+    """
+    assert "STOP" in operator
+    for condition in (
+        "host key changed",
+        "SHA-256 does not match",
+        "/app/GIT_SHA",
+        "deployment_readiness",
+        "uuendused",
+    ):
+        assert condition.lower() in flat(operator), f"the stop list does not cover: {condition}"
+    assert "preserve" in flat(operator), (
+        "the runbook does not say to preserve the observed state, which is the "
+        "half that makes a stop useful afterwards"
+    )
+
+
+def test_the_operator_runbook_does_not_claim_to_settle_who_may_have_access(
+    operator: str,
+) -> None:
+    """Secure Pilot Gate row 8 is open, with an owner who is not this repository.
+
+    A procedure for using a key reads like an access policy to anybody who wants
+    one, and a gate that gets treated as satisfied by a runbook is a gate that
+    never gets signed.
+    """
+    gate = (ROOT / "docs" / "secure-pilot-gate.md").read_text(encoding="utf-8")
+    if "Documented developer and support access policy" not in gate:
+        pytest.skip("the access-policy row has moved; re-check the operator runbook by hand")
+    assert "not started" in gate, "row 8 has been answered; this test can be retired"
+    assert "access policy" in operator, (
+        "the operator runbook does not say that it is not the access policy, so "
+        "it will eventually be read as one"
+    )
+
+
+def test_the_operator_runbook_names_the_services_a_release_moves(operator: str) -> None:
+    """Derived from `compose.yml`, never listed here.
+
+    A hard-coded trio is the defect this repository has already had twice: the
+    CI identity guard and the scanner topology guard both carried a list that
+    was right when it was written and silently wrong after `extractor` left.
+    So the test asks the Compose file which services share the release image,
+    and requires the runbook to name each of them — including one added
+    tomorrow.
+
+    The other half is the pair that must *not* move. `db` and `tunnel` run
+    pinned upstream images, and a code release that restarted either of them
+    did something nobody asked for.
+    """
+    import yaml
+
+    compose = yaml.safe_load((DEPLOY / "unraid-main" / "compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    web_image = services["web"]["image"]
+    application = {name for name, service in services.items() if service.get("image") == web_image}
+    preserved = set(services) - application
+    assert application and preserved, "compose.yml no longer has both halves"
+
+    for name in sorted(application):
+        assert f"`{name}`" in operator, (
+            f"the operator runbook does not say that a release replaces `{name}`, "
+            "which runs the same image as `web`"
+        )
+    for name in sorted(preserved):
+        assert f"`{name}`" in operator, (
+            f"the operator runbook does not say that `{name}` is left alone by a code release"
+        )
