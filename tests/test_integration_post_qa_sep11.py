@@ -348,7 +348,7 @@ def test_registering_a_historical_send_still_works_on_a_closed_matter(normal_mat
 
     assert submission.status == SubmissionStatus.SENT
     assert submission.sent_at_precision == SentAtPrecision.DATE
-    assert submission.sent_at.date() != timezone.localdate()
+    assert timezone.localtime(submission.sent_at).date() != timezone.localdate()
 
 
 def test_the_two_layers_answer_the_same_call_differently_on_purpose(normal_matter, specialist):
@@ -424,7 +424,13 @@ def test_marking_a_draft_sent_still_means_now_beside_all_of_this(normal_matter, 
     sent = mark_submission_sent(submission=draft, actor=specialist)
 
     assert sent.status == SubmissionStatus.SENT
-    assert sent.sent_at.date() == timezone.localdate()
+    # `localtime` before `.date()`, because `sent_at` comes back from the
+    # database as UTC and `localdate()` is Tallinn. Between 21:00 and midnight
+    # UTC those are different days, so the unconverted form fails this assertion
+    # every night for three hours — which is how it was found, on a release the
+    # whole payload of which was one TOML file. The idiom is the one
+    # `tests/test_opinions_under_documents.py` already uses.
+    assert timezone.localtime(sent.sent_at).date() == timezone.localdate()
     assert sent.sent_at_precision == SentAtPrecision.TIMESTAMP
 
 
