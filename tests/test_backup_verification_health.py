@@ -426,3 +426,121 @@ def test_the_check_is_read_only(tmp_path: Path) -> None:
     text = AGE.read_text(encoding="utf-8")
     for forbidden in ("rm ", "mv ", "rsync", "docker", ">"):
         assert forbidden not in text.split("EXIT STATUS", 1)[1].split("usage()", 1)[0], forbidden
+
+
+# ---------------------------------------------------------------------------
+# A tree emptied on purpose
+
+
+def _empty_source_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """A source whose evidence tree is empty beside a mirror that still holds it.
+
+    The shape an operational reset leaves behind: the mirrors never delete, so
+    yesterday's corpus is still in the backup root while today's tree has
+    nothing in it.
+    """
+    data_root = tmp_path / "appdata"
+    backup_root = tmp_path / "backups"
+    for tree in ("evidence", "legacy-source"):
+        (data_root / tree).mkdir(parents=True)
+        (backup_root / tree).mkdir(parents=True)
+    (data_root / "legacy-source" / "page.xml").write_text("<page/>", encoding="utf-8")
+    (backup_root / "legacy-source" / "page.xml").write_text("<page/>", encoding="utf-8")
+    (backup_root / "evidence" / "old.bin").write_bytes(b"kept")
+    return data_root, backup_root
+
+
+def _stub_tools(tmp_path: Path) -> dict[str, str]:
+    """`docker` and `rsync` that exist and do nothing, on a PATH of our own.
+
+    The script checks both are installed before it reaches `sync_tree`, so
+    without these the guard is unreachable on a laptop and these tests would
+    only ever prove that Docker is missing. Neither stub is *called* on the
+    paths tested here — the script dies at the guard first — they only have to
+    be findable by `command -v`.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("docker", "rsync"):
+        stub = bin_dir / tool
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+    return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+
+def _run_backup(
+    data_root: Path, backup_root: Path, *extra: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """The real script, far enough to reach the guard and no further."""
+    return subprocess.run(  # noqa: S603 - a fixed interpreter and a repository path
+        [
+            BASH,
+            str(BACKUP),
+            "--project",
+            "juristid-main",
+            "--compose-file",
+            str(ROOT / "deploy" / "unraid-main" / "compose.yml"),
+            "--data-root",
+            str(data_root),
+            "--backup-root",
+            str(backup_root),
+            "--minimum-free-mib",
+            "1",
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        env=env,
+    )
+
+
+def test_an_empty_tree_beside_a_full_mirror_is_still_refused_by_default(tmp_path: Path) -> None:
+    """The guard this flag relaxes has to keep working when nobody relaxes it.
+
+    A missing mount and a deliberately emptied tree look identical from here,
+    and the default reading stays "missing mount" — the expensive mistake is
+    recording a backup that says the Chamber holds no evidence.
+    """
+    data_root, backup_root = _empty_source_fixture(tmp_path)
+    result = _run_backup(data_root, backup_root, env=_stub_tools(tmp_path))
+    assert result.returncode != 0
+    assert "is a missing mount, not an empty tree" in result.stdout + result.stderr
+    assert "--allow-empty evidence" in result.stdout + result.stderr, (
+        "the refusal must name the way out, or the operator's only option is to edit the script"
+    )
+
+
+def test_allowing_one_tree_does_not_allow_the_other(tmp_path: Path) -> None:
+    """The claim is per tree, because the knowledge behind it is per tree.
+
+    On 2026-09-12 the reset emptied evidence and left legacy-source intact. An
+    operator who knows that must not, by saying it, also promise that a
+    legacy-source which goes missing next month was emptied on purpose.
+    """
+    data_root, backup_root = _empty_source_fixture(tmp_path)
+    (data_root / "legacy-source" / "page.xml").unlink()
+    result = _run_backup(
+        data_root, backup_root, "--allow-empty", "evidence", env=_stub_tools(tmp_path)
+    )
+    assert result.returncode != 0
+    assert "legacy-source" in result.stdout + result.stderr
+
+
+def test_a_misspelled_tree_name_is_refused_rather_than_ignored(tmp_path: Path) -> None:
+    """A flag that silently allows nothing reads exactly like one that works."""
+    data_root, backup_root = _empty_source_fixture(tmp_path)
+    result = _run_backup(data_root, backup_root, "--allow-empty", "evidnce")
+    assert result.returncode != 0
+    assert "--allow-empty takes" in result.stdout + result.stderr
+
+
+def test_the_manifest_records_which_guards_were_relaxed() -> None:
+    """A set taken with a guard relaxed says so, in the artifact that outlives the shell.
+
+    The same reason the release manifest carries its note waiver: the reason a
+    check was skipped is worth more later than it is at the time.
+    """
+    text = BACKUP.read_text(encoding="utf-8")
+    assert '"empty_source_allowed_for": [$ALLOW_EMPTY_JSON]' in text
+    assert "ALLOW_EMPTY_JSON=" in text
