@@ -28,6 +28,7 @@ from app.core.richtext import plain_text
 from app.core.visibility_help import RESTRICTED_VISIBILITY_HELP
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
+from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     COMPOSER_ENGAGEMENT_KINDS,
@@ -3088,9 +3089,21 @@ class WorkingDocumentForm(forms.Form):
             attrs={"class": "field__input", "placeholder": "Näiteks: Arvamuse töödokument.docx"}
         ),
     )
+    #: The same bound the service enforces, read from the same name.
+    #:
+    #: Stated here as well so an over-long address is a field error on the form
+    #: the person is looking at rather than a message banner after the POST —
+    #: and stated *only* as a bound. `link_working_document` is what actually
+    #: decides, and it refuses rather than shortening; the number they share is
+    #: in `app/documents/limits.py` so the two cannot drift apart again.
     web_url = forms.CharField(
         label="SharePointi aadress",
-        max_length=1000,
+        max_length=WORKING_DOCUMENT_URL_MAX_LENGTH,
+        error_messages={
+            "max_length": (
+                f"Viide on liiga pikk: lubatud on {WORKING_DOCUMENT_URL_MAX_LENGTH} märki."
+            )
+        },
         widget=forms.TextInput(
             attrs={"class": "field__input", "placeholder": "https://…sharepoint.com/…"}
         ),
