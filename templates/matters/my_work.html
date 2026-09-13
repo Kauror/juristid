@@ -258,8 +258,14 @@ The rail holds only what has no honest place on a timeline.
         {% endif %}
       </section>
 
+      {% comment %}
+        Open, both views. The list is four short lines and it answers «did I
+        write that down?», which is a question a person asks on the way past
+        rather than one they open a panel to ask. A disclosure whose first act
+        every morning is to be opened is not saving anybody a decision.
+      {% endcomment %}
       <section class="workband workband--entries" aria-label="Viimased sissekanded">
-        <details class="foldout">
+        <details class="foldout" open>
           <summary class="foldout__trigger">
             <span class="foldout__label">{% if is_self %}Minu viimased sissekanded{% else %}Viimased sissekanded{% endif %}</span>
             {% if work.last_entry %}
@@ -463,12 +469,17 @@ The rail holds only what has no honest place on a timeline.
 
       {% comment %}
         Counts, never ratings. No rank, no percentage, no comparison with a
-        colleague — the same refusal Osakond opens with. Open by default in
-        the manager's view, because that is what they came to read; collapsed in
-        one's own, because one already knows (02-EKRAANID §A).
+        colleague — the same refusal Osakond opens with.
+
+        Open in both views. It used to be collapsed on one's own desk, on the
+        reasoning that a person already knows their own numbers (02-EKRAANID
+        §A); live use reversed that. What a person knows is roughly, and the
+        block was being opened every morning to find out exactly — so the
+        disclosure was not sparing anybody a decision, it was charging a click
+        for the answer. `is_self` no longer decides the state, only the label.
       {% endcomment %}
       <section class="railblock" aria-label="Statistika">
-        <details class="foldout"{% if not is_self %} open{% endif %}>
+        <details class="foldout" open>
           <summary class="foldout__trigger">
             <span class="foldout__label">{% if is_self %}Minu statistika{% else %}Statistika{% endif %}</span>
           </summary>
