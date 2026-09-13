@@ -33,6 +33,7 @@ from app.core.enums import validate_visibility_override
 from app.core.errors import DomainError
 from app.core.ids import uuid7
 from app.documents.enums import DocumentRole, ExtractionState
+from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 from app.documents.models import Document, DocumentVersion
 from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Matter
@@ -194,6 +195,13 @@ def link_working_document(
         raise DomainError("Viide peab algama http:// või https:// aadressiga.")
     if not parts.netloc:
         raise DomainError("Viide peab sisaldama veebiaadressi.")
+    # Refuse, never shorten. This used to be `url[:1000]` on the way into the
+    # column, which stored a broken link under a success message and threw away
+    # the only copy of the part it cut (app/documents/limits.py).
+    if len(url) > WORKING_DOCUMENT_URL_MAX_LENGTH:
+        raise DomainError(
+            f"Viide on liiga pikk: {len(url)} märki, lubatud on {WORKING_DOCUMENT_URL_MAX_LENGTH}."
+        )
 
     identifier = (item_id or "").strip() or f"url:{hashlib.sha256(url.encode()).hexdigest()[:32]}"
 
@@ -202,7 +210,7 @@ def link_working_document(
         title=clean_title[:400],
         role=DocumentRole.WORKING_DOCUMENT,
         created_by=created_by,
-        sharepoint_web_url=url[:1000],
+        sharepoint_web_url=url,
         sharepoint_item_id=identifier[:200],
         sharepoint_site_id=(site_path or "").strip()[:200],
         sharepoint_observed_at=timezone.now(),
