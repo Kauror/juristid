@@ -26,6 +26,7 @@ from app.documents.enums import (
     MalwareScanState,
     RetentionClass,
 )
+from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 
 
 class DocumentQuerySet(models.QuerySet):
@@ -65,7 +66,9 @@ class Document(VisibilityInheritingModel):
     sharepoint_site_id = models.CharField(max_length=200, blank=True)
     sharepoint_drive_id = models.CharField(max_length=200, blank=True)
     sharepoint_item_id = models.CharField(max_length=200, blank=True)
-    sharepoint_web_url = models.URLField(max_length=1000, blank=True)
+    # Long enough for an address SharePoint really issues, and a refusal rather
+    # than a truncation past it (app/documents/limits.py).
+    sharepoint_web_url = models.URLField(max_length=WORKING_DOCUMENT_URL_MAX_LENGTH, blank=True)
     sharepoint_etag = models.CharField(max_length=200, blank=True)
     sharepoint_observed_at = models.DateTimeField(null=True, blank=True)
 

@@ -20,6 +20,7 @@ from typing import Any
 
 from django.db.models import Q
 from django.urls import reverse
+from django.utils import timezone
 
 from app.legacy_import.opinion_access import may_read_archive
 from app.matters.models import Matter
@@ -124,7 +125,10 @@ def _background_item(row: MatterBackgroundMaterial) -> BackgroundItem:
             label="Arvamus",
             key=submission.pk,
             title=submission.title,
-            date=submission.sent_at.date() if submission.sent_at else None,
+            # The Tallinn day, not the UTC one PostgreSQL returns: an
+            # opinion sent at 01:30 Tallinn is still the 12th in UTC
+            # (config/settings.py `TIME_ZONE`).
+            date=timezone.localdate(submission.sent_at) if submission.sent_at else None,
             source_reference=source.display_reference,
             source_title=source.title,
             recipient=", ".join(

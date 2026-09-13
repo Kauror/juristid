@@ -58,6 +58,7 @@ from django.db.models import (
     When,
 )
 from django.urls import reverse
+from django.utils import timezone
 
 from app.core.text import normalize_for_matching
 from app.legacy_import.opinion_access import may_read_archive
@@ -686,7 +687,16 @@ def related_matter_candidates(
 
 
 def _submission_date(submission: Submission) -> date | None:
-    return submission.sent_at.date() if submission.sent_at else None
+    """The Tallinn day the opinion went out, not the UTC one.
+
+    `sent_at` is an aware timestamp and PostgreSQL hands it back in UTC, so
+    `.date()` on it answered a question nobody asked: an opinion sent at 01:30
+    on 13 September reads 22:30 on the 12th in UTC, and the suggestion dated
+    itself a day early. `timezone.localdate` converts into the business
+    timezone first (`Europe/Tallinn`, config/settings.py), which is the day the
+    lawyer who sent it would name.
+    """
+    return timezone.localdate(submission.sent_at) if submission.sent_at else None
 
 
 def _submission_suggestion(

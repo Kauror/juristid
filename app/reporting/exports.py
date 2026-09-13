@@ -36,6 +36,7 @@ from urllib.parse import urlencode
 
 from django.http import StreamingHttpResponse
 from django.urls import reverse
+from django.utils import timezone
 
 from app.core.csv_safety import csv_safe_row
 from app.core.http import content_disposition
@@ -183,7 +184,11 @@ def submissions_csv(context: ReportingContext, **filters: Any) -> StreamingHttpR
                 if row.role == RecipientRole.FOR_INFORMATION
             ]
             yield [
-                submission.sent_at.date().isoformat() if submission.sent_at else "",
+                # `localdate`, not `.date()`. The column is aware and comes back
+                # in UTC, so an opinion sent at 01:30 on the 13th exported as
+                # the 12th — a date a reader would reconcile against nothing
+                # (config/settings.py `TIME_ZONE`).
+                timezone.localdate(submission.sent_at).isoformat() if submission.sent_at else "",
                 submission.title,
                 submission.get_kind_display(),
                 submission.matter.display_reference,
