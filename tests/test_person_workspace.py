@@ -449,3 +449,129 @@ def test_an_empty_desk_leaves_no_gap_where_the_link_was(client, specialist):
 
     assert "Selles vaates ei ole ühtegi teemat." in body
     assert 'class="pw-register"' not in body
+
+
+# -- the two foldouts start open (2026-09-13) --------------------------------
+
+
+def _foldout_tag(body: str, label: str) -> str:
+    """The `<details …>` tag of the foldout whose summary carries `label`.
+
+    Read from the rendered page rather than from the template, so a foldout
+    whose `open` is behind a branch is asserted in the branch the reader is in.
+    The label is matched on its `foldout__label` span, because «Statistika» is
+    also the name of a page in the top bar.
+    """
+    at = body.index(f'class="foldout__label">{label}<')
+    start = body.rindex("<details", 0, at)
+    return body[start : body.index(">", start) + 1]
+
+
+def test_minu_viimased_sissekanded_starts_open(client, specialist):
+    """Four short lines answering «did I write that down?».
+
+    It was a closed `<details class="foldout">`, which charged a click for an
+    answer a person asks for on the way past.
+    """
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert "open" in _foldout_tag(body, "Minu viimased sissekanded")
+
+
+def test_the_entries_foldout_starts_open_on_a_colleagues_desk_too(
+    client, specialist, department_head
+):
+    """Same disclosure, same state: `is_self` decides the label, not the state."""
+    client.force_login(department_head)
+    body = client.get(_person_url(specialist)).content.decode()
+
+    assert "open" in _foldout_tag(body, "Viimased sissekanded")
+
+
+def test_minu_statistika_starts_open(client, specialist):
+    """The reversal. It was collapsed in one's own view on the reasoning that a
+    person already knows their own numbers; what a person knows is roughly, and
+    the block was being opened every morning to find out exactly."""
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert "open" in _foldout_tag(body, "Minu statistika")
+
+
+def test_the_statistics_foldout_stays_open_on_a_colleagues_desk(
+    client, specialist, department_head
+):
+    """The half that was already open is untouched by the reversal."""
+    client.force_login(department_head)
+    body = client.get(_person_url(specialist)).content.decode()
+
+    assert "open" in _foldout_tag(body, "Statistika")
+
+
+def test_opening_the_two_foldouts_changed_nothing_inside_them(client, specialist, today):
+    """Only the disclosure state moved: same labels, same bodies, same counts,
+    and the manager's view still gets the figures the self view gets."""
+    matter = _matter(specialist)
+    set_next_action(
+        matter=matter,
+        text="Saada arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=today,
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert 'class="foldout__label">Minu viimased sissekanded<' in body
+    assert 'class="foldout__label">Minu statistika<' in body
+    assert 'class="pw-stats"' in body
+    assert "Sa ei ole veel sissekandeid teinud." in body
+
+
+# -- Aktiivsed teemad reads as a list of Teemad (2026-09-13) -----------------
+
+
+def _app_css() -> str:
+    from pathlib import Path
+
+    from django.conf import settings
+
+    return (Path(settings.BASE_DIR) / "static" / "css" / "app.css").read_text(encoding="utf-8")
+
+
+def test_an_active_topic_row_is_still_the_link_it_was(client, specialist):
+    """The marker is drawn, not written: no wrapper, no extra element, and the
+    whole row is still one anchor to the Matter."""
+    matter = _matter(specialist, "Pakendiseaduse muutmise seaduse eelnou")
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    row = body[body.index('class="pw-matters"') :]
+    row = row[: row.index("</div>")]
+    assert f'<a class="pw-matter" href="/teemad/{matter.pk}/">' in row
+    assert 'class="pw-matter__title">Pakendiseaduse muutmise seaduse eelnou<' in row
+    # Nothing was written into the row to carry the dot.
+    assert "•" not in row
+
+
+def test_the_topic_marker_is_scoped_to_aktiivsed_teemad():
+    """«this is a Teema», and only where that is what a row is.
+
+    `portfolio_row.html` has one caller today. Scoping the rule to the section
+    rather than to `.pw-matter` is what keeps the cue with the surface that
+    means it if a second caller ever appears — and keeps it off any other
+    reuse by default rather than by review.
+    """
+    css = re.sub(r"/\*.*?\*/", " ", _app_css(), flags=re.S)
+
+    assert ".workband--portfolio .pw-matter__title::before" in css
+    for unscoped in (
+        "\n.pw-matter__title::before",
+        "\n.pw-matter::before",
+        "\n.pw-matters .pw-matter__title::before",
+    ):
+        assert unscoped not in css, f"the topic marker escaped its section: {unscoped.strip()}"

@@ -9014,6 +9014,30 @@ button.accordion__action:focus-visible {
   color: var(--text-primary);
 }
 
+/* The object-type cue, and only that: this line is a Teema. Under «Aktiivsed
+ * teemad» a row is a title, a stage and a date on one line with no rule around
+ * it, which read as a menu item — a list of links to somewhere rather than a
+ * list of things. A 4px dot in the muted text colour says which of the two it
+ * is without saying anything else: it is not a status, not a selection, not a
+ * checkbox and not a warning, and it is deliberately the same neutral colour on
+ * every row so that nothing can be read into it.
+ *
+ * Scoped to the section rather than put on `.pw-matter` itself. The partial has
+ * one caller today (`templates/matters/my_work.html`, both `.pw-matters`
+ * blocks), and this keeps the marker with the surface that means it if a second
+ * caller ever appears. `vertical-align: middle` centres it on the lowercase
+ * x-height, which is where the eye expects it against the title. */
+.workband--portfolio .pw-matter__title::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: var(--spacing-15);
+  border-radius: 50%;
+  background: var(--text-muted);
+  vertical-align: middle;
+}
+
 .pw-matter__stage {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
@@ -10443,8 +10467,8 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 /* The attachment, by its real name and linked to its exact bytes. The glyph is
- * a bordered pseudo-element rather than an icon font: two rules, no request,
- * and it inherits the link's colour on hover without a second asset. */
+ * a drawn pseudo-element rather than an icon font: two rules, no request, and
+ * it inherits the link's colour on hover without a second asset. */
 #teema-vaade-wrap .uxtl__file {
   display: inline-flex;
   align-items: center;
@@ -10456,13 +10480,24 @@ section:has(.pw-more[open]) tbody.uxextra {
   text-decoration: none;
 }
 
+/* A page with its top-right corner turned down — the shape a document has in
+ * every icon set, and the reason this is a filled silhouette rather than an
+ * outline. The outline that stood here was an empty 9×11 box with a 1px border,
+ * which on a row of filenames read as an unchecked checkbox: a control offering
+ * to be ticked, beside text that is a link and cannot be. Nothing about it was
+ * interactive, so the only thing it could do was be clicked at.
+ *
+ * Same box, same 9×11, so the filename sits exactly where it sat. `clip-path`
+ * cuts the fold out of the fill: no second element, no asset, no request, and
+ * `currentColor` keeps it on the link through hover and through both themes. */
 #teema-vaade-wrap .uxtl__file::before {
   content: "";
+  flex: none;
   width: 9px;
   height: 11px;
-  border: 1px solid currentColor;
-  border-radius: 1px;
-  opacity: 0.8;
+  background: currentColor;
+  clip-path: polygon(0 0, 60% 0, 100% 33%, 100% 100%, 0 100%);
+  opacity: 0.75;
 }
 
 #teema-vaade-wrap .uxtl__file:hover {

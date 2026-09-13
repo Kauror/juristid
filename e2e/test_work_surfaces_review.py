@@ -122,6 +122,65 @@ def test_the_range_control_is_in_the_url(page, base_url):
     _shoot(page, "minu-too-koik-tahtajad")
 
 
+def test_both_foldouts_are_readable_without_a_click(page, base_url):
+    """«Minu viimased sissekanded» and «Minu statistika» start open.
+
+    Asserted on visibility rather than on the attribute: `open` in the markup
+    and a body a person can actually read are two different claims, and it is
+    the second one the change was made for.
+    """
+    _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
+
+    entries = page.locator(".workband--entries details.foldout")
+    statistics = page.locator('.railblock[aria-label="Statistika"] details.foldout')
+
+    for name, foldout in (("sissekanded", entries), ("statistika", statistics)):
+        assert foldout.count() == 1, f"the {name} foldout is not on the page"
+        assert foldout.get_attribute("open") is not None, f"the {name} foldout starts closed"
+        assert foldout.locator(".foldout__body").is_visible(), (
+            f"the {name} foldout is marked open and shows nothing"
+        )
+
+    # The disclosure still works: this is a default, not a removal.
+    page.locator(".workband--entries .foldout__trigger").click()
+    assert not entries.locator(".foldout__body").is_visible()
+
+
+def test_an_active_topic_row_carries_the_topic_marker(page, base_url):
+    """The object-type cue, and only on this section's rows.
+
+    Browser-only: the marker is a `::before` on the title, so nothing in the
+    HTML says whether it is drawn. Its box is measured, and its colour is read
+    back to prove it is the muted text colour every row shares rather than
+    anything a reader could take for a status.
+    """
+    _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
+
+    titles = page.locator(".workband--portfolio .pw-matter__title")
+    assert titles.count(), "Aktiivsed teemad rendered no rows to mark"
+
+    colours = set()
+    for index in range(titles.count()):
+        marker = titles.nth(index).evaluate(
+            "el => { const s = getComputedStyle(el, '::before');"
+            " return {content: s.content, width: s.width, height: s.height,"
+            " radius: s.borderRadius, colour: s.backgroundColor}; }"
+        )
+        assert marker["content"] == '""', "the marker is written text rather than drawn"
+        assert marker["width"] == "4px" and marker["height"] == "4px", marker
+        assert marker["radius"] == "50%", "the topic marker is not a circle"
+        colours.add(marker["colour"])
+
+    assert len(colours) == 1, f"the marker changes colour between rows: {sorted(colours)}"
+
+    # And only here. The bands above this section name the same Matters on the
+    # same page, and a dot there would make the cue mean "a row" rather than
+    # "a Teema".
+    elsewhere = page.locator(".workrow2__matter").first
+    assert elsewhere.count(), "the seeded desk has no dated work to compare against"
+    assert elsewhere.evaluate("el => getComputedStyle(el, '::before').content") == "none"
+
+
 # --- Osakond --------------------------------------------------------------
 
 
