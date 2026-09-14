@@ -77,15 +77,20 @@ def test_the_matter_page_carries_no_standalone_kaasamine_section(page, base_url)
 
 
 def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, base_url):
-    """`Liik`, `Keda kaasati`, `Vastuseid`, and the two provider pointers.
+    """`Liik`, `Keda kaasati`, `Vastuseid`, the two provider pointers, two dates.
 
-    It asked three things until 2026-09-12. The two links are the round's one
-    addition and they are additions in the weakest sense — optional, external,
-    contacting nothing — because one consultation routinely has a mailing *and*
-    a questionnaire and `url` held one address (docs/adr/0027, amended).
+    It asked three things until 2026-09-12, when the provider links arrived —
+    optional, external, contacting nothing — because one consultation routinely
+    has a mailing *and* a questionnaire and `url` held one address
+    (docs/adr/0027, amended).
 
-    The old five-field form is still not back: no generic `Link`, no `Märkus`,
-    no `Kuupäev`.
+    **The dates arrived on 2026-09-14 and reverse docs/adr/0074 §9.** The panel
+    asked for no date and the view stamped today on every row, so a consultation
+    from March written up in September was stored as a September consultation.
+    `Kaasamise kuupäev` is that value, made visible and editable, and
+    `Tagasisidet ootame kuni` is what was asked of the people contacted.
+
+    The old five-field form is still not back: no generic `Link`, no `Märkus`.
     """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
@@ -103,7 +108,14 @@ def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, b
     # pointers are beside the generic one, not a rename of it.
     expect(panel(page).locator("[name=url]")).to_have_count(0)
     expect(panel(page).locator("[name=note]")).to_have_count(0)
-    expect(panel(page).locator("[name=occurred_on]")).to_have_count(0)
+    # The two dates, and the difference between their defaults: today is the
+    # usual engagement date and never a plausible reply-by date.
+    expect(panel(page).locator("[name=occurred_on]")).to_be_visible()
+    expect(panel(page).locator("[name=feedback_deadline]")).to_be_visible()
+    expect(panel(page).locator("[name=feedback_deadline]")).to_have_value("")
+    assert panel(page).locator("[name=occurred_on]").input_value(), (
+        "the engagement date opens empty, so today is being applied out of sight"
+    )
     # And its own save, which commits this operation and nothing else
     # (docs/adr/0075 §2).
     expect(panel(page).locator("button[type=submit]")).to_have_count(1)

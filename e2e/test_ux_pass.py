@@ -23,6 +23,7 @@ from app.core.management.commands.seed_e2e_data import (
 from e2e.conftest import (
     HEAD,
     SANDRA,
+    add_panel_is_open,
     open_add_panel,
     open_composer,
     open_next_action_form,
@@ -81,10 +82,9 @@ def test_l_puts_the_caret_in_the_box_that_records_what_happened(page, base_url):
         expect(current).to_be_focused()
         box = current
     else:
-        note = page.locator("#lisa-marge")
-        assert note.evaluate("node => node.open") is False
+        assert not add_panel_is_open(page, "lisa-marge")
         page.keyboard.press("l")
-        assert note.evaluate("node => node.open") is True
+        assert add_panel_is_open(page, "lisa-marge")
         box = page.locator("#lisa-marge textarea.composer__body")
         expect(box).to_be_focused()
 

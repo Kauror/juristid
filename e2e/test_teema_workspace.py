@@ -17,6 +17,7 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     MARTIN,
+    add_panel_is_open,
     create_matter,
     finish_current_action,
     open_add_panel,
@@ -82,7 +83,7 @@ def test_the_current_action_loop_from_task_to_result_to_the_next_one(page, base_
     # `+ Järgmine tegevus` is now available, and nothing opened it for anybody.
     launcher = page.locator("#lisa-jargmine")
     expect(launcher).to_have_count(1)
-    assert launcher.evaluate("node => node.open") is False
+    assert not add_panel_is_open(page, "lisa-jargmine")
 
     set_step(page, "Saata arvamus ministeeriumile", 10)
 
@@ -131,9 +132,9 @@ def test_opening_one_panel_closes_whichever_was_open(page, base_url):
     previous = ""
     for panel_id in PANELS:
         open_add_panel(page, panel_id)
-        assert page.locator(f"#{panel_id}").evaluate("node => node.open") is True, panel_id
+        assert add_panel_is_open(page, panel_id), panel_id
         if previous:
-            assert page.locator(f"#{previous}").evaluate("node => node.open") is False, previous
+            assert not add_panel_is_open(page, previous), previous
         previous = panel_id
 
 
@@ -216,7 +217,7 @@ def test_a_refused_panel_reopens_itself_and_no_other(page, base_url):
     expect(page.locator("#lisa-toovoit")).to_be_visible()
     expect(page.locator("#lisa-toovoit")).to_contain_text("Kirjuta, mis muutus")
     for other in ("lisa-marge", "lisa-kaasamine", "lisa-tahtaeg", "lisa-lopeta"):
-        assert page.locator(f"#{other}").evaluate("node => node.open") is False, other
+        assert not add_panel_is_open(page, other), other
 
 
 def test_a_blank_result_is_refused_beside_the_field_it_belongs_to(page, base_url):

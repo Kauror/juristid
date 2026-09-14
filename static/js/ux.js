@@ -49,7 +49,11 @@
     if (!composer) {
       return;
     }
-    composer.open = true;
+    /* `revealDisclosure` rather than `.open = true`: `+ Märge` stopped being a
+       `<details>` on 2026-09-14, and setting `open` on a plain element assigns a
+       property nothing reads — the `L` shortcut then focused a box that was
+       still hidden. Hoisted from below, where the arrival handler declares it. */
+    revealDisclosure(composer);
     var box = composer.querySelector("textarea");
     if (box) {
       box.focus();

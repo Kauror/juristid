@@ -33,7 +33,14 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, create_matter, open_add_panel, open_matter, sign_in
+from e2e.conftest import (
+    MARTIN,
+    add_panel_is_open,
+    create_matter,
+    open_add_panel,
+    open_matter,
+    sign_in,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -215,7 +222,7 @@ def close_the_matter(page, label: str = "Menetlus lõppes") -> None:
     """Close the open Matter through the panel a person uses."""
     open_add_panel(page, "lisa-lopeta")
     panel = page.locator("#lisa-lopeta")
-    expect(panel).to_have_attribute("open", "")
+    assert add_panel_is_open(page, "lisa-lopeta")
     panel.locator(".uxchip", has_text=label).click()
     with page.expect_response(
         lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
