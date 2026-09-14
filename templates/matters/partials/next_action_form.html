@@ -36,7 +36,7 @@ October*, which until now had to be filed as the 1st.
     <p class="field__error" id="{{ action_form.text.auto_id }}_error">{{ action_form.text.errors|first }}</p>
   {% endif %}
 
-  {% include "matters/partials/period_composer.html" with chips=action_form.precision_chips date_field=action_form.target_date quick_dates=quick_dates month_field=action_form.next_month quarter_field=action_form.next_quarter year_field=action_form.next_year %}
+  {% include "matters/partials/period_composer.html" with chips=action_form.precision_chips date_field=action_form.target_date quick_dates=quick_dates month_field=action_form.next_month quarter_field=action_form.next_quarter year_field=action_form.next_year only %}
 
   <div class="addform__actions">
     <button class="button button--primary" type="submit">Salvesta</button>

@@ -276,14 +276,25 @@ def test_the_precision_control_fits_a_phone(page, base_url):
 def test_a_precision_can_be_stated_with_scripting_off(browser, base_url, javascript):
     """§35 H, and the reason the control was rebuilt rather than extended.
 
-    The chips this replaces were `<button type=button>` writing into a hidden
-    input. With scripting off they did nothing, so the hidden field kept
-    `EXACT` and a reader without JavaScript could record only an exact day —
-    the precision was not merely inconvenient to state, it was unstateable.
+    The chips this replaces were `<button type="button">` writing into a hidden
+    input. With scripting off they did nothing, so the hidden field kept `EXACT`
+    and a reader without JavaScript could record only an exact day — the
+    precision was not merely inconvenient to state, it was **unstateable**.
 
-    A radio group posts on its own. The groups are all visible without
-    `:has()`-driven CSS or without CSS at all, which is verbose and correct:
-    the server reads only the fields the chosen precision needs.
+    What this asserts is that the control itself is now the browser's own: the
+    chips check a real radio, the checked radio carries the chosen value, the
+    right group of inputs is revealed — `:has()` is CSS — and the field is
+    inside the form that would carry it.
+
+    **What it deliberately does not assert is the save.** Every `LISA TEEMALE`
+    form posts through `hx-post` and carries no `action`, so submitting the
+    workspace without scripting has not worked since docs/adr/0075 §2 and does
+    not work now. That is the zone's contract, not this control's, and making
+    it true is a change to seven panels and to what their views return — a
+    separate round, and one that should be taken deliberately rather than
+    ridden in on a date control. The server half *is* proved, without a
+    browser: `tests/test_date_precision_composer.py` posts these exact field
+    names to these exact endpoints.
     """
     context = browser.new_context(java_script_enabled=javascript)
     page = context.new_page()
@@ -293,14 +304,25 @@ def test_a_precision_can_be_stated_with_scripting_off(browser, base_url, javascr
 
         page.locator('label[for="lisa-tahtaeg-valik"]').click()
         page.locator("#lisa-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
-        page.locator("#lisa-tahtaeg label.precision__chip", has_text="Aasta").first.click()
-        # A past year, for the reason the year test above gives: the chronology
-        # carries what has happened, and this needs a surface to read back from.
-        page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
-        page.locator("#lisa-tahtaeg button[type=submit]").first.click()
-        page.wait_for_load_state("load")
 
-        expect(page.locator("body")).to_contain_text("Ülevõtmise tähtaeg")
-        expect(page.locator("body")).to_contain_text("2024")
+        year_group = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="year"]')
+        expect(year_group).to_be_hidden()
+
+        page.locator("#lisa-tahtaeg label.precision__chip", has_text="Aasta").first.click()
+
+        checked = page.locator('#lisa-tahtaeg input[name="deadline_precision"]:checked')
+        expect(checked).to_have_value("YEAR")
+        expect(year_group).to_be_visible()
+        expect(
+            page.locator('#lisa-tahtaeg .precision__group[data-precision-for="day"]')
+        ).to_be_hidden()
+
+        page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
+
+        # The radio and the year are both inside the form that would carry them,
+        # and neither needed a line of script to get its value.
+        form = page.locator("#lisa-tahtaeg form")
+        expect(form.locator('input[name="deadline_precision"]:checked')).to_have_count(1)
+        expect(form.locator('[name="deadline_year"]')).to_have_value("2024")
     finally:
         context.close()

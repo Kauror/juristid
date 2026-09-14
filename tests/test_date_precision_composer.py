@@ -792,3 +792,24 @@ def test_uus_teema_keeps_the_narrower_contract_it_had(signed_in):
 
     assert crafted.is_valid() is False
     assert "target_date" in crafted.errors
+
+
+def test_the_quick_spans_belong_to_the_next_step_and_to_nothing_else(signed_in, normal_matter):
+    """`Täna` / `Homme` / `+1 nädal` are a *next step*'s shortcuts.
+
+    A Django `{% include %}` adds to the parent context rather than replacing
+    it, so `quick_dates` — put there for `Järgmine tegevus` — reached the other
+    three panels through the shared partial and wired four day-shortcut buttons
+    to write into each of *their* date boxes. A milestone somebody else
+    announced is not «homme», and a commencement certainly is not.
+
+    The fix is `only` on every include; this is the assertion that keeps it,
+    because the defect is invisible in the markup that causes it.
+    """
+    body = _detail(signed_in, normal_matter)
+
+    for panel in ("lisa-tahtaeg", "lisa-joustumine", "lisa-toovoit"):
+        section = _panel(body, panel)
+        assert "data-quickdate" not in section, f"{panel} offers day shortcuts"
+        for label in ("Homme", "+1 nädal", "+2 nädalat"):
+            assert label not in section, f"{panel} offers «{label}»"

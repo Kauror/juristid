@@ -259,7 +259,7 @@ row of controls that refuse (brief §30, §31).
           {% if important_date_form.deadline_title.errors %}
             <p class="field__error">{{ important_date_form.deadline_title.errors|first }}</p>
           {% endif %}
-          {% include "matters/partials/period_composer.html" with chips=important_date_form.precision_chips date_field=important_date_form.deadline_date month_field=important_date_form.deadline_month quarter_field=important_date_form.deadline_quarter year_field=important_date_form.deadline_year %}
+          {% include "matters/partials/period_composer.html" with chips=important_date_form.precision_chips date_field=important_date_form.deadline_date month_field=important_date_form.deadline_month quarter_field=important_date_form.deadline_quarter year_field=important_date_form.deadline_year only %}
           {% include "matters/partials/add_files.html" with field=important_date_form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
@@ -289,7 +289,7 @@ row of controls that refuse (brief §30, §31).
           {% if effective_date_form.effective_title.errors %}
             <p class="field__error">{{ effective_date_form.effective_title.errors|first }}</p>
           {% endif %}
-          {% include "matters/partials/period_composer.html" with chips=effective_date_form.precision_chips date_field=effective_date_form.effective_on month_field=effective_date_form.effective_month quarter_field=effective_date_form.effective_quarter year_field=effective_date_form.effective_year %}
+          {% include "matters/partials/period_composer.html" with chips=effective_date_form.precision_chips date_field=effective_date_form.effective_on month_field=effective_date_form.effective_month quarter_field=effective_date_form.effective_quarter year_field=effective_date_form.effective_year only %}
           {% include "matters/partials/add_files.html" with field=effective_date_form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
@@ -324,7 +324,7 @@ row of controls that refuse (brief §30, §31).
           {% if work_victory_form.victory_change.errors %}
             <p class="field__error">{{ work_victory_form.victory_change.errors|first }}</p>
           {% endif %}
-          {% include "matters/partials/period_composer.html" with chips=work_victory_form.precision_chips date_field=work_victory_form.victory_date month_field=work_victory_form.victory_month quarter_field=work_victory_form.victory_quarter year_field=work_victory_form.victory_year %}
+          {% include "matters/partials/period_composer.html" with chips=work_victory_form.precision_chips date_field=work_victory_form.victory_date month_field=work_victory_form.victory_month quarter_field=work_victory_form.victory_quarter year_field=work_victory_form.victory_year only %}
           {% include "matters/partials/add_files.html" with field=work_victory_form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>

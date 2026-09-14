@@ -9,9 +9,13 @@ entering it in two panels must be entering the same fact (docs/adr/0079 §1).
 
     {% include "matters/partials/period_composer.html" with chips=form.precision_chips date_field=form.deadline_date month_field=form.deadline_month quarter_field=form.deadline_quarter year_field=form.deadline_year %}
 
-`date_field` is optional and may be omitted where the panel renders the date box
-itself — `Järgmine tegevus` does, because its four quick spans (`Täna`, `Homme`,
-`+1 nädal`, `+2 nädalat`) sit on the same row as the box they write into.
+**`only` on every include, and it is load-bearing.** A Django `{% include %}`
+adds to the parent context rather than replacing it, so `quick_dates` — which
+the Teema page puts there for `Järgmine tegevus` — reached `+ Oluline tähtaeg`,
+`+ Jõustumine` and `+ Töövõit` as well. That put `Täna` / `Homme` / `+1 nädal`
+on three panels that never asked for them, wired to write a day into *their*
+date box: a milestone somebody else announced is not «homme». Caught by
+inspecting the visual candidate, which is what that step is for.
 
 **Native radios, and the whole control works with scripting off.**
 

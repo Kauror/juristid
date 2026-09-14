@@ -202,7 +202,7 @@ field with no visible focus at all (static/css/app.css).
             derivation necessary, and both are gone together
             (docs/adr/0079 §1, superseding docs/adr/0074 §11).
           {% endcomment %}
-          {% include "matters/partials/period_composer.html" with chips=composer_form.precision_chips date_field=composer_form.deadline_date month_field=composer_form.deadline_month quarter_field=composer_form.deadline_quarter year_field=composer_form.deadline_year %}
+          {% include "matters/partials/period_composer.html" with chips=composer_form.precision_chips date_field=composer_form.deadline_date month_field=composer_form.deadline_month quarter_field=composer_form.deadline_quarter year_field=composer_form.deadline_year only %}
         </div>
       </details>
 
@@ -240,7 +240,7 @@ field with no visible focus at all (static/css/app.css).
           {% if composer_form.victory_change.errors %}
             <p class="field__error">{{ composer_form.victory_change.errors|first }}</p>
           {% endif %}
-          {% include "matters/partials/period_composer.html" with chips=composer_form.victory_precision_chips date_field=composer_form.victory_date month_field=composer_form.victory_month quarter_field=composer_form.victory_quarter year_field=composer_form.victory_year %}
+          {% include "matters/partials/period_composer.html" with chips=composer_form.victory_precision_chips date_field=composer_form.victory_date month_field=composer_form.victory_month quarter_field=composer_form.victory_quarter year_field=composer_form.victory_year only %}
         </div>
       </details>
 
