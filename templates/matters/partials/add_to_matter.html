@@ -20,9 +20,31 @@ current, changing it is `Muuda` in `PRAEGUNE TEGEVUS`; once it is finished, the
 chip appears here. Two controls both offering to set "the next action" is how a
 lawyer ends up believing they have two (brief §15).
 
-**Only one panel open at a time**, enforced in `ux.js` over `[data-addpanel]`.
-With scripting off every disclosure still opens, closes, submits and validates
-— less elegant, fully operable (brief §11, §33).
+**The launcher is a stable choice bar, and picking a choice does not move it.**
+Each operation is a radio, its visible chip, and its form — in that order,
+seven times. The chips are ordinary flex items in the canonical order and never
+change size, line or position; the one chosen form is the single item with
+`order: 1` and a full-width basis, so it lands on its own line *under* the whole
+row rather than pushing its neighbours sideways.
+
+The panels were `<details>` until 2026-09-14, and an open one took
+`flex: 1 1 100%; order: 1` — which moved the chip somebody had just clicked to
+the start of the next line, under their cursor. Every other chip shifted with
+it. Splitting the control from the form is what makes that structurally
+impossible rather than tuned away: the thing that moves is no longer the thing
+you click (design feedback 2026-09-14).
+
+**Only one panel open at a time, and the browser enforces it** — one radio
+`name`, so choosing a second operation unchecks the first with no script
+involved. `ux.js` adds exactly one thing: clicking the chip that is already
+chosen puts the bar back to nothing chosen. With scripting off the bar still
+opens every form, switches between them and keeps the one a refusal came back
+in; what is lost is the click-to-close, not the capability (brief §11, §33).
+
+The radio itself is `position: absolute` and clipped, not `display: none`: it
+stays focusable, it keeps the group's arrow-key navigation, and `:checked` is
+what both the blue chip and the visible form hang off — so the active state is
+announced natively instead of being painted on with a class.
 
 The whole section renders only for a writer on an open Matter; `overview.html`
 decides that, so a reader and a closed file get no launcher at all rather than a
@@ -31,6 +53,11 @@ row of controls that refuse (brief §30, §31).
 <section class="addzone" id="lisa-teemale" aria-labelledby="lisa-pealkiri">
   <h2 class="rowlabel" id="lisa-pealkiri">Lisa teemale</h2>
 
+  {% comment %}
+    One flex container for the whole zone, because the chip and the form it
+    opens have to be siblings for `:checked` to reach across them. The chips are
+    its wrapping first line; the chosen form is its second.
+  {% endcomment %}
   <div class="cx-panels">
     {% comment %}
       `+ Märge`. Something happened and it is *not* the current task finishing:
@@ -38,9 +65,11 @@ row of controls that refuse (brief §30, §31).
       step that is open stays open. It writes an Entry and its files and touches
       `Järgmiseks` in no way at all (brief §13).
     {% endcomment %}
-    <details class="cx-panel" id="lisa-marge" data-addpanel
-             {% if open_panel == "lisa-marge" %}open{% endif %}>
-      <summary class="disclosure-chip">+ Märge</summary>
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-marge-valik"
+           data-addpick aria-controls="lisa-marge"
+           {% if open_panel == "lisa-marge" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-marge-valik">+ Märge</label>
+    <div class="cx-panel" id="lisa-marge" data-addpanel>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-marge" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -63,19 +92,21 @@ row of controls that refuse (brief §30, §31).
           </div>
         </form>
       </div>
-    </details>
+    </div>
 
     {% if not current_action %}
-      <details class="cx-panel" id="lisa-jargmine" data-addpanel
-               {% if open_panel == "lisa-jargmine" %}open{% endif %}>
-        <summary class="disclosure-chip">+ Järgmine tegevus</summary>
+      <input class="addpick" type="radio" name="lisa-valik" id="lisa-jargmine-valik"
+             data-addpick aria-controls="lisa-jargmine"
+             {% if open_panel == "lisa-jargmine" %}checked{% endif %}>
+      <label class="disclosure-chip" for="lisa-jargmine-valik">+ Järgmine tegevus</label>
+      <div class="cx-panel" id="lisa-jargmine" data-addpanel>
         <div class="cx-panel__body">
           {% if open_panel == "lisa-jargmine" and workspace_error %}
             <p class="formerror" role="alert">{{ workspace_error }}</p>
           {% endif %}
           {% include "matters/partials/next_action_form.html" %}
         </div>
-      </details>
+      </div>
     {% endif %}
 
     {% comment %}
@@ -85,9 +116,11 @@ row of controls that refuse (brief §30, §31).
       «Alustasin arvamuste küsimist» / «Arvamused saabusid» redesign is a
       separate product round (brief §16).
     {% endcomment %}
-    <details class="cx-panel" id="lisa-kaasamine" data-addpanel
-             {% if open_panel == "lisa-kaasamine" %}open{% endif %}>
-      <summary class="disclosure-chip">+ Kaasamine</summary>
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-kaasamine-valik"
+           data-addpick aria-controls="lisa-kaasamine"
+           {% if open_panel == "lisa-kaasamine" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-kaasamine-valik">+ Kaasamine</label>
+    <div class="cx-panel" id="lisa-kaasamine" data-addpanel>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-kaasamine" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -113,6 +146,36 @@ row of controls that refuse (brief §30, §31).
             <label class="cx-f cx-f--num">
               <span class="cx-f__lab">Vastuseid</span>
               {{ add_engagement_form.response_count }}
+            </label>
+          </div>
+          {% comment %}
+            The two dates, and the difference between them is the whole point.
+
+            `Kaasamise kuupäev` is when the round happened. It used to be
+            invisible: the panel never asked, and the view stamped today on
+            every row it wrote — so a consultation from March, typed up in
+            September, was filed as a September consultation and there was no
+            box on the screen saying so. The box shows today because today is
+            the usual answer, and it can be changed or emptied; an empty one is
+            stored as «kuupäev teadmata», which is what the model has always
+            meant by a blank date.
+
+            `Tagasisidet ootame kuni` is what was asked of the people who were
+            contacted — «ootan vastuseid kuni 22.09». Optional, blank by
+            default, and deliberately *not* work: it makes no next action, no
+            deadline row, no badge and no count. Labelled `valikuline` because a
+            second date box beside a pre-filled one otherwise reads as required
+            (docs/adr/0027; design feedback 2026-09-14).
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Kaasamise kuupäev</span>
+              {{ add_engagement_form.occurred_on }}
+            </label>
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Tagasisidet ootame kuni
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ add_engagement_form.feedback_deadline }}
             </label>
           </div>
           {% comment %}
@@ -152,13 +215,21 @@ row of controls that refuse (brief §30, §31).
             <p class="field__error" id="{{ add_engagement_form.alchemer_url.auto_id }}_error">
               {{ add_engagement_form.alchemer_url.errors|first }}</p>
           {% endif %}
+          {% if add_engagement_form.occurred_on.errors %}
+            <p class="field__error" id="{{ add_engagement_form.occurred_on.auto_id }}_error">
+              {{ add_engagement_form.occurred_on.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.feedback_deadline.errors %}
+            <p class="field__error" id="{{ add_engagement_form.feedback_deadline.auto_id }}_error">
+              {{ add_engagement_form.feedback_deadline.errors|first }}</p>
+          {% endif %}
           {% include "matters/partials/add_files.html" with field=add_engagement_form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
           </div>
         </form>
       </div>
-    </details>
+    </div>
 
     {% comment %}
       `+ Oluline tähtaeg`. One date box over three precision chips: a milestone
@@ -167,9 +238,11 @@ row of controls that refuse (brief §30, §31).
       was picked. It creates no `NextAction` — a date the file has to live with
       is not an instruction to a person (brief §17).
     {% endcomment %}
-    <details class="cx-panel" id="lisa-tahtaeg" data-addpanel
-             {% if open_panel == "lisa-tahtaeg" %}open{% endif %}>
-      <summary class="disclosure-chip">+ Oluline tähtaeg</summary>
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-tahtaeg-valik"
+           data-addpick aria-controls="lisa-tahtaeg"
+           {% if open_panel == "lisa-tahtaeg" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-tahtaeg-valik">+ Oluline tähtaeg</label>
+    <div class="cx-panel" id="lisa-tahtaeg" data-addpanel>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-tahtaeg" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -210,11 +283,13 @@ row of controls that refuse (brief §30, §31).
           </div>
         </form>
       </div>
-    </details>
+    </div>
 
-    <details class="cx-panel" id="lisa-joustumine" data-addpanel
-             {% if open_panel == "lisa-joustumine" %}open{% endif %}>
-      <summary class="disclosure-chip">+ Jõustumine</summary>
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-joustumine-valik"
+           data-addpick aria-controls="lisa-joustumine"
+           {% if open_panel == "lisa-joustumine" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-joustumine-valik">+ Jõustumine</label>
+    <div class="cx-panel" id="lisa-joustumine" data-addpanel>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-joustumine" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -246,16 +321,18 @@ row of controls that refuse (brief §30, §31).
           </div>
         </form>
       </div>
-    </details>
+    </div>
 
     {% comment %}
       `+ Töövõit`. A win is recorded when it happens, not when the file closes,
       and it neither closes the Matter nor completes the current step
       (brief §19).
     {% endcomment %}
-    <details class="cx-panel" id="lisa-toovoit" data-addpanel
-             {% if open_panel == "lisa-toovoit" %}open{% endif %}>
-      <summary class="disclosure-chip">+ Töövõit</summary>
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-toovoit-valik"
+           data-addpick aria-controls="lisa-toovoit"
+           {% if open_panel == "lisa-toovoit" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-toovoit-valik">+ Töövõit</label>
+    <div class="cx-panel" id="lisa-toovoit" data-addpanel>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-toovoit" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -278,7 +355,7 @@ row of controls that refuse (brief §30, §31).
           </div>
         </form>
       </div>
-    </details>
+    </div>
 
     {% comment %}
       `+ Lõpeta teema` — last, because finishing a file is not a routine
@@ -291,9 +368,11 @@ row of controls that refuse (brief §30, §31).
       and giving it one would quietly restore the final-evidence precondition
       the previous round removed.
     {% endcomment %}
-    <details class="cx-panel cx-panel--last" id="lisa-lopeta" data-addpanel
-             {% if open_panel == "lisa-lopeta" %}open{% endif %}>
-      <summary class="disclosure-chip disclosure-chip--last">+ Lõpeta teema</summary>
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-lopeta-valik"
+           data-addpick aria-controls="lisa-lopeta"
+           {% if open_panel == "lisa-lopeta" %}checked{% endif %}>
+    <label class="disclosure-chip disclosure-chip--last" for="lisa-lopeta-valik">+ Lõpeta teema</label>
+    <div class="cx-panel" id="lisa-lopeta" data-addpanel>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-lopeta" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -323,6 +402,6 @@ row of controls that refuse (brief §30, §31).
           </div>
         </form>
       </div>
-    </details>
+    </div>
   </div>
 </section>

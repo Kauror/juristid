@@ -858,6 +858,30 @@ class MatterEngagement(VisibilityInheritingModel):
     #: engagement is about", and it is optional because somebody recording an
     #: old consultation may genuinely not know it (brief 8).
     occurred_on = models.DateField(null=True, blank=True, db_index=True, verbose_name="kuupäev")
+    #: `Tagasisidet ootame kuni` — the day the lawyer asked people to answer by.
+    #:
+    #: A consultation that starts today almost always names a reply-by date in
+    #: the same breath — «ootan vastuseid kuni 22.09» — and until now there was
+    #: nowhere on the file to put it, so it lived in the mailing and in
+    #: somebody's memory.
+    #:
+    #: **A recorded fact, not an instruction.** It creates no `NextAction`, it
+    #: is not `Matter.response_deadline`, it is not a `MatterImportantDate`, and
+    #: nothing counts, filters, sorts or badges it. A column that generated a
+    #: task would make every historical consultation somebody types in overdue
+    #: on the day it is entered: what was *asked of others* is a different claim
+    #: from what is *owed by us*, and only the second is work.
+    #:
+    #: Null for every row that predates the question and for every row somebody
+    #: leaves blank. Nothing is inferred from `occurred_on`, `created_at`, the
+    #: note or the provider links — a date guessed from a neighbouring column is
+    #: a date nobody chose.
+    #:
+    #: Not indexed, because nothing reads it that way yet. An index built for a
+    #: query that does not exist is a write cost with no reader.
+    feedback_deadline = models.DateField(
+        null=True, blank=True, verbose_name="tagasisidet ootame kuni"
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

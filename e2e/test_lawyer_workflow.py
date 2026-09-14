@@ -204,7 +204,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
         "#lisa-toovoit",
         "#lisa-lopeta",
     ):
-        expect(page.locator(panel)).not_to_have_attribute("open", "")
+        expect(page.locator(panel)).not_to_be_visible()
     # `+ Kaasamine` **is** among them. It was kept out while the standalone
     # Kaasamine section existed, because two entry points for one act is how the
     # same consultation gets recorded twice; that section is gone, so this is
@@ -221,10 +221,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     open_composer(page)
     page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
     # Opening one panel closes whichever was open (docs/adr/0075 §2).
-    page.locator("#lisa-tahtaeg > summary").click()
-    expect(page.locator("#lisa-tahtaeg")).to_have_attribute("open", "")
-    expect(page.locator("#lisa-marge")).not_to_have_attribute("open", "")
-    expect(page.locator("#lisa-lopeta")).not_to_have_attribute("open", "")
+    page.locator('label[for="lisa-tahtaeg-valik"]').click()
+    expect(page.locator("#lisa-tahtaeg")).to_be_visible()
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
+    expect(page.locator("#lisa-lopeta")).not_to_be_visible()
     open_composer(page)
     page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
     screenshots(page, "04-marge")
@@ -505,7 +505,7 @@ def test_a_next_step_without_a_date_is_refused_without_losing_what_was_typed(pag
 
     expect(page.get_by_text("Vali järgmise tegevuse kuupäev.")).to_be_visible()
     # Nothing was applied, and the sentence came back in its own open panel.
-    expect(page.locator("#lisa-jargmine")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-jargmine")).to_be_visible()
     expect(page.locator("#lisa-jargmine [name='text']")).to_have_value(
         "Küsida ministeeriumilt selgitust"
     )

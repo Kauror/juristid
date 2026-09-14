@@ -814,11 +814,19 @@
   });
 
   /* ---- Inline editors: Ctrl/Cmd+Enter saves, Esc cancels -----------------
-   * Every edit in the Matter workflow happens where the value is shown, inside
-   * a <details> that opened in place. The two keys behave the same in all of
-   * them — the summary, the position, an engagement — because a shortcut that
-   * works in one box and not the next is a shortcut nobody trusts. Both have a
-   * visible click equivalent beside them (master specification 22.3).
+   * Every edit in the Matter workflow happens where the value is shown, in a
+   * disclosure that opened in place. The two keys behave the same in all of
+   * them — the summary, the position, an engagement, a `LISA TEEMALE`
+   * operation — because a shortcut that works in one box and not the next is a
+   * shortcut nobody trusts. Both have a visible click equivalent beside them
+   * (master specification 22.3).
+   *
+   * **`form[data-addform]` is named beside `details form`, not instead of it.**
+   * The `LISA TEEMALE` panels were `<details>` until 2026-09-14 and were reached
+   * through the first selector alone; splitting the chip from the form took them
+   * out of it, and `Ctrl+Enter` in `+ Märge` silently stopped saving — a
+   * keystroke that does nothing looks exactly like a page that is still
+   * thinking. Every other editor here is still a `<details>`.
    *
    * Delegated, so it costs nothing per editor and survives every HTMX swap.
    */
@@ -826,7 +834,7 @@
     if (!event.target.closest) {
       return;
     }
-    var form = event.target.closest("details form");
+    var form = event.target.closest("details form, form[data-addform]");
     if (!form || event.target.closest("form[data-composer]")) {
       return;
     }
@@ -835,16 +843,29 @@
       form.requestSubmit();
       return;
     }
-    if (event.key === "Escape") {
-      var holder = form.closest("details");
-      if (holder && holder.open) {
-        event.preventDefault();
-        holder.open = false;
-        var trigger = holder.querySelector("summary");
-        if (trigger) {
-          trigger.focus();
-        }
+    if (event.key !== "Escape") {
+      return;
+    }
+    var holder = form.closest("details");
+    if (holder && holder.open) {
+      event.preventDefault();
+      holder.open = false;
+      var trigger = holder.querySelector("summary");
+      if (trigger) {
+        trigger.focus();
       }
+      return;
+    }
+    /* A `LISA TEEMALE` panel closes by un-choosing it, and focus goes back to
+       the radio rather than to its label: the label is what is painted, the
+       radio is what is focusable, and the ring is drawn on the first from the
+       second. */
+    var panel = form.closest("[data-addpanel]");
+    var pick = panel && panel.id ? document.getElementById(panel.id + "-valik") : null;
+    if (pick && pick.checked) {
+      event.preventDefault();
+      pick.checked = false;
+      pick.focus();
     }
   });
 

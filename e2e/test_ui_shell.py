@@ -856,7 +856,7 @@ def test_the_composer_starts_as_one_row(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_first_matter(page, base_url)
 
-    closed = page.locator("#lisa-marge > summary")
+    closed = page.locator('label[for="lisa-marge-valik"]')
     expect(closed).to_be_visible()
     resting = closed.bounding_box()["height"]
     # One chip. The number is the difference between "note this down" and

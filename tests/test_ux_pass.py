@@ -629,9 +629,15 @@ def _workspace_markup(body: str) -> str:
 
 
 def _panel_is_open(body: str, panel_id: str) -> bool:
-    """Whether one `<details>` carries `open`, read off its own tag only."""
-    tag = body.split(f'id="{panel_id}"')[1].split(">")[0]
-    return "open" in tag
+    """Whether one LISA TEEMALE panel renders chosen, read off its own tag only.
+
+    The state moved from the panel to the radio that names it when the panels
+    stopped being `<details>` on 2026-09-14 — a chip that grows when you click
+    it is a chip that moves, so the control and the form are two elements now
+    (templates/matters/partials/add_to_matter.html).
+    """
+    tag = body.split(f'id="{panel_id}-valik"')[1].split(">")[0]
+    return "checked" in tag
 
 
 @pytest.mark.django_db

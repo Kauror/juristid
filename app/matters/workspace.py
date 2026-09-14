@@ -217,6 +217,7 @@ def add_matter_engagement(
     smaily_url: str = "",
     alchemer_url: str = "",
     occurred_on: Any = None,
+    feedback_deadline: Any = None,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
@@ -231,6 +232,15 @@ def add_matter_engagement(
     later. They do not weaken what makes an engagement an engagement: `audience`
     is still required, and a panel holding two links and no audience is a
     refusal, not a row (docs/adr/0027, amended 2026-09-12).
+
+    **Both dates come from the panel and neither is invented here.**
+    ``occurred_on`` used to be stamped with today inside the view, which turned
+    a consultation from March into one that happened this afternoon the moment
+    somebody wrote it down. The panel now asks `Kaasamise kuupäev`, pre-filled
+    with today because that is the common case, and an answer of *blank* is
+    stored as blank. ``feedback_deadline`` is `Tagasisidet ootame kuni` and is
+    optional, undefaulted and inert — it is a record of what was asked of other
+    people, not a task for this office.
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
@@ -243,6 +253,7 @@ def add_matter_engagement(
             response_count=response_count,
             smaily_url=smaily_url,
             alchemer_url=alchemer_url,
+            feedback_deadline=feedback_deadline,
             actor=author,
         )
         result.documents = capture_supporting_evidence(

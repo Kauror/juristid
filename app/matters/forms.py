@@ -3532,6 +3532,42 @@ class CompactEngagementForm(ChipChoices, forms.Form):
     )
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
+    #: **The date the panel never asked for.** The view used to stamp
+    #: `timezone.localdate()` on every row it wrote, so a consultation from
+    #: March, recorded in September, was filed as having happened in September —
+    #: a false fact, written behind the person's back, with no box on the screen
+    #: to contradict it.
+    #:
+    #: Pre-filled with today because the overwhelming case is recording
+    #: something that just happened, and re-typing today's date every time is
+    #: friction people complain about; the same argument settled `EngagementForm`
+    #: (Agent-F brief 38). What is different is that the default is now
+    #: *visible*: it can be read, changed, and emptied. A cleared box stores
+    #: `NULL` — «kuupäev teadmata» is a fact `MatterEngagement` has always been
+    #: able to hold, and nothing downstream puts today back.
+    occurred_on = EstonianDateField(
+        label="Kaasamise kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+        initial=timezone.localdate,
+    )
+    #: `Tagasisidet ootame kuni` — «ootan vastuseid kuni 22.09», which a lawyer
+    #: says in the same breath as starting the round and has had nowhere to put.
+    #:
+    #: **No initial.** Today is a plausible engagement date and never a
+    #: plausible reply-by date, and a pre-filled one would be answered by
+    #: pressing `Salvesta`. Blank is the truthful default and stays `NULL`.
+    #:
+    #: A past date is accepted: a consultation recorded months later had a
+    #: deadline months ago, and refusing it would make the historical record
+    #: unwritable to protect a rule nothing enforces. The only refusal is a
+    #: deadline before the engagement it belongs to, which is not a late round
+    #: but a typo.
+    feedback_deadline = EstonianDateField(
+        label="Tagasisidet ootame kuni",
+        required=False,
+        widget=EstonianDateInput(),
+    )
     attachments = workspace_attachments("id_kaasamine_failid")
 
     @property
@@ -3552,6 +3588,30 @@ class CompactEngagementForm(ChipChoices, forms.Form):
 
     def clean_kind(self) -> str:
         return self.cleaned_data.get("kind") or COMPOSER_ENGAGEMENT_KINDS[0][0]
+
+    def clean(self) -> dict[str, Any]:
+        """The one relationship between the two dates, and no other rule.
+
+        A reply-by date *before* the day the round started is not a late
+        consultation, it is a slip of the keyboard — nothing was ever asked to
+        be answered before it was asked. Same day is fine («vastake tänaseks»),
+        later is the normal case, and a deadline with no engagement date at all
+        is accepted because a person who does not remember when they wrote may
+        still remember what they asked for.
+
+        Reported on `feedback_deadline`, because that is the box the person
+        would correct: the engagement date is the anchor and the deadline is
+        what is being placed against it.
+        """
+        cleaned = super().clean() or {}
+        occurred_on = cleaned.get("occurred_on")
+        feedback_deadline = cleaned.get("feedback_deadline")
+        if occurred_on and feedback_deadline and feedback_deadline < occurred_on:
+            self.add_error(
+                "feedback_deadline",
+                "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva.",
+            )
+        return cleaned
 
 
 class CompactImportantDateForm(ChipChoices, forms.Form):
