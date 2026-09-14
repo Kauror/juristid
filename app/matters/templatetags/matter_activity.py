@@ -1,4 +1,4 @@
-"""Reading a Matter's two derived dates inside a shared row partial.
+"""Reading a Matter's derived dates inside a shared row partial.
 
 ``matters/partials/matter_table.html`` is rendered by four surfaces, all of
 which come through ``selectors.matter_list_queryset`` and therefore carry the
@@ -23,6 +23,11 @@ from django import template
 from app.matters.activity import MatterActivityFact, activity_of
 from app.matters.register_dates import RegisterDate
 from app.matters.register_dates import register_date as _register_date
+from app.matters.work_items import (
+    DISCHARGED,
+    ResponseObligation,
+    secondary_response_obligation,
+)
 
 register = template.Library()
 
@@ -42,6 +47,41 @@ def register_date(matter: Any) -> RegisterDate | None:
     and calls itself sorted.
     """
     return _register_date(matter)
+
+
+@register.filter(name="secondary_obligation")
+def secondary_obligation(matter: Any, user: Any) -> ResponseObligation | None:
+    """The official `Arvamuse tähtaeg` the Kuupäev cell is not already showing.
+
+    The row's primary date is the *plan* — an open `Järgmiseks` outranks the
+    response deadline, and a file under an instruction is being worked on rather
+    than missed (docs/adr/0050). That reading says nothing about whether Koda has
+    answered, which is a different question about the same date, so an
+    outstanding obligation is stated under the plan rather than in place of it.
+
+    ``primary_date`` comes from ``register_date`` — the same function the cell
+    above renders and the same rule the ORDER BY reads — so when the cell has
+    already fallen back to `Arvamuse tähtaeg` the secondary line is silent
+    rather than printing the same day twice.
+
+    **The annotation is required, not preferred.** ``secondary_response_
+    obligation`` would otherwise answer through a query per row, which on a
+    fifty-row register is fifty ``Exists`` pairs for a fact the page already
+    bought once in ``selectors.matter_list_queryset``. Refusing is the rule
+    ``register_date`` keeps one cell to the left, and for the sharper reason: a
+    missing prefetch there raises, while a missing annotation here would only
+    ever be *slow* — the failure nobody notices until the register is large
+    (Agent-G brief 63, ADR 0026).
+    """
+    if getattr(matter, DISCHARGED, None) is None:
+        raise ValueError(
+            "secondary_obligation needs work_items.annotate_response_obligation on "
+            "the queryset; selectors.matter_list_queryset applies it."
+        )
+    shown = _register_date(matter)
+    return secondary_response_obligation(
+        matter, user, primary_date=shown.value if shown is not None else None
+    )
 
 
 @register.filter

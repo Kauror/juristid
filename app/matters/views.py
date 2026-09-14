@@ -2394,6 +2394,26 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "quick_dates": quick_date_choices(timezone.localdate()),
         "can_defer": current_action is not None and not current_action.is_approximate,
         "today": timezone.localdate(),
+        # The official `Arvamuse tähtaeg`, where `PRAEGUNE TEGEVUS` is showing a
+        # plan instead of it. An open `Järgmiseks` is the current work and stays
+        # primary (docs/adr/0050); what it never said is whether Koda has
+        # answered, and until an opinion goes out or the register records the
+        # opinion work as finished it has not (PR #205).
+        #
+        # The primary date this is measured against is the open step's own, and
+        # the Matter's deadline where there is no step — because then the header
+        # metaline directly above is already stating that date in full, and a
+        # second line would be the same day twice
+        # (`work_items.secondary_response_obligation`).
+        "response_obligation": work_items.secondary_response_obligation(
+            matter,
+            request.user,
+            primary_date=(
+                current_action.target_date
+                if current_action is not None
+                else matter.response_deadline
+            ),
+        ),
     }
 
 

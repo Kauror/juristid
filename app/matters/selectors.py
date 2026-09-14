@@ -265,12 +265,25 @@ def matter_list_queryset(user: Any) -> QuerySet[Matter]:
     the one place every one of those surfaces already comes through is what
     makes forgetting impossible (Agent-G brief 63, ADR 0026).
 
-    Six correlated subqueries, evaluated once for the page, not per row.
+    ``annotate_response_obligation`` is here for exactly the same reason, one
+    round later. The Kuupäev cell states the *plan* — an open ``Järgmiseks``
+    outranks the response deadline — and says nothing about whether the Chamber
+    has actually answered, so the row now also carries the official obligation
+    beside it. Read per row that would be two ``Exists`` per Matter; annotated
+    here it is two for the page, and `secondary_obligation` refuses to render
+    without it rather than quietly paying per row (docs/adr/0050, PR #205).
+
+    Eight correlated subqueries, evaluated once for the page, not per row.
     """
-    return annotate_last_activity(
-        Matter.objects.visible_to(user)
-        .select_related("owner", "stage", "addressee_organisation")
-        .prefetch_related(open_action_prefetch(user), "source_organisations", "policy_areas"),
+    from app.matters.work_items import annotate_response_obligation
+
+    return annotate_response_obligation(
+        annotate_last_activity(
+            Matter.objects.visible_to(user)
+            .select_related("owner", "stage", "addressee_organisation")
+            .prefetch_related(open_action_prefetch(user), "source_organisations", "policy_areas"),
+            user,
+        ),
         user,
     )
 

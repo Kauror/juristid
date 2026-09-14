@@ -369,22 +369,40 @@ def test_the_skip_link_is_the_first_thing_a_keyboard_reaches(page, base_url):
 
 
 def test_the_register_keeps_its_row_rhythm(page, base_url):
-    """32–34px rows, and every row the same height.
+    """32–34px rows, and every row that says one thing the same height.
 
     One wrapped owner name re-rhythms the whole table, and a register that has
-    lost its rhythm has lost the thing it is for.
+    lost its rhythm has lost the thing it is for. That is what this measures,
+    and it is measured over the rows that carry a single line — which, until
+    the response obligation reached the Kuupäev cell, was all of them.
+
+    **A row stating a second fact is taller, and that is the fact costing the
+    height rather than a wrap.** A file whose `Arvamuse tähtaeg` is still
+    officially unanswered says so under the date it plans on, so its Kuupäev
+    cell is two lines (PR #205, `app/matters/work_items.py`). The line is held
+    at chip size and a 1.15 leading to keep that row to ~47px against a 34px
+    base; a wrap anywhere else still fails the first assertion, which is the
+    protection this test was written for.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
     open_register(page, base_url)
 
-    heights = page.eval_on_selector_all(
+    measured = page.eval_on_selector_all(
         ".table--register tbody tr",
-        "rows => rows.map(r => Math.round(r.getBoundingClientRect().height))",
+        "rows => rows.map(r => [Math.round(r.getBoundingClientRect().height),"
+        " r.querySelector('.dateowed') !== null])",
     )
-    assert heights, "the register rendered no rows"
-    assert max(heights) <= 40, f"rows grew past the dense rhythm: {sorted(set(heights))}"
-    assert max(heights) - min(heights) <= 2, f"rows are uneven: {sorted(set(heights))}"
+    assert measured, "the register rendered no rows"
+    plain = [height for height, owed in measured if not owed]
+    owing = [height for height, owed in measured if owed]
+
+    assert plain, "every row states a second fact, which is not a rhythm at all"
+    assert max(plain) <= 40, f"rows grew past the dense rhythm: {sorted(set(plain))}"
+    assert max(plain) - min(plain) <= 2, f"rows are uneven: {sorted(set(plain))}"
+    assert not owing or max(owing) <= 48, (
+        f"the obligation line wrapped or grew past one extra line: {sorted(set(owing))}"
+    )
 
 
 @pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))

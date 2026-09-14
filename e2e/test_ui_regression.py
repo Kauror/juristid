@@ -167,6 +167,14 @@ CLOCK_DEPENDENT = [
     ".curact__date",
     # `Excelist` and the register snapshot label beside an imported instruction.
     ".curact__flag",
+    # The outstanding `Arvamuse tähtaeg` stated under the task — «20.09 · 25 p
+    # üle». Both halves move with the clock: the day is `short_day_month` and
+    # the count is measured from today.
+    #
+    ".curact__oweddate",
+    # The register's rendering of the same fact, in the Kuupäev cell under the
+    # date the row plans on.
+    ".dateowed__value",
     # The `Ajajoon` head's entry count, which every functional test that writes
     # a note increments.
     #

@@ -1134,6 +1134,54 @@ p.formnote {
   margin-right: var(--spacing-1);
 }
 
+/* The register row's second date: the official `Arvamuse tähtaeg` that is still
+ * outstanding, under the plan the cell states above it.
+ *
+ * Its own line, and deliberately subordinate to the one above: the primary date
+ * is what a lawyer does next, and a second date shouting at the same weight
+ * would make the column ask the reader to choose between two instructions. So
+ * it is smaller than `.dateline`, muted, and reads as a note under the cell —
+ * everything except the overdue count, which keeps the danger colour every
+ * other late value in this product uses.
+ *
+ * `display: block` rather than a new table row: the cell is one `<td>` and this
+ * must not be able to fall out of alignment with the date it belongs to. */
+.dateowed {
+  display: block;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.dateowed__label {
+  font-size: var(--typography-size-chip);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: var(--spacing-1);
+}
+
+/* Chip size and a 1.15 line, which is as small as this line gets before it
+ * stops being readable — and the register's row rhythm is why it is pushed
+ * that far. A `<td>` is 34px with a single line in it, so a row that states a
+ * second fact is taller whatever this rule says; what the rule decides is
+ * whether it is 42px or 53px, and the register is a scanning surface where
+ * that difference is the whole of it (`e2e/test_ui_shell.py`).
+ *
+ * Tabular figures, because the line is width-stable by construction:
+ * `short_display` zero-pads to five characters and the day count beside it is
+ * a fact about the record rather than about today. A cell whose width moved
+ * with the calendar would move the two columns after it. */
+.dateowed__value {
+  font-size: var(--typography-size-chip);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.dateowed__value--overdue {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
 /* The register's own instruction, where no structured one exists. Muted and
  * labelled, so a carried-over Excel sentence never reads like a decision made
  * here (ADR 0021).
@@ -10694,6 +10742,37 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .curact__date--overdue {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* The outstanding official `Arvamuse tähtaeg`, under the task rather than in
+ * place of it. Zone A's first line is still what happens next; this is the
+ * second question — whether Koda has answered — and it must read as one.
+ *
+ * Subordinate by size and colour, on its own line, and with no control on it:
+ * there is nothing to do here that the task above does not already offer. */
+.curact__owed {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  margin: var(--spacing-1) 0 0;
+  font-size: var(--typography-size-sm);
+}
+
+.curact__owedlabel {
+  font-size: var(--typography-size-chip);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.curact__oweddate {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.curact__oweddate--overdue {
   color: var(--status-danger);
   font-weight: var(--typography-weight-semibold);
 }
