@@ -23,6 +23,12 @@ The predicate itself is unchanged on purpose. `wi.outstanding_response_deadlines
 knows a stronger rule — a `Järgmiseks` supersedes the register's date
 (docs/adr/0050) — and adopting it here would change what the rail shows. That is
 a product decision, and this round is a cleanup.
+
+That stronger rule answers *what is on a lawyer's desk today*, and only that. It
+is not a statement that Koda has responded — `wi.response_obligations` is the
+function that asks that, and an open `Järgmiseks` does not discharge it. The
+rail reads the operational side, which is the right one for a work surface; the
+distinction is recorded here so the next reader does not take one for the other.
 """
 
 from __future__ import annotations

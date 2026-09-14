@@ -39,6 +39,22 @@ date or none at all — and nothing is written or cleared to express it: the
 column stays exactly where it was, in the Matter header, as the fact it is
 (`outstanding_response_deadlines`, docs/adr/0050).
 
+The plan and the obligation are two questions
+---------------------------------------------
+
+That precedence decides **what a lawyer works on today**, and it is right. What
+it must not decide is whether Koda has actually answered: an instruction is a
+plan, and a ministry waiting for an opinion is not answered by a note somebody
+wrote to themselves. Those two readings were one predicate, so recording a
+`Järgmiseks` quietly reported the obligation as met.
+
+`response_obligations` is the second question, asked on its own. It is
+discharged only by a ``SENT`` Submission the reader may see or by the register
+recording the opinion work as finished, and an open `NextAction` does not
+discharge it. The operational population is the same set *minus* the Matters
+carrying a visible open step, so every work surface keeps exactly the rows it
+had: the separation adds a concept, not a count.
+
 They are unified only in the read layer, and only far enough to be sorted into
 one chronological list. Everything that distinguishes them survives the trip:
 the mode chip, the meaning of the date, and what may be done to it.
@@ -68,7 +84,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import BooleanField, Exists, ExpressionWrapper, OuterRef, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -80,6 +96,7 @@ from app.legacy_import.current_state import CurrentRegisterState, RegisterCurren
 from app.legacy_import.register_semantics import OPINION_WORK_COMPLETE_STATES
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
+from app.matters.register_dates import RESPONSE_DEADLINE_LABEL
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.dates import format_at_precision, period_bounds
@@ -102,6 +119,14 @@ SOURCE_IMPORTANT_DEADLINE = "IMPORTANT_DEADLINE"
 #: deliberately not one: the column is canonical and a second copy of it in a
 #: deadline table is a second thing to keep in step.
 SOURCE_RESPONSE_DEADLINE = "RESPONSE_DEADLINE"
+
+#: The annotation :func:`annotate_response_obligation` writes: whether the
+#: official response obligation on this Matter has been **discharged**.
+#:
+#: Prefixed and spelled out, because it lands on ``Matter`` beside real field
+#: names and a collision would be silent — the precaution
+#: :data:`app.matters.register_dates.DISPLAY_DATE` already takes.
+DISCHARGED = "response_obligation_discharged"
 
 #: What the date on a row means, in the words the department agreed.
 #:
@@ -458,18 +483,63 @@ class WorkBand:
         return len(self.rest)
 
 
+@dataclass(frozen=True)
+class ResponseObligation:
+    """One Matter's ``Arvamuse tähtaeg``, read as the official obligation it is.
+
+    Read-only and derived, like :class:`WorkItem` and
+    :class:`~app.matters.register_dates.RegisterDate`. Nothing here is stored,
+    and ``Matter.response_deadline`` is never written to express any of it.
+
+    **This is not the operational plan.** An open ``Järgmiseks`` decides what a
+    lawyer does next, and it still outranks this date on every work surface
+    (docs/adr/0050). What it does not do is answer the *other* question — has
+    Koda actually responded — and this object answers only that one. The two
+    were one predicate until now, which meant recording an instruction quietly
+    reported the obligation as met.
+    """
+
+    #: The stored ``Arvamuse tähtaeg``, or ``None`` when the Matter carries none.
+    value: date | None
+    #: The date as a reader reads it. Empty when there is no date.
+    display: str
+    #: What the date is called, in the register's own words. Never blank: a bare
+    #: date does not say which obligation it belongs to.
+    label: str
+    #: Whether the obligation is still undischarged — no visible SENT
+    #: ``Submission`` and no ``CURRENT`` register row recording the opinion work
+    #: as finished. An open ``NextAction`` deliberately does **not** enter here.
+    is_outstanding: bool
+    #: Whether the day has gone by. A fact about the calendar only: a discharged
+    #: obligation whose deadline has passed is past and is not late.
+    is_past: bool
+    #: Whether the product may call this late — outstanding *and* past.
+    is_overdue: bool
+    #: Days since the deadline, and ``0`` unless :attr:`is_overdue`. A number
+    #: that counted from a discharged date would be a lateness nobody owes.
+    days_late: int
+
+
 # ---------------------------------------------------------------------------
 # Building items
 # ---------------------------------------------------------------------------
 
 
-def open_matters(user: Any) -> QuerySet[Matter]:
-    """Open FULL Matters the reader may see.
+def full_matters(user: Any) -> QuerySet[Matter]:
+    """FULL Matters the reader may see, open or closed.
 
     ARCHIVE rows never reach a work surface: a decade of imported register rows
-    is historical evidence, not a queue anybody can act on.
+    is historical evidence, not a queue anybody can act on. That exclusion is
+    here rather than in :func:`open_matters` because it holds for every reading
+    of a Matter as a live record, including the ones that describe a closed file
+    honestly rather than queueing it.
     """
-    return Matter.objects.visible_to(user).filter(is_open=True, record_mode=RecordMode.FULL)
+    return Matter.objects.visible_to(user).filter(record_mode=RecordMode.FULL)
+
+
+def open_matters(user: Any) -> QuerySet[Matter]:
+    """Open FULL Matters the reader may see — the base of every work surface."""
+    return full_matters(user).filter(is_open=True)
 
 
 def action_item(action: NextAction, today: date) -> WorkItem:
@@ -640,46 +710,189 @@ def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImpor
     return queryset
 
 
+def _discharge_exists(user: Any) -> Q:
+    """Whether anything has discharged this Matter's official response obligation.
+
+    Exactly two facts do.
+
+    * A ``SENT`` :class:`~app.submissions.models.Submission` — the product's one
+      definition of *Koda's opinion went out*, and the only record allowed to
+      make a claim about what was sent (ADR 0011).
+    * A ``CURRENT``
+      :class:`~app.legacy_import.current_state.CurrentRegisterState` whose
+      ``VÄLJA`` reads either a date or *ei saatnud*
+      (:data:`OPINION_WORK_COMPLETE_STATES`) — the department writing down, in
+      its own register, that the opinion step on the file is over (ADR 0059).
+
+    Everything else leaves the obligation standing, and the list of what does not
+    discharge it is the point of this function:
+
+    * ``RECORDED_OTHER`` — a cell nobody has read is not an approved completion
+      state, and discharging on the strength of prose is the trade ADR 0059 §2
+      refused;
+    * a blank ``VÄLJA`` — the live drafting queue;
+    * a Matter with no register row at all — it has no ``VÄLJA`` to speak for it;
+    * a ``RETIRED`` or ``SUPERSEDED`` row — its ``VÄLJA`` describes a finished
+      file, not this one;
+    * **an open ``NextAction``** — and this is the separation the concept exists
+      for. «JÄLGIN, vaatan uuesti üle 09.10» is a lawyer saying what happens
+      next. It is the current operational plan and it rightly outranks this date
+      on every work surface (docs/adr/0050) — but it is a plan, not a response,
+      and it discharges nothing the Chamber owes anybody outside the building.
+
+    No dates are compared here, or anywhere near here.
+
+    **The Submission side is scoped to the reader and the register side is not**,
+    and the difference is which table can be restricted. ``Submission`` is a
+    :class:`~app.core.models.VisibilityInheritingModel`, so a colleague's
+    restricted opinion could otherwise decide what a NORMAL Matter looks like to
+    a reader who may not see it — removing a row is observable, which is the
+    inference ``visible_to`` exists to prevent (AUTH-003, docs/adr/0038).
+    ``CurrentRegisterState`` has no visibility override of its own: it is the
+    derived one-row-per-Matter reading of the register, so scoping it would add
+    a join and change no answer.
+    """
+    sent = Submission.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), status=SubmissionStatus.SENT
+    )
+    completed = CurrentRegisterState.objects.filter(
+        matter=OuterRef("pk"),
+        currency=RegisterCurrency.CURRENT,
+        opinion_sent_state__in=OPINION_WORK_COMPLETE_STATES,
+    )
+    return Q(Exists(sent)) | Q(Exists(completed))
+
+
+def annotate_response_obligation(queryset: QuerySet[Matter], user: Any) -> QuerySet[Matter]:
+    """Attach :data:`DISCHARGED` to each row, as one correlated pair of ``Exists``.
+
+    The database's reading of the rule :func:`response_obligation_of` reads in
+    Python — the shape :mod:`app.matters.register_dates` and
+    :mod:`app.matters.activity` already use, and for the same reason: two
+    readings of one rule written in two places is how a count and the list
+    behind it start disagreeing.
+
+    Both subqueries are correlated ``Exists``, so a page pays for one query
+    however many Matters it annotates, and never one Submission lookup per row.
+    """
+    return queryset.annotate(
+        **{DISCHARGED: ExpressionWrapper(_discharge_exists(user), output_field=BooleanField())}
+    )
+
+
+def response_obligations(
+    user: Any, *, owner: Any = None, open_only: bool = True
+) -> QuerySet[Matter]:
+    """Matters whose ``Arvamuse tähtaeg`` is still officially unanswered.
+
+    This is the **obligation**, not the plan, and they are two different
+    questions about one date:
+
+    ``response_obligations``
+        has Koda responded? Discharged only by a visible ``SENT`` Submission or
+        by the register recording the opinion work as finished
+        (:func:`_discharge_exists`).
+    :func:`outstanding_response_deadlines`
+        is this date what a lawyer should be working on today? The same
+        population, minus the Matters where an open ``Järgmiseks`` has already
+        said what happens next (docs/adr/0050).
+
+    They were one predicate until this concept existed, which meant recording an
+    instruction reported the obligation as met. It does not: a ministry still
+    waiting for Koda's opinion is not answered by Koda writing itself a note,
+    however sound the note is. The operational precedence is untouched — a file
+    under an instruction still shows the instruction — and this concept puts
+    nothing new on any work surface.
+
+    Authorization first, like every other source here: the population starts
+    from :func:`full_matters`, so a restricted Matter contributes nothing for a
+    reader who may not see it. ``owner`` narrows by ``Matter.owner``, for the
+    reason :func:`important_deadlines` does — this obligation belongs to whoever
+    carries the file.
+
+    ``open_only=False`` drops **only** the ``is_open`` clause. ARCHIVE rows stay
+    out and the reader scope stays on; what changes is that a closed Matter with
+    an unanswered deadline can be described honestly, which is a different act
+    from putting it in a live queue. Nothing that reads this population for work
+    passes ``False``.
+
+    ``Matter.response_deadline`` is never written, cleared or moved by any of
+    this. It remains canonical Matter data stating itself in the header, exactly
+    as ADR 0050 requires.
+    """
+    base = full_matters(user)
+    if open_only:
+        base = base.filter(is_open=True)
+    queryset = (
+        annotate_response_obligation(base.filter(response_deadline__isnull=False), user)
+        .filter(**{DISCHARGED: False})
+        .select_related("stage", "owner")
+    )
+    if owner is not None:
+        queryset = queryset.filter(owner=owner)
+    return queryset
+
+
+def response_obligation_of(
+    matter: Matter, user: Any, today: date | None = None
+) -> ResponseObligation:
+    """One Matter's response obligation, described.
+
+    The row-level reading of :func:`annotate_response_obligation`, and it reads
+    that annotation when the queryset already carries it — so a page that
+    annotates pays one query for the whole list rather than one per row. Without
+    it the same question is asked about the one Matter through the same helper,
+    so the two readings cannot drift apart.
+
+    A Matter this reader may not see yields an obligation that is not
+    outstanding: there is no fact here to describe, and inventing one from a row
+    the reader cannot open would be the disclosure the scoping exists to
+    prevent.
+
+    ``is_overdue`` is ``is_outstanding and is_past``, and ``days_late`` counts
+    only then. A discharged deadline in the past is simply past — the register
+    answered it, and a number of days late would be a debt nobody owes.
+    """
+    today = today or timezone.localdate()
+    deadline = matter.response_deadline
+    outstanding = False
+    if deadline is not None:
+        discharged = getattr(matter, DISCHARGED, None)
+        if discharged is None:
+            discharged = (
+                annotate_response_obligation(Matter.objects.visible_to(user), user)
+                .filter(pk=matter.pk)
+                .values_list(DISCHARGED, flat=True)
+                .first()
+            )
+            # ``None`` here means no such row for this reader, not "undischarged".
+            discharged = True if discharged is None else discharged
+        outstanding = not discharged
+    is_past = deadline is not None and deadline < today
+    is_overdue = outstanding and is_past
+    return ResponseObligation(
+        value=deadline,
+        display=format_estonian_date(deadline) if deadline is not None else "",
+        label=RESPONSE_DEADLINE_LABEL,
+        is_outstanding=outstanding,
+        is_past=is_past,
+        is_overdue=is_overdue,
+        days_late=(today - deadline).days if is_overdue and deadline is not None else 0,
+    )
+
+
 def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
     """Open Matters whose ``Arvamuse tähtaeg`` is still the current instruction.
 
-    Authorization first, like every other source here: the population starts
-    from :func:`open_matters`, so a restricted Matter contributes nothing to a
-    count, a band or a row for a reader who may not see it.
+    The **operational** population, and unchanged in membership: every dated
+    surface reads it, and this is the list Minu asjad, Ülevaade, Osakonna töö
+    and the register's ``?too=`` populations are built from.
 
-    **Outstanding, not merely stored.** The obligation a response deadline
-    describes is discharged by sending the opinion, and the product already has
-    one definition of that — a ``SENT`` :class:`~app.submissions.models.Submission`
-    on the Matter, which is what the old dashboard's *Tähtaeg möödas, arvamust
-    ei ole saadetud* row and `selectors.attention_items` both test. That same
-    definition is reused here rather than restated.
+    It is now stated as what it has always meant — the official obligation, minus
+    the files where somebody has said what happens next::
 
-    **The register discharges it too.** ``VÄLJA`` is where the department writes
-    that the opinion work on a file is finished: a date means the opinion went
-    out that day, ``ei saatnud`` means a decision was taken not to send one, and
-    both end the drafting step. A blank cell means the file is still being
-    worked on, so it discharges nothing (ADR 0059).
-
-    This is a statement about **work**, not about evidence. A ``VÄLJA`` value
-    creates no ``Submission``, proves nothing about which document was sent, and
-    enters no opinion statistic — a SENT Submission remains the only record that
-    can answer *what* Koda sent, and remains the stronger reason wherever both
-    exist (ADR 0011). ``response_deadline`` itself is untouched and keeps
-    stating itself in the Matter header, exactly as ADR 0050 requires.
-
-    Three narrowings, each load-bearing:
-
-    * **Only ``CURRENT``.** The same table holds thousands of ``RETIRED`` and
-      ``SUPERSEDED`` rows whose ``VÄLJA`` speaks for a finished file rather than
-      for live work.
-    * **Only ``DATE`` and ``NOT_SENT``** (:data:`OPINION_WORK_COMPLETE_STATES`).
-      ``RECORDED_OTHER`` is a cell nobody has read and is not an approved
-      completion state; it leaves the deadline outstanding and is surfaced as a
-      data-quality question instead. This is why the test is a state set and not
-      ``opinion_sent_recorded``, which would answer *is anything written* and
-      discharge on the strength of prose.
-    * **A Matter with no register row is never discharged here.** A file created
-      in the application has no ``VÄLJA`` to speak for it.
+        response_obligations(user)                     the obligation
+          minus Matters with a visible open Järgmiseks      the plan
 
     **A `Järgmiseks` outranks it.** ``Arvamuse tähtaeg`` is the date the register
     arrived with: the fallback obligation a file carries until somebody says what
@@ -688,7 +901,7 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     stops being live work and goes back to being what it always was, a recorded
     fact in the Matter's header (docs/adr/0050).
 
-    Three things this rule deliberately is not:
+    Three things that rule deliberately is not:
 
     * **It is not a comparison of dates.** *Any* open action wins, including one
       dated later than the response deadline. A file whose deadline was in
@@ -704,62 +917,29 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
       structured ``JÄRGMISEKS`` value, so it is the department's instruction too.
       There is no second idea of a sufficiently human action here.
 
-    All three subqueries are ``Exists``, so the whole source stays one query
-    however many Matters it holds. **Two of the three are scoped to the reader**
-    and the third is not, and the difference is which table can be restricted.
+    And one thing it is **not** any more, which is the whole of this seam: it is
+    not a statement that the obligation has been *met*. An instruction suppresses
+    the date as today's work; the Chamber still owes the answer, and
+    :func:`response_obligations` is where that is now asked. Nothing this
+    function returns changed when that separation was made.
 
-    ``Submission`` and ``NextAction`` are both
-    :class:`~app.core.models.VisibilityInheritingModel`, so either can be
-    restricted below a Matter its reader may open. They were read unscoped, on
-    the argument that a subquery which can only *remove* a row cannot disclose
-    anything. It can: removing a row is observable. A NORMAL Matter that sits on
-    Osakond's *tähtaeg sel nädalal* and in Statistika's *tähtaeg 30 p jooksul*
-    silently left both the moment a colleague filed a restricted opinion on it,
-    while every other surface went on showing the Matter — so the reader learns
-    that restricted work happened on a named file, which is exactly the
-    inference `visible_to` exists to prevent (AUTH-003, docs/adr/0038). The
-    register's own ``?tegevus=puudub`` had already been scoped for this reason
-    and disagreed with the figure beside it.
+    ``NextAction`` is read through ``visible_to``, as the discharge tests are and
+    for the same reason: it is a
+    :class:`~app.core.models.VisibilityInheritingModel`, and a restricted step
+    silently removing a Matter from a deadline list tells a reader that
+    restricted work happened on a named file (AUTH-003).
 
-    ``CurrentRegisterState`` is not restrictable — it is a derived row per
-    Matter with no override of its own — so scoping it would add a join and
-    change nothing.
-
-    ``owner`` narrows by ``Matter.owner``, for the reason
-    :func:`important_deadlines` does: this deadline belongs to whoever carries
-    the file. An ownerless Matter's deadline therefore reaches nobody's Minu
-    töö and appears as *vastutajata* on the department surfaces, which is the
-    honest place for work nobody has been given.
+    Every subquery is an ``Exists``, so the whole source stays one query however
+    many Matters it holds.
     """
-    sent = Submission.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), status=SubmissionStatus.SENT
-    )
     instructed = NextAction.objects.visible_to(user).filter(
         matter=OuterRef("pk"), status=ActionStatus.OPEN
     )
-    completed = CurrentRegisterState.objects.filter(
-        matter=OuterRef("pk"),
-        currency=RegisterCurrency.CURRENT,
-        opinion_sent_state__in=OPINION_WORK_COMPLETE_STATES,
+    return (
+        response_obligations(user, owner=owner)
+        .annotate(has_open_action=Exists(instructed))
+        .filter(has_open_action=False)
     )
-    queryset = (
-        open_matters(user)
-        .filter(response_deadline__isnull=False)
-        .annotate(
-            has_sent_submission=Exists(sent),
-            has_open_action=Exists(instructed),
-            register_says_complete=Exists(completed),
-        )
-        .filter(
-            has_sent_submission=False,
-            has_open_action=False,
-            register_says_complete=False,
-        )
-        .select_related("stage", "owner")
-    )
-    if owner is not None:
-        queryset = queryset.filter(owner=owner)
-    return queryset
 
 
 def response_deadline_is_outstanding(matter: Matter, user: Any) -> bool:
@@ -767,10 +947,15 @@ def response_deadline_is_outstanding(matter: Matter, user: Any) -> bool:
 
     The same question :func:`outstanding_response_deadlines` answers for a
     population, asked about one row — and answered *by that function*, not by a
-    second copy of its four clauses. A page that re-derived them would be the
+    second copy of its clauses. A page that re-derived them would be the
     divergence this module exists to prevent: the Matter header would call a
     deadline late while the work list did not, and both would be right about
     their own arithmetic.
+
+    **Operational, not official.** An open ``Järgmiseks`` makes this ``False``
+    while the Chamber still owes the answer — that is the precedence working,
+    and :func:`response_obligation_of` is the function that asks the other
+    question about the same Matter.
 
     ``False`` for a Matter with no deadline, for a closed or ``ARCHIVE`` record,
     and for one this reader may not see — each because the population it is
@@ -1288,6 +1473,7 @@ __all__ = [
     "BAND_OVERDUE",
     "BAND_VISIBLE",
     "BAND_WEEK",
+    "DISCHARGED",
     "MEANING_DEADLINE",
     "MEANING_EXPECTED",
     "MEANING_IMPORTANT",
@@ -1308,14 +1494,17 @@ __all__ = [
     "WORK_QUIET_30",
     "WORK_RIPE",
     "ActionKind",
+    "ResponseObligation",
     "WorkBand",
     "WorkItem",
     "action_item",
+    "annotate_response_obligation",
     "band_items",
     "band_of",
     "dated_actions",
     "deadline_window",
     "end_of_iso_week",
+    "full_matters",
     "important_deadlines",
     "matters_without_action",
     "open_matters",
@@ -1325,6 +1514,8 @@ __all__ = [
     "quiet_matters",
     "real_deadlines",
     "response_deadline_is_outstanding",
+    "response_obligation_of",
+    "response_obligations",
     "review_ripe_items",
     "sort_items",
     "start_of_iso_week",

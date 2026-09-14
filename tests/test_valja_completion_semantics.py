@@ -239,7 +239,12 @@ def test_an_unreadable_valja_mark_does_not_discharge_the_deadline(specialist, to
 
 
 def test_an_open_next_action_still_outranks_everything(specialist, today):
-    """Case 6. ADR 0050's precedence, unmoved by ADR 0059."""
+    """Case 6. ADR 0050's precedence, unmoved by ADR 0059 — and operational only.
+
+    A blank ``VÄLJA`` is the live drafting queue: the register says this opinion
+    is still being written. The instruction takes the date off today's work list
+    and changes nothing about that, which is the second assertion.
+    """
     matter = _matter(specialist, deadline=today - timedelta(days=200))
     _mark(matter, state=OpinionSentState.BLANK)
     set_next_action(
@@ -252,6 +257,7 @@ def test_an_open_next_action_still_outranks_everything(specialist, today):
     )
 
     assert _is_outstanding(matter, specialist) is False
+    assert matter.pk in wi.response_obligations(specialist).values_list("pk", flat=True)
 
 
 # ---------------------------------------------------------------------------

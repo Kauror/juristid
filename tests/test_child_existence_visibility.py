@@ -223,14 +223,20 @@ def test_a_restricted_opinion_does_not_discharge_a_response_deadline(
     assert matter in wi.outstanding_response_deadlines(reader)
 
 
-def test_a_participant_sees_their_own_work_discharge_the_deadline(mixed_matter):
-    """The owner participates, so for them the step is real and the deadline is met."""
+def test_a_participant_sees_their_own_step_take_the_deadline_off_their_work(mixed_matter):
+    """The owner participates, so for them the step is real and outranks the date.
+
+    *Off their work*, not *met*: the step suppresses the deadline as today's
+    task and discharges no obligation — the second assertion holds the two
+    apart, and `tests/test_response_obligation_state` holds the whole matrix.
+    """
     owner = mixed_matter["owner"]
     matter = mixed_matter["matter"]
 
     assert matter in wi.outstanding_response_deadlines(owner)
     restricted_action(mixed_matter)
     assert matter not in wi.outstanding_response_deadlines(owner)
+    assert matter in wi.response_obligations(owner)
 
 
 # ---------------------------------------------------------------------------

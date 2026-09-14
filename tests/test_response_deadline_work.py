@@ -1057,6 +1057,14 @@ def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specia
 # No dates are compared anywhere in this section. That is the point of it: the
 # defect this fixes was a January deadline dominating a file whose lawyer had
 # already written «JÄLGIN, vaata uuesti üle 09.10».
+#
+# **Suppressed, not discharged.** Everything asserted below is about the
+# *operational plan*: what a lawyer should be working on today. It says nothing
+# about whether Koda has answered, and the two used to be one predicate. The
+# official obligation is `wi.response_obligations`, an open `Järgmiseks` does
+# not discharge it, and the assertions that prove so live beside these ones —
+# here where the precedence is stated, and in full in
+# `tests/test_response_obligation_state.py`.
 # ---------------------------------------------------------------------------
 
 
@@ -1111,6 +1119,8 @@ def test_any_open_next_action_suppresses_the_response_deadline(
     assert matter.pk not in wi.outstanding_response_deadlines(specialist).values_list(
         "pk", flat=True
     )
+    # And the other question, unmoved: an instruction is a plan, not a response.
+    assert matter.pk in wi.response_obligations(specialist).values_list("pk", flat=True)
 
 
 def test_the_earlier_response_deadline_does_not_beat_the_later_instruction(specialist, today):
@@ -1138,6 +1148,11 @@ def test_the_earlier_response_deadline_does_not_beat_the_later_instruction(speci
     # A MONITOR review is never late, so nothing about this Matter is overdue.
     assert not action.is_overdue
     assert matter.pk not in wi.work_population_ids(specialist, wi.WORK_OVERDUE, today=today)
+    # The file is being watched and the January opinion is still owed. Both are
+    # true at once, and until the obligation had a name only the first was said.
+    obligation = wi.response_obligation_of(matter, specialist, today)
+    assert obligation.is_outstanding is True
+    assert obligation.is_overdue is True
 
 
 def test_an_overdue_deadline_under_a_monitor_leaves_every_overdue_population(
