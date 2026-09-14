@@ -31,16 +31,24 @@ basis = "deployment"
 # registris (#208). Kaks alumist punkti on nende omad. Skeemimuudatust kummaski
 # ei ole.
 #
+# Neljas väljalase, kaks ühendust: kuupäeva täpsus. #212 parandab, millal
+# ligikaudselt märgitud tegevus üle aja läheb, ja #213 annab neljal teema faktil
+# valiku «täpne päev / kuu / kvartal / aasta». Viis alumist punkti on nende
+# omad. Skeemimuudatust ega andmeteisendust kummaski ei ole, ja ühtegi varasemat
+# kirjet ei täiendatud tagantjärele.
+#
 # Esimese väljalaske liitmisrevisjon on 699cdb74, teise oma b4291bc4, kolmanda
-# oma 6bd809cd; ükski neist ei sisalda seda kirjet ennast. See, mis päriselt
-# toodangusse jõuab, sünnib alles siis, kui see fail ühendatakse, ja on kirjas
-# väljalaske raportis — täpselt nagu 11., 12. ja 13. septembri kirjete puhul.
+# oma 6bd809cd, neljanda oma bd7dfe3c; ükski neist ei sisalda seda kirjet
+# ennast. See, mis päriselt toodangusse jõuab, sünnib alles siis, kui see fail
+# ühendatakse, ja on kirjas väljalaske raportis — täpselt nagu 11., 12. ja 13.
+# septembri kirjete puhul.
 revisions = [
   "699cdb74363fe5ee81d9f9ac5489a27e91913d82",
   "b4291bc49b0b6d3b42052b7378554da45382ec67",
   "6bd809cdc6767148217cd6aeb37901b348522438",
+  "bd7dfe3c4cc462f6628ea224ed884a072a8a0575",
 ]
-prs = [202, 203, 204, 205, 207, 208, 209]
+prs = [202, 203, 204, 205, 207, 208, 209, 212, 213]
 changes = [
   "Töödokumendi SharePointi linki ei lõigata enam vaikides katki. Pikk aadress salvestatakse tervikuna, ja kui see on päriselt liiga pikk, öeldakse seda kohe — varem salvestati poolik link eduka teatega.",
   "Saadetud arvamuse kuupäev on kõikjal Tallinna kuupäev: seotud materjalides, teema taustamaterjalides ja arvamuste väljavõttes. Hilisõhtul saadetud arvamus näitas varem ühe päeva varasemat kuupäeva.",
@@ -53,6 +61,11 @@ changes = [
   "Kaasamise juurde saab kirja panna kuupäeva, milleni tagasisidet oodatakse. See on märge teema ajajoonel: sellest ei teki järgmist tegevust, tähtaega ega tööülesannet.",
   "Olemasoleva sissekande teksti saab nüüd «Muuda» kaudu parandada — ka suletud teemal. Parandus ei loo uut sissekannet ega liiguta rida ajajoonel: rea juurde tuleb märge «muudetud» ja varasem sõnastus jääb alles.",
   "Kui teema järgmine plaanitud tegevus on hilisem kui vastamata arvamuse tähtaeg, näitavad teema leht ja register nüüd mõlemat. Plaan jääb peamiseks ja selle all seisab arvamuse tähtaeg koos üle tähtaja läinud päevade arvuga — varem oli näha ainult plaan, mis ei öelnud, kas koda on juba vastanud.",
+  "Järgmise tegevuse, olulise tähtaja, jõustumise ja töövõidu kuupäeva saab nüüd märkida ka kuu, kvartali või aastana, mitte üksnes täpse päevana. Kui aeg on teada ainult kuu või kvartali täpsusega, ei pea enam valima päeva, mida keegi öelnud ei ole.",
+  "Ligikaudselt märgitud aega näidatakse nii, nagu see kirja pandi — «oktoober 2026» või «IV kvartal 2026» —, mitte perioodi esimese päevana. Varem sai selline kirje ekraanil kuju «01.10.2026» ja luges nagu kokkulepitud päev.",
+  "Kuu, kvartali või aasta täpsusega plaanitud tegevus läheb üle aja alles siis, kui kogu periood on läbi. Septembrisse plaanitud töö ei ole hilinenud 2. septembril, vaid alles 1. oktoobrist, ja ülekantud päevi loetakse perioodi lõpust.",
+  "Töövõidu juurde käib nüüd periood, mille lisaja ise märgib. Tänast kuupäeva ega jooksvat aastat selle asemel ei panda, ja varem salvestatud perioodita töövõidud jäävad täpselt nii, nagu nad on.",
+  "Ametlik arvamuse tähtaeg jääb eraldi nähtavaks ka siis, kui järgmine tegevus on märgitud ligikaudselt. Varem võis see kaduda plaani taha juhul, kui perioodi esimene päev sattus olema sama kuupäev.",
 ]
 
 [[day]]
