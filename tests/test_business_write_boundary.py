@@ -333,7 +333,17 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     WriteRoute(
         name="matters:add_work_victory",
         label="Töövõidu lisamine",
-        request=lambda w: ({"pk": w["matter"].pk}, {"victory_change": "Loata töövõit"}),
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            # A period, because a new win now needs one. The route is what this
+            # suite is about; the payload only has to be a save that would
+            # otherwise succeed (docs/adr/0079 §10).
+            {
+                "victory_change": "Loata töövõit",
+                "victory_precision": "YEAR",
+                "victory_year": "2026",
+            },
+        ),
         probe=lambda w: w["matter"].work_victories.count(),
     ),
     WriteRoute(

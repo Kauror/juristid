@@ -10127,6 +10127,139 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
+/* -- `Täpsus`: how exactly is this date known ------------------------------
+ *
+ * **Every selector here starts at `.precision`, and that is not tidiness.**
+ * `precision__radio` is also the class `app/intelligence/forms.py` puts on its
+ * own period control's radios, which live in a `.choiceset` fieldset on the
+ * Olulised tähtajad and Jõustumised pages and are ordinary visible radios with
+ * a `<span>` beside them. Written bare, the clipping rule below reached those
+ * too and left four pages with a control nobody could see or click — found by
+ * the browser suite as `Locator.check: Timeout`, which reads like a flake and
+ * is not one.
+ *
+ * Four chips and the controls each of them needs. Used by `+ Järgmine
+ * tegevus`, `+ Oluline tähtaeg`, `+ Jõustumine` and `+ Töövõit`, from one
+ * partial, because a quarter entered on any of them is the same period
+ * (docs/adr/0079 §1).
+ *
+ * The chips are the launcher bar's pattern one level down — a clipped radio
+ * carrying the state and a `<label>` carrying the look — so the control needs
+ * no script, no `role="tablist"` and no keyboard contract of its own. See
+ * `.addpick` above for why the radio is clipped rather than `display: none`.
+ */
+
+.precision {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+}
+
+/* A `<legend>` inside a flex `<fieldset>` is laid out by its own rules in every
+   engine; taking it out of the flow and letting the chips row carry the label
+   spacing is the one reliable answer across them. */
+.precision .precision__legend {
+  padding: 0;
+  float: left;
+  width: 100%;
+}
+
+.precision .precision__chips {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  flex-wrap: wrap;
+  clear: both;
+}
+
+.precision .precision__radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* `flex: none` unconditionally, and the chosen state carries no weight change.
+   Bold is wider, and a chip that grows when you pick it moves every chip after
+   it along the row — measured, and fixed structurally, on the launcher bar
+   directly above (docs/adr/0078). */
+.precision .precision__chip {
+  flex: none;
+}
+
+.precision .precision__radio:focus-visible + .precision__chip {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+.precision .precision__radio:checked + .precision__chip {
+  color: var(--accent-link);
+  background: var(--status-info-soft);
+  border: 1px solid var(--accent-border);
+}
+
+.precision .precision__group {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  min-width: 0;
+}
+
+/* The quick spans and the date box share the day group's row. */
+.precision .precision__group--day .uxchip {
+  flex: none;
+}
+
+.precision .cx-f--year {
+  flex: 0 0 auto;
+  max-width: 140px;
+}
+
+/* **Showing one answer at a time is a progressive enhancement, and the guard is
+ * load-bearing.** Without `@supports` an engine that does not know `:has()`
+ * would apply the `display: none` and skip every rule that turns it back on —
+ * hiding all four groups and leaving a set of chips that do nothing. Guarded,
+ * such an engine simply shows every group, labelled, and the form still saves
+ * the right thing: the server reads only the fields the chosen precision needs.
+ *
+ * No JavaScript is involved in either case, which is the point. The precision
+ * is a real radio in the POST (docs/adr/0079 §1, brief §6). */
+@supports selector(:has(*)) {
+  .precision .precision__group {
+    display: none;
+  }
+
+  .precision:has(.precision__radio[value="EXACT"]:checked)
+    .precision__group[data-precision-for="day"],
+  /* A precision the control does not offer — the «Muutmata» chip — shows no
+     group at all. It has no question to ask: the record's own period is kept
+     from the record (`forms.NextActionForm._chosen_period`), and a date box
+     holding `01.07.2027` under a chip that says *II poolaasta 2027* would be
+     the anchor leaking onto a screen (docs/adr/0079 §2). */
+  .precision:has(.precision__radio[value="MONTH"]:checked)
+    .precision__group[data-precision-for="month"],
+  .precision:has(.precision__radio[value="QUARTER"]:checked)
+    .precision__group[data-precision-for="quarter"],
+  .precision:has(.precision__radio[value="MONTH"]:checked)
+    .precision__group[data-precision-for="year"],
+  .precision:has(.precision__radio[value="QUARTER"]:checked)
+    .precision__group[data-precision-for="year"],
+  .precision:has(.precision__radio[value="YEAR"]:checked)
+    .precision__group[data-precision-for="year"] {
+    display: flex;
+  }
+}
+
 /* -- the file affordance ---------------------------------------------------
  *
  * `Lohista fail siia või vali arvutist`, at the right end of the `Millal?` row.

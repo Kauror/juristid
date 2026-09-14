@@ -211,16 +211,16 @@ def open_next_action_form(page) -> None:
     """`Muuda` or `+ Järgmine tegevus`, whichever this Matter is showing.
 
     One form, two hosts: while a step is open it is the `Muuda` disclosure
-    beside the task, and once none is it is the launcher chip. A test that sets
-    a next step should not have to know which, and the exact-date box behind
-    «Kuupäev…» is opened here too — the quick chips write into it, so it is
-    closed at rest, but it is the field every test fills and the one the server
-    validates (docs/adr/0075 §10).
+    beside the task, and once none is it is the launcher chip. Both carry the
+    same `#lisa-jargmine` id, which is what lets one helper open either.
+
+    The date box used to sit behind a «Kuupäev…» `<details>` and was opened
+    here. It is now the `Täpne päev` group of the `Täpsus` control, shown
+    because that chip is the one selected first — so there is nothing to
+    disclose, and a test choosing another precision is choosing to fill a
+    different control (docs/adr/0079 §1).
     """
     open_add_panel(page, "lisa-jargmine")
-    date_box = page.locator("#lisa-jargmine details.uxcomp__date")
-    if date_box.count() and date_box.evaluate("node => !node.open"):
-        date_box.locator("summary").click()
     page.locator("#id_target_date").wait_for(state="visible")
 
 

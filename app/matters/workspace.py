@@ -311,10 +311,21 @@ def add_matter_effective_date(
     author: Any,
     description: str,
     date_value: Any,
+    period_end: Any,
     date_precision: str,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
-    """`+ Jõustumine` — what commences, the day it does, and the act itself."""
+    """`+ Jõustumine` — what commences, when it does, and the act itself.
+
+    ``period_end`` is a parameter rather than ``date_value`` repeated. It was
+    the repetition while the panel offered nothing but an exact day, and it was
+    the *wrong* answer the moment it offered a quarter: a commencement recorded
+    as *IV kvartal 2026* would have been stored as a period ending on 1 October
+    and read, by everything that asks `has_passed`, as over on its first day
+    (docs/adr/0079 §13). The form computes both ends through `bounds_for`, and
+    `intelligence.services._check_bounds` refuses a pair that disagrees with its
+    own precision.
+    """
     from app.intelligence.services import add_effective_date
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
@@ -325,7 +336,7 @@ def add_matter_effective_date(
             actor=author,
             description=description,
             date_value=date_value,
-            period_end=date_value,
+            period_end=period_end,
             date_precision=date_precision,
         )
         result.documents = capture_supporting_evidence(
@@ -343,15 +354,24 @@ def add_matter_work_victory(
     matter: Matter,
     author: Any,
     title: str,
+    period_date: Any,
+    period_end: Any,
+    date_precision: str,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
-    """`+ Töövõit` — what changed, and the evidence that it did.
+    """`+ Töövõit` — what changed, when it belongs, and the evidence for it.
 
     A win closes nothing and completes nothing. It is its own canonical fact,
-    recorded on the day it happened rather than on the day the file finishes,
-    and it goes through the confirmed-victory service because a person stating
-    it has already made the judgement a candidate exists to defer
+    recorded against the period it belongs to rather than the day the file
+    finishes, and it goes through the confirmed-victory service because a person
+    stating it has already made the judgement a candidate exists to defer
     (docs/adr/0074 §8, brief §19).
+
+    **The period is required here and has no default.** This helper used to send
+    none, so a win recorded from the workspace arrived with `period_date` NULL
+    and never appeared in `?toovoit=<aasta>` or the reporting rail. The three
+    columns are now the caller's to supply, and the caller is a form that asks
+    (docs/adr/0079 §10).
     """
     from app.intelligence.services import add_confirmed_work_victory
 
@@ -363,6 +383,9 @@ def add_matter_work_victory(
             actor=author,
             title=title,
             detail="",
+            period_date=period_date,
+            period_end=period_end,
+            date_precision=date_precision,
         )
         result.documents = capture_supporting_evidence(
             matter=locked_matter,

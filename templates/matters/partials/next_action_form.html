@@ -13,10 +13,15 @@ Rendered in two places rather than reached from one by script, because a
 page would do nothing with JavaScript off. The panel that is present is the one
 the situation calls for.
 
-**What and when. Nothing else.** No `TEEN`/`OOTAN`/`JÄLGIN`, no date meaning,
-no precision: a step recorded here is `DO`/`DEADLINE`/`EXACT`, which is exactly
-"the day this gets done" (ADR 0052, brief §14). `NextActionForm` carries no
-field for any of them, so a crafted POST cannot name one either.
+**What, when, and how exactly the when is known.** Still no `TEEN`/`OOTAN`/
+`JÄLGIN` and still no date meaning: a step recorded here is `DO`/`DEADLINE`,
+which is exactly "the day this gets done" (ADR 0052 §1, §3). `NextActionForm`
+carries no field for either, so a crafted POST cannot name one.
+
+The precision is new, and it is the half of ADR 0052 §3 that docs/adr/0079
+supersedes. `Täpne päev` is selected first and the quick spans sit inside it
+untouched; the other three chips exist for the step that genuinely belongs *in
+October*, which until now had to be filed as the 1st.
 {% endcomment %}
 <form class="addform" data-addform
       hx-post="{% url 'matters:set_action' pk=matter.pk %}"
@@ -31,44 +36,7 @@ field for any of them, so a crafted POST cannot name one either.
     <p class="field__error" id="{{ action_form.text.auto_id }}_error">{{ action_form.text.errors|first }}</p>
   {% endif %}
 
-  {% comment %}
-    The quick spans and the exact box behind them. The chips store nothing of
-    their own: each writes the day it names into the date field, which is the
-    field that is submitted and validated — so the server sees one value however
-    it was chosen, and the form works with the chips ignored entirely.
-
-    **Deliberately not `data-uxpopover`.** That contract closes a disclosure on
-    any click outside it, which is right for a menu and wrong for a box somebody
-    is typing a date into (docs/adr/0074 §20).
-  {% endcomment %}
-  <div class="addform__when" data-quickdate-group="{{ action_form.target_date.id_for_label }}">
-    <span class="cx-f__lab" id="lisa-millal">Millal?</span>
-    {% for choice in quick_dates %}
-      <button type="button" class="uxchip" aria-pressed="false"
-              data-quickdate="{{ choice.value }}"
-              data-label-default="{{ choice.label }}"
-              data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
-    {% endfor %}
-    <details class="uxcomp__date"
-             {% if action_form.target_date.value or action_form.target_date.errors %}open{% endif %}>
-      <summary class="uxchip">Kuupäev…</summary>
-      <div class="uxcomp__datebody">
-        <label class="visually-hidden" for="{{ action_form.target_date.id_for_label }}">
-          Järgmise tegevuse kuupäev
-        </label>
-        {{ action_form.target_date }}
-      </div>
-    </details>
-  </div>
-  {% comment %}
-    The refusal sits on the row rather than inside the disclosure. «Vali
-    järgmise tegevuse kuupäev» printed inside a closed «Kuupäev…» is an error
-    nobody can see, and the chips are how the date is nearly always chosen
-    (ADR 0052 §5).
-  {% endcomment %}
-  {% if action_form.target_date.errors %}
-    <p class="field__error" id="{{ action_form.target_date.auto_id }}_error">{{ action_form.target_date.errors|first }}</p>
-  {% endif %}
+  {% include "matters/partials/period_composer.html" with chips=action_form.precision_chips date_field=action_form.target_date quick_dates=quick_dates month_field=action_form.next_month quarter_field=action_form.next_quarter year_field=action_form.next_year only %}
 
   <div class="addform__actions">
     <button class="button button--primary" type="submit">Salvesta</button>

@@ -145,6 +145,11 @@ def test_each_panel_saves_its_own_record_and_nothing_else(page, base_url, tmp_pa
 
     open_add_panel(page, "lisa-toovoit")
     page.locator("#lisa-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
+    # The period a win belongs to. Nothing is defaulted, so a save without one
+    # is refused — and this test is about the files, not the refusal
+    # (docs/adr/0079 §10).
+    page.locator("#lisa-toovoit label.precision__chip", has_text="Aasta").click()
+    page.locator("#lisa-toovoit [name=victory_year]").fill("2026")
     page.locator("#lisa-toovoit input[type=file]").set_input_files(
         [_pdf(tmp_path, "toend.pdf"), _pdf(tmp_path, "lisatoend.pdf", b"kaks")]
     )

@@ -200,12 +200,14 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
 
     # `+ Oluline tähtaeg`'s own approximate-period control.
     #
-    # `Täpsus` is three chips over a hidden field since the approved target: the
-    # panel asks for the day somebody was told about and says how precisely it
-    # was meant, and `_period_anchor` derives the period from that day
-    # (docs/adr/0074 §11, docs/adr/0075 §2).
+    # `Täpsus` is four native radios with `<label>` chips since docs/adr/0079
+    # §1. It was three `<button>`s over a hidden field (docs/adr/0074 §11), and
+    # the class this used to find it by — `.cx-when` — went with them. What the
+    # test is about is unchanged: this control belongs to *this* form, and the
+    # commencement form's own radio several hundred pixels below must not reach
+    # it.
     open_add_panel(page, "lisa-tahtaeg")
-    panel_precision = page.locator("#lisa-tahtaeg .cx-when .uxchip").first
+    panel_precision = page.locator("#lisa-tahtaeg label.precision__chip").first
     expect(panel_precision).to_be_visible()
 
     # Now the inline commencement form, and the answer that removes its own
@@ -224,4 +226,4 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
     page.go_back()
     page.wait_for_load_state("networkidle")
     open_add_panel(page, "lisa-tahtaeg")
-    expect(page.locator("#lisa-tahtaeg .cx-when .uxchip").first).to_be_visible()
+    expect(page.locator("#lisa-tahtaeg label.precision__chip").first).to_be_visible()

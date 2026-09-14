@@ -1,0 +1,116 @@
+{% comment %}
+`Täpsus` — the one control that asks how exactly a date is known.
+
+Four surfaces include this: `+ Järgmine tegevus` (and `Muuda` behind
+PRAEGUNE TEGEVUS, which is the same form), `+ Oluline tähtaeg`, `+ Jõustumine`
+and `+ Töövõit`. One partial rather than four, for the reason
+`app.workflow.dates` exists at all: a quarter is one period, and a person
+entering it in two panels must be entering the same fact (docs/adr/0079 §1).
+
+    {% include "matters/partials/period_composer.html" with chips=form.precision_chips date_field=form.deadline_date month_field=form.deadline_month quarter_field=form.deadline_quarter year_field=form.deadline_year %}
+
+**`only` on every include, and it is load-bearing.** A Django `{% include %}`
+adds to the parent context rather than replacing it, so `quick_dates` — which
+the Teema page puts there for `Järgmine tegevus` — reached `+ Oluline tähtaeg`,
+`+ Jõustumine` and `+ Töövõit` as well. That put `Täna` / `Homme` / `+1 nädal`
+on three panels that never asked for them, wired to write a day into *their*
+date box: a milestone somebody else announced is not «homme». Caught by
+inspecting the visual candidate, which is what that step is for.
+
+**Native radios, and the whole control works with scripting off.**
+
+The pattern is the launcher bar's, one level up: a clipped `<input type=radio>`
+carrying the state and a visible `<label>` chip carrying the appearance
+(docs/adr/0078). What it replaces was a row of `<button type=button>` writing
+into a hidden input — which meant the precision could not be *stated* at all
+without JavaScript: the buttons did the choosing, and a reader without them was
+locked to whatever the hidden field already held. A radio group arrives in the
+POST on its own, brings arrow-key navigation and a focus ring with it, and needs
+no `role="tablist"` keyboard contract because it already has the one the browser
+wrote.
+
+Which controls are *shown* is then a pure-CSS consequence of which radio is
+checked (`app.css`, `.precision`). With no CSS at all every group stays visible
+and labelled, which is verbose but correct — the server reads only the fields
+the chosen precision needs, so a value left in a group nobody was looking at
+changes nothing (`forms._period_anchor`).
+
+**`Aasta` is one input, not three.** A month, a quarter and a bare year all need
+it, and rendering it inside each of those three groups would put three controls
+with one name in the POST — of which the browser sends all three and Django
+keeps the last, so filling the visible one and leaving the hidden ones empty
+would submit an empty year. It is its own group, revealed by any of the three.
+{% endcomment %}
+<fieldset class="precision" data-precision>
+  <legend class="cx-f__lab precision__legend">Täpsus</legend>
+  <div class="precision__chips">
+    {% for chip in chips %}
+      <input class="precision__radio" type="radio"
+             name="{{ chip.name }}" id="{{ chip.id }}" value="{{ chip.value }}"
+             {% if chip.selected %}checked{% endif %}>
+      <label class="uxchip precision__chip" for="{{ chip.id }}">{{ chip.label }}</label>
+    {% endfor %}
+  </div>
+
+  {% comment %}
+    One group per answer. `data-precision-for` is what the stylesheet keys on,
+    and it is also what a reader of the DOM can use to see — without running
+    anything — which control belongs to which precision.
+  {% endcomment %}
+  {% if date_field %}
+    <div class="precision__group precision__group--day" data-precision-for="day"
+         {% if quick_dates %}data-quickdate-group="{{ date_field.id_for_label }}"{% endif %}>
+      {% comment %}
+        The quick spans belong to this group and to no other. `Homme` names a
+        day, and a row of day shortcuts under a chip that says `Kvartal` would
+        be offering to answer a question the person has just said they cannot
+        answer that precisely. They write into the date box beside them and
+        store nothing of their own, so the server sees one value however it was
+        chosen and the panel works with the chips ignored entirely.
+      {% endcomment %}
+      {% for choice in quick_dates %}
+        <button type="button" class="uxchip" aria-pressed="false"
+                data-quickdate="{{ choice.value }}"
+                data-label-default="{{ choice.label }}"
+                data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+      {% endfor %}
+      <label class="cx-f cx-f--date">
+        <span class="cx-f__lab">{{ date_field.label }}</span>
+        {{ date_field }}
+      </label>
+      {% if date_field.errors %}
+        <p class="field__error">{{ date_field.errors|first }}</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="precision__group" data-precision-for="month">
+    <label class="cx-f">
+      <span class="cx-f__lab">Kuu</span>
+      {{ month_field }}
+    </label>
+    {% if month_field.errors %}
+      <p class="field__error">{{ month_field.errors|first }}</p>
+    {% endif %}
+  </div>
+
+  <div class="precision__group" data-precision-for="quarter">
+    <label class="cx-f">
+      <span class="cx-f__lab">Kvartal</span>
+      {{ quarter_field }}
+    </label>
+    {% if quarter_field.errors %}
+      <p class="field__error">{{ quarter_field.errors|first }}</p>
+    {% endif %}
+  </div>
+
+  <div class="precision__group" data-precision-for="year">
+    <label class="cx-f cx-f--year">
+      <span class="cx-f__lab">Aasta</span>
+      {{ year_field }}
+    </label>
+    {% if year_field.errors %}
+      <p class="field__error">{{ year_field.errors|first }}</p>
+    {% endif %}
+  </div>
+</fieldset>

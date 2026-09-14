@@ -298,7 +298,12 @@ def test_the_next_step_is_asked_for_in_its_own_words(signed_in, normal_matter):
     panel = body[body.index('id="lisa-jargmine"') : body.index('id="lisa-kaasamine"')]
 
     assert panel.index("Mida on vaja teha?") < panel.index("Millal?")
-    for chip in ("Täna", "Homme", "+1 nädal", "+2 nädalat", "Kuupäev…"):
+    # `Kuupäev…` is gone, and it is gone because the box it disclosed is no
+    # longer hidden. The date is now the `Täpne päev` group of the `Täpsus`
+    # control — shown because that chip is the one selected first — so a
+    # disclosure in front of it would be a second click to reach a field that is
+    # already there (docs/adr/0079 §1). The quick spans are untouched.
+    for chip in ("Täna", "Homme", "+1 nädal", "+2 nädalat"):
         assert chip in panel
     # The retired vocabulary is not back.
     for gone in ("TEEN", "OOTAN", "JÄLGIN", "Täpsemalt…"):
@@ -429,6 +434,8 @@ def test_one_post_records_every_panel_atomically(signed_in, normal_matter, speci
         effective_title="Pakendiseaduse muudatused",
         effective_on="01.01.2027",
         victory_change="Üleminekuaeg pikenes",
+        victory_precision=DatePrecision.YEAR,
+        victory_year="2026",
         engagement_kind=EngagementKind.SURVEY,
         engagement_audience="liikmed",
         engagement_responses="14",
@@ -492,25 +499,49 @@ def test_an_attachment_goes_through_the_canonical_evidence_service(signed_in, no
 
 
 @pytest.mark.parametrize(
-    ("precision", "anchor", "end"),
+    ("precision", "fields", "anchor", "end"),
     [
-        (DatePrecision.EXACT, date(2026, 9, 30), date(2026, 9, 30)),
-        (DatePrecision.MONTH, date(2026, 9, 1), date(2026, 9, 30)),
-        (DatePrecision.QUARTER, date(2026, 7, 1), date(2026, 9, 30)),
+        (
+            DatePrecision.EXACT,
+            {"deadline_date": "30.09.2026"},
+            date(2026, 9, 30),
+            date(2026, 9, 30),
+        ),
+        (
+            DatePrecision.MONTH,
+            {"deadline_month": "9", "deadline_year": "2026"},
+            date(2026, 9, 1),
+            date(2026, 9, 30),
+        ),
+        (
+            DatePrecision.QUARTER,
+            {"deadline_quarter": "3", "deadline_year": "2026"},
+            date(2026, 7, 1),
+            date(2026, 9, 30),
+        ),
+        (DatePrecision.YEAR, {"deadline_year": "2027"}, date(2027, 1, 1), date(2027, 12, 31)),
     ],
 )
-def test_the_compact_precision_derives_its_period_from_the_day(
-    signed_in, normal_matter, precision, anchor, end
+def test_the_compact_precision_stores_the_period_it_was_given(
+    signed_in, normal_matter, precision, fields, anchor, end
 ):
-    """One `Kuupäev` box and three chips. `Kuu` means the month containing the
-    day that was picked, and `bounds_for` normalises it to the same stored anchor
-    the full period form produces (docs/adr/0074 §11)."""
+    """The panel takes the answer its chosen precision asks for.
+
+    **This replaces «derives its period from the day».** The panel used to offer
+    one `Kuupäev` box and three chips, and a `Kvartal` meant *the quarter
+    containing whatever day you typed* (docs/adr/0074 §11). That worked, and it
+    asked somebody who knew only «III kvartal» to name a day first — so the day
+    they picked to satisfy the control became the thing the record was built
+    from. With `Aasta` added and a control per precision there is nothing left
+    to derive, and `bounds_for` still normalises every answer to the anchor the
+    full period form produces (docs/adr/0079 §1).
+    """
     response = _compose(
         signed_in,
         normal_matter,
         deadline_title="Kooskõlastusringi lõpp",
-        deadline_date="30.09.2026",
         deadline_precision=precision,
+        **fields,
     )
     assert response.status_code == 200, response.content.decode()[:2000]
 
@@ -520,15 +551,35 @@ def test_the_compact_precision_derives_its_period_from_the_day(
     assert record.period_end == end
 
 
-def test_the_panel_offers_three_precisions_and_the_domain_keeps_five(signed_in, normal_matter):
+def test_a_chosen_precision_whose_own_control_is_empty_is_refused(signed_in, normal_matter):
+    """The other half of the same change, and the stronger one.
+
+    A `Kvartal` with no quarter chosen used to be *derivable* — from the date
+    box, or from today if the box was empty. It is now a question the person
+    did not answer, and the refusal says which control is waiting.
+    """
+    response = _compose(
+        signed_in,
+        normal_matter,
+        deadline_title="Kooskõlastusringi lõpp",
+        deadline_precision=DatePrecision.QUARTER,
+        deadline_date="30.09.2026",
+    )
+
+    assert response.status_code == 400
+    assert not MatterImportantDate.objects.filter(matter=normal_matter).exists()
+
+
+def test_the_panel_offers_four_precisions_and_the_domain_keeps_six(signed_in, normal_matter):
     chips = ComposerForm().precision_chips
 
-    assert [chip["label"] for chip in chips] == ["Täpne päev", "Kuu", "Kvartal"]
+    assert [chip["label"] for chip in chips] == ["Täpne päev", "Kuu", "Kvartal", "Aasta"]
     assert chips[0]["selected"]
     body = _detail(signed_in, normal_matter)
     assert "Poolaasta" not in body
     # The stored vocabulary is untouched; old records still read.
     assert DatePrecision.HALF_YEAR in DatePrecision.values
+    assert DatePrecision.INFERRED in DatePrecision.values
 
 
 # ===========================================================================
@@ -557,7 +608,13 @@ def test_a_commencement_is_a_matter_effective_date_not_an_entry(signed_in, norma
 def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter):
     """**§21.** A win is recorded when it happens, which is usually while the
     file is still open."""
-    response = _compose(signed_in, normal_matter, victory_change="Üleminekuaeg pikenes 2028-ni")
+    response = _compose(
+        signed_in,
+        normal_matter,
+        victory_change="Üleminekuaeg pikenes 2028-ni",
+        victory_precision=DatePrecision.YEAR,
+        victory_year="2026",
+    )
     assert response.status_code == 200, response.content.decode()[:2000]
 
     normal_matter.refresh_from_db()
@@ -567,8 +624,15 @@ def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter)
     assert victory.title == "Üleminekuaeg pikenes 2028-ni"
     assert victory.status == WorkVictoryStatus.CONFIRMED
     assert victory.confirmed_by is not None
-    # No reporting period was borrowed because the panel happened to be open.
-    assert victory.period_date is None
+    # **The period is stated, not borrowed.** This used to assert
+    # `period_date is None`, and it was asserting the right thing about the
+    # wrong solution: nothing may be filed into a reporting year because a
+    # panel happened to be open, and the answer to that is to *ask*, not to
+    # record the win undated and invisible to every year-based surface
+    # (docs/adr/0079 §10).
+    assert victory.period_date == date(2026, 1, 1)
+    assert victory.period_end == date(2026, 12, 31)
+    assert victory.date_precision == DatePrecision.YEAR
     assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
