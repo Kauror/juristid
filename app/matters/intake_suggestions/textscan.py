@@ -493,6 +493,170 @@ def normalise_title(value: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The head: where a document says what it is
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HeadLine:
+    """One line of a document's head region, ready to be classified.
+
+    A head line is a line that *stands for the document* — a message's
+    subject, or a heading-shaped line in the opening of a file. It is
+    deliberately not «a line near the top»: a covering letter's address block,
+    its salutation, its opening sentence and its list of attachments are all
+    near the top and none of them says what the file is.
+    """
+
+    text: str
+    block: TextBlock | None = None
+    start: int = 0
+    #: A message's ``Subject:``. Kept apart because a subject is not written in
+    #: the document it describes, and the confidence contract cares
+    #: (`vocabulary.MESSAGE_ONLY_HIGH_MARGIN`).
+    is_subject: bool = False
+
+
+def head_lines(document: SourceDocument) -> list[HeadLine]:
+    """A document's own head: its subject line, and its title block.
+
+    Used by the Õigusakt rules and by nothing else, because it is the answer to
+    a question only they ask: *what does this one document say it is?* Valdkond
+    and Menetlusliik read whole documents and pool across an envelope, which is
+    right for a subject and wrong for an instrument (docs/adr/0080 §1).
+
+    **The title block is the run of lines before the document starts saying
+    things.** A ministry letter opens with a letterhead, an address, an
+    addressee and a reference line or two, then its heading, and only then
+    «Lugupeetud…». A draft opens with the act's name and then «§ 1.». So the
+    reader walks from the first line and stops at the first line that is the
+    document *talking* rather than *naming itself*:
+
+    * a salutation;
+    * a sentence — an internal full stop, or a trailing full stop or comma;
+    * one of the verbs of sending and asking (`vocabulary.TITLE_PROSE_CUES`);
+    * a list entry or a numbered section (`vocabulary.HEAD_LIST_ENTRY`).
+
+    Everything before that is examined. Lines that cannot be a heading but do
+    not end the block — an address, a reference line that is mostly digits, a
+    label ending in a colon — are stepped over rather than stopped at, because
+    a ministry puts two of them between its letterhead and its heading and a
+    reader that stopped there would never reach the one line that matters.
+
+    **Blank lines are not load-bearing**, and that is deliberate rather than
+    convenient: `parse_source` returns a PDF's text as one line per visual
+    line with the empty ones gone, so a rule that asked for blank space above
+    and below a heading would be a rule that never fired on a real document.
+    The block is bounded by `vocabulary.HEAD_MAX_LINES` and by
+    `vocabulary.TITLE_OPENING_WINDOW` instead.
+    """
+    lines: list[HeadLine] = []
+    subject = collapse(vocab.SUBJECT_PREFIXES.sub("", document.email_value("subject")))
+    if len(subject) >= vocab.HEAD_MIN_LENGTH:
+        prose = document.prose_blocks
+        lines.append(
+            HeadLine(text=subject, block=prose[0] if prose else None, start=0, is_subject=True)
+        )
+
+    annexed = document.is_annex
+    seen = 0
+    consumed = 0
+    for block in document.prose_blocks:
+        if consumed >= vocab.TITLE_OPENING_WINDOW or seen > vocab.HEAD_MAX_LINES:
+            break
+        window = block.text[: vocab.TITLE_OPENING_WINDOW - consumed]
+        consumed += len(block.text)
+        position = 0
+        for raw_line in window.split("\n"):
+            line_start = position
+            position += len(raw_line) + 1
+            line = collapse(raw_line)
+            if not line:
+                continue
+            if annexed:
+                # «Lisa 2. Määruse kavand» is this annex's own title page, and
+                # the same words in a covering letter are an entry in a list of
+                # enclosures. Only the annex may have the prefix taken off, and
+                # only because `is_annex` already said what this file is
+                # (`vocabulary.HEAD_ANNEX_PREFIX`).
+                line = vocab.HEAD_ANNEX_PREFIX.sub("", line).strip() or line
+            if _ends_the_head(line):
+                seen = vocab.HEAD_MAX_LINES + 1
+                break
+            seen += 1
+            if seen > vocab.HEAD_MAX_LINES:
+                break
+            if _is_head_line(line):
+                lines.append(HeadLine(text=line, block=block, start=line_start))
+    return lines
+
+
+def _ends_the_head(line: str) -> bool:
+    """Whether this line is the document starting to talk."""
+    return bool(
+        vocab.TITLE_SALUTATION.match(line)
+        or vocab.HEAD_LIST_ENTRY.match(line)
+        or vocab.TITLE_PROSE_CUES.search(line)
+        or _SENTENCE_BREAK.search(line)
+        or line.endswith((".", ","))
+    )
+
+
+def _is_head_line(line: str) -> bool:
+    """Whether this line could be the document naming itself.
+
+    Called only on lines `_ends_the_head` has already cleared, so what is left
+    to refuse is shape: a line too short or too long to be a heading, an
+    address or a link, a label rather than a name, and a reference line that is
+    more digits than letters.
+    """
+    if not vocab.HEAD_MIN_LENGTH <= len(line) <= vocab.TITLE_MAX_LENGTH:
+        return False
+    if vocab.EMAIL_ADDRESS.search(line) or vocab.ANY_URL.search(line):
+        return False
+    return not (line.endswith(":") or _mostly_numbers(line))
+
+
+@dataclass(frozen=True)
+class HeadSignalHit:
+    label: str
+    weight: int
+    line: HeadLine
+    start: int
+    end: int
+
+
+def count_head_signals(
+    document: SourceDocument, signals: tuple[vocab.Signal, ...]
+) -> list[HeadSignalHit]:
+    """Which of these signals fire in the document's head, and where first.
+
+    **Once per document, at its strongest**, and no repetition counting at all.
+    `count_signals` caps repetition because a term on every page of a draft is
+    one piece of evidence; a head is a handful of deliberately chosen words and
+    there is nothing there to repeat. Two signals sharing a label pool into
+    one, exactly as they do over a whole document.
+    """
+    pooled: dict[str, HeadSignalHit] = {}
+    for line in head_lines(document):
+        for signal in signals:
+            found = signal.regex.search(line.text)
+            if found is None:
+                continue
+            existing = pooled.get(signal.label)
+            if existing is not None and existing.weight >= signal.weight:
+                continue
+            pooled[signal.label] = HeadSignalHit(
+                label=signal.label,
+                weight=signal.weight,
+                line=line,
+                start=found.start(),
+                end=found.end(),
+            )
+    return sorted(pooled.values(), key=lambda hit: (-hit.weight, hit.label))
+
+
+# ---------------------------------------------------------------------------
 # Contacts
 # ---------------------------------------------------------------------------
 

@@ -37,6 +37,12 @@ basis = "deployment"
 # omad. Skeemimuudatust ega andmeteisendust kummaski ei ole, ja ühtegi varasemat
 # kirjet ei täiendatud tagantjärele.
 #
+# Viies väljalase, üks ühendus: «Õigusakt» täidetakse uue teema vormil ette
+# selle järgi, mida üleslaaditud dokument oma pealkirjas ise ütleb. Alumine punkt
+# on selle oma. Uut välja, uut valikut ega uut nuppu ei tekkinud — täidetakse
+# ette juba olemas olev väli —, skeemimuudatust ei ole ja ühtegi varasemat teemat
+# ei liigitatud tagantjärele.
+#
 # Esimese väljalaske liitmisrevisjon on 699cdb74, teise oma b4291bc4, kolmanda
 # oma 6bd809cd, neljanda oma bd7dfe3c; ükski neist ei sisalda seda kirjet
 # ennast. See, mis päriselt toodangusse jõuab, sünnib alles siis, kui see fail
@@ -66,6 +72,7 @@ changes = [
   "Kuu, kvartali või aasta täpsusega plaanitud tegevus läheb üle aja alles siis, kui kogu periood on läbi. Septembrisse plaanitud töö ei ole hilinenud 2. septembril, vaid alles 1. oktoobrist, ja ülekantud päevi loetakse perioodi lõpust.",
   "Töövõidu juurde käib nüüd periood, mille lisaja ise märgib. Tänast kuupäeva ega jooksvat aastat selle asemel ei panda, ja varem salvestatud perioodita töövõidud jäävad täpselt nii, nagu nad on.",
   "Ametlik arvamuse tähtaeg jääb eraldi nähtavaks ka siis, kui järgmine tegevus on märgitud ligikaudselt. Varem võis see kaduda plaani taha juhul, kui perioodi esimene päev sattus olema sama kuupäev.",
+  "Uut teemat luues pakutakse «Õigusakt» juba ette selle järgi, mida üleslaaditud dokument oma pealkirjas ise ütleb — seaduse eelnõu, määruse eelnõu, arengukava, tegevuskava. Kui liiki nimetab ainult lisa või kirja pealkiri, või kui dokumendid ütlevad erinevat, ei täideta midagi ette ja pakkumine on kõrval ühe klõpsuga võtta.",
 ]
 
 [[day]]

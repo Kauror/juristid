@@ -69,7 +69,7 @@ SOURCE_LABELS: dict[str, str] = {
 class SuggestedField(StrEnum):
     """What a candidate is *for*.
 
-    The first five are canonical Matter fields the edit form carries. The rest
+    The first six are canonical Matter fields the edit form carries. The rest
     are informational findings: facts worth showing that have no correct
     canonical home yet (docs/adr/0060 records why, and what the future model
     should look like).
@@ -79,6 +79,7 @@ class SuggestedField(StrEnum):
     SOURCE_ORGANISATIONS = "source_organisations"
     RESPONSE_DEADLINE = "response_deadline"
     TRACK = "track"
+    LEGAL_INSTRUMENTS = "legal_instruments"
     POLICY_AREAS = "policy_areas"
 
     SENDER_CONTACT = "sender_contact"
@@ -93,11 +94,17 @@ class SuggestedField(StrEnum):
 
 #: The fields the edit form can take a value for, in the order the panel
 #: shows them. Everything else is a finding.
+#:
+#: `Õigusakt` sits between Menetlusliik and Valdkonnad, which is where the two
+#: forms put the control: the panel reads in the order somebody fills the form
+#: in, or a suggestion and the box it belongs in are two scrolls apart
+#: (docs/adr/0070 §1, OIGUSAKT_UUS_TEEMA_DESIGN).
 FORM_FIELDS: tuple[str, ...] = (
     SuggestedField.TITLE,
     SuggestedField.SOURCE_ORGANISATIONS,
     SuggestedField.RESPONSE_DEADLINE,
     SuggestedField.TRACK,
+    SuggestedField.LEGAL_INSTRUMENTS,
     SuggestedField.POLICY_AREAS,
 )
 
@@ -106,6 +113,7 @@ FIELD_LABELS: dict[str, str] = {
     SuggestedField.SOURCE_ORGANISATIONS: "Kellelt",
     SuggestedField.RESPONSE_DEADLINE: "Arvamuse tähtaeg",
     SuggestedField.TRACK: "Menetlusliik",
+    SuggestedField.LEGAL_INSTRUMENTS: "Õigusakt",
     SuggestedField.POLICY_AREAS: "Valdkonnad",
     SuggestedField.SENDER_CONTACT: "Saatja kontakt",
     SuggestedField.DOCUMENT_CONTACT: "Kontakt dokumendis",
@@ -346,7 +354,7 @@ class IntakeAnalysis:
 
     @property
     def form_suggestions(self) -> list[FieldSuggestions]:
-        """The five form fields, in panel order, only where something was found."""
+        """The six form fields, in panel order, only where something was found."""
         return [
             self.fields[name]
             for name in FORM_FIELDS
