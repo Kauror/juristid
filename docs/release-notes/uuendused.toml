@@ -54,7 +54,7 @@ revisions = [
   "6bd809cdc6767148217cd6aeb37901b348522438",
   "bd7dfe3c4cc462f6628ea224ed884a072a8a0575",
 ]
-prs = [202, 203, 204, 205, 207, 208, 209, 212, 213]
+prs = [202, 203, 204, 205, 207, 208, 209, 212, 213, 216]
 changes = [
   "Töödokumendi SharePointi linki ei lõigata enam vaikides katki. Pikk aadress salvestatakse tervikuna, ja kui see on päriselt liiga pikk, öeldakse seda kohe — varem salvestati poolik link eduka teatega.",
   "Saadetud arvamuse kuupäev on kõikjal Tallinna kuupäev: seotud materjalides, teema taustamaterjalides ja arvamuste väljavõttes. Hilisõhtul saadetud arvamus näitas varem ühe päeva varasemat kuupäeva.",
