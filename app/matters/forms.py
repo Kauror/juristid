@@ -3309,7 +3309,22 @@ class EngagementForm(forms.Form):
     #: `ENGAGEMENT_DATE_UNKNOWN`). That is the whole point of it being
     #: correctable: a row the old panel stamped with today can now be told the
     #: truth, including the truth that nobody knows.
-    occurred_on = EstonianDateField(label="Kaasamise kuupäev", required=False, widget=DATE_WIDGET)
+    #:
+    #: **`initial` is today, and it belongs to the add route rather than to the
+    #: editor.** `matters:add_engagement` still posts this form, and every date
+    #: box the product opens for a *new* record starts on today — re-typing it
+    #: on every save is the friction people actually complained about
+    #: (Teema QA §5, `tests/test_teema_human_qa.py`). It reaches no correction,
+    #: because `_engagement_edit_form` supplies `initial` for this field on
+    #: every instance it builds: a per-form `initial` wins over the field's, and
+    #: an engagement stored with no date therefore opens with an empty box
+    #: rather than with today proposed as a change nobody asked for.
+    occurred_on = EstonianDateField(
+        label="Kaasamise kuupäev",
+        required=False,
+        widget=DATE_WIDGET,
+        initial=timezone.localdate,
+    )
     #: `Tagasisidet ootame kuni`, the column docs/adr/0078 §3 added and this
     #: form could not see.
     #:
@@ -3320,11 +3335,11 @@ class EngagementForm(forms.Form):
     #: protected it behind `_UNSET` precisely because no form named it; now one
     #: does, and an emptied box clears it deliberately rather than by omission.
     #:
-    #: **No `initial`, on either box.** Today is a plausible engagement date for
-    #: a record being *created* and is never a plausible answer for one being
-    #: *corrected*: an editor opens filled from the stored value, and a default
-    #: would be this form proposing a change nobody asked for. Both boxes are
-    #: filled from the record by `_engagement_edit_form`.
+    #: **No `initial` here, unlike the box beside it.** Today is a plausible
+    #: engagement date and never a plausible reply-by date, so a pre-filled one
+    #: would be answered by pressing `Salvesta` (docs/adr/0078 §3). Blank is the
+    #: truthful default for a new record; a correction is filled from the stored
+    #: value by `_engagement_edit_form`, which overrides this on every instance.
     feedback_deadline = EstonianDateField(
         label="Tagasisidet ootame kuni", required=False, widget=DATE_WIDGET
     )
