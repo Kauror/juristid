@@ -107,6 +107,7 @@ from app.matters.forms import (
     PositionForm,
     WorkingDocumentForm,
     edit_initial,
+    period_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
@@ -2409,6 +2410,11 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # metaline directly above is already stating that date in full, and a
         # second line would be the same day twice
         # (`work_items.secondary_response_obligation`).
+        #
+        # An approximate step never suppresses it. *Plaanis IV kvartal 2026*
+        # anchors on 1 October, and a Matter whose `Arvamuse tähtaeg` is that
+        # day would otherwise lose its official line to a number nobody put on
+        # the screen (docs/adr/0079 §12).
         "response_obligation": work_items.secondary_response_obligation(
             matter,
             request.user,
@@ -2417,6 +2423,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
                 if current_action is not None
                 else matter.response_deadline
             ),
+            primary_is_approximate=(current_action is not None and current_action.is_approximate),
         ),
     }
 
@@ -3103,7 +3110,7 @@ def _overview_with_engagement_error(
 @require_http_methods(["POST"])
 def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
-    form = NextActionForm(request.POST)
+    form = NextActionForm(request.POST, current=selectors.current_action_of(matter, request.user))
 
     if not form.is_valid():
         context = _overview_context(request, matter)
@@ -4202,15 +4209,25 @@ def workspace_forms(current_action: Any = None) -> dict[str, Any]:
     return {
         "current_action_form": CompleteCurrentActionForm(),
         "matter_note_form": MatterNoteForm(),
+        # The period travels with the text. Reopening the editor on `Täpne
+        # päev` / `01.10.2026` for a step recorded as *oktoober 2026* would
+        # invite somebody to save the invented day back, which is the whole
+        # defect arriving through the edit path (docs/adr/0079 §3).
         "action_form": NextActionForm(
+            current=current_action,
             initial=(
                 {
                     "text": current_action.text,
-                    "target_date": current_action.target_date,
+                    **period_initial(
+                        "next",
+                        current_action.target_date,
+                        current_action.date_precision,
+                        date_field="target_date",
+                    ),
                 }
                 if current_action is not None
                 else None
-            )
+            ),
         ),
         "add_engagement_form": CompactEngagementForm(),
         "important_date_form": CompactImportantDateForm(),
@@ -4491,8 +4508,8 @@ def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
         workspace.add_matter_work_victory(
             matter=matter,
             author=request.user,
-            title=form.cleaned_data["victory_change"],
             uploads=form.cleaned_data["attachments"],
+            **form.cleaned_data["work_victory_kwargs"],
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(

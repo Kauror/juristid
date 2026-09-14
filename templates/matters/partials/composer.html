@@ -188,38 +188,21 @@ field with no visible focus at all (static/css/app.css).
                {% if composer_form.deadline_title.errors or composer_form.deadline_date.errors %}open{% endif %}>
         <summary class="disclosure-chip">+ Oluline tähtaeg</summary>
         <div class="cx-panel__body">
-          <div class="cx-grid">
-            <label class="cx-f">
-              <span class="cx-f__lab">Mis tähtaeg</span>
-              {{ composer_form.deadline_title }}
-            </label>
-            <label class="cx-f cx-f--date">
-              <span class="cx-f__lab">Kuupäev</span>
-              {{ composer_form.deadline_date }}
-            </label>
-          </div>
-          {% comment %}
-            `Täpsus` — three chips over one date box. A milestone somebody else
-            announced is often known to a month or a quarter, and the panel reads
-            the precision off the chips and the period off the day that was
-            picked (app/matters/forms.py `_period_anchor`).
-
-            `Poolaasta` and `Aasta` are still stored precisions and still render
-            on the records that carry them; they are not worth a chip on a panel
-            whose whole point is that it fits on one row (docs/adr/0074 §11).
-          {% endcomment %}
-          <div class="cx-when" data-chipgroup="{{ composer_form.deadline_precision.html_name }}">
-            <span class="cx-f__lab">Täpsus</span>
-            {% for chip in composer_form.precision_chips %}
-              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
-                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
-            {% endfor %}
-            <input type="hidden" name="{{ composer_form.deadline_precision.html_name }}"
-                   value="{{ composer_form.deadline_precision.value|default:'EXACT' }}">
-          </div>
-          {% if composer_form.deadline_date.errors %}
-            <p class="field__error">{{ composer_form.deadline_date.errors|first }}</p>
+          <label class="cx-f">
+            <span class="cx-f__lab">Mis tähtaeg</span>
+            {{ composer_form.deadline_title }}
+          </label>
+          {% if composer_form.deadline_title.errors %}
+            <p class="field__error">{{ composer_form.deadline_title.errors|first }}</p>
           {% endif %}
+          {% comment %}
+            `Täpsus` — the same four chips the Teema page offers, from the same
+            partial. This panel showed three and derived the period from the day
+            somebody picked; `Aasta` is the chip whose absence made that
+            derivation necessary, and both are gone together
+            (docs/adr/0079 §1, superseding docs/adr/0074 §11).
+          {% endcomment %}
+          {% include "matters/partials/period_composer.html" with chips=composer_form.precision_chips date_field=composer_form.deadline_date month_field=composer_form.deadline_month quarter_field=composer_form.deadline_quarter year_field=composer_form.deadline_year %}
         </div>
       </details>
 
@@ -257,6 +240,7 @@ field with no visible focus at all (static/css/app.css).
           {% if composer_form.victory_change.errors %}
             <p class="field__error">{{ composer_form.victory_change.errors|first }}</p>
           {% endif %}
+          {% include "matters/partials/period_composer.html" with chips=composer_form.victory_precision_chips date_field=composer_form.victory_date month_field=composer_form.victory_month quarter_field=composer_form.victory_quarter year_field=composer_form.victory_year %}
         </div>
       </details>
 

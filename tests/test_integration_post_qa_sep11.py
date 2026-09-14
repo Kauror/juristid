@@ -155,7 +155,11 @@ def test_a_file_attached_to_a_work_victory_is_never_a_send_candidate(
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Uleminekuaeg pikenes kuue kuuni"},
+        {
+            "victory_change": "Uleminekuaeg pikenes kuue kuuni",
+            "victory_precision": "YEAR",
+            "victory_year": "2026",
+        },
         files=[_pdf("toovoidu_tous.pdf")],
     )
     assert response.status_code == 200, response.status_code

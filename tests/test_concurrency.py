@@ -9,7 +9,7 @@ deterministic rather than timing-dependent.
 from __future__ import annotations
 
 import threading
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from django.db import connection, connections, transaction
@@ -679,7 +679,12 @@ def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
             date_precision="EXACT",
         ),
         lambda: workspace.add_matter_work_victory(
-            matter=matter, author=specialist, title="Hiline võit"
+            matter=matter,
+            author=specialist,
+            title="Hiline võit",
+            period_date=date(2026, 1, 1),
+            period_end=date(2026, 12, 31),
+            date_precision="YEAR",
         ),
         lambda: compose_update(matter=matter, author=specialist, body="<p>Hiline.</p>"),
         lambda: link_related_matters(

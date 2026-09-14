@@ -901,6 +901,7 @@ def secondary_response_obligation(
     user: Any,
     *,
     primary_date: date | None,
+    primary_is_approximate: bool = False,
     today: date | None = None,
 ) -> ResponseObligation | None:
     """The official obligation, for a surface whose primary date is the plan.
@@ -943,6 +944,18 @@ def secondary_response_obligation(
     workspace passes the open step's date, falling back to the Matter's own
     deadline because the header directly above states that one in full.
 
+    **``primary_is_approximate`` is the exception, and it is not a refinement of
+    that rule — it is the rule refusing to be fooled by a number.** A step
+    planned for *IV kvartal 2026* is stored against the anchor ``2026-10-01``,
+    and a Matter whose ``Arvamuse tähtaeg`` happens to be 1 October then makes
+    those two values equal. They are not the same fact and they do not even
+    share a day: one says *some time in the last quarter*, the other says *this
+    Thursday, and the Chamber owes it*. Suppressing the second because the two
+    integers matched would erase an official obligation on the strength of a
+    value the reader cannot see and never chose — the anchor is not a
+    user-visible fact (docs/adr/0079 §2, §12). So an approximate primary never
+    suppresses; exact duplicate suppression is untouched.
+
     **The reader's scope is the one :func:`response_obligation_of` keeps.** A
     ``SENT`` Submission restricted below a NORMAL Matter discharges the
     obligation only for somebody who may see it; a reader who may not still sees
@@ -958,7 +971,7 @@ def secondary_response_obligation(
     obligation = response_obligation_of(matter, user, today)
     if not obligation.is_outstanding:
         return None
-    if obligation.value == primary_date:
+    if obligation.value == primary_date and not primary_is_approximate:
         return None
     return obligation
 

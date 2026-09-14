@@ -62,6 +62,18 @@ def _action(matter, actor, *, text: str = "Vaata uus eelnõu versioon üle", day
     )
 
 
+def _victory(change: str = "Üleminekuaeg pikendati") -> dict[str, str]:
+    """A `+ Töövõit` payload that would save.
+
+    The period is not incidental. A new win states when it belongs — nothing is
+    defaulted to today or to this year — so a payload without one is refused,
+    and every test here that is about something else (the files, the lock, the
+    audit trail, the panel that reopens) needs a saveable one
+    (docs/adr/0079 §10).
+    """
+    return {"victory_change": change, "victory_precision": "YEAR", "victory_year": "2026"}
+
+
 def _pdf(name: str = "koond.pdf", body: bytes = b"%PDF-1.4 sisu") -> SimpleUploadedFile:
     return SimpleUploadedFile(name, body, content_type="application/pdf")
 
@@ -517,7 +529,7 @@ def test_a_work_victory_is_confirmed_and_closes_nothing(signed_in, normal_matter
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
     )
 
     assert response.status_code == 200
@@ -588,7 +600,7 @@ def test_a_valid_save_writes_only_its_own_record(signed_in, normal_matter):
         "matters:add_work_victory",
         normal_matter,
         {
-            "victory_change": "Üleminekuaeg pikendati",
+            **_victory(),
             "body": "<p>Marge, mida keegi ei palunud.</p>",
             "disposition": "INITIATIVE_WITHDRAWN",
             "audience": "Liikmed",
@@ -715,7 +727,7 @@ def test_a_work_victory_carries_its_evidence(signed_in, normal_matter):
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
         files=[_pdf("toend.pdf")],
     )
 
@@ -737,14 +749,14 @@ def test_two_facts_seconds_apart_with_the_same_filename_keep_their_own_file(
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Esimene võit"},
+        _victory("Esimene võit"),
         files=[_pdf("toend.pdf", b"%PDF-1.4 esimene")],
     )
     _post(
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Teine võit"},
+        _victory("Teine võit"),
         files=[_pdf("toend.pdf", b"%PDF-1.4 teine")],
     )
 
@@ -842,7 +854,7 @@ def test_a_fact_file_reads_on_the_facts_own_row_and_adds_none(signed_in, normal_
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
         files=[_pdf("toend.pdf"), _pdf("teine.pdf", b"%PDF-1.4 kaks")],
     )
 
@@ -860,7 +872,7 @@ def test_the_associated_file_is_a_link_on_the_rendered_row(signed_in, normal_mat
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
         files=[_pdf("toend.pdf")],
     )
 
@@ -893,7 +905,7 @@ def test_a_restricted_document_contributes_no_link_to_a_reader_who_may_not_see_i
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
         files=[_pdf("saladus.pdf")],
     )
     document = Document.objects.get(matter=normal_matter)
@@ -945,7 +957,7 @@ def test_an_associated_file_is_still_an_ordinary_document_on_dokumendid(signed_i
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
         files=[_pdf("toend.pdf")],
     )
 
@@ -1017,7 +1029,7 @@ STALE_WORKSPACE_WRITES = [
     ),
     (
         "matters:add_work_victory",
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
         lambda m: MatterWorkVictory.objects.filter(matter=m).count(),
     ),
 ]
@@ -1269,7 +1281,7 @@ def test_the_attachment_is_still_a_plain_link_on_its_filename(signed_in, normal_
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        _victory(),
         files=[_pdf("toend.pdf")],
     )
 

@@ -43,7 +43,7 @@ from app.taxonomy.vocabulary import (
     selectable_legal_instrument_types,
     selectable_policy_areas,
 )
-from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
+from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for, format_at_precision
 from app.workflow.enums import (
     ESTONIAN_MONTHS,
     ROMAN_QUARTERS,
@@ -1829,10 +1829,19 @@ class NextActionForm(forms.Form):
     #: "you forgot the date" into a date nobody chose. Deciding when somebody
     #: will do their own work is not the application's to decide (ADR 0052 §5).
     #:
-    #: There is no precision group behind it either. The approximate-period
-    #: control genuinely earns its place on `Oluline tähtaeg`, where a
-    #: consultation really does end "in the autumn"; a lawyer's own working day
-    #: is a day (ADR 0052 §4).
+    #: There **is** a precision group behind it, added in this round.
+    #:
+    #: ADR 0052 §4 deleted one, on the reasoning that «a lawyer's own working
+    #: day is a day». That is right about the common case, and `Täpne päev` is
+    #: still the default with the quick spans untouched in front of it. It is
+    #: wrong about the case that brought the control back: a step that genuinely
+    #: belongs *in October* left the person choosing between inventing the 1st
+    #: and leaving the field empty, and the 1st is a claim they never made
+    #: (docs/adr/0079 §1).
+    #:
+    #: The field keeps its name. Four quick spans write into `target_date` by
+    #: name, and renaming it to `next_date` for tidiness would unhook them in a
+    #: way that still looked right on the page.
     target_date = EstonianDateField(label="Millal?", required=False, widget=DATE_WIDGET)
     #: Kept, and still not rendered on Uus teema.
     #:
@@ -1855,6 +1864,13 @@ class NextActionForm(forms.Form):
     )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        #: The open step this save replaces, when there is one.
+        #:
+        #: Read for exactly one thing: whether it carries a precision this
+        #: control cannot offer, so that editing its sentence does not rewrite
+        #: *II poolaasta 2027* into a day (docs/adr/0079 §9). Uus teema passes
+        #: nothing, because there is no step yet and no Matter either.
+        self.current = kwargs.pop("current", None)
         super().__init__(*args, **kwargs)
         # No template renders this select — it is a field the POST may carry,
         # which is exactly why the population matters. A control hidden from the
@@ -1872,6 +1888,21 @@ class NextActionForm(forms.Form):
         # reaches the same fallback without going through this form at all
         # (ADR 0036 §5).
         set_choices(self, "responsible", assignable_users())
+        # The precision group, minus the date box: `target_date` above is the
+        # exact-day control and keeps its name for the quick spans' sake.
+        kept = kept_precision_choice(
+            getattr(self.current, "target_date", None),
+            getattr(self.current, "date_precision", "") or "",
+        )
+        self.precision_choices = precision_choices(kept)
+        group = _precision_fields("next", date_label="Millal?", kept=kept)
+        del group["next_date"]
+        self.fields.update(group)
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        """The `Täpsus` radios, as the template renders every other chip row."""
+        return _precision_chips(self, "next_precision")
 
     def clean(self) -> dict[str, Any]:
         """`Järgmiseks` + `Millal?`, together or not at all.
@@ -1897,19 +1928,64 @@ class NextActionForm(forms.Form):
 
         if not text:
             self.add_error("text", "Kirjuta järgmine tegevus.")
-        elif cleaned.get("target_date") is None:
-            self.add_error("target_date", "Vali järgmise tegevuse kuupäev.")
+            return cleaned
+
+        anchor, precision = self._chosen_period()
+        if anchor is None:
+            # The refusal lands on whichever control the chosen precision asks
+            # for — `_period_anchor` has already put one there when a month or a
+            # year was malformed, and this is the remaining case: the chosen
+            # precision's field was simply left alone.
+            if not self.errors:
+                self.add_error(
+                    _precision_answer_field("next", precision)
+                    if precision in _PRECISION_FIELD_SUFFIX
+                    else "target_date",
+                    "Vali järgmise tegevuse kuupäev.",
+                )
+            return cleaned
+        cleaned["next_anchor"] = anchor
+        cleaned["next_precision_value"] = precision
         return cleaned
+
+    def _chosen_period(self) -> tuple[date | None, str]:
+        """The anchor and precision this save means, from what was chosen.
+
+        Two answers, and the second one is the whole of docs/adr/0079 §9.
+
+        **The «Muutmata» chip keeps the record's own values.** Nothing is
+        recomputed and nothing was displayed: a step imported as *II poolaasta
+        2027* has no `Poolaasta` control to read, so the honest way to keep it
+        is to keep it — read the anchor off the record, not off a form that was
+        never shown the period. Choosing one of the four offered chips instead
+        replaces it, which is the only way it changes.
+
+        The chip is only in `choices` when the record being replaced actually
+        carries that precision, so this cannot be reached by a POST naming
+        `HALF_YEAR` on a record that never had one.
+        """
+        precision = self.cleaned_data.get("next_precision") or DatePrecision.EXACT.value
+        if precision not in _OFFERED_PRECISIONS:
+            kept = getattr(self.current, "target_date", None)
+            return kept, precision
+        anchor, _, precision = _period_anchor(self, "next", date_field="target_date")
+        return anchor, precision
 
     def as_service_kwargs(self, *, default_responsible: Any = None) -> dict[str, Any]:
         """What ``set_next_action`` needs.
 
-        The kind, the date meaning and the precision are the canonical
-        compatibility values, written here and never read from the POST. They
-        are honest rather than merely convenient: on this surface the date is
-        the day the work gets done, and a lawyer who has to remember to chase a
-        ministry writes that as an action — «Kontrollida, kas ministeerium
-        vastas» — rather than as a workflow classification (ADR 0052 §1, §3).
+        The kind and the date meaning are the canonical compatibility values,
+        written here and never read from the POST. They are honest rather than
+        merely convenient: on this surface the date is the day the work gets
+        done, and a lawyer who has to remember to chase a ministry writes that
+        as an action — «Kontrollida, kas ministeerium vastas» — rather than as a
+        workflow classification (ADR 0052 §1, §3).
+
+        **The precision now comes from the person**, which is the half of §3
+        docs/adr/0079 supersedes. The stored date is the anchor `bounds_for`
+        computed — the first day of whatever period they named — and the
+        precision travels with it so that nothing ever prints the anchor as a
+        day somebody chose.
 
         ``default_responsible`` is for the one caller that has an owner the
         service cannot see yet: Uus teema chooses the Matter's owner on the same
@@ -1921,8 +1997,9 @@ class NextActionForm(forms.Form):
             "text": self.cleaned_data["text"].strip()[:2000],
             "kind": ActionKind.DO,
             "date_semantics": DateSemantics.DEADLINE,
-            "target_date": self.cleaned_data.get("target_date"),
-            "date_precision": DatePrecision.EXACT,
+            "target_date": self.cleaned_data.get("next_anchor"),
+            "date_precision": self.cleaned_data.get("next_precision_value")
+            or DatePrecision.EXACT.value,
             "responsible": self.cleaned_data.get("responsible") or default_responsible,
         }
 
@@ -1938,6 +2015,140 @@ COMPOSER_PRECISION_CHOICES: tuple[tuple[str, str], ...] = (
     (DatePrecision.HALF_YEAR.value, "Poolaasta täpsusega"),
     (DatePrecision.YEAR.value, "Aasta täpsusega"),
 )
+
+#: What a person may choose when stating a date they are recording now.
+#:
+#: Four, and the labels are the four things somebody actually knows: a day, a
+#: month, a quarter, a year. `DatePrecision` keeps six values and every one of
+#: them still stores, renders and compares correctly — this tuple decides what
+#: is *offered*, which is a different question (docs/adr/0079 §1).
+#:
+#: `HALF_YEAR` is left out because the department does not plan in halves; the
+#: register's own vocabulary does, so the value stays and historical rows keep
+#: reading correctly. `INFERRED` is left out because it is provenance — *this
+#: day was read out of a sentence* — and is not something a person choosing a
+#: precision can truthfully assert about their own answer (§7, §8).
+OFFERED_PRECISION_CHOICES: tuple[tuple[str, str], ...] = (
+    (DatePrecision.EXACT.value, "Täpne päev"),
+    (DatePrecision.MONTH.value, "Kuu"),
+    (DatePrecision.QUARTER.value, "Kvartal"),
+    (DatePrecision.YEAR.value, "Aasta"),
+)
+
+#: The precisions whose answer is a single day, and which therefore need the
+#: date box rather than a period select.
+_DAY_PRECISIONS: tuple[str, ...] = (DatePrecision.EXACT.value, DatePrecision.INFERRED.value)
+
+#: Which control a precision's own answer lives in, after the prefix. A refusal
+#: has to land on the field the reader was asked to fill, not on the date box
+#: they deliberately left alone.
+_PRECISION_FIELD_SUFFIX: dict[str, str] = {
+    DatePrecision.MONTH.value: "month",
+    DatePrecision.QUARTER.value: "quarter",
+    DatePrecision.HALF_YEAR.value: "half",
+    DatePrecision.YEAR.value: "year",
+}
+
+
+def _precision_answer_field(prefix: str, precision: str) -> str:
+    """The control whose emptiness is the reason a period could not be built."""
+    suffix = _PRECISION_FIELD_SUFFIX.get(precision)
+    return f"{prefix}_date" if suffix is None else f"{prefix}_{suffix}"
+
+
+_OFFERED_PRECISIONS: frozenset[str] = frozenset(value for value, _ in OFFERED_PRECISION_CHOICES)
+
+
+def precision_choices(kept: tuple[str, str] | None = None) -> tuple[tuple[str, str], ...]:
+    """The four offered precisions, plus a record's own where it has one."""
+    return OFFERED_PRECISION_CHOICES if kept is None else (kept, *OFFERED_PRECISION_CHOICES)
+
+
+def _precision_chips(form: forms.Form, name: str) -> list[dict[str, Any]]:
+    """One `Täpsus` control's radios, ready to render as chips.
+
+    **Real radios, not buttons writing into a hidden input.** The hidden-input
+    pattern this replaces could not state a precision at all with scripting off:
+    the buttons did the choosing, so a reader without JavaScript was locked to
+    whatever the hidden field already held. A radio group is the browser's own
+    answer to «one of these», it arrives in the POST on its own, it carries
+    arrow-key navigation and a focus ring for free, and the panel around it
+    already uses exactly this pattern for the same reason (docs/adr/0078).
+
+    The choices come from ``form.precision_choices`` — the same tuple that built
+    the field — rather than from the field's own ``choices``, because a form
+    carrying the «Muutmata» chip has five and every other form has four, and a
+    control whose chips and whose validation read two different lists is a
+    control that can offer something it then refuses.
+
+    Read through the bound field when bound rather than from ``cleaned_data``:
+    the save that most needs its chips back is the one that did not validate.
+    """
+    choices = getattr(form, "precision_choices", OFFERED_PRECISION_CHOICES)
+    bound = form[name]
+    chosen = str(bound.value() or choices[0][0])
+    return [
+        {
+            "value": value,
+            "label": label,
+            "selected": value == chosen,
+            "id": f"{bound.auto_id}_{value.lower()}",
+            "name": bound.html_name,
+        }
+        for value, label in choices
+    ]
+
+
+def period_initial(
+    prefix: str, value: date | None, precision: str, *, date_field: str | None = None
+) -> dict[str, Any]:
+    """One stored period, as the initial values its composer renders.
+
+    The inverse of `_period_anchor`: given what the database holds, reopen the
+    control on the answer somebody actually gave. An editor that opened on
+    `Täpne päev` showing `01.10.2026` for a step recorded as *oktoober 2026*
+    would invite a person to save the invented day back — which is the defect
+    this round exists to remove, arriving through the edit path instead of the
+    create one (docs/adr/0079 §3).
+    """
+    if value is None:
+        return {}
+    initial: dict[str, Any] = {f"{prefix}_precision": precision}
+    if precision not in _OFFERED_PRECISIONS:
+        # Only the «Muutmata» chip, selected. No control is filled in and none
+        # is shown: the record's period is kept from the record itself, and
+        # putting its anchor into a date box would be this product writing
+        # `01.07.2027` on a screen for a fact that says *II poolaasta 2027*
+        # (docs/adr/0079 §2, §9).
+        return initial
+    if precision in _DAY_PRECISIONS:
+        initial[date_field or f"{prefix}_date"] = value
+        return initial
+    initial[f"{prefix}_year"] = value.year
+    if precision == DatePrecision.MONTH.value:
+        initial[f"{prefix}_month"] = str(value.month)
+    elif precision == DatePrecision.QUARTER.value:
+        initial[f"{prefix}_quarter"] = str((value.month - 1) // 3 + 1)
+    return initial
+
+
+def kept_precision_choice(value: date | None, precision: str) -> tuple[str, str] | None:
+    """The extra chip a record carrying an unoffered precision earns.
+
+    ``None`` for everything the control already offers, which is every record a
+    person created through this product. A row imported as *II poolaasta 2027*,
+    or one whose day the register's parser read out of a sentence, gets a fifth
+    chip naming what it holds — selected, so that editing the sentence beside it
+    keeps the date exactly as it was (docs/adr/0079 §9).
+
+    The reader can still choose one of the four and replace it. What they cannot
+    do is replace it *by accident*, which is what a control that silently
+    reported `EXACT` for a half-year would arrange.
+    """
+    if value is None or precision in _OFFERED_PRECISIONS:
+        return None
+    return (precision, f"Muutmata: {format_at_precision(value, precision)}")
+
 
 MONTH_CHOICES: tuple[tuple[str, str], ...] = tuple(
     (str(number), name.capitalize()) for number, name in enumerate(ESTONIAN_MONTHS, start=1)
@@ -2057,60 +2268,55 @@ class RecipientNamesField(forms.Field):
         return [cleaned for cleaned in (" ".join(str(item).split()) for item in raw) if cleaned]
 
 
-def _period_anchor(form: forms.Form, prefix: str) -> tuple[date | None, date | None, str]:
+def _period_anchor(
+    form: forms.Form, prefix: str, *, date_field: str | None = None
+) -> tuple[date | None, date | None, str]:
     """Turn one prefixed precision group into an anchor, an end and a precision.
 
-    The composer carries two of these groups at once — the next step's date and
-    an important deadline's — so they cannot each be a `PeriodForm`. What they
-    share instead is `app.workflow.dates.bounds_for`, which is the thing that
-    actually matters: a quarter entered here and a quarter entered on the
-    Olulised tähtajad form must produce the same stored anchor, or the same
-    period would sort into two places (Stage-2G brief 49).
+    Four surfaces carry one of these groups — the next step, an important
+    deadline, a commencement and a work victory — and the composer carries two
+    at once, so they cannot each be a `PeriodForm`. What they share instead is
+    `app.workflow.dates.bounds_for`, which is the thing that actually matters: a
+    quarter entered on any of them must produce the same stored anchor, or the
+    same period would sort into two places (Stage-2G brief 49).
+
+    ``date_field`` names the exact-day control when it is not ``<prefix>_date``.
+    `Järgmine tegevus` keeps its own `target_date`, because the quick spans
+    (`Täna`, `Homme`, `+1 nädal`) write into that field by name and renaming it
+    would silently unhook four controls that still looked right (ADR 0052 §4).
+
+    **The person's own answer, and no other.** An earlier reading filled a
+    missing month or quarter in from the day in the date box, because the
+    compact `+ Oluline tähtaeg` panel offered no month select to fill in
+    (docs/adr/0074 §11). Every surface now renders the control its chosen
+    precision needs, so a blank one is a question the person did not answer, and
+    guessing *III kvartal* from a day somebody typed and then stopped believing
+    is exactly the invented certainty this round exists to remove
+    (docs/adr/0079 §1).
     """
+    exact_name = date_field or f"{prefix}_date"
 
     def value(name: str) -> int | None:
         raw = form.cleaned_data.get(f"{prefix}_{name}")
         return int(raw) if raw not in (None, "") else None
 
     precision = form.cleaned_data.get(f"{prefix}_precision") or DatePrecision.EXACT.value
-    exact = form.cleaned_data.get(f"{prefix}_date")
-    if precision == DatePrecision.EXACT.value and exact is None:
+    exact = form.cleaned_data.get(exact_name)
+    if precision in _DAY_PRECISIONS and exact is None:
         return None, None, precision
 
     field_for_precision = {
-        DatePrecision.EXACT.value: f"{prefix}_date",
+        DatePrecision.EXACT.value: exact_name,
+        DatePrecision.INFERRED.value: exact_name,
         DatePrecision.MONTH.value: f"{prefix}_month",
         DatePrecision.QUARTER.value: f"{prefix}_quarter",
         DatePrecision.HALF_YEAR.value: f"{prefix}_half",
         DatePrecision.YEAR.value: f"{prefix}_year",
     }
-    # **One date box and a precision, when that is all the surface offers.**
-    #
-    # The approved Teema target's `+ Oluline tähtaeg` is a single `Kuupäev` plus
-    # `Täpne päev` / `Kuu` / `Kvartal`: somebody picks the day they were told
-    # about and says how precisely it was meant. The month, quarter, half and
-    # year selects are still here, still posted by the surfaces that have them,
-    # and still take precedence — this only fills in what a compact panel cannot
-    # ask for, from the date it did ask for. `bounds_for` normalises either way,
-    # which is what keeps a quarter entered here and a quarter entered on
-    # `Olulised tähtajad` the same stored anchor (docs/adr/0074 §11).
     derived_year = value("year")
     derived_month = value("month")
     derived_quarter = value("quarter")
     derived_half = value("half")
-    if exact is not None:
-        if derived_year is None:
-            derived_year = exact.year
-        if derived_month is None:
-            derived_month = exact.month
-        if derived_quarter is None:
-            derived_quarter = (exact.month - 1) // 3 + 1
-        if derived_half is None:
-            derived_half = 1 if exact.month <= 6 else 2
-    if precision != DatePrecision.EXACT.value and exact is not None:
-        # The refusal has to land on a control the reader can see. On the target
-        # panel that is the date box, whatever precision the chips say.
-        field_for_precision = dict.fromkeys(field_for_precision, f"{prefix}_date")
     try:
         start, end = bounds_for(
             precision,
@@ -2121,18 +2327,33 @@ def _period_anchor(form: forms.Form, prefix: str) -> tuple[date | None, date | N
             half=derived_half,
         )
     except InvalidPeriod as error:
-        form.add_error(field_for_precision.get(precision, f"{prefix}_date"), str(error))
+        form.add_error(field_for_precision.get(precision, exact_name), str(error))
         return None, None, precision
     return start, end, precision
 
 
-def _precision_fields(prefix: str, *, date_label: str) -> dict[str, forms.Field]:
+def _precision_fields(
+    prefix: str, *, date_label: str, kept: tuple[str, str] | None = None
+) -> dict[str, forms.Field]:
     """One precision group, named for the thing it dates.
 
-    Built rather than declared because the composer needs two identical groups
-    under different prefixes, and copying twenty lines is how the second copy
-    stops matching the first.
+    Built rather than declared because four surfaces need the same group under
+    four prefixes, and copying twenty lines is how the second copy stops
+    matching the first.
+
+    ``kept`` is the one-record exception of docs/adr/0079 §9: ``(value, label)``
+    for a stored precision this control does not otherwise offer. A `Järgmiseks`
+    imported as *II poolaasta 2027* must survive somebody fixing a typo in its
+    sentence, and the honest way to do that is to show the reader what will be
+    kept and let them replace it — not to carry the old value in a hidden input
+    they cannot see, and certainly not to rewrite it to *juuli 2027* because
+    another field on the form was edited.
+
+    It is added **per instance, from the record being edited**, so the choice
+    field refuses a crafted POST naming `HALF_YEAR` on a record that never had
+    one.
     """
+    choices = precision_choices(kept)
     return {
         #: **No `initial`**, unlike almost every other date box in the product,
         #: and the exception is deliberate.
@@ -2153,8 +2374,8 @@ def _precision_fields(prefix: str, *, date_label: str) -> dict[str, forms.Field]
         ),
         f"{prefix}_precision": forms.ChoiceField(
             label="Täpsus",
-            choices=COMPOSER_PRECISION_CHOICES,
-            initial=DatePrecision.EXACT.value,
+            choices=choices,
+            initial=choices[0][0],
             required=False,
             widget=forms.RadioSelect(attrs={"class": "precision__radio"}),
         ),
@@ -2469,7 +2690,9 @@ class ComposerForm(forms.Form):
         # group is gone rather than hidden, so a crafted POST cannot store an
         # approximate next step through a control the page no longer has
         # (ADR 0052 §4).
+        self.precision_choices = precision_choices()
         self.fields.update(_precision_fields("deadline", date_label="Kuupäev"))
+        self.fields.update(_precision_fields("victory", date_label="Millal"))
         self.matter = matter
         self.viewer = viewer
 
@@ -2520,22 +2743,23 @@ class ComposerForm(forms.Form):
 
     @property
     def precision_chips(self) -> list[dict[str, Any]]:
-        """`Täpne päev` / `Kuu` / `Kvartal` for `+ Oluline tähtaeg`.
+        """`Täpne päev` / `Kuu` / `Kvartal` / `Aasta` for `+ Oluline tähtaeg`.
 
-        Three of the five stored precisions. `HALF_YEAR` and `YEAR` are real and
-        stay readable on the records that carry them; they are simply not worth
-        a chip on a panel whose whole point is that it fits on one row
-        (TEEMA_TARGET_SPEC §C.4, docs/adr/0074 §11).
+        The same four the Teema page offers, from the same partial. This panel
+        showed three and derived the period from the day that was picked; the
+        fourth is the one that made the derivation necessary, and both are gone
+        together (docs/adr/0079 §1, superseding docs/adr/0074 §11).
+
+        `HALF_YEAR` and `INFERRED` are real stored precisions and stay readable
+        on the records that carry them. Neither is offered here, because this
+        panel only ever creates (§7, §8).
         """
-        chosen = self._chosen("deadline_precision", DatePrecision.EXACT.value)
-        labels = (
-            (DatePrecision.EXACT.value, "Täpne päev"),
-            (DatePrecision.MONTH.value, "Kuu"),
-            (DatePrecision.QUARTER.value, "Kvartal"),
-        )
-        return [
-            {"value": value, "label": label, "selected": value == chosen} for value, label in labels
-        ]
+        return _precision_chips(self, "deadline_precision")
+
+    @property
+    def victory_precision_chips(self) -> list[dict[str, Any]]:
+        """The same four, for `+ Töövõit`'s own period (docs/adr/0079 §10)."""
+        return _precision_chips(self, "victory_precision")
 
     def _chosen(self, name: str, fallback: str) -> str:
         """What a chip group should show as selected, after a refused save too.
@@ -2613,7 +2837,14 @@ class ComposerForm(forms.Form):
             (cleaned.get("effective_title") or "").strip()
             or cleaned.get("effective_on") is not None
         )
-        wants_victory = bool((cleaned.get("victory_change") or "").strip())
+        # A period with no sentence counts as wanting the panel too, and is
+        # then refused on the empty sentence — the rule every other panel here
+        # already follows, applied to a control this one did not used to have.
+        wants_victory = bool(
+            (cleaned.get("victory_change") or "").strip()
+            or cleaned.get("victory_date") is not None
+            or (cleaned.get("victory_year") or "")
+        )
         # A typed provider link is attempted work too. It used to count for
         # nothing: somebody who pasted a Smaily address and pressed Salvesta
         # was told «Kirjelda tegevust või vali, mida veel salvestada» and the
@@ -2741,20 +2972,37 @@ class ComposerForm(forms.Form):
         }
 
     def _clean_victory(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
-        """`+ Töövõit` — one sentence, and no second question.
+        """`+ Töövõit` — one sentence and the period it belongs to.
 
-        No period. `MatterWorkVictory.period_date` is a *reporting* period, and
-        borrowing today's date for it because the panel happens to be open would
-        file a win into a reporting year nobody chose. The record is created
-        undated, which the domain already supports and the reporting surfaces
-        already count separately (Stage-2G brief 13, docs/adr/0074 §8).
+        **The period is asked for, and it is asked for here as well as on the
+        Teema page.** This path used to create the record undated, on the sound
+        reasoning that borrowing today's date would file a win into a reporting
+        year nobody chose (Stage-2G brief 13, docs/adr/0074 §8) — but *not
+        asking* is not the only alternative to guessing, and an undated win is
+        invisible to `?toovoit=<aasta>` and to the reporting rail.
+
+        So the person says when, at whatever precision they have. The rule that
+        matters is unchanged and is now enforced rather than worked around:
+        nothing is defaulted, and an existing undated row keeps no period
+        (docs/adr/0079 §10).
         """
         if not wanted:
             cleaned["work_victory_kwargs"] = None
             return
+        anchor, end, precision = _period_anchor(self, "victory")
+        if anchor is None or end is None:
+            if not self.errors:
+                self.add_error(
+                    _precision_answer_field("victory", precision),
+                    "Märgi, millal see töövõit saavutati.",
+                )
+            return
         cleaned["work_victory_kwargs"] = {
             "title": (cleaned.get("victory_change") or "").strip()[:2000],
             "detail": "",
+            "period_date": anchor,
+            "period_end": end,
+            "date_precision": precision,
         }
 
     def _clean_engagement(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
@@ -3614,14 +3862,20 @@ class CompactEngagementForm(ChipChoices, forms.Form):
         return cleaned
 
 
-class CompactImportantDateForm(ChipChoices, forms.Form):
+class CompactImportantDateForm(forms.Form):
     """`+ Oluline tähtaeg` — a milestone somebody announced, and its letter.
 
-    The canonical `MatterImportantDate` semantics, unchanged: one date box plus
-    `Täpne päev` / `Kuu` / `Kvartal`, normalised through `app.workflow.dates`
-    so a quarter recorded here is the same stored anchor as a quarter recorded
-    on `Olulised tähtajad`. `HALF_YEAR` and `YEAR` remain stored precisions and
-    still render on the rows that carry them (docs/adr/0074 §11, brief §17).
+    The canonical `MatterImportantDate` semantics, unchanged: `Täpne päev` /
+    `Kuu` / `Kvartal` / `Aasta`, normalised through `app.workflow.dates` so a
+    quarter recorded here is the same stored anchor as a quarter recorded on
+    `Olulised tähtajad`. `HALF_YEAR` remains a stored precision and still
+    renders on the rows that carry it (docs/adr/0074 §11, docs/adr/0079 §1).
+
+    **`Aasta` was the missing fourth**, and its absence was the reason the
+    panel had to guess: a consultation somebody was told about *«järgmisel
+    aastal»* had no chip, so the person picked a day and the form derived a
+    quarter from it. The control now asks for the year outright and the
+    derivation is gone (`_period_anchor`).
 
     Creates no `NextAction`, then or ever: a date the file has to live with is
     not an instruction to a person.
@@ -3644,19 +3898,12 @@ class CompactImportantDateForm(ChipChoices, forms.Form):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.precision_choices = precision_choices()
         self.fields.update(_precision_fields("deadline", date_label="Kuupäev"))
 
     @property
     def precision_chips(self) -> list[dict[str, Any]]:
-        return self.chips(
-            "deadline_precision",
-            (
-                (DatePrecision.EXACT.value, "Täpne päev"),
-                (DatePrecision.MONTH.value, "Kuu"),
-                (DatePrecision.QUARTER.value, "Kvartal"),
-            ),
-            DatePrecision.EXACT.value,
-        )
+        return _precision_chips(self, "deadline_precision")
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
@@ -3665,8 +3912,11 @@ class CompactImportantDateForm(ChipChoices, forms.Form):
             self.add_error("deadline_title", "Kirjuta, mis tähtaeg see on.")
         anchor, end, precision = _period_anchor(self, "deadline")
         if anchor is None or end is None:
-            if not self.has_error("deadline_date"):
-                self.add_error("deadline_date", "Oluline tähtaeg vajab kuupäeva või perioodi.")
+            if not self.errors:
+                self.add_error(
+                    _precision_answer_field("deadline", precision),
+                    "Oluline tähtaeg vajab kuupäeva või perioodi.",
+                )
             return cleaned
         cleaned["important_date_kwargs"] = {
             "title": title,
@@ -3678,16 +3928,23 @@ class CompactImportantDateForm(ChipChoices, forms.Form):
 
 
 class CompactEffectiveDateForm(forms.Form):
-    """`+ Jõustumine` — what commences and the day it does.
+    """`+ Jõustumine` — what commences and when.
 
     A door onto the canonical `MatterEffectiveDate`, not a second commencement
     model and not an `Entry` pretending to be one. Both halves or neither,
     refused on whichever is missing: a commencement with no date is a sentence,
     and a date with nothing commencing on it is a number (brief §18).
 
-    Stored at `EXACT`, because the panel asks for a day and takes a day. The
-    approximate and general-order kinds the domain also carries keep their own
-    surfaces and their own rows.
+    **A commencement is frequently known to a month or a year**, which is why
+    the model has carried `date_precision` and `period_end` since Stage 2G and
+    why `EffectiveDateKind` has a *kuupäev täpsustamisel* value beside them.
+    This panel took a day and stored `EXACT`; somebody told the act commences
+    *«2027»* had to either name 1 January or record nothing. It now asks with
+    the same four chips as everything else (docs/adr/0079 §1).
+
+    The period is stored in full. A `QUARTER` row whose `period_end` equalled
+    its anchor would claim, to every reader of the table, that a three-month
+    commencement was over on its first day.
     """
 
     use_required_attribute = False
@@ -3703,23 +3960,42 @@ class CompactEffectiveDateForm(forms.Form):
             }
         ),
     )
-    effective_on = EstonianDateField(label="Jõustub", required=False, widget=EstonianDateInput())
     attachments = workspace_attachments("id_joustumine_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.precision_choices = precision_choices()
+        group = _precision_fields("effective", date_label="Jõustub")
+        # The date box keeps the name it has had since this panel existed. A
+        # tidier `effective_date` would read better and would rename a control
+        # that a browser test, a process-strip test and anybody's muscle memory
+        # already know, for no behaviour at all.
+        group["effective_on"] = group.pop("effective_date")
+        self.fields.update(group)
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        return _precision_chips(self, "effective_precision")
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         title = (cleaned.get("effective_title") or "").strip()
-        when = cleaned.get("effective_on")
         if not title:
             self.add_error("effective_title", "Kirjuta, mis jõustub.")
-        if when is None and not self.has_error("effective_on"):
-            self.add_error("effective_on", "Märgi, millal see jõustub.")
-        if self.errors:
+        anchor, end, precision = _period_anchor(self, "effective", date_field="effective_on")
+        if anchor is None or end is None:
+            if not self.errors:
+                field = _precision_answer_field("effective", precision)
+                self.add_error(
+                    "effective_on" if field == "effective_date" else field,
+                    "Märgi, millal see jõustub.",
+                )
             return cleaned
         cleaned["effective_date_kwargs"] = {
             "description": title,
-            "date_value": when,
-            "date_precision": DatePrecision.EXACT.value,
+            "date_value": anchor,
+            "period_end": end,
+            "date_precision": precision,
         }
         return cleaned
 
@@ -3727,13 +4003,27 @@ class CompactEffectiveDateForm(forms.Form):
 class CompactWorkVictoryForm(forms.Form):
     """`+ Töövõit` — what changed, and the evidence that it did.
 
-    One sentence and its files. A win closes nothing, completes nothing and is
-    recorded on the day it happened rather than on the day the file finishes
-    (brief §19).
+    One sentence, its period and its files. A win closes nothing, completes
+    nothing and is recorded against the period it belongs to rather than the day
+    the file finishes (brief §19).
 
-    No period. `MatterWorkVictory.period_date` is a *reporting* period, and
-    borrowing today's date for it because a panel happened to be open would file
-    a win into a reporting year nobody chose.
+    **The period is asked for, and nothing is invented when it is missing.**
+    This panel used to send none at all, so every win recorded through it
+    reached the database as `period_date = NULL` — invisible to
+    `?toovoit=<aasta>`, absent from the reporting rail, and indistinguishable
+    from an imported row whose period genuinely is unknown. The obvious repairs
+    are both worse than the gap: today's date files a 2019 win in the year
+    somebody typed it up, and the current year does the same thing less
+    visibly. So the person says when, at whatever precision they have — most
+    often `Aasta` (docs/adr/0079 §10, Stage-2G brief 22).
+
+    The date box stays **blank**. `Täpne päev` is the chip that is selected
+    first because it is the commonest answer elsewhere, and a pre-filled today
+    underneath it would be a claim nobody made.
+
+    Rows that already have no period keep none. There is no backfill and no
+    migration: a win whose period was never recorded does not acquire one
+    because this form learned to ask.
     """
 
     use_required_attribute = False
@@ -3751,11 +4041,35 @@ class CompactWorkVictoryForm(forms.Form):
     )
     attachments = workspace_attachments("id_toovoit_failid")
 
-    def clean_victory_change(self) -> str:
-        value = (self.cleaned_data.get("victory_change") or "").strip()
-        if not value:
-            raise forms.ValidationError("Kirjuta, mis muutus.")
-        return value[:2000]
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.precision_choices = precision_choices()
+        self.fields.update(_precision_fields("victory", date_label="Millal"))
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        return _precision_chips(self, "victory_precision")
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        change = (cleaned.get("victory_change") or "").strip()
+        if not change:
+            self.add_error("victory_change", "Kirjuta, mis muutus.")
+        anchor, end, precision = _period_anchor(self, "victory")
+        if anchor is None or end is None:
+            if not self.errors:
+                self.add_error(
+                    _precision_answer_field("victory", precision),
+                    "Märgi, millal see töövõit saavutati.",
+                )
+            return cleaned
+        cleaned["work_victory_kwargs"] = {
+            "title": change[:2000],
+            "period_date": anchor,
+            "period_end": end,
+            "date_precision": precision,
+        }
+        return cleaned
 
 
 class CompactClosureForm(ChipChoices, forms.Form):

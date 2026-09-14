@@ -232,11 +232,11 @@ row of controls that refuse (brief §30, §31).
     </div>
 
     {% comment %}
-      `+ Oluline tähtaeg`. One date box over three precision chips: a milestone
-      somebody else announced is often known to a month or a quarter, and the
-      panel reads the precision off the chips and the period off the day that
-      was picked. It creates no `NextAction` — a date the file has to live with
-      is not an instruction to a person (brief §17).
+      `+ Oluline tähtaeg`. A milestone somebody else announced is often known
+      only to a month, a quarter or a year, so the panel asks at which of those
+      four precisions it is known and takes the answer that precision needs.
+      It creates no `NextAction` — a date the file has to live with is not an
+      instruction to a person (brief §17, docs/adr/0079 §1).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-tahtaeg-valik"
            data-addpick aria-controls="lisa-tahtaeg"
@@ -252,31 +252,14 @@ row of controls that refuse (brief §30, §31).
               hx-target="#teema-vaade" hx-swap="outerHTML"
               hx-encoding="multipart/form-data">
           {% csrf_token %}
-          <div class="cx-grid">
-            <label class="cx-f">
-              <span class="cx-f__lab">Mis tähtaeg</span>
-              {{ important_date_form.deadline_title }}
-            </label>
-            <label class="cx-f cx-f--date">
-              <span class="cx-f__lab">Kuupäev</span>
-              {{ important_date_form.deadline_date }}
-            </label>
-          </div>
-          <div class="cx-when" data-chipgroup="{{ important_date_form.deadline_precision.html_name }}">
-            <span class="cx-f__lab">Täpsus</span>
-            {% for chip in important_date_form.precision_chips %}
-              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
-                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
-            {% endfor %}
-            <input type="hidden" name="{{ important_date_form.deadline_precision.html_name }}"
-                   value="{{ important_date_form.deadline_precision.value|default:'EXACT' }}">
-          </div>
+          <label class="cx-f">
+            <span class="cx-f__lab">Mis tähtaeg</span>
+            {{ important_date_form.deadline_title }}
+          </label>
           {% if important_date_form.deadline_title.errors %}
             <p class="field__error">{{ important_date_form.deadline_title.errors|first }}</p>
           {% endif %}
-          {% if important_date_form.deadline_date.errors %}
-            <p class="field__error">{{ important_date_form.deadline_date.errors|first }}</p>
-          {% endif %}
+          {% include "matters/partials/period_composer.html" with chips=important_date_form.precision_chips date_field=important_date_form.deadline_date month_field=important_date_form.deadline_month quarter_field=important_date_form.deadline_quarter year_field=important_date_form.deadline_year %}
           {% include "matters/partials/add_files.html" with field=important_date_form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
@@ -299,22 +282,14 @@ row of controls that refuse (brief §30, §31).
               hx-target="#teema-vaade" hx-swap="outerHTML"
               hx-encoding="multipart/form-data">
           {% csrf_token %}
-          <div class="cx-grid">
-            <label class="cx-f">
-              <span class="cx-f__lab">Mis jõustub</span>
-              {{ effective_date_form.effective_title }}
-            </label>
-            <label class="cx-f cx-f--date">
-              <span class="cx-f__lab">Jõustub</span>
-              {{ effective_date_form.effective_on }}
-            </label>
-          </div>
+          <label class="cx-f">
+            <span class="cx-f__lab">Mis jõustub</span>
+            {{ effective_date_form.effective_title }}
+          </label>
           {% if effective_date_form.effective_title.errors %}
             <p class="field__error">{{ effective_date_form.effective_title.errors|first }}</p>
           {% endif %}
-          {% if effective_date_form.effective_on.errors %}
-            <p class="field__error">{{ effective_date_form.effective_on.errors|first }}</p>
-          {% endif %}
+          {% include "matters/partials/period_composer.html" with chips=effective_date_form.precision_chips date_field=effective_date_form.effective_on month_field=effective_date_form.effective_month quarter_field=effective_date_form.effective_quarter year_field=effective_date_form.effective_year %}
           {% include "matters/partials/add_files.html" with field=effective_date_form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
@@ -349,6 +324,7 @@ row of controls that refuse (brief §30, §31).
           {% if work_victory_form.victory_change.errors %}
             <p class="field__error">{{ work_victory_form.victory_change.errors|first }}</p>
           {% endif %}
+          {% include "matters/partials/period_composer.html" with chips=work_victory_form.precision_chips date_field=work_victory_form.victory_date month_field=work_victory_form.victory_month quarter_field=work_victory_form.victory_quarter year_field=work_victory_form.victory_year %}
           {% include "matters/partials/add_files.html" with field=work_victory_form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>

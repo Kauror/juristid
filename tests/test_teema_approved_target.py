@@ -492,25 +492,49 @@ def test_an_attachment_goes_through_the_canonical_evidence_service(signed_in, no
 
 
 @pytest.mark.parametrize(
-    ("precision", "anchor", "end"),
+    ("precision", "fields", "anchor", "end"),
     [
-        (DatePrecision.EXACT, date(2026, 9, 30), date(2026, 9, 30)),
-        (DatePrecision.MONTH, date(2026, 9, 1), date(2026, 9, 30)),
-        (DatePrecision.QUARTER, date(2026, 7, 1), date(2026, 9, 30)),
+        (
+            DatePrecision.EXACT,
+            {"deadline_date": "30.09.2026"},
+            date(2026, 9, 30),
+            date(2026, 9, 30),
+        ),
+        (
+            DatePrecision.MONTH,
+            {"deadline_month": "9", "deadline_year": "2026"},
+            date(2026, 9, 1),
+            date(2026, 9, 30),
+        ),
+        (
+            DatePrecision.QUARTER,
+            {"deadline_quarter": "3", "deadline_year": "2026"},
+            date(2026, 7, 1),
+            date(2026, 9, 30),
+        ),
+        (DatePrecision.YEAR, {"deadline_year": "2027"}, date(2027, 1, 1), date(2027, 12, 31)),
     ],
 )
-def test_the_compact_precision_derives_its_period_from_the_day(
-    signed_in, normal_matter, precision, anchor, end
+def test_the_compact_precision_stores_the_period_it_was_given(
+    signed_in, normal_matter, precision, fields, anchor, end
 ):
-    """One `Kuupäev` box and three chips. `Kuu` means the month containing the
-    day that was picked, and `bounds_for` normalises it to the same stored anchor
-    the full period form produces (docs/adr/0074 §11)."""
+    """The panel takes the answer its chosen precision asks for.
+
+    **This replaces «derives its period from the day».** The panel used to offer
+    one `Kuupäev` box and three chips, and a `Kvartal` meant *the quarter
+    containing whatever day you typed* (docs/adr/0074 §11). That worked, and it
+    asked somebody who knew only «III kvartal» to name a day first — so the day
+    they picked to satisfy the control became the thing the record was built
+    from. With `Aasta` added and a control per precision there is nothing left
+    to derive, and `bounds_for` still normalises every answer to the anchor the
+    full period form produces (docs/adr/0079 §1).
+    """
     response = _compose(
         signed_in,
         normal_matter,
         deadline_title="Kooskõlastusringi lõpp",
-        deadline_date="30.09.2026",
         deadline_precision=precision,
+        **fields,
     )
     assert response.status_code == 200, response.content.decode()[:2000]
 
@@ -520,15 +544,35 @@ def test_the_compact_precision_derives_its_period_from_the_day(
     assert record.period_end == end
 
 
-def test_the_panel_offers_three_precisions_and_the_domain_keeps_five(signed_in, normal_matter):
+def test_a_chosen_precision_whose_own_control_is_empty_is_refused(signed_in, normal_matter):
+    """The other half of the same change, and the stronger one.
+
+    A `Kvartal` with no quarter chosen used to be *derivable* — from the date
+    box, or from today if the box was empty. It is now a question the person
+    did not answer, and the refusal says which control is waiting.
+    """
+    response = _compose(
+        signed_in,
+        normal_matter,
+        deadline_title="Kooskõlastusringi lõpp",
+        deadline_precision=DatePrecision.QUARTER,
+        deadline_date="30.09.2026",
+    )
+
+    assert response.status_code == 400
+    assert not MatterImportantDate.objects.filter(matter=normal_matter).exists()
+
+
+def test_the_panel_offers_four_precisions_and_the_domain_keeps_six(signed_in, normal_matter):
     chips = ComposerForm().precision_chips
 
-    assert [chip["label"] for chip in chips] == ["Täpne päev", "Kuu", "Kvartal"]
+    assert [chip["label"] for chip in chips] == ["Täpne päev", "Kuu", "Kvartal", "Aasta"]
     assert chips[0]["selected"]
     body = _detail(signed_in, normal_matter)
     assert "Poolaasta" not in body
     # The stored vocabulary is untouched; old records still read.
     assert DatePrecision.HALF_YEAR in DatePrecision.values
+    assert DatePrecision.INFERRED in DatePrecision.values
 
 
 # ===========================================================================

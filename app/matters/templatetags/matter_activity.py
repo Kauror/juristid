@@ -80,7 +80,15 @@ def secondary_obligation(matter: Any, user: Any) -> ResponseObligation | None:
         )
     shown = _register_date(matter)
     return secondary_response_obligation(
-        matter, user, primary_date=shown.value if shown is not None else None
+        matter,
+        user,
+        primary_date=shown.value if shown is not None else None,
+        # `RegisterDate` already knows whether the cell is showing a period
+        # rather than a day, and the cell is styled on that same answer. An
+        # approximate cell's anchor is not what the reader sees, so matching it
+        # against the deadline would silence an obligation on the strength of a
+        # number the row never printed (docs/adr/0079 §12).
+        primary_is_approximate=shown is not None and shown.is_approximate,
     )
 
 
