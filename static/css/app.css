@@ -6640,6 +6640,14 @@ button.accordion__action:focus-visible {
   color: var(--text-body);
 }
 
+/* `Avalda` is a native disclosure — alone on its row, with no siblings to
+   displace and nothing to be chosen instead of it, which is the shape
+   docs/adr/0078 §1 leaves `Muuda` in PRAEGUNE TEGEVUS as. It is a plain flex
+   item; the chip it is drawn as carries its own rule. */
+.webrow__publish {
+  flex: none;
+}
+
 /* The publish form lands on its own full-width line under the row, for the same
    reason a launcher panel does: the control that opens it must not move
    (docs/adr/0078 §1). */

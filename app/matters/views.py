@@ -4621,6 +4621,7 @@ def workspace_forms(current_action: Any = None) -> dict[str, Any]:
         # operation can produce — comes back through the same machinery
         # (docs/adr/0081 §2).
         "website_overview_form": CompactWebsiteOverviewForm(),
+        "closure_form": CompactClosureForm(),
         "open_panel": "",
         "workspace_error": "",
     }
