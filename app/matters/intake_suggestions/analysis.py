@@ -945,7 +945,15 @@ class _HeadReading:
 
 
 def _read_head(document: SourceDocument, offered: dict[str, Any]) -> _HeadReading | None:
-    """Classify one document from its head alone. Reads no body text."""
+    """Classify one document from its head alone. Reads no body text.
+
+    The head is read once and every rule table is scored against those lines,
+    so the cost of this field is one walk of a document's opening rather than
+    one per instrument kind.
+    """
+    lines = textscan.head_lines(document)
+    if not lines:
+        return None
     scores: dict[str, int] = {}
     hits: dict[str, tuple[textscan.HeadSignalHit, ...]] = {}
     for key, signals in vocab.INSTRUMENT_RULES.items():
@@ -954,7 +962,7 @@ def _read_head(document: SourceDocument, offered: dict[str, Any]) -> _HeadReadin
         veto = vocab.INSTRUMENT_LINE_VETOES.get(key)
         found = tuple(
             hit
-            for hit in textscan.count_head_signals(document, signals)
+            for hit in textscan.count_head_signals(lines, signals)
             if veto is None or veto.search(hit.line.text) is None
         )
         if not found:
@@ -967,7 +975,7 @@ def _read_head(document: SourceDocument, offered: dict[str, Any]) -> _HeadReadin
             del hits[key]
     draft = None
     if vocab.INSTRUMENT_DRAFT_KEY in offered:
-        found_draft = textscan.count_head_signals(document, vocab.INSTRUMENT_DRAFT_MARKERS)
+        found_draft = textscan.count_head_signals(lines, vocab.INSTRUMENT_DRAFT_MARKERS)
         draft = found_draft[0] if found_draft else None
     if not scores and draft is None:
         return None

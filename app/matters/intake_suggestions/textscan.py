@@ -627,18 +627,22 @@ class HeadSignalHit:
 
 
 def count_head_signals(
-    document: SourceDocument, signals: tuple[vocab.Signal, ...]
+    lines: list[HeadLine], signals: tuple[vocab.Signal, ...]
 ) -> list[HeadSignalHit]:
-    """Which of these signals fire in the document's head, and where first.
+    """Which of these signals fire in a document's head, and where first.
 
     **Once per document, at its strongest**, and no repetition counting at all.
     `count_signals` caps repetition because a term on every page of a draft is
     one piece of evidence; a head is a handful of deliberately chosen words and
     there is nothing there to repeat. Two signals sharing a label pool into
     one, exactly as they do over a whole document.
+
+    Takes the lines rather than the document, so the caller reads the head once
+    and scores fifteen rule tables against it instead of walking the opening of
+    the file fifteen times.
     """
     pooled: dict[str, HeadSignalHit] = {}
-    for line in head_lines(document):
+    for line in lines:
         for signal in signals:
             found = signal.regex.search(line.text)
             if found is None:
