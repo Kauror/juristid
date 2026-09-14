@@ -47,6 +47,7 @@ from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.lateness import overdue_date_q
 from app.workflow.models import NextAction
 
 #: The summary cards look this far ahead. Fixed: the card is a KPI, not a view
@@ -193,14 +194,18 @@ def overdue_actions(user: Any, today: date) -> QuerySet[NextAction]:
     due for a look, not missed — describing an ordinary dependency on a ministry
     as a failure is what makes a work queue stop being believed
     (master specification 18.8).
+
+    The date condition is the shared one, so an approximate plan is late here
+    only once its period has ended — the same day the Matter page, the register
+    and the statistic say so (ADR 0079).
     """
     return (
         NextAction.objects.visible_to(user)
         .filter(
+            overdue_date_q(today),
             status=ActionStatus.OPEN,
             kind=ActionKind.DO,
             date_semantics=DateSemantics.DEADLINE,
-            target_date__lt=today,
         )
         .select_related("matter", "matter__owner", "matter__stage", "responsible")
     )

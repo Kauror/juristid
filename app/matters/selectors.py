@@ -23,6 +23,7 @@ from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
+from app.workflow.lateness import overdue_date_q
 from app.workflow.models import NextAction
 
 HORIZON_DAYS = 7
@@ -195,10 +196,13 @@ def _open_action_condition(value: str, today: date) -> Q:
     """
     open_now = Q(status=ActionStatus.OPEN)
     if value == "hilinenud":
-        return open_now & Q(
-            kind=ActionKind.DO,
-            date_semantics=DateSemantics.DEADLINE,
-            target_date__lt=today,
+        # `overdue_date_q` rather than `target_date__lt`: an approximate plan is
+        # late once its period has ended, and the register's own «Üle aja» chip
+        # must hold exactly the rows the row styling beside it calls late.
+        return (
+            open_now
+            & Q(kind=ActionKind.DO, date_semantics=DateSemantics.DEADLINE)
+            & overdue_date_q(today)
         )
     if value == REVIEW_DUE:
         return open_now & Q(
@@ -577,6 +581,11 @@ def my_work_timeline(user: Any, today: date | None = None) -> list[WorkGroup]:
     mine = visible_actions(user).filter(responsible=user)
 
     dated = mine.filter(target_date__isnull=False)
+    # Banding, not lateness. These five groups partition *every* open action by
+    # the day it sorts on, review kinds included, and the anchor is exactly the
+    # right value to band on — «Tähtaeg või ülevaatus möödas» is where a date
+    # went, not a claim that anybody missed anything. Only DO + DEADLINE is ever
+    # described as late, and that reading is `overdue_date_q`'s.
     past = list(dated.filter(target_date__lt=today).order_by("target_date"))
     now = list(dated.filter(target_date=today).order_by("matter__title"))
     soon = list(
