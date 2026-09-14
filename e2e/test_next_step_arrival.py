@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from playwright.sync_api import expect
+
 from e2e.conftest import SANDRA, sign_in
 
 
@@ -72,7 +74,12 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     # Open because somebody asked for it by following a control that says so —
     # not because the page opens it for everybody. `LISA TEEMALE` is a choice
     # until one is made (docs/adr/0075 §2).
-    assert panel.evaluate("node => node.open") is True
+    #
+    # Asked as "is it showing" rather than "does it carry `open`": the panels
+    # stopped being `<details>` on 2026-09-14, and what the arrival handler now
+    # does is choose the radio that reveals this one.
+    expect(panel).to_be_visible()
+    assert page.locator("#lisa-jargmine-valik").is_checked()
 
     # And the caret is in the box, so the next thing typed is the next step.
     assert page.evaluate(
@@ -99,7 +106,7 @@ def test_an_ordinary_matter_visit_opens_no_panel(page, base_url):
     panel = page.locator("#lisa-jargmine")
     panel.wait_for(state="attached")
 
-    assert panel.evaluate("node => node.open") is False
-    # And it opens from its own summary, which is what makes it a disclosure.
-    panel.locator("summary").first.click()
-    assert panel.evaluate("node => node.open") is True
+    expect(panel).not_to_be_visible()
+    # And it opens from its own chip, which is what makes it a choice.
+    page.locator('label[for="lisa-jargmine-valik"]').click()
+    expect(panel).to_be_visible()

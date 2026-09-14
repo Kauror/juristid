@@ -10,7 +10,11 @@
 [[day]]
 date = 2026-09-14
 basis = "deployment"
-# Üks väljalase, neli ühendust. Töödokumendi lingi ja Tallinna kuupäeva
+# **Kaks väljalaset, üks kirje.** README ütleb, et ühe päeva mitu väljalaset
+# käivad kokku: lugeja jaoks on küsimus see, mis oli teisiti, kui ta järgmine
+# kord Juristidi avas, mitte see, mitu tõmmist selle kohale viis.
+#
+# Esimene väljalase, neli ühendust: töödokumendi lingi ja Tallinna kuupäeva
 # parandused (#202), Minu asjade lugemispoole korrastus (#203), aruannete
 # mõõdetud akna Tallinna aasta (#204) ning arvamuse kohustuse eraldamine
 # operatiivsest plaanist (#205).
@@ -19,12 +23,18 @@ basis = "deployment"
 # oleku, ei muuda ühtegi tööpinda, ühtegi arvu ega ühtegi kuupäeva, mida lugeja
 # näeb. README ütleb, et kõik ei saa punkti — see on täpselt see juhtum.
 #
-# Väljalaske liitmisrevisjon 699cdb74 on kogu koorem peale selle kirje enda;
-# see, mis päriselt toodangusse jõuab, sünnib alles siis, kui see fail
-# ühendatakse, ja on kirjas väljalaske raportis — täpselt nagu 11., 12. ja
-# 13. septembri kirjete puhul.
-revisions = ["699cdb74363fe5ee81d9f9ac5489a27e91913d82"]
-prs = [202, 203, 204, 205]
+# Teine väljalase, üks ühendus: `LISA TEEMALE` valikuriba püsivus ning kaasamise
+# kaks kuupäeva (#207). Kolm alumist punkti on selle omad.
+#
+# Esimese väljalaske liitmisrevisjon on 699cdb74, teise oma b4291bc4; kumbki ei
+# sisalda seda kirjet ennast. See, mis päriselt toodangusse jõuab, sünnib alles
+# siis, kui see fail ühendatakse, ja on kirjas väljalaske raportis — täpselt
+# nagu 11., 12. ja 13. septembri kirjete puhul.
+revisions = [
+  "699cdb74363fe5ee81d9f9ac5489a27e91913d82",
+  "b4291bc49b0b6d3b42052b7378554da45382ec67",
+]
+prs = [202, 203, 204, 205, 207]
 changes = [
   "Töödokumendi SharePointi linki ei lõigata enam vaikides katki. Pikk aadress salvestatakse tervikuna, ja kui see on päriselt liiga pikk, öeldakse seda kohe — varem salvestati poolik link eduka teatega.",
   "Saadetud arvamuse kuupäev on kõikjal Tallinna kuupäev: seotud materjalides, teema taustamaterjalides ja arvamuste väljavõttes. Hilisõhtul saadetud arvamus näitas varem ühe päeva varasemat kuupäeva.",
@@ -32,6 +42,9 @@ changes = [
   "Minu asjades on «Minu viimased sissekanded» ja «Minu statistika» kohe avatud. Mõlemat avati iga kord käsitsi, nii et kokkupandud kuju ei säästnud kelleltki midagi.",
   "Aktiivsete teemade nimede ees on väike neutraalne märgis, et rida oleks tööloendis äratuntav teemana, mitte menüüvalikuna.",
   "Teema ajajoonel on manuse failinime ees dokumendi kujuline märk. Senine tühi kastike nägi välja nagu märkeruut, mida saaks linnutada — ja ei saanud.",
+  "«Lisa teemale» valikud püsivad vormi avamisel samas järjekorras ja samas kohas: aktiivne valik on esile tõstetud ja selle vorm avaneb kõigi valikute all. Varem hüppas just vajutatud nupp järgmisele reale ja võttis ülejäänud rea kaasa.",
+  "Kaasamise juures saab märkida tegeliku kaasamise kuupäeva. Vaikimisi on kirjas tänane päev, aga selle saab ära muuta või tühjaks jätta — varem salvestati iga kaasamine tänase kuupäevaga ka siis, kui see toimus kuu aega tagasi.",
+  "Kaasamise juurde saab kirja panna kuupäeva, milleni tagasisidet oodatakse. See on märge teema ajajoonel: sellest ei teki järgmist tegevust, tähtaega ega tööülesannet.",
 ]
 
 [[day]]

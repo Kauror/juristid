@@ -1,0 +1,442 @@
+"""`Kaasamise kuupäev` and `Tagasisidet ootame kuni` — the dates `+ Kaasamine` asks for.
+
+Until 2026-09-14 the panel asked for neither. `add_engagement_compact` passed
+`timezone.localdate()` for `occurred_on` on every save, so a consultation held
+in March and written up in September was stored as a September consultation —
+a false fact, produced by the server, with no box on the screen a person could
+have corrected. The first half of this file is about that stamp being gone and
+staying gone.
+
+The second half is the new column. `feedback_deadline` records what was asked of
+the people who were contacted — «ootan vastuseid kuni 22.09» — and it is
+deliberately inert: no work item, no overdue badge, no count, no filter, no
+index. The tests that matter most here are the ones asserting what it does
+*not* do, because a deadline column is exactly the kind of thing that grows a
+task queue by accident.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+
+import pytest
+from django.urls import reverse
+from django.utils import timezone
+
+from app.core.dates import format_estonian_date
+from app.matters.enums import EngagementKind
+from app.matters.forms import CompactEngagementForm
+from app.matters.models import MatterEngagement
+from app.matters.services import add_engagement, update_engagement
+from app.matters.timeline import matter_timeline
+from tests import factories
+
+pytestmark = pytest.mark.django_db
+
+
+def _post(client, matter, **fields):
+    """One `+ Kaasamine` save, through the route a person actually uses."""
+    payload = {"kind": EngagementKind.SURVEY, "audience": "liikmed"}
+    payload.update(fields)
+    return client.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        payload,
+        headers={"HX-Request": "true"},
+    )
+
+
+def _panel(body: str) -> str:
+    """The `+ Kaasamine` panel's own markup, from its id to the next panel's."""
+    start = body.index('id="lisa-kaasamine"')
+    return body[start : body.index('id="lisa-tahtaeg"', start)]
+
+
+def _workspace(client, matter) -> str:
+    return client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+
+# ---------------------------------------------------------------------------
+# A — the date is on the screen, and so is the default
+# ---------------------------------------------------------------------------
+
+
+def test_the_panel_asks_for_the_engagement_date_and_shows_todays_default(signed_in, specialist):
+    """**§7.A.** The box exists, it is labelled `Kaasamise kuupäev`, and the
+    default it applies is *visible* rather than applied on the server.
+
+    That is the whole difference from what this replaces. Today was always the
+    value being stored; what nobody could see was that it was being stored.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    panel = _panel(_workspace(signed_in, matter))
+
+    assert "Kaasamise kuupäev" in panel
+    assert 'name="occurred_on"' in panel
+    assert f'value="{format_estonian_date(timezone.localdate())}"' in panel
+
+
+def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_nothing(signed_in, specialist):
+    """`Tagasisidet ootame kuni`, blank.
+
+    Today is a plausible engagement date and never a plausible reply-by date, so
+    a pre-filled one would be answered by pressing `Salvesta`.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    panel = _panel(_workspace(signed_in, matter))
+
+    assert "Tagasisidet ootame kuni" in panel
+    assert 'name="feedback_deadline"' in panel
+    field = panel[panel.index('name="feedback_deadline"') :]
+    field = field[: field.index(">")]
+    assert 'value=""' in field, "a reply-by date nobody chose is a reply-by date nobody meant"
+
+
+# ---------------------------------------------------------------------------
+# B, C, D — what is stored is what was typed
+# ---------------------------------------------------------------------------
+
+
+def test_a_historical_engagement_date_survives_the_save(signed_in, specialist):
+    """**§7.B.** Thirty days ago, stored as thirty days ago.
+
+    The regression this stands on: the view used to discard whatever the form
+    cleaned and write `timezone.localdate()`.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    when = timezone.localdate() - dt.timedelta(days=30)
+
+    response = _post(signed_in, matter, occurred_on=format_estonian_date(when))
+
+    assert response.status_code == 200
+    engagement = MatterEngagement.objects.get()
+    assert engagement.occurred_on == when
+    assert engagement.occurred_on != timezone.localdate()
+
+
+def test_clearing_the_date_stores_no_date_at_all(signed_in, specialist):
+    """**§7.C.** An emptied box is an answer, and the answer is «kuupäev teadmata».
+
+    `MatterEngagement.occurred_on` has always been nullable and the chronology
+    has always been able to say so. What was missing was any way for a person to
+    *mean* it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post(signed_in, matter, occurred_on="")
+
+    assert response.status_code == 200
+    engagement = MatterEngagement.objects.get()
+    assert engagement.occurred_on is None, "the server put today back"
+
+
+def test_no_path_from_the_panel_stamps_today_behind_the_persons_back(signed_in, specialist):
+    """The same claim as above, made about the code rather than about one save.
+
+    A cleared date and a backdated one are both proved; this is what catches a
+    re-introduction that only fires when some *other* field is also present.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    when = dt.date(2019, 3, 4)
+
+    _post(
+        signed_in,
+        matter,
+        occurred_on=format_estonian_date(when),
+        response_count="12",
+        smaily_url="https://sendsmaily.net/c/1",
+    )
+
+    assert MatterEngagement.objects.get().occurred_on == when
+
+
+def test_a_refused_save_hands_the_typed_date_back_rather_than_todays(signed_in, specialist):
+    """**§7.D.** The audience is missing, so the panel comes back — carrying the
+    date that was typed into it, not the default it opened with."""
+    matter = factories.MatterFactory(owner=specialist)
+    when = timezone.localdate() - dt.timedelta(days=90)
+    typed = format_estonian_date(when)
+
+    response = _post(signed_in, matter, audience="", occurred_on=typed)
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.exists()
+    # Its own panel came back chosen, with the refusal inside it.
+    radio = body[body.index('id="lisa-kaasamine-valik"') :]
+    assert "checked" in radio[: radio.index(">")]
+    assert f'value="{typed}"' in body
+    assert f'value="{format_estonian_date(timezone.localdate())}"' not in _panel(body)
+
+
+# ---------------------------------------------------------------------------
+# E, F, G — the feedback deadline
+# ---------------------------------------------------------------------------
+
+
+def test_the_feedback_deadline_is_optional_and_blank_stores_null(signed_in, specialist):
+    """**§7.E.** Most consultations never named one."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post(signed_in, matter, feedback_deadline="")
+
+    assert response.status_code == 200
+    assert MatterEngagement.objects.get().feedback_deadline is None
+
+
+def test_the_feedback_deadline_is_stored_and_read_back_exactly(signed_in, specialist):
+    """**§7.F.** Stored, re-read, and shown where the engagement is read."""
+    matter = factories.MatterFactory(owner=specialist)
+    deadline = timezone.localdate() + dt.timedelta(days=8)
+
+    response = _post(signed_in, matter, feedback_deadline=format_estonian_date(deadline))
+
+    assert response.status_code == 200
+    engagement = MatterEngagement.objects.get()
+    assert engagement.feedback_deadline == deadline
+    assert MatterEngagement.objects.get(pk=engagement.pk).feedback_deadline == deadline
+
+    items, _ = matter_timeline(matter=matter, user=specialist)
+    subs = [item.milestone.sub for item in items if item.is_milestone and item.milestone.sub]
+    assert any(f"Tagasisidet ootame kuni {format_estonian_date(deadline)}" in sub for sub in subs)
+
+
+def test_the_chronology_says_nothing_about_a_deadline_that_was_never_set(specialist):
+    """**§5.** No «Määramata», no «—», no «Tähtaeg puudub».
+
+    An absence the reader has to decode is worse than silence, and every row
+    written before today has this absence.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Liikmed",
+        occurred_on=timezone.localdate(),
+        actor=specialist,
+    )
+
+    items, _ = matter_timeline(matter=matter, user=specialist)
+    subs = " ".join(item.milestone.sub or "" for item in items if item.is_milestone)
+
+    assert "Tagasisidet" not in subs
+    assert "Määramata" not in subs
+    assert "Tähtaeg puudub" not in subs
+
+
+@pytest.mark.parametrize("offset", [0, 1, 400])
+def test_a_deadline_on_or_after_the_engagement_date_is_accepted(signed_in, specialist, offset):
+    """**§7.G.** Same day is «vastake tänaseks», later is the normal case."""
+    matter = factories.MatterFactory(owner=specialist)
+    when = timezone.localdate() - dt.timedelta(days=10)
+
+    response = _post(
+        signed_in,
+        matter,
+        occurred_on=format_estonian_date(when),
+        feedback_deadline=format_estonian_date(when + dt.timedelta(days=offset)),
+    )
+
+    assert response.status_code == 200
+    assert MatterEngagement.objects.get().feedback_deadline == when + dt.timedelta(days=offset)
+
+
+def test_a_deadline_before_the_engagement_is_refused_on_its_own_field(signed_in, specialist):
+    """**§7.G.** Nothing was ever asked to be answered before it was asked.
+
+    Reported on `feedback_deadline`, because that is the box a person would
+    correct: the engagement date is the anchor.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    when = timezone.localdate()
+
+    response = _post(
+        signed_in,
+        matter,
+        occurred_on=format_estonian_date(when),
+        feedback_deadline=format_estonian_date(when - dt.timedelta(days=1)),
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.exists()
+    assert "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva." in body
+    assert 'id="id_feedback_deadline_error"' in body
+
+
+def test_the_form_names_the_refusal_on_the_deadline_and_not_on_the_engagement_date():
+    """The same rule read off the form, so the field it lands on is pinned."""
+    form = CompactEngagementForm(
+        {
+            "kind": EngagementKind.SURVEY,
+            "audience": "liikmed",
+            "occurred_on": "10.09.2026",
+            "feedback_deadline": "01.09.2026",
+        }
+    )
+
+    assert not form.is_valid()
+    assert "feedback_deadline" in form.errors
+    assert "occurred_on" not in form.errors
+
+
+def test_a_deadline_with_no_engagement_date_is_accepted(signed_in, specialist):
+    """**§7.G.** Somebody may remember what they asked for and not when."""
+    matter = factories.MatterFactory(owner=specialist)
+    deadline = dt.date(2024, 5, 6)
+
+    response = _post(
+        signed_in, matter, occurred_on="", feedback_deadline=format_estonian_date(deadline)
+    )
+
+    assert response.status_code == 200
+    engagement = MatterEngagement.objects.get()
+    assert engagement.occurred_on is None
+    assert engagement.feedback_deadline == deadline
+
+
+def test_a_deadline_already_in_the_past_is_not_refused(signed_in, specialist):
+    """A consultation recorded months late had its deadline months ago.
+
+    Refusing it would make the historical record unwritable to protect a rule
+    nothing enforces — and this column enforces nothing by design.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post(
+        signed_in,
+        matter,
+        occurred_on=format_estonian_date(dt.date(2021, 1, 4)),
+        feedback_deadline=format_estonian_date(dt.date(2021, 1, 18)),
+    )
+
+    assert response.status_code == 200
+    assert MatterEngagement.objects.get().feedback_deadline == dt.date(2021, 1, 18)
+
+
+# ---------------------------------------------------------------------------
+# What it deliberately is not
+# ---------------------------------------------------------------------------
+
+
+def test_a_feedback_deadline_creates_no_work_and_moves_no_chronology_date(signed_in, specialist):
+    """**§5.** Not a `NextAction`, not `Matter.response_deadline`, not a
+    `MatterImportantDate`, and not the engagement's activity date.
+
+    A past deadline is used on purpose: if any of these were wired up, an
+    overdue item would be the loudest possible symptom.
+    """
+    from app.intelligence.models import MatterImportantDate
+    from app.workflow.models import NextAction
+
+    matter = factories.MatterFactory(owner=specialist)
+    when = timezone.localdate() - dt.timedelta(days=60)
+
+    _post(
+        signed_in,
+        matter,
+        occurred_on=format_estonian_date(when),
+        feedback_deadline=format_estonian_date(when + dt.timedelta(days=5)),
+    )
+
+    matter.refresh_from_db()
+    assert not NextAction.objects.filter(matter=matter).exists()
+    assert not MatterImportantDate.objects.filter(matter=matter).exists()
+    assert matter.response_deadline is None
+
+    items, _ = matter_timeline(matter=matter, user=specialist)
+    rows = [
+        item for item in items if item.is_milestone and "Kaasamine" in (item.milestone.what or "")
+    ]
+    assert len(rows) == 1
+    assert rows[0].milestone.display_date == format_estonian_date(when)
+
+
+# ---------------------------------------------------------------------------
+# H — rows written before the column existed
+# ---------------------------------------------------------------------------
+
+
+def test_an_engagement_with_no_feedback_deadline_reads_exactly_as_it_did(signed_in, specialist):
+    """**§7.H.** Every row in production is this row."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Liikmed",
+        occurred_on=dt.date(2020, 2, 3),
+        response_count=7,
+        actor=specialist,
+    )
+
+    assert engagement.feedback_deadline is None
+
+    body = _workspace(signed_in, matter)
+    assert "Kaasamine: Liikmed" in body
+    assert "Vastuseid 7" in body
+    assert "Tagasisidet ootame kuni" in _panel(body), "the empty form still offers the box"
+    assert body.count("Tagasisidet ootame kuni") == 1, "and the row itself says nothing"
+
+
+# ---------------------------------------------------------------------------
+# §6 — the correction path must not clear what it never mentions
+# ---------------------------------------------------------------------------
+
+
+def test_an_unrelated_correction_leaves_the_feedback_deadline_alone(specialist):
+    """`_UNSET`, proved rather than trusted.
+
+    Every caller that existed before this column names the fields it is
+    correcting and no others. A default of `None` instead of the sentinel would
+    make a title fix silently erase a reply-by date.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Liikmed",
+        occurred_on=dt.date(2026, 9, 1),
+        feedback_deadline=dt.date(2026, 9, 22),
+        actor=specialist,
+    )
+
+    update_engagement(engagement=engagement, title="Liikmed ja töögrupp", actor=specialist)
+
+    engagement.refresh_from_db()
+    assert engagement.title == "Liikmed ja töögrupp"
+    assert engagement.feedback_deadline == dt.date(2026, 9, 22)
+
+
+def test_a_correction_that_names_the_deadline_can_clear_it(specialist):
+    """An explicit `None` still removes a wrong one — the sentinel protects
+    silence, not the value."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Liikmed",
+        feedback_deadline=dt.date(2026, 9, 22),
+        actor=specialist,
+    )
+
+    update_engagement(engagement=engagement, feedback_deadline=None, actor=specialist)
+
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
+
+
+def test_the_service_invents_no_deadline_for_a_caller_that_names_none(specialist):
+    """The importer, the register enrichment, the opinion mapping — none of them
+    knows about this column, and none of them may acquire a value for it."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.WEB_CALL,
+        title="Avalik kaasamiskutse",
+        occurred_on=dt.date(2018, 6, 1),
+        actor=specialist,
+    )
+
+    assert engagement.feedback_deadline is None

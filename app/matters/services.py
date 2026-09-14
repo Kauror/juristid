@@ -1517,6 +1517,7 @@ def add_engagement(
     alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
+    feedback_deadline: Any = None,
     response_count: Any = None,
     actor: Any = None,
 ) -> MatterEngagement:
@@ -1537,6 +1538,13 @@ def add_engagement(
     engagement: ``title`` is still required, so a row cannot come into
     existence as two addresses and no statement of who was engaged
     (docs/adr/0027, amended 2026-09-12).
+
+    ``feedback_deadline`` is `Tagasisidet ootame kuni` — the day the people who
+    were asked were told to answer by. Optional, stored exactly as given, and
+    never derived: a caller that does not name it writes ``NULL`` rather than
+    borrowing ``occurred_on`` or today. It is a record of what was asked, so
+    nothing here turns it into work — no `NextAction`, no deadline row, no
+    count.
     """
     clean_title = title.strip()
     if not clean_title:
@@ -1551,6 +1559,7 @@ def add_engagement(
         alchemer_url=normalize_engagement_url(alchemer_url),
         note=note.strip(),
         occurred_on=occurred_on,
+        feedback_deadline=feedback_deadline,
         response_count=_engagement_response_count(response_count),
         created_by=actor,
     )
@@ -1563,6 +1572,12 @@ def add_engagement(
         payload={
             "kind": engagement.kind,
             "occurred_on": engagement.occurred_on.isoformat() if engagement.occurred_on else None,
+            # The date itself, like `occurred_on` beside it: it is a small
+            # value, it is the thing a correction would change, and an audit
+            # row saying only «a deadline was set» cannot answer «to when».
+            "feedback_deadline": (
+                engagement.feedback_deadline.isoformat() if engagement.feedback_deadline else None
+            ),
             "has_url": bool(engagement.url),
             "has_smaily_url": bool(engagement.smaily_url),
             "has_alchemer_url": bool(engagement.alchemer_url),
@@ -1586,6 +1601,7 @@ def update_engagement(
     alchemer_url: Any = _UNSET,
     note: Any = _UNSET,
     occurred_on: Any = _UNSET,
+    feedback_deadline: Any = _UNSET,
     actor: Any = None,
 ) -> MatterEngagement:
     """Correct an engagement, and say nothing when nothing changed.
@@ -1594,6 +1610,13 @@ def update_engagement(
     small ones. A note can run to paragraphs, and copying every version of it
     into the audit table would turn the history into a second, worse copy of
     the notes themselves (brief 26).
+
+    **`_UNSET` is what protects `feedback_deadline`.** Every caller that
+    existed before the column did — the register enrichment, the opinion
+    mapping refresh, the Teema `Muuda` form — names the fields it is correcting
+    and no others, so a correction to a title or a date cannot quietly clear a
+    reply-by date somebody typed. An explicit ``None`` still clears it, which is
+    how a wrong deadline is removed rather than only overwritten.
     """
     proposed: dict[str, Any] = {}
     if kind is not _UNSET:
@@ -1616,6 +1639,8 @@ def update_engagement(
         proposed["note"] = (note or "").strip()
     if occurred_on is not _UNSET:
         proposed["occurred_on"] = occurred_on
+    if feedback_deadline is not _UNSET:
+        proposed["feedback_deadline"] = feedback_deadline
 
     changed = [field for field, value in proposed.items() if getattr(engagement, field) != value]
     if not changed:
@@ -1631,6 +1656,13 @@ def update_engagement(
         )
         payload["occurred_on_to"] = (
             proposed["occurred_on"].isoformat() if proposed["occurred_on"] else None
+        )
+    if "feedback_deadline" in changed:
+        payload["feedback_deadline_from"] = (
+            engagement.feedback_deadline.isoformat() if engagement.feedback_deadline else None
+        )
+        payload["feedback_deadline_to"] = (
+            proposed["feedback_deadline"].isoformat() if proposed["feedback_deadline"] else None
         )
 
     for field in changed:

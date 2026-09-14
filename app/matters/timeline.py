@@ -709,6 +709,20 @@ def projected_milestones(
         sub = engagement.get_kind_display()
         if engagement.response_count is not None:
             sub = f"{sub} · Vastuseid {engagement.response_count}"
+        # `Tagasisidet ootame kuni 22.9.2026` — what the round asked of the
+        # people it went to, in the words the panel asked for it.
+        #
+        # On the row it belongs to and nowhere else. It is not the chronology
+        # date — that is still `occurred_on` — and it is not work: no item, no
+        # badge, no «üle tähtaja», not even when the day has passed. A blank
+        # deadline says nothing at all rather than «Määramata», because most
+        # engagements never had one and an absence the reader has to decode is
+        # worse than silence.
+        if engagement.feedback_deadline:
+            sub = (
+                f"{sub} · Tagasisidet ootame kuni "
+                f"{format_estonian_date(engagement.feedback_deadline)}"
+            )
         # Read off the row already in hand — no second query, and nothing here
         # for an engagement that carries neither address, so a row that has no
         # links renders no empty container for them.
