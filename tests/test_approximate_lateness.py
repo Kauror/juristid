@@ -406,14 +406,19 @@ def test_the_shared_condition_is_the_one_every_surface_imports():
 
     root = Path(__file__).resolve().parent.parent / "app"
     sources = [
-        (path, number, line)
+        (path, number)
         for path in root.rglob("*.py")
+        # `lateness.py` is where the comparison is *supposed* to be. It is the
+        # one definition this test exists to keep everything else pointed at,
+        # and a guard that flagged its own subject would have to be deleted the
+        # first time somebody read it.
+        if path.name != "lateness.py"
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if "target_date__lt=" in line
     ]
     offenders = [
         f"{path.relative_to(root)}:{number}"
-        for path, number, _ in sources
+        for path, number in sources
         # `my_work_timeline` bands *every* open action by the day it sorts on,
         # review kinds included. That is a position on a timeline and not a
         # verdict, and it says so at the call site.
