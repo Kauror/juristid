@@ -89,6 +89,32 @@
    * order in which the focus survives. */
   var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine"];
 
+  /* Open whatever kind of disclosure this destination is, and say whether it
+   * was one.
+   *
+   * `#lisa-jargmine` is **two different elements** depending on the Matter, and
+   * a link from another page cannot know which it will land on: with a task
+   * open it is `Muuda`, a lone `<details>` in PRAEGUNE TEGEVUS; with none it is
+   * the `+ Järgmine tegevus` panel in LISA TEEMALE, which since 2026-09-14 is a
+   * plain element revealed by its own radio. Both have to be opened before the
+   * scroll, or the browser centres a box of the wrong height and the field
+   * inside it is not focusable at all. */
+  function revealDisclosure(target) {
+    if (!target) {
+      return false;
+    }
+    if (target.tagName === "DETAILS") {
+      target.open = true;
+      return true;
+    }
+    var pick = target.id ? document.getElementById(target.id + "-valik") : null;
+    if (!pick) {
+      return false;
+    }
+    pick.checked = true;
+    return true;
+  }
+
   function focusQuietly(element) {
     /* The scroll is ours, just above; focusing again would fight it. */
     try {
@@ -107,10 +133,9 @@
     if (!target) {
       return;
     }
-    if (target.tagName === "DETAILS") {
-      /* Open before scrolling, so the box is its real height when it is
+    if (revealDisclosure(target)) {
+      /* Opened before scrolling, so the box is its real height when it is
          centred, and so the field inside it is focusable at all. */
-      target.open = true;
       target.scrollIntoView({ block: "center", behavior: "auto" });
       /* The same query app.js uses for `[data-focus]`. Not `input` in general:
          every form here opens with a hidden CSRF token. */
@@ -140,10 +165,7 @@
       if (!trigger) {
         return;
       }
-      var target = document.getElementById(trigger.getAttribute("data-focus"));
-      if (target && target.tagName === "DETAILS") {
-        target.open = true;
-      }
+      revealDisclosure(document.getElementById(trigger.getAttribute("data-focus")));
     },
     true
   );
@@ -408,34 +430,49 @@
     }
   }
 
-  /* ---- LISA TEEMALE: one panel open at a time ---------------------------
-   * Opening one add-to-matter form closes whichever other one was open. The
-   * zone is a *choice* of seven operations, and seven expanded panels stacked
-   * down the page is the composer it replaces wearing different markup
-   * (brief §11).
+  /* ---- LISA TEEMALE: the chip you already chose closes the form ---------
+   * The zone is a *choice* of seven operations, and the browser now keeps that
+   * on its own: one radio `name` means choosing a second operation unchecks the
+   * first, `:checked` reveals its form and paints its chip, and a refusal that
+   * comes back with the radio checked server-side reopens the panel it came
+   * from. None of that needs a script, which is why none of it is here
+   * (templates/matters/partials/add_to_matter.html).
+   *
+   * What a radio group cannot do is go back to nothing chosen. This adds that
+   * one behaviour: clicking the chip that is already active puts the bar back
+   * to seven closed choices. With scripting off the bar still opens every form
+   * and switches between them — what is lost is the click-to-close, not the
+   * capability.
    *
    * Deliberately **not** `data-uxpopover`. That contract also closes on any
    * click outside the disclosure, which is right for a menu and wrong for a
    * form somebody is typing into: the browser lane caught it shutting under the
    * cursor mid-entry and taking the field with it (docs/adr/0074 §20).
    *
-   * With scripting off every `<details>` still opens, closes, submits and
-   * validates. What is lost is the tidiness, not the capability.
+   * `Muuda` in PRAEGUNE TEGEVUS is still a lone `<details>` and needs nothing
+   * here: it has no siblings to close and nothing to un-choose.
    */
   function bindAddPanels(scope) {
-    scope.querySelectorAll("details[data-addpanel]").forEach(function (panel) {
-      if (!once(panel, "AddPanel")) {
+    scope.querySelectorAll("[data-addpick]").forEach(function (pick) {
+      if (!once(pick, "AddPick")) {
         return;
       }
-      panel.addEventListener("toggle", function () {
-        if (!panel.open) {
+      /* The label is the visible control, so the click arrives there and is
+         forwarded to the radio by the browser. Intercepting it on the label —
+         before the forwarding — is what makes "already chosen" observable at
+         all: by the time a `click` reaches the input it is checked either way. */
+      var chip = pick.parentNode
+        ? pick.parentNode.querySelector('label[for="' + pick.id + '"]')
+        : null;
+      if (!chip) {
+        return;
+      }
+      chip.addEventListener("click", function (event) {
+        if (!pick.checked) {
           return;
         }
-        document.querySelectorAll("details[data-addpanel][open]").forEach(function (other) {
-          if (other !== panel) {
-            other.open = false;
-          }
-        });
+        event.preventDefault();
+        pick.checked = false;
       });
     });
   }

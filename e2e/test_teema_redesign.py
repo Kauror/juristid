@@ -215,7 +215,7 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     # Closing is a `LISA TEEMALE` panel, not a box in the rail.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
     open_add_panel(page, "lisa-lopeta")
-    expect(page.locator("#lisa-lopeta")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-lopeta")).to_be_visible()
 
     # No confirmation box: answering the panel is the request (pilot QA F-02).
     expect(page.locator("#id_close_matter")).to_have_count(0)
@@ -391,8 +391,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     open_matter(page, base_url, OPEN_TITLE)
 
     open_next_action_form(page)
-    drop_panel = page.locator("#lisa-marge")
-    drop_panel.locator("summary").first.click()
+    page.locator('label[for="lisa-marge-valik"]').click()
     drop = page.locator("#lisa-marge .cx-drop")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
@@ -429,7 +428,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     page.set_viewport_size({"width": 1440, "height": 900})
     page.wait_for_timeout(120)
     open_next_action_form(page)
-    drop_panel.locator("summary").first.click()
+    page.locator('label[for="lisa-marge-valik"]').click()
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 1440px the drop area is absolutely positioned inside a narrow panel "

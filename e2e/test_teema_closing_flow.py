@@ -122,9 +122,9 @@ def test_a_refused_closure_comes_back_in_an_open_panel(page, base_url):
     page.locator("#lisa-lopeta button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#lisa-lopeta")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-lopeta")).to_be_visible()
     expect(page.locator("#lisa-lopeta")).to_contain_text("Vali, kuidas teema lõppes")
     # Its own panel and no other: a refusal answers itself (docs/adr/0075 §2).
-    expect(page.locator("#lisa-marge")).not_to_have_attribute("open", "")
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
     expect(page.locator("#lisa-lopeta [name=closing_words]")).to_have_value("Midagi juhtus.")
     expect(page.locator(".badge--state")).to_contain_text("Avatud")

@@ -90,7 +90,7 @@ def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, b
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    expect(panel(page)).not_to_have_attribute("open", "")
+    expect(panel(page)).not_to_be_visible()
     open_panel(page)
 
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
@@ -187,11 +187,11 @@ def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, bas
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_be_visible()
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
     # With the count still in it, and no other panel opened on its behalf.
     expect(panel(page).locator("[name=response_count]")).to_have_value("3")
-    expect(page.locator("#lisa-marge")).not_to_have_attribute("open", "")
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
 
 
 def test_an_uncounted_engagement_says_nothing_about_responses(page, base_url):
@@ -265,7 +265,7 @@ def test_a_link_typed_with_no_audience_is_answered_where_the_answer_belongs(page
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_be_visible()
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
     expect(panel(page).locator("[name=smaily_url]")).to_have_value(SMAILY_URL)
 
@@ -284,7 +284,7 @@ def test_a_link_that_is_not_a_web_address_is_refused_under_its_own_box(page, bas
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_be_visible()
     expect(panel(page)).to_contain_text("Link peab algama")
 
 

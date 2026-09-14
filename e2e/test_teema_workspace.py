@@ -213,7 +213,7 @@ def test_a_refused_panel_reopens_itself_and_no_other(page, base_url):
     page.locator("#lisa-toovoit button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#lisa-toovoit")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-toovoit")).to_be_visible()
     expect(page.locator("#lisa-toovoit")).to_contain_text("Kirjuta, mis muutus")
     for other in ("lisa-marge", "lisa-kaasamine", "lisa-tahtaeg", "lisa-lopeta"):
         assert page.locator(f"#{other}").evaluate("node => node.open") is False, other

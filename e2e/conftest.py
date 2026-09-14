@@ -155,13 +155,41 @@ def sign_out(page, base_url: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def add_panel_is_open(page, panel_id: str) -> bool:
+    """Whether one `LISA TEEMALE` operation is showing its form.
+
+    Two shapes, because `#lisa-jargmine` is two different controls: `Muuda` in
+    PRAEGUNE TEGEVUS is still a lone `<details>`, and the launcher's own panels
+    are revealed by the radio that names them.
+    """
+    panel = page.locator(f"#{panel_id}")
+    if panel.count() == 0:
+        return False
+    if panel.evaluate("node => node.tagName") == "DETAILS":
+        return bool(panel.evaluate("node => node.open"))
+    return panel.is_visible()
+
+
+def add_panel_chip(page, panel_id: str):
+    """The control that opens one `LISA TEEMALE` operation.
+
+    The launcher's chips are `<label>`s for their radios; `Muuda` is a
+    `<summary>`. Both are clicked, neither is the element that grows.
+    """
+    chip = page.locator(f'label[for="{panel_id}-valik"]')
+    if chip.count():
+        return chip.first
+    return page.locator(f"#{panel_id} summary").first
+
+
 def open_add_panel(page, panel_id: str) -> None:
     """Open one `LISA TEEMALE` operation and wait for its form.
 
-    The zone is a choice of seven until one is picked, and opening one closes
+    The zone is a choice of seven until one is picked, and picking one closes
     whichever was open (docs/adr/0075 §2). Every browser test that writes
-    anything other than the current action's result goes through here, so the
-    day a panel stops being a `<details>` this is the only line that changes.
+    anything other than the current action's result goes through here, which is
+    what made changing the panels from `<details>` to a radio bar on 2026-09-14
+    a change to these two lines rather than to forty files.
     """
     panel = page.locator(f"#{panel_id}")
     panel.wait_for(state="attached")
@@ -172,9 +200,9 @@ def open_add_panel(page, panel_id: str) -> None:
     # `+ Kaasamine` form stayed hidden for the full 30s locator timeout after a
     # `+ Märge` save immediately before it.
     for _ in range(3):
-        if panel.evaluate("node => node.open"):
+        if add_panel_is_open(page, panel_id):
             break
-        panel.locator("summary").first.click()
+        add_panel_chip(page, panel_id).click()
         page.wait_for_timeout(120)
     panel.locator("form").first.wait_for(state="visible")
 

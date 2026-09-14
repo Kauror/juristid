@@ -4213,7 +4213,15 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Kaasamine` — one consultation and the replies that came back with it."""
+    """`+ Kaasamine` — one consultation and the replies that came back with it.
+
+    **Both dates come off the form.** This view used to pass
+    `timezone.localdate()` for `occurred_on` no matter what, because the panel
+    had no date box — so a consultation from March, written down in September,
+    was stored as a September consultation. The panel asks `Kaasamise kuupäev`
+    now, pre-filled with today, and what the person left in the box is what is
+    stored; a box they emptied stores nothing.
+    """
     matter = get_visible_matter(request, pk)
     form = CompactEngagementForm(request.POST, request.FILES)
     if not form.is_valid():
@@ -4227,7 +4235,8 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             response_count=form.cleaned_data.get("response_count"),
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            occurred_on=timezone.localdate(),
+            occurred_on=form.cleaned_data.get("occurred_on"),
+            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:

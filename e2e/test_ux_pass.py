@@ -154,10 +154,10 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     expect(page.locator("#lisa-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
     open_add_panel(page, "lisa-lopeta")
-    expect(page.locator("#lisa-lopeta")).to_have_attribute("open", "")
+    expect(page.locator("#lisa-lopeta")).to_be_visible()
     expect(page.locator("#lisa-lopeta [name=closing_words]")).to_be_visible()
     # Opening the last one closed the one before it (docs/adr/0075 §2).
-    expect(page.locator("#lisa-tahtaeg")).not_to_have_attribute("open", "")
+    expect(page.locator("#lisa-tahtaeg")).not_to_be_visible()
 
 
 # =========================================================================

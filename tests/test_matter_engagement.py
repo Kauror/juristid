@@ -531,14 +531,22 @@ def test_an_undated_engagement_is_readable_without_a_manufactured_day(signed_in,
     assert "Teavituskiri" not in strip
 
 
-def test_the_composer_panel_asks_no_date_at_all(signed_in, specialist):
-    """The target's `+ Kaasamine` asks `Liik`, `Keda kaasati` and `Vastuseid`.
+def test_the_composer_panel_asks_for_both_dates(signed_in, specialist):
+    """`Liik`, `Keda kaasati`, `Vastuseid` — and, since 2026-09-14, two dates.
 
-    An engagement recorded from the composer is work being written down now, and
-    takes today in Europe/Tallinn — the same clock `add_entry` stamps with. The
-    service still takes `occurred_on`, and the standalone route still asks for
-    it, so an old consultation can still be recorded with its real date
-    (docs/adr/0074 §9).
+    **This reverses docs/adr/0074 §9.** The panel used to ask for no date, on
+    the reasoning that an engagement recorded here is work being written down
+    now and may take today in Europe/Tallinn. The half of that which was true
+    stayed true, and is why `Kaasamise kuupäev` opens pre-filled with today. The
+    half that was not is what a lawyer actually does: a consultation is very
+    often typed up days or months after it happened, and the panel answered that
+    by storing today anyway, silently, with no box on the screen saying so.
+
+    `Tagasisidet ootame kuni` is the second date and the new one — what was
+    asked of the people who were contacted, which the file had nowhere to hold.
+
+    How those boxes behave is `tests/test_engagement_dates.py`; this is the
+    inventory of what the panel asks.
     """
     matter = factories.MatterFactory(owner=specialist)
     body = signed_in.get(
@@ -549,7 +557,10 @@ def test_the_composer_panel_asks_no_date_at_all(signed_in, specialist):
     assert 'name="kind"' in panel
     assert 'name="audience"' in panel
     assert 'name="response_count"' in panel
-    assert 'name="occurred_on"' not in panel
+    assert 'name="occurred_on"' in panel
+    assert "Kaasamise kuupäev" in panel
+    assert 'name="feedback_deadline"' in panel
+    assert "Tagasisidet ootame kuni" in panel
 
 
 def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):
@@ -844,10 +855,19 @@ def _opening_tag(body: str, marker: str) -> str:
 
 
 def _is_open(body: str, marker: str) -> bool:
-    """Whether the `<details>` carrying `marker` renders with `open`."""
+    """Whether the LISA TEEMALE panel carrying `marker` renders chosen.
+
+    The panels stopped being `<details>` on 2026-09-14: a chip that grows
+    when you click it is a chip that moves, so the control and the form are
+    two elements now and the open state lives on the radio that names the
+    panel. `id="lisa-kaasamine"` is therefore answered through
+    `id="lisa-kaasamine-valik"`, which is what carries `checked`
+    (templates/matters/partials/add_to_matter.html).
+    """
     import re as _re
 
-    return _re.search(r"\bopen\b", _opening_tag(body, marker)) is not None
+    radio = marker[:-1] + '-valik"'
+    return _re.search(r"\bchecked\b", _opening_tag(body, radio)) is not None
 
 
 SECTION = 'id="kaasamine"'

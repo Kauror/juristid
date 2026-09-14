@@ -182,11 +182,14 @@ def test_a_refused_closure_comes_back_with_the_closing_panel_open(signed_in, nor
 
     assert response.status_code == 400
     assert 'id="lisa-lopeta"' in html
-    opening = html.split('id="lisa-lopeta"', 1)[1].split(">", 1)[0]
-    assert "open" in opening
+    # The chosen state is on the panel's radio: the launcher's controls and its
+    # forms have been separate elements since 2026-09-14, so that a chip cannot
+    # move when the form it opens grows.
+    opening = html.split('id="lisa-lopeta-valik"', 1)[1].split(">", 1)[0]
+    assert "checked" in opening
     # And no other panel was opened on its behalf (brief §33).
     for other in ("lisa-marge", "lisa-toovoit"):
-        assert "open" not in html.split(f'id="{other}"', 1)[1].split(">", 1)[0]
+        assert "checked" not in html.split(f'id="{other}-valik"', 1)[1].split(">", 1)[0]
 
 
 def test_a_rejected_upload_leaves_nothing_behind(signed_in, normal_matter):
