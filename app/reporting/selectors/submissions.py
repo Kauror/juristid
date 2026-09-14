@@ -29,6 +29,7 @@ from urllib.parse import urlencode
 
 from django.db.models import Count, Q, QuerySet
 from django.urls import reverse
+from django.utils import timezone
 
 from app.matters.enums import RecordMode
 from app.reporting import metric_catalogue as keys
@@ -100,11 +101,21 @@ def measured_window(context: ReportingContext) -> tuple[int, int] | None:
     ``None`` when nothing has ever been recorded. Derived from the data rather
     than from a configured cutover date, because a configured date that drifts
     from reality would produce exactly the false zeros this guards against.
+
+    The opening year is read through ``timezone.localdate``, not off the aware
+    timestamp. `sent_at` comes back from PostgreSQL in UTC, and ``first.year``
+    is therefore the UTC calendar year — which is a different year from the
+    business one across New Year. An opinion sent at 00:30 on 1 January in
+    Tallinn is 22:30 on 31 December in UTC, and reading it directly opened the
+    window a year early: a year with no measurement in it, drawn as a bar
+    meaning "measured, and none". This is the seam #202 named and left for its
+    own round; `timezone.localdate` is the idiom that round established, and it
+    reads ``Europe/Tallinn`` from settings rather than an offset written here.
     """
     first = all_sent(context).order_by("sent_at").values_list("sent_at", flat=True).first()
     if first is None:
         return None
-    return first.year, context.today.year
+    return timezone.localdate(first).year, context.today.year
 
 
 def _submission_url(context: ReportingContext, **extra: str) -> str:
