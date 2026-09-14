@@ -79,9 +79,17 @@ def test_state_a_the_page_shows_the_step_its_date_and_one_way_to_finish_it(page,
     expect(zone.get_by_role("button", name="✓ Tehtud")).to_have_count(0)
     expect(zone.get_by_role("button", name="Märgi tehtuks")).to_have_count(0)
 
-    text = zone.inner_text()
+    # Read off the **step's own line**, which is where every one of these words
+    # lived: TEEN/OOTAN/JÄLGIN were the kind chip in front of the sentence and
+    # TÄHTAEG was the flag in front of its date. The zone as a whole also
+    # carries `Arvamuse tähtaeg` now, where Koda still owes an answer on a file
+    # under an instruction — a different, still-current label that happens to
+    # contain one of these words as a substring, and the two remaining
+    # legitimate spellings are exactly `OLULINE TÄHTAEG` and `ARVAMUSE TÄHTAEG`
+    # (tests/test_next_action_plaanis_wording.py, PR #205).
+    text = zone.locator(".curact__task").inner_text()
     for retired in RETIRED:
-        assert retired not in text, f"the zone still says «{retired}»"
+        assert retired not in text, f"the step still says «{retired}»"
 
 
 # ---------------------------------------------------------------------------
@@ -210,9 +218,17 @@ def test_a_seeded_wait_reads_as_a_sentence_and_a_date(page, base_url):
     expect(zone).not_to_have_class(re.compile("curact--overdue"))
     expect(zone.locator(".curact__date--overdue")).to_have_count(0)
 
-    text = zone.inner_text()
+    # Read off the **step's own line**, which is where every one of these words
+    # lived: TEEN/OOTAN/JÄLGIN were the kind chip in front of the sentence and
+    # TÄHTAEG was the flag in front of its date. The zone as a whole also
+    # carries `Arvamuse tähtaeg` now, where Koda still owes an answer on a file
+    # under an instruction — a different, still-current label that happens to
+    # contain one of these words as a substring, and the two remaining
+    # legitimate spellings are exactly `OLULINE TÄHTAEG` and `ARVAMUSE TÄHTAEG`
+    # (tests/test_next_action_plaanis_wording.py, PR #205).
+    text = zone.locator(".curact__task").inner_text()
     for retired in RETIRED:
-        assert retired not in text, f"the zone still says «{retired}»"
+        assert retired not in text, f"the step still says «{retired}»"
 
     # And it is finishable from here like anything else — the box is offered,
     # and filling it in is asserted on Matters this file creates rather than

@@ -89,7 +89,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core import dates
-from app.core.dates import format_estonian_date
+from app.core.dates import format_estonian_date, short_day_month
 from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
@@ -519,6 +519,23 @@ class ResponseObligation:
     #: that counted from a discharged date would be a lateness nobody owes.
     days_late: int
 
+    @property
+    def short_display(self) -> str:
+        """``20.09`` — the date as a surface that already has a primary date says it.
+
+        The compact, zero-padded form the dense work surfaces already use
+        (:func:`app.core.dates.short_day_month`), because that is what this
+        reading is *for*: a second date stated beside a primary one, in a table
+        cell or under a task, where the full ``20.9.2026`` would compete with
+        the date above it.
+
+        The year is carried by the sentence around it rather than lost: an
+        overdue obligation prints «N p üle» beside this, and a deadline from a
+        previous year reads «382 p üle» rather than «2 p üle». :attr:`display`
+        stays the full form, for the header that states this date on its own.
+        """
+        return short_day_month(self.value)
+
 
 # ---------------------------------------------------------------------------
 # Building items
@@ -879,6 +896,73 @@ def response_obligation_of(
         is_overdue=is_overdue,
         days_late=(today - deadline).days if is_overdue and deadline is not None else 0,
     )
+
+
+def secondary_response_obligation(
+    matter: Matter,
+    user: Any,
+    *,
+    primary_date: date | None,
+    today: date | None = None,
+) -> ResponseObligation | None:
+    """The official obligation, for a surface whose primary date is the plan.
+
+    ``Järgmiseks`` is the operational plan and it stays primary everywhere
+    (docs/adr/0050). What a surface showing *Plaanis 15.10.2026* never said is
+    that the Chamber still owes an answer on a day that has already gone by —
+    the second question :func:`response_obligations` exists to ask. This is that
+    answer, shaped for a surface that is already showing something else::
+
+        Plaanis 15.10.2026
+        Arvamuse tähtaeg 20.09 · 25 p üle
+
+    ``None`` means *say nothing here*, for one of three reasons, and the third
+    is the one worth naming.
+
+    **Nothing is owed.** The obligation is discharged — a visible ``SENT``
+    Submission, or a ``CURRENT`` register row recording the opinion work as
+    finished — or the Matter carries no ``Arvamuse tähtaeg`` at all
+    (:func:`response_obligation_of`).
+
+    **It is not live work.** A closed Matter and an ``ARCHIVE`` record are not
+    things anybody can act on, and an overdue warning on one is a queue entry in
+    everything but name. The two clauses here are exactly the ones
+    :func:`full_matters` and :func:`response_obligations` already apply, so the
+    rows this reading describes are precisely ``response_obligations(user)`` —
+    asserted rather than assumed, in
+    ``tests/test_response_obligation_display.py``.
+
+    **The surface is already showing this date.** ``primary_date`` is what the
+    surface prints as its primary fact, and when that *is* the response deadline
+    the secondary line would print the same day twice::
+
+        Arvamuse tähtaeg 20.9.2026
+        Arvamuse tähtaeg 20.09 · 25 p üle
+
+    which is not a second fact, it is the first one stuttering. Each surface
+    passes its own primary: the register row passes
+    :attr:`~app.matters.register_dates.RegisterDate.value`, and the Teema
+    workspace passes the open step's date, falling back to the Matter's own
+    deadline because the header directly above states that one in full.
+
+    **The reader's scope is the one :func:`response_obligation_of` keeps.** A
+    ``SENT`` Submission restricted below a NORMAL Matter discharges the
+    obligation only for somebody who may see it; a reader who may not still sees
+    the deadline outstanding, which is the direction that discloses nothing
+    (AUTH-003, docs/adr/0038). Nothing here adds a query of its own: on a list
+    the ``DISCHARGED`` annotation is already on the row.
+
+    Nothing about any work population, count or ordering is touched. This adds a
+    sentence to a surface; it moves no Matter into a queue.
+    """
+    if not matter.is_open or matter.record_mode != RecordMode.FULL:
+        return None
+    obligation = response_obligation_of(matter, user, today)
+    if not obligation.is_outstanding:
+        return None
+    if obligation.value == primary_date:
+        return None
+    return obligation
 
 
 def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
@@ -1517,6 +1601,7 @@ __all__ = [
     "response_obligation_of",
     "response_obligations",
     "review_ripe_items",
+    "secondary_response_obligation",
     "sort_items",
     "start_of_iso_week",
     "undated_actions",

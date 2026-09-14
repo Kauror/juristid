@@ -99,6 +99,34 @@ task above it is a form asking about work nobody has named. The route to work is
       {% endif %}
     </div>
 
+    {% comment %}
+      The other date this file carries, under the plan and never instead of it.
+
+      The task above is what happens next, and it outranks the `Arvamuse
+      tähtaeg` on every work surface: a lawyer who wrote «JÄLGIN, vaatan uuesti
+      üle 15.10» has said what this file is doing, and a list calling it overdue
+      is the defect ADR 0050 fixed. What that precedence never decided is whether
+      **Koda has answered the ministry** — a note to oneself is a plan, not a
+      response — so while an opinion has not gone out and the register has not
+      recorded the opinion work as finished, the obligation stands and says so
+      here (PR #205, ADR 0011, ADR 0059).
+
+      One line, quiet, under the task: the reader's first question is still
+      *what am I supposed to be doing about this*, and this is the second.
+
+      Absent on a file where the deadline **is** the primary fact — no step, or a
+      closed Matter. There the header's own `Tähtaeg` states it in full, and
+      `work_items.secondary_response_obligation` returns nothing rather than let
+      the page print one day twice. Nothing about it moves the Matter into a work
+      queue: no population, no count and no ordering reads this.
+    {% endcomment %}
+    {% if response_obligation %}
+      <p class="curact__owed">
+        <span class="curact__owedlabel">{{ response_obligation.label }}</span>
+        <span class="curact__oweddate{% if response_obligation.is_overdue %} curact__oweddate--overdue{% endif %}">{{ response_obligation.short_display }}{% if response_obligation.is_overdue %} · {{ response_obligation.days_late }} p üle{% endif %}</span>
+      </p>
+    {% endif %}
+
     {% if can_write %}
       <form class="curact__form" data-composer
             hx-post="{% url 'matters:complete_current_action' pk=matter.pk %}"

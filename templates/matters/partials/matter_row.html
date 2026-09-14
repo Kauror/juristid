@@ -182,6 +182,32 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
         <span class="muted">—</span>
       {% endif %}
     {% endwith %}
+    {% comment %}
+      The second truth about the same column, under the first.
+
+      The line above is the **plan**: an open `Järgmiseks` outranks the response
+      deadline, so a file whose lawyer wrote «JÄLGIN, vaatan uuesti üle 15.10»
+      reads *Plaanis 15.10.2026* and is not late (docs/adr/0050). What that says
+      nothing about is whether Koda has answered the ministry — and until an
+      opinion goes out or the register records the opinion work as finished, it
+      has not (PR #205, ADR 0011, ADR 0059).
+
+      So the outstanding `Arvamuse tähtaeg` is stated here, quietly and second.
+      It changes no sort key, no primary date and no work population: the row is
+      in exactly the places it was, saying one more true thing.
+
+      Silent when the cell above has already fallen back to this same deadline —
+      `secondary_obligation` compares the two dates, so the column never prints
+      one day twice (`app/matters/work_items.py`).
+    {% endcomment %}
+    {% with owed=matter|secondary_obligation:user %}
+      {% if owed %}
+        <span class="dateowed">
+          <span class="dateowed__label">{{ owed.label }}</span>
+          <span class="dateowed__value{% if owed.is_overdue %} dateowed__value--overdue{% endif %}">{{ owed.short_display }}{% if owed.is_overdue %} · {{ owed.days_late }} p üle{% endif %}</span>
+        </span>
+      {% endif %}
+    {% endwith %}
   </td>
 
   {% comment %}
