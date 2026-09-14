@@ -247,8 +247,17 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     zone = page.locator("#praegune-tegevus")
     expect(zone.locator(".curact__text")).to_have_text("Kontrollida ministeeriumi uut sõnastust")
     expect(zone.locator(".curact__date")).to_be_visible()
+    # Read off the **step's own line**, which is where every one of these words
+    # lived: TEEN/OOTAN/JÄLGIN were the kind chip in front of the sentence and
+    # TÄHTAEG was the flag in front of its date. The zone as a whole also
+    # carries `Arvamuse tähtaeg` now, where Koda still owes an answer on a file
+    # under an instruction — a different, still-current label that happens to
+    # contain one of these words as a substring, and the two remaining
+    # legitimate spellings are exactly `OLULINE TÄHTAEG` and `ARVAMUSE TÄHTAEG`
+    # (tests/test_next_action_plaanis_wording.py, PR #205).
+    step = zone.locator(".curact__task").inner_text()
     for retired in ("TEEN", "OOTAN", "JÄLGIN", "OODATAV", "TÄHTAEG"):
-        assert retired not in zone.inner_text()
+        assert retired not in step, f"the step still says «{retired}»"
     expect(zone).not_to_have_class("curact--overdue")
     # The superseded DO must no longer be presented as the current action.
     expect(zone.get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)

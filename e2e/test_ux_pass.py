@@ -175,9 +175,17 @@ def test_the_next_action_row_says_the_step_and_its_date_and_nothing_else(page, b
     expect(zone).to_be_visible()
     expect(zone).to_contain_text("Praegune tegevus")
 
-    text = zone.inner_text()
+    # Read off the **step's own line**, which is where every one of these words
+    # lived: TEEN/OOTAN/JÄLGIN were the kind chip in front of the sentence and
+    # TÄHTAEG was the flag in front of its date. The zone as a whole also
+    # carries `Arvamuse tähtaeg` now, where Koda still owes an answer on a file
+    # under an instruction — a different, still-current label that happens to
+    # contain one of these words as a substring, and the two remaining
+    # legitimate spellings are exactly `OLULINE TÄHTAEG` and `ARVAMUSE TÄHTAEG`
+    # (tests/test_next_action_plaanis_wording.py, PR #205).
+    text = zone.locator(".curact__task").inner_text()
     for retired in ("TEEN", "OOTAN", "JÄLGIN", "TÄHTAEG", "VAATAN ÜLE", "OODATAV"):
-        assert retired not in text, f"the zone still says «{retired}»"
+        assert retired not in text, f"the step still says «{retired}»"
 
 
 def test_deferring_moves_the_date_and_says_which_day_it_lands_on(page, base_url):
