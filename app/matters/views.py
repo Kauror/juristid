@@ -92,6 +92,7 @@ from app.matters.forms import (
     CompactEffectiveDateForm,
     CompactEngagementForm,
     CompactImportantDateForm,
+    CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
     ComposerForm,
@@ -105,6 +106,7 @@ from app.matters.forms import (
     NextActionForm,
     PersonalNoteForm,
     PositionForm,
+    WebsiteOverviewLinkForm,
     WorkingDocumentForm,
     edit_initial,
     period_initial,
@@ -118,7 +120,13 @@ from app.matters.intake_suggestions import (
     prefill_controls,
     prefill_initial,
 )
-from app.matters.models import Entry, Matter, MatterAssignmentNotice, MatterEngagement
+from app.matters.models import (
+    Entry,
+    Matter,
+    MatterAssignmentNotice,
+    MatterEngagement,
+    MatterWebsiteOverview,
+)
 from app.matters.my_work import (
     HORIZON_PARAM,
     VIEW_PARAM,
@@ -130,6 +138,7 @@ from app.matters.process_timeline import process_steps
 from app.matters.services import (
     EntryEditConflict,
     PersonalNoteConflict,
+    WebsiteOverviewConflict,
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
@@ -2389,6 +2398,29 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # explanation shut on exactly the saves that needed explaining
         # (Kaasamine one-click §3, §7).
         "engagement_add_open": False,
+        # `Kodulehe ülevaated`, and only the ones this Matter still owes.
+        #
+        # Read here for the reason everything else on this dict is: the template
+        # must not be able to start querying. Planned rows only — a published
+        # overview reads in the chronology, off the record that holds it, and a
+        # strip that listed both would state one fact in two places
+        # (docs/adr/0081 §4).
+        #
+        # The strip renders nothing at all when this is empty, which is the
+        # ordinary case: there are no permanently visible empty sections on this
+        # page (TEEMA_TARGET_SPEC §F).
+        # `(record, form)`, one pair per planned row. The form is this row's own
+        # — its ids are derived from the record's id, because a Matter may owe
+        # several write-ups and two controls sharing an id is enough to make a
+        # label reach the wrong box — and it carries the row's revision token, so
+        # a publication cannot land on a plan that has moved on
+        # (`_planned_website_overview_rows`).
+        "planned_website_overviews": _planned_website_overview_rows(matter, request.user),
+        # What a refused `Avalda` came back as. Empty on an ordinary render; a
+        # refusal replaces the pair for its own row and fills these two
+        # (`_website_overview_refusal`).
+        "website_overview_open": "",
+        "website_overview_error": "",
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
         # «Lükka edasi», with the day each option lands on. Offered only on an
@@ -4015,6 +4047,13 @@ ENTRY_READ_PARAM = "vaade"
 ENTRY_READ_VALUE = "lugemine"
 ENTRY_READ_QUERY = f"?{ENTRY_READ_PARAM}={ENTRY_READ_VALUE}"
 
+#: The same question, for the `Kodulehe ülevaade` link a chronology row shows.
+#: Its own constants rather than the entry's reused, so the two controls can
+#: never be tied to each other by a value one of them changes.
+WEBSITE_OVERVIEW_READ_PARAM = "vaade"
+WEBSITE_OVERVIEW_READ_VALUE = "lugemine"
+WEBSITE_OVERVIEW_READ_QUERY = f"?{WEBSITE_OVERVIEW_READ_PARAM}={WEBSITE_OVERVIEW_READ_VALUE}"
+
 
 def _entry_edit_form(entry: Entry, data: Any = None) -> EntryEditForm:
     """One entry's edit form, with ids nothing else on the page can share.
@@ -4163,6 +4202,342 @@ def edit_entry_view(request: HttpRequest, pk: Any, entry_id: Any) -> HttpRespons
     return _entry_row(request, matter, entry)
 
 
+# ---------------------------------------------------------------------------
+# `Kodulehe ülevaade`
+# ---------------------------------------------------------------------------
+#
+# Four routes for four things that happen to one record: a plan is recorded, it
+# is published, it is dropped, or an address already on the file turns out to be
+# wrong. Three of them are new business content and take the closed-Matter lock
+# in `app.matters.workspace`; the fourth is a correction and deliberately does
+# not (docs/adr/0081 §5).
+
+
+def _website_overview_for(
+    request: HttpRequest, matter: Matter, overview_id: Any
+) -> MatterWebsiteOverview:
+    """The overview this request may act on, or a 404.
+
+    Scoped through the child's own `visible_to` rather than fetched by id off
+    the Matter, exactly as `_entry_for_correction` and `update_engagement_view`
+    do it: the record carries its own `visibility_override`, and reading it any
+    other way would bypass that. A restricted overview inside a Matter somebody
+    may see is indistinguishable here from one that does not exist (AUTH-003).
+    """
+    return get_object_or_404(
+        MatterWebsiteOverview.objects.visible_to(request.user).filter(matter=matter),
+        pk=overview_id,
+    )
+
+
+def _website_overview_link_form(
+    overview: MatterWebsiteOverview, data: Any = None
+) -> WebsiteOverviewLinkForm:
+    """One overview's address form, with ids nothing else on the page can share.
+
+    Field *names* stay `url`, `published_on` and `revision` — the POST handler
+    and its tests read one spelling — while the ids, and the `<label for>` that
+    follows them, are per row. A Matter may owe or hold several overviews, and
+    two elements sharing an id is enough to make a label reach the wrong box
+    (`_entry_edit_form`, `workspace_attachments`).
+
+    **A planned row is given no `published_on` initial, and that is not an
+    oversight.** Passing `None` explicitly would override the field's own
+    default and leave the box empty; leaving it out lets today through, which is
+    what somebody recording a publication almost always wants — visibly, in a
+    box they can change or clear (docs/adr/0078 §2). A published row is filled
+    from what it actually says, because there the form is a correction.
+    """
+    auto_id = f"id_kodulehe_ulevaade_{overview.pk}_%s"
+    if data is not None:
+        return WebsiteOverviewLinkForm(data, auto_id=auto_id)
+    initial: dict[str, Any] = {"revision": overview.revision_token}
+    if overview.is_published:
+        initial["url"] = overview.url
+        initial["published_on"] = overview.published_on
+    return WebsiteOverviewLinkForm(initial=initial, auto_id=auto_id)
+
+
+def _planned_website_overview_rows(
+    matter: Matter,
+    user: Any,
+    *,
+    bound_for: Any = None,
+    form: WebsiteOverviewLinkForm | None = None,
+) -> list[tuple[MatterWebsiteOverview, WebsiteOverviewLinkForm]]:
+    """Each planned overview with the form that publishes it.
+
+    Paired here rather than in the template for the reason `engagement_rows` is:
+    exactly one row may render a *bound* form — the one a refusal came back for
+    — and deciding that in the template would mean comparing ids in three
+    places. Every other row gets its own unbound form, so a refused `Avalda` on
+    one plan cannot put somebody's typed address into the box beside another.
+    """
+    rows = []
+    for record in selectors.planned_website_overviews(matter, user):
+        if form is not None and bound_for is not None and str(record.pk) == str(bound_for):
+            rows.append((record, form))
+        else:
+            rows.append((record, _website_overview_link_form(record)))
+    return rows
+
+
+def _website_overview_refusal(
+    request: HttpRequest,
+    matter: Matter,
+    *,
+    overview: MatterWebsiteOverview | None,
+    form: Any = None,
+    error: str = "",
+    status: int = 400,
+) -> HttpResponse:
+    """Re-render the column with the strip's own refusal in the row it came from.
+
+    Deliberately **not** `_workspace_refusal`. That helper answers a refusal by
+    reopening a launcher panel, and these two operations have no launcher panel:
+    `Avalda` and `Tühista` live on a planned row in the strip, which is rendered
+    from the Matter's own records rather than from a chip somebody clicked. A
+    refusal routed through the panel machinery would set `open_panel` to the
+    empty string and the sentence would render nowhere at all.
+
+    The bound form and the refused row's id travel together, so the strip
+    reopens exactly the disclosure the words were typed into and puts them back
+    in it — the same promise every other refused save on this page keeps.
+
+    **There is no separate «the version that beat you» block here**, and there
+    does not need to be. The strip is re-rendered from `_overview_context`, which
+    has just re-read the records, so the row beside the refusal already *is* what
+    the file now says — published by the other tab, or gone from the planned list
+    entirely — and the sentence explains why this save did not land. Nothing was
+    written. The stale token deliberately stays in the bound form: advancing it
+    would be this view deciding that the next submit may overwrite what the other
+    writer saved (`edit_entry_view`, QA-09).
+    """
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    if overview is not None and form is not None:
+        # A refused `Avalda`: the disclosure reopens on this row and the form
+        # comes back bound, so what was typed is still in the boxes.
+        context["website_overview_open"] = str(overview.pk)
+        context["planned_website_overviews"] = _planned_website_overview_rows(
+            matter, request.user, bound_for=overview.pk, form=form
+        )
+    # A refused `Tühista` has no form and therefore no panel to reopen — opening
+    # `Avalda` to explain why a cancellation failed would answer a refusal by
+    # offering a different operation. Its sentence goes under the list instead,
+    # which is where the strip prints a refusal no row owns.
+    context["website_overview_error"] = error
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    return HttpResponse(body, status=status)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Kodulehe ülevaade` — this file is owed a summary on koda.ee.
+
+    No fields, so nothing to validate here and nothing a refusal could hand
+    back. The one refusal this route can produce is the closed Matter, which the
+    service answers under the row lock — a POST from a tab that was open before
+    somebody else shut the file (R2-02).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactWebsiteOverviewForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="website_overview_form", form=form)
+    try:
+        workspace.add_matter_website_overview(matter=matter, author=request.user)
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="website_overview_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def publish_website_overview_view(request: HttpRequest, pk: Any, overview_id: Any) -> HttpResponse:
+    """`Avalda` — the page is up on koda.ee, and this is where it is.
+
+    New business content, so a closed Matter refuses it under the lock rather
+    than by not rendering the control. The address goes through
+    `normalize_koda_website_url` on the form *and* in the service: the first is
+    where a person sees the refusal beside what they typed, and the second is
+    what a crafted POST meets.
+    """
+    matter = get_visible_matter(request, pk)
+    overview = _website_overview_for(request, matter, overview_id)
+    form = WebsiteOverviewLinkForm(request.POST)
+    if not form.is_valid():
+        return _website_overview_refusal(request, matter, overview=overview, form=form)
+    try:
+        workspace.publish_planned_website_overview(
+            matter=matter,
+            author=request.user,
+            overview=overview,
+            url=form.cleaned_data["url"],
+            published_on=form.cleaned_data["published_on"],
+            expected_revision=form.cleaned_data.get("revision") or None,
+        )
+    except WebsiteOverviewConflict as conflict:
+        return _website_overview_refusal(
+            request,
+            matter,
+            overview=overview,
+            form=form,
+            error=str(conflict),
+            status=409,
+        )
+    except DomainError as error:
+        return _website_overview_refusal(
+            request, matter, overview=overview, form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def cancel_website_overview_view(request: HttpRequest, pk: Any, overview_id: Any) -> HttpResponse:
+    """`Tühista` — the write-up is not going to happen after all.
+
+    The row stays on the file as a cancelled plan and reads in the chronology.
+    Nothing is deleted here, and a published overview is refused: a record
+    claiming a page was never published would be the file disagreeing with the
+    website (docs/adr/0081 §1).
+    """
+    matter = get_visible_matter(request, pk)
+    overview = _website_overview_for(request, matter, overview_id)
+    try:
+        workspace.cancel_matter_website_overview(
+            matter=matter,
+            author=request.user,
+            overview=overview,
+            expected_revision=request.POST.get("revision") or None,
+        )
+    except WebsiteOverviewConflict as conflict:
+        return _website_overview_refusal(
+            request,
+            matter,
+            overview=overview,
+            error=str(conflict),
+            status=409,
+        )
+    except DomainError as error:
+        return _website_overview_refusal(request, matter, overview=overview, error=str(error))
+    return _render_overview(request, matter)
+
+
+def _website_overview_link_row(
+    request: HttpRequest,
+    matter: Matter,
+    overview: MatterWebsiteOverview,
+    *,
+    form: WebsiteOverviewLinkForm | None = None,
+    error: str = "",
+    conflict: MatterWebsiteOverview | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    """The published overview's link region, read-only or in correction mode.
+
+    One renderer for both, because they swap the same element: `Paranda link`
+    replaces the link with the form, and every answer replaces it again — with
+    the corrected address, or with the form still open and what the person typed
+    still in it. The chronology row around it, its dot, its date and its
+    position are never in the response, so a correction cannot move the line
+    (`_entry_row`, which this mirrors exactly).
+    """
+    return render(
+        request,
+        "matters/partials/website_overview_link.html",
+        {
+            "matter": matter,
+            "overview": overview,
+            "website_overview_link_form": form,
+            "website_overview_link_error": error,
+            "website_overview_link_conflict": conflict,
+            "website_overview_read_query": WEBSITE_OVERVIEW_READ_QUERY,
+        },
+        status=status,
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def correct_website_overview_view(request: HttpRequest, pk: Any, overview_id: Any) -> HttpResponse:
+    """`Paranda link` — what the file says about an existing page was wrong.
+
+    **Available on a closed Matter too, and that is the point.** Closure means
+    no new business content: no new plan, no publication, no cancellation, each
+    refused by its own route's row lock. It has never meant that an address
+    recorded wrongly must stay wrong. Correcting one creates no record, moves
+    nothing in the chronology, reopens nothing and leaves `is_open`, `closed_at`
+    and `disposition` exactly as they were — `correct_website_overview_link`
+    does not so much as read them (docs/adr/0075 §12, docs/adr/0081 §5).
+
+    It also cannot become a way to publish a plan on a closed file: the service
+    refuses anything whose status, read under the lock, is not already
+    `Avaldatud`.
+
+    Behind `business_write_required` and nothing narrower, for the reason
+    `edit_entry_view` gives: a wrong address on the file is the department's
+    problem and not its author's alone (docs/adr/0042).
+
+    GET opens the form; POST saves it. One route, because they are one
+    interaction and the second is only reachable from the first.
+    """
+    matter = get_visible_matter(request, pk)
+    overview = _website_overview_for(request, matter, overview_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving correction mode is a re-read rather than a
+        # client-side hide: the boxes may be holding an address that was never
+        # saved, and the only honest way out is to fetch what the record says.
+        if request.GET.get(WEBSITE_OVERVIEW_READ_PARAM) == WEBSITE_OVERVIEW_READ_VALUE:
+            return _website_overview_link_row(request, matter, overview)
+        return _website_overview_link_row(
+            request, matter, overview, form=_website_overview_link_form(overview)
+        )
+
+    form = _website_overview_link_form(overview, request.POST)
+    if not form.is_valid():
+        return _website_overview_link_row(request, matter, overview, form=form, status=400)
+
+    try:
+        workspace.correct_matter_website_overview(
+            author=request.user,
+            overview=overview,
+            url=form.cleaned_data["url"],
+            published_on=form.cleaned_data["published_on"],
+            expected_revision=form.cleaned_data.get("revision") or None,
+        )
+    except WebsiteOverviewConflict as conflict:
+        # 409, and nothing was written. The form stays open holding this
+        # person's address, and the version that beat them arrives beside it to
+        # read. The hidden token is **not** advanced: adopting the newer one
+        # here would be this view deciding that the next submit may overwrite
+        # what the other writer saved (`edit_entry_view`, QA-09).
+        return _website_overview_link_row(
+            request,
+            matter,
+            overview,
+            form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except DomainError as error:
+        return _website_overview_link_row(
+            request, matter, overview, form=form, error=str(error), status=400
+        )
+
+    overview.refresh_from_db()
+    return _website_overview_link_row(request, matter, overview)
+
+
 def matter_url(matter: Matter) -> str:
     return reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
@@ -4193,6 +4568,7 @@ WORKSPACE_PANELS: dict[str, str] = {
     "important_date_form": "lisa-tahtaeg",
     "effective_date_form": "lisa-joustumine",
     "work_victory_form": "lisa-toovoit",
+    "website_overview_form": "lisa-koduleht",
     "closure_form": "lisa-lopeta",
 }
 
@@ -4238,7 +4614,13 @@ def workspace_forms(current_action: Any = None) -> dict[str, Any]:
         "important_date_form": CompactImportantDateForm(),
         "effective_date_form": CompactEffectiveDateForm(),
         "work_victory_form": CompactWorkVictoryForm(),
-        "closure_form": CompactClosureForm(),
+        # `+ Kodulehe ülevaade`. A form with no fields, because at the moment
+        # somebody decides a Matter should be written up on koda.ee there is no
+        # address and no date to ask for. It is built here like the other seven
+        # so that a refusal — the closed Matter, which is the only one this
+        # operation can produce — comes back through the same machinery
+        # (docs/adr/0081 §2).
+        "website_overview_form": CompactWebsiteOverviewForm(),
         "open_panel": "",
         "workspace_error": "",
     }

@@ -14,6 +14,7 @@ from typing import Any
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
+from django.utils import timezone
 
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
@@ -28,6 +29,7 @@ from app.matters.enums import (
     MatterOrigin,
     RecordMode,
     TagAssignmentSource,
+    WebsiteOverviewStatus,
 )
 from app.workflow.enums import Disposition, Track
 
@@ -748,6 +750,14 @@ class EntryRevision(AppendOnlyModel):
 #: rather than the first validator (red-team finding F-1, 2026-09-12).
 ENGAGEMENT_URL_MAX_LENGTH = 1000
 
+#: The same bound, for the same reason, on a `Kodulehe ülevaade`'s address.
+#: Stated separately rather than shared with the engagement columns because the
+#: two are different product decisions that happen to agree today: an engagement
+#: link is a campaign address full of tracking parameters, and this one is a
+#: koda.ee page. `normalize_koda_website_url` enforces it, refusing rather than
+#: truncating, and the column stays the defence behind it.
+WEBSITE_OVERVIEW_URL_MAX_LENGTH = 1000
+
 
 class MatterEngagementQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterEngagementQuerySet:
@@ -1014,6 +1024,242 @@ class MatterEngagement(VisibilityInheritingModel):
         for url in (self.url, self.smaily_url, self.alchemer_url):
             terms.extend(self._host_terms(url))
         return list(dict.fromkeys(terms))
+
+
+#: The one host a `Kodulehe ülevaade` may point at, and every subdomain of it.
+#:
+#: Named here rather than written into the validator, because the model's
+#: docstring, the refusal sentence and `normalize_koda_website_url` all have to
+#: agree about it — and because the day the Chamber publishes under a second
+#: domain, this is the line that moves and the only one (docs/adr/0081).
+KODA_WEBSITE_HOST = "koda.ee"
+
+
+class MatterWebsiteOverviewQuerySet(models.QuerySet):
+    def visible_to(self, user: object | None) -> MatterWebsiteOverviewQuerySet:
+        """The only supported entry point for reading website overviews."""
+        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+
+    def planned(self) -> MatterWebsiteOverviewQuerySet:
+        return self.filter(status=WebsiteOverviewStatus.PLANNED)
+
+    def published(self) -> MatterWebsiteOverviewQuerySet:
+        return self.filter(status=WebsiteOverviewStatus.PUBLISHED)
+
+
+class MatterWebsiteOverview(VisibilityInheritingModel):
+    """`Kodulehe ülevaade` — a summary of this Matter that belongs on koda.ee.
+
+    A lawyer finishing a round of work frequently decides that the membership
+    should be told about it on the Chamber's own website. Until now the file had
+    nowhere to hold that: the intention lived in somebody's head until the page
+    appeared, and the published address lived in a browser history. The question
+    «did we ever write this up, and where is it» had no answer on the Teema.
+
+    So it is a record with three states and two columns. `Plaanis` says the
+    write-up is owed and carries neither an address nor a date, because neither
+    exists yet. `Avaldatud` says it happened, and carries both. `Tühistatud` says
+    the plan was dropped, which is part of the file rather than something to
+    delete (docs/adr/0081).
+
+    What it is not
+    --------------
+    Not a `Märge`: a note is narrative, and «kodulehe ülevaade on plaanis»
+    written as prose is a sentence nothing can ask a question of. Not a
+    `Document`: nothing is uploaded here and koda.ee is not the evidence store.
+    Not `Tulemuse tõend` and not a `Submission`: a summary written for the
+    membership is not the Chamber's formal outbound opinion, and folding it into
+    that vocabulary would corrupt every submission statistic. Not a `Töövõit`:
+    publishing a page is not a claim that anything was won. Not a `NextAction`
+    and not a deadline: an overview that is owed is not a dated instruction, and
+    a column that generated a task would make every Matter with a plan on it
+    look late (docs/adr/0081 §4).
+
+    Zero, one or many
+    -----------------
+    A Matter may carry none, one, or several. A long proceeding is written up
+    more than once, and there is deliberately no uniqueness on ``matter``. The
+    one uniqueness there *is* guards against the same address being filed twice
+    on one Matter, which is a duplicate record rather than a second overview.
+
+    No deletion
+    -----------
+    Create, publish, cancel and correct. A mistaken plan is cancelled, not
+    removed; a wrong address is corrected, not replaced by a new row. That is
+    the same rule `MatterEngagement` keeps, for the same reason.
+    """
+
+    matter = models.ForeignKey(
+        Matter,
+        on_delete=models.CASCADE,
+        related_name="website_overviews",
+        verbose_name="teema",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=WebsiteOverviewStatus.choices,
+        default=WebsiteOverviewStatus.PLANNED,
+        db_index=True,
+        verbose_name="olek",
+    )
+    #: Where the published overview actually is. Empty until it is published,
+    #: and empty forever on a plan that was dropped — the constraints below say
+    #: so in the database rather than only in the service, because a URL on a
+    #: record that claims nothing was published is a link a reader would follow.
+    url = models.URLField(
+        max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH, blank=True, verbose_name="link"
+    )
+    #: The day the overview went up on koda.ee, as a person states it.
+    #:
+    #: **Never stamped by the server.** The panel that records a publication
+    #: offers today because today is the usual answer, and what the person left
+    #: in the box is what is stored. Nothing anywhere derives this from
+    #: ``created_at``, from ``published_at`` or from the clock: a date the
+    #: application invented is a date nobody can correct, because nobody knows
+    #: it is wrong (docs/adr/0078 §2, and docs/adr/0081 §3).
+    published_on = models.DateField(null=True, blank=True, verbose_name="avaldamise kuupäev")
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="planned_website_overviews",
+        verbose_name="lisas",
+    )
+    #: Who recorded the publication, and when they recorded it — which is a
+    #: different fact from ``published_on``, the day the page appeared. A
+    #: correction months later changes the second and never the first.
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="published_website_overviews",
+        verbose_name="avaldamise kirjutas",
+    )
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="avaldatuks märgitud")
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="tühistatud")
+    #: When this record last moved between states, whichever state that was.
+    #: The same column `MatterWorkVictory` keeps for the same purpose.
+    status_changed_at = models.DateTimeField(default=timezone.now, verbose_name="oleku muutus")
+
+    objects = MatterWebsiteOverviewQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "kodulehe ülevaade"
+        verbose_name_plural = "kodulehe ülevaated"
+        # Newest publication first, and a row that has not been published sorts
+        # *last* rather than first: `NULLS LAST` is what stops a plan reading as
+        # though it went up today. The same ordering, for the same reason, as
+        # `MatterEngagement` (brief 18).
+        ordering = [models.F("published_on").desc(nulls_last=True), "-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=WebsiteOverviewStatus.values),
+                name="matters_website_overview_status_vocabulary",
+            ),
+            # **The two halves of «published means published».** An overview in
+            # that state has an address and a day; one in any other state has
+            # neither. Written as a single implication each way so that no row
+            # can exist claiming a publication with nothing to show, and none
+            # can carry a koda.ee link while saying it was never published.
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(status=WebsiteOverviewStatus.PUBLISHED)
+                    | (~models.Q(url="") & models.Q(published_on__isnull=False))
+                ),
+                name="matters_website_overview_published_has_link_and_date",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status=WebsiteOverviewStatus.PUBLISHED)
+                    | models.Q(url="", published_on__isnull=True)
+                ),
+                name="matters_website_overview_unpublished_has_neither",
+            ),
+            # A published row records when the publication was written down, and
+            # a cancelled one when the plan was dropped. `published_by` and the
+            # actor behind a cancellation are deliberately *not* required by the
+            # database: a later reviewed import may carry a decision whose author
+            # is not a user of this system, exactly as
+            # `intelligence_work_victory_confirmed_has_timestamp` allows.
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(status=WebsiteOverviewStatus.PUBLISHED)
+                    | models.Q(published_at__isnull=False)
+                ),
+                name="matters_website_overview_published_has_timestamp",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(status=WebsiteOverviewStatus.CANCELLED)
+                    | models.Q(cancelled_at__isnull=False)
+                ),
+                name="matters_website_overview_cancelled_has_timestamp",
+            ),
+            # The only uniqueness this record needs, and it is not on `matter`:
+            # a Matter may be written up several times. What must not happen is
+            # one address filed twice against one Matter, which is not a second
+            # overview but the same one recorded twice — and it is scoped to
+            # PUBLISHED rows because every other row has an empty `url`, and
+            # three plans on one Matter are three legitimate rows.
+            models.UniqueConstraint(
+                fields=["matter", "url"],
+                condition=models.Q(status=WebsiteOverviewStatus.PUBLISHED),
+                name="matters_website_overview_one_row_per_published_link",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
+                ),
+                name="matters_website_overview_visibility_vocabulary",
+            ),
+        ]
+        indexes = [
+            # The planned strip's own question — «what does this Matter still
+            # owe the website» — and the one closure asks when it cancels them.
+            models.Index(fields=["matter", "status"], name="matters_weboverview_mat_stat"),
+            # And the chronology's, which reads one Matter's overviews in the
+            # model's own order. The pair `MatterEngagement` keeps on
+            # `(matter, -occurred_on)`, for the same read.
+            models.Index(fields=["matter", "-published_on"], name="matters_weboverview_mat_pub"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_status_display()}: {self.matter_id}"[:120]
+
+    def parent_visibility(self) -> str:
+        return self.matter.visibility
+
+    @property
+    def revision_token(self) -> str:
+        """Which version of this record a rendered form was filled from.
+
+        ``updated_at``, for the reasons `personal_note_revision` gives: `auto_now`
+        sets it on every write, PostgreSQL stores it to the microsecond so two
+        saves cannot share one, and having it costs no migration.
+
+        A property on the record rather than only a function in the service,
+        because both a template and the service need the token and a second
+        spelling of it — a `date:"c"` in the template, say, which renders in the
+        *reader's* timezone — would produce a different string for the same row
+        and refuse every save. `app.matters.services.website_overview_revision`
+        is the service-side name and returns exactly this.
+        """
+        return self.updated_at.isoformat()
+
+    @property
+    def is_planned(self) -> bool:
+        return self.status == WebsiteOverviewStatus.PLANNED
+
+    @property
+    def is_published(self) -> bool:
+        return self.status == WebsiteOverviewStatus.PUBLISHED
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self.status == WebsiteOverviewStatus.CANCELLED
 
 
 class MatterPersonalNote(BaseModel):

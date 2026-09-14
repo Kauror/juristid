@@ -33,6 +33,7 @@ from app.matters.enums import (
     MatterOrigin,
     RecordMode,
     TagAssignmentSource,
+    WebsiteOverviewStatus,
 )
 from app.matters.locks import (
     lock_matter_for_evidence_integrity,
@@ -40,6 +41,8 @@ from app.matters.locks import (
 )
 from app.matters.models import (
     ENGAGEMENT_URL_MAX_LENGTH,
+    KODA_WEBSITE_HOST,
+    WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Entry,
     EntryRevision,
     Matter,
@@ -47,6 +50,7 @@ from app.matters.models import (
     MatterEngagement,
     MatterPersonalNote,
     MatterReferenceSequence,
+    MatterWebsiteOverview,
     TagAssignment,
 )
 from app.submissions.models import Submission
@@ -1679,6 +1683,476 @@ def update_engagement(
     return engagement
 
 
+# ---------------------------------------------------------------------------
+# `Kodulehe ülevaade`
+# ---------------------------------------------------------------------------
+#
+# The record, its three states and the one address it is allowed to point at.
+# Every rule here is in this module rather than on a form, because a form is
+# what one browser was shown and a POST is what arrives (docs/adr/0081).
+
+#: The only scheme a published overview may use.
+#:
+#: `http` is not on this list and that is the point. An engagement link is a
+#: pointer to whatever a campaign tool happened to serve, and the historical
+#: register is full of addresses this department did not choose; a Koda website
+#: overview is the Chamber's own page on the Chamber's own site, and there is no
+#: version of that which is legitimately unencrypted.
+KODA_WEBSITE_URL_SCHEME = "https"
+
+#: What a refused address says. Named because three surfaces print these and the
+#: tests assert on them.
+WEBSITE_OVERVIEW_URL_NOT_A_URL = "Kodulehe ülevaate link peab olema täielik veebiaadress."
+WEBSITE_OVERVIEW_URL_NOT_HTTPS = "Kodulehe ülevaate link peab algama https:// aadressiga."
+WEBSITE_OVERVIEW_URL_WRONG_HOST = (
+    f"Kodulehe ülevaate link peab viitama {KODA_WEBSITE_HOST} aadressile "
+    f"(nt https://{KODA_WEBSITE_HOST}/…)."
+)
+WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS = (
+    "Kodulehe ülevaate link ei tohi sisaldada kasutajanime ega parooli."
+)
+WEBSITE_OVERVIEW_NEEDS_LINK = "Avaldatud kodulehe ülevaade vajab linki."
+WEBSITE_OVERVIEW_NEEDS_DATE = "Avaldatud kodulehe ülevaade vajab avaldamise kuupäeva."
+WEBSITE_OVERVIEW_ALREADY_PUBLISHED = (
+    "See kodulehe ülevaade on juba avaldatud. Linki ja kuupäeva saab parandada."
+)
+WEBSITE_OVERVIEW_CANCELLED_IS_FINAL = (
+    "Tühistatud kodulehe ülevaadet ei saa enam avaldada ega muuta. Lisa uus ülevaade."
+)
+WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE = (
+    "Avaldatud kodulehe ülevaadet ei saa tühistada — leht on juba kodulehel. "
+    "Paranda link või kuupäev."
+)
+WEBSITE_OVERVIEW_NOT_PUBLISHED = (
+    "Seda kodulehe ülevaadet ei ole avaldatud, seega ei ole linki ega kuupäeva parandada."
+)
+WEBSITE_OVERVIEW_CONFLICT = (
+    "Seda kodulehe ülevaadet on vahepeal mujal muudetud. "
+    "Värskenda lehte ja vaata, mis seal nüüd kirjas on."
+)
+
+
+def _koda_hostname(parts: Any) -> str:
+    """The host an address points at, refusing every shape that is not one.
+
+    `urlsplit(url).netloc` is the URL's **authority** — ``userinfo@host:port`` —
+    and the difference is exactly what a look-alike address is built out of:
+    ``https://koda.ee@evil.example/`` has `koda.ee` in its authority and
+    `evil.example` as its host, and a substring check reads the first. So the
+    comparison below is against `parsed.hostname`, which drops the userinfo and
+    the port and lowercases what is left, and the same reasoning
+    `MatterEngagement._hostname` records (red-team finding F-2, 2026-09-12).
+
+    Userinfo is refused outright rather than merely ignored. A link that carries
+    it resolves perfectly well and is printed to a reader as `Ava kodulehel`;
+    there is no legitimate koda.ee page behind ``user:pw@``, and a credential on
+    the file is a credential in an audit payload, a rendered page and anybody's
+    browser history.
+    """
+    try:
+        hostname = parts.hostname
+    except ValueError:
+        # A malformed authority — an unbracketed IPv6 literal, a port that is
+        # not a number. A refusal with a sentence, not a parser exception.
+        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_A_URL) from None
+    if parts.username or parts.password:
+        raise DomainError(WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS)
+    if not hostname:
+        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_A_URL)
+    return hostname
+
+
+def normalize_koda_website_url(value: str | None) -> str:
+    """Trim it, allow it to be empty, and refuse anything that is not a koda.ee page.
+
+    The one door every writer of `MatterWebsiteOverview.url` passes through, so
+    it is where the trust boundary and the column's own width are both enforced.
+
+    **A parsed host, never a substring.** `koda.ee.example.com` contains
+    `koda.ee`, ends in nothing this accepts, and is somebody else's domain;
+    `https://koda.ee@evil.example/` contains it in the *userinfo*. Both are
+    refused because the comparison is `hostname == "koda.ee"` or
+    `hostname.endswith(".koda.ee")` on the parsed host, with a leading dot that
+    is doing real work — without it `notkoda.ee` would pass (docs/adr/0081 §3).
+
+    **Refused, never truncated**, for the reason `normalize_engagement_url`
+    gives: a link cut off at a thousand characters is a link that no longer
+    resolves, and a stored pointer that is quietly wrong is worse than a refusal
+    naming the row.
+
+    An empty value is returned as an empty string rather than refused. Whether
+    emptiness is allowed is a question about the *state* the record is in — a
+    plan legitimately has no address — and that question is answered by
+    `publish_website_overview`, which is the only caller that requires one.
+    """
+    from urllib.parse import urlsplit
+
+    url = (value or "").strip()
+    if not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_A_URL) from None
+    if parts.scheme.lower() != KODA_WEBSITE_URL_SCHEME:
+        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_HTTPS)
+    hostname = _koda_hostname(parts)
+    if hostname != KODA_WEBSITE_HOST and not hostname.endswith(f".{KODA_WEBSITE_HOST}"):
+        raise DomainError(WEBSITE_OVERVIEW_URL_WRONG_HOST)
+    if len(url) > WEBSITE_OVERVIEW_URL_MAX_LENGTH:
+        raise DomainError(
+            f"Kodulehe ülevaate link on liiga pikk — kuni "
+            f"{WEBSITE_OVERVIEW_URL_MAX_LENGTH} tähemärki."
+        )
+    return url
+
+
+class WebsiteOverviewConflict(DomainError):
+    """The overview changed elsewhere between rendering this form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see the
+    other side of is a conflict they cannot resolve — deliberately the same
+    shape as :class:`PersonalNoteConflict` and :class:`EntryEditConflict`.
+    """
+
+    def __init__(self, current: MatterWebsiteOverview) -> None:
+        super().__init__(WEBSITE_OVERVIEW_CONFLICT)
+        self.current = current
+
+
+def website_overview_revision(record: MatterWebsiteOverview) -> str:
+    """Which version of an overview a rendered form was filled from.
+
+    ``updated_at``, rather than a column of its own — the token
+    `personal_note_revision` and `entry_revision_token` use, for the reasons
+    they give: `auto_now` sets it on every write, PostgreSQL stores it to the
+    microsecond so two saves cannot share one, and having it costs no migration.
+
+    The *status* would not do, and neither would a counter. Two corrections to
+    one published address leave the status where it was, and a token that did
+    not move between them would accept the second form as current when it is one
+    write behind.
+
+    Delegates to the record's own property rather than computing the string
+    again: a template renders the token too, and two spellings of one value is
+    one spelling away from a form that can never be saved.
+    """
+    return record.revision_token
+
+
+def _locked_website_overview(
+    overview: MatterWebsiteOverview, expected_revision: str | None
+) -> MatterWebsiteOverview:
+    """The row as it actually is, with the stale-form question already asked.
+
+    `no_key=True` for the reason `app/matters/locks.py` gives for every lock in
+    this module: these transactions go on to insert a `ChangeEvent`, and a plain
+    `FOR UPDATE` on a row other writers reference is how the two deadlock cycles
+    in this codebase were built.
+
+    The revision is compared **after** the lock, so the version compared against
+    is the one that is committed rather than the one that was on screen, and
+    **before** anything is decided, so a refusal leaves nothing behind.
+    """
+    locked = MatterWebsiteOverview.objects.select_for_update(no_key=True).get(pk=overview.pk)
+    if expected_revision is not None and website_overview_revision(locked) != expected_revision:
+        raise WebsiteOverviewConflict(locked)
+    return locked
+
+
+@transaction.atomic
+def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsiteOverview:
+    """Record that this Matter is owed a summary on koda.ee.
+
+    No address, no date, and no title. The record's whole content is *that the
+    write-up is owed*, and asking for anything else at this moment would be
+    asking a question nobody can answer yet — the page does not exist. A title
+    invented here would be a title nobody chose, and it would sit beside the
+    real one the day the page is published (docs/adr/0081 §1).
+
+    Writes no `Entry`. One action must not become two records that can disagree,
+    which is `add_engagement`'s rule and is this one's for the same reason.
+
+    Takes no closed-Matter guard itself, deliberately: the leaf is where the row
+    is created, and the rule «a closed file accepts no new business content» is
+    stated where a *person* writes, in `app.matters.workspace`. That is the same
+    split `add_engagement` and `record_engagement` keep, and it is what leaves
+    room for a later reviewed import to file the history of an archived Matter
+    without the rule having to be weakened (R2-02).
+    """
+    overview = MatterWebsiteOverview.objects.create(
+        matter=matter,
+        status=WebsiteOverviewStatus.PLANNED,
+        created_by=actor,
+        status_changed_at=timezone.now(),
+    )
+    record_change_event(
+        event_type=ChangeEventType.WEBSITE_OVERVIEW_PLANNED,
+        matter=matter,
+        actor=actor,
+        obj=overview,
+        payload={"status": overview.status},
+    )
+    return overview
+
+
+def _publication_values(url: Any, published_on: Any) -> tuple[str, Any]:
+    """The two things a publication needs, or the sentence that says which is missing.
+
+    Both refusals are their own sentence rather than one «täida väljad», because
+    they are different mistakes: an address that is not a koda.ee page is a link
+    somebody pasted from the wrong tab, and a missing date is a box they did not
+    reach. The date is checked after the address so that a form with both wrong
+    reports the address first — it is the one that carries the trust boundary.
+    """
+    clean_url = normalize_koda_website_url(url)
+    if not clean_url:
+        raise DomainError(WEBSITE_OVERVIEW_NEEDS_LINK)
+    if published_on is None:
+        raise DomainError(WEBSITE_OVERVIEW_NEEDS_DATE)
+    return clean_url, published_on
+
+
+@transaction.atomic
+def publish_website_overview(
+    *,
+    overview: MatterWebsiteOverview,
+    url: Any,
+    published_on: Any,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterWebsiteOverview:
+    """`Plaanis` → `Avaldatud`: the page exists, and this is where it is.
+
+    The one transition that gives an overview an address. It requires both an
+    `https://koda.ee/…` link and the day the page went up, and it refuses every
+    other starting state by name: an overview that is already published is
+    corrected rather than published again (`correct_website_overview_link`), and
+    a cancelled one is terminal — the honest record of a plan that came back is
+    a new plan, not a resurrected one (docs/adr/0081 §1).
+
+    **The date is the caller's and is never invented here.** `published_at`
+    below is a different fact — the moment somebody wrote the publication down —
+    and deriving one from the other would put a day on the file that nobody
+    chose (docs/adr/0078 §2).
+
+    The status is read **from the locked row**, not from the instance the caller
+    arrived with: two tabs both showing the same plan, both pressing `Avalda`,
+    would otherwise both find it planned and both publish it. Whichever
+    transaction takes the row first wins and the other is told what the record
+    now says.
+    """
+    locked = _locked_website_overview(overview, expected_revision)
+    if locked.status == WebsiteOverviewStatus.PUBLISHED:
+        raise DomainError(WEBSITE_OVERVIEW_ALREADY_PUBLISHED)
+    if locked.status == WebsiteOverviewStatus.CANCELLED:
+        raise DomainError(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL)
+
+    clean_url, day = _publication_values(url, published_on)
+    now = timezone.now()
+    locked.status = WebsiteOverviewStatus.PUBLISHED
+    locked.url = clean_url
+    locked.published_on = day
+    locked.published_by = actor
+    locked.published_at = now
+    locked.status_changed_at = now
+    locked.save(
+        update_fields=[
+            "status",
+            "url",
+            "published_on",
+            "published_by",
+            "published_at",
+            "status_changed_at",
+            "updated_at",
+        ]
+    )
+    record_change_event(
+        event_type=ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
+        matter=locked.matter,
+        actor=actor,
+        obj=locked,
+        payload={
+            "status": locked.status,
+            # The address itself, because it is the whole content of this record
+            # and a history saying only «a link was recorded» could not answer
+            # «which». It is a public koda.ee page: there is no token in it, and
+            # `normalize_koda_website_url` has already refused any address
+            # carrying credentials.
+            "url": locked.url,
+            "published_on": locked.published_on.isoformat(),
+        },
+    )
+    # Keep the caller's instance consistent with what was written, as
+    # `edit_entry` does: several callers go on reading the object they passed.
+    overview.status = locked.status
+    overview.url = locked.url
+    overview.published_on = locked.published_on
+    overview.published_at = locked.published_at
+    return locked
+
+
+@transaction.atomic
+def correct_website_overview_link(
+    *,
+    overview: MatterWebsiteOverview,
+    url: Any,
+    published_on: Any,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterWebsiteOverview:
+    """`Avaldatud` → `Avaldatud`: the address or the day was wrong, and is now right.
+
+    A correction, not a second publication. `published_at` and `published_by`
+    stay exactly as they were — they record who wrote the publication down and
+    when, which a typo discovered in March does not change — and the event is
+    its own type so the history can say which of the two happened.
+
+    **Allowed on a closed Matter, and that is the point.** Closure means no new
+    business content: no new plan, no publication of one, no cancellation, each
+    refused by `lock_open_matter_for_business_write` on its own route. It has
+    never meant that a link recorded wrongly must stay wrong, and this function
+    deliberately does not so much as read `is_open` — the same rule, and the same
+    reasoning, as `edit_entry` (docs/adr/0075 §12, docs/adr/0081 §5).
+
+    Refuses anything that is not already published, read from the locked row.
+    That is what stops this route being a way to publish a planned overview on a
+    closed Matter: the transition that *creates* a publication is the guarded
+    one, and this one can only move an address that already exists.
+
+    Says nothing when nothing changed, like `update_engagement` — but the
+    revision is compared first, because a stale form that happens to carry the
+    values the other writer saved has still been overtaken, and answering it with
+    a silent success would teach the person that their copy was current.
+    """
+    locked = _locked_website_overview(overview, expected_revision)
+    if locked.status != WebsiteOverviewStatus.PUBLISHED:
+        raise DomainError(
+            WEBSITE_OVERVIEW_CANCELLED_IS_FINAL
+            if locked.status == WebsiteOverviewStatus.CANCELLED
+            else WEBSITE_OVERVIEW_NOT_PUBLISHED
+        )
+
+    clean_url, day = _publication_values(url, published_on)
+    if clean_url == locked.url and day == locked.published_on:
+        return locked
+
+    payload: dict[str, Any] = {"fields": []}
+    if clean_url != locked.url:
+        payload["fields"].append("url")
+        payload["url_from"] = locked.url
+        payload["url_to"] = clean_url
+    if day != locked.published_on:
+        payload["fields"].append("published_on")
+        payload["published_on_from"] = (
+            locked.published_on.isoformat() if locked.published_on else None
+        )
+        payload["published_on_to"] = day.isoformat()
+
+    locked.url = clean_url
+    locked.published_on = day
+    locked.save(update_fields=["url", "published_on", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
+        matter=locked.matter,
+        actor=actor,
+        obj=locked,
+        payload=payload,
+    )
+    overview.url = locked.url
+    overview.published_on = locked.published_on
+    return locked
+
+
+def _cancel_one_website_overview(
+    overview: MatterWebsiteOverview, *, actor: Any, reason: str
+) -> MatterWebsiteOverview:
+    """Write the cancellation. The caller has already locked the row and checked it.
+
+    ``reason`` is a short machine word in the audit payload — ``"manual"`` or
+    ``"matter_closed"`` — and not free text somebody typed. It is there so the
+    history can distinguish a lawyer dropping one plan from a closure dropping
+    every plan on the file, which are two different facts that produce the same
+    row (docs/adr/0081 §5).
+    """
+    now = timezone.now()
+    overview.status = WebsiteOverviewStatus.CANCELLED
+    overview.cancelled_at = now
+    overview.status_changed_at = now
+    overview.save(update_fields=["status", "cancelled_at", "status_changed_at", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.WEBSITE_OVERVIEW_CANCELLED,
+        matter=overview.matter,
+        actor=actor,
+        obj=overview,
+        payload={"status": overview.status, "reason": reason},
+    )
+    return overview
+
+
+@transaction.atomic
+def cancel_website_overview(
+    *,
+    overview: MatterWebsiteOverview,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterWebsiteOverview:
+    """`Plaanis` → `Tühistatud`: the write-up is not going to happen.
+
+    Nothing is deleted when a plan changes. A dropped intention is what the
+    department decided at the time, and quietly removing the row is how a reader
+    concludes nobody ever recorded anything — the rule `FactStatus` was written
+    for (Stage-2G brief 5, 33).
+
+    **`Avaldatud` → `Tühistatud` is refused**, and not for want of a state to
+    move to. The page is on koda.ee: a record claiming it was never published
+    would be the file disagreeing with the website, and the honest correction to
+    an overview that was taken down is a decision this product has not been asked
+    to make (docs/adr/0081 §1). Cancelling an already-cancelled one is refused
+    for the ordinary reason — it would write a second cancellation event for an
+    act that happened once.
+    """
+    locked = _locked_website_overview(overview, expected_revision)
+    if locked.status == WebsiteOverviewStatus.PUBLISHED:
+        raise DomainError(WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE)
+    if locked.status == WebsiteOverviewStatus.CANCELLED:
+        raise DomainError(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL)
+    cancelled = _cancel_one_website_overview(locked, actor=actor, reason="manual")
+    overview.status = cancelled.status
+    overview.cancelled_at = cancelled.cancelled_at
+    return cancelled
+
+
+def cancel_planned_website_overviews_for_closure(
+    *, matter: Matter, actor: Any = None
+) -> list[MatterWebsiteOverview]:
+    """Every plan this Matter still owed, dropped with the file that owed it.
+
+    Called from inside `close_matter`, in its transaction and under its lock, so
+    a closure either shuts the Matter *and* cancels its plans or does neither.
+    A closed file that still says «a kodulehe ülevaade is owed» would be an
+    instruction nobody can act on: every route that could publish or cancel one
+    refuses a closed Matter, so the plan would sit there permanently owed
+    (docs/adr/0081 §5).
+
+    **Closure is never blocked by them.** There is no precondition here and no
+    refusal: the plans are cancelled, each with its own auditable event naming
+    the closure as the reason, and closing a Matter carrying ten of them is the
+    same gesture as closing one carrying none.
+
+    Published overviews are untouched. They are a record of pages that exist.
+    """
+    planned = (
+        MatterWebsiteOverview.objects.select_for_update(no_key=True)
+        .filter(matter=matter, status=WebsiteOverviewStatus.PLANNED)
+        .order_by("created_at", "id")
+    )
+    return [
+        _cancel_one_website_overview(overview, actor=actor, reason="matter_closed")
+        for overview in planned
+    ]
+
+
 @transaction.atomic
 def close_matter(
     *,
@@ -1740,6 +2214,15 @@ def close_matter(
 
     # A closed Matter must not keep sitting in somebody's work list.
     end_open_action_for_closure(matter=matter, actor=actor)
+
+    # Nor keep owing the website a summary nobody is allowed to publish any
+    # more. Every planned `Kodulehe ülevaade` is cancelled here, in this
+    # transaction and under this lock, each with its own audit event naming the
+    # closure — so the file either shuts with its plans dropped or does not shut
+    # at all. Closure is never *blocked* by them: an open plan is not a
+    # precondition and there is nothing here that can refuse
+    # (docs/adr/0081 §5).
+    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor)
 
     record_change_event(
         event_type=ChangeEventType.MATTER_CLOSED,

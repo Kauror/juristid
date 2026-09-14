@@ -148,6 +148,39 @@ urlpatterns = [
         name="add_effective_date",
     ),
     path("teemad/<uuid:pk>/lisa/toovoit/", views.add_work_victory, name="add_work_victory"),
+    # `+ Kodulehe ülevaade`, and the three things that happen to one afterwards.
+    #
+    # `lisa/koduleht/` is the launcher's eighth operation and records nothing but
+    # the intention. The other three are addressed *under the record*, because
+    # the thing being published, dropped or corrected is that record and the
+    # route says so — the Matter stays in the path so the view can prove the two
+    # belong together before it reads either (`edit_entry`, which is addressed
+    # the same way and for the same reason).
+    #
+    # `link/` is deliberately not under `lisa/`: it is a correction to an address
+    # already on the file, it takes no closed-Matter lock, and a route that
+    # spelled it as an addition would be the one place somebody later moved the
+    # guard to (docs/adr/0081 §5).
+    path(
+        "teemad/<uuid:pk>/lisa/koduleht/",
+        views.add_website_overview,
+        name="add_website_overview",
+    ),
+    path(
+        "teemad/<uuid:pk>/kodulehe-ulevaade/<uuid:overview_id>/avalda/",
+        views.publish_website_overview_view,
+        name="publish_website_overview",
+    ),
+    path(
+        "teemad/<uuid:pk>/kodulehe-ulevaade/<uuid:overview_id>/tuhista/",
+        views.cancel_website_overview_view,
+        name="cancel_website_overview",
+    ),
+    path(
+        "teemad/<uuid:pk>/kodulehe-ulevaade/<uuid:overview_id>/link/",
+        views.correct_website_overview_view,
+        name="correct_website_overview",
+    ),
     path("teemad/<uuid:pk>/lisa/lopeta/", views.close_from_workspace, name="close_from_workspace"),
     # `+ Järgmine tegevus` and `Muuda` both post here — one endpoint, because
     # setting a step and replacing one are the same canonical act and

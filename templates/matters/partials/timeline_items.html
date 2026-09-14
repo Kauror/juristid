@@ -65,7 +65,7 @@ record, not professional chronology (master specification 16.5).
           without one is exactly the row it was before. Nothing here contacts
           either provider (docs/adr/0027, amended 2026-09-12).
         {% endcomment %}
-        {% if item.milestone.links %}
+        {% if item.milestone.links and not item.website_overview %}
           <span class="uxtl__links">
             {% for link in item.milestone.links %}
               <a class="uxtl__link" href="{{ link.url }}"
@@ -73,6 +73,20 @@ record, not professional chronology (master specification 16.5).
                  class="visually-hidden"> — avaneb uues aknas</span></a>
             {% endfor %}
           </span>
+        {% endif %}
+        {% comment %}
+          A published `Kodulehe ülevaade` renders its address through its own
+          element instead, because that element is a swap target: `Paranda link`
+          replaces it with a form and every answer replaces it again, while the
+          row around it — the dot, the date, the headline — never moves. The link
+          itself is the same labelled, `target="_blank"`, `rel="noopener
+          noreferrer"` control the block above renders, with the same visually
+          hidden «avaneb uues aknas» (docs/adr/0081 §4).
+
+          A cancelled overview has no address and no form, and renders neither.
+        {% endcomment %}
+        {% if item.website_overview and item.website_overview.is_published %}
+          {% include "matters/partials/website_overview_link.html" with overview=item.website_overview matter=matter website_overview_link_form=None %}
         {% endif %}
         {% comment %}
           The files this milestone's own record carries, in the same compact

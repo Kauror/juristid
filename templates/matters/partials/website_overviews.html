@@ -1,0 +1,123 @@
+{% comment %}
+`KODULEHE ÜLEVAATED` — what this file still owes the Chamber's website.
+
+**Planned rows only, and nothing at all when there are none.** A published
+overview reads in the chronology, off the record that holds it, where a dated
+fact belongs; listing it here as well would state one thing in two places, which
+is exactly what the approved target removed the standing sections to be rid of.
+And a Matter that owes no write-up renders no strip, no heading and no «ei ole
+veel» — there are no permanently visible empty sections on this page
+(TEEMA_TARGET_SPEC §F, docs/adr/0074 §15, docs/adr/0081 §4).
+
+**It is not a task.** Nothing here makes a `NextAction`, a work item, a deadline
+or a badge: an overview that is owed appears on this Matter and on no work list,
+no `Minu asjad`, no `Tähtajad` and no department view. This strip is the one
+place that says the write-up is outstanding, which is why it says so in a
+sentence rather than by colour alone (docs/adr/0081 §4).
+
+The controls are `can_write and matter.is_open` — the same pair `overview.html`
+gates the launcher on — and the strip itself is not. A reader, and anybody
+looking at a closed file, sees what the Matter owes and no buttons that would
+refuse them. Closure cancels every planned overview in its own transaction, so
+on a closed Matter this list is normally empty by construction rather than by
+hiding; when a row does survive by some other route, the page shows it without
+controls and every write route still refuses it under the row lock
+(docs/adr/0081 §5).
+{% endcomment %}
+{% if planned_website_overviews %}
+  <section class="webrow" id="kodulehe-ulevaated" aria-labelledby="kodulehe-ulevaated-heading">
+    <h2 class="rowlabel" id="kodulehe-ulevaated-heading">Kodulehe ülevaated</h2>
+    <ul class="webrow__list">
+      {% for overview, publish_form in planned_website_overviews %}
+        <li class="webrow__item" id="kodulehe-ulevaade-{{ overview.pk }}">
+          {% comment %}
+            The state in words. «Plaanis» alone would be a label a reader has to
+            interpret; this says what is outstanding and what has not happened
+            yet, which is the whole content of a planned row.
+          {% endcomment %}
+          <p class="webrow__state">
+            <span class="webrow__badge">{{ overview.get_status_display }}</span>
+            <span class="webrow__says">Ülevaade on plaanis, aga veel avaldamata.</span>
+          </p>
+          {% if can_write and matter.is_open %}
+            {% comment %}
+              `Avalda` is a native disclosure rather than a launcher radio: it is
+              alone on its row, it has no siblings to displace and there is
+              nothing to be chosen *instead* of it — the same reasoning that
+              leaves `Muuda` in `PRAEGUNE TEGEVUS` a `<details>` (docs/adr/0078
+              §1). A refusal reopens exactly the one it came from.
+            {% endcomment %}
+            <details class="webrow__publish"
+                     {% if website_overview_open == overview.pk|stringformat:"s" %}open{% endif %}>
+              <summary class="disclosure-chip">Avalda</summary>
+              <div class="webrow__form">
+                {% if website_overview_open == overview.pk|stringformat:"s" and website_overview_error %}
+                  <p class="formerror" role="alert">{{ website_overview_error }}</p>
+                {% endif %}
+                <form class="addform"
+                      hx-post="{% url 'matters:publish_website_overview' pk=matter.pk overview_id=overview.pk %}"
+                      hx-target="#teema-vaade" hx-swap="outerHTML">
+                  {% csrf_token %}
+                  <div class="cx-grid cx-grid--links">
+                    <label class="cx-f">
+                      <span class="cx-f__lab">{{ publish_form.url.label }}</span>
+                      {{ publish_form.url }}
+                    </label>
+                    <label class="cx-f cx-f--date">
+                      <span class="cx-f__lab">{{ publish_form.published_on.label }}</span>
+                      {{ publish_form.published_on }}
+                    </label>
+                  </div>
+                  {% comment %}
+                    The `_error` ids are what Django's own `aria-describedby` on
+                    a refused control already points at; without them the pointer
+                    dangles (the same pairing `+ Kaasamine` makes).
+                  {% endcomment %}
+                  {% if publish_form.url.errors %}
+                    <p class="field__error" id="{{ publish_form.url.auto_id }}_error">
+                      {{ publish_form.url.errors|first }}</p>
+                  {% endif %}
+                  {% if publish_form.published_on.errors %}
+                    <p class="field__error" id="{{ publish_form.published_on.auto_id }}_error">
+                      {{ publish_form.published_on.errors|first }}</p>
+                  {% endif %}
+                  {{ publish_form.revision }}
+                  <p class="cx-note">Ainult koda.ee aadress, https-kujul.</p>
+                  <div class="addform__actions">
+                    <button class="button button--primary" type="submit">Salvesta</button>
+                  </div>
+                </form>
+              </div>
+            </details>
+            {% comment %}
+              `Tühista` — the write-up is not going to happen. Its own small form
+              rather than a link, because it writes: a plan a link checker could
+              cancel is a plan that will be cancelled by one (docs/adr/0051 makes
+              the same argument about «Uus asi»).
+
+              The revision travels with it for the reason it travels with
+              `Avalda`: the row may have been published from another tab while
+              this page sat open, and a cancellation that landed on it anyway
+              would have the file claiming a page on koda.ee was never published.
+            {% endcomment %}
+            <form class="webrow__cancel"
+                  hx-post="{% url 'matters:cancel_website_overview' pk=matter.pk overview_id=overview.pk %}"
+                  hx-target="#teema-vaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              <input type="hidden" name="revision" value="{{ overview.revision_token }}">
+              <button class="button button--quiet button--tiny" type="submit">Tühista</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+    {% comment %}
+      A refusal that belongs to no row — a cancellation, which has no form to
+      reopen, and a conflict that arrived after the strip was re-read. Printed
+      once, under the list, rather than nowhere at all (`_website_overview_refusal`).
+    {% endcomment %}
+    {% if website_overview_error and not website_overview_open %}
+      <p class="formerror" role="alert">{{ website_overview_error }}</p>
+    {% endif %}
+  </section>
+{% endif %}

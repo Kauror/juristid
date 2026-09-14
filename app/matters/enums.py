@@ -143,3 +143,24 @@ COMPOSER_ENGAGEMENT_KINDS: tuple[tuple[str, str], ...] = (
     (EngagementKind.MEETING.value, EngagementKind.MEETING.label),
     (EngagementKind.EMAIL_CAMPAIGN.value, EngagementKind.EMAIL_CAMPAIGN.label),
 )
+
+
+class WebsiteOverviewStatus(models.TextChoices):
+    """Where one `Kodulehe ülevaade` stands.
+
+    Three states and no fourth. A lawyer decides that a Matter deserves a
+    summary on koda.ee, somebody writes and publishes it, and the address goes
+    on the file; or the plan is dropped and that is part of the file too
+    (docs/adr/0081).
+
+    ``PLANNED`` carries no address and no date, because neither exists yet:
+    the whole point of the record is to hold the intention before there is
+    anything to link to. ``PUBLISHED`` carries both, and nothing else may.
+    ``CANCELLED`` is what a plan that was dropped becomes, and it is terminal —
+    an overview that was published cannot be un-published, and a cancelled one
+    is not re-planned but recorded again.
+    """
+
+    PLANNED = "PLANNED", "Plaanis"
+    PUBLISHED = "PUBLISHED", "Avaldatud"
+    CANCELLED = "CANCELLED", "Tühistatud"

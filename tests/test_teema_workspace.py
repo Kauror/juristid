@@ -398,7 +398,7 @@ def test_muuda_supersedes_rather_than_completes(signed_in, normal_matter, specia
 
 
 # ===========================================================================
-# LISA TEEMALE — seven intentions, seven saves
+# LISA TEEMALE — eight intentions, eight saves
 # ===========================================================================
 
 
@@ -413,12 +413,13 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "+ Oluline tähtaeg",
         "+ Jõustumine",
         "+ Töövõit",
+        "+ Kodulehe ülevaade",
         "+ Lõpeta teema",
     ):
         assert chip in zone, chip
     assert 'cx-panel" open' not in zone
-    # Seven operations, seven saves. There is no shared one left.
-    assert zone.count('type="submit"') == 7
+    # Eight operations, eight saves. There is no shared one left.
+    assert zone.count('type="submit"') == 8
     assert "composer__actions" not in zone
 
 

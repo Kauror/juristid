@@ -413,6 +413,28 @@
   min-width: 0;
 }
 
+/* A published `Kodulehe ülevaade`'s address, and the control that corrects it.
+   The same plain wrapper `.uxtl__entry` is, and for the same reason: it exists
+   to be the swap target, so `Paranda link` replaces the link and nothing around
+   it — not the dot, not the date, not the row's place in the chronology
+   (templates/matters/partials/website_overview_link.html). */
+.uxtl__weblink {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 3px;
+}
+
+/* Side by side while it is a link and a quiet control; the form inside it
+   stacks, because two labelled boxes on one line is what breaks at 400px. */
+.uxtl__weblink:has(> .uxtl__link) {
+  flex-direction: row;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* `Muuda` is quiet to the point of nearly not being there, and that is the
    design: the chronology is a reading surface, and a correction is a rare act
    on a record that is usually right. It reads as text until it is reached for,

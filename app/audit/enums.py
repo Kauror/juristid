@@ -170,6 +170,33 @@ class ChangeEventType(models.TextChoices):
     MATTER_RELATION_REMOVED = "MATTER_RELATION_REMOVED", "Teemade seos eemaldatud"
     BACKGROUND_MATERIAL_ADDED = "BACKGROUND_MATERIAL_ADDED", "Taustmaterjal lisatud"
     BACKGROUND_MATERIAL_REMOVED = "BACKGROUND_MATERIAL_REMOVED", "Taustmaterjal eemaldatud"
+    # -- Kodulehe ülevaade --------------------------------------------------
+    #
+    # Four events, because the record has four things that can happen to it and
+    # a history that could not tell them apart would be a history nobody trusts.
+    # `ENGAGEMENT_ADDED` would claim the Chamber asked somebody something,
+    # `SUBMISSION_SENT` would claim an opinion went out, and a shared
+    # "overview changed" could not answer whether a plan was dropped or an
+    # address corrected (docs/adr/0081).
+    #
+    # The published and the cancelled ones are the two *milestones*, and unlike
+    # every other structured fact on the Matter they are deliberately absent
+    # from `matters.timeline.TIMELINE_EVENT_TYPES` for the usual reason: the
+    # chronology renders those two from the canonical record itself, through
+    # `projected_milestones`, so reading the event as well would state one act
+    # twice (docs/adr/0074 §14).
+    WEBSITE_OVERVIEW_PLANNED = "WEBSITE_OVERVIEW_PLANNED", "Kodulehe ülevaade plaanis"
+    WEBSITE_OVERVIEW_PUBLISHED = "WEBSITE_OVERVIEW_PUBLISHED", "Kodulehe ülevaade avaldatud"
+    WEBSITE_OVERVIEW_CANCELLED = "WEBSITE_OVERVIEW_CANCELLED", "Kodulehe ülevaade tühistatud"
+    # A correction to an address or a publication date that was already
+    # recorded. Its own event rather than a second PUBLISHED one, because the
+    # first says a page appeared on koda.ee and this one says the file was
+    # wrong about where or when — and a closed Matter accepts the second while
+    # refusing the first.
+    WEBSITE_OVERVIEW_LINK_CORRECTED = (
+        "WEBSITE_OVERVIEW_LINK_CORRECTED",
+        "Kodulehe ülevaate linki või kuupäeva parandatud",
+    )
 
 
 class SecurityEventType(models.TextChoices):

@@ -38,7 +38,7 @@ from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.dates import format_estonian_date
 from app.matters.entry_enums import EntryKind
-from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.models import Entry, Matter, MatterEngagement, MatterWebsiteOverview
 from app.workflow.dates import format_at_precision
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
@@ -284,6 +284,17 @@ class TimelineItem:
     @property
     def is_milestone(self) -> bool:
         return self.milestone is not None
+
+    @property
+    def website_overview(self) -> Any:
+        """The `Kodulehe ülevaade` this row stands for, when it stands for one.
+
+        A named property rather than the template comparing `item_type` to a
+        class name: the chronology offers `Paranda link` on exactly these rows,
+        and a string comparison in a template is a rename away from silently
+        offering it on none of them.
+        """
+        return self.record if isinstance(self.record, MatterWebsiteOverview) else None
 
     @property
     def is_entry(self) -> bool:
@@ -744,6 +755,61 @@ def projected_milestones(
                 links=links,
             ),
         )
+
+    # `Kodulehe ülevaade`, and **only the two states that are milestones**.
+    #
+    # A published overview and a cancelled plan are things that happened to the
+    # file: the page went up on koda.ee, or the write-up was called off. A
+    # *planned* one has not happened — it is work the file still owes — and it
+    # reads in its own strip above, where it can be acted on. Projecting it here
+    # would put an intention in a list that means «what has already occurred»
+    # (docs/adr/0081 §4).
+    for overview in MatterWebsiteOverview.objects.filter(matter=matter).visible_to(user):
+        if overview.is_published:
+            published_on = overview.published_on
+            if published_on is None or published_on > day:
+                # A publication date in the future is the same case as a future
+                # engagement: it is not history yet, and the chronology reads
+                # newest-first and means *past*. The `None` cannot happen — the
+                # database refuses a published row without a date — and is
+                # handled rather than asserted because a read path is not the
+                # place to discover it.
+                continue
+            add(
+                overview,
+                _end_of_day(published_on),
+                ChronologyMilestone(
+                    what="Kodulehe ülevaade",
+                    display_date=format_estonian_date(published_on),
+                    sub=str(overview.get_status_display()),
+                    # **The label, never the address.** A raw URL as the row's
+                    # own text is a line a reader has to parse instead of read,
+                    # and it is the one shape in which a look-alike address would
+                    # be believed. `Ava kodulehel` says what the link is for; the
+                    # template gives it `target="_blank"`, `rel="noopener
+                    # noreferrer"` and a visually-hidden «avaneb uues aknas»
+                    # (templates/matters/partials/timeline_items.html).
+                    links=(ChronologyLink(label="Ava kodulehel", url=overview.url),),
+                ),
+            )
+            continue
+        if overview.is_cancelled and overview.cancelled_at is not None:
+            cancelled_on = _local_day(overview.cancelled_at)
+            if cancelled_on > day:
+                continue
+            # A cancelled plan is marked, never hidden. Nothing is deleted when
+            # a plan changes, and quietly dropping the row is how a reader
+            # concludes nobody ever recorded anything — the same rule a cancelled
+            # `Oluline tähtaeg` follows directly above (Stage-2G brief 5, 33).
+            add(
+                overview,
+                _end_of_day(cancelled_on),
+                ChronologyMilestone(
+                    what="Kodulehe ülevaade",
+                    display_date=format_estonian_date(cancelled_on),
+                    sub=str(overview.get_status_display()),
+                ),
+            )
 
     return rows
 

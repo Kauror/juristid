@@ -1,6 +1,6 @@
 """`LISA TEEMALE` is a stable choice bar, and the server's half of that contract.
 
-Seven chips in one order. Choosing one opens its form; it does not move the
+Eight chips in one order. Choosing one opens its form; it does not move the
 chip, reorder the row, or change which line anything sits on. The browser half —
 that no control's bounding box moves by a pixel when a panel opens — is
 `e2e/test_add_launcher_stability.py`; what *this* file pins is the markup that
@@ -43,6 +43,11 @@ CANONICAL = [
     "+ Oluline tähtaeg",
     "+ Jõustumine",
     "+ Töövõit",
+    # `+ Kodulehe ülevaade` goes after the win and before the closure, which is
+    # where the reasoning puts it: telling the membership what happened is the
+    # last thing done *about* a file, and finishing the file is not routine
+    # capture at all (docs/adr/0081 §2).
+    "+ Kodulehe ülevaade",
     "+ Lõpeta teema",
 ]
 
@@ -58,6 +63,7 @@ PANEL_IDS = [
     "lisa-tahtaeg",
     "lisa-joustumine",
     "lisa-toovoit",
+    "lisa-koduleht",
     "lisa-lopeta",
 ]
 
@@ -83,14 +89,14 @@ def _chips(zone: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_launcher_offers_seven_choices_in_the_canonical_order(signed_in, specialist):
+def test_the_launcher_offers_eight_choices_in_the_canonical_order(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chips(_zone(signed_in, matter)) == CANONICAL
 
 
 def test_an_open_step_removes_only_its_own_chip_and_reorders_nothing(signed_in, specialist):
-    """`+ Järgmine tegevus` goes; the remaining six keep their relative order."""
+    """`+ Järgmine tegevus` goes; the remaining seven keep their relative order."""
     matter = factories.MatterFactory(owner=specialist)
     set_next_action(
         matter=matter,
@@ -161,7 +167,7 @@ def test_every_chip_is_a_control_and_its_form_is_a_separate_element(signed_in, s
 
 
 def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in, specialist):
-    """One `name`, seven values: the browser enforces the product rule, and it
+    """One `name`, eight values: the browser enforces the product rule, and it
     keeps enforcing it with scripting off."""
     matter = factories.MatterFactory(owner=specialist)
     zone = _zone(signed_in, matter)
@@ -173,7 +179,7 @@ def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in,
 
 
 def test_nothing_is_chosen_until_somebody_chooses(signed_in, specialist):
-    """The zone is a choice of seven, not seven forms."""
+    """The zone is a choice of eight, not eight forms."""
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chosen(_zone(signed_in, matter)) == []

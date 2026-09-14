@@ -1,0 +1,99 @@
+{% comment %}
+One published `Kodulehe ülevaade`'s address, and the way to correct it.
+
+**This element is the whole swap target.** `Paranda link` replaces it with
+itself carrying the form; saving replaces it again with the corrected address.
+The `<article>` around it — the dot, the spine, the date, the milestone headline
+— is never in the response, so a correction cannot move the row, cannot change
+the day the page went up and cannot turn into a second line in the chronology.
+An address recorded wrongly is a correction to a historical fact, and the fact
+stays exactly where it was (app/matters/timeline.py, where
+`WEBSITE_OVERVIEW_LINK_CORRECTED` is deliberately not a chronology row).
+
+A correction is not new business work, so it is offered on a closed Teema as
+well as an open one. `can_write_business_content` is the reader's own capability
+and says nothing about the Matter's state — deliberately, because
+`can_add_content`, the flag that *does* read `is_open`, is what guards the
+controls that would publish or cancel a plan (docs/adr/0075 §12,
+docs/adr/0081 §5).
+
+**The link is labelled and never printed.** `Ava kodulehel` says what the link
+is for; a raw URL as the row's own text is a line a reader has to parse instead
+of read, and it is the one shape in which a look-alike address would be believed.
+It opens in a new tab because the reader is in the middle of a file and should
+come back to it, with `rel="noopener noreferrer"` and a visually hidden sentence
+saying so, which is the same treatment every external link on this page gets.
+{% endcomment %}
+<div class="uxtl__weblink" id="kodulehe-ulevaade-{{ overview.pk }}-link">
+  {% if website_overview_link_form %}
+    <form class="uxtl__editform"
+          hx-post="{% url 'matters:correct_website_overview' pk=matter.pk overview_id=overview.pk %}"
+          hx-target="#kodulehe-ulevaade-{{ overview.pk }}-link"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      <label class="cx-f">
+        <span class="cx-f__lab">{{ website_overview_link_form.url.label }}</span>
+        {{ website_overview_link_form.url }}
+      </label>
+      <label class="cx-f cx-f--date">
+        <span class="cx-f__lab">{{ website_overview_link_form.published_on.label }}</span>
+        {{ website_overview_link_form.published_on }}
+      </label>
+      {{ website_overview_link_form.revision }}
+      {% if website_overview_link_form.url.errors %}
+        <p class="formerror" role="alert">{{ website_overview_link_form.url.errors|first }}</p>
+      {% elif website_overview_link_form.published_on.errors %}
+        <p class="formerror" role="alert">
+          {{ website_overview_link_form.published_on.errors|first }}</p>
+      {% elif website_overview_link_error %}
+        <p class="formerror" role="alert">{{ website_overview_link_error }}</p>
+      {% endif %}
+
+      {% comment %}
+        What the record says now, read-only and under the boxes. Offered so the
+        two can be reconciled; neither is chosen for the person, and nothing was
+        written (`matters/partials/entry_body.html`, which answers a refused
+        correction the same way).
+      {% endcomment %}
+      {% if website_overview_link_conflict %}
+        <div class="uxtl__conflict">
+          <p class="uxtl__conflictnote">Praegu on kirjas:</p>
+          <p class="uxtl__conflictnote">
+            {{ website_overview_link_conflict.url }}
+            {% if website_overview_link_conflict.published_on %}
+              · {{ website_overview_link_conflict.published_on|date:"j.n.Y" }}
+            {% endif %}
+          </p>
+          <p class="uxtl__conflictnote">
+            Laadi leht uuesti, et praeguse versiooniga jätkata. Sinu sisestus on ülal alles.
+          </p>
+        </div>
+      {% endif %}
+
+      <p class="uxtl__editactions">
+        <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+        {% comment %}
+          `Tühista` re-fetches this element in its read state, so leaving
+          correction mode restores exactly what the server holds and changes
+          nothing. A GET of the region rather than client-side hiding, because
+          the boxes may hold an address that was never saved and the only honest
+          way to leave them is to go and read what the record actually says.
+        {% endcomment %}
+        <button class="button button--quiet button--tiny" type="button"
+                hx-get="{% url 'matters:correct_website_overview' pk=matter.pk overview_id=overview.pk %}{{ website_overview_read_query }}"
+                hx-target="#kodulehe-ulevaade-{{ overview.pk }}-link"
+                hx-swap="outerHTML">Tühista</button>
+      </p>
+    </form>
+  {% else %}
+    <a class="uxtl__link" href="{{ overview.url }}"
+       target="_blank" rel="noopener noreferrer">Ava kodulehel<span
+       class="visually-hidden"> — avaneb uues aknas</span></a>
+    {% if can_write_business_content %}
+      <button class="uxtl__edit" type="button"
+              hx-get="{% url 'matters:correct_website_overview' pk=matter.pk overview_id=overview.pk %}"
+              hx-target="#kodulehe-ulevaade-{{ overview.pk }}-link"
+              hx-swap="outerHTML">Paranda link</button>
+    {% endif %}
+  {% endif %}
+</div>
