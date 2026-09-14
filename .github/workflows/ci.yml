@@ -724,34 +724,6 @@ jobs:
           --output artifacts/playwright
           --junitxml=artifacts/junit-visual.xml
 
-      # **Temporary, and it comes out with the baselines it exists to carry.**
-      #
-      # The documented way to adopt a moved baseline is to take the candidate
-      # from this job's own `test-report-visual` upload, scenario by scenario
-      # (docs/ci-architecture.md). That upload lands on Azure blob storage,
-      # which some networks refuse outright — and a baseline that cannot be
-      # fetched cannot be inspected, so the alternative is either committing a
-      # rendering from the wrong machine or leaving the scenario uncovered.
-      # Both are worse than a step that prints the same bytes somewhere a log
-      # reader can reach.
-      #
-      # Only the candidates named in `BASELINES`, so the log carries three
-      # renderings and not forty. Failure-only, so an ordinary green run is
-      # unchanged. Delete this step in the same commit that lands the
-      # baselines.
-      - name: Print the moved candidates for a reader who cannot reach the upload
-        if: failure()
-        env:
-          BASELINES: teema-ulevaade teema-1024 teema-ajajoon
-        run: |
-          for name in $BASELINES; do
-            file="artifacts/screenshots/visual-$name.png"
-            [ -f "$file" ] || { echo "MISSING $name"; continue; }
-            echo "BEGIN $name $(wc -c < "$file")"
-            base64 -w 3000 "$file"
-            echo "END $name"
-          done
-
       - name: Upload renderings and traces
         if: always()
         uses: actions/upload-artifact@v4
