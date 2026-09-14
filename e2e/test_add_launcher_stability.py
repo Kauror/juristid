@@ -57,19 +57,30 @@ PANEL_IDS = [
 TOLERANCE = 1.5
 
 
-def chips(page):
-    return page.locator("#lisa-teemale label.disclosure-chip")
-
-
 def chip_geometry(page) -> list[tuple[str, float, float]]:
-    """Every launcher control: its label, and where it is."""
-    out = []
-    for index in range(chips(page).count()):
-        control = chips(page).nth(index)
-        box = control.bounding_box()
-        assert box is not None, f"launcher control {index} has no box"
-        out.append((control.inner_text().strip(), box["x"], box["y"]))
-    return out
+    """Every launcher control: its label, and where it sits **inside the zone**.
+
+    Measured against `#lisa-teemale` rather than against the viewport, because
+    two of the states being compared are separated by an HTMX swap and a scroll:
+    `bounding_box()` is viewport-relative, so a page that scrolled by 117px
+    would report a launcher that had not moved as one that had. Offsets inside
+    the zone answer the actual claim — that the bar's own geometry does not
+    change — and they are what a person watching the chips sees.
+    """
+    return [
+        (label.strip(), float(x), float(y))
+        for label, x, y in page.evaluate(
+            """() => {
+                const zone = document.getElementById('lisa-teemale').getBoundingClientRect();
+                return [...document.querySelectorAll(
+                    '#lisa-teemale label.disclosure-chip'
+                )].map(node => {
+                    const box = node.getBoundingClientRect();
+                    return [node.innerText, box.x - zone.x, box.y - zone.y];
+                });
+            }"""
+        )
+    ]
 
 
 def assert_unchanged(before, after, what: str) -> None:
@@ -126,13 +137,23 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    quiet = chips(page).first.evaluate("n => getComputedStyle(n).color")
+    #: Each chip's own resting colour. `+ Lõpeta teema` is quieter than the six
+    #: above it on purpose, so one shared "quiet" value would be a colour no
+    #: seventh chip ever has.
+    resting = {
+        panel_id: page.locator(f'label[for="{panel_id}-valik"]').evaluate(
+            "n => getComputedStyle(n).color"
+        )
+        for panel_id in PANEL_IDS
+    }
 
     open_panel(page, "lisa-kaasamine")
     chosen = page.locator('label[for="lisa-kaasamine-valik"]')
     active = chosen.evaluate("n => getComputedStyle(n).color")
 
-    assert active != quiet, "the chosen choice is not distinguished from the six others"
+    assert active != resting["lisa-kaasamine"], (
+        "the chosen choice is not distinguished from the six others"
+    )
     accent = page.evaluate(
         "() => getComputedStyle(document.documentElement).getPropertyValue('--accent-link').trim()"
     )
@@ -149,7 +170,7 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
         if panel_id == "lisa-kaasamine":
             continue
         other = page.locator(f'label[for="{panel_id}-valik"]')
-        assert other.evaluate("n => getComputedStyle(n).color") == quiet, panel_id
+        assert other.evaluate("n => getComputedStyle(n).color") == resting[panel_id], panel_id
 
 
 def test_the_form_opens_below_the_whole_row_and_only_one_does(page, base_url):
@@ -158,15 +179,19 @@ def test_the_form_opens_below_the_whole_row_and_only_one_does(page, base_url):
     a_new_matter(page, base_url)
 
     open_panel(page, "lisa-marge")
-    form = page.locator("#lisa-marge").bounding_box()
-    lowest_chip = max(row[1] for row in [(c[0], c[2]) for c in chip_geometry(page)])
-    bottom_of_bar = max(
-        chips(page).nth(index).bounding_box()["y"] + chips(page).nth(index).bounding_box()["height"]
-        for index in range(chips(page).count())
+    form_top, bottom_of_bar = page.evaluate(
+        """() => {
+            const form = document.getElementById('lisa-marge').getBoundingClientRect();
+            const bar = [...document.querySelectorAll(
+                '#lisa-teemale label.disclosure-chip'
+            )].map(node => node.getBoundingClientRect().bottom);
+            return [form.top, Math.max(...bar)];
+        }"""
     )
 
-    assert form["y"] >= lowest_chip, "the form is not below the last row of chips"
-    assert form["y"] >= bottom_of_bar - TOLERANCE, "the form overlaps the launcher"
+    assert form_top >= bottom_of_bar - TOLERANCE, (
+        "the form does not open below the last row of chips"
+    )
 
     for panel_id in PANEL_IDS:
         expectation = expect(page.locator(f"#{panel_id}"))

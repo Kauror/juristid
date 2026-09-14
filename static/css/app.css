@@ -9933,12 +9933,19 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 /* Blue, from the accent tokens a chosen chip already uses everywhere else in
- * the application — the same treatment as `.disclosure-chip.is-active`. */
+ * the application — the same treatment as `.disclosure-chip.is-active`, minus
+ * its weight change.
+ *
+ * **The weight is deliberately not touched.** `.is-active` goes to bold, and
+ * bold text is wider: measured in CI, choosing `+ Järgmine tegevus` grew its
+ * own chip by 5px and pushed the five chips after it along the row. That is a
+ * smaller version of the very defect this zone was rebuilt to remove, so the
+ * active state is carried entirely by things with no metrics — colour, a
+ * background, and a border that goes from dashed to solid at the same width. */
 #teema-vaade-wrap .addpick:checked + .disclosure-chip {
   color: var(--accent-link);
   background: var(--status-info-soft);
   border: 1px solid var(--accent-border);
-  font-weight: var(--typography-weight-bold);
 }
 
 /* The form area. Hidden until its own chip is chosen, and then the only item on
