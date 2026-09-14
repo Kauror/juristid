@@ -99,7 +99,7 @@ from app.matters.models import Matter
 from app.matters.register_dates import RESPONSE_DEADLINE_LABEL
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.dates import format_at_precision, period_bounds
+from app.workflow.dates import format_at_precision
 from app.workflow.enums import (
     REVIEW_KINDS,
     ActionKind,
@@ -107,6 +107,7 @@ from app.workflow.enums import (
     DatePrecision,
     DateSemantics,
 )
+from app.workflow.lateness import period_end_for
 from app.workflow.models import NextAction
 
 # ---------------------------------------------------------------------------
@@ -561,14 +562,11 @@ def open_matters(user: Any) -> QuerySet[Matter]:
 
 def action_item(action: NextAction, today: date) -> WorkItem:
     anchor = action.target_date
-    end = anchor
-    if anchor is not None and action.date_precision != DatePrecision.EXACT:
-        # A month or a quarter is behind us only once its *last* day is, so the
-        # stored precision decides where the item stops being current.
-        try:
-            _, end = period_bounds(anchor, action.date_precision)
-        except Exception:  # pragma: no cover - a stored precision the parser refuses
-            end = anchor
+    # A month or a quarter is behind us only once its *last* day is, so the
+    # stored precision decides where the item stops being current. The same
+    # helper `NextAction.is_overdue` reads, so the row's styling and the number
+    # beside it cannot be answering two different questions.
+    end = None if anchor is None else period_end_for(anchor, action.date_precision)
     overdue = action.is_overdue(today)
     ripe = (
         action.kind in REVIEW_KINDS

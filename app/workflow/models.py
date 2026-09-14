@@ -30,6 +30,7 @@ from app.workflow.enums import (
     Disposition,
     Track,
 )
+from app.workflow.lateness import days_past_period, is_past_period, overdue_date_q
 
 
 class StageVocabulary(BaseModel):
@@ -173,11 +174,16 @@ class NextActionQuerySet(models.QuerySet):
         Only a DO with a DEADLINE qualifies. A WAIT whose review date has passed
         is due for a look, not missed, and calling it overdue would make the
         whole list untrustworthy.
+
+        The date half is :func:`~app.workflow.lateness.overdue_date_q`, so an
+        approximate plan goes late only once its whole period has ended — and
+        this queryset returns exactly the rows ``is_overdue`` below says are
+        late, rather than a wider set the page then has to disagree with.
         """
         return self.open().filter(
+            overdue_date_q(today or timezone.localdate()),
             kind=OVERDUE_KIND,
             date_semantics=OVERDUE_SEMANTICS,
-            target_date__lt=today or timezone.localdate(),
         )
 
     def due_for_review(self, today: date | None = None) -> NextActionQuerySet:
@@ -329,11 +335,18 @@ class NextAction(VisibilityInheritingModel):
         return self.status == ActionStatus.OPEN
 
     def is_overdue(self, today: date | None = None) -> bool:
+        """Whether this step's own period has ended without it being done.
+
+        An approximate date is a period, and a period is missed only once all
+        of it is behind us: *september 2026* anchors on 1 September so that it
+        sorts, and reading that anchor as the commitment called a lawyer late on
+        the second day of the month they were given (ADR 0079).
+        """
         if not self.is_open or self.target_date is None:
             return False
         if self.kind != OVERDUE_KIND or self.date_semantics != OVERDUE_SEMANTICS:
             return False
-        return self.target_date < (today or timezone.localdate())
+        return is_past_period(self.target_date, self.date_precision, today or timezone.localdate())
 
     def is_due_for_review(self, today: date | None = None) -> bool:
         if not self.is_open or self.target_date is None:
@@ -360,10 +373,15 @@ class NextAction(VisibilityInheritingModel):
         Only for something genuinely overdue: a review date that has come round
         is not late, and a number of days beside it would read as a tally of
         failure for waiting on a ministry (master specification 18.8).
+
+        Counted from the **last** day of the stored period, for the same reason
+        `is_overdue` reads it: a September plan is one day late on 1 October,
+        and «30 p üle» would be a number nobody could account for.
         """
-        if not self.is_overdue() or self.target_date is None:
+        today = timezone.localdate()
+        if not self.is_overdue(today) or self.target_date is None:
             return 0
-        return (timezone.localdate() - self.target_date).days
+        return days_past_period(self.target_date, self.date_precision, today)
 
     @property
     def display_date(self) -> str:
