@@ -1475,6 +1475,7 @@ def record_engagement(
     alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
+    feedback_deadline: Any = None,
     response_count: Any = None,
     actor: Any = None,
 ) -> MatterEngagement:
@@ -1491,6 +1492,12 @@ def record_engagement(
     row is created (R2-02). The Teema overview's `Kaasamine` form posts here;
     the workspace's `+ Kaasamine` takes the same lock itself in
     `app/matters/workspace.py`; the importer keeps the leaf.
+
+    ``feedback_deadline`` is passed straight through, like every other field.
+    It was the one column this door could not carry: `add_engagement` has taken
+    it since docs/adr/0078 §3 and this function did not, so a save arriving
+    here wrote `NULL` however carefully the form had been filled in. A door
+    that silently drops a field is worse than one that does not offer it.
     """
     locked = lock_open_matter_for_business_write(matter.pk)
     return add_engagement(
@@ -1502,6 +1509,7 @@ def record_engagement(
         alchemer_url=alchemer_url,
         note=note,
         occurred_on=occurred_on,
+        feedback_deadline=feedback_deadline,
         response_count=response_count,
         actor=actor,
     )
@@ -1590,6 +1598,36 @@ def add_engagement(
     return engagement
 
 
+#: What a stale correction is told, in one place because a view, a template and
+#: a test all have to agree about it. The sibling of `ENTRY_EDIT_CONFLICT`, and
+#: deliberately the same shape of sentence.
+ENGAGEMENT_EDIT_CONFLICT = "Kaasamist on vahepeal mujal muudetud."
+
+
+class EngagementEditConflict(DomainError):
+    """The engagement changed elsewhere between rendering a form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see
+    the other side of is a conflict they cannot resolve — the same reasoning,
+    and deliberately the same shape, as :class:`EntryEditConflict`.
+    """
+
+    def __init__(self, current: MatterEngagement) -> None:
+        super().__init__(ENGAGEMENT_EDIT_CONFLICT)
+        self.current = current
+
+
+def engagement_revision_token(engagement: MatterEngagement) -> str:
+    """Which version of an engagement a rendered correction form was filled from.
+
+    ``updated_at``, for the reasons `entry_revision_token` gives: `auto_now`
+    sets it on every write, PostgreSQL stores it to the microsecond so two
+    saves cannot share one, and having it costs no migration — which matters
+    here, because this round adds no schema at all.
+    """
+    return engagement.updated_at.isoformat()
+
+
 @transaction.atomic
 def update_engagement(
     *,
@@ -1603,6 +1641,7 @@ def update_engagement(
     occurred_on: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
     actor: Any = None,
+    expected_revision: str | None = None,
 ) -> MatterEngagement:
     """Correct an engagement, and say nothing when nothing changed.
 
@@ -1617,7 +1656,38 @@ def update_engagement(
     and no others, so a correction to a title or a date cannot quietly clear a
     reply-by date somebody typed. An explicit ``None`` still clears it, which is
     how a wrong deadline is removed rather than only overwritten.
+
+    **The row is locked and re-read before anything is decided**, and the
+    comparison that produces `changed` is made against *that* row rather than
+    against the instance the caller arrived with. Two people correcting one
+    consultation would otherwise each diff against their own stale copy, and
+    the second writer would file an audit row naming fields that had already
+    moved — or none, and silently discard their own correction as a no-op.
+    `no_key=True` for the reason `app/matters/locks.py` gives: `SearchDocument`
+    carries an `engagement` foreign key and its targeted refresh runs from
+    `post_save` inside this transaction.
+
+    **Optimistic concurrency**, exactly as `edit_entry` has it. A caller that
+    knows which version its form was filled from says so in
+    ``expected_revision``, and a save whose token is not the stored one raises
+    :class:`EngagementEditConflict` and **writes nothing**. ``None`` means «no
+    opinion» and is what every non-interactive caller passes — the importer,
+    the register enrichment, a data fix, a test — none of which is holding an
+    earlier version of anything. The token is compared *before* the no-op
+    check: a stale form carrying the values somebody else already saved has
+    still been overtaken, and answering it with a silent success would teach
+    the person that their copy was current when it was not.
+
+    ``engagement`` is kept consistent with what was written, so a caller that
+    goes on reading the instance it passed — `app.legacy_import.register_outreach`
+    compares its own fields before and after — sees the stored values.
     """
+    locked = MatterEngagement.objects.select_for_update(no_key=True).get(pk=engagement.pk)
+    if expected_revision is not None and engagement_revision_token(locked) != expected_revision:
+        # Read *after* the lock, so the version compared against is the one that
+        # is committed rather than the one that was on screen.
+        raise EngagementEditConflict(locked)
+
     proposed: dict[str, Any] = {}
     if kind is not _UNSET:
         proposed["kind"] = _engagement_kind(kind)
@@ -1642,41 +1712,110 @@ def update_engagement(
     if feedback_deadline is not _UNSET:
         proposed["feedback_deadline"] = feedback_deadline
 
-    changed = [field for field, value in proposed.items() if getattr(engagement, field) != value]
+    changed = [field for field, value in proposed.items() if getattr(locked, field) != value]
     if not changed:
-        return engagement
+        return locked
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "kind" in changed:
-        payload["kind_from"] = engagement.kind
+        payload["kind_from"] = locked.kind
         payload["kind_to"] = proposed["kind"]
     if "occurred_on" in changed:
-        payload["occurred_on_from"] = (
-            engagement.occurred_on.isoformat() if engagement.occurred_on else None
-        )
+        payload["occurred_on_from"] = locked.occurred_on.isoformat() if locked.occurred_on else None
         payload["occurred_on_to"] = (
             proposed["occurred_on"].isoformat() if proposed["occurred_on"] else None
         )
     if "feedback_deadline" in changed:
         payload["feedback_deadline_from"] = (
-            engagement.feedback_deadline.isoformat() if engagement.feedback_deadline else None
+            locked.feedback_deadline.isoformat() if locked.feedback_deadline else None
         )
         payload["feedback_deadline_to"] = (
             proposed["feedback_deadline"].isoformat() if proposed["feedback_deadline"] else None
         )
 
     for field in changed:
+        setattr(locked, field, proposed[field])
+        # The caller's own instance, kept in step with the row. `register_outreach`
+        # reads its fields back after this returns to decide whether the refresh
+        # changed anything, and an instance left holding pre-write values would
+        # report every corrected row as untouched.
         setattr(engagement, field, proposed[field])
-    engagement.save(update_fields=[*changed, "updated_at"])
+    locked.save(update_fields=[*changed, "updated_at"])
     record_change_event(
         event_type=ChangeEventType.ENGAGEMENT_CHANGED,
-        matter=engagement.matter,
+        matter=locked.matter,
         actor=actor,
-        obj=engagement,
-        summary=engagement.title[:200],
+        obj=locked,
+        summary=locked.title[:200],
         payload=payload,
     )
-    return engagement
+    return locked
+
+
+@transaction.atomic
+def correct_engagement(
+    *,
+    engagement: MatterEngagement,
+    kind: str = _UNSET,
+    title: str = _UNSET,
+    url: Any = _UNSET,
+    smaily_url: Any = _UNSET,
+    alchemer_url: Any = _UNSET,
+    note: Any = _UNSET,
+    occurred_on: Any = _UNSET,
+    feedback_deadline: Any = _UNSET,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterEngagement:
+    """`Muuda` on a `Kaasamine`, by a person, on a Matter that is open.
+
+    The correction sibling of :func:`record_engagement`, and it exists for the
+    same reason: :func:`update_engagement` has a second, legitimate writer that
+    must **not** be held to the open-Matter rule.
+    `app.legacy_import.register_outreach` refreshes consultations on imported
+    Matters and most of those are closed, so a guard in the leaf would break
+    the import rather than protect anything. The rule is therefore stated where
+    a *person* writes (R2-02).
+
+    **Correcting a consultation is normal interactive business work, and a
+    closed Matter refuses it.** This is deliberately *not* the rule
+    `edit_entry` keeps. An entry correction rewrites the wording of a narrative
+    somebody authored and touches no canonical fact; a `Kaasamine` correction
+    moves the dates, the channel, the audience and the links of a structured
+    record that the chronology, the register's activity date and the search
+    projection all read. If that has to change on a finished file, the file is
+    reopened, the work is done and it is closed again — which leaves somebody's
+    name on both decisions (docs/adr/0075 §12, docs/adr/0076 §2).
+
+    The lock is `lock_open_matter_for_business_write`, taken on the way in and
+    held for the whole transaction, so the refusal cannot be raced: a closure
+    committing first makes this refuse, and this committing first makes the
+    engagement part of the file the closure then shuts.
+
+    The child is re-read **through the locked Matter**, so the row about to be
+    corrected provably belongs to the file whose state the lock just answered
+    for. The view has already scoped it through `visible_to`; this is the same
+    invariant stated where the write happens, because a page is not a boundary.
+    """
+    locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
+    try:
+        current = MatterEngagement.objects.get(pk=engagement.pk, matter=locked_matter)
+    except MatterEngagement.DoesNotExist:
+        raise DomainError("Seda kaasamist ei ole sellel teemal.") from None
+
+    return update_engagement(
+        engagement=current,
+        kind=kind,
+        title=title,
+        url=url,
+        smaily_url=smaily_url,
+        alchemer_url=alchemer_url,
+        note=note,
+        occurred_on=occurred_on,
+        feedback_deadline=feedback_deadline,
+        actor=actor,
+        expected_revision=expected_revision,
+    )
 
 
 @transaction.atomic

@@ -179,6 +179,41 @@ def clean_provider_link(form: forms.Form, field: str) -> str:
         raise forms.ValidationError(str(error)) from error
 
 
+#: What a reply-by date typed before the round it belongs to is told.
+#:
+#: One string, because two forms ask the same question and a refusal worded
+#: twice is a refusal that drifts (`CompactEngagementForm`, `EngagementForm`).
+DEADLINE_BEFORE_ENGAGEMENT = "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva."
+
+
+def refuse_deadline_before_engagement(form: forms.Form, cleaned: dict[str, Any]) -> None:
+    """The one relationship between the two engagement dates, and no other rule.
+
+    A reply-by date *before* the day the round started is not a late
+    consultation, it is a slip of the keyboard — nothing was ever asked to be
+    answered before it was asked. Same day is fine («vastake tänaseks»), later
+    is the normal case, and a deadline with no engagement date at all is
+    accepted because a person who does not remember when they wrote may still
+    remember what they asked for. A deadline already in the past is accepted
+    too: a consultation recorded months late had its deadline months ago
+    (docs/adr/0078 §3).
+
+    Reported on `feedback_deadline`, because that is the box the person would
+    correct: the engagement date is the anchor and the deadline is what is
+    being placed against it.
+
+    Shared by the `+ Kaasamine` panel and the correction form. The panel writes
+    a new record and the correction form rewrites one, and the rule about what
+    the two dates may say to each other is the same rule either way — a copy
+    per form is how a record becomes correctable into a state it could never
+    have been created in.
+    """
+    occurred_on = cleaned.get("occurred_on")
+    feedback_deadline = cleaned.get("feedback_deadline")
+    if occurred_on and feedback_deadline and feedback_deadline < occurred_on:
+        form.add_error("feedback_deadline", DEADLINE_BEFORE_ENGAGEMENT)
+
+
 def assignable_users() -> Any:
     """Who a person may be handed work on this form.
 
@@ -3056,12 +3091,25 @@ class ComposerForm(forms.Form):
             "response_count": cleaned.get("engagement_responses"),
             "smaily_url": (cleaned.get("engagement_smaily_url") or "").strip(),
             "alchemer_url": (cleaned.get("engagement_alchemer_url") or "").strip(),
-            # The day the work is being recorded. The target deliberately does
-            # not ask for an engagement date, and the application's convention
-            # for «this happened as part of the work I am writing down now» is
-            # today in Europe/Tallinn — the same clock `add_entry` stamps with
-            # (docs/adr/0074 §9).
-            "occurred_on": timezone.localdate(),
+            # **Nothing, because this form has no box to ask with.**
+            #
+            # It used to be `timezone.localdate()`, on the reasoning of
+            # docs/adr/0074 §9: the target asked for no engagement date, and
+            # «this happened as part of the work I am writing down now» meant
+            # today in Europe/Tallinn. docs/adr/0078 §2 withdrew that — a
+            # consultation is routinely typed up days or months after it
+            # happened, and filing it as today is a false fact written by the
+            # server with no box on the screen anybody could have corrected.
+            #
+            # `+ Kaasamine` answered that by *asking*. This form cannot: it is
+            # the superseded composer, kept alive for the browsers still
+            # holding a page that posts to it (docs/adr/0075 §11), and adding a
+            # date control to a surface nothing renders would be building a
+            # question nobody can be shown. So it records that the date is not
+            # known, which is what `MatterEngagement.occurred_on` has always
+            # been able to mean and is the only truthful answer available here.
+            # A surface that cannot ask must not answer.
+            "occurred_on": None,
         }
 
     def _clean_closure(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
@@ -3197,13 +3245,29 @@ class MatterFieldForm(forms.Form):
 
 
 class EngagementForm(forms.Form):
-    """`Kaasamine` — five fields, four of them optional.
+    """`Kaasamine`, as it is **corrected** — every stored field, and its version.
 
     Required: the channel and a human-readable title. Everything else is
     optional because the commonest real record is incomplete: a mailing with no
     durable link, a consultation somebody is entering months later without the
     exact date to hand. A form that demanded them would simply not be used
     (Agent-F brief 39).
+
+    **This is the correction contract, and it has to name every column a person
+    can have filled in.** A correction form missing a field does not leave that
+    field alone — it leaves the person with a record they can read on the
+    chronology and cannot fix, which is the state `feedback_deadline` was in
+    between docs/adr/0078 §3 adding the column and this round. The fields here
+    are therefore exactly the stored ones: `kind`, `title`, `url`, the two
+    provider links, `note`, and both dates. `response_count` is deliberately
+    not among them — the correction UI does not offer it, so the view never
+    names it and `update_engagement`'s `_UNSET` leaves whatever is stored
+    untouched rather than clearing it to «nobody counted».
+
+    Creating a `Kaasamine` is `CompactEngagementForm` and the `+ Kaasamine`
+    panel. The two forms stay separate — a creator may default a box and an
+    editor may not — and share the one rule that relates the two dates
+    (`refuse_deadline_before_engagement`).
     """
 
     #: The three approved options, not the whole enum. `WEB_CALL` stays a valid
@@ -3233,20 +3297,58 @@ class EngagementForm(forms.Form):
     #: what `+ Kaasamine` stored (docs/adr/0027, amended 2026-09-12).
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
-    #: Today. The original argument against it was that a record may be about a
-    #: consultation from 2019 and a pre-filled box is answered by pressing save
-    #: (Agent-F brief 38). Hands-on QA settled it the other way: the overwhelming
-    #: case is recording something that just happened, and re-typing today's date
-    #: every time is the friction people actually complained about. Backdating is
-    #: one edit; typing today is every time.
-    occurred_on = EstonianDateField(
-        label="Kuupäev", required=False, widget=DATE_WIDGET, initial=timezone.localdate
+    #: `Kaasamise kuupäev`. Optional, and an **exact day or nothing** — no
+    #: precision control, no month, no quarter, no year. `Kaasamise kuupäev`
+    #: stays on docs/adr/0079 §11's list of dates that are recorded exactly,
+    #: beside `Arvamuse tähtaeg` and `Saabus`, and an editor that offered a
+    #: precision the panel cannot write would let a record be corrected into a
+    #: shape it could never have been created in.
+    #:
+    #: An emptied box stores `NULL`, which is «kuupäev teadmata» and is what the
+    #: chronology then prints (`app/matters/timeline.py`,
+    #: `ENGAGEMENT_DATE_UNKNOWN`). That is the whole point of it being
+    #: correctable: a row the old panel stamped with today can now be told the
+    #: truth, including the truth that nobody knows.
+    occurred_on = EstonianDateField(label="Kaasamise kuupäev", required=False, widget=DATE_WIDGET)
+    #: `Tagasisidet ootame kuni`, the column docs/adr/0078 §3 added and this
+    #: form could not see.
+    #:
+    #: Its absence was not a cosmetic gap. `+ Kaasamine` writes the deadline and
+    #: this is the form that *corrects* a written record, so a reply-by date
+    #: somebody typed into the panel could be read nowhere, changed nowhere and
+    #: removed nowhere — a stored fact with no way back out. `update_engagement`
+    #: protected it behind `_UNSET` precisely because no form named it; now one
+    #: does, and an emptied box clears it deliberately rather than by omission.
+    #:
+    #: **No `initial`, on either box.** Today is a plausible engagement date for
+    #: a record being *created* and is never a plausible answer for one being
+    #: *corrected*: an editor opens filled from the stored value, and a default
+    #: would be this form proposing a change nobody asked for. Both boxes are
+    #: filled from the record by `_engagement_edit_form`.
+    feedback_deadline = EstonianDateField(
+        label="Tagasisidet ootame kuni", required=False, widget=DATE_WIDGET
     )
     note = forms.CharField(
         label="Märkus",
         required=False,
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "2"}),
     )
+    #: The half of optimistic concurrency the browser owns, exactly as
+    #: `EntryEditForm` carries it: the version the boxes were filled from,
+    #: returned unchanged so `correct_engagement` can refuse a stale save
+    #: rather than let it overwrite somebody else's correction.
+    #:
+    #: `required=False`, because an absent token must reach the service as an
+    #: empty string and be refused *there* against a real row — a required
+    #: field would answer a stale form with a field error that says nothing
+    #: about what actually went wrong.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def clean(self) -> dict[str, Any]:
+        """The one rule relating the two dates, shared with the other form."""
+        cleaned = super().clean() or {}
+        refuse_deadline_before_engagement(self, cleaned)
+        return cleaned
 
     def clean_url(self) -> str:
         """The same rule the service enforces, reported where somebody typed it.
@@ -3856,27 +3958,9 @@ class CompactEngagementForm(ChipChoices, forms.Form):
         return self.cleaned_data.get("kind") or COMPOSER_ENGAGEMENT_KINDS[0][0]
 
     def clean(self) -> dict[str, Any]:
-        """The one relationship between the two dates, and no other rule.
-
-        A reply-by date *before* the day the round started is not a late
-        consultation, it is a slip of the keyboard — nothing was ever asked to
-        be answered before it was asked. Same day is fine («vastake tänaseks»),
-        later is the normal case, and a deadline with no engagement date at all
-        is accepted because a person who does not remember when they wrote may
-        still remember what they asked for.
-
-        Reported on `feedback_deadline`, because that is the box the person
-        would correct: the engagement date is the anchor and the deadline is
-        what is being placed against it.
-        """
+        """The one rule relating the two dates, shared with the other form."""
         cleaned = super().clean() or {}
-        occurred_on = cleaned.get("occurred_on")
-        feedback_deadline = cleaned.get("feedback_deadline")
-        if occurred_on and feedback_deadline and feedback_deadline < occurred_on:
-            self.add_error(
-                "feedback_deadline",
-                "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva.",
-            )
+        refuse_deadline_before_engagement(self, cleaned)
         return cleaned
 
 
