@@ -10129,6 +10129,15 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* -- `Täpsus`: how exactly is this date known ------------------------------
  *
+ * **Every selector here starts at `.precision`, and that is not tidiness.**
+ * `precision__radio` is also the class `app/intelligence/forms.py` puts on its
+ * own period control's radios, which live in a `.choiceset` fieldset on the
+ * Olulised tähtajad and Jõustumised pages and are ordinary visible radios with
+ * a `<span>` beside them. Written bare, the clipping rule below reached those
+ * too and left four pages with a control nobody could see or click — found by
+ * the browser suite as `Locator.check: Timeout`, which reads like a flake and
+ * is not one.
+ *
  * Four chips and the controls each of them needs. Used by `+ Järgmine
  * tegevus`, `+ Oluline tähtaeg`, `+ Jõustumine` and `+ Töövõit`, from one
  * partial, because a quarter entered on any of them is the same period
@@ -10153,13 +10162,13 @@ section:has(.pw-more[open]) tbody.uxextra {
 /* A `<legend>` inside a flex `<fieldset>` is laid out by its own rules in every
    engine; taking it out of the flow and letting the chips row carry the label
    spacing is the one reliable answer across them. */
-.precision__legend {
+.precision .precision__legend {
   padding: 0;
   float: left;
   width: 100%;
 }
 
-.precision__chips {
+.precision .precision__chips {
   display: flex;
   align-items: center;
   gap: var(--spacing-15);
@@ -10167,7 +10176,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   clear: both;
 }
 
-.precision__radio {
+.precision .precision__radio {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -10183,22 +10192,22 @@ section:has(.pw-more[open]) tbody.uxextra {
    Bold is wider, and a chip that grows when you pick it moves every chip after
    it along the row — measured, and fixed structurally, on the launcher bar
    directly above (docs/adr/0078). */
-.precision__chip {
+.precision .precision__chip {
   flex: none;
 }
 
-.precision__radio:focus-visible + .precision__chip {
+.precision .precision__radio:focus-visible + .precision__chip {
   outline: 2px solid var(--accent-border);
   outline-offset: 2px;
 }
 
-.precision__radio:checked + .precision__chip {
+.precision .precision__radio:checked + .precision__chip {
   color: var(--accent-link);
   background: var(--status-info-soft);
   border: 1px solid var(--accent-border);
 }
 
-.precision__group {
+.precision .precision__group {
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
@@ -10207,11 +10216,11 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 /* The quick spans and the date box share the day group's row. */
-.precision__group--day .uxchip {
+.precision .precision__group--day .uxchip {
   flex: none;
 }
 
-.cx-f--year {
+.precision .cx-f--year {
   flex: 0 0 auto;
   max-width: 140px;
 }
@@ -10226,7 +10235,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * No JavaScript is involved in either case, which is the point. The precision
  * is a real radio in the POST (docs/adr/0079 §1, brief §6). */
 @supports selector(:has(*)) {
-  .precision__group {
+  .precision .precision__group {
     display: none;
   }
 

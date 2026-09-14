@@ -298,7 +298,12 @@ def test_the_next_step_is_asked_for_in_its_own_words(signed_in, normal_matter):
     panel = body[body.index('id="lisa-jargmine"') : body.index('id="lisa-kaasamine"')]
 
     assert panel.index("Mida on vaja teha?") < panel.index("Millal?")
-    for chip in ("Täna", "Homme", "+1 nädal", "+2 nädalat", "Kuupäev…"):
+    # `Kuupäev…` is gone, and it is gone because the box it disclosed is no
+    # longer hidden. The date is now the `Täpne päev` group of the `Täpsus`
+    # control — shown because that chip is the one selected first — so a
+    # disclosure in front of it would be a second click to reach a field that is
+    # already there (docs/adr/0079 §1). The quick spans are untouched.
+    for chip in ("Täna", "Homme", "+1 nädal", "+2 nädalat"):
         assert chip in panel
     # The retired vocabulary is not back.
     for gone in ("TEEN", "OOTAN", "JÄLGIN", "Täpsemalt…"):
@@ -429,6 +434,8 @@ def test_one_post_records_every_panel_atomically(signed_in, normal_matter, speci
         effective_title="Pakendiseaduse muudatused",
         effective_on="01.01.2027",
         victory_change="Üleminekuaeg pikenes",
+        victory_precision=DatePrecision.YEAR,
+        victory_year="2026",
         engagement_kind=EngagementKind.SURVEY,
         engagement_audience="liikmed",
         engagement_responses="14",
@@ -601,7 +608,13 @@ def test_a_commencement_is_a_matter_effective_date_not_an_entry(signed_in, norma
 def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter):
     """**§21.** A win is recorded when it happens, which is usually while the
     file is still open."""
-    response = _compose(signed_in, normal_matter, victory_change="Üleminekuaeg pikenes 2028-ni")
+    response = _compose(
+        signed_in,
+        normal_matter,
+        victory_change="Üleminekuaeg pikenes 2028-ni",
+        victory_precision=DatePrecision.YEAR,
+        victory_year="2026",
+    )
     assert response.status_code == 200, response.content.decode()[:2000]
 
     normal_matter.refresh_from_db()
@@ -611,8 +624,15 @@ def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter)
     assert victory.title == "Üleminekuaeg pikenes 2028-ni"
     assert victory.status == WorkVictoryStatus.CONFIRMED
     assert victory.confirmed_by is not None
-    # No reporting period was borrowed because the panel happened to be open.
-    assert victory.period_date is None
+    # **The period is stated, not borrowed.** This used to assert
+    # `period_date is None`, and it was asserting the right thing about the
+    # wrong solution: nothing may be filed into a reporting year because a
+    # panel happened to be open, and the answer to that is to *ask*, not to
+    # record the win undated and invisible to every year-based surface
+    # (docs/adr/0079 §10).
+    assert victory.period_date == date(2026, 1, 1)
+    assert victory.period_end == date(2026, 12, 31)
+    assert victory.date_precision == DatePrecision.YEAR
     assert not Entry.objects.filter(matter=normal_matter).exists()
 
 

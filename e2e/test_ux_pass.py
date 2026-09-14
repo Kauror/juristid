@@ -126,31 +126,40 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
 
     The next step's «Täpsemalt…» panel is not a fold that got lost — it was
     deliberately deleted, along with the classification it held (ADR 0052 §4).
-    The period control it wrapped is still a control and is still one
-    disclosure away, on `Oluline tähtaeg`, which is the surface where "in the
-    autumn" is a real answer.
+    The *classification* is still gone and is still unreachable by POST.
+
+    **The period control came back, and only here.** ADR 0052 §4 deleted it on
+    the reasoning that a lawyer's own working day is a day; docs/adr/0079 §1
+    supersedes that half, because a step that genuinely belongs *in October*
+    had to be filed as the 1st. `Täpne päev` is still the chip that is
+    selected first, and the quick spans still sit inside it.
     """
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    # The next step asks two things and nothing else.
+    # The next step asks what, when, and how exactly the when is known.
     open_next_action_form(page)
     expect(page.locator("#lisa-jargmine [name='text']")).to_be_visible()
     expect(page.locator("#id_target_date")).to_have_count(1)
     expect(page.locator("details.uxcomp__more")).to_have_count(0)
+    # The classification is still gone from the contract, not merely hidden.
     expect(page.locator("#id_next_date_semantics")).to_have_count(0)
-    expect(page.locator("input[name=next_precision]")).to_have_count(0)
+    expect(page.locator("#lisa-jargmine [name=next_kind]")).to_have_count(0)
+    # And the four precisions are here, as real radios.
+    expect(page.locator("#lisa-jargmine input[name=next_precision]")).to_have_count(4)
+    for label in ("Täpne päev", "Kuu", "Kvartal", "Aasta"):
+        expect(page.locator("#lisa-jargmine label.precision__chip", has_text=label)).to_have_count(
+            1
+        )
 
-    # `Oluline tähtaeg` is one date box and three precision chips since the
-    # approved target: the panel asks for the day somebody was told about and
-    # says how precisely it was meant, and `_period_anchor` derives the period
-    # from that day. The «Ligikaudne aeg» disclosure and its four selects are
-    # gone from this surface and still serve `Olulised tähtajad`
-    # (docs/adr/0074 §11).
+    # `Oluline tähtaeg` asks the same four, from the same partial. `Aasta` is
+    # the one that did not exist before this round, and its absence was why the
+    # panel had to derive a period from the day somebody typed
+    # (docs/adr/0079 §1, superseding docs/adr/0074 §11).
     open_add_panel(page, "lisa-tahtaeg")
     expect(page.locator("#lisa-tahtaeg [name=deadline_date]")).to_be_visible()
-    for label in ("Täpne päev", "Kuu", "Kvartal"):
-        expect(page.locator("#lisa-tahtaeg .uxchip", has_text=label)).to_have_count(1)
+    for label in ("Täpne päev", "Kuu", "Kvartal", "Aasta"):
+        expect(page.locator("#lisa-tahtaeg label.precision__chip", has_text=label)).to_have_count(1)
     expect(page.locator("#lisa-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
     open_add_panel(page, "lisa-lopeta")
@@ -213,33 +222,31 @@ def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     # «Lükka edasi» left the Järgmiseks row with the approved target, and with
-    # it the only `[data-uxpopover]` this page had (docs/adr/0074 §20). The
-    # `Kuupäev…` box deliberately does **not** join that contract: it closes on
-    # a click outside, which is right for a menu and wrong for a box somebody is
-    # typing a date into. So what is asserted here is the disclosure the page
-    # does have — it opens and closes by its own summary, and typing into it
-    # survives a click elsewhere in the same form.
+    # it the only `[data-uxpopover]` this page had (docs/adr/0074 §20).
+    #
+    # **The `Kuupäev…` disclosure it was asserted through is gone too.** The
+    # date box is now the `Täpne päev` group of the `Täpsus` control and is
+    # shown because that chip is the one selected first, so there is nothing
+    # left to open (docs/adr/0079 §1). What that disclosure existed to protect
+    # is unchanged and is what this asserts instead: a date somebody is typing
+    # must not vanish or reset because they clicked elsewhere in the same form.
     open_add_panel(page, "lisa-jargmine")
-    popover = page.locator("#lisa-jargmine details.uxcomp__date")
-    trigger = popover.locator("summary")
-    # `Muuda` prefills the form from the open step, and the box renders open
-    # whenever it holds a value — so a refused save never hides the field the
-    # reader has to correct. Start from closed whichever state this Matter is in.
-    if popover.evaluate("node => node.open"):
-        trigger.click()
-    trigger.click()
-    assert popover.evaluate("node => node.open") is True
+    day_group = page.locator('#lisa-jargmine .precision__group[data-precision-for="day"]')
+    expect(day_group).to_be_visible()
 
     page.locator("#id_target_date").fill("30.09.2026")
     page.locator("#lisa-jargmine [name='text']").click()
 
-    assert popover.evaluate("node => node.open") is True, (
-        "a date box must not close under the cursor mid-entry"
-    )
+    expect(day_group).to_be_visible()
     assert page.locator("#id_target_date").input_value() == "30.09.2026"
 
-    trigger.click()
-    assert popover.evaluate("node => node.open") is False
+    # And choosing another precision puts the question somewhere else rather
+    # than leaving two date controls disagreeing.
+    page.locator("#lisa-jargmine label.precision__chip", has_text="Kvartal").first.click()
+    expect(day_group).to_be_hidden()
+    expect(
+        page.locator('#lisa-jargmine .precision__group[data-precision-for="quarter"]')
+    ).to_be_visible()
 
 
 # =========================================================================

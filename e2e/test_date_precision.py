@@ -98,19 +98,29 @@ def test_the_edit_path_can_state_a_quarter_on_an_existing_step(page, base_url):
 
 
 def test_an_important_deadline_can_be_stated_as_a_year(page, base_url):
-    """§35 C. `Aasta` is the chip that did not exist before this round."""
+    """§35 C. `Aasta` is the chip that did not exist before this round.
+
+    **2024, not 2027.** The chronology projects structured facts that have
+    *happened*: a deadline in the future is where the file is going, which is
+    the process strip's question, and a generic `Oluline tähtaeg` is not one of
+    the strip's five sources (`app/matters/timeline.py`, docs/adr/0074 §12.4).
+    So a future year saves correctly and appears nowhere on this page, and a
+    test asserting otherwise would be asserting against the wrong surface.
+    """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Aasta täpsusega tähtaeg")
 
     open_add_panel(page, "lisa-tahtaeg")
     page.locator("#lisa-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
     choose(page, "#lisa-tahtaeg", "Aasta")
-    page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2027")
+    page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
     save(page, "#lisa-tahtaeg")
 
     body = page.locator("#teema-vaade")
-    expect(body).to_contain_text("2027")
-    expect(body).not_to_contain_text("01.01.2027")
+    expect(body).to_contain_text("Ülevõtmise tähtaeg")
+    expect(body).to_contain_text("2024")
+    # The anchor, spelled as a day. Never.
+    expect(body).not_to_contain_text("01.01.2024")
 
 
 def test_a_commencement_keeps_its_period_across_a_reload(page, base_url):
@@ -284,11 +294,13 @@ def test_a_precision_can_be_stated_with_scripting_off(browser, base_url, javascr
         page.locator('label[for="lisa-tahtaeg-valik"]').click()
         page.locator("#lisa-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
         page.locator("#lisa-tahtaeg label.precision__chip", has_text="Aasta").first.click()
-        page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2027")
+        # A past year, for the reason the year test above gives: the chronology
+        # carries what has happened, and this needs a surface to read back from.
+        page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
         page.locator("#lisa-tahtaeg button[type=submit]").first.click()
         page.wait_for_load_state("load")
 
         expect(page.locator("body")).to_contain_text("Ülevõtmise tähtaeg")
-        expect(page.locator("body")).to_contain_text("2027")
+        expect(page.locator("body")).to_contain_text("2024")
     finally:
         context.close()

@@ -18,7 +18,7 @@ is because the surface that reaches it moved, not because the rule did.
 from __future__ import annotations
 
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -1181,7 +1181,12 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
             matter=normal_matter, author=specialist, kind="SURVEY", audience="Liikmed"
         ),
         lambda: workspace.add_matter_work_victory(
-            matter=normal_matter, author=specialist, title="Muudatus"
+            matter=normal_matter,
+            author=specialist,
+            title="Muudatus",
+            period_date=date(2026, 1, 1),
+            period_end=date(2026, 12, 31),
+            date_precision="YEAR",
         ),
         lambda: compose_update(matter=normal_matter, author=specialist, body="<p>x</p>"),
     ):

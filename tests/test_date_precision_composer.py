@@ -33,6 +33,7 @@ import re
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, MatterWorkVictory
@@ -157,8 +158,11 @@ def test_a_next_action_is_recorded_at_the_precision_it_was_stated(
     assert action.display_date == reads
 
     body = _detail(signed_in, normal_matter)
+    # PRAEGUNE TEGEVUS prints the date and not the word: the step's own heading
+    # already says what the date is for, and `date_label` — *Plaanis* — belongs
+    # to the surfaces that show a step out of context, the register row and the
+    # work lists (ADR 0054 §Amendment).
     assert reads in body
-    assert "Plaanis" in body
     if precision != DatePrecision.EXACT:
         # The anchor, spelled as a day, on the surface that shows the step.
         # This is the assertion the whole feature exists for: `01.10.2026`
@@ -538,7 +542,11 @@ def test_an_existing_undated_work_victory_is_left_exactly_as_it_is(
         period_date=None,
         period_end=None,
         status=WorkVictoryStatus.CONFIRMED,
-        confirmed_at=None,
+        # A confirmed row records when it was confirmed — the database refuses
+        # one that does not (`intelligence_work_victory_confirmed_has_timestamp`).
+        # That is a different fact from the business period, which is exactly
+        # the distinction this test is about.
+        confirmed_at=timezone.now(),
     )
 
     record.refresh_from_db()

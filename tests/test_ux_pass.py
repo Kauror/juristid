@@ -710,21 +710,27 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
         url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
         markup += _workspace_markup(client.get(url).content.decode())
 
-    # The four period selects are deliberately not rendered. `+ Oluline tähtaeg`
-    # is one `Kuupäev` box plus `Täpne päev` / `Kuu` / `Kvartal`, and
-    # `_period_anchor` derives the month, quarter, half and year from the day
-    # that was picked. The fields stay on the form because the surfaces that
-    # *do* ask those questions post them, and because `bounds_for` must
-    # normalise both routes to one stored anchor (docs/adr/0074 §11).
+    # **The month, quarter and year selects are rendered now.** They used to be
+    # on this list: `+ Oluline tähtaeg` was one `Kuupäev` box plus three chips,
+    # and `_period_anchor` derived the rest from the day that was picked
+    # (docs/adr/0074 §11). Every panel now renders the control its chosen
+    # precision needs, so a field that is not on the page is a question nobody
+    # can answer (docs/adr/0079 §1).
+    #
+    # `*_half` stays off the page and on the forms. `Poolaasta` is a real stored
+    # precision and is not offered for new input — the register's vocabulary
+    # uses halves and this product's does not — so the field exists to keep one
+    # `_precision_fields` shared across four surfaces, and nothing posts it
+    # (docs/adr/0079 §7).
     #
     # `responsible` is the same kind of exception and predates this round: no
     # template renders it, and it stays on `NextActionForm` so an explicit POST
     # still wins over the owner default (ADR 0036 §5).
     derived = {
-        "deadline_month",
-        "deadline_quarter",
         "deadline_half",
-        "deadline_year",
+        "effective_half",
+        "victory_half",
+        "next_half",
         "responsible",
     }
 
