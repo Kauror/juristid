@@ -8,6 +8,33 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-14
+basis = "deployment"
+# Üks väljalase, neli ühendust. Töödokumendi lingi ja Tallinna kuupäeva
+# parandused (#202), Minu asjade lugemispoole korrastus (#203), aruannete
+# mõõdetud akna Tallinna aasta (#204) ning arvamuse kohustuse eraldamine
+# operatiivsest plaanist (#205).
+#
+# #205-l ei ole punkti ja see on tahtlik: see lisab ainult sisemise kanoonilise
+# oleku, ei muuda ühtegi tööpinda, ühtegi arvu ega ühtegi kuupäeva, mida lugeja
+# näeb. README ütleb, et kõik ei saa punkti — see on täpselt see juhtum.
+#
+# Väljalaske liitmisrevisjon 699cdb74 on kogu koorem peale selle kirje enda;
+# see, mis päriselt toodangusse jõuab, sünnib alles siis, kui see fail
+# ühendatakse, ja on kirjas väljalaske raportis — täpselt nagu 11., 12. ja
+# 13. septembri kirjete puhul.
+revisions = ["699cdb74363fe5ee81d9f9ac5489a27e91913d82"]
+prs = [202, 203, 204, 205]
+changes = [
+  "Töödokumendi SharePointi linki ei lõigata enam vaikides katki. Pikk aadress salvestatakse tervikuna, ja kui see on päriselt liiga pikk, öeldakse seda kohe — varem salvestati poolik link eduka teatega.",
+  "Saadetud arvamuse kuupäev on kõikjal Tallinna kuupäev: seotud materjalides, teema taustamaterjalides ja arvamuste väljavõttes. Hilisõhtul saadetud arvamus näitas varem ühe päeva varasemat kuupäeva.",
+  "Statistika arvamuste aegrida algab aastast, mil esimene arvamus Tallinna aja järgi välja läks. Aastavahetuse lähedal saadetud arvamus ei tekita enam aegrea algusse tühja aastat, mis näeb välja nagu «sel aastal ei saadetud midagi».",
+  "Minu asjades on «Minu viimased sissekanded» ja «Minu statistika» kohe avatud. Mõlemat avati iga kord käsitsi, nii et kokkupandud kuju ei säästnud kelleltki midagi.",
+  "Aktiivsete teemade nimede ees on väike neutraalne märgis, et rida oleks tööloendis äratuntav teemana, mitte menüüvalikuna.",
+  "Teema ajajoonel on manuse failinime ees dokumendi kujuline märk. Senine tühi kastike nägi välja nagu märkeruut, mida saaks linnutada — ja ei saanud.",
+]
+
+[[day]]
 date = 2026-09-13
 basis = "deployment"
 # Üks väljalase: 12. septembri ühendusvoor. Viis kasutamisest tulnud muudatust
