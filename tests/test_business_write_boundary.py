@@ -281,6 +281,24 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         request=lambda w: ({"pk": w["matter"].pk}, {"body": "<p>Loata märge.</p>"}),
         probe=lambda w: w["matter"].entries.count(),
     ),
+    # Correcting an entry that is already filed. In the matrix and not in
+    # `CLASSIFIED_ELSEWHERE`, because it is an ordinary business write on
+    # business content — the only thing unusual about it is that a *closed*
+    # Matter permits it, which is a question about the Matter and not about who
+    # the actor is (tests/test_entry_correction.py).
+    WriteRoute(
+        name="matters:edit_entry",
+        label="Sissekande parandamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "entry_id": w["entry"].pk},
+            {"body": "<p>Loata parandus.</p>", "revision": ""},
+        ),
+        probe=lambda w: (
+            w["entry"].__class__.objects.values_list("body", "edit_count").get(pk=w["entry"].pk),
+            w["entry"].revisions.count(),
+        ),
+        events=(ChangeEventType.ENTRY_EDITED,),
+    ),
     WriteRoute(
         name="matters:add_engagement_compact",
         label="Kaasamise lisamine",
@@ -595,6 +613,11 @@ def world(db):
     closed = create_matter(title="Suletud teema", actor=author, owner=author)
     close_matter(matter=closed, actor=author, disposition="COMPLETED")
 
+    # An entry already in the chronology, for the correction route: `Muuda`
+    # changes a record that exists rather than creating one, so a world without
+    # one would have nothing for a forbidden actor to be refused *on*.
+    entry = factories.EntryFactory(matter=matter, author=author, body="<p>Algne sõnastus.</p>")
+
     submission = factories.SubmissionFactory(matter=matter, title="Mustand")
     document = factories.DocumentFactory(matter=matter)
     version = add_evidence_version(
@@ -619,6 +642,7 @@ def world(db):
 
     return {
         "matter": matter,
+        "entry": entry,
         "unowned": unowned,
         "closed": closed,
         "author": author,

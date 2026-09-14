@@ -159,6 +159,20 @@ urlpatterns = [
     # form and its tests, and no longer posted to by any page
     # (docs/adr/0075 §11, brief §29).
     path("teemad/<uuid:pk>/sissekanne/", views.compose, name="compose"),
+    # `Muuda` on a filed Sissekanne. Under the entry rather than under the
+    # Teema, because the thing being corrected is the entry and the route says
+    # so; the Matter is still in the path so the view can prove the two belong
+    # together before it reads either.
+    #
+    # One address for the form and the save. GET opens the box in the row, POST
+    # writes it — there is no state between them, so a second route would only
+    # be a second place for the authorization to be written out
+    # (app/matters/views.py, `edit_entry_view`).
+    path(
+        "teemad/<uuid:pk>/sissekanne/<uuid:entry_id>/muuda/",
+        views.edit_entry_view,
+        name="edit_entry",
+    ),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),
     path("teemad/<uuid:pk>/kaasamine/", views.add_engagement_view, name="add_engagement"),
     path(

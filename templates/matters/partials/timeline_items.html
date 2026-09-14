@@ -112,18 +112,25 @@ record, not professional chronology (master specification 16.5).
           {% if item.entry.organisation %}
             <span class="uxtl__where">{{ item.entry.organisation.name }}</span>
           {% endif %}
-          {% if item.entry.was_edited %}
-            <span class="uxtl__where" title="Varasem sõnastus on säilitatud">muudetud</span>
+          {% comment %}
+            An entry's correction marker is always in the document and hides
+            itself when there is nothing to say, because a correction saved
+            from this page has to be able to reveal it out of band without
+            reloading the row (matters/partials/entry_edited_marker.html).
+          {% endcomment %}
+          {% if item.is_entry %}
+            {% include "matters/partials/entry_edited_marker.html" with entry=item.entry oob=False %}
           {% endif %}
           <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y H:i" }}</time>
         </p>
         {% if item.is_entry %}
           {% comment %}
-            Bodies are sanitised on write by app.core.richtext, so the stored
-            fragment is safe to render. Nothing reaches this template that has
-            not been through the allowlist.
+            The body and the `Muuda` that corrects it, in their own element so
+            that correcting one swaps the text and nothing around it — not the
+            dot, not the date, not the position in the chronology
+            (matters/partials/entry_body.html).
           {% endcomment %}
-          <div class="richtext">{{ item.entry.body|safe }}</div>
+          {% include "matters/partials/entry_body.html" with entry=item.entry matter=matter entry_edit_form=None entry_edit_swap_marker=False %}
         {% elif item.event.summary and not item.summary_sentence %}
           <div class="richtext">{{ item.event.summary }}</div>
         {% endif %}

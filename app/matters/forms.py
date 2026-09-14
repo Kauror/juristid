@@ -3804,3 +3804,54 @@ class CompactClosureForm(ChipChoices, forms.Form):
         if not disposition:
             raise forms.ValidationError("Vali, kuidas teema lõppes.")
         return disposition
+
+
+class EntryEditForm(forms.Form):
+    """`Muuda` — correcting the wording of a Sissekanne that is already filed.
+
+    **The body and nothing else.** Not the author, not `Toimus`, not the kind,
+    not the files and not the visibility: a correction says what happened was
+    written down wrongly, and every one of those other fields would be saying
+    that something *different* happened. A form with no field for them is the
+    surest way to guarantee it
+    (tests/test_entry_correction.py, `test_a_correction_changes_only_the_body`).
+
+    **The box is filled from the stored value exactly, markup and all.** A note
+    typed into the composer is stored as the plain sentence it was — the
+    sanitiser wraps nothing that arrived unwrapped — so the ordinary correction
+    shows a lawyer their own words and no tags. An entry pasted out of Word
+    carries real structure: paragraphs, lists, a table. Showing that as plain
+    text would be friendlier to look at and would destroy the structure on the
+    next save, which is the one thing a *correction* may not do
+    (app/core/richtext.py).
+
+    `revision` is the version the box was filled from, carried through the
+    round trip so `edit_entry` can refuse a stale save rather than let it
+    overwrite somebody else's. `required=False`, because an absent token must
+    reach the service as an empty string and be refused there against a real
+    row — a required field would answer a stale form with a field error that
+    says nothing about what actually went wrong.
+    """
+
+    use_required_attribute = False
+
+    body = forms.CharField(
+        label="Sissekande sisu",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                # The ordinary field style rather than `composer__body`. The
+                # composer's box is one line at rest and grows only inside
+                # `.composer:focus-within`, which this is not in — it would open
+                # forty pixels tall on an entry somebody wrote three paragraphs
+                # of (static/css/app.css).
+                "class": "field__input",
+                "rows": "4",
+                "data-richtext": "true",
+            }
+        ),
+    )
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def clean_body(self) -> str:
+        return require_written_body(self.cleaned_data.get("body"), "Sissekanne vajab sisu.")

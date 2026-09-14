@@ -38,9 +38,15 @@ writes`, not `once closed, forever immutable`.
 
 What this module deliberately does *not* decide: whether a *historical*
 correction — `Võta tagasi`, superseding, editing a fact already recorded — should
-be possible on a closed Matter. That is a separate product question and nothing
-here changes it. Nor does it touch personal `Märkmed`, which were outside #180's
-canonical-business-write boundary on purpose.
+be possible on a closed Matter. One part of that question has since been
+answered, and answered the other way: **an already-filed `Sissekanne` may be
+corrected on a closed Matter**, because closure means no new business work and
+has never meant that a fact recorded wrongly in 2023 must stay wrong. The rule
+and its boundary are in `tests/test_entry_correction.py`, which proves the same
+Matter that takes a correction still refuses a new note and a new next step. The
+rest — withdrawal, supersession, correcting a closure — is untouched and still a
+separate product question. Nor does this touch personal `Märkmed`, which were
+outside #180's canonical-business-write boundary on purpose.
 
 The import side of the same boundary is in
 `tests/test_integration_post_qa_sep11.py` §3: the services below these use cases
