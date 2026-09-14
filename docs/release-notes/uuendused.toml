@@ -24,17 +24,23 @@ basis = "deployment"
 # näeb. README ütleb, et kõik ei saa punkti — see on täpselt see juhtum.
 #
 # Teine väljalase, üks ühendus: `LISA TEEMALE` valikuriba püsivus ning kaasamise
-# kaks kuupäeva (#207). Kolm alumist punkti on selle omad.
+# kaks kuupäeva (#207). Kolm keskmist punkti on selle omad.
 #
-# Esimese väljalaske liitmisrevisjon on 699cdb74, teise oma b4291bc4; kumbki ei
-# sisalda seda kirjet ennast. See, mis päriselt toodangusse jõuab, sünnib alles
-# siis, kui see fail ühendatakse, ja on kirjas väljalaske raportis — täpselt
-# nagu 11., 12. ja 13. septembri kirjete puhul.
+# Kolmas väljalase, kaks ühendust: olemasoleva sissekande teksti parandamine
+# (#209) ning vastamata arvamuse tähtaja kuvamine plaani kõrval teema lehel ja
+# registris (#208). Kaks alumist punkti on nende omad. Skeemimuudatust kummaski
+# ei ole.
+#
+# Esimese väljalaske liitmisrevisjon on 699cdb74, teise oma b4291bc4, kolmanda
+# oma 6bd809cd; ükski neist ei sisalda seda kirjet ennast. See, mis päriselt
+# toodangusse jõuab, sünnib alles siis, kui see fail ühendatakse, ja on kirjas
+# väljalaske raportis — täpselt nagu 11., 12. ja 13. septembri kirjete puhul.
 revisions = [
   "699cdb74363fe5ee81d9f9ac5489a27e91913d82",
   "b4291bc49b0b6d3b42052b7378554da45382ec67",
+  "6bd809cdc6767148217cd6aeb37901b348522438",
 ]
-prs = [202, 203, 204, 205, 207]
+prs = [202, 203, 204, 205, 207, 208, 209]
 changes = [
   "Töödokumendi SharePointi linki ei lõigata enam vaikides katki. Pikk aadress salvestatakse tervikuna, ja kui see on päriselt liiga pikk, öeldakse seda kohe — varem salvestati poolik link eduka teatega.",
   "Saadetud arvamuse kuupäev on kõikjal Tallinna kuupäev: seotud materjalides, teema taustamaterjalides ja arvamuste väljavõttes. Hilisõhtul saadetud arvamus näitas varem ühe päeva varasemat kuupäeva.",
@@ -45,6 +51,8 @@ changes = [
   "«Lisa teemale» valikud püsivad vormi avamisel samas järjekorras ja samas kohas: aktiivne valik on esile tõstetud ja selle vorm avaneb kõigi valikute all. Varem hüppas just vajutatud nupp järgmisele reale ja võttis ülejäänud rea kaasa.",
   "Kaasamise juures saab märkida tegeliku kaasamise kuupäeva. Vaikimisi on kirjas tänane päev, aga selle saab ära muuta või tühjaks jätta — varem salvestati iga kaasamine tänase kuupäevaga ka siis, kui see toimus kuu aega tagasi.",
   "Kaasamise juurde saab kirja panna kuupäeva, milleni tagasisidet oodatakse. See on märge teema ajajoonel: sellest ei teki järgmist tegevust, tähtaega ega tööülesannet.",
+  "Olemasoleva sissekande teksti saab nüüd «Muuda» kaudu parandada — ka suletud teemal. Parandus ei loo uut sissekannet ega liiguta rida ajajoonel: rea juurde tuleb märge «muudetud» ja varasem sõnastus jääb alles.",
+  "Kui teema järgmine plaanitud tegevus on hilisem kui vastamata arvamuse tähtaeg, näitavad teema leht ja register nüüd mõlemat. Plaan jääb peamiseks ja selle all seisab arvamuse tähtaeg koos üle tähtaja läinud päevade arvuga — varem oli näha ainult plaan, mis ei öelnud, kas koda on juba vastanud.",
 ]
 
 [[day]]
