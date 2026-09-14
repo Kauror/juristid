@@ -3110,7 +3110,11 @@ def _overview_with_engagement_error(
 @require_http_methods(["POST"])
 def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
-    form = NextActionForm(request.POST, current=selectors.current_action_of(matter, request.user))
+    form = NextActionForm(
+        request.POST,
+        periods=True,
+        current=selectors.current_action_of(matter, request.user),
+    )
 
     if not form.is_valid():
         context = _overview_context(request, matter)
@@ -4214,6 +4218,7 @@ def workspace_forms(current_action: Any = None) -> dict[str, Any]:
         # invite somebody to save the invented day back, which is the whole
         # defect arriving through the edit path (docs/adr/0079 §3).
         "action_form": NextActionForm(
+            periods=True,
             current=current_action,
             initial=(
                 {

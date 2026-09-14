@@ -1871,6 +1871,17 @@ class NextActionForm(forms.Form):
         #: *II poolaasta 2027* into a day (docs/adr/0079 §9). Uus teema passes
         #: nothing, because there is no step yet and no Matter either.
         self.current = kwargs.pop("current", None)
+        #: Whether this host renders the `Täpsus` control.
+        #:
+        #: Default **off**, and the two Teema-page call sites turn it on. The
+        #: rule is ADR 0052 §4's and it is why the retired group was deleted
+        #: rather than hidden: a control the page does not have must not be
+        #: reachable through a crafted POST either. Uus teema asks for a title,
+        #: an owner and a first step on one screen and does not offer four
+        #: precision chips inside that; adding the fields anyway would make
+        #: `next-next_precision=MONTH` work on a form with no such control
+        #: (docs/adr/0079 §1).
+        self.periods = kwargs.pop("periods", False)
         super().__init__(*args, **kwargs)
         # No template renders this select — it is a field the POST may carry,
         # which is exactly why the population matters. A control hidden from the
@@ -1890,14 +1901,17 @@ class NextActionForm(forms.Form):
         set_choices(self, "responsible", assignable_users())
         # The precision group, minus the date box: `target_date` above is the
         # exact-day control and keeps its name for the quick spans' sake.
-        kept = kept_precision_choice(
-            getattr(self.current, "target_date", None),
-            getattr(self.current, "date_precision", "") or "",
-        )
-        self.precision_choices = precision_choices(kept)
-        group = _precision_fields("next", date_label="Millal?", kept=kept)
-        del group["next_date"]
-        self.fields.update(group)
+        if self.periods:
+            kept = kept_precision_choice(
+                getattr(self.current, "target_date", None),
+                getattr(self.current, "date_precision", "") or "",
+            )
+            self.precision_choices = precision_choices(kept)
+            group = _precision_fields("next", date_label="Millal?", kept=kept)
+            # The date box is `target_date` above, which keeps its name for the
+            # quick spans' sake.
+            del group["next_date"]
+            self.fields.update(group)
 
     @property
     def precision_chips(self) -> list[dict[str, Any]]:
@@ -1939,7 +1953,7 @@ class NextActionForm(forms.Form):
             if not self.errors:
                 self.add_error(
                     _precision_answer_field("next", precision)
-                    if precision in _PRECISION_FIELD_SUFFIX
+                    if self.periods and precision in _PRECISION_FIELD_SUFFIX
                     else "target_date",
                     "Vali järgmise tegevuse kuupäev.",
                 )
@@ -1964,6 +1978,10 @@ class NextActionForm(forms.Form):
         carries that precision, so this cannot be reached by a POST naming
         `HALF_YEAR` on a record that never had one.
         """
+        if not self.periods:
+            # A host with no `Täpsus` control states an exact day, which is what
+            # this form always did (ADR 0052 §3).
+            return self.cleaned_data.get("target_date"), DatePrecision.EXACT.value
         precision = self.cleaned_data.get("next_precision") or DatePrecision.EXACT.value
         if precision not in _OFFERED_PRECISIONS:
             kept = getattr(self.current, "target_date", None)

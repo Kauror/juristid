@@ -755,3 +755,32 @@ def test_one_partial_serves_every_panel(signed_in, normal_matter):
 
     assert body.count("data-precision") >= 3
     assert body.count('data-precision-for="quarter"') >= 3
+
+
+def test_uus_teema_keeps_the_narrower_contract_it_had(signed_in):
+    """The control exists where it is rendered, and nowhere else.
+
+    ADR 0052 §4 deleted the next step's precision group *rather than hiding it*,
+    because a control the page does not have must not be reachable through a
+    crafted POST either. That rule outlives the decision it was written for:
+    Uus teema asks for a title, an owner and a first step on one screen and does
+    not offer four precision chips inside that, so the fields are absent there
+    and a POST naming one changes nothing.
+    """
+    from app.matters.forms import NextActionForm
+
+    assert set(NextActionForm(prefix="next").fields) == {"text", "target_date", "responsible"}
+    assert "next_precision" in NextActionForm(periods=True).fields
+
+    crafted = NextActionForm(
+        {
+            "next-text": "Koosta arvamus",
+            "next-next_precision": DatePrecision.MONTH,
+            "next-next_month": "10",
+            "next-next_year": "2026",
+        },
+        prefix="next",
+    )
+
+    assert crafted.is_valid() is False
+    assert "target_date" in crafted.errors
