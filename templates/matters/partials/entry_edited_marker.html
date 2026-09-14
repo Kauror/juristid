@@ -1,19 +1,22 @@
 {% comment %}
 `muudetud` — this entry's wording has been corrected since it was filed.
 
-One element, always present, so a correction can put it there without the page
-having to be reloaded. When the entry has never been edited it renders `hidden`
-rather than being left out: `.uxtl__meta` is a flex row with a gap, so an empty
-placeholder would push the line apart, and `[hidden]` is `display: none`, which
-a flex container removes from layout entirely. Nothing is announced either —
-`display: none` is out of the accessibility tree — so the marked-up state and
-the absent one read the same to a screen reader as well as to a camera.
+One element, always in the document, so a correction saved from the page can
+reveal it without the row being reloaded. When the entry has never been edited
+it renders **empty and `hidden`** rather than being left out:
+
+* empty, so the page carries no invisible word that a text assertion, a
+  translation pass or a copy-paste of the chronology would pick up;
+* `hidden`, because `.uxtl__meta` is a flex row with a gap and a present-but-
+  blank element would push the line apart. `[hidden]` is `display: none`, which
+  a flex container removes from layout entirely and which is out of the
+  accessibility tree — so the unmarked state reads the same to a screen reader
+  as it does to a camera.
 
 `oob` is set only when this arrives as the answer to one entry's correction,
 where the meta line is not part of the response and has to be reached out of
 band (app/matters/views.py, `_entry_row`).
 {% endcomment %}
 <span class="uxtl__where" id="sissekanne-{{ entry.pk }}-muudetud"
-      title="Varasem sõnastus on säilitatud"
       {% if oob %}hx-swap-oob="outerHTML"{% endif %}
-      {% if not entry.was_edited %}hidden{% endif %}>muudetud</span>
+      {% if entry.was_edited %}title="Varasem sõnastus on säilitatud"{% else %}hidden{% endif %}>{% if entry.was_edited %}muudetud{% endif %}</span>

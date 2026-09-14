@@ -3755,6 +3755,15 @@ class EntryEditForm(forms.Form):
     that something *different* happened. A form with no field for them is the
     surest way to guarantee it (§3).
 
+    **The box is filled from the stored value exactly, markup and all.** A note
+    typed into the composer is stored as the plain sentence it was — the
+    sanitiser wraps nothing that arrived unwrapped — so the ordinary correction
+    shows a lawyer their own words and no tags. An entry pasted out of Word
+    carries real structure: paragraphs, lists, a table. Showing that as plain
+    text would be friendlier to look at and would destroy the structure on the
+    next save, which is the one thing a *correction* may not do
+    (app/core/richtext.py).
+
     `revision` is the version the box was filled from, carried through the
     round trip so `edit_entry` can refuse a stale save rather than let it
     overwrite somebody else's. `required=False`, because an absent token must
