@@ -12,6 +12,15 @@ late at all — is unchanged.
 `Kvartal`) by adding `Aasta` to that set, and extends the same control to three
 more operations.
 
+**Supersedes ADR 0052 §4** («one date question, and no precision machinery»)
+and the *precision* half of its §3 («a native next step is `DO` / `DEADLINE` /
+`EXACT`»). That decision's reasoning was «a lawyer's own working day is a day»,
+and it is right about the common case — `Täpne päev` is still the default and
+the quick spans are untouched. It is wrong about the case that produced this
+record: a lawyer who knows only *«oktoobris»* was left choosing between an
+invented 1 October and an empty field. §3's `DO` / `DEADLINE` half stands
+unchanged; only the fixed `EXACT` becomes a choice.
+
 ## Context
 
 `DatePrecision` has existed since Stage 1 and `app/workflow/dates.py` since
