@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import uuid
 from dataclasses import dataclass
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 BASE_URL = os.environ.get("E2E_BASE_URL", "")
 SCREENSHOT_DIR = os.environ.get("E2E_SCREENSHOT_DIR", "artifacts/screenshots")
@@ -155,19 +157,74 @@ def sign_out(page, base_url: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
+#: The class HTMX puts on the element it is posting for, and takes off only
+#: once the response has been swapped in (`htmx.config.requestClass`, htmx
+#: 2.0.4). Its absence is the one honest "the page is the page the server just
+#: sent" signal a test has.
+HTMX_REQUEST_CLASS = "htmx-request"
+
+#: How long `open_add_panel` keeps looking at the page before it gives up. A
+#: swap is tens of milliseconds even on a loaded runner, so reaching the end of
+#: this means the panel is not going to open at all — and saying so is better
+#: than handing the next line a hidden form and letting it spend the full 30s
+#: locator timeout discovering the same thing.
+PANEL_TIMEOUT_MS = 10_000
+
+#: One pass's worth of patience. Short on purpose: a pass that finds itself
+#: holding a control the swap has since taken away is supposed to go back and
+#: look at the page again, not sit on a detached node.
+PANEL_STEP_MS = 2_000
+
+
+def wait_for_htmx(page, timeout: float = PANEL_TIMEOUT_MS) -> None:
+    """Wait until no HTMX request is in flight — and so until its swap is done.
+
+    `wait_for_load_state("networkidle")` is not that and cannot be. It is a
+    *network* silence, watched in the browser process, while the swap it is
+    being used to wait for runs afterwards in the page's own task queue; and it
+    returns 500ms after the last byte whether or not the response has been
+    applied. Measured on this workspace with the save held back by a route
+    handler: `htmx-request` is on the document from the moment `Salvesta` is
+    clicked until `#teema-vaade` has been replaced, with no sample in between
+    showing one without the other.
+
+    So this is the wait a helper needs before it reads the page: the state to
+    watch is HTMX's own, not the clock and not the socket.
+    """
+    page.wait_for_function(
+        f"() => !document.querySelector('.{HTMX_REQUEST_CLASS}')", timeout=timeout
+    )
+
+
 def add_panel_is_open(page, panel_id: str) -> bool:
     """Whether one `LISA TEEMALE` operation is showing its form.
 
     Two shapes, because `#lisa-jargmine` is two different controls: `Muuda` in
     PRAEGUNE TEGEVUS is still a lone `<details>`, and the launcher's own panels
     are revealed by the radio that names them.
+
+    Read in one evaluation rather than three round-trips. Each round-trip is a
+    chance to straddle a swap and describe half of one page and half of
+    another — which is precisely the answer this function must never give.
     """
-    panel = page.locator(f"#{panel_id}")
-    if panel.count() == 0:
-        return False
-    if panel.evaluate("node => node.tagName") == "DETAILS":
-        return bool(panel.evaluate("node => node.open"))
-    return panel.is_visible()
+    return bool(
+        page.evaluate(
+            """(id) => {
+                const panel = document.getElementById(id);
+                if (!panel) {
+                    return false;
+                }
+                if (panel.tagName === "DETAILS") {
+                    return panel.open;
+                }
+                // The launcher's panels are revealed by `:checked`, so the
+                // radio is the state the page itself is reading.
+                const pick = document.getElementById(id + "-valik");
+                return pick ? pick.checked : panel.getClientRects().length > 0;
+            }""",
+            panel_id,
+        )
+    )
 
 
 def add_panel_chip(page, panel_id: str):
@@ -175,6 +232,10 @@ def add_panel_chip(page, panel_id: str):
 
     The launcher's chips are `<label>`s for their radios; `Muuda` is a
     `<summary>`. Both are clicked, neither is the element that grows.
+
+    Which one exists is a fact about the Matter as it is *now* — a saved step
+    replaces the chip with the disclosure — so the answer is resolved when it
+    is asked for and never kept.
     """
     chip = page.locator(f'label[for="{panel_id}-valik"]')
     if chip.count():
@@ -190,21 +251,56 @@ def open_add_panel(page, panel_id: str) -> None:
     anything other than the current action's result goes through here, which is
     what made changing the panels from `<details>` to a radio bar on 2026-09-14
     a change to these two lines rather than to forty files.
+
+    **Both hosts are toggles, so nothing here clicks blindly.** A click is what
+    opens a closed panel and what shuts an open one — `ux.js` un-checks a chip
+    that is already chosen, and a `<summary>` closes its own `<details>` — so a
+    fixed number of clicks is a coin-toss on parity. This looks first, clicks
+    only a control it has just seen closed, and then checks that the click did
+    what it was for.
+
+    **And it reads the page the server last sent.** A workspace save swaps
+    `#teema-vaade` wholesale and `#lisa-jargmine` crosses hosts on exactly the
+    save this test suite makes it cross: the launcher chip, while no step is
+    open, and the `Muuda` disclosure once one is. Measured against the previous
+    version of this helper, with the save still on the wire: it read the panel
+    that was about to be thrown away, called it open, returned in 0.04s, and
+    the replacement then arrived closed — so the form was hidden, the next line
+    burned its 30s locator timeout and the test failed with a workspace that
+    had rendered perfectly (e2e/test_panel_reopen_after_save.py).
     """
+    deadline = time.monotonic() + PANEL_TIMEOUT_MS / 1000
+    while True:
+        try:
+            if _open_add_panel_once(page, panel_id):
+                return
+        except PlaywrightTimeoutError:
+            # Whatever was being waited on belonged to a page that is not on
+            # the screen any more. There is nothing to recover — look again.
+            pass
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"#{panel_id} did not open within {PANEL_TIMEOUT_MS}ms "
+                f"(open={add_panel_is_open(page, panel_id)})"
+            )
+
+
+def _open_add_panel_once(page, panel_id: str) -> bool:
+    """One look at the page as it is now. True once the form is showing.
+
+    Every locator is resolved inside this pass, after the wait that guarantees
+    no swap is outstanding — so a pass never mixes what it saw before a swap
+    with what it clicks after one.
+    """
+    wait_for_htmx(page)
     panel = page.locator(f"#{panel_id}")
-    panel.wait_for(state="attached")
-    # **Clicked until it is open, not once.** Every workspace save swaps
-    # `#teema-vaade`, and `wait_for_load_state("networkidle")` can return while
-    # HTMX is still replacing the node — so a click lands on the element that is
-    # about to be thrown away and the replacement arrives closed. Measured: the
-    # `+ Kaasamine` form stayed hidden for the full 30s locator timeout after a
-    # `+ Märge` save immediately before it.
-    for _ in range(3):
-        if add_panel_is_open(page, panel_id):
-            break
-        add_panel_chip(page, panel_id).click()
-        page.wait_for_timeout(120)
-    panel.locator("form").first.wait_for(state="visible")
+    panel.wait_for(state="attached", timeout=PANEL_STEP_MS)
+    if not add_panel_is_open(page, panel_id):
+        add_panel_chip(page, panel_id).click(timeout=PANEL_STEP_MS)
+        if not add_panel_is_open(page, panel_id):
+            return False
+    panel.locator("form").first.wait_for(state="visible", timeout=PANEL_STEP_MS)
+    return True
 
 
 def open_next_action_form(page) -> None:
