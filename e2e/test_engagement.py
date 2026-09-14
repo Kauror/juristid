@@ -77,20 +77,25 @@ def test_the_matter_page_carries_no_standalone_kaasamine_section(page, base_url)
 
 
 def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, base_url):
-    """`Liik`, `Keda kaasati`, `Vastuseid`, and the two provider pointers.
+    """`Liik`, `Keda kaasati`, `Vastuseid`, the two provider pointers, two dates.
 
-    It asked three things until 2026-09-12. The two links are the round's one
-    addition and they are additions in the weakest sense — optional, external,
-    contacting nothing — because one consultation routinely has a mailing *and*
-    a questionnaire and `url` held one address (docs/adr/0027, amended).
+    It asked three things until 2026-09-12, when the provider links arrived —
+    optional, external, contacting nothing — because one consultation routinely
+    has a mailing *and* a questionnaire and `url` held one address
+    (docs/adr/0027, amended).
 
-    The old five-field form is still not back: no generic `Link`, no `Märkus`,
-    no `Kuupäev`.
+    **The dates arrived on 2026-09-14 and reverse docs/adr/0074 §9.** The panel
+    asked for no date and the view stamped today on every row, so a consultation
+    from March written up in September was stored as a September consultation.
+    `Kaasamise kuupäev` is that value, made visible and editable, and
+    `Tagasisidet ootame kuni` is what was asked of the people contacted.
+
+    The old five-field form is still not back: no generic `Link`, no `Märkus`.
     """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    expect(panel(page)).not_to_have_attribute("open", "")
+    expect(panel(page)).not_to_be_visible()
     open_panel(page)
 
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
@@ -103,7 +108,14 @@ def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, b
     # pointers are beside the generic one, not a rename of it.
     expect(panel(page).locator("[name=url]")).to_have_count(0)
     expect(panel(page).locator("[name=note]")).to_have_count(0)
-    expect(panel(page).locator("[name=occurred_on]")).to_have_count(0)
+    # The two dates, and the difference between their defaults: today is the
+    # usual engagement date and never a plausible reply-by date.
+    expect(panel(page).locator("[name=occurred_on]")).to_be_visible()
+    expect(panel(page).locator("[name=feedback_deadline]")).to_be_visible()
+    expect(panel(page).locator("[name=feedback_deadline]")).to_have_value("")
+    assert panel(page).locator("[name=occurred_on]").input_value(), (
+        "the engagement date opens empty, so today is being applied out of sight"
+    )
     # And its own save, which commits this operation and nothing else
     # (docs/adr/0075 §2).
     expect(panel(page).locator("button[type=submit]")).to_have_count(1)
@@ -187,11 +199,11 @@ def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, bas
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_be_visible()
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
     # With the count still in it, and no other panel opened on its behalf.
     expect(panel(page).locator("[name=response_count]")).to_have_value("3")
-    expect(page.locator("#lisa-marge")).not_to_have_attribute("open", "")
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
 
 
 def test_an_uncounted_engagement_says_nothing_about_responses(page, base_url):
@@ -265,7 +277,7 @@ def test_a_link_typed_with_no_audience_is_answered_where_the_answer_belongs(page
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_be_visible()
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
     expect(panel(page).locator("[name=smaily_url]")).to_have_value(SMAILY_URL)
 
@@ -284,7 +296,7 @@ def test_a_link_that_is_not_a_web_address_is_refused_under_its_own_box(page, bas
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(panel(page)).to_have_attribute("open", "")
+    expect(panel(page)).to_be_visible()
     expect(panel(page)).to_contain_text("Link peab algama")
 
 

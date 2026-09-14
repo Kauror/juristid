@@ -9871,18 +9871,32 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-variant-numeric: tabular-nums;
 }
 
-/* -- the composer's five panels -------------------------------------------
+/* -- LISA TEEMALE: a stable choice bar, and one form under it ---------------
  *
- * `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit`, `+ Kaasamine`,
- * `+ Lõpeta teema` — closed chips on one wrapping row, each opening to a full
- * row *underneath* that row rather than pushing its neighbours sideways. That
- * is what `order: 1` buys: the chips keep their line and the open body takes
- * the next one, so two open panels stack instead of breaking the layout
- * (TEEMA_TARGET_SPEC §C.4).
+ * Seven chips on one wrapping row. Choosing one opens its form on the line
+ * *beneath the whole row* and moves nothing else: every chip keeps its size,
+ * its line and its position, so the control somebody just clicked is still
+ * under their cursor.
  *
- * This replaces the standing facts panel that used to sit between the composer
- * and the chronology. The records are unchanged; the surface that writes them
- * moved into the one box the page is built around (docs/adr/0074 §15). */
+ * **This is the 2026-09-14 fix, and it is structural.** The launcher panels
+ * used to be `<details>`, and an open one took `flex: 1 1 100%; order: 1` — the
+ * chip that had just been clicked therefore jumped to the head of the next line
+ * and dragged the rest of the row with it. No `order` value repairs that,
+ * because the element that grows *is* the element you press. The control and
+ * the form are two elements now: `input.addpick` + `label.disclosure-chip` stay
+ * on the row as ordinary `flex: none` items in DOM order, and `.cx-panel` is
+ * the only item that ever takes `order: 1` and a full-width basis.
+ *
+ * The radio holds the state. One `name` per zone means the browser enforces
+ * "one open at a time" with no script, `:checked` paints the chip and reveals
+ * the form, and a refusal that comes back with `checked` rendered server-side
+ * reopens exactly the panel it came from — the whole contract survives with
+ * scripting off (docs/adr/0074 §15, docs/adr/0075 §2, TEEMA_TARGET_SPEC §C.4).
+ *
+ * Everything here is scoped to `.cx-panels`, because `.cx-panel` has a second
+ * user: `Muuda` in PRAEGUNE TEGEVUS is a lone `<details>` in the same visual
+ * language and keeps the disclosure rules below.
+ */
 
 #teema-vaade-wrap .cx-panels {
   display: flex;
@@ -9890,6 +9904,67 @@ section:has(.pw-more[open]) tbody.uxextra {
   gap: var(--spacing-15);
   margin-top: 10px;
 }
+
+/* Clipped, not `display: none`: a radio hidden by display is not focusable, and
+ * the chips would stop being reachable by keyboard at all. Absolutely
+ * positioned so it is not a flex item and adds no gap of its own. */
+#teema-vaade-wrap .addpick {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The chip. `flex: none` unconditionally — there is no state in which a
+ * launcher control changes size. */
+#teema-vaade-wrap .cx-panels > .disclosure-chip {
+  flex: none;
+}
+
+/* The focus ring belongs on the thing you can see. */
+#teema-vaade-wrap .addpick:focus-visible + .disclosure-chip {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+/* Blue, from the accent tokens a chosen chip already uses everywhere else in
+ * the application — the same treatment as `.disclosure-chip.is-active`, minus
+ * its weight change.
+ *
+ * **The weight is deliberately not touched.** `.is-active` goes to bold, and
+ * bold text is wider: measured in CI, choosing `+ Järgmine tegevus` grew its
+ * own chip by 5px and pushed the five chips after it along the row. That is a
+ * smaller version of the very defect this zone was rebuilt to remove, so the
+ * active state is carried entirely by things with no metrics — colour, a
+ * background, and a border that goes from dashed to solid at the same width. */
+#teema-vaade-wrap .addpick:checked + .disclosure-chip {
+  color: var(--accent-link);
+  background: var(--status-info-soft);
+  border: 1px solid var(--accent-border);
+}
+
+/* The form area. Hidden until its own chip is chosen, and then the only item on
+ * the line below the bar. `order: 1` moves the *form*, never a control. */
+#teema-vaade-wrap .cx-panels > .cx-panel {
+  display: none;
+}
+
+#teema-vaade-wrap .addpick:checked + .disclosure-chip + .cx-panel {
+  display: block;
+  flex: 1 1 100%;
+  order: 1;
+}
+
+/* -- the same language for a lone disclosure -------------------------------
+ *
+ * `Muuda` in PRAEGUNE TEGEVUS is one `<details>` with no siblings to displace,
+ * so it stays a native disclosure and keeps the rules the launcher panels used
+ * to share with it (brief §9, §11). */
 
 #teema-vaade-wrap .cx-panel {
   flex: none;
@@ -9900,10 +9975,10 @@ section:has(.pw-more[open]) tbody.uxextra {
   order: 1;
 }
 
-/* `+ Lõpeta teema` is visually last on the chip row. The target draws the five
- * contiguous and in this order, so this only pins the one that must not float
- * into the middle of them if the DOM is ever reordered — finishing a file is
- * not a routine capture. */
+/* The superseded composer's `+ Lõpeta teema`, which is still the last chip in
+ * `matters/partials/composer.html`. No page includes that template any more
+ * (docs/adr/0075 §11); the rule stays with the markup that names the class, so
+ * the stylesheet keeps describing what the repository actually contains. */
 #teema-vaade-wrap .cx-panel--last:not([open]) {
   order: 0;
 }

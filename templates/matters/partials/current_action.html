@@ -77,9 +77,14 @@ task above it is a form asking about work nobody has named. The route to work is
           exists to undo (brief §9).
 
           Open, it claims the whole line and its form takes the next one —
-          `.cx-panel[open] { flex: 1 1 100%; order: 1 }`, the same rule every
-          `LISA TEEMALE` panel follows, so an editor never pushes the sentence
-          it belongs to sideways.
+          `.cx-panel[open] { flex: 1 1 100%; order: 1 }`, so an editor never
+          pushes the sentence it belongs to sideways.
+
+          It stays a `<details>` where the `LISA TEEMALE` panels stopped being
+          one on 2026-09-14. That change exists because a chip in a row of seven
+          moved when its own panel grew; this control is alone on its line, has
+          no siblings to displace and nothing to be chosen *instead of*, so a
+          native disclosure is still the honest markup for it.
         {% endcomment %}
         <details class="cx-panel curact__edit" id="lisa-jargmine" data-addpanel
                  {% if open_panel == "lisa-jargmine" %}open{% endif %}>
