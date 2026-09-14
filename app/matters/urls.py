@@ -166,7 +166,8 @@ urlpatterns = [
     #
     # One address for the form and the save. GET opens the box in the row, POST
     # writes it — there is no state between them, so a second route would only
-    # be a second place for the authorization to be written out (§6).
+    # be a second place for the authorization to be written out
+    # (app/matters/views.py, `edit_entry_view`).
     path(
         "teemad/<uuid:pk>/sissekanne/<uuid:entry_id>/muuda/",
         views.edit_entry_view,

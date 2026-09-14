@@ -7,7 +7,7 @@ carrying the form; saving replaces it again with the corrected text. The
 next-step pill — is never in the response, so a correction cannot move the row,
 cannot change its date and cannot turn into a second line in the chronology. An
 edit is a correction to a historical fact, and the fact stays exactly where it
-was (§10).
+was (app/matters/timeline.py — `ENTRY_EDITED` is never a chronology row).
 
 A correction is not new business work, so it is offered on a closed Teema as
 well as an open one. `can_write_business_content` is the reader's own capability
@@ -43,8 +43,9 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
         rather than a second textarea: a box somebody can type into is a box
         they will type into, and this one is not theirs to edit — it is what the
         record now says, offered so the two can be reconciled. Neither version
-        is chosen for them, and nothing was written (§8,
-        `matters/partials/note_conflict.html`).
+        is chosen for them, and nothing was written (app/matters/views.py
+        `edit_entry_view`, and `matters/partials/note_conflict.html`, which answers
+        a refused autosave the same way).
       {% endcomment %}
       {% if entry_conflict %}
         <div class="uxtl__conflict">
@@ -67,7 +68,7 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
           is to go and read what the record actually says.
         {% endcomment %}
         <button class="button button--quiet button--tiny" type="button"
-                hx-get="{% url 'matters:edit_entry' pk=matter.pk entry_id=entry.pk %}?vaade=lugemine"
+                hx-get="{% url 'matters:edit_entry' pk=matter.pk entry_id=entry.pk %}{{ entry_read_query }}"
                 hx-target="#sissekanne-{{ entry.pk }}-sisu"
                 hx-swap="outerHTML">Tühista</button>
       </p>

@@ -3973,21 +3973,28 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
     )
 
 
-#: How `Tühista` asks for the row back in its read state. Named here because the
-#: template spells it and the view reads it, and a query parameter written in
-#: two places is two places for one of them to be changed alone.
+#: How `Tühista` asks for the row back in its read state.
+#:
+#: Named once and handed to the template as `entry_read_query`, rather than
+#: spelled in both places. The view reads the parameter and the button writes
+#: it, and a query string written twice is two places for one of them to be
+#: changed alone — after which the cancel button silently reopens the editor
+#: instead of leaving it.
 ENTRY_READ_PARAM = "vaade"
 ENTRY_READ_VALUE = "lugemine"
+ENTRY_READ_QUERY = f"?{ENTRY_READ_PARAM}={ENTRY_READ_VALUE}"
 
 
-#: The edit form's ids, keyed on the entry so several open forms cannot collide.
-#:
-#: Field *names* stay `body` and `revision` — the POST handler and its tests read
-#: one spelling — while the ids, and the `<label for>` that follows them, are per
-#: row. Two rows in edit mode at once is an ordinary thing to do on a page whose
-#: whole subject is a list, and two elements sharing an id is enough to make a
-#: label reach the wrong box (`workspace_attachments` names the same defect).
 def _entry_edit_form(entry: Entry, data: Any = None) -> EntryEditForm:
+    """One entry's edit form, with ids nothing else on the page can share.
+
+    Field *names* stay `body` and `revision` — the POST handler and its tests
+    read one spelling — while the ids, and the `<label for>` that follows them,
+    are per row. Two rows in edit mode at once is an ordinary thing to do on a
+    page whose whole subject is a list, and two elements sharing an id is enough
+    to make a label reach the wrong box (`workspace_attachments` in
+    `app/matters/forms.py` names the same defect, on the same page).
+    """
     auto_id = f"id_sissekanne_{entry.pk}_%s"
     if data is not None:
         return EntryEditForm(data, auto_id=auto_id)
@@ -4045,6 +4052,7 @@ def _entry_row(
             # that left it out after a refusal would be indistinguishable from
             # one that meant to clear it.
             "entry_edit_swap_marker": True,
+            "entry_read_query": ENTRY_READ_QUERY,
         },
         status=status,
     )
@@ -4062,12 +4070,14 @@ def edit_entry_view(request: HttpRequest, pk: Any, entry_id: Any) -> HttpRespons
     meant that a fact recorded wrongly in 2023 must stay wrong. Correcting one
     creates no `Entry`, moves nothing in the chronology, reopens nothing and
     leaves `is_open`, `closed_at` and `disposition` exactly as they were —
-    `edit_entry` does not so much as read them (§1, §5).
+    `edit_entry` does not so much as read them (docs/adr/0075 §12,
+    tests/test_entry_correction.py).
 
     Behind `business_write_required` and nothing narrower. A colleague who may
     author business content may correct it; this is not an owner-only, a
     head-only or a creator-only capability, because a typo in a colleague's
-    entry is the department's problem and not that colleague's alone (§4). A
+    entry is the department's problem and not that colleague's alone
+    (docs/adr/0042, `may_write_business_content`). A
     reader gets the decorator's 404 — the same answer the route gives for a
     Matter that does not exist, so a refusal describes no surface.
 

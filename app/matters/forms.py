@@ -3753,7 +3753,8 @@ class EntryEditForm(forms.Form):
     not the files and not the visibility: a correction says what happened was
     written down wrongly, and every one of those other fields would be saying
     that something *different* happened. A form with no field for them is the
-    surest way to guarantee it (§3).
+    surest way to guarantee it
+    (tests/test_entry_correction.py, `test_a_correction_changes_only_the_body`).
 
     **The box is filled from the stored value exactly, markup and all.** A note
     typed into the composer is stored as the plain sentence it was — the
