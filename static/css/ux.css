@@ -405,6 +405,63 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* One entry's text and the control that corrects it. A plain wrapper: it exists
+   to be the swap target, so that a correction replaces the words and nothing
+   around them — not the dot, not the date, not the row's place in the
+   chronology (templates/matters/partials/entry_body.html). */
+.uxtl__entry {
+  min-width: 0;
+}
+
+/* `Muuda` is quiet to the point of nearly not being there, and that is the
+   design: the chronology is a reading surface, and a correction is a rare act
+   on a record that is usually right. It reads as text until it is reached for,
+   which is also why it is a `<button>` and not a link — nothing is navigated
+   to. */
+.uxtl__edit {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: 400 11.5px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxtl__edit:hover,
+.uxtl__edit:focus-visible {
+  color: var(--accent-link);
+  text-decoration: underline;
+}
+
+.uxtl__editform {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.uxtl__editactions {
+  margin: 4px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* What the record says now, beside what this person tried to save. Set apart by
+   an edge rather than a panel: it is the same entry, one version further on,
+   and boxing it would read as a second record (§8). */
+.uxtl__conflict {
+  border-left: 2px solid var(--status-warning);
+  padding-left: 10px;
+}
+
+.uxtl__conflictnote {
+  margin: 0 0 4px;
+  font: 400 11.5px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
 .uxtl__sysrow {
   margin: 0;
   font: 400 12px/1.4 var(--typography-font-sans);

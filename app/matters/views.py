@@ -96,6 +96,7 @@ from app.matters.forms import (
     CompleteCurrentActionForm,
     ComposerForm,
     EngagementForm,
+    EntryEditForm,
     IncomingIntakeForm,
     MatterCreateForm,
     MatterEditForm,
@@ -116,7 +117,7 @@ from app.matters.intake_suggestions import (
     prefill_controls,
     prefill_initial,
 )
-from app.matters.models import Matter, MatterAssignmentNotice, MatterEngagement
+from app.matters.models import Entry, Matter, MatterAssignmentNotice, MatterEngagement
 from app.matters.my_work import (
     HORIZON_PARAM,
     VIEW_PARAM,
@@ -126,6 +127,7 @@ from app.matters.my_work import (
 )
 from app.matters.process_timeline import process_steps
 from app.matters.services import (
+    EntryEditConflict,
     PersonalNoteConflict,
     acknowledge_assignment_notice,
     assign_matter,
@@ -134,6 +136,8 @@ from app.matters.services import (
     close_matter,
     compose_update,
     create_matter,
+    edit_entry,
+    entry_revision_token,
     personal_note_record,
     personal_note_revision,
     record_engagement,
@@ -3967,6 +3971,155 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "timeline_only": only,
         },
     )
+
+
+#: How `Tühista` asks for the row back in its read state. Named here because the
+#: template spells it and the view reads it, and a query parameter written in
+#: two places is two places for one of them to be changed alone.
+ENTRY_READ_PARAM = "vaade"
+ENTRY_READ_VALUE = "lugemine"
+
+
+#: The edit form's ids, keyed on the entry so several open forms cannot collide.
+#:
+#: Field *names* stay `body` and `revision` — the POST handler and its tests read
+#: one spelling — while the ids, and the `<label for>` that follows them, are per
+#: row. Two rows in edit mode at once is an ordinary thing to do on a page whose
+#: whole subject is a list, and two elements sharing an id is enough to make a
+#: label reach the wrong box (`workspace_attachments` names the same defect).
+def _entry_edit_form(entry: Entry, data: Any = None) -> EntryEditForm:
+    auto_id = f"id_sissekanne_{entry.pk}_%s"
+    if data is not None:
+        return EntryEditForm(data, auto_id=auto_id)
+    return EntryEditForm(
+        initial={"body": entry.body, "revision": entry_revision_token(entry)},
+        auto_id=auto_id,
+    )
+
+
+def _entry_for_correction(request: HttpRequest, matter: Matter, entry_id: Any) -> Entry:
+    """The entry this request is allowed to correct, or a 404.
+
+    Scoped through the child's own `visible_to` and not fetched by id off the
+    Matter, exactly as `update_engagement_view` does it: an entry may carry a
+    stricter visibility override than its parent, and reading it any other way
+    would bypass that. A restricted entry inside a Matter somebody may see is
+    therefore indistinguishable here from an entry that does not exist, which is
+    the contract the rest of the product keeps (AUTH-003).
+    """
+    return get_object_or_404(
+        Entry.objects.visible_to(request.user).filter(matter=matter), pk=entry_id
+    )
+
+
+def _entry_row(
+    request: HttpRequest,
+    matter: Matter,
+    entry: Entry,
+    *,
+    form: EntryEditForm | None = None,
+    error: str = "",
+    conflict: Entry | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    """The corrected entry back in place, or the form that could not save.
+
+    One renderer for both, because they swap the same element: `Muuda` replaces
+    the body region with the form, and every answer replaces it again — with
+    the corrected text, or with the form still open and what the person typed
+    still in it. The row itself, its dot, its time, its files and its next-step
+    pill are never in the response, so nothing can move them.
+    """
+    return render(
+        request,
+        "matters/partials/entry_body.html",
+        {
+            "matter": matter,
+            "entry": entry,
+            "entry_edit_form": form,
+            "entry_edit_error": error,
+            "entry_conflict": conflict,
+            # The `muudetud` marker lives in the meta line above this element, so
+            # a correction has to reach it out of band. Rendered on every answer
+            # and not only the successful one: it is idempotent, and a response
+            # that left it out after a refusal would be indistinguishable from
+            # one that meant to clear it.
+            "entry_edit_swap_marker": True,
+        },
+        status=status,
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def edit_entry_view(request: HttpRequest, pk: Any, entry_id: Any) -> HttpResponse:
+    """`Muuda` — correct what an already-filed Sissekanne says.
+
+    **Available on a closed Matter too, and that is the point.** Closure means
+    no new business work: no note, no next step, no consultation, no upload,
+    every one of those still refused by its own route's row lock. It has never
+    meant that a fact recorded wrongly in 2023 must stay wrong. Correcting one
+    creates no `Entry`, moves nothing in the chronology, reopens nothing and
+    leaves `is_open`, `closed_at` and `disposition` exactly as they were —
+    `edit_entry` does not so much as read them (§1, §5).
+
+    Behind `business_write_required` and nothing narrower. A colleague who may
+    author business content may correct it; this is not an owner-only, a
+    head-only or a creator-only capability, because a typo in a colleague's
+    entry is the department's problem and not that colleague's alone (§4). A
+    reader gets the decorator's 404 — the same answer the route gives for a
+    Matter that does not exist, so a refusal describes no surface.
+
+    GET opens the form; POST saves it. One route, because they are one
+    interaction and the second is only reachable from the first.
+    """
+    matter = get_visible_matter(request, pk)
+    entry = _entry_for_correction(request, matter, entry_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving edit mode is a re-read rather than a client-side
+        # hide: the box may be holding text that was never saved, and the only
+        # honest way out of it is to go and fetch what the record actually says.
+        # Nothing is written on this path — it is a GET, and it takes no lock.
+        if request.GET.get(ENTRY_READ_PARAM) == ENTRY_READ_VALUE:
+            return _entry_row(request, matter, entry)
+        return _entry_row(request, matter, entry, form=_entry_edit_form(entry))
+
+    form = _entry_edit_form(entry, request.POST)
+    if not form.is_valid():
+        # The form comes back bound, so what the person typed is still in the
+        # box — and the entry is untouched, so nothing was lost either way.
+        return _entry_row(request, matter, entry, form=form, status=400)
+
+    try:
+        edit_entry(
+            entry=entry,
+            body=form.cleaned_data["body"],
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except EntryEditConflict as conflict:
+        # 409, and nothing was written. The form stays open holding this
+        # person's words, and the version that beat them arrives beside it to
+        # read — neither is chosen for them. The hidden token is **not**
+        # advanced: adopting the newer one here would be this view deciding that
+        # the next submit may overwrite what the other writer saved, which is
+        # the defect with one more step in it (`_note_conflict`, QA-09).
+        return _entry_row(
+            request,
+            matter,
+            entry,
+            form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except DomainError as error:
+        return _entry_row(request, matter, entry, form=form, error=str(error), status=400)
+
+    entry.refresh_from_db()
+    return _entry_row(request, matter, entry)
 
 
 def matter_url(matter: Matter) -> str:

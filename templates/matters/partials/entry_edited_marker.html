@@ -1,0 +1,19 @@
+{% comment %}
+`muudetud` — this entry's wording has been corrected since it was filed.
+
+One element, always present, so a correction can put it there without the page
+having to be reloaded. When the entry has never been edited it renders `hidden`
+rather than being left out: `.uxtl__meta` is a flex row with a gap, so an empty
+placeholder would push the line apart, and `[hidden]` is `display: none`, which
+a flex container removes from layout entirely. Nothing is announced either —
+`display: none` is out of the accessibility tree — so the marked-up state and
+the absent one read the same to a screen reader as well as to a camera.
+
+`oob` is set only when this arrives as the answer to one entry's correction,
+where the meta line is not part of the response and has to be reached out of
+band (app/matters/views.py, `_entry_row`).
+{% endcomment %}
+<span class="uxtl__where" id="sissekanne-{{ entry.pk }}-muudetud"
+      title="Varasem sõnastus on säilitatud"
+      {% if oob %}hx-swap-oob="outerHTML"{% endif %}
+      {% if not entry.was_edited %}hidden{% endif %}>muudetud</span>

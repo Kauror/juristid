@@ -2163,12 +2163,68 @@ def add_entry(
     return entry
 
 
+#: What a stale correction is told, in one place because a view, a template and
+#: a test all have to agree about it.
+ENTRY_EDIT_CONFLICT = "Sissekannet on vahepeal mujal muudetud."
+
+
+class EntryEditConflict(DomainError):
+    """The entry changed elsewhere between rendering this form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see
+    the other side of is a conflict they cannot resolve — the same reasoning,
+    and deliberately the same shape, as :class:`PersonalNoteConflict`.
+    """
+
+    def __init__(self, current: Entry) -> None:
+        super().__init__(ENTRY_EDIT_CONFLICT)
+        self.current = current
+
+
+def entry_revision_token(entry: Entry) -> str:
+    """Which version of an entry a rendered edit form was filled from.
+
+    ``updated_at``, rather than a column of its own — the token
+    `personal_note_revision` uses, for the same reasons. It is set by
+    `auto_now` on every write, PostgreSQL stores it to the microsecond so two
+    saves cannot share one, and having it costs no migration.
+
+    ``edit_count`` would not do. A correction reverted and re-applied would
+    return it to a value a stale form is still holding, and the form would then
+    be accepted as current when it is two writes behind.
+    """
+    return entry.updated_at.isoformat()
+
+
 @transaction.atomic
-def edit_entry(*, entry: Entry, body: str, actor: Any = None) -> Entry:
+def edit_entry(
+    *, entry: Entry, body: str, actor: Any = None, expected_revision: str | None = None
+) -> Entry:
     """Change an entry's text, keeping what it said before.
 
     Correcting a typo should not require a correction note, but the earlier
     wording is preserved so an edit cannot silently rewrite the record.
+
+    **A correction, not a new fact.** ``occurred_at`` is untouched, so the line
+    stays exactly where it is in the chronology; no `Entry` is created, none is
+    removed, and nothing here asks whether the Matter is open. That last part is
+    deliberate: a closed Matter accepts no new business work — the gate for
+    that is `lock_open_matter_for_business_write`, which this function does not
+    take and must not — but its history stays correctable, because the
+    alternative is a record everybody knows is wrong and nobody may fix.
+
+    **Optimistic concurrency.** The row lock below protects the revision chain;
+    it does not tell a second editor that their browser was stale. A caller
+    that knows which version its form was filled from says so in
+    ``expected_revision``, and a save whose token is not the stored one raises
+    :class:`EntryEditConflict` and **writes nothing**. ``None`` means «no
+    opinion», and is for the caller with no earlier version to be holding — a
+    data fix, a migration, a test.
+
+    The token is compared *before* the no-op check rather than after. A stale
+    form that happens to carry the same words the other writer saved has still
+    been overtaken, and answering it with a silent success would teach the
+    person that their copy was current when it was not.
     """
     clean_body = sanitize_entry_html(body)
     if is_empty(clean_body):
@@ -2179,7 +2235,20 @@ def edit_entry(*, entry: Entry, body: str, actor: Any = None) -> Entry:
     # number from a stale copy: one revision would collide, and one version of
     # the wording would be lost. The second writer waits, then edits whatever is
     # current by then.
-    locked = Entry.objects.select_for_update().get(pk=entry.pk)
+    #
+    # `no_key=True`, like every other lock in this module. `SearchDocument`
+    # carries an `entry` foreign key, and its targeted refresh runs from
+    # `post_save` inside the writing transaction while a full rebuild holds the
+    # indexing gate and inserts `SearchDocument` rows referencing entries. A
+    # plain `FOR UPDATE` here conflicts with the `FOR KEY SHARE` those inserts
+    # take — the second deadlock cycle `app/matters/locks.py` describes, with
+    # `Entry` where it names `Submission`. `FOR NO KEY UPDATE` still serialises
+    # two editors against each other, which is the whole job of this lock.
+    locked = Entry.objects.select_for_update(no_key=True).get(pk=entry.pk)
+    if expected_revision is not None and entry_revision_token(locked) != expected_revision:
+        # Read *after* the lock, so the version compared against is the one that
+        # is committed rather than the one that was on screen.
+        raise EntryEditConflict(locked)
     if clean_body == locked.body:
         return locked
 
