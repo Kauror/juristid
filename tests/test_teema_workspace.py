@@ -17,6 +17,7 @@ is because the surface that reaches it moved, not because the rule did.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 import pytest
@@ -1236,3 +1237,62 @@ def test_the_other_fact_routes_refuse_a_closed_matter_too(
     signed_in.post(reverse(route, kwargs=address), payload)
 
     assert probe(normal_matter) == 0
+
+
+# ---------------------------------------------------------------------------
+# The attachment's glyph is a document, not a control (2026-09-13)
+# ---------------------------------------------------------------------------
+
+
+def _app_css() -> str:
+    from pathlib import Path
+
+    from django.conf import settings
+
+    return (Path(settings.BASE_DIR) / "static" / "css" / "app.css").read_text(encoding="utf-8")
+
+
+def _file_glyph_rule() -> str:
+    """The `.uxtl__file::before` declarations, comments stripped."""
+    css = re.sub(r"/\*.*?\*/", " ", _app_css(), flags=re.S)
+    at = css.index("#teema-vaade-wrap .uxtl__file::before")
+    return css[at : css.index("}", at)]
+
+
+def test_the_attachment_is_still_a_plain_link_on_its_filename(signed_in, normal_matter, specialist):
+    """The glyph is drawn by the link, not wrapped around it.
+
+    The filename is the whole clickable thing it always was: same anchor, same
+    class, same `href` to the exact bytes, and no chip or button around it.
+    """
+    _post(
+        signed_in,
+        "matters:add_work_victory",
+        normal_matter,
+        {"victory_change": "Üleminekuaeg pikendati"},
+        files=[_pdf("toend.pdf")],
+    )
+
+    body = _detail(signed_in, normal_matter)
+    chronology = body[body.index('id="ajalugu-loend"') :]
+
+    anchor = re.search(r'<a class="uxtl__file" href="([^"]+)">toend\.pdf</a>', chronology)
+    assert anchor, "the attachment is no longer a bare `a.uxtl__file` around its filename"
+    assert anchor.group(1).startswith("/"), "the link stopped pointing at the stored bytes"
+
+
+def test_the_file_glyph_is_a_document_rather_than_an_empty_box():
+    """It read as an unchecked checkbox, which is a promise it cannot keep.
+
+    A 9×11 outline with a 1px border beside a filename offers to be ticked, and
+    nothing here is interactive. What replaced it is the same 9×11 box filled
+    and cut at the top-right corner — a page with its corner turned down.
+    """
+    rule = _file_glyph_rule()
+
+    assert "border" not in rule, "the empty bordered box is back beside the filename"
+    assert "clip-path" in rule, "the glyph no longer draws the folded corner"
+    assert "background: currentColor" in rule, "the glyph stopped following the link's colour"
+    # Same footprint, so the filename did not move to gain an icon.
+    assert "width: 9px" in rule
+    assert "height: 11px" in rule
