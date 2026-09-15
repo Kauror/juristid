@@ -43,6 +43,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
+from app.workflow.enums import ESTONIAN_MONTHS
 from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
@@ -119,13 +120,32 @@ def row_titled(page, title: str):
 
 DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
 
+#: A date somebody knew only to the month, the quarter, the half-year or the
+#: year, written the way `app.workflow.dates.format_at_precision` writes it.
+#:
+#: These are **dated** rows that print no day, and telling them apart from a row
+#: with no date at all is the whole reason this exists. ADR 0079 keeps the
+#: ordering anchor internal precisely so that no surface prints *oktoober 2026*
+#: as `01.10.2026` — so the register sorts such a row by a day this suite
+#: cannot see, and an assertion that "a cell with no day comes last" is a claim
+#: about the wrong rows.
+#:
+#: It used to be invisible because the seeded world holds no approximate step.
+#: Any file that files one — `e2e/test_date_precision.py` does — put four
+#: parametrisations of this module into a state they were written before, and
+#: whether that happened depended on which CI shard the two files landed in.
+PERIOD = re.compile(
+    r"\b(?:" + "|".join(ESTONIAN_MONTHS) + r"|[IV]+\s+kvartal|[IV]+\s+poolaasta" + r")\s+\d{4}\b",
+    re.IGNORECASE,
+)
+
 
 def dates_in(cells: list[str]) -> list[tuple[int, int, int] | None]:
     """Each cell as a sortable day, or ``None`` where the row shows no date.
 
-    A cell can carry more than a date — «TÄHTAEG 4.9.2026» — and an approximate
-    step carries no day at all («III kvartal 2026»), which reads as None here
-    and is asserted separately.
+    A cell can carry more than a date — «TÄHTAEG 4.9.2026». A cell carrying only
+    an approximate period is not undated and is not here: `exactly_dated` drops
+    those rows before anything is asserted about order.
     """
     found = []
     for cell in cells:
@@ -134,6 +154,18 @@ def dates_in(cells: list[str]) -> list[tuple[int, int, int] | None]:
             (int(match.group(3)), int(match.group(2)), int(match.group(1))) if match else None
         )
     return found
+
+
+def exactly_dated(cells: list[str]) -> list[str]:
+    """The cells whose date this suite can actually read, in order.
+
+    A row showing «IV kvartal 2026» is sorted by an anchor day the browser never
+    sees, so it can be neither checked for order nor counted among the rows that
+    must come last. Dropping it is the honest reading: what is left is every
+    row that prints a day and every row that prints nothing, which is exactly
+    what the two contracts below are about.
+    """
+    return [cell for cell in cells if DATE.search(cell) or not PERIOD.search(cell)]
 
 
 def monotonic(days: list[tuple[int, int, int] | None], *, ascending: bool) -> bool:
@@ -365,8 +397,8 @@ def test_kuupaev_first_activation_puts_the_nearest_date_first(page, base_url):
     assert "jarjestus=kuupaev_asc" in page.url
     cell = page.locator(".table--register thead th").nth(column_index(page, "Kuupäev"))
     assert cell.get_attribute("aria-sort") == "ascending"
-    days = dates_in(column_text(page, "Kuupäev"))
-    assert monotonic(days, ascending=True), column_text(page, "Kuupäev")
+    cells = exactly_dated(column_text(page, "Kuupäev"))
+    assert monotonic(dates_in(cells), ascending=True), cells
 
 
 def test_kuupaev_second_activation_puts_the_latest_date_first(page, base_url):
@@ -379,8 +411,8 @@ def test_kuupaev_second_activation_puts_the_latest_date_first(page, base_url):
     assert "jarjestus=kuupaev_desc" in page.url
     cell = page.locator(".table--register thead th").nth(column_index(page, "Kuupäev"))
     assert cell.get_attribute("aria-sort") == "descending"
-    days = dates_in(column_text(page, "Kuupäev"))
-    assert monotonic(days, ascending=False), column_text(page, "Kuupäev")
+    cells = exactly_dated(column_text(page, "Kuupäev"))
+    assert monotonic(dates_in(cells), ascending=False), cells
 
 
 def test_a_third_activation_returns_to_the_registers_own_order(page, base_url):
@@ -417,8 +449,8 @@ def test_viimane_tegevus_first_activation_puts_the_newest_first(page, base_url):
     cell = page.locator(".table--register thead th").nth(column_index(page, "Viimane tegevus"))
     # Newest first is a descending date column, whatever the click order is.
     assert cell.get_attribute("aria-sort") == "descending"
-    days = dates_in(column_text(page, "Viimane tegevus"))
-    assert monotonic(days, ascending=False), column_text(page, "Viimane tegevus")
+    cells = exactly_dated(column_text(page, "Viimane tegevus"))
+    assert monotonic(dates_in(cells), ascending=False), cells
 
 
 def test_viimane_tegevus_second_activation_puts_the_oldest_first(page, base_url):
@@ -429,8 +461,8 @@ def test_viimane_tegevus_second_activation_puts_the_oldest_first(page, base_url)
     page.wait_for_load_state("networkidle")
 
     assert "jarjestus=viimane_vanim" in page.url
-    days = dates_in(column_text(page, "Viimane tegevus"))
-    assert monotonic(days, ascending=True), column_text(page, "Viimane tegevus")
+    cells = exactly_dated(column_text(page, "Viimane tegevus"))
+    assert monotonic(dates_in(cells), ascending=True), cells
 
 
 @pytest.mark.parametrize(
@@ -455,7 +487,7 @@ def test_a_row_with_no_date_is_always_last(page, base_url, column, query):
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url, query)
 
-    cells = column_text(page, column)
+    cells = exactly_dated(column_text(page, column))
     days = dates_in(cells)
     undated = [index for index, day in enumerate(days) if day is None]
     if not undated:

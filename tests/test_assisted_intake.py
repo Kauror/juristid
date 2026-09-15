@@ -1519,12 +1519,15 @@ def test_an_existing_canonical_value_is_never_overwritten_by_a_suggestion(
     assert "Pakendiseaduse muutmise seaduse eelnõu" in body
     assert 'data-suggest-value="18.9.2026"' in body
     assert body.count("Kasuta") >= 3
-    # Only the field this Matter left empty may be pre-filled. Valdkonnad was
-    # never set here, so that is the one field the GET filled — the same rule
-    # stated from the other side.
+    # Only the fields this Matter left empty may be pre-filled. Valdkonnad and
+    # Õigusakt were never set here, so those are the two the GET filled — the
+    # same rule stated from the other side.
     keskkond = PolicyArea.objects.get(key="keskkond")
     assert _checked(body, "policy_areas", str(keskkond.pk))
-    assert set(response.context["assisted"].prefilled) == {SuggestedField.POLICY_AREAS}
+    assert set(response.context["assisted"].prefilled) == {
+        SuggestedField.POLICY_AREAS,
+        SuggestedField.LEGAL_INSTRUMENTS,
+    }
     assert "vormil eeltäidetud" in body
 
 
