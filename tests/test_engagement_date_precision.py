@@ -428,6 +428,46 @@ def test_clearing_a_period_clears_the_precision_with_it(signed_in, specialist):
     assert ENGAGEMENT_DATE_UNKNOWN in _chronology_line(signed_in, engagement.matter, engagement)
 
 
+def test_the_editor_opens_an_undated_record_with_an_empty_box_and_not_today(signed_in, specialist):
+    """§5. The day box declares `initial=timezone.localdate` for the *add* route.
+
+    A correction form that inherited it would open a record with no date at all
+    showing today, one `Salvesta` away from stamping the file with a day nobody
+    chose — the defect docs/adr/0078 §2 removed, coming back through the edit
+    path. `engagement_period_initial` puts an explicit `None` under the field's
+    own initial, and this is what says so.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Vana voor")
+
+    form = signed_in.get(_edit_url(engagement)).content.decode()
+
+    day_box = form[form.index('name="occurred_on"') :]
+    day_box = day_box[: day_box.index(">")]
+    assert format_estonian_date(timezone.localdate()) not in day_box, day_box
+    assert 'value=""' in day_box or "value=" not in day_box, day_box
+    chosen = re.search(r'<input[^>]*name="engagement_precision"[^>]*checked[^>]*>', form)
+    assert chosen is not None and 'value="EXACT"' in chosen.group(0)
+
+
+def test_saving_an_undated_record_back_unchanged_stamps_nothing(signed_in, specialist):
+    """And the round trip, which is what a person actually does to it.
+
+    Opening `Muuda` to fix a typo in the audience must not date the
+    consultation as a side effect.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Vana voor")
+
+    response = _edit(signed_in, engagement, DatePrecision.EXACT, {}, title="Vana voor 2019")
+    assert response.status_code == 200, response.content.decode()[:2000]
+
+    engagement.refresh_from_db()
+    assert engagement.title == "Vana voor 2019"
+    assert engagement.occurred_on is None
+    assert engagement.occurred_on_precision == DatePrecision.EXACT
+
+
 def test_the_service_refuses_to_store_a_precision_on_a_date_that_does_not_exist():
     """The same rule below the form, because the form is not the only writer."""
     matter = factories.MatterFactory()
