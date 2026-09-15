@@ -694,6 +694,14 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     from app.matters.views import workspace_forms
 
     client.force_login(specialist)
+    # One institution in the catalogue, because `+ Väline seisukoht` asks
+    # `Organisatsioon` through the shared picker and that control renders a
+    # radio *per institution* — with an empty catalogue there is no
+    # `name="organisation"` in the document at all, and the panel's only answer
+    # is the typed box beside it. That is the right rendering for a deployment
+    # with no institutions on file and the wrong world for a test whose claim is
+    # «every field is reachable» (docs/adr/0073, docs/adr/0084 §2).
+    factories.OrganisationFactory()
     with_action = factories.MatterFactory(owner=specialist)
     set_next_action(
         matter=with_action,
