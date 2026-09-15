@@ -29,7 +29,8 @@ from app.matters.enums import (
     RecordMode,
     TagAssignmentSource,
 )
-from app.workflow.enums import Disposition, Track
+from app.workflow.dates import format_at_precision, is_approximate
+from app.workflow.enums import DatePrecision, Disposition, Track
 
 
 class MatterQuerySet(models.QuerySet):
@@ -858,6 +859,47 @@ class MatterEngagement(VisibilityInheritingModel):
     #: engagement is about", and it is optional because somebody recording an
     #: old consultation may genuinely not know it (brief 8).
     occurred_on = models.DateField(null=True, blank=True, db_index=True, verbose_name="kuupäev")
+    #: How exactly :attr:`occurred_on` is known — `Täpne päev`, `Kuu`,
+    #: `Kvartal` or `Aasta`.
+    #:
+    #: `Kaasamise kuupäev` came off docs/adr/0079 §11's exact-only list in
+    #: docs/adr/0082, and for the reason that list exists at all: everything
+    #: else on it is a day somebody *recorded or owes*, and this is a statement
+    #: about when something happened out in the world. A consultation round run
+    #: «kevadel 2019», typed up years later from a mail folder, had two answers
+    #: before this column — an invented day or an empty field — and both are
+    #: worse than the one the person actually has.
+    #:
+    #: **Named for its date, not `date_precision`.** The three Stage-2G facts
+    #: each carry one date and call this `date_precision`; this model carries
+    #: two, and the other one — `feedback_deadline` — is exact-day-only and
+    #: stays that way. A bare `date_precision` beside them would read as
+    #: qualifying both.
+    #:
+    #: The stored value is the **anchor**: the first day of the period, which
+    #: exists so a month has a place in a sort and is never a day anybody named
+    #: (docs/adr/0079 §2). :attr:`display_date` is the only supported way to
+    #: write it down.
+    #:
+    #: **No `period_end` beside it**, unlike `MatterImportantDate` and
+    #: `MatterEffectiveDate`. Those store one because their question is *has
+    #: this passed yet*, which is about a period's last day and is asked in
+    #: SQL. Nothing asks that here: an engagement is something that already
+    #: happened, it is never late, and the two places that read `occurred_on`
+    #: as a number — the activity maximum and the register sort — order on the
+    #: anchor, which is what the anchor is for. `NextAction` reached the same
+    #: conclusion and carries precision alone (docs/adr/0079, *Alternatives*).
+    #:
+    #: `EXACT` by default, so every row written before this column existed
+    #: reads exactly as it did — which is true of them: they were all entered
+    #: through a box that asked for a day. **Nothing is backfilled and no
+    #: historical precision is inferred.**
+    occurred_on_precision = models.CharField(
+        max_length=16,
+        choices=DatePrecision.choices,
+        default=DatePrecision.EXACT,
+        verbose_name="kuupäeva täpsus",
+    )
     #: `Tagasisidet ootame kuni` — the day the lawyer asked people to answer by.
     #:
     #: A consultation that starts today almost always names a reply-by date in
@@ -910,6 +952,10 @@ class MatterEngagement(VisibilityInheritingModel):
                 name="matters_engagement_kind_vocabulary",
             ),
             models.CheckConstraint(
+                condition=models.Q(occurred_on_precision__in=DatePrecision.values),
+                name="matters_engagement_occurred_precision_vocabulary",
+            ),
+            models.CheckConstraint(
                 condition=models.Q(
                     visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
                 ),
@@ -925,6 +971,33 @@ class MatterEngagement(VisibilityInheritingModel):
 
     def parent_visibility(self) -> str:
         return self.matter.visibility
+
+    @property
+    def display_date(self) -> str:
+        """`Kaasamise kuupäev`, written the way it was actually known.
+
+        The only supported way to put `occurred_on` on a screen. A row stored
+        as `2026-10-01` + `MONTH` reads *oktoober 2026* here and must read that
+        on every surface that shows it — the chronology, the correction form's
+        own headline, *Viimane tegevus*, *Viimati muudetud*. Rendering the
+        stored value instead would print `01.10.2026`, which is an anchor and
+        not a day anybody named (docs/adr/0079 §2, §3, docs/adr/0082).
+
+        Empty string for a row with no date. What the *chronology* prints in
+        that case is «Kuupäev teadmata», which is a sentence about the file and
+        belongs to the surface saying it, not to the model
+        (`app.matters.timeline.ENGAGEMENT_DATE_UNKNOWN`).
+        """
+        return format_at_precision(self.occurred_on, self.occurred_on_precision)
+
+    @property
+    def has_approximate_date(self) -> bool:
+        """Whether this engagement is dated to a period rather than to a day.
+
+        `False` for a row with no date at all: an unknown date is not an
+        approximate one, and the two say different things to a reader.
+        """
+        return self.occurred_on is not None and is_approximate(self.occurred_on_precision)
 
     @staticmethod
     def _hostname(url: str) -> str:

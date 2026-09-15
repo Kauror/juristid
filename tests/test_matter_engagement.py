@@ -40,7 +40,12 @@ from app.matters.enums import EngagementKind, MatterDataClass, MatterOrigin
 from app.matters.forms import ComposerForm
 from app.matters.models import Entry, Matter, MatterEngagement
 from app.matters.selectors import matter_list_queryset
-from app.matters.services import add_engagement, close_matter, update_engagement
+from app.matters.services import (
+    add_engagement,
+    close_matter,
+    engagement_revision_token,
+    update_engagement,
+)
 from app.matters.timeline import TIMELINE_EVENT_TYPES, matter_timeline
 from app.workflow.enums import Disposition
 from tests import factories
@@ -643,6 +648,14 @@ def test_the_route_refuses_a_javascript_link(signed_in, specialist):
 
 
 def test_editing_through_the_page_updates_the_record(signed_in, specialist):
+    """The correction route still corrects — now carrying the version it read.
+
+    `revision` is what the rendered form ships back, and a save without it is a
+    save that cannot be told from a stale one, so the route refuses it. The
+    whole correction workflow, its conflict behaviour and its closed-Matter
+    rule live in tests/test_engagement_correction.py; this keeps the original
+    round-trip assertion where it has always been.
+    """
     matter = factories.MatterFactory(owner=specialist)
     engagement = add_engagement(
         matter=matter, kind=EngagementKind.WEB_CALL, title="Enne", actor=specialist
@@ -653,7 +666,13 @@ def test_editing_through_the_page_updates_the_record(signed_in, specialist):
             "matters:update_engagement",
             kwargs={"pk": matter.pk, "engagement_id": engagement.pk},
         ),
-        {"kind": EngagementKind.SURVEY, "title": "Pärast", "url": "", "note": ""},
+        {
+            "kind": EngagementKind.SURVEY,
+            "title": "Pärast",
+            "url": "",
+            "note": "",
+            "revision": engagement_revision_token(engagement),
+        },
     )
 
     assert response.status_code == 200

@@ -47,32 +47,44 @@ record, not professional chronology (master specification 16.5).
           a day, and printing 14:02 beside it would claim a precision the fact
           does not have.
         {% endcomment %}
-        <p class="uxtl__ms">
-          <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
-          <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
-        </p>
-        {% if item.milestone.sub %}
-          <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
-        {% endif %}
-        {% comment %}
-          Where a `Kaasamine`'s working material actually lives — the mailing in
-          Smaily, the questionnaire in Alchemer. Named by the tool and never by
-          the address: a campaign URL is mostly tracking parameters and a
-          recipient token, and printing it would put somebody's one-time key on
-          the page in readable text.
+        {% if item.is_engagement %}
+          {% comment %}
+            A `Kaasamine` is the one milestone a person can correct in place, so
+            its headline, its date and its links are their own element and their
+            own swap target — the dot, the spine and the files below stay put
+            while the record inside changes
+            (matters/partials/engagement_row.html).
+          {% endcomment %}
+          {% include "matters/partials/engagement_row.html" with engagement=item.record milestone=item.milestone matter=matter engagement_edit_form=None %}
+        {% else %}
+          <p class="uxtl__ms">
+            <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
+            <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
+          </p>
+          {% if item.milestone.sub %}
+            <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
+          {% endif %}
+          {% comment %}
+            A milestone's own addresses, named by the tool and never by the
+            address: a campaign URL is mostly tracking parameters and a
+            recipient token, and printing it would put somebody's one-time key
+            on the page in readable text (docs/adr/0027, amended 2026-09-12).
 
-          The row renders only when a link exists, so an engagement recorded
-          without one is exactly the row it was before. Nothing here contacts
-          either provider (docs/adr/0027, amended 2026-09-12).
-        {% endcomment %}
-        {% if item.milestone.links %}
-          <span class="uxtl__links">
-            {% for link in item.milestone.links %}
-              <a class="uxtl__link" href="{{ link.url }}"
-                 target="_blank" rel="noopener noreferrer">{{ link.label }}<span
-                 class="visually-hidden"> — avaneb uues aknas</span></a>
-            {% endfor %}
-          </span>
+            No milestone but a `Kaasamine` sets any today
+            (`ChronologyMilestone.links`), and a `Kaasamine` renders its own in
+            the partial above. This stays because the generic branch is where a
+            second kind of record would arrive, and a branch that had quietly
+            lost the loop would drop its links without anybody noticing.
+          {% endcomment %}
+          {% if item.milestone.links %}
+            <span class="uxtl__links">
+              {% for link in item.milestone.links %}
+                <a class="uxtl__link" href="{{ link.url }}"
+                   target="_blank" rel="noopener noreferrer">{{ link.label }}<span
+                   class="visually-hidden"> — avaneb uues aknas</span></a>
+              {% endfor %}
+            </span>
+          {% endif %}
         {% endif %}
         {% comment %}
           The files this milestone's own record carries, in the same compact

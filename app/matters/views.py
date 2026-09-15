@@ -107,6 +107,7 @@ from app.matters.forms import (
     PositionForm,
     WorkingDocumentForm,
     edit_initial,
+    engagement_period_initial,
     period_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
@@ -128,6 +129,7 @@ from app.matters.my_work import (
 )
 from app.matters.process_timeline import process_steps
 from app.matters.services import (
+    EngagementEditConflict,
     EntryEditConflict,
     PersonalNoteConflict,
     acknowledge_assignment_notice,
@@ -136,8 +138,10 @@ from app.matters.services import (
     change_track,
     close_matter,
     compose_update,
+    correct_engagement,
     create_matter,
     edit_entry,
+    engagement_revision_token,
     entry_revision_token,
     personal_note_record,
     personal_note_revision,
@@ -158,11 +162,11 @@ from app.matters.services import (
     set_policy_areas,
     set_position,
     set_tags,
-    update_engagement,
 )
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
     TIMELINE_FILTERS,
+    engagement_milestone,
     matter_timeline,
 )
 from app.organisations.models import Organisation
@@ -2296,7 +2300,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         only=timeline_only,
         intelligence=intelligence,
     )
-    engagements = selectors.matter_engagements(matter, request.user)
     # `selectors.current_action_of`, not `workflow.services.current_next_action`.
     # The service answers "which action is open on this Matter" for the domain,
     # which is a question about the file; a *page* asks "which action may this
@@ -2354,9 +2357,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # scoped to this reader. Two queries; the suggestions are not read
         # here at all (app/related_materials/selectors.py).
         "related_materials": related_materials_for(matter, request.user),
-        # `Kaasamine`. Read here for the same reason as everything else on this
-        # dict: the template must not be able to start querying.
-        "engagements": engagements,
         # What the register observed *around* the outreach: how many members
         # were asked and how many answered, whether the opinion went out, and
         # whether KELLELE named more bodies than the canonical field can hold.
@@ -2366,29 +2366,16 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # default:"—" }}` renders a measured zero as a missing one
         # (`register_display.MemberFeedback`).
         "register_facts": register_facts_for(matter),
-        # `(record, is_editing)`. One bound form is shared by the add form and
-        # every row's edit form, so exactly one of them may render the rejected
-        # values — and the row's disclosure and the fields inside it have to
-        # agree about which. Decided here rather than compared twice in the
-        # template (Kaasamine one-click §7).
-        "engagement_rows": [(record, False) for record in engagements],
-        "engagement_count": len(engagements),
-        "engagement_form": EngagementForm(),
-        "engagement_error": "",
-        "engagement_editing": None,
-        # Collapsed by default, and open on the render that follows a write.
-        # Adding a consultation and watching the section it went into fold shut
-        # is the one moment a reader needs to see the list (Teema redesign §14).
-        "engagement_open": False,
-        # The add form's own state, separate from the section's. On a Matter
-        # with records it is a disclosure that stays shut until asked for; on
-        # one with none there is no disclosure at all and opening the section
-        # is the whole gesture. Either way a *refused* add reopens it, and it
-        # cannot key on `engagement_error`: a field error — an empty title, an
-        # unreadable date — leaves that string empty, which folded the
-        # explanation shut on exactly the saves that needed explaining
-        # (Kaasamine one-click §3, §7).
-        "engagement_add_open": False,
+        # The standing `Kaasamine` section's state is gone with the section.
+        # `engagement_rows`, `engagement_count`, `engagement_form`,
+        # `engagement_editing`, `engagement_open` and `engagement_add_open`
+        # described a list-plus-composer that docs/adr/0074 §9 folded into
+        # `+ Kaasamine` and the chronology; the three templates reading them
+        # had not been included by anything since, and they are removed with
+        # this round rather than left to render an `EngagementForm` whose new
+        # `Tagasisidet ootame kuni` box they know nothing about. A consultation
+        # is read on its chronology row and corrected in place there
+        # (`matters/partials/engagement_row.html`).
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
         # «Lükka edasi», with the day each option lands on. Offered only on an
@@ -2944,7 +2931,6 @@ def _render_overview(
     matter: Matter,
     status: int = 200,
     *,
-    engagement_open: bool = False,
     header_out_of_band: bool = False,
 ) -> HttpResponse:
     """Re-render the whole overview column.
@@ -2967,7 +2953,6 @@ def _render_overview(
             milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
         )
     )
-    context["engagement_open"] = engagement_open
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if header_out_of_band:
         context["header_out_of_band"] = True
@@ -3016,15 +3001,30 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter, header_out_of_band=not matter.is_open)
 
 
+def _refused_overview(request: HttpRequest, matter: Matter) -> HttpResponse:
+    """400, and the overview column as it actually stands."""
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    return render(request, "matters/partials/overview.html", context, status=400)
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
 def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Record one `Kaasamine` on this Matter."""
+    """Record one `Kaasamine` on this Matter. A compatibility door.
+
+    What a person uses is `+ Kaasamine`, whose refusals come back inside the
+    panel they were typed in (`_workspace_refusal`). This route survives for
+    the browsers still posting to it, and the standing `Kaasamine` section that
+    used to render its bound form went with docs/adr/0074 §9 — so a refusal
+    here is 400 and the column as it actually stands, which tells a stale tab
+    that the save did not land rather than showing it a success it did not get.
+    """
     matter = get_visible_matter(request, pk)
     form = EngagementForm(request.POST)
     if not form.is_valid():
-        return _overview_with_engagement_error(request, matter, form)
+        return _refused_overview(request, matter)
 
     try:
         record_engagement(
@@ -3035,34 +3035,182 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             note=form.cleaned_data.get("note") or "",
-            occurred_on=form.cleaned_data.get("occurred_on"),
+            # The **resolved** date, not the day box: a month, a quarter or a
+            # year leaves that box empty and arrives as an anchor plus its
+            # precision (`app/matters/forms.py`, `engagement_period`).
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+            # The column this door used to drop on the floor. `record_engagement`
+            # could not carry it and the form had no box for it, so a reply-by
+            # date posted here was discarded in silence (docs/adr/0078 §3).
+            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             actor=request.user,
         )
-    except DomainError as error:
-        return _overview_with_engagement_error(request, matter, form, str(error))
+    except DomainError:
+        return _refused_overview(request, matter)
 
-    return _render_overview(request, matter, engagement_open=True)
+    return _render_overview(request, matter)
+
+
+#: How `Tühista` asks for a `Kaasamine` row back in its read state.
+#:
+#: The same two constants `edit_entry_view` uses, under their own names because
+#: the two rows are two swap targets and a shared spelling would suggest one
+#: control opens both (`ENTRY_READ_PARAM`).
+ENGAGEMENT_READ_PARAM = "vaade"
+ENGAGEMENT_READ_VALUE = "lugemine"
+ENGAGEMENT_READ_QUERY = f"?{ENGAGEMENT_READ_PARAM}={ENGAGEMENT_READ_VALUE}"
+
+
+def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> EngagementForm:
+    """One engagement's correction form, with ids nothing else can share.
+
+    Field *names* stay what the POST handler and its tests read; the ids, and
+    the `<label for>` that follows them, are per record — a reader may open two
+    chronology rows at once, and two elements sharing an id is enough to make a
+    label reach the wrong box (`_entry_edit_form` names the same defect).
+
+    **Filled from the record, every field of it.** An editor that opened empty,
+    or with today in the date box, would be asking somebody to retype what is
+    already on the screen and inviting them to save a change they did not mean.
+    A bound form ignores `initial`, so a refused save still comes back carrying
+    what was typed.
+    """
+    auto_id = f"id_kaasamine_{engagement.pk}_%s"
+    # `record=` on both branches. It decides which precision chips exist, so a
+    # bound form built without it would refuse a `HALF_YEAR` the record
+    # legitimately holds — and would accept one it does not (docs/adr/0079 §9,
+    # `attach_engagement_precision`).
+    if data is not None:
+        return EngagementForm(data, auto_id=auto_id, record=engagement)
+    return EngagementForm(
+        initial={
+            "kind": engagement.kind,
+            "title": engagement.title,
+            "url": engagement.url,
+            "smaily_url": engagement.smaily_url,
+            "alchemer_url": engagement.alchemer_url,
+            "note": engagement.note,
+            # `Kaasamise kuupäev`, in whichever boxes its own precision uses —
+            # and in **none** of them when it is a period, because the stored
+            # anchor is not a day and must not appear in a date box
+            # (`engagement_period_initial`, docs/adr/0079 §2).
+            **engagement_period_initial(engagement),
+            "feedback_deadline": engagement.feedback_deadline,
+            "revision": engagement_revision_token(engagement),
+        },
+        auto_id=auto_id,
+        record=engagement,
+    )
+
+
+def _engagement_for_correction(
+    request: HttpRequest, matter: Matter, engagement_id: Any
+) -> MatterEngagement:
+    """The engagement this request may correct, or a 404.
+
+    Scoped through the child's own `visible_to` and not fetched by id off the
+    Matter: a `Kaasamine` may carry a stricter visibility override than its
+    parent, and reading it any other way would bypass that. A restricted
+    consultation inside a Matter somebody may see is therefore indistinguishable
+    here from one that does not exist, which is the contract the rest of the
+    product keeps (AUTH-003, docs/adr/0038).
+    """
+    return get_object_or_404(
+        MatterEngagement.objects.visible_to(request.user).filter(matter=matter), pk=engagement_id
+    )
+
+
+def _engagement_row(
+    request: HttpRequest,
+    matter: Matter,
+    engagement: MatterEngagement,
+    *,
+    form: EngagementForm | None = None,
+    error: str = "",
+    conflict: MatterEngagement | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    """The corrected `Kaasamine` back in place, or the form that could not save.
+
+    One renderer for both, because they swap the same element: `Muuda` replaces
+    the milestone's text region with the form, and every answer replaces it
+    again — with the corrected record, or with the form still open and what the
+    person typed still in it. The `<article>` around it, its 12 px dot, its
+    spine and its attached files are never in the response, so a correction
+    cannot move the row or turn into a second line in the chronology.
+
+    The milestone is rebuilt through `engagement_milestone`, the same function
+    the chronology itself renders from, so a corrected row cannot come back
+    worded differently from the way it will read on the next page load.
+    """
+    return render(
+        request,
+        "matters/partials/engagement_row.html",
+        {
+            "matter": matter,
+            "engagement": engagement,
+            "milestone": engagement_milestone(engagement),
+            "engagement_edit_form": form,
+            "engagement_edit_error": error,
+            "engagement_conflict": conflict,
+            "engagement_conflict_milestone": (
+                engagement_milestone(conflict) if conflict is not None else None
+            ),
+            "engagement_read_query": ENGAGEMENT_READ_QUERY,
+        },
+        status=status,
+    )
 
 
 @login_required
 @business_write_required
-@require_http_methods(["POST"])
+@require_http_methods(["GET", "POST"])
 def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) -> HttpResponse:
-    """Correct one `Kaasamine`. There is no delete; a wrong row is edited."""
-    matter = get_visible_matter(request, pk)
-    # Scoped through the child's own `visible_to`, not fetched by id off the
-    # Matter: a record may carry a stricter visibility override than its parent,
-    # and reading it any other way would bypass that.
-    engagement = get_object_or_404(
-        MatterEngagement.objects.visible_to(request.user).filter(matter=matter), pk=engagement_id
-    )
+    """`Muuda` on a `Kaasamine`. There is no delete; a wrong row is corrected.
 
-    form = EngagementForm(request.POST)
+    GET opens the form in the chronology row; POST saves it. One route, because
+    they are one interaction and the second is only reachable from the first —
+    the shape `edit_entry_view` already uses for a Sissekanne.
+
+    **Refused on a closed Matter, deliberately, and unlike an entry
+    correction.** `edit_entry` is available on a closed file because rewriting
+    the wording of a narrative touches no canonical fact. A `Kaasamine`
+    correction moves the dates, the channel, the audience and the links of a
+    structured record that the chronology, the register's activity date and the
+    search projection all read, so it is normal interactive business work and
+    a finished file refuses it. Reopening is the way out, and it leaves
+    somebody's name on both decisions (docs/adr/0075 §12, docs/adr/0076 §2).
+    The rule is enforced under the Matter's row lock inside
+    `correct_engagement`, never by whether this page rendered a button: the
+    browser that posts may be holding a page from before the closure.
+
+    Behind `business_write_required` and nothing narrower, like every other
+    correction: a wrong date on a colleague's consultation is the department's
+    problem and not that colleague's alone (docs/adr/0042). A reader gets the
+    decorator's 404 — the same answer the route gives for a Matter that does
+    not exist, so a refusal describes no surface.
+    """
+    matter = get_visible_matter(request, pk)
+    engagement = _engagement_for_correction(request, matter, engagement_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving edit mode is a re-read rather than a client-side
+        # hide: the boxes may be holding values that were never saved, and the
+        # only honest way out of them is to fetch what the record actually says.
+        # Nothing is written on this path — it is a GET, and it takes no lock.
+        if request.GET.get(ENGAGEMENT_READ_PARAM) == ENGAGEMENT_READ_VALUE:
+            return _engagement_row(request, matter, engagement)
+        return _engagement_row(request, matter, engagement, form=_engagement_edit_form(engagement))
+
+    form = _engagement_edit_form(engagement, request.POST)
     if not form.is_valid():
-        return _overview_with_engagement_error(request, matter, form, editing=engagement.pk)
+        # Bound, so what the person typed is still in the boxes — and the
+        # engagement is untouched, so nothing was lost either way.
+        return _engagement_row(request, matter, engagement, form=form, status=400)
 
     try:
-        update_engagement(
+        corrected = correct_engagement(
             engagement=engagement,
             kind=form.cleaned_data["kind"],
             title=form.cleaned_data["title"],
@@ -3070,39 +3218,45 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             note=form.cleaned_data.get("note") or "",
-            occurred_on=form.cleaned_data.get("occurred_on"),
+            # Both dates, named explicitly on every save, so an emptied box
+            # clears the column. `update_engagement`'s `_UNSET` sentinel is what
+            # protects a field a caller does *not* name — the importer and the
+            # register refresh rely on it — and naming a field is how this form
+            # says «I am the editor of this value» (docs/adr/0078 §3).
+            #
+            # `occurred_on` is the resolved anchor and travels with its
+            # precision, because the two are one fact: correcting *oktoober
+            # 2026* to *IV kvartal 2026* changes only the second of them
+            # (docs/adr/0082 §3).
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except EngagementEditConflict as conflict:
+        # 409, and nothing was written. The form stays open holding this
+        # person's values, and the version that beat them arrives beside it to
+        # read — neither is chosen for them. The hidden token is **not**
+        # advanced: adopting the newer one here would be this view deciding that
+        # the next submit may overwrite what the other writer saved, which is
+        # the defect with one more step in it (`edit_entry_view`, QA-09).
+        return _engagement_row(
+            request,
+            matter,
+            engagement,
+            form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
         )
     except DomainError as error:
-        return _overview_with_engagement_error(
-            request, matter, form, str(error), editing=engagement.pk
-        )
+        # A closed Matter lands here, and so does any refusal the service
+        # makes. The sentence goes into the form that is still open rather
+        # than into a panel this row does not have.
+        return _engagement_row(request, matter, engagement, form=form, error=str(error), status=400)
 
-    return _render_overview(request, matter, engagement_open=True)
-
-
-def _overview_with_engagement_error(
-    request: HttpRequest,
-    matter: Matter,
-    form: EngagementForm,
-    error: str = "",
-    editing: Any = None,
-) -> HttpResponse:
-    """Re-render the column with the bound form, so nothing typed is lost."""
-    context = _overview_context(request, matter)
-    context.update(_header_context(request, matter))
-    context["engagement_form"] = form
-    context["engagement_error"] = error
-    context["engagement_editing"] = editing
-    context["engagement_rows"] = [
-        (record, editing is not None and record.pk == editing) for record in context["engagements"]
-    ]
-    # The section always, and the add form only when the add is what failed:
-    # a refused *edit* belongs in the row it came from, and opening the composer
-    # beside it would offer a second, empty answer to the same refusal.
-    context["engagement_open"] = True
-    context["engagement_add_open"] = editing is None
-    return render(request, "matters/partials/overview.html", context, status=400)
+    return _engagement_row(request, matter, corrected)
 
 
 @login_required
@@ -4440,7 +4594,10 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             response_count=form.cleaned_data.get("response_count"),
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            occurred_on=form.cleaned_data.get("occurred_on"),
+            # The resolved anchor and its precision, not the day box: `Kuu`,
+            # `Kvartal` and `Aasta` leave that box empty on purpose.
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             uploads=form.cleaned_data["attachments"],
         )
