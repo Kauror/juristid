@@ -607,6 +607,13 @@ def engagement_chronology_day(engagement: MatterEngagement) -> date:
     `created_at` beside «Kaasamine: liikmed» states that the consultation
     happened on the day somebody typed it in, which is the invention this
     release exists to remove.
+
+    **An approximate date places the row on its anchor**, which is the first
+    day of the period and is exactly what an anchor is for: a month has to sit
+    somewhere in a chronology, and its own first day is the only honest choice
+    that keeps *september* before *oktoober*. Here too the placement is not the
+    description — :func:`engagement_milestone` prints *oktoober 2026*
+    (docs/adr/0079 §2, docs/adr/0082 §4).
     """
     return engagement.occurred_on or _local_day(engagement.created_at)
 
@@ -653,13 +660,13 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
     )
     return ChronologyMilestone(
         what=f"Kaasamine: {engagement.title}",
-        # The stored day, or the words «kuupäev teadmata» — never the day the
-        # row happens to sit on. See :func:`engagement_chronology_day`.
-        display_date=(
-            format_estonian_date(engagement.occurred_on)
-            if engagement.occurred_on
-            else ENGAGEMENT_DATE_UNKNOWN
-        ),
+        # The date as it was actually known, or the words «kuupäev teadmata» —
+        # never the day the row happens to sit on, and never the anchor of a
+        # period. `MatterEngagement.display_date` is `format_at_precision`, so a
+        # round recorded as *oktoober 2026* reads that here and not `01.10.2026`
+        # (docs/adr/0079 §3, docs/adr/0082 §3). See
+        # :func:`engagement_chronology_day` for the other half of the rule.
+        display_date=engagement.display_date or ENGAGEMENT_DATE_UNKNOWN,
         sub=sub,
         links=links,
     )

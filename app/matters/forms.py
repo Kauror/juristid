@@ -202,13 +202,26 @@ def refuse_deadline_before_engagement(form: forms.Form, cleaned: dict[str, Any])
     correct: the engagement date is the anchor and the deadline is what is
     being placed against it.
 
+    **Read from `occurred_on_value`, which is the resolved anchor rather than
+    the day box.** Since docs/adr/0082 the engagement date may be a month, a
+    quarter or a year, and those leave the day box empty — a rule reading it
+    directly would simply stop firing for three of the four precisions.
+
+    **And the anchor is the right end of the period to compare against.** The
+    anchor is the period's *first* day, so an approximate round refuses only a
+    deadline that falls before the whole period began — «kaasamine oktoobris,
+    vastused 20. septembriks» — and accepts every day inside it. Comparing
+    against the period's end would refuse «kaasamine oktoobris, vastused
+    15. oktoobriks», which is not a typo but the commonest thing a consultation
+    run over a month actually says.
+
     Shared by the `+ Kaasamine` panel and the correction form. The panel writes
     a new record and the correction form rewrites one, and the rule about what
     the two dates may say to each other is the same rule either way — a copy
     per form is how a record becomes correctable into a state it could never
     have been created in.
     """
-    occurred_on = cleaned.get("occurred_on")
+    occurred_on = cleaned.get("occurred_on_value")
     feedback_deadline = cleaned.get("feedback_deadline")
     if occurred_on and feedback_deadline and feedback_deadline < occurred_on:
         form.add_error("feedback_deadline", DEADLINE_BEFORE_ENGAGEMENT)
@@ -2457,6 +2470,107 @@ def _precision_fields(
     }
 
 
+#: The prefix the two `Kaasamine` forms carry their precision group under.
+#:
+#: One name, because the panel that creates a consultation and the form that
+#: corrects one must read the same POST keys — a person who states *oktoober
+#: 2026* in `+ Kaasamine` and then opens `Muuda` has to find the same control
+#: holding the same answer.
+ENGAGEMENT_PREFIX = "engagement"
+
+
+def attach_engagement_precision(form: forms.Form, *, record: Any = None) -> None:
+    """Give a `Kaasamine` form the shared `Täpsus` control, and its day box back.
+
+    `Kaasamise kuupäev` came off docs/adr/0079 §11's exact-only list in
+    docs/adr/0082: a consultation round is routinely remembered as «oktoobris»
+    or «2019», and the two answers available before this — an invented day or
+    an empty field — were both worse than the one the person had.
+
+    **The existing composer, not a second one.** `_precision_fields` builds the
+    same group `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit` and
+    `Järgmine tegevus` carry, normalised through the same
+    `app.workflow.dates.bounds_for`, and rendered by the same
+    `matters/partials/period_composer.html`. A quarter stated on a consultation
+    is the same stored anchor as a quarter stated anywhere else, or the same
+    period would sort into two places (Stage-2G brief 49, docs/adr/0079 §1).
+
+    **The day box keeps the name `occurred_on`.** The group's own
+    `engagement_date` is dropped, exactly as `CompactEffectiveDateForm` keeps
+    `effective_on` and `NextActionForm` keeps `target_date`: two views, two
+    services, the register importer and a long row of tests read that name, and
+    renaming a control for tidiness is how four things stop being wired up
+    while still looking right.
+
+    ``record`` is the engagement being corrected, when there is one. It earns
+    the «Muutmata» chip of docs/adr/0079 §9 for a row carrying a precision the
+    control does not otherwise offer — and, because the choices are built per
+    instance, it is also what refuses a crafted `HALF_YEAR` on a record that
+    never had one.
+    """
+    kept = kept_precision_choice(
+        getattr(record, "occurred_on", None),
+        getattr(record, "occurred_on_precision", "") or "",
+    )
+    form.precision_choices = precision_choices(kept)  # type: ignore[attr-defined]
+    group = _precision_fields(ENGAGEMENT_PREFIX, date_label="Kaasamise kuupäev", kept=kept)
+    del group[f"{ENGAGEMENT_PREFIX}_date"]
+    form.fields.update(group)
+
+
+def engagement_period(form: forms.Form) -> tuple[date | None, str]:
+    """What a `Kaasamine` form's date control actually says: an anchor and a precision.
+
+    Three answers, and the difference between the second and the third is the
+    point of this function:
+
+    * a day, a month, a quarter or a year the person stated — the anchor and
+      its precision;
+    * **nothing at all** — `(None, EXACT)`. `Kaasamise kuupäev` is optional and
+      an empty box is «kuupäev teadmata», a fact `MatterEngagement.occurred_on`
+      has always been able to hold. Nothing is invented for it: not today, not
+      `created_at`, not a year guessed from the note (docs/adr/0078 §2);
+    * a period somebody began stating and did not finish — «Kuu» chosen with no
+      month in the select. `_period_anchor` has already refused that on the
+      control it belongs to, and this returns the same `(None, EXACT)` because
+      the form is invalid and nothing will be written from it.
+
+    The precision returned beside a `None` anchor is always `EXACT`, which is
+    what the column stores for a row with no date: an unknown date has no
+    precision, and a stored `MONTH` with nothing to qualify would be a period
+    the record cannot render (`MatterEngagement.occurred_on_precision`).
+    """
+    anchor, _end, precision = _period_anchor(form, ENGAGEMENT_PREFIX, date_field="occurred_on")
+    if anchor is None:
+        return None, DatePrecision.EXACT.value
+    return anchor, precision
+
+
+def engagement_period_initial(record: Any) -> dict[str, Any]:
+    """One stored `Kaasamine` date, as the boxes its composer reopens on.
+
+    `period_initial` under this form's prefix, with one addition it cannot
+    make: an explicit ``occurred_on=None`` underneath. The day box declares
+    ``initial=timezone.localdate`` for the *add* route, and a correction form
+    that inherited it would open a record dated *oktoober 2026* — or dated not
+    at all — with today sitting in a box nobody filled, one `Salvesta` away
+    from being saved as a change the person never made.
+
+    For an approximate record `period_initial` fills the year and the month or
+    quarter and deliberately leaves the day box empty, so the anchor never
+    reaches a screen as `01.10.2026` (docs/adr/0079 §2).
+    """
+    return {
+        "occurred_on": None,
+        **period_initial(
+            ENGAGEMENT_PREFIX,
+            getattr(record, "occurred_on", None),
+            getattr(record, "occurred_on_precision", "") or DatePrecision.EXACT.value,
+            date_field="occurred_on",
+        ),
+    }
+
+
 class ComposerForm(forms.Form):
     """`TEGEVUSE KIRJELDUS` — one box, and everything else on demand.
 
@@ -3109,6 +3223,11 @@ class ComposerForm(forms.Form):
             # known, which is what `MatterEngagement.occurred_on` has always
             # been able to mean and is the only truthful answer available here.
             # A surface that cannot ask must not answer.
+            #
+            # No `occurred_on_precision` either, for the same reason: an
+            # unknown date has no precision, and `add_engagement` normalises a
+            # `NULL` date to `EXACT` whatever a caller names
+            # (`app/matters/services.py`, `_engagement_precision`).
             "occurred_on": None,
         }
 
@@ -3297,15 +3416,17 @@ class EngagementForm(forms.Form):
     #: what `+ Kaasamine` stored (docs/adr/0027, amended 2026-09-12).
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
-    #: `Kaasamise kuupäev`. Optional, and an **exact day or nothing** — no
-    #: precision control, no month, no quarter, no year. `Kaasamise kuupäev`
-    #: stays on docs/adr/0079 §11's list of dates that are recorded exactly,
-    #: beside `Arvamuse tähtaeg` and `Saabus`, and an editor that offered a
-    #: precision the panel cannot write would let a record be corrected into a
-    #: shape it could never have been created in.
+    #: `Kaasamise kuupäev`'s **exact-day box**, which is one of the four answers
+    #: the `Täpsus` control offers; the month, quarter and year selects arrive
+    #: per instance in :func:`attach_engagement_precision`.
     #:
-    #: An emptied box stores `NULL`, which is «kuupäev teadmata» and is what the
-    #: chronology then prints (`app/matters/timeline.py`,
+    #: The field is declared here rather than taken from the group so that it
+    #: keeps the name `occurred_on` — two views, two services and the register
+    #: importer read it — and so that it keeps the `initial` below, which the
+    #: group's own date box deliberately does not have.
+    #:
+    #: An emptied control stores `NULL`, which is «kuupäev teadmata» and is what
+    #: the chronology then prints (`app/matters/timeline.py`,
     #: `ENGAGEMENT_DATE_UNKNOWN`). That is the whole point of it being
     #: correctable: a row the old panel stamped with today can now be told the
     #: truth, including the truth that nobody knows.
@@ -3315,10 +3436,9 @@ class EngagementForm(forms.Form):
     #: box the product opens for a *new* record starts on today — re-typing it
     #: on every save is the friction people actually complained about
     #: (Teema QA §5, `tests/test_teema_human_qa.py`). It reaches no correction,
-    #: because `_engagement_edit_form` supplies `initial` for this field on
-    #: every instance it builds: a per-form `initial` wins over the field's, and
-    #: an engagement stored with no date therefore opens with an empty box
-    #: rather than with today proposed as a change nobody asked for.
+    #: because `_engagement_edit_form` builds its `initial` through
+    #: `engagement_period_initial`, which puts an explicit `None` here before
+    #: the stored period fills in whichever boxes that period actually uses.
     occurred_on = EstonianDateField(
         label="Kaasamise kuupäev",
         required=False,
@@ -3359,9 +3479,31 @@ class EngagementForm(forms.Form):
     #: about what actually went wrong.
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
 
+    def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
+        """``record`` is the engagement being corrected, when there is one.
+
+        Passed by `_engagement_edit_form` and by nothing else: the add route
+        posts this form with no record behind it, and a create form has no
+        stored precision to keep. See :func:`attach_engagement_precision`.
+        """
+        super().__init__(*args, **kwargs)
+        attach_engagement_precision(self, record=record)
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        return _precision_chips(self, f"{ENGAGEMENT_PREFIX}_precision")
+
     def clean(self) -> dict[str, Any]:
-        """The one rule relating the two dates, shared with the other form."""
+        """The date control's answer, then the one rule relating the two dates.
+
+        In that order, and it matters: the deadline rule compares against the
+        *resolved anchor*, which for a month or a quarter is not in the day box
+        at all (`refuse_deadline_before_engagement`).
+        """
         cleaned = super().clean() or {}
+        anchor, precision = engagement_period(self)
+        cleaned["occurred_on_value"] = anchor
+        cleaned["occurred_on_precision"] = precision
         refuse_deadline_before_engagement(self, cleaned)
         return cleaned
 
@@ -3915,11 +4057,12 @@ class CompactEngagementForm(ChipChoices, forms.Form):
     )
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
-    #: **The date the panel never asked for.** The view used to stamp
-    #: `timezone.localdate()` on every row it wrote, so a consultation from
-    #: March, recorded in September, was filed as having happened in September —
-    #: a false fact, written behind the person's back, with no box on the screen
-    #: to contradict it.
+    #: **The date the panel never asked for**, and now the exact-day answer to
+    #: a question that has four. The view used to stamp `timezone.localdate()`
+    #: on every row it wrote, so a consultation from March, recorded in
+    #: September, was filed as having happened in September — a false fact,
+    #: written behind the person's back, with no box on the screen to contradict
+    #: it.
     #:
     #: Pre-filled with today because the overwhelming case is recording
     #: something that just happened, and re-typing today's date every time is
@@ -3928,6 +4071,11 @@ class CompactEngagementForm(ChipChoices, forms.Form):
     #: *visible*: it can be read, changed, and emptied. A cleared box stores
     #: `NULL` — «kuupäev teadmata» is a fact `MatterEngagement` has always been
     #: able to hold, and nothing downstream puts today back.
+    #:
+    #: `Kuu`, `Kvartal` and `Aasta` arrive beside it from
+    #: :func:`attach_engagement_precision`, and choosing one of them leaves this
+    #: box empty on purpose: the stored anchor is a place in a sort, not a day
+    #: the panel should show back (docs/adr/0082).
     occurred_on = EstonianDateField(
         label="Kaasamise kuupäev",
         required=False,
@@ -3953,9 +4101,19 @@ class CompactEngagementForm(ChipChoices, forms.Form):
     )
     attachments = workspace_attachments("id_kaasamine_failid")
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # No `record`: this panel only ever creates. The «Muutmata» chip is a
+        # correction affordance and there is nothing here to keep unchanged.
+        attach_engagement_precision(self)
+
     @property
     def kind_chips(self) -> list[dict[str, Any]]:
         return self.chips("kind", COMPOSER_ENGAGEMENT_KINDS, COMPOSER_ENGAGEMENT_KINDS[0][0])
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        return _precision_chips(self, f"{ENGAGEMENT_PREFIX}_precision")
 
     def clean_audience(self) -> str:
         audience = (self.cleaned_data.get("audience") or "").strip()
@@ -3973,8 +4131,16 @@ class CompactEngagementForm(ChipChoices, forms.Form):
         return self.cleaned_data.get("kind") or COMPOSER_ENGAGEMENT_KINDS[0][0]
 
     def clean(self) -> dict[str, Any]:
-        """The one rule relating the two dates, shared with the other form."""
+        """The date control's answer, then the one rule relating the two dates.
+
+        The same two steps in the same order as `EngagementForm.clean`, because
+        a record must be creatable in exactly the shapes it is correctable
+        into.
+        """
         cleaned = super().clean() or {}
+        anchor, precision = engagement_period(self)
+        cleaned["occurred_on_value"] = anchor
+        cleaned["occurred_on_precision"] = precision
         refuse_deadline_before_engagement(self, cleaned)
         return cleaned
 

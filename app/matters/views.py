@@ -107,6 +107,7 @@ from app.matters.forms import (
     PositionForm,
     WorkingDocumentForm,
     edit_initial,
+    engagement_period_initial,
     period_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
@@ -3034,7 +3035,11 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             note=form.cleaned_data.get("note") or "",
-            occurred_on=form.cleaned_data.get("occurred_on"),
+            # The **resolved** date, not the day box: a month, a quarter or a
+            # year leaves that box empty and arrives as an anchor plus its
+            # precision (`app/matters/forms.py`, `engagement_period`).
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             # The column this door used to drop on the floor. `record_engagement`
             # could not carry it and the form had no box for it, so a reply-by
             # date posted here was discarded in silence (docs/adr/0078 §3).
@@ -3072,8 +3077,12 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
     what was typed.
     """
     auto_id = f"id_kaasamine_{engagement.pk}_%s"
+    # `record=` on both branches. It decides which precision chips exist, so a
+    # bound form built without it would refuse a `HALF_YEAR` the record
+    # legitimately holds — and would accept one it does not (docs/adr/0079 §9,
+    # `attach_engagement_precision`).
     if data is not None:
-        return EngagementForm(data, auto_id=auto_id)
+        return EngagementForm(data, auto_id=auto_id, record=engagement)
     return EngagementForm(
         initial={
             "kind": engagement.kind,
@@ -3082,11 +3091,16 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
             "smaily_url": engagement.smaily_url,
             "alchemer_url": engagement.alchemer_url,
             "note": engagement.note,
-            "occurred_on": engagement.occurred_on,
+            # `Kaasamise kuupäev`, in whichever boxes its own precision uses —
+            # and in **none** of them when it is a period, because the stored
+            # anchor is not a day and must not appear in a date box
+            # (`engagement_period_initial`, docs/adr/0079 §2).
+            **engagement_period_initial(engagement),
             "feedback_deadline": engagement.feedback_deadline,
             "revision": engagement_revision_token(engagement),
         },
         auto_id=auto_id,
+        record=engagement,
     )
 
 
@@ -3209,7 +3223,13 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             # protects a field a caller does *not* name — the importer and the
             # register refresh rely on it — and naming a field is how this form
             # says «I am the editor of this value» (docs/adr/0078 §3).
-            occurred_on=form.cleaned_data.get("occurred_on"),
+            #
+            # `occurred_on` is the resolved anchor and travels with its
+            # precision, because the two are one fact: correcting *oktoober
+            # 2026* to *IV kvartal 2026* changes only the second of them
+            # (docs/adr/0082 §3).
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
@@ -4574,7 +4594,10 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             response_count=form.cleaned_data.get("response_count"),
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            occurred_on=form.cleaned_data.get("occurred_on"),
+            # The resolved anchor and its precision, not the day box: `Kuu`,
+            # `Kvartal` and `Aasta` leave that box empty on purpose.
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             uploads=form.cleaned_data["attachments"],
         )

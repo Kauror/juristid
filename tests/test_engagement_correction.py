@@ -206,12 +206,28 @@ def test_the_form_opens_filled_from_the_record(signed_in, normal_matter, engagem
     assert f"id_kaasamine_{engagement.pk}_occurred_on" in html
 
 
-def test_the_form_offers_no_precision_control(signed_in, normal_matter, engagement):
-    """docs/adr/0079 §11. Both dates are an exact day or nothing."""
+def test_the_form_asks_the_engagement_date_at_four_precisions_and_the_deadline_at_one(
+    signed_in, normal_matter, engagement
+):
+    """docs/adr/0082 §2, §3, narrowing docs/adr/0079 §11 for one date only.
+
+    `Kaasamise kuupäev` is a statement about something that happened out in the
+    world and may honestly be a month, a quarter or a year. `Tagasisidet ootame
+    kuni` is a day somebody named to other people, so there is nothing for a
+    period to mean and it keeps its place on §11's list.
+
+    One precision group on this form, and it belongs to the first of the two.
+    The matrix itself is `tests/test_engagement_date_precision.py`.
+    """
     html = _open_form(signed_in, normal_matter, engagement).content.decode()
 
-    for absent in ("occurred_on_precision", "Kvartal", "Poolaasta", "Täpsus"):
-        assert absent not in html, f"the correction form offers {absent!r}"
+    assert html.count("precision__chips") == 1
+    assert 'name="engagement_precision"' in html
+    assert "Täpsus" in html
+    assert 'name="feedback_deadline_precision"' not in html
+    # `Poolaasta` is a stored precision and not an offered chip, here as
+    # everywhere else (docs/adr/0079 §7).
+    assert "Poolaasta" not in html
 
 
 def test_tuhista_gives_back_the_stored_row_and_writes_nothing(signed_in, normal_matter, engagement):

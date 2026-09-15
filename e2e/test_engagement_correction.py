@@ -12,6 +12,12 @@ adding a second one underneath. That an emptied `Kaasamise kuupäev` comes back
 reading «Kuupäev teadmata» rather than the day somebody typed it in. And that
 the correction survives a reload, so what was shown is what was stored.
 
+The `Täpsus` chips are here for the same reason (docs/adr/0082). Which group of
+controls is *shown* is a pure-CSS consequence of which radio is checked — a
+`:has()` rule on the fieldset — so whether a person can actually reach the month
+select, and whether the day box is really empty when they open a record stored
+as a quarter, are questions only a rendering engine answers.
+
 Everything here is synthetic, and every test files its own Matter. The seeded
 world is shared across a shard and never reset between files
 (`e2e/conftest.py`), so a test that corrected a seeded `Kaasamine` would be
@@ -56,6 +62,14 @@ REPLY_BY = "18.03.2026"
 HELD_ON_READ = "4.3.2026"
 REPLY_BY_READ = "18.3.2026"
 DATE_UNKNOWN = "Kuupäev teadmata"
+
+#: A period in the past, because the chronology projects what has happened and
+#: drops a milestone dated after today — a future one is stored correctly and
+#: read back from nowhere.
+PAST_MONTH = ("2", "2026")
+PAST_MONTH_READS = "veebruar 2026"
+PAST_QUARTER = ("1", "2026")
+PAST_QUARTER_READS = "I kvartal 2026"
 
 
 def _file_an_engagement(page, *, occurred_on: str = HELD_ON) -> None:
@@ -238,3 +252,89 @@ def test_a_reader_is_offered_no_correction(page, base_url):
     expect(chronology).to_be_visible()
     expect(chronology.get_by_text("Kaasamine:", exact=False).first).to_be_visible()
     expect(chronology.get_by_role("button", name="Muuda", exact=False)).to_have_count(0)
+
+
+# ---------------------------------------------------------------------------
+# `Täpsus` — the half of docs/adr/0082 that only a rendering engine can answer
+# ---------------------------------------------------------------------------
+
+
+def _choose_precision(scope, label: str) -> None:
+    """Click one `Täpsus` chip, the way a person does.
+
+    The chip is a `<label>` over a clipped radio; clicking the label is what
+    checks it, and the CSS then reveals that precision's own group. Clicking
+    the input directly would check it without proving the control is reachable,
+    which is exactly what this file exists to prove.
+    """
+    scope.locator(".precision__chip", has_text=label).first.click()
+
+
+def test_the_panel_can_state_a_month_and_the_row_reads_it_back(page, base_url):
+    """docs/adr/0082 §1, §3. A consultation somebody remembers as «veebruaris».
+
+    The month select has to be *reachable* — it is hidden until its chip is
+    chosen — and the row afterwards has to say *veebruar 2026* rather than the
+    stored anchor, which is 1 February and a day nobody named.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Kaasamise täpsuse katse: kuu"))
+
+    open_add_panel(page, "lisa-kaasamine")
+    panel = page.locator("#lisa-kaasamine")
+    panel.locator("input[name=audience]").fill(AUDIENCE)
+    _choose_precision(panel, "Kuu")
+    month, year = PAST_MONTH
+    expect(panel.locator("select[name=engagement_month]")).to_be_visible()
+    panel.locator("select[name=engagement_month]").select_option(month)
+    panel.locator("input[name=engagement_year]").fill(year)
+    with page.expect_response(
+        lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
+    ) as caught:
+        panel.locator("button[type=submit]").click()
+    assert caught.value.status == 200, f"a month was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+
+    row = _row(page)
+    expect(row).to_contain_text(PAST_MONTH_READS)
+    expect(row).not_to_contain_text("1.2.2026")
+
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    expect(_row(page)).to_contain_text(PAST_MONTH_READS)
+
+
+def test_correcting_an_exact_day_to_a_quarter_leaves_no_day_behind(page, base_url):
+    """docs/adr/0079 §2 stated where it is easiest to break.
+
+    A record corrected to *I kvartal 2026* must reopen on its own chip with the
+    day box **empty**. An editor that put `1.1.2026` back into that box would
+    invite the person to save an invented day — the create-path defect arriving
+    through the edit path.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Kaasamise täpsuse katse: kvartal"))
+    _file_an_engagement(page)
+
+    form = _open_the_editor(page)
+    _choose_precision(form, "Kvartal")
+    quarter, year = PAST_QUARTER
+    expect(form.locator("select[name=engagement_quarter]")).to_be_visible()
+    form.locator("select[name=engagement_quarter]").select_option(quarter)
+    form.locator("input[name=engagement_year]").fill(year)
+    saved = _save(page)
+    assert saved.status == 200, f"a quarter was refused: {saved.status}"
+    page.wait_for_load_state("networkidle")
+
+    row = _row(page)
+    expect(row).to_contain_text(PAST_QUARTER_READS)
+    expect(row).not_to_contain_text(HELD_ON_READ)
+    expect(row).not_to_contain_text("1.1.2026")
+
+    # And reopening it hands back the period, not the anchor.
+    form = _open_the_editor(page)
+    assert form.locator("input[name=occurred_on]").input_value() == "", (
+        "the anchor is sitting in the day box"
+    )
+    expect(form.locator("input[name=engagement_precision][value=QUARTER]")).to_be_checked()
+    assert form.locator("input[name=engagement_year]").input_value() == year

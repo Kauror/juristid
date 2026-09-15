@@ -8,12 +8,14 @@ is never in the response, so a correction cannot move the row, cannot add a
 second line to the chronology and cannot turn a milestone into a work entry
 (matters/partials/timeline_items.html, app/matters/views.py `_engagement_row`).
 
-**The row's date is the record's own, or the words «Kuupäev teadmata».** An
-undated `Kaasamine` still has to sit somewhere, so it sits on the day it was
-written down — but that day is never printed as if it were the day the
-consultation happened. Placing a row and describing it are two different jobs
-and the fallback does only the first (app/matters/timeline.py,
-`engagement_chronology_day`, docs/adr/0078 §2).
+**The row's date is the record's own, at the precision it is known to, or the
+words «Kuupäev teadmata».** An undated `Kaasamine` still has to sit somewhere,
+so it sits on the day it was written down — but that day is never printed as if
+it were the day the consultation happened. An approximate one sits on its
+period's first day and prints *oktoober 2026*, never `01.10.2026`. Placing a row
+and describing it are two different jobs and the anchor does only the first
+(app/matters/timeline.py, `engagement_chronology_day`,
+`MatterEngagement.display_date`, docs/adr/0078 §2, docs/adr/0082 §3).
 
 **`Muuda` needs a writer *and* an open Teema**, unlike a Sissekanne's. An entry
 correction rewrites narrative and is offered on a closed file; correcting a
@@ -72,22 +74,27 @@ before the closure.
       {% endif %}
 
       {% comment %}
-        The two dates, side by side, in the same order and with the same labels
-        the `+ Kaasamine` panel asks them in. A person who learns the panel must
-        not have to learn a second vocabulary to fix what they typed into it.
+        The two dates, in the same order, with the same labels and — for the
+        first of them — through the same `Täpsus` control the `+ Kaasamine`
+        panel asks them in. A person who learns the panel must not have to
+        learn a second vocabulary to fix what they typed into it, and a record
+        must not be correctable into a shape it could never have been created
+        in. One partial serves both, so the two cannot drift
+        (matters/partials/period_composer.html, docs/adr/0082 §3).
 
-        Both are optional and both are an exact day. Emptying `Kaasamise
-        kuupäev` is a real answer — «kuupäev teadmata» — and is how a row the
-        old panel stamped with today gets told the truth. `Tagasisidet ootame
-        kuni` is inert: correcting it makes no next action, no deadline row, no
-        badge and no count (docs/adr/0078 §2, §3, docs/adr/0079 §11).
+        Both are optional. `Kaasamise kuupäev` may be a day, a month, a quarter
+        or a year, and emptying it altogether is a real answer — «kuupäev
+        teadmata» — and is how a row the old panel stamped with today gets told
+        the truth. An approximate record opens on its own chip with the day box
+        left empty: the stored anchor is a place in a sort, not a day to hand
+        back to somebody to re-save (docs/adr/0079 §2).
+
+        `Tagasisidet ootame kuni` stays an exact day and stays inert:
+        correcting it makes no next action, no deadline row, no badge and no
+        count (docs/adr/0078 §2, §3, docs/adr/0079 §11).
       {% endcomment %}
+      {% include "matters/partials/period_composer.html" with chips=engagement_edit_form.precision_chips date_field=engagement_edit_form.occurred_on month_field=engagement_edit_form.engagement_month quarter_field=engagement_edit_form.engagement_quarter year_field=engagement_edit_form.engagement_year only %}
       <div class="cx-grid cx-grid--links">
-        <label class="cx-f cx-f--date" for="{{ engagement_edit_form.occurred_on.id_for_label }}">
-          <span class="cx-f__lab">{{ engagement_edit_form.occurred_on.label }}
-            <span class="cx-f__opt">valikuline</span></span>
-          {{ engagement_edit_form.occurred_on }}
-        </label>
         <label class="cx-f cx-f--date"
                for="{{ engagement_edit_form.feedback_deadline.id_for_label }}">
           <span class="cx-f__lab">{{ engagement_edit_form.feedback_deadline.label }}
@@ -95,9 +102,6 @@ before the closure.
           {{ engagement_edit_form.feedback_deadline }}
         </label>
       </div>
-      {% if engagement_edit_form.occurred_on.errors %}
-        <p class="field__error">{{ engagement_edit_form.occurred_on.errors|first }}</p>
-      {% endif %}
       {% if engagement_edit_form.feedback_deadline.errors %}
         <p class="field__error">{{ engagement_edit_form.feedback_deadline.errors|first }}</p>
       {% endif %}

@@ -1443,6 +1443,31 @@ def _engagement_kind(value: str) -> str:
     return value
 
 
+def _engagement_precision(occurred_on: Any, value: Any) -> str:
+    """How exactly `Kaasamise kuupäev` is known, normalised and vouched for.
+
+    Two rules, and both are about a value a form or an importer can get wrong.
+
+    **A date nobody knows has no precision.** `NULL` + `MONTH` is not «an
+    approximate consultation», it is a period with nothing to qualify — and
+    every surface reading it would have to guess whether to print a period or
+    «kuupäev teadmata». So a missing date forces `EXACT`, which is what the
+    column holds for every undated row today.
+
+    **The vocabulary is checked here rather than by the database.** The
+    `CheckConstraint` is the backstop; a `DomainError` from the service names
+    what was wrong, where an `IntegrityError` out of a composer transaction
+    that has already written a note and a next step names a constraint. Same
+    reasoning as `_engagement_kind` and `_engagement_response_count`.
+    """
+    if occurred_on is None:
+        return DatePrecision.EXACT.value
+    precision = value or DatePrecision.EXACT.value
+    if precision not in DatePrecision.values:
+        raise DomainError(f"Tundmatu kuupäeva täpsus {precision!r}.")
+    return precision
+
+
 @transaction.atomic
 def _engagement_response_count(value: Any) -> int | None:
     """`Vastuseid`, or nothing at all.
@@ -1475,6 +1500,7 @@ def record_engagement(
     alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
     response_count: Any = None,
     actor: Any = None,
@@ -1509,6 +1535,7 @@ def record_engagement(
         alchemer_url=alchemer_url,
         note=note,
         occurred_on=occurred_on,
+        occurred_on_precision=occurred_on_precision,
         feedback_deadline=feedback_deadline,
         response_count=response_count,
         actor=actor,
@@ -1525,6 +1552,7 @@ def add_engagement(
     alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
     response_count: Any = None,
     actor: Any = None,
@@ -1552,11 +1580,26 @@ def add_engagement(
     never derived: a caller that does not name it writes ``NULL`` rather than
     borrowing ``occurred_on`` or today. It is a record of what was asked, so
     nothing here turns it into work — no `NextAction`, no deadline row, no
-    count.
+    count. **It stays an exact day**: docs/adr/0082 widened `Kaasamise kuupäev`
+    and deliberately left this one on docs/adr/0079 §11's list, because a
+    reply-by date is a day somebody named to other people.
+
+    ``occurred_on_precision`` says how exactly ``occurred_on`` is known, and
+    ``occurred_on`` is then the **anchor** of that period — the normalisation
+    every surface goes through is `app.workflow.dates.bounds_for`, so a quarter
+    stated in `+ Kaasamine` is the same stored value as a quarter stated
+    anywhere else. `EXACT` by default, which is what a caller that knows
+    nothing about precision means and what every historical row holds.
+
+    **An unknown date is normalised back to `EXACT`.** A `NULL` date with a
+    stored `MONTH` beside it would be a period with nothing to qualify — a row
+    that renders as neither a date nor «kuupäev teadmata» but as whichever of
+    the two the reading surface guessed. Absence has no precision.
     """
     clean_title = title.strip()
     if not clean_title:
         raise DomainError("Kaasamisel peab olema pealkiri.")
+    precision = _engagement_precision(occurred_on, occurred_on_precision)
 
     engagement = MatterEngagement.objects.create(
         matter=matter,
@@ -1567,6 +1610,7 @@ def add_engagement(
         alchemer_url=normalize_engagement_url(alchemer_url),
         note=note.strip(),
         occurred_on=occurred_on,
+        occurred_on_precision=precision,
         feedback_deadline=feedback_deadline,
         response_count=_engagement_response_count(response_count),
         created_by=actor,
@@ -1580,6 +1624,11 @@ def add_engagement(
         payload={
             "kind": engagement.kind,
             "occurred_on": engagement.occurred_on.isoformat() if engagement.occurred_on else None,
+            # The precision beside the value, never on its own. The stored date
+            # is a period's first day, so an audit row carrying `2026-10-01`
+            # with nothing else says «1 October» to whoever reads it back,
+            # which is the invention docs/adr/0079 §2 exists to refuse.
+            "occurred_on_precision": engagement.occurred_on_precision,
             # The date itself, like `occurred_on` beside it: it is a small
             # value, it is the thing a correction would change, and an audit
             # row saying only «a deadline was set» cannot answer «to when».
@@ -1639,6 +1688,7 @@ def update_engagement(
     alchemer_url: Any = _UNSET,
     note: Any = _UNSET,
     occurred_on: Any = _UNSET,
+    occurred_on_precision: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
@@ -1711,6 +1761,21 @@ def update_engagement(
         proposed["occurred_on"] = occurred_on
     if feedback_deadline is not _UNSET:
         proposed["feedback_deadline"] = feedback_deadline
+    if occurred_on_precision is not _UNSET:
+        proposed["occurred_on_precision"] = occurred_on_precision
+
+    # The two columns are one fact and are normalised together, against the
+    # date this save *results in* rather than the one it named. Clearing
+    # `Kaasamise kuupäev` on a record stored as *oktoober 2026* would otherwise
+    # leave `MONTH` behind on a row with no anchor — a period the record can no
+    # longer render (`_engagement_precision`). A correction naming neither
+    # column touches neither: the normalised value then equals what is stored
+    # and drops out of `changed`.
+    if "occurred_on" in proposed or "occurred_on_precision" in proposed:
+        proposed["occurred_on_precision"] = _engagement_precision(
+            proposed.get("occurred_on", locked.occurred_on),
+            proposed.get("occurred_on_precision", locked.occurred_on_precision),
+        )
 
     changed = [field for field, value in proposed.items() if getattr(locked, field) != value]
     if not changed:
@@ -1725,6 +1790,13 @@ def update_engagement(
         payload["occurred_on_to"] = (
             proposed["occurred_on"].isoformat() if proposed["occurred_on"] else None
         )
+    if "occurred_on_precision" in changed:
+        # Recorded whenever it moves, including when the date itself did not:
+        # *oktoober 2026* corrected to *IV kvartal 2026* keeps `2026-10-01` and
+        # changes what that number means, so an audit row carrying only the
+        # anchor would say nothing had happened.
+        payload["occurred_on_precision_from"] = locked.occurred_on_precision
+        payload["occurred_on_precision_to"] = proposed["occurred_on_precision"]
     if "feedback_deadline" in changed:
         payload["feedback_deadline_from"] = (
             locked.feedback_deadline.isoformat() if locked.feedback_deadline else None
@@ -1763,6 +1835,7 @@ def correct_engagement(
     alchemer_url: Any = _UNSET,
     note: Any = _UNSET,
     occurred_on: Any = _UNSET,
+    occurred_on_precision: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
@@ -1812,6 +1885,7 @@ def correct_engagement(
         alchemer_url=alchemer_url,
         note=note,
         occurred_on=occurred_on,
+        occurred_on_precision=occurred_on_precision,
         feedback_deadline=feedback_deadline,
         actor=actor,
         expected_revision=expected_revision,

@@ -220,12 +220,21 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
     No known date renders an em dash. Falling back to the import
     timestamp is the exact mistake this replaces, and a dash is the
     honest statement that nothing is recorded.
+
+    `display_date` rather than the raw date: a `Kaasamine` may be
+    recorded to a month, a quarter or a year, and what is stored for
+    one of those is the period's first day. Printing that would put
+    `01.10.2026` in this column for a consultation somebody remembers
+    as *oktoobris*. For every exact fact — which is eight of the nine
+    bases, and every one that existed before docs/adr/0082 — it is the
+    same `j.n.Y` this cell has always rendered
+    (app/matters/activity.py, docs/adr/0079 §3).
   {% endcomment %}
   <td class="table__date table__lastactivity">
     {% with activity=matter|last_activity %}
       {% if activity %}
         <span class="muted" title="{{ activity.label }}">
-          {{ activity.occurred_on|date:"j.n.Y" }}
+          {{ activity.display_date }}
         </span>
       {% else %}
         <span class="muted">—</span>
