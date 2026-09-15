@@ -12,21 +12,22 @@ both of which are guesses (docs/adr/0075 §5).
 So this is one additive link table: *this document supports that record*, stated
 once, at the moment the record is written.
 
-Why five nullable typed columns and not a generic target
---------------------------------------------------------
+Why six nullable typed columns and not a generic target
+-------------------------------------------------------
 A ``GenericForeignKey`` would be one column pair and no referential integrity at
 all: nothing stops a content-type/id pair naming a row that does not exist, a
 row on another Matter, or a row in a table that has since been dropped, and
 every read costs a query per kind. This codebase does not use one anywhere.
 
-Five columns with an exactly-one ``CHECK`` is the shape
+One typed column per kind with an exactly-one ``CHECK`` is the shape
 ``related_materials.MatterBackgroundMaterial`` and
 ``related_materials.RelatedSuggestionDismissal`` already use for the same
 problem, and it is the one with the stronger guarantees: every link is a real
 foreign key, the database refuses a row that names two records or none, and one
 ``select_related`` reads every kind at once.
 
-The cost is that a sixth kind of linkable record is a migration. That is the
+The cost is that each new kind of linkable record is a migration — the sixth,
+``external_position``, is exactly that (docs/adr/0084 §3). That is the
 correct cost — what evidence may be attached to is a product decision, not a
 shape a caller invents at run time.
 
@@ -79,6 +80,7 @@ TARGET_FIELDS: tuple[str, ...] = (
     "important_date",
     "effective_date",
     "work_victory",
+    "external_position",
 )
 
 
@@ -143,7 +145,7 @@ class DocumentLink(BaseModel):
         verbose_name="dokument",
     )
 
-    # -- exactly one of the five below ---------------------------------------
+    # -- exactly one of the six below ----------------------------------------
     entry = models.ForeignKey(
         "matters.Entry",
         on_delete=models.CASCADE,
@@ -183,6 +185,20 @@ class DocumentLink(BaseModel):
         blank=True,
         related_name="document_links",
         verbose_name="töövõit",
+    )
+    #: The sixth kind, and the cost the module docstring names: what evidence
+    #: may be attached to is a product decision, so a new one is a migration
+    #: rather than a shape a caller invents at run time. A `Väline seisukoht`
+    #: frequently *is* a document — a ministry's position paper arrives as a
+    #: PDF and is published nowhere — so the record needs the ordinary evidence
+    #: pipeline rather than a file store of its own (docs/adr/0084 §3).
+    external_position = models.ForeignKey(
+        "matters.MatterExternalPosition",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="document_links",
+        verbose_name="väline seisukoht",
     )
 
     created_by = models.ForeignKey(

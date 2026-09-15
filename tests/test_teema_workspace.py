@@ -398,7 +398,7 @@ def test_muuda_supersedes_rather_than_completes(signed_in, normal_matter, specia
 
 
 # ===========================================================================
-# LISA TEEMALE — eight intentions, eight saves
+# LISA TEEMALE — nine intentions, nine saves
 # ===========================================================================
 
 
@@ -414,12 +414,18 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "+ Jõustumine",
         "+ Töövõit",
         "+ Kodulehe ülevaade",
+        "+ Väline seisukoht",
         "+ Lõpeta teema",
     ):
         assert chip in zone, chip
     assert 'cx-panel" open' not in zone
-    # Eight operations, eight saves. There is no shared one left.
-    assert zone.count('type="submit"') == 8
+    # Nine operations, nine saves. There is no shared one left.
+    #
+    # The organisation picker inside `+ Väline seisukoht` contributes no
+    # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
+    # naming a body the catalogue does not hold cannot submit the panel
+    # (docs/adr/0073, `organisation_picker.html`).
+    assert zone.count('type="submit"') == 9
     assert "composer__actions" not in zone
 
 
@@ -929,7 +935,7 @@ def test_the_rendered_workspace_contains_no_duplicate_element_id(
     """**The guard `tests/test_ui_contract` structurally cannot be.**
 
     That one reads literal `id="…"` out of each template separately, which is
-    the right check for markup somebody wrote. These ids are *generated*: eight
+    the right check for markup somebody wrote. These ids are *generated*: nine
     forms render on one page and two of them call a field `body` while six call
     one `attachments`, so Django produced `id_body` twice and `id_attachments`
     six times — invalid HTML, a `<label for>` pointing at the wrong control, and

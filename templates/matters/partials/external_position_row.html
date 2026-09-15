@@ -1,0 +1,193 @@
+{% comment %}
+One `Väline seisukoht`'s chronology row, and the way to correct it.
+
+**This element is the whole swap target.** `Muuda` replaces it with itself
+carrying the form; saving replaces it again with the corrected record. The
+`<article>` around it — the 12 px accent dot, the spine, the attached files — is
+never in the response, so a correction cannot move the row, cannot add a second
+line to the chronology and cannot turn a milestone into a work entry
+(matters/partials/timeline_items.html, app/matters/views.py
+`_external_position_row`). Deliberately the same shape as
+`matters/partials/engagement_row.html`, because it is the same interaction on a
+sibling record and two shapes would be two things to learn.
+
+**The headline names the organisation, and the link is named by its host.** A
+raw URL as a row's own text is a line a reader has to parse instead of read, and
+it is the one shape in which a look-alike address would be believed — so the
+control says `rahandusministeerium.ee`, or `Ava seisukoht` where the address has
+no host to name. `target="_blank"`, `rel="noopener noreferrer"` and a visually
+hidden «avaneb uues aknas», exactly as a published `Kodulehe ülevaade` renders
+its own (docs/adr/0081 §4, docs/adr/0084 §6).
+
+**The row's date is the record's own, at the precision it is known to, or the
+words «Kuupäev teadmata».** An undated position still has to sit somewhere, so
+it sits on the day it was written down — but that day is never printed as if it
+were the day the other organisation stated its position. An approximate one sits
+on its period's first day and prints *oktoober 2026*, never `01.10.2026`
+(app/matters/timeline.py, `external_position_chronology_day`).
+
+**`Muuda` needs a writer *and* an open Teema.** Correcting a position moves the
+organisation, the date, the source and the relation of a structured record the
+chronology reads, so it is normal business work and a finished file refuses it;
+reopening is the way out. The flag hides the button and decides nothing —
+`correct_external_position` takes the Matter's row lock and refuses a closed one
+on its own, because the browser that posts may be holding a page from before the
+closure (docs/adr/0076 §2, docs/adr/0084 §8).
+{% endcomment %}
+<div class="uxtl__ms-body" id="valine-seisukoht-{{ position.pk }}-sisu">
+  {% if external_position_edit_form %}
+    {% comment %}
+      Edit mode. The form posts to the same address that opened it and swaps
+      this element again, so every answer — saved, refused, conflicted — lands
+      in the one place the reader is looking.
+    {% endcomment %}
+    <form class="uxtl__editform" aria-label="Välise seisukoha parandamine"
+          hx-post="{% url 'matters:update_external_position' pk=matter.pk position_id=position.pk %}"
+          hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      {% comment %}
+        Which record is being corrected, in the words the row was reading a
+        moment ago. The stored headline, never the typed one: it says what is
+        being edited, not what the edit would make it. Absent on a conflict,
+        where «Praegune kirje» below says the same thing and says more of it.
+      {% endcomment %}
+      {% if not external_position_conflict_milestone %}
+        <p class="uxtl__ms">
+          <span class="uxtl__mswhat">{{ milestone.what }}</span>
+        </p>
+      {% endif %}
+
+      {% comment %}
+        The same organisation control the panel asks in, and the same date
+        control at the same four precisions: a record must be correctable into
+        exactly the shapes it could have been created in, and a person who
+        learns the panel must not have to learn a second vocabulary to fix what
+        they typed into it. One partial each, so the two cannot drift
+        (docs/adr/0073, docs/adr/0079 §1).
+      {% endcomment %}
+      {% include "matters/partials/organisation_picker.html" with picker_id=external_position_picker_id legend=external_position_edit_form.organisation.label chips=external_position_edit_form.organisation_chip_choices tail=external_position_edit_form.organisation_tail_choices typed_field=external_position_edit_form.organisation_name add_label="Lisa uus organisatsioon" single=True clears_group="organisation" only %}
+      {% if external_position_edit_form.organisation.errors %}
+        <p class="field__error">{{ external_position_edit_form.organisation.errors|first }}</p>
+      {% endif %}
+
+      {% include "matters/partials/period_composer.html" with chips=external_position_edit_form.precision_chips date_field=external_position_edit_form.stated_on month_field=external_position_edit_form.position_month quarter_field=external_position_edit_form.position_quarter year_field=external_position_edit_form.position_year only %}
+
+      {% comment %}
+        The source. **No upload control here**: adding a second piece of
+        evidence to a position is a different act with a different audit trail,
+        and a correction form that also captured bytes would make «what
+        changed» unanswerable from one event. Emptying the address of a
+        position that carries a file is an ordinary correction; emptying the
+        address of one that carries nothing else unsources the record and is
+        refused (docs/adr/0084 §8).
+      {% endcomment %}
+      <label class="cx-f" for="{{ external_position_edit_form.url.id_for_label }}">
+        <span class="cx-f__lab">{{ external_position_edit_form.url.label }}</span>
+        {{ external_position_edit_form.url }}
+      </label>
+      {% if external_position_edit_form.url.errors %}
+        <p class="field__error">{{ external_position_edit_form.url.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ external_position_edit_form.summary.id_for_label }}">
+        <span class="cx-f__lab">{{ external_position_edit_form.summary.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ external_position_edit_form.summary }}
+      </label>
+      {% if external_position_edit_form.summary.errors %}
+        <p class="field__error">{{ external_position_edit_form.summary.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ external_position_edit_form.engagement.id_for_label }}">
+        <span class="cx-f__lab">{{ external_position_edit_form.engagement.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ external_position_edit_form.engagement }}
+      </label>
+      {% if external_position_edit_form.engagement.errors %}
+        <p class="field__error">{{ external_position_edit_form.engagement.errors|first }}</p>
+      {% endif %}
+
+      {{ external_position_edit_form.revision }}
+
+      {% if external_position_edit_error %}
+        <p class="formerror" role="alert">{{ external_position_edit_error }}</p>
+      {% endif %}
+
+      {% comment %}
+        The version that beat this one, read-only and under the boxes. Rendered
+        as the chronology row it now is rather than as a second set of fields: a
+        box somebody can type into is a box they will type into, and this one is
+        not theirs to edit — it is what the record now says, offered so the two
+        can be reconciled. Neither version is chosen for them, and nothing was
+        written — not the metadata and not the source
+        (app/matters/views.py `update_external_position_view`).
+      {% endcomment %}
+      {% if external_position_conflict_milestone %}
+        <div class="uxtl__conflict">
+          <p class="uxtl__conflictnote">Praegune kirje:</p>
+          <p class="uxtl__ms">
+            <span class="uxtl__mswhat">{{ external_position_conflict_milestone.what }}</span>
+            <span class="uxtl__msdate">{{ external_position_conflict_milestone.display_date }}</span>
+          </p>
+          {% if external_position_conflict_milestone.sub %}
+            <span class="uxtl__mssub">{{ external_position_conflict_milestone.sub }}</span>
+          {% endif %}
+          <p class="uxtl__conflictnote">
+            Võrdle oma parandust praeguse kirjega või laadi leht uuesti, et
+            praeguse versiooniga jätkata. Sinu sisestus on ülal alles.
+          </p>
+        </div>
+      {% endif %}
+
+      <p class="uxtl__editactions">
+        <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+        {% comment %}
+          `Tühista` re-fetches this element in its read state, so leaving edit
+          mode restores exactly what the server holds and changes nothing. A GET
+          of the row rather than client-side hiding, because the boxes may be
+          holding values that were never saved and the only honest way to leave
+          them is to go and read what the record actually says.
+        {% endcomment %}
+        <button class="button button--quiet button--tiny" type="button"
+                hx-get="{% url 'matters:update_external_position' pk=matter.pk position_id=position.pk %}{{ external_position_read_query }}"
+                hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
+                hx-swap="outerHTML">Tühista</button>
+      </p>
+    </form>
+  {% else %}
+    <p class="uxtl__ms">
+      <span class="uxtl__mswhat" id="valine-seisukoht-{{ position.pk }}-pealkiri">{{ milestone.what }}</span>
+      <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+    </p>
+    {% if milestone.sub %}
+      <span class="uxtl__mssub">{{ milestone.sub }}</span>
+    {% endif %}
+    {% if milestone.links %}
+      <span class="uxtl__links">
+        {% for link in milestone.links %}
+          <a class="uxtl__link" href="{{ link.url }}"
+             target="_blank" rel="noopener noreferrer">{{ link.label }}<span
+             class="visually-hidden"> — avaneb uues aknas</span></a>
+        {% endfor %}
+      </span>
+    {% endif %}
+    {% if can_write_business_content and matter.is_open %}
+      <p class="uxtl__editactions">
+        {% comment %}
+          «Muuda» on its own says which verb and not which record, and a
+          chronology may show a dozen of these. The accessible name is built by
+          reference — the button's own word, then the headline element above it
+          — rather than by repeating the headline into a visually-hidden span,
+          which would put «Väline seisukoht: …» into the document twice.
+        {% endcomment %}
+        <button class="uxtl__edit" type="button"
+                id="valine-seisukoht-{{ position.pk }}-muuda"
+                aria-labelledby="valine-seisukoht-{{ position.pk }}-muuda valine-seisukoht-{{ position.pk }}-pealkiri"
+                hx-get="{% url 'matters:update_external_position' pk=matter.pk position_id=position.pk %}"
+                hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
+                hx-swap="outerHTML">Muuda</button>
+      </p>
+    {% endif %}
+  {% endif %}
+</div>

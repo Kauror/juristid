@@ -38,7 +38,13 @@ from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.dates import format_estonian_date
 from app.matters.entry_enums import EntryKind
-from app.matters.models import Entry, Matter, MatterEngagement, MatterWebsiteOverview
+from app.matters.models import (
+    Entry,
+    Matter,
+    MatterEngagement,
+    MatterExternalPosition,
+    MatterWebsiteOverview,
+)
 from app.workflow.dates import format_at_precision
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
@@ -299,6 +305,17 @@ class TimelineItem:
     @property
     def is_entry(self) -> bool:
         return self.entry is not None
+
+    @property
+    def external_position(self) -> Any:
+        """The `Väline seisukoht` this row stands for, when it stands for one.
+
+        A named property rather than the template comparing `item_type` to a
+        class name: the chronology offers `Muuda` on exactly these rows, and a
+        string comparison in a template is a rename away from silently offering
+        it on none of them — the reasoning `website_overview` above states.
+        """
+        return self.record if isinstance(self.record, MatterExternalPosition) else None
 
     @property
     def is_engagement(self) -> bool:
@@ -683,6 +700,80 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
     )
 
 
+#: What the chronology prints where a `Väline seisukoht` has no date of its own.
+#:
+#: Its own constant beside :data:`ENGAGEMENT_DATE_UNKNOWN` rather than a shared
+#: one: the two happen to be the same four words and are answers to different
+#: questions — «when did Koda ask» and «when did they say it» — so a single
+#: name would make one record's wording change the other's the day either of
+#: them is reworded.
+EXTERNAL_POSITION_DATE_UNKNOWN = "Kuupäev teadmata"
+
+
+def external_position_chronology_day(position: MatterExternalPosition) -> date:
+    """Where an external position's row sits in the chronology.
+
+    Its own date when it has one; the day it was written down when it has not —
+    the rule :func:`engagement_chronology_day` states, for the same reason. A
+    row that cannot be placed cannot be read, and the day it was recorded is the
+    only day this system knows anything about.
+
+    **The fallback places the row and never describes it.**
+    :func:`external_position_milestone` prints
+    :data:`EXTERNAL_POSITION_DATE_UNKNOWN` for exactly these rows, because
+    printing `created_at` beside «Väline seisukoht: Rahandusministeerium» would
+    state that the ministry said it on the day somebody typed it in — a fact
+    about another organisation, invented by this application.
+
+    An approximate date places the row on its anchor, which is the first day of
+    the period and is exactly what an anchor is for (docs/adr/0079 §2).
+    """
+    return position.stated_on or _local_day(position.created_at)
+
+
+def external_position_milestone(position: MatterExternalPosition) -> ChronologyMilestone:
+    """One `Väline seisukoht` as the chronology row a reader sees.
+
+    Built here rather than inline in :func:`projected_milestones` because the
+    correction form swaps this one row back in place after a save, and the two
+    renderings have to be the same rendering — a second copy of the `sub`
+    composition is a second place for the `Selgitus` to gain a separator or for
+    the linked consultation to lose its label (`app/matters/views.py`,
+    `_external_position_row`).
+
+    **The headline names the organisation and nothing else.** «Väline
+    seisukoht: Rahandusministeerium» is what a reader scanning six months is
+    looking for; what the ministry actually said is the `Selgitus` under it and
+    the source beside it, and folding either into the headline would make one
+    line say three things (docs/adr/0084 §6).
+
+    **The link is labelled by its host, never printed as an address.** A raw URL
+    as a row's own text is a line a reader has to parse instead of read, and it
+    is the one shape in which a look-alike address would be believed — the rule
+    a published `Kodulehe ülevaade` already follows. `link_label` falls back to
+    `Ava seisukoht` where the address has no host to name, and the template
+    gives every one of these `target="_blank"`, `rel="noopener noreferrer"` and
+    a visually hidden «avaneb uues aknas» (docs/adr/0081 §4).
+    """
+    sub = position.summary
+    if position.engagement is not None:
+        # The round this answered, where it answered one. After the explanation
+        # rather than before it: what they said is what a reader wants first,
+        # and «this came back from our consultation» is the context for it.
+        related = f"Vastus kaasamisele: {position.engagement.title}"
+        sub = f"{sub} · {related}" if sub else related
+    links = (ChronologyLink(label=position.link_label, url=position.url),) if position.url else ()
+    return ChronologyMilestone(
+        what=f"Väline seisukoht: {position.organisation.name}",
+        # The date as it was actually known, or the words «kuupäev teadmata» —
+        # never the day the row happens to sit on, and never the anchor of a
+        # period (docs/adr/0079 §3).
+        display_date=position.display_date or EXTERNAL_POSITION_DATE_UNKNOWN,
+        sub=sub,
+        links=links,
+    )
+
+
 def projected_milestones(
     *,
     matter: Matter,
@@ -810,6 +901,29 @@ def projected_milestones(
         if when > day:
             continue
         add(engagement, _end_of_day(when), engagement_milestone(engagement))
+
+    # `Väline seisukoht`: what another organisation said about this file.
+    #
+    # Projected from the canonical record like every other structured fact, so
+    # the four audit events this record writes contribute no row of their own
+    # and one act takes one line (docs/adr/0074 §14, docs/adr/0084 §6).
+    #
+    # `select_related` on both foreign keys the row renders, because the
+    # headline is the organisation's name and the sub-line may name the
+    # consultation it answered — without it a Matter carrying ten positions
+    # would cost twenty queries to draw them.
+    for position in (
+        MatterExternalPosition.objects.filter(matter=matter)
+        .visible_to(user)
+        .select_related("organisation", "engagement")
+    ):
+        when = external_position_chronology_day(position)
+        if when > day:
+            # A position dated in the future is not history yet, and the
+            # chronology reads newest-first and means *past*. The same rule the
+            # engagement above it follows.
+            continue
+        add(position, _end_of_day(when), external_position_milestone(position))
 
     # `Kodulehe ülevaade`, and **only the two states that are milestones**.
     #

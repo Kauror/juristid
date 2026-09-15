@@ -197,6 +197,42 @@ class ChangeEventType(models.TextChoices):
         "WEBSITE_OVERVIEW_LINK_CORRECTED",
         "Kodulehe ülevaate linki või kuupäeva parandatud",
     )
+    # -- Väline seisukoht ---------------------------------------------------
+    #
+    # Four events, because four different things happen to this record and a
+    # history that could not tell them apart would be a history nobody trusts.
+    # None of the existing families would have been true of any of them:
+    # `ENGAGEMENT_ADDED` would claim the Chamber asked somebody something,
+    # `SUBMISSION_SENT` would claim an opinion went out, `ENTRY_ADDED` would
+    # claim somebody wrote a note, and `WORK_VICTORY_PROPOSED` would claim
+    # something was won — where what happened is that another organisation
+    # stated a position and the file now points at it (docs/adr/0084 §7).
+    #
+    # Deliberately absent from `matters.timeline.TIMELINE_EVENT_TYPES`, like
+    # every other structured fact since docs/adr/0074 §14: the chronology
+    # renders the position from the canonical record through
+    # `projected_milestones`, and reading the event as well would state one act
+    # twice.
+    EXTERNAL_POSITION_RECORDED = "EXTERNAL_POSITION_RECORDED", "Väline seisukoht lisatud"
+    EXTERNAL_POSITION_CORRECTED = "EXTERNAL_POSITION_CORRECTED", "Välist seisukohta parandatud"
+    # Its own event beside the correction rather than a field named inside it.
+    # The source is what makes this record a record at all — a position with no
+    # link and no document is hearsay on a file — so «where this points now, and
+    # where it pointed before» is the one change a reader is most likely to be
+    # auditing, and a history that buried it in a list of moved field names
+    # could not answer it.
+    EXTERNAL_POSITION_SOURCE_CHANGED = (
+        "EXTERNAL_POSITION_SOURCE_CHANGED",
+        "Välise seisukoha link muudetud",
+    )
+    # The other half of the source. `DOCUMENT_CREATED` and
+    # `EVIDENCE_VERSION_ADDED` already record that bytes arrived; this records
+    # that they are the evidence for *this* position, which is the fact the
+    # `DocumentLink` row carries and neither of those two can state.
+    EXTERNAL_POSITION_DOCUMENT_LINKED = (
+        "EXTERNAL_POSITION_DOCUMENT_LINKED",
+        "Välise seisukoha fail lisatud",
+    )
 
 
 class SecurityEventType(models.TextChoices):

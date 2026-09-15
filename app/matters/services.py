@@ -41,6 +41,8 @@ from app.matters.locks import (
 )
 from app.matters.models import (
     ENGAGEMENT_URL_MAX_LENGTH,
+    EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
+    EXTERNAL_POSITION_URL_MAX_LENGTH,
     KODA_WEBSITE_HOST,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Entry,
@@ -48,6 +50,7 @@ from app.matters.models import (
     Matter,
     MatterAssignmentNotice,
     MatterEngagement,
+    MatterExternalPosition,
     MatterPersonalNote,
     MatterReferenceSequence,
     MatterWebsiteOverview,
@@ -1392,6 +1395,45 @@ def add_source_derived_policy_areas(
 ENGAGEMENT_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
+def _normalize_public_link(value: str | None, *, max_length: int) -> str:
+    """One implementation of «a public http(s) address, or nothing».
+
+    Factored out of :func:`normalize_engagement_url` when `Väline seisukoht`
+    needed exactly the same rule under its own column width, because the rule is
+    not the kind that may exist twice: it is the difference between a clickable
+    control on a page a lawyer trusts and a script-delivery vector, and a second
+    copy is a second place for `javascript:` to be forgotten. ``max_length`` is
+    the only thing the two callers disagree about, and both of them state their
+    own — the refusal sentence is built from it, so neither caller's wording
+    changed when this was extracted.
+    """
+    from urllib.parse import urlsplit
+
+    url = (value or "").strip()
+    if not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        raise DomainError("Link peab sisaldama veebiaadressi.") from None
+    if parts.scheme.lower() not in ENGAGEMENT_URL_SCHEMES:
+        raise DomainError("Link peab algama http:// või https:// aadressiga.")
+    try:
+        hostname = parts.hostname
+    except ValueError:
+        # A malformed authority — an unbracketed IPv6 literal, a port that is
+        # not a number. A refusal, not an unhandled exception from a parser.
+        hostname = None
+    if not hostname:
+        raise DomainError("Link peab sisaldama veebiaadressi.")
+    if len(url) > max_length:
+        raise DomainError(
+            f"Link on liiga pikk — kuni {max_length} tähemärki. "
+            "Lühenda aadressi või salvesta see märkusesse."
+        )
+    return url
+
+
 def normalize_engagement_url(value: str | None) -> str:
     """Trim it, allow it to be empty, refuse anything not http(s), bound it.
 
@@ -1414,31 +1456,32 @@ def normalize_engagement_url(value: str | None) -> str:
     follow and is the one shape whose «host» is nothing but credentials
     (red-team finding F-2, and `MatterEngagement._hostname` is its other half).
     """
-    from urllib.parse import urlsplit
+    return _normalize_public_link(value, max_length=ENGAGEMENT_URL_MAX_LENGTH)
 
-    url = (value or "").strip()
-    if not url:
-        return ""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        raise DomainError("Link peab sisaldama veebiaadressi.") from None
-    if parts.scheme.lower() not in ENGAGEMENT_URL_SCHEMES:
-        raise DomainError("Link peab algama http:// või https:// aadressiga.")
-    try:
-        hostname = parts.hostname
-    except ValueError:
-        # A malformed authority — an unbracketed IPv6 literal, a port that is
-        # not a number. A refusal, not an unhandled exception from a parser.
-        hostname = None
-    if not hostname:
-        raise DomainError("Link peab sisaldama veebiaadressi.")
-    if len(url) > ENGAGEMENT_URL_MAX_LENGTH:
-        raise DomainError(
-            f"Link on liiga pikk — kuni {ENGAGEMENT_URL_MAX_LENGTH} tähemärki. "
-            "Lühenda aadressi või salvesta see märkusesse."
-        )
-    return url
+
+def normalize_external_position_url(value: str | None) -> str:
+    """The same rule, for the address a `Väline seisukoht` points at.
+
+    Its own function rather than a call to `normalize_engagement_url` at every
+    site, because the two are different product decisions that agree today: an
+    engagement link is a pointer to whatever campaign tool Koda used, and this
+    one is somebody else's published page. What they must never disagree about
+    is the safety half — `http` and `https` only, a parsed host rather than a
+    substring, refused rather than truncated — and that half is shared rather
+    than copied (docs/adr/0084 §3).
+
+    **No host allow-list**, deliberately, and this is the difference from
+    `normalize_koda_website_url`. That one guards the Chamber's own site and can
+    name it; this one records where another organisation published its
+    position, and the set of those is every institution in Estonia and the EU.
+    A list would be a list somebody has to maintain, and the day a ministry
+    moves domain the file would refuse to record what actually happened.
+
+    Empty is not a refusal here either. A position may carry a document and no
+    address at all, and which of the two it has is decided by
+    :func:`record_external_position`, where both halves are visible.
+    """
+    return _normalize_public_link(value, max_length=EXTERNAL_POSITION_URL_MAX_LENGTH)
 
 
 def _engagement_kind(value: str) -> str:
@@ -2364,6 +2407,378 @@ def cancel_planned_website_overviews_for_closure(
         _cancel_one_website_overview(overview, actor=actor, reason="matter_closed")
         for overview in planned
     ]
+
+
+# ---------------------------------------------------------------------------
+# `Väline seisukoht`
+# ---------------------------------------------------------------------------
+#
+# What another organisation said about this Matter, recorded as factual
+# reference material: who said it, where a colleague can read it, and — when it
+# is known — when they said it. Every rule is in this module rather than on a
+# form, because a form is what one browser was shown and a POST is what arrives
+# (docs/adr/0084).
+
+#: What a position with no source is told. Named because the form, the view and
+#: the tests all print or assert on it, and a sentence spelled twice drifts.
+EXTERNAL_POSITION_NEEDS_SOURCE = (
+    "Lisa link või fail — välist seisukohta ei saa salvestada ilma allikata."
+)
+EXTERNAL_POSITION_NEEDS_ORGANISATION = "Vali organisatsioon, kelle seisukoht see on."
+#: A `Seotud kaasamine` naming a round on somebody else's file. The same
+#: refusal, for the same reason, as `link_document_to_record`'s cross-Matter
+#: one: a relation written across two files is a disclosure, and quietly
+#: dropping the half that does not fit would be the application deciding which
+#: of the two the person meant.
+EXTERNAL_POSITION_ENGAGEMENT_ELSEWHERE = "Seotud kaasamine peab olema sama teema oma."
+
+#: What a stale correction is told. The sibling of `ENGAGEMENT_EDIT_CONFLICT`
+#: and deliberately the same shape of sentence.
+EXTERNAL_POSITION_EDIT_CONFLICT = "Välist seisukohta on vahepeal mujal muudetud."
+
+
+class ExternalPositionConflict(DomainError):
+    """The position changed elsewhere between rendering a form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see
+    the other side of is a conflict they cannot resolve — the same reasoning,
+    and deliberately the same shape, as :class:`EngagementEditConflict`.
+    """
+
+    def __init__(self, current: MatterExternalPosition) -> None:
+        super().__init__(EXTERNAL_POSITION_EDIT_CONFLICT)
+        self.current = current
+
+
+def external_position_revision(position: MatterExternalPosition) -> str:
+    """Which version of a position a rendered correction form was filled from.
+
+    ``updated_at``, for the reasons `engagement_revision_token` gives: `auto_now`
+    sets it on every write, PostgreSQL stores it to the microsecond so two saves
+    cannot share one, and having it costs no extra column.
+    """
+    return position.updated_at.isoformat()
+
+
+def _external_position_precision(stated_on: Any, value: Any) -> str:
+    """How exactly `Seisukoha kuupäev` is known, normalised and vouched for.
+
+    The two rules `_engagement_precision` keeps, for the same two reasons. A
+    date nobody knows has no precision, so a missing date forces `EXACT` — and
+    here the database says so as well, because the column is new and could
+    afford the `CHECK` the engagement's could not. And the vocabulary is
+    checked in the service so that a bad value is a `DomainError` naming what
+    was wrong rather than an `IntegrityError` naming a constraint from inside a
+    transaction that has already captured three files.
+    """
+    if stated_on is None:
+        return DatePrecision.EXACT.value
+    precision = value or DatePrecision.EXACT.value
+    if precision not in DatePrecision.values:
+        raise DomainError(f"Tundmatu kuupäeva täpsus {precision!r}.")
+    return precision
+
+
+def _external_position_engagement(matter: Matter, engagement: Any) -> MatterEngagement | None:
+    """The `Kaasamine` this position answers, proved to be on the same Matter.
+
+    A `CHECK` constraint sees one row and cannot follow a foreign key, so the
+    invariant that both ends of this relation belong to one file is stated
+    here — the same division of labour, and the same refusal rather than a
+    repair, as :func:`app.documents.services.link_document_to_record`.
+
+    ``None`` passes straight through, and that is the ordinary case: most
+    external positions are unsolicited, and a required relation would make the
+    commonest kind of position unrecordable (docs/adr/0084 §4).
+    """
+    if engagement is None:
+        return None
+    if engagement.matter_id != matter.pk:
+        raise DomainError(EXTERNAL_POSITION_ENGAGEMENT_ELSEWHERE)
+    return engagement
+
+
+def _external_position_source(url: str, *, attachments: int, documents: int = 0) -> None:
+    """Refuse a position that would point at nothing.
+
+    One of the two is required and either alone is enough: a public address, or
+    a document captured through the ordinary evidence pipeline. Both together
+    are ordinary too — a ministry that publishes a page *and* sends the paper.
+
+    It cannot be a database constraint: the address is a column on this row and
+    the document is a row in `documents_documentlink`, and a `CHECK` sees
+    neither of the other. So it is stated here, at the one door a person's save
+    comes through, and it is stated *before* anything is written so that a
+    refusal leaves nothing behind (docs/adr/0084 §3).
+    """
+    if url or attachments or documents:
+        return
+    raise DomainError(EXTERNAL_POSITION_NEEDS_SOURCE)
+
+
+def record_external_position(
+    *,
+    matter: Matter,
+    organisation: Any,
+    url: str = "",
+    stated_on: Any = None,
+    stated_on_precision: str = DatePrecision.EXACT.value,
+    summary: str = "",
+    engagement: Any = None,
+    attachment_count: int = 0,
+    actor: Any = None,
+) -> MatterExternalPosition:
+    """Record one other organisation's stated position on this Matter.
+
+    Writes no `Entry`. One act must not become two records — a structured
+    position and a narrative note saying the same thing — because the day they
+    disagree there is no way to tell which was meant (the rule `add_engagement`
+    states for the same reason).
+
+    Writes no `Submission`, no `NextAction`, no `MatterImportantDate` and no
+    work item, and moves no `Matter.response_deadline`. What somebody else
+    published is a fact about the world; what is owed by this office is work,
+    and only the second is modelled as work (docs/adr/0084 §5).
+
+    ``attachment_count`` is how many files the caller is about to capture
+    against this record. It is a count rather than the documents themselves
+    because the `DocumentLink` cannot exist until this row does, so the source
+    rule has to be decided from what the caller *holds* — and deciding it here,
+    before the insert, is what makes a sourceless save leave nothing behind.
+    The caller then captures the files in the same transaction, so «promised a
+    file and captured none» unwinds the position with it
+    (`app.matters.workspace.add_matter_external_position`).
+
+    ``stated_on_precision`` says how exactly ``stated_on`` is known, and
+    ``stated_on`` is then the **anchor** of that period — normalised through
+    the same `app.workflow.dates.bounds_for` as every other period on this
+    product, so a quarter stated here is the same stored value as a quarter
+    stated anywhere else. An unknown date is normalised back to `EXACT`:
+    absence has no precision (docs/adr/0079 §2).
+
+    **Takes no closed-Matter lock of its own.** The person's door is
+    `app.matters.workspace.add_matter_external_position`, which locks the Matter
+    and refuses a closed one before it calls this — the shape `add_engagement`
+    and `add_matter_engagement` already have, and the reason is the same one
+    R2-02 states: a page is not a boundary.
+    """
+    if organisation is None:
+        raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+    clean_url = normalize_external_position_url(url)
+    _external_position_source(clean_url, attachments=attachment_count)
+    related = _external_position_engagement(matter, engagement)
+    precision = _external_position_precision(stated_on, stated_on_precision)
+
+    position = MatterExternalPosition.objects.create(
+        matter=matter,
+        organisation=organisation,
+        url=clean_url,
+        stated_on=stated_on,
+        stated_on_precision=precision,
+        summary=(summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH],
+        engagement=related,
+        created_by=actor,
+    )
+    record_change_event(
+        event_type=ChangeEventType.EXTERNAL_POSITION_RECORDED,
+        matter=matter,
+        actor=actor,
+        obj=position,
+        summary=organisation.name[:200],
+        payload={
+            "organisation": str(organisation.pk),
+            # The date and its precision together, never the anchor on its own:
+            # a payload carrying `2026-10-01` and nothing else says «1 October»
+            # to whoever reads it back, which is the invention docs/adr/0079 §2
+            # exists to refuse.
+            "stated_on": position.stated_on.isoformat() if position.stated_on else None,
+            "stated_on_precision": position.stated_on_precision,
+            # Whether there is an address, not what it is. The address is on the
+            # record where a reader can open and correct it; the source events
+            # below are what say where it points and when that moved.
+            "has_url": bool(position.url),
+            "has_summary": bool(position.summary),
+            "engagement": str(related.pk) if related is not None else None,
+        },
+    )
+    if position.url:
+        # The source, on its own event, from the first moment it exists. A
+        # history whose only «where does this point» rows were corrections
+        # could not answer the question for a record nobody ever corrected.
+        record_change_event(
+            event_type=ChangeEventType.EXTERNAL_POSITION_SOURCE_CHANGED,
+            matter=matter,
+            actor=actor,
+            obj=position,
+            summary=position.link_label[:200],
+            payload={"url_from": None, "url_to": position.url},
+        )
+    return position
+
+
+def record_external_position_document(
+    *, position: MatterExternalPosition, document: Any, actor: Any = None
+) -> None:
+    """Record that one captured file is the evidence for this position.
+
+    `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED` already say that bytes
+    arrived on the Matter; neither of them says *what they are the evidence
+    for*, which is the fact the `DocumentLink` row carries and the reason this
+    event exists (docs/adr/0084 §7).
+
+    The filename is the summary because it is what a reader recognises the file
+    by and it is already in the two events above; the payload carries
+    identifiers, as everything here does.
+    """
+    record_change_event(
+        event_type=ChangeEventType.EXTERNAL_POSITION_DOCUMENT_LINKED,
+        matter=position.matter,
+        actor=actor,
+        obj=position,
+        summary=document.title[:200],
+        payload={
+            "document": str(document.pk),
+            "organisation": str(position.organisation_id),
+        },
+    )
+
+
+@transaction.atomic
+def correct_external_position(
+    *,
+    position: MatterExternalPosition,
+    organisation: Any,
+    url: Any,
+    stated_on: Any,
+    stated_on_precision: Any,
+    summary: Any,
+    engagement: Any,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterExternalPosition:
+    """`Muuda` on a `Väline seisukoht`, by a person, on a Matter that is open.
+
+    **Correcting a position is normal interactive business work, and a closed
+    Matter refuses it.** This is deliberately the rule `correct_engagement`
+    keeps and deliberately *not* the one `edit_entry` keeps: an entry
+    correction rewrites the wording of a narrative somebody authored and touches
+    no canonical fact, while this moves the organisation, the date, the source
+    and the relation of a structured record that the chronology reads. If that
+    has to change on a finished file, the file is reopened, the work is done and
+    it is closed again — which leaves somebody's name on both decisions
+    (docs/adr/0075 §12, docs/adr/0076 §2, docs/adr/0084 §8).
+
+    It is deliberately *not* `correct_website_overview_link`'s narrow exception
+    either. That one may run on a closed Matter because the transition it
+    performs cannot create anything: it moves an address on a row that is
+    already published and refuses every other state. Here every field is
+    substantive and there is no such guarded half to carve out.
+
+    **Optimistic concurrency, and a stale save writes nothing at all.** The row
+    is locked, the token is compared against the *locked* row — so the version
+    compared against is the committed one — and the comparison happens before
+    any value is decided, so a refusal cannot have half-applied the metadata and
+    left the source behind. ``None`` means «no opinion» and is what a caller
+    holding no earlier version passes (`update_engagement`, QA-09).
+
+    Every field is named on every save, unlike `update_engagement`'s `_UNSET`
+    sentinel: this function has exactly one caller, a correction form that
+    renders every box, so «not mentioned» is not a state it can be in — and an
+    emptied box has to be able to clear a column.
+    """
+    locked_matter = lock_open_matter_for_business_write(position.matter_id)
+    try:
+        current = MatterExternalPosition.objects.select_for_update(no_key=True).get(
+            pk=position.pk, matter=locked_matter
+        )
+    except MatterExternalPosition.DoesNotExist:
+        raise DomainError("Seda välist seisukohta ei ole sellel teemal.") from None
+
+    if expected_revision is not None and external_position_revision(current) != expected_revision:
+        raise ExternalPositionConflict(current)
+
+    if organisation is None:
+        raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+    clean_url = normalize_external_position_url(url)
+    # The source rule, asked again and against what this save would *result* in.
+    # A correction that empties the address of a position carrying no document
+    # would leave a record pointing at nothing, which is the one state this
+    # record may never be in — and the document half is counted from the link
+    # table rather than assumed, because the files were captured by a different
+    # operation than this one.
+    _external_position_source(
+        clean_url,
+        attachments=0,
+        documents=current.document_links.count(),
+    )
+    related = _external_position_engagement(locked_matter, engagement)
+    precision = _external_position_precision(stated_on, stated_on_precision)
+    clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+
+    proposed: dict[str, Any] = {
+        "organisation_id": organisation.pk,
+        "url": clean_url,
+        "stated_on": stated_on,
+        "stated_on_precision": precision,
+        "summary": clean_summary,
+        "engagement_id": related.pk if related is not None else None,
+    }
+    changed = [field for field, value in proposed.items() if getattr(current, field) != value]
+    if not changed:
+        # Nothing moved, so nothing is recorded. An audit row for a save that
+        # changed no value would be a history of somebody pressing a button
+        # (`update_engagement`).
+        return current
+
+    payload: dict[str, Any] = {"fields": sorted(changed)}
+    if "organisation_id" in changed:
+        payload["organisation_from"] = str(current.organisation_id)
+        payload["organisation_to"] = str(organisation.pk)
+    if "stated_on" in changed:
+        payload["stated_on_from"] = current.stated_on.isoformat() if current.stated_on else None
+        payload["stated_on_to"] = stated_on.isoformat() if stated_on else None
+    if "stated_on_precision" in changed:
+        # Recorded whenever it moves, including when the anchor did not:
+        # *oktoober 2026* corrected to *IV kvartal 2026* keeps `2026-10-01` and
+        # changes what that number means, so a payload carrying only the date
+        # would say nothing had happened.
+        payload["stated_on_precision_from"] = current.stated_on_precision
+        payload["stated_on_precision_to"] = precision
+    if "engagement_id" in changed:
+        payload["engagement_from"] = (
+            str(current.engagement_id) if current.engagement_id is not None else None
+        )
+        payload["engagement_to"] = str(related.pk) if related is not None else None
+
+    url_from = current.url
+    for field, value in proposed.items():
+        setattr(current, field, value)
+        setattr(position, field, value)
+    current.save(update_fields=[*changed, "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.EXTERNAL_POSITION_CORRECTED,
+        matter=locked_matter,
+        actor=actor,
+        obj=current,
+        summary=current.organisation.name[:200],
+        payload=payload,
+    )
+    if "url" in changed:
+        # Its own event beside the correction, carrying both addresses in full.
+        # Where a position points is the change a reader is most likely to be
+        # auditing — an address that quietly became a different page is the one
+        # way this record can lie — and a history that buried it in a list of
+        # moved field names could not answer it.
+        record_change_event(
+            event_type=ChangeEventType.EXTERNAL_POSITION_SOURCE_CHANGED,
+            matter=locked_matter,
+            actor=actor,
+            obj=current,
+            summary=current.link_label[:200],
+            payload={"url_from": url_from or None, "url_to": current.url or None},
+        )
+    return current
 
 
 @transaction.atomic

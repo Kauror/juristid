@@ -70,7 +70,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
         MatterImportantDate,
         MatterWorkVictory,
     )
-    from app.matters.models import Entry, MatterEngagement
+    from app.matters.models import Entry, MatterEngagement, MatterExternalPosition
     from app.submissions.models import Submission
     from app.workflow.models import NextAction
 
@@ -134,6 +134,16 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
         ),
         (
             (
+                ChangeEventType.EXTERNAL_POSITION_RECORDED,
+                ChangeEventType.EXTERNAL_POSITION_CORRECTED,
+                ChangeEventType.EXTERNAL_POSITION_SOURCE_CHANGED,
+                ChangeEventType.EXTERNAL_POSITION_DOCUMENT_LINKED,
+            ),
+            MatterExternalPosition,
+            direct,
+        ),
+        (
+            (
                 ChangeEventType.WORK_VICTORY_PROPOSED,
                 ChangeEventType.WORK_VICTORY_CHANGED,
                 ChangeEventType.WORK_VICTORY_CONFIRMED,
@@ -165,11 +175,11 @@ def scope_change_events(events: QuerySet[ChangeEvent], user: Any) -> QuerySet[Ch
     answer for them.
 
     **The scope is resolved once.** `visible_to` looks up whether this person
-    holds a break-glass grant every time it is called, and there are nine
-    families here — so the obvious spelling of this function put nine identical
-    lookups on every page that renders a timeline, and took the Matter page from
-    38 queries to 47. Resolving once and building each predicate from that scope
-    is the same rule at a ninth of the cost, and is what
+    holds a break-glass grant every time it is called, and there are ten
+    families here — so the obvious spelling of this function put one identical
+    lookup per family on every page that renders a timeline, and took the Matter
+    page from 38 queries to 47. Resolving once and building each predicate from
+    that scope is the same rule at a fraction of the cost, and is what
     `app.matters.activity.annotate_last_activity` already documents for the same
     reason.
     """

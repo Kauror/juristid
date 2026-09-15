@@ -759,6 +759,23 @@ ENGAGEMENT_URL_MAX_LENGTH = 1000
 #: truncating, and the column stays the defence behind it.
 WEBSITE_OVERVIEW_URL_MAX_LENGTH = 1000
 
+#: The same bound again, on the public address a `Väline seisukoht` points at.
+#:
+#: Stated separately for the reason the two above it are: they are three
+#: different product decisions that happen to agree on a number today. This one
+#: is somebody else's page — a ministry's press release, an association's
+#: position paper — and `normalize_external_position_url` enforces it, refusing
+#: rather than truncating, with the column behind it as the defence.
+EXTERNAL_POSITION_URL_MAX_LENGTH = 1000
+
+#: How long the optional `Selgitus` on a `Väline seisukoht` may be.
+#:
+#: A short explanation of what the other organisation actually said, not a
+#: summary of their document: the document is attached and the link is
+#: recorded, and a box that invited paragraphs would make this record a second,
+#: worse copy of the source it points at (docs/adr/0084 §2).
+EXTERNAL_POSITION_SUMMARY_MAX_LENGTH = 1000
+
 
 class MatterEngagementQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterEngagementQuerySet:
@@ -1333,6 +1350,275 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     @property
     def is_cancelled(self) -> bool:
         return self.status == WebsiteOverviewStatus.CANCELLED
+
+
+class MatterExternalPositionQuerySet(models.QuerySet):
+    def visible_to(self, user: object | None) -> MatterExternalPositionQuerySet:
+        """The only supported entry point for reading external positions."""
+        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+
+
+class MatterExternalPosition(VisibilityInheritingModel):
+    """`Väline seisukoht` — what somebody else said about this Matter, on file.
+
+    A ministry publishes a press release, an association sends its position
+    paper, a member organisation answers a consultation in writing. The file has
+    had nowhere to keep any of it: the address lived in a browser history and
+    the PDF lived in a mail folder, so the question «kes on selle kohta midagi
+    öelnud, ja kus see on» had no answer on the Teema (docs/adr/0084).
+
+    So it is factual reference material and nothing more: **who** said it, a
+    **source** a colleague can open, and — when it is known — **when** they said
+    it.
+
+    What it is not
+    --------------
+    Not Koda's own opinion and not a `Submission`: recording what a ministry
+    published is the opposite claim from the Chamber having sent something, and
+    folding the two together would corrupt every submission statistic. Not a
+    `Töövõit`: somebody else's position is not a claim that anything was won,
+    and a position *against* Koda is exactly as ordinary a record as one for it.
+    Not a `NextAction` and not a deadline: an external position is something
+    that already happened, so it creates no work, moves no
+    `Matter.response_deadline` and makes no Matter read as late. Not a
+    `Kaasamine`: an engagement records that Koda **asked**, and this records
+    that somebody else **said** — the round and the answer are two facts, which
+    is why :attr:`engagement` relates them rather than merging them. And not a
+    `Märge`: «Rahandusministeerium avaldas oma seisukoha» written as prose is a
+    sentence nothing can ask a question of.
+
+    The source minimum
+    ------------------
+    A position with no source is hearsay on a file, so one of the two is
+    required: a public ``url``, an attached `Document` through the ordinary
+    `DocumentLink` architecture, or both. The URL half is a column and the
+    document half is a row in another table, so the rule cannot be a `CHECK`;
+    it lives in `app.matters.services.record_external_position`, which is the
+    one door a person's save comes through (docs/adr/0084 §3).
+
+    Zero, one or many
+    -----------------
+    A Matter may carry none, one, or several — including several from the same
+    `Organisation`, which is the ordinary case when a ministry states a position
+    twice in a long proceeding. There is deliberately no uniqueness on
+    ``(matter, organisation)`` and none on ``(matter, url)``: two positions may
+    genuinely be published at one address (a page that carries both), and a
+    constraint refusing that would make the second one unrecordable.
+
+    No deletion
+    -----------
+    Create and correct, like `MatterEngagement`. A mistaken row is corrected,
+    not removed: what the file recorded and who recorded it is part of the file.
+    """
+
+    matter = models.ForeignKey(
+        Matter,
+        on_delete=models.CASCADE,
+        related_name="external_positions",
+        verbose_name="teema",
+    )
+    #: **Whose position this is**, from the one shared catalogue that already
+    #: answers `Saatja` and `Adressaat`. Required: a position with no author is
+    #: not a position, it is an anonymous claim on a professional file
+    #: (docs/adr/0063, docs/adr/0073).
+    #:
+    #: `PROTECT`, like every other pointer into the catalogue: an institution
+    #: that a Matter cites is an institution the register may not quietly lose.
+    organisation = models.ForeignKey(
+        "organisations.Organisation",
+        on_delete=models.PROTECT,
+        related_name="matter_external_positions",
+        verbose_name="organisatsioon",
+    )
+    #: Where the position was published, when it was published anywhere.
+    #:
+    #: Optional on its own and never optional together with the attachment: see
+    #: the class docstring. `http` and `https` only, refused rather than
+    #: truncated past :data:`EXTERNAL_POSITION_URL_MAX_LENGTH`, and checked by a
+    #: parsed host so that an address whose «host» is nothing but credentials
+    #: cannot be stored (`normalize_external_position_url`).
+    url = models.URLField(
+        max_length=EXTERNAL_POSITION_URL_MAX_LENGTH, blank=True, verbose_name="link"
+    )
+    #: `Seisukoha kuupäev` — the day the other organisation stated it.
+    #:
+    #: Optional, because a position found months later frequently carries no
+    #: date a reader could defend, and «kuupäev teadmata» is a fact this column
+    #: has to be able to hold. **Nothing derives it**: not `created_at`, not the
+    #: engagement it answers, not the day somebody typed it in. A date the
+    #: application invented is a date nobody can correct, because nobody knows
+    #: it is wrong (docs/adr/0078 §2).
+    stated_on = models.DateField(null=True, blank=True, db_index=True, verbose_name="kuupäev")
+    #: How exactly :attr:`stated_on` is known — `Täpne päev`, `Kuu`, `Kvartal`
+    #: or `Aasta`.
+    #:
+    #: The same reasoning that took `Kaasamise kuupäev` off docs/adr/0079 §11's
+    #: exact-only list in docs/adr/0082, and the stronger case: this is a
+    #: statement about *somebody else's* timetable, which is exactly what §11's
+    #: list excludes. A position remembered as «kevadel 2019» had two answers
+    #: before this column — an invented day or an empty field — and both are
+    #: worse than the one the person actually has.
+    #:
+    #: The stored value is the **anchor**: the first day of the period, which
+    #: exists so a month has a place in a sort and is never a day anybody named.
+    #: :attr:`display_date` is the only supported way to write it down
+    #: (docs/adr/0079 §2, §3).
+    stated_on_precision = models.CharField(
+        max_length=16,
+        choices=DatePrecision.choices,
+        default=DatePrecision.EXACT,
+        verbose_name="kuupäeva täpsus",
+    )
+    #: `Selgitus` — a short note on what they actually said.
+    #:
+    #: Optional, and deliberately bounded. The source is the source; this is the
+    #: line that lets a colleague scanning the chronology decide whether to open
+    #: it. Nothing extracts it, nothing indexes it and nothing summarises the
+    #: linked document into it (docs/adr/0084 §6).
+    summary = models.TextField(blank=True, verbose_name="selgitus")
+    #: `Seotud kaasamine` — the round this position answered, where it answered
+    #: one.
+    #:
+    #: Optional and must stay optional: the commonest external position is
+    #: **unsolicited**, published because the ministry chose to publish it, and
+    #: a required relation would make that unrecordable. Where it is set it says
+    #: something no other column can — that this is a reply to a consultation
+    #: Koda ran — and the engagement must belong to the same Matter, which is
+    #: refused in the service because a `CHECK` cannot follow a foreign key
+    #: (the rule `link_document_to_record` states for the same reason).
+    #:
+    #: `SET_NULL`: the position is a fact in its own right and survives a round
+    #: it happened to answer. Nothing in this product deletes an engagement, so
+    #: this is the honest answer to a case that does not arise rather than a
+    #: cascade that would silently take factual records with it.
+    engagement = models.ForeignKey(
+        MatterEngagement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="external_positions",
+        verbose_name="seotud kaasamine",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="recorded_external_positions",
+        verbose_name="lisas",
+    )
+
+    objects = MatterExternalPositionQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "väline seisukoht"
+        verbose_name_plural = "välised seisukohad"
+        # Newest first, and a row with no date sorts *last* rather than first:
+        # `NULLS LAST` is what stops an undated position reading as though it
+        # was stated today. The ordering `MatterEngagement` keeps, for the same
+        # reason (docs/adr/0084 §5).
+        ordering = [models.F("stated_on").desc(nulls_last=True), "-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(stated_on_precision__in=DatePrecision.values),
+                name="matters_external_position_precision_vocabulary",
+            ),
+            # An unknown date has no precision. `NULL` + `MONTH` would be a
+            # period with nothing to qualify, and every surface reading it would
+            # have to guess whether to print a period or «kuupäev teadmata» —
+            # the rule `_engagement_precision` keeps in Python, stated here in
+            # the database because this column is new and can afford it.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(stated_on__isnull=False)
+                    | models.Q(stated_on_precision=DatePrecision.EXACT)
+                ),
+                name="matters_external_position_undated_is_exact",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
+                ),
+                name="matters_external_position_visibility_vocabulary",
+            ),
+        ]
+        indexes = [
+            # The chronology's own read: one Matter's positions, newest first.
+            models.Index(fields=["matter", "-stated_on"], name="matters_extpos_matter_date"),
+            # And «what has this body said on this file», which is the question
+            # a reader asks when a Matter carries several.
+            models.Index(fields=["matter", "organisation"], name="matters_extpos_matter_org"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Väline seisukoht: {self.organisation_id}"[:120]
+
+    def parent_visibility(self) -> str:
+        return self.matter.visibility
+
+    @property
+    def revision_token(self) -> str:
+        """Which version of this record a rendered correction form was filled from.
+
+        ``updated_at``, for the reasons `entry_revision_token` and
+        `MatterWebsiteOverview.revision_token` both give: `auto_now` sets it on
+        every write, PostgreSQL stores it to the microsecond so two saves cannot
+        share one, and having it costs no migration.
+        """
+        return self.updated_at.isoformat()
+
+    @property
+    def display_date(self) -> str:
+        """`Seisukoha kuupäev`, written the way it was actually known.
+
+        The only supported way to put :attr:`stated_on` on a screen. A row
+        stored as `2026-10-01` + `MONTH` reads *oktoober 2026* here and must
+        read that on every surface that shows it; rendering the stored value
+        instead would print `01.10.2026`, which is an anchor and not a day
+        anybody named (docs/adr/0079 §2, §3).
+
+        Empty string for a row with no date. What the chronology prints in that
+        case is «Kuupäev teadmata», which is a sentence about the file and
+        belongs to the surface saying it, not to the model
+        (`app.matters.timeline.EXTERNAL_POSITION_DATE_UNKNOWN`).
+        """
+        return format_at_precision(self.stated_on, self.stated_on_precision)
+
+    @property
+    def has_approximate_date(self) -> bool:
+        """Whether this position is dated to a period rather than to a day.
+
+        `False` for a row with no date at all: an unknown date is not an
+        approximate one, and the two say different things to a reader.
+        """
+        return self.stated_on is not None and is_approximate(self.stated_on_precision)
+
+    @property
+    def link_label(self) -> str:
+        """What the chronology calls the link, and never the address itself.
+
+        The parsed host — `rahandusministeerium.ee` — because that is what tells
+        a reader where a link goes, and because a raw URL as a row's own text is
+        a line a reader has to parse instead of read and the one shape in which
+        a look-alike address would be believed. An address this method cannot
+        find a host in falls back to `Ava seisukoht`, which says what the
+        control is for without claiming anything about where it points
+        (docs/adr/0081 §4, docs/adr/0084 §3).
+
+        `MatterEngagement._hostname` is the implementation, shared rather than
+        copied: it is what drops the userinfo and the port, so a link carrying
+        basic-auth credentials cannot put a password into a rendered label
+        (red-team finding F-2).
+        """
+        if not self.url:
+            return ""
+        return MatterEngagement._hostname(self.url) or EXTERNAL_POSITION_LINK_FALLBACK
+
+
+#: What a `Väline seisukoht`'s link control says when the address has no host to
+#: name. Named here because the model, the chronology and a test all have to
+#: agree about it, and a sentence spelled twice is a sentence that drifts.
+EXTERNAL_POSITION_LINK_FALLBACK = "Ava seisukoht"
 
 
 class MatterPersonalNote(BaseModel):

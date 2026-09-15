@@ -91,6 +91,7 @@ from app.matters.forms import (
     CompactClosureForm,
     CompactEffectiveDateForm,
     CompactEngagementForm,
+    CompactExternalPositionForm,
     CompactImportantDateForm,
     CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
@@ -98,6 +99,7 @@ from app.matters.forms import (
     ComposerForm,
     EngagementForm,
     EntryEditForm,
+    ExternalPositionEditForm,
     IncomingIntakeForm,
     MatterCreateForm,
     MatterEditForm,
@@ -110,6 +112,7 @@ from app.matters.forms import (
     WorkingDocumentForm,
     edit_initial,
     engagement_period_initial,
+    external_position_period_initial,
     period_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
@@ -126,6 +129,7 @@ from app.matters.models import (
     Matter,
     MatterAssignmentNotice,
     MatterEngagement,
+    MatterExternalPosition,
     MatterWebsiteOverview,
 )
 from app.matters.my_work import (
@@ -139,6 +143,7 @@ from app.matters.process_timeline import process_steps
 from app.matters.services import (
     EngagementEditConflict,
     EntryEditConflict,
+    ExternalPositionConflict,
     PersonalNoteConflict,
     WebsiteOverviewConflict,
     acknowledge_assignment_notice,
@@ -148,6 +153,7 @@ from app.matters.services import (
     close_matter,
     compose_update,
     correct_engagement,
+    correct_external_position,
     create_matter,
     edit_entry,
     engagement_revision_token,
@@ -176,6 +182,7 @@ from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
     TIMELINE_FILTERS,
     engagement_milestone,
+    external_position_milestone,
     matter_timeline,
 )
 from app.organisations.models import Organisation
@@ -2350,7 +2357,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `LISA TEEMALE` takes the rest; a refused save replaces exactly one of
         # them with its bound self and opens that panel alone
         # (docs/adr/0075 §2, `workspace_forms`).
-        **workspace_forms(current_action),
+        **workspace_forms(current_action, matter=matter, viewer=request.user),
         # The superseded composer, still built for the endpoint that still
         # accepts it. Nothing on this page renders it any more
         # (docs/adr/0075 §11).
@@ -4736,11 +4743,14 @@ WORKSPACE_PANELS: dict[str, str] = {
     "effective_date_form": "lisa-joustumine",
     "work_victory_form": "lisa-toovoit",
     "website_overview_form": "lisa-koduleht",
+    "external_position_form": "lisa-valine-seisukoht",
     "closure_form": "lisa-lopeta",
 }
 
 
-def workspace_forms(current_action: Any = None) -> dict[str, Any]:
+def workspace_forms(
+    current_action: Any = None, *, matter: Any = None, viewer: Any = None
+) -> dict[str, Any]:
     """One unbound form per write intention, for an ordinary render.
 
     Built here rather than in the template because a template that constructed
@@ -4788,6 +4798,14 @@ def workspace_forms(current_action: Any = None) -> dict[str, Any]:
         # operation can produce — comes back through the same machinery
         # (docs/adr/0081 §2).
         "website_overview_form": CompactWebsiteOverviewForm(),
+        # `+ Väline seisukoht`. The one form here that has to be told which
+        # Matter it is on and who is looking: `Organisatsioon` is ranked by the
+        # institutions *this reader's* visible Matters involve, and
+        # `Seotud kaasamine` offers this Matter's consultations as this reader
+        # may see them. Both are queryset-level, so a crafted POST naming a
+        # round on another file is refused by the field rather than by the
+        # template not having drawn it (docs/adr/0084 §4).
+        "external_position_form": CompactExternalPositionForm(matter=matter, viewer=viewer),
         "closure_form": CompactClosureForm(),
         "open_panel": "",
         "workspace_error": "",
@@ -5074,6 +5092,244 @@ def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
             request, matter, key="work_victory_form", form=form, error=str(error)
         )
     return _render_overview(request, matter)
+
+
+# ---------------------------------------------------------------------------
+# `Väline seisukoht`
+# ---------------------------------------------------------------------------
+
+
+def _external_position_for_correction(
+    request: HttpRequest, matter: Matter, position_id: Any
+) -> MatterExternalPosition:
+    """The position this request may correct, or a 404.
+
+    Scoped through the child's own `visible_to` and not fetched by id off the
+    Matter: a `Väline seisukoht` may carry a stricter visibility override than
+    its parent, and reading it any other way would bypass that. A restricted
+    position inside a Matter somebody may see is therefore indistinguishable
+    here from one that does not exist, which is the contract the rest of the
+    product keeps (AUTH-003, docs/adr/0038).
+    """
+    return get_object_or_404(
+        MatterExternalPosition.objects.visible_to(request.user)
+        .filter(matter=matter)
+        .select_related("organisation", "engagement", "matter"),
+        pk=position_id,
+    )
+
+
+def _external_position_edit_form(
+    request: HttpRequest, position: MatterExternalPosition, data: Any = None
+) -> ExternalPositionEditForm:
+    """The correction form for one position, opened on what the record says.
+
+    `auto_id` is derived from the record's primary key because a chronology may
+    show several of these and two controls sharing an id is enough to make a
+    `<label for>` reach the wrong box — the same reason
+    `_website_overview_link_form` derives its own.
+
+    An approximate date reopens on its own chip with the day box left empty: the
+    stored anchor is a place in a sort, not a day to hand back to somebody to
+    re-save (docs/adr/0079 §2, `external_position_period_initial`).
+    """
+    auto_id = f"id_valine_seisukoht_{position.pk}_%s"
+    if data is not None:
+        return ExternalPositionEditForm(data, auto_id=auto_id, record=position, viewer=request.user)
+    return ExternalPositionEditForm(
+        initial={
+            "organisation": position.organisation_id,
+            "url": position.url,
+            "summary": position.summary,
+            "engagement": position.engagement_id,
+            **external_position_period_initial(position),
+            "revision": position.revision_token,
+        },
+        auto_id=auto_id,
+        record=position,
+        viewer=request.user,
+    )
+
+
+def _external_position_row(
+    request: HttpRequest,
+    matter: Matter,
+    position: MatterExternalPosition,
+    *,
+    form: ExternalPositionEditForm | None = None,
+    error: str = "",
+    conflict: MatterExternalPosition | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    """The corrected position back in place, or the form that could not save.
+
+    One renderer for both, because they swap the same element: `Muuda` replaces
+    the milestone's text region with the form, and every answer replaces it
+    again — with the corrected record, or with the form still open and what the
+    person typed still in it. The `<article>` around it, its 12 px dot, its
+    spine and its attached files are never in the response, so a correction
+    cannot move the row or turn into a second line in the chronology
+    (`_engagement_row`, which this deliberately mirrors).
+
+    The milestone is rebuilt through `external_position_milestone`, the same
+    function the chronology itself renders from, so a corrected row cannot come
+    back worded differently from the way it will read on the next page load.
+    """
+    return render(
+        request,
+        "matters/partials/external_position_row.html",
+        {
+            "matter": matter,
+            "position": position,
+            "milestone": external_position_milestone(position),
+            "external_position_edit_form": form,
+            "external_position_edit_error": error,
+            "external_position_conflict_milestone": (
+                external_position_milestone(conflict) if conflict is not None else None
+            ),
+            "external_position_read_query": ENGAGEMENT_READ_QUERY,
+            # One picker per record, because a chronology may hold several of
+            # these and the shared organisation control derives every id it
+            # writes — the search box, the results list, the status region —
+            # from this one string. Two of them sharing it would put duplicate
+            # ids in the document and make a `<label for>` reach the wrong
+            # control (docs/adr/0073, `organisation_picker.html`).
+            "external_position_picker_id": f"valine-seisukoht-{position.pk}",
+        },
+        status=status,
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Väline seisukoht` — another organisation's position, filed with its source.
+
+    The institution is answered either by the picker's radio group or by the
+    name somebody typed into it, and which of the two wins is
+    `resolve_addressee`'s rule, shared rather than restated: a typed name is a
+    deliberate act and beats a chip that was merely left selected. Resolution
+    happens inside the save's own transaction, so a refusal further down leaves
+    no institution behind (docs/adr/0073, docs/adr/0084 §4).
+
+    A refusal comes back through `_workspace_refusal` with the form still bound,
+    so the link somebody pasted and the explanation they wrote are still in
+    their boxes — losing them would cost the person the record they opened the
+    panel to make. The closed-Matter refusal is the service's, answered under
+    the Matter's row lock, because a POST may arrive from a tab that was open
+    before somebody else shut the file (R2-02).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactExternalPositionForm(
+        request.POST, request.FILES, matter=matter, viewer=request.user
+    )
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="external_position_form", form=form)
+    try:
+        workspace.add_matter_external_position(
+            matter=matter,
+            author=request.user,
+            organisation=resolve_addressee(
+                chosen=form.cleaned_data.get("organisation"),
+                typed_name=form.cleaned_data.get("organisation_name") or "",
+            ),
+            url=form.cleaned_data.get("url") or "",
+            # The resolved anchor and its precision, not the day box: `Kuu`,
+            # `Kvartal` and `Aasta` leave that box empty on purpose.
+            stated_on=form.cleaned_data.get("stated_on_value"),
+            stated_on_precision=form.cleaned_data["stated_on_precision"],
+            summary=form.cleaned_data.get("summary") or "",
+            engagement=form.cleaned_data.get("engagement"),
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="external_position_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def update_external_position_view(request: HttpRequest, pk: Any, position_id: Any) -> HttpResponse:
+    """`Muuda` on a `Väline seisukoht`. There is no delete; a wrong row is corrected.
+
+    GET opens the form in the chronology row; POST saves it. One route, because
+    they are one interaction and the second is only reachable from the first —
+    the shape `update_engagement_view` and `edit_entry_view` already use.
+
+    **Refused on a closed Matter**, like a `Kaasamine` correction and unlike an
+    entry's. Correcting a position moves the organisation, the date, the source
+    and the relation of a structured record the chronology reads, so it is
+    normal interactive business work and a finished file refuses it; reopening
+    is the way out and leaves somebody's name on both decisions. The rule is
+    enforced under the Matter's row lock inside `correct_external_position`,
+    never by whether this page rendered a button (docs/adr/0084 §8).
+
+    **There is no route that deletes one**, on an open Matter or a closed one.
+    A mistaken position is corrected, because what the file recorded and who
+    recorded it is part of the file — the rule `MatterEngagement` has kept since
+    it was written.
+    """
+    matter = get_visible_matter(request, pk)
+    position = _external_position_for_correction(request, matter, position_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving edit mode is a re-read rather than a client-side
+        # hide: the boxes may be holding values that were never saved, and the
+        # only honest way out of them is to fetch what the record actually says.
+        if request.GET.get(ENGAGEMENT_READ_PARAM) == ENGAGEMENT_READ_VALUE:
+            return _external_position_row(request, matter, position)
+        return _external_position_row(
+            request, matter, position, form=_external_position_edit_form(request, position)
+        )
+
+    form = _external_position_edit_form(request, position, request.POST)
+    if not form.is_valid():
+        return _external_position_row(request, matter, position, form=form, status=400)
+
+    try:
+        corrected = correct_external_position(
+            position=position,
+            organisation=resolve_addressee(
+                chosen=form.cleaned_data.get("organisation"),
+                typed_name=form.cleaned_data.get("organisation_name") or "",
+            ),
+            url=form.cleaned_data.get("url") or "",
+            stated_on=form.cleaned_data.get("stated_on_value"),
+            stated_on_precision=form.cleaned_data["stated_on_precision"],
+            summary=form.cleaned_data.get("summary") or "",
+            engagement=form.cleaned_data.get("engagement"),
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except ExternalPositionConflict as conflict:
+        # 409, and nothing was written — not the metadata and not the source.
+        # The form stays open holding this person's values and the version that
+        # beat them arrives beside it to read; neither is chosen for them. The
+        # hidden token is **not** advanced: adopting the newer one here would be
+        # this view deciding that the next submit may overwrite what the other
+        # writer saved (QA-09).
+        return _external_position_row(
+            request,
+            matter,
+            position,
+            form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except DomainError as error:
+        # A closed Matter lands here, and so does any refusal the service makes.
+        # The sentence goes into the form that is still open rather than into a
+        # panel this row does not have.
+        return _external_position_row(
+            request, matter, position, form=form, error=str(error), status=400
+        )
+
+    return _external_position_row(request, matter, corrected)
 
 
 @login_required

@@ -35,7 +35,12 @@ from app.matters.enums import (
     EngagementKind,
     MatterDataClass,
 )
-from app.matters.models import WEBSITE_OVERVIEW_URL_MAX_LENGTH, Matter
+from app.matters.models import (
+    EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
+    EXTERNAL_POSITION_URL_MAX_LENGTH,
+    WEBSITE_OVERVIEW_URL_MAX_LENGTH,
+    Matter,
+)
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
 from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
@@ -2571,6 +2576,180 @@ def engagement_period_initial(record: Any) -> dict[str, Any]:
     }
 
 
+#: The prefix both `Väline seisukoht` forms carry their precision group under.
+#:
+#: One name, because the panel that records a position and the form that
+#: corrects one must read the same POST keys — a person who states *oktoober
+#: 2026* in `+ Väline seisukoht` and then opens `Muuda` has to find the same
+#: control holding the same answer. `ENGAGEMENT_PREFIX` exists for the same
+#: reason, and the two are deliberately different strings: both forms can be on
+#: one page at once, and one prefix would be one POST key for two dates.
+EXTERNAL_POSITION_PREFIX = "position"
+
+
+def attach_external_position_precision(form: forms.Form, *, record: Any = None) -> None:
+    """Give a `Väline seisukoht` form the shared `Täpsus` control, and its day box.
+
+    `Seisukoha kuupäev` is a statement about *somebody else's* timetable, which
+    is precisely the category docs/adr/0079 §11's exact-only list excludes — a
+    ministry's paper remembered as «kevadel 2019» had an invented day or an
+    empty field before this, and both are worse than the one the person has.
+
+    **The existing composer, not a second one.** `_precision_fields` builds the
+    group `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit`, `Järgmine tegevus`
+    and `+ Kaasamine` all carry, normalised through the same
+    `app.workflow.dates.bounds_for` and rendered by the same
+    `matters/partials/period_composer.html`. A quarter stated on a position is
+    the same stored anchor as a quarter stated anywhere else, or the same period
+    would sort into two places (Stage-2G brief 49, docs/adr/0079 §1).
+
+    **The day box keeps the name `stated_on`**, exactly as the engagement's
+    keeps `occurred_on` and `NextActionForm` keeps `target_date`: the view, the
+    service and the tests read that name, and renaming a control for tidiness is
+    how several things stop being wired up while still looking right.
+
+    ``record`` is the position being corrected, when there is one. It earns the
+    «Muutmata» chip of docs/adr/0079 §9 for a row carrying a precision the
+    control does not otherwise offer — and, because the choices are built per
+    instance, it is also what refuses a crafted `HALF_YEAR` on a record that
+    never had one.
+    """
+    kept = kept_precision_choice(
+        getattr(record, "stated_on", None),
+        getattr(record, "stated_on_precision", "") or "",
+    )
+    form.precision_choices = precision_choices(kept)  # type: ignore[attr-defined]
+    group = _precision_fields(EXTERNAL_POSITION_PREFIX, date_label="Seisukoha kuupäev", kept=kept)
+    del group[f"{EXTERNAL_POSITION_PREFIX}_date"]
+    form.fields.update(group)
+
+
+def external_position_period(form: forms.Form) -> tuple[date | None, str]:
+    """What a `Väline seisukoht` form's date control says: an anchor and a precision.
+
+    The three answers `engagement_period` documents, for the same reasons: a
+    period the person stated, **nothing at all** — which is «kuupäev teadmata»
+    and is a fact the column has to be able to hold — or a period somebody began
+    stating and did not finish, which `_period_anchor` has already refused on
+    the control it belongs to.
+
+    The precision returned beside a `None` anchor is always `EXACT`, which is
+    what the column stores for a row with no date. Here the database says so as
+    well (`matters_external_position_undated_is_exact`).
+    """
+    anchor, _end, precision = _period_anchor(form, EXTERNAL_POSITION_PREFIX, date_field="stated_on")
+    if anchor is None:
+        return None, DatePrecision.EXACT.value
+    return anchor, precision
+
+
+def external_position_period_initial(record: Any) -> dict[str, Any]:
+    """One stored `Seisukoha kuupäev`, as the boxes its composer reopens on.
+
+    `period_initial` under this form's prefix. For an approximate record it
+    fills the year and the month or quarter and deliberately leaves the day box
+    empty, so the anchor never reaches a screen as `01.10.2026`
+    (docs/adr/0079 §2).
+
+    Unlike `engagement_period_initial` there is no explicit ``stated_on=None``
+    underneath it, because this form's day box declares no ``initial``: a
+    position is routinely recorded long after it was stated, so today is not the
+    likely answer and a pre-filled one would be a date nobody chose sitting one
+    `Salvesta` away from being saved (docs/adr/0084 §2).
+    """
+    return period_initial(
+        EXTERNAL_POSITION_PREFIX,
+        getattr(record, "stated_on", None),
+        getattr(record, "stated_on_precision", "") or DatePrecision.EXACT.value,
+        date_field="stated_on",
+    )
+
+
+def attach_organisation_picker(form: forms.Form, *, viewer: Any) -> None:
+    """Point one single-answer organisation control at the shared catalogue.
+
+    The compact `Väline seisukoht` panel asks the same question `Saatja` and
+    `Adressaat` ask — *which institution?* — over the same one catalogue, so it
+    is answered with the same control rather than a ninth way of naming a body
+    (docs/adr/0063, docs/adr/0073). What this function does is exactly what
+    `MatterCreateForm.__init__` does for `addressee_organisation`, and no more:
+
+    * validation runs against the **whole** catalogue, because every institution
+      is a valid answer and narrowing it to what is on screen would refuse a
+      correct answer given through the search;
+    * the *rendered* order is presentation — the bodies this reader's own
+      Matters actually involve first, then the rest alphabetically — and it is
+      scoped by `visible_to` inside `organisations_by_usage`, so no restricted
+      Matter can move a chip;
+    * `organisation_split` is where the shortlist ends and the searchable tail
+      begins, computed here because a template cannot slice on a primary key;
+    * the recorded spellings go onto the widget, so «MKM» finds
+      `Majandus- ja Kommunikatsiooniministeerium` through a recorded alias
+      rather than through a similarity score.
+
+    **No blank option**, unlike `Adressaat`. «Määramata» is a real answer to
+    *who was this addressed to* and is not a real answer to *whose position is
+    this*: a position with no author is an anonymous claim on a professional
+    file, so the refusal is `EXTERNAL_POSITION_NEEDS_ORGANISATION` rather than a
+    chip.
+
+    A form with no viewer gets the plain catalogue and no split, which is the
+    same fallback `MatterCreateForm` takes: no usage to rank by means no
+    shortlist, and everything is a chip.
+    """
+    from app.organisations.models import Organisation
+
+    # **The catalogue is read once**, and both halves are sliced out of that one
+    # list in Python. `organisations_by_usage` is the shared shortlist helper and
+    # is deliberately *not* called here: it re-reads the rows it ranked and tops
+    # the row up with a second catalogue query, which is the right trade on a
+    # page built around one Organisation question and the wrong one on the Teema
+    # page, where this control is a closed panel that most visits never open.
+    # Three reads became one, and the ranking below is the same ranking
+    # (`tests/test_teema_redesign.py` holds the page's query budget).
+    set_choices(form, "organisation", Organisation.objects.order_by("name"))
+    field = cast(Any, form.fields["organisation"])
+    catalogue = list(Organisation.objects.order_by("name"))
+
+    if viewer is None:
+        form.organisation_offered = catalogue  # type: ignore[attr-defined]
+        form.organisation_split = None  # type: ignore[attr-defined]
+    else:
+        # The same two usage passes `organisations_by_usage` makes, in the same
+        # order and scoped by `visible_to` inside `_usage_order`, so a
+        # restricted Matter still cannot move a chip. The second runs only when
+        # the sender history did not fill the row.
+        ranked: list[Any] = []
+        seen: set[Any] = set()
+        for field_name in ("source_organisations", "addressee_organisation"):
+            if len(ranked) >= SENDER_SHORTLIST_SIZE:
+                break
+            for pk in _usage_order(viewer, field_name, SENDER_SHORTLIST_SIZE):
+                if pk not in seen:
+                    seen.add(pk)
+                    ranked.append(pk)
+        by_pk = {organisation.pk: organisation for organisation in catalogue}
+        shortlist = [by_pk[pk] for pk in ranked[:SENDER_SHORTLIST_SIZE] if pk in by_pk]
+        if len(shortlist) < SENDER_SHORTLIST_SIZE:
+            # Topped up alphabetically, so two readers with no history see the
+            # same eight and neither sees none.
+            chosen = {organisation.pk for organisation in shortlist}
+            shortlist.extend(
+                organisation for organisation in catalogue if organisation.pk not in chosen
+            )
+            shortlist = shortlist[:SENDER_SHORTLIST_SIZE]
+        chosen = {organisation.pk for organisation in shortlist}
+        tail = [organisation for organisation in catalogue if organisation.pk not in chosen]
+        form.organisation_offered = [*shortlist, *tail]  # type: ignore[attr-defined]
+        form.organisation_split = len(shortlist)  # type: ignore[attr-defined]
+
+    field.choices = [
+        (organisation.pk, organisation.name)
+        for organisation in cast(Any, form).organisation_offered
+    ]
+    cast(Any, field.widget).alias_terms = organisation_alias_terms()
+
+
 class ComposerForm(forms.Form):
     """`TEGEVUSE KIRJELDUS` — one box, and everything else on demand.
 
@@ -4533,6 +4712,318 @@ class WebsiteOverviewLinkForm(forms.Form):
         if published_on is None:
             raise forms.ValidationError(WEBSITE_OVERVIEW_NEEDS_DATE)
         return published_on
+
+
+def _external_position_organisation_field() -> forms.ModelChoiceField:
+    """`Organisatsioon` — one institution, from the one catalogue, required.
+
+    The `Adressaat` control's shape with one difference, and the difference is
+    the whole product rule: there is no named blank option, because «Määramata»
+    is not an answer to *whose position is this* (`attach_organisation_picker`).
+
+    ``required=False`` at field level and refused in `clean` instead, so the
+    sentence a person reads is `EXTERNAL_POSITION_NEEDS_ORGANISATION` rather
+    than Django's generic one — and so that a panel answered only through the
+    typed box, which is the «this body is not in your catalogue» case, is not
+    refused before the two halves have been read together.
+    """
+    from app.organisations.models import Organisation
+
+    return forms.ModelChoiceField(
+        label="Organisatsioon",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=OrganisationRadioSelect(attrs={"class": "chip__input"}),
+    )
+
+
+def _external_position_link_field() -> forms.CharField:
+    """`Link` — where the position was published, if it was published anywhere.
+
+    A `CharField` rather than a `URLField`, exactly as `provider_link_field` is
+    one: the rule belongs to
+    `app.matters.services.normalize_external_position_url`, which is what the
+    service enforces, and letting Django's own validator answer first would give
+    one refused address two different sentences depending on which layer caught
+    it.
+    """
+    return forms.CharField(
+        label="Link",
+        required=False,
+        max_length=EXTERNAL_POSITION_URL_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "url",
+                "autocomplete": "off",
+                "placeholder": "https://…",
+            }
+        ),
+    )
+
+
+def _external_position_summary_field() -> forms.CharField:
+    """`Selgitus` — a short line on what they actually said. Optional."""
+    return forms.CharField(
+        label="Selgitus",
+        required=False,
+        max_length=EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input field__input--compact",
+                "rows": 2,
+                "placeholder": "nt toetab eelnõu, kuid soovib pikemat üleminekuaega",
+            }
+        ),
+    )
+
+
+def _external_position_engagement_field() -> forms.ModelChoiceField:
+    """`Seotud kaasamine` — the round this position answered, where it answered one.
+
+    Optional and empty by default, and the empty label says so in words rather
+    than with a dash: the commonest external position is unsolicited, and a
+    control whose blank option read «—» would look like a question somebody
+    forgot to answer (docs/adr/0084 §4).
+
+    The queryset is narrowed per instance, in `__init__`, to this Matter's
+    engagements as *this reader* may see them. It is the field's own queryset
+    and not only its rendered choices, because that is what validates a posted
+    id: a crafted POST naming a consultation on another file, or one restricted
+    below the Matter, is refused by the field before the service's own
+    cross-Matter check ever runs (AUTH-003).
+    """
+    from app.matters.models import MatterEngagement
+
+    return forms.ModelChoiceField(
+        label="Seotud kaasamine",
+        queryset=MatterEngagement.objects.none(),
+        required=False,
+        empty_label="Ei ole seotud kaasamisega",
+        widget=SELECT_WIDGET,
+    )
+
+
+class ExternalPositionFieldsMixin:
+    """What both `Väline seisukoht` forms share: the catalogue, the date, the source.
+
+    Two forms, because recording a position and correcting one are different
+    transactions with different services — and one set of questions, because a
+    record must be correctable into exactly the shapes it could have been
+    created in. A second spelling of the source rule is a second place for it to
+    drift, and the day the two disagreed would be the day a correction accepted
+    a position the panel would have refused (docs/adr/0084 §2).
+    """
+
+    fields: dict[str, forms.Field]
+    cleaned_data: dict[str, Any]
+    add_error: Any
+    errors: Any
+    is_bound: bool
+
+    #: Where the organisation radio group stops being chips and starts being
+    #: searchable tail. `None` on a form with no viewer — no usage to rank by
+    #: means no shortlist, and everything is a chip.
+    organisation_split: int | None = None
+    organisation_offered: list[Any] = []
+
+    @property
+    def organisation_chip_choices(self) -> list[Any]:
+        offered = list(cast(Any, self)["organisation"])
+        return offered if self.organisation_split is None else offered[: self.organisation_split]
+
+    @property
+    def organisation_tail_choices(self) -> list[Any]:
+        if self.organisation_split is None:
+            return []
+        return list(cast(Any, self)["organisation"])[self.organisation_split :]
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        return _precision_chips(cast(Any, self), f"{EXTERNAL_POSITION_PREFIX}_precision")
+
+    def clean_organisation_name(self) -> str:
+        return clean_typed_organisation_name(self.cleaned_data.get("organisation_name"))
+
+    def _clean_external_position(self, *, has_file: bool) -> dict[str, Any]:
+        """The three rules the service will enforce, reported beside the boxes.
+
+        Stated here as well as in `app.matters.services` and not *instead* of
+        it. A form is what one browser was shown and a POST is what arrives, so
+        the service is the boundary; this is where a person sees the refusal
+        under the control that caused it, with everything they typed still in
+        the other ones (docs/adr/0084 §3).
+        """
+        from app.matters.services import (
+            EXTERNAL_POSITION_NEEDS_ORGANISATION,
+            EXTERNAL_POSITION_NEEDS_SOURCE,
+            normalize_external_position_url,
+        )
+
+        cleaned = self.cleaned_data
+
+        # 1. Whose position it is. Either half answers it; neither does not.
+        if not cleaned.get("organisation") and not (cleaned.get("organisation_name") or "").strip():
+            self.add_error("organisation_name", EXTERNAL_POSITION_NEEDS_ORGANISATION)
+
+        # 2. The address, through the service's own door, so a hostile scheme is
+        #    refused here in the words it is refused in everywhere.
+        raw_url = (cleaned.get("url") or "").strip()
+        url = ""
+        if raw_url:
+            try:
+                url = normalize_external_position_url(raw_url)
+            except DomainError as error:
+                self.add_error("url", str(error))
+            else:
+                cleaned["url"] = url
+
+        # 3. A source. Reported on `url` because that is the box on the screen
+        #    the sentence is about; the file control beside it is named in the
+        #    sentence itself, which is how a refusal points at two controls
+        #    without being printed twice.
+        if not url and not has_file and not self.errors.get("url"):
+            self.add_error("url", EXTERNAL_POSITION_NEEDS_SOURCE)
+
+        # The date control's answer, resolved to an anchor and a precision.
+        anchor, precision = external_position_period(cast(Any, self))
+        cleaned["stated_on_value"] = anchor
+        cleaned["stated_on_precision"] = precision
+        return cleaned
+
+
+class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
+    """`+ Väline seisukoht` — another organisation's position, and where to read it.
+
+    Six controls, of which two are required together and four are not: the
+    institution, a source — a link, a file, or both — and then the date, the
+    explanation and the consultation it answered, each of which a real record
+    frequently does not have.
+
+    **The date has no `initial`**, unlike `+ Kaasamine`'s. A consultation is
+    usually recorded the day it happens, so today is the useful default there; a
+    position is usually found and filed some time after it was stated, so today
+    would be a date nobody chose sitting one `Salvesta` away from being saved as
+    a fact. Blank is «kuupäev teadmata», which is what the column holds
+    (docs/adr/0078 §2, docs/adr/0084 §2).
+    """
+
+    use_required_attribute = False
+
+    organisation = _external_position_organisation_field()
+    organisation_name = _typed_organisation_field("Uus organisatsioon")
+    url = _external_position_link_field()
+    summary = _external_position_summary_field()
+    engagement = _external_position_engagement_field()
+    stated_on = EstonianDateField(
+        label="Seisukoha kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+    )
+    attachments = workspace_attachments("id_valine_seisukoht_failid")
+
+    def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
+        # **Its own `auto_id`, and the field names are untouched.** Nine forms
+        # render on one Teema page and `+ Kodulehe ülevaade` also calls a field
+        # `url`, so Django's default `id_%s` put `id_url` in the document twice
+        # — invalid HTML, a `<label for>` reaching the wrong box and
+        # `getElementById` answering whichever came first. Prefixing the *ids*
+        # fixes exactly that while leaving the POST keys alone, which is the
+        # reasoning docs/adr/0065 gives for preferring `auto_id` over a form
+        # `prefix` (`tests/test_teema_workspace.py`).
+        kwargs.setdefault("auto_id", "id_valine_seisukoht_%s")
+        super().__init__(*args, **kwargs)
+        # No `record`: this panel only ever creates. The «Muutmata» chip is a
+        # correction affordance and there is nothing here to keep unchanged.
+        attach_external_position_precision(self)
+        attach_organisation_picker(self, viewer=viewer)
+        set_external_position_engagements(self, matter=matter, viewer=viewer)
+
+    def clean(self) -> dict[str, Any]:
+        super().clean()
+        return self._clean_external_position(
+            has_file=bool(self.cleaned_data.get("attachments")),
+        )
+
+
+class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
+    """`Muuda` on a recorded `Väline seisukoht`. The same questions, no files.
+
+    **No upload control, deliberately.** Correcting the metadata of a position
+    and adding a second piece of evidence to it are different acts with
+    different audit trails, and a correction form that also captured bytes would
+    make «what changed» unanswerable from one event. The files a position
+    already carries are read on its chronology row through the ordinary
+    `DocumentLink` projection and are not re-posted here — so a correction can
+    never silently detach one either (docs/adr/0084 §8).
+
+    That is also why the source rule reads the link table rather than a box:
+    a position whose only source is an attached document may have its address
+    emptied and stay sourced, and one whose only source is the address may not.
+    `app.matters.services.correct_external_position` decides that under the row
+    lock; this form only needs to know whether to print the sentence.
+
+    ``revision`` is the version the form was filled from, carried through the
+    round trip so the service can refuse a save whose record has moved on. The
+    same hidden field `EntryEditForm` and `WebsiteOverviewLinkForm` carry, for
+    the same reason.
+    """
+
+    use_required_attribute = False
+
+    organisation = _external_position_organisation_field()
+    organisation_name = _typed_organisation_field("Uus organisatsioon")
+    url = _external_position_link_field()
+    summary = _external_position_summary_field()
+    engagement = _external_position_engagement_field()
+    stated_on = EstonianDateField(
+        label="Seisukoha kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+    )
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def __init__(self, *args: Any, record: Any = None, viewer: Any = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.record = record
+        attach_external_position_precision(self, record=record)
+        attach_organisation_picker(self, viewer=viewer)
+        set_external_position_engagements(
+            self, matter=getattr(record, "matter", None), viewer=viewer
+        )
+
+    def clean(self) -> dict[str, Any]:
+        super().clean()
+        # Whether this record is *already* sourced by a document, read from the
+        # link table rather than from a control. A correction that empties the
+        # address of a position carrying a file is an ordinary correction; one
+        # that empties the address of a position carrying nothing else is the
+        # record being unsourced, and is refused.
+        has_file = self.record is not None and self.record.document_links.exists()
+        return self._clean_external_position(has_file=has_file)
+
+
+def set_external_position_engagements(form: forms.Form, *, matter: Any, viewer: Any) -> None:
+    """Point `Seotud kaasamine` at this Matter's consultations, as this reader sees them.
+
+    The field's **queryset**, not only its rendered choices: that is what
+    validates a posted id, so a crafted POST naming a `Kaasamine` on another
+    Matter — or one restricted below the Matter this reader may open — is
+    refused by the field itself. The service's own cross-Matter check stays
+    where it is, because a form is not a boundary (AUTH-003, docs/adr/0038).
+
+    A form built without a Matter keeps the empty queryset the field declares,
+    which is «no round to relate this to» and is the correct answer for a form
+    that does not know which file it is on.
+    """
+    from app.matters.models import MatterEngagement
+
+    field = cast(Any, form.fields["engagement"])
+    if matter is None:
+        return
+    field.queryset = (
+        MatterEngagement.objects.filter(matter=matter).visible_to(viewer).order_by("-created_at")
+    )
 
 
 class CompactClosureForm(ChipChoices, forms.Form):
