@@ -41,15 +41,21 @@ controls and every write route still refuses it under the row lock
           </p>
           {% if can_write and matter.is_open %}
             {% comment %}
-              `Avalda` is a native disclosure rather than a launcher radio: it is
-              alone on its row, it has no siblings to displace and there is
-              nothing to be chosen *instead* of it — the same reasoning that
-              leaves `Muuda` in `PRAEGUNE TEGEVUS` a `<details>` (docs/adr/0078
-              §1). A refusal reopens exactly the one it came from.
+              A native disclosure rather than a launcher radio: it is alone on
+              its row, it has no siblings to displace and there is nothing to be
+              chosen *instead* of it — the same reasoning that leaves `Muuda` in
+              `PRAEGUNE TEGEVUS` a `<details>` (docs/adr/0078 §1). A refusal
+              reopens exactly the one it came from.
+
+              **It says what to do, not what the transition is called.**
+              `Avalda` named the lifecycle step and left the reader to work out
+              that it wanted two things they might not have to hand; «Lisa link
+              ja avaldamiskuupäev» is the next action itself, which is what a
+              planned row exists to prompt (docs/adr/0083).
             {% endcomment %}
             <details class="webrow__publish"
                      {% if website_overview_open == overview.pk|stringformat:"s" %}open{% endif %}>
-              <summary class="disclosure-chip">Avalda</summary>
+              <summary class="disclosure-chip">Lisa link ja avaldamiskuupäev</summary>
               <div class="webrow__form">
                 {% if website_overview_open == overview.pk|stringformat:"s" and website_overview_error %}
                   <p class="formerror" role="alert">{{ website_overview_error }}</p>
@@ -84,7 +90,7 @@ controls and every write route still refuses it under the row lock
                   {{ publish_form.revision }}
                   <p class="cx-note">Ainult koda.ee aadress, https-kujul.</p>
                   <div class="addform__actions">
-                    <button class="button button--primary" type="submit">Salvesta</button>
+                    <button class="button button--primary" type="submit">Salvesta avaldatuna</button>
                   </div>
                 </form>
               </div>

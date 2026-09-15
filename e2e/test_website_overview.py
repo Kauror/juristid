@@ -44,16 +44,26 @@ def chronology(page):
     return page.locator("#ajalugu-loend")
 
 
+#: What the panel's primary action says. It named the *operation* rather than
+#: the outcome until docs/adr/0083 — a fieldless form and a button saying
+#: `Salvesta` read as a text area that had failed to load.
+PLAN_BUTTON = "Lisa planeeritud ülevaade"
+
+#: What a planned row offers next. `Avalda` named the lifecycle transition and
+#: left the reader to discover it wanted two things (docs/adr/0083).
+PUBLISH_DISCLOSURE = "Lisa link ja avaldamiskuupäev"
+
+
 def plan_one(page, base_url: str) -> None:
-    """`+ Kodulehe ülevaade` → `Salvesta`, on a Matter that has just been made."""
+    """`+ Kodulehe ülevaade` → the plan, on a Matter that has just been made."""
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-koduleht")
-    page.locator("#lisa-koduleht").get_by_role("button", name="Salvesta").click()
+    page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).click()
     strip(page).wait_for(state="visible")
 
 
 def open_publish_form(page):
-    """Open the `Avalda` disclosure on the first planned row."""
+    """Open the publish disclosure on the first planned row."""
     disclosure = strip(page).locator("details.webrow__publish").first
     if not disclosure.evaluate("node => node.open"):
         disclosure.locator("summary").click()
@@ -92,8 +102,15 @@ def test_the_panel_asks_for_no_address_and_no_date(page, base_url):
     open_add_panel(page, "lisa-koduleht")
 
     panel = page.locator("#lisa-koduleht")
-    expect(panel.locator("input[type=text], input[type=url]")).to_have_count(0)
-    expect(panel.get_by_role("button", name="Salvesta")).to_be_visible()
+    # docs/adr/0083: two optional boxes, under their own legend, and a button
+    # that says what the empty form does. What it must still not grow is a
+    # title, a description or a file control.
+    expect(panel.get_by_role("button", name=PLAN_BUTTON)).to_be_visible()
+    expect(panel.locator("[name=url]")).to_be_visible()
+    expect(panel.locator("[name=published_on]")).to_be_visible()
+    expect(panel.get_by_text("Kui ülevaade on juba avaldatud")).to_be_visible()
+    expect(panel.locator("textarea")).to_have_count(0)
+    expect(panel.locator("input[type=file]")).to_have_count(0)
 
 
 def test_publishing_moves_the_row_onto_the_chronology_as_a_labelled_link(page, base_url):
@@ -103,7 +120,7 @@ def test_publishing_moves_the_row_onto_the_chronology_as_a_labelled_link(page, b
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta").click()
+    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
 
     # The plan is discharged, so the strip goes with it.
     expect(strip(page)).to_have_count(0)
@@ -126,7 +143,7 @@ def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta").click()
+    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
     chronology(page).get_by_role("link", name="Ava kodulehel").wait_for()
 
     name = (
@@ -148,7 +165,7 @@ def test_a_refused_address_comes_back_with_what_was_typed(page, base_url):
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill("https://koda.ee.example.com/uudised/x")
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta").click()
+    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
     page.wait_for_timeout(400)
 
     reopened = strip(page).locator("details.webrow__publish").first
@@ -179,7 +196,7 @@ def test_a_published_address_can_be_corrected_from_its_own_row(page, base_url):
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta").click()
+    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
     chronology(page).get_by_role("link", name="Ava kodulehel").wait_for()
 
     chronology(page).get_by_role("button", name="Paranda link").click()
@@ -187,7 +204,10 @@ def test_a_published_address_can_be_corrected_from_its_own_row(page, base_url):
     region.locator("[name=url]").wait_for(state="visible")
     expect(region.locator("[name=url]")).to_have_value(KODA_URL)
     region.locator("[name=url]").fill(f"{KODA_URL}-parandatud")
-    region.get_by_role("button", name="Salvesta").click()
+    # The *correction* form keeps `Salvesta`: it corrects an address already
+    # recorded, and calling that «salvesta avaldatuna» would name a transition
+    # this row has already made (docs/adr/0081 §5).
+    region.get_by_role("button", name="Salvesta", exact=True).click()
 
     link = chronology(page).get_by_role("link", name="Ava kodulehel")
     expect(link).to_have_attribute("href", f"{KODA_URL}-parandatud")
@@ -213,7 +233,7 @@ def test_the_chip_and_the_publish_disclosure_work_from_the_keyboard(page, base_u
     expect(page.locator("#lisa-koduleht")).to_be_visible()
     assert page.locator("#lisa-koduleht-valik").is_checked()
 
-    page.locator("#lisa-koduleht").get_by_role("button", name="Salvesta").focus()
+    page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).focus()
     page.keyboard.press("Enter")
     strip(page).wait_for(state="visible")
 
@@ -242,3 +262,96 @@ def test_the_strip_and_its_form_fit_a_phone(page, base_url):
     ), "the Kodulehe ülevaated strip makes the Teema page scroll sideways at 375px"
     expect(strip(page).locator("[name=url]").first).to_be_visible()
     expect(strip(page).get_by_role("button", name="Tühista")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# docs/adr/0083 — the panel a lawyer meets first, and the published path
+# ---------------------------------------------------------------------------
+
+
+def test_the_panel_can_record_a_page_that_is_already_up(page, base_url):
+    """The case the old panel could not express, in one act.
+
+    Filling both boxes files the record straight as `Avaldatud`: no plan to
+    publish afterwards, and no second control to find.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = page.locator("#lisa-koduleht")
+    panel.locator("[name=url]").fill(KODA_URL)
+    panel.locator("[name=published_on]").fill("14.03.2026")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    chronology(page).wait_for(state="visible")
+
+    # Straight onto the chronology as a published overview, and no planned row
+    # left behind on the strip.
+    expect(chronology(page)).to_contain_text("Avaldatud")
+    expect(strip(page)).to_have_count(0)
+    expect(chronology(page).get_by_role("link", name="Ava kodulehel")).to_be_visible()
+
+
+def test_half_a_publication_is_refused_and_keeps_what_was_typed(page, base_url):
+    """An address without a date is a mistake, not a plan with a note attached.
+
+    The refusal comes back through HTMX with the panel reopened and the address
+    still in the box — losing it would cost the one fact they opened the panel
+    to record.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = page.locator("#lisa-koduleht")
+    panel.locator("[name=url]").fill(KODA_URL)
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    page.wait_for_timeout(200)
+
+    reopened = page.locator("#lisa-koduleht")
+    expect(reopened).to_be_visible()
+    expect(reopened.locator(".field__error").first).to_be_visible()
+    assert reopened.locator("[name=url]").input_value() == KODA_URL
+    # Nothing was filed.
+    expect(strip(page)).to_have_count(0)
+
+
+def test_a_look_alike_host_is_refused_from_the_panel_too(page, base_url):
+    """The koda.ee boundary is the service's and reaches the new path unchanged."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = page.locator("#lisa-koduleht")
+    panel.locator("[name=url]").fill("https://koda.ee.example.com/uudised/x")
+    panel.locator("[name=published_on]").fill("14.03.2026")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    page.wait_for_timeout(200)
+
+    expect(page.locator("#lisa-koduleht .field__error").first).to_be_visible()
+    expect(strip(page)).to_have_count(0)
+
+
+def test_a_planned_row_says_what_to_do_next(page, base_url):
+    """`Avalda` named the transition; this names the action (docs/adr/0083)."""
+    sign_in(page, base_url, SANDRA)
+    plan_one(page, base_url)
+
+    summary = strip(page).locator("details.webrow__publish summary").first
+    expect(summary).to_have_text(PUBLISH_DISCLOSURE)
+
+
+def test_the_panel_fits_a_phone_with_both_boxes(page, base_url):
+    """Two controls where there were none, at 375px, without sideways scroll."""
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": 375, "height": 812})
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+    page.wait_for_timeout(120)
+
+    panel = page.locator("#lisa-koduleht")
+    expect(panel.locator("[name=url]")).to_be_visible()
+    expect(panel.locator("[name=published_on]")).to_be_visible()
+    assert not page.evaluate(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
+    ), "the + Kodulehe ülevaade panel makes the Teema page scroll sideways at 375px"

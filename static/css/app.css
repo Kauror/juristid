@@ -10127,6 +10127,23 @@ section:has(.pw-more[open]) tbody.uxextra {
   background: var(--surface-base);
 }
 
+/* An optional group inside a panel form — today only «Kui ülevaade on juba
+ * avaldatud» under `+ Kodulehe ülevaade`.
+ *
+ * A real `<fieldset>`, because the two controls inside it are one answer and a
+ * screen reader should hear the legend before either of them. The browser's own
+ * border and padding go: the panel already draws the box, and a second frame
+ * inside it reads as a nested form. `min-inline-size: 0` is the fieldset's own
+ * quirk — without it the element refuses to shrink below its content's
+ * intrinsic width and the grid inside stops collapsing at narrow widths, which
+ * is the one place a fieldset differs from a div. */
+#teema-vaade-wrap .cx-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
 /* A wide field and a date beside it. The date column is fixed because a date is
  * a known width and the thing being dated is not. */
 #teema-vaade-wrap .cx-grid {

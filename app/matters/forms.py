@@ -4356,27 +4356,100 @@ class CompactWorkVictoryForm(forms.Form):
 
 
 class CompactWebsiteOverviewForm(forms.Form):
-    """`+ Kodulehe ülevaade` — one button, and deliberately not one field.
+    """`+ Kodulehe ülevaade` — a plan, or a page that is already up.
 
-    At the moment a lawyer decides that this Matter should be written up on
-    koda.ee there is no address, no publication date and no headline: the page
-    does not exist. Every field this panel could offer would therefore be asking
-    somebody to invent something the real page contradicts a week later, and the
-    product decision is that the record's whole content is *that the write-up is
-    owed* (docs/adr/0081 §1, §2).
+    docs/adr/0081 §1 shaped this panel as one button and no fields, on the
+    reasoning that at the moment somebody decides a Matter should be written up
+    there is no address and no publication date, so every field would be asking
+    them to invent something the real page contradicts a week later. That
+    reasoning is right about the case it describes and wrong about the one it
+    did not: a lawyer frequently records the overview **after** the page is
+    already on koda.ee, and the panel made them file a plan and then publish it
+    from a second control to say so. Worse, what they met first was a panel with
+    no fields at all and a button saying `Salvesta` — which reads as an unusable
+    text box rather than as a complete form (docs/adr/0083).
 
-    So the form has no fields and validates nothing. It exists because every
-    other launcher operation has one: `_workspace_refusal` re-renders the column
-    with one bound form under its own key, `WORKSPACE_PANELS` maps that key to
-    the panel a refusal reopens, and a panel with no form would be the one shape
-    that machinery cannot answer — which is exactly the shape a closed-Matter
-    refusal arrives in.
+    So the two questions are here, **optional and empty**, and the form answers
+    in one of three ways:
 
-    The address arrives later, through `WebsiteOverviewLinkForm`, because it is a
-    separate thing that happened.
+    * neither filled — the plan, exactly as before, and the only outcome the
+      button's own words promise;
+    * both filled — a page that already exists, recorded in one act;
+    * one filled — a refusal naming the other, with what was typed still in the
+      boxes. Half a publication is not a plan with a note attached: silently
+      dropping an address somebody pasted would lose the one fact they came to
+      record.
+
+    **No `initial` on the date**, unlike `WebsiteOverviewLinkForm`, and the
+    difference is load-bearing. There the form exists only to publish, so today
+    is a helpful default. Here an empty submit *is* a valid answer — the plan —
+    and a pre-filled date would make «neither filled» unreachable: every plan
+    would arrive carrying a publication date nobody typed, and the panel would
+    have no way left to say «this is only owed».
+
+    Still no title, no description and no attachment. The record's content is
+    the address and the day, and a headline invented at planning time would sit
+    beside the real one the day the page appears (docs/adr/0081 §2).
     """
 
     use_required_attribute = False
+
+    #: The same `CharField`-not-`URLField` shape as `WebsiteOverviewLinkForm`,
+    #: and for the same reason: the rule is `normalize_koda_website_url`'s, and
+    #: letting Django's validator answer first would give `http://koda.ee/x` a
+    #: different sentence depending on which layer caught it.
+    url = forms.CharField(
+        label="Kodulehe link",
+        required=False,
+        max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "url",
+                "autocomplete": "off",
+                "placeholder": "https://koda.ee/…",
+            }
+        ),
+    )
+    published_on = EstonianDateField(
+        label="Avaldamise kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+    )
+
+    def clean(self) -> dict[str, Any]:
+        """Nothing, both, or a refusal naming what is missing.
+
+        The address is validated through the service's own door so that a
+        look-alike host is refused here in the words it is refused in
+        everywhere, and under the box it was typed into.
+        """
+        from app.matters.services import (
+            WEBSITE_OVERVIEW_NEEDS_DATE,
+            WEBSITE_OVERVIEW_NEEDS_LINK,
+            normalize_koda_website_url,
+        )
+
+        cleaned = super().clean() or {}
+        raw_url = (cleaned.get("url") or "").strip()
+        published_on = cleaned.get("published_on")
+
+        url = ""
+        if raw_url:
+            try:
+                url = normalize_koda_website_url(raw_url)
+            except DomainError as error:
+                self.add_error("url", str(error))
+                return cleaned
+
+        if url and published_on is None:
+            self.add_error("published_on", WEBSITE_OVERVIEW_NEEDS_DATE)
+        elif published_on is not None and not url:
+            self.add_error("url", WEBSITE_OVERVIEW_NEEDS_LINK)
+
+        # What the view acts on. `None` is the plan; a pair is a publication.
+        cleaned["publication"] = (url, published_on) if url and published_on else None
+        return cleaned
 
 
 class WebsiteOverviewLinkForm(forms.Form):
