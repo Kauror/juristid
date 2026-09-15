@@ -339,22 +339,31 @@ row of controls that refuse (brief §30, §31).
 
     {% comment %}
       `+ Kodulehe ülevaade`. This file should be written up for the membership
-      on koda.ee — and the panel asks nothing else, because at the moment
-      somebody decides that, there is no address, no publication date and no
-      headline to ask for. The page does not exist yet.
+      on koda.ee.
 
-      One button is the whole form. What it records is the *intention*, which is
-      the fact the file has never been able to hold: the plan lived in somebody's
-      head until the page appeared, and the published address lived in a browser
-      history. The address is added later from the `Kodulehe ülevaated` strip
-      under this launcher, which is a separate act with its own validation because it is a
-      separate thing that happened (docs/adr/0081 §1, §2).
+      **Two optional boxes, and an empty form is still a complete answer.**
+      docs/adr/0081 §1 gave this panel one button and no fields, because at the
+      moment somebody decides a Matter should be written up there is no address
+      and no publication date. That is true of the planning case and false of the
+      other one: an overview is frequently recorded *after* the page is up, and
+      the panel made those people file a plan and then publish it from a second
+      control to state something already true. What they met first was a panel
+      with no fields and a button saying `Salvesta`, which reads as an unusable
+      text box rather than as a finished form (docs/adr/0083).
 
-      It is not a `+ Märge`: «kodulehe ülevaade on plaanis» written as prose is a
-      sentence nothing can ask a question of. It is not a `+ Töövõit`: publishing
-      a page is not a claim that anything was won. And it is not a deadline — an
-      overview that is owed makes no `NextAction`, no work item and no badge, so
-      a Matter carrying one never reads as late (docs/adr/0081 §4).
+      So the button says what it does — `Lisa ülevaade` — and the two boxes
+      under their own legend say what to do instead when the page already
+      exists. Fill neither and the record is `Plaanis`; fill both and it is
+      recorded as published in one act; fill one and the form refuses, naming
+      the other and keeping what was typed. The button names neither outcome
+      because the one form now reaches both, and a label that said `planeeritud`
+      would be wrong on every submission that carried an address and a day.
+
+      Still no title, no description and no attachment: the record's content is
+      the address and the day (docs/adr/0081 §2). It is not a `+ Märge`, it is
+      not a `+ Töövõit`, and it is not a deadline — an overview that is owed
+      makes no `NextAction`, no work item and no badge, so a Matter carrying one
+      never reads as late (docs/adr/0081 §4).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-koduleht-valik"
            data-addpick aria-controls="lisa-koduleht"
@@ -371,10 +380,42 @@ row of controls that refuse (brief §30, §31).
           {% csrf_token %}
           <p class="cx-note">
             Märgib, et sellest teemast peaks tulema ülevaade koda.ee lehel.
-            Lingi ja avaldamise kuupäeva saad lisada siis, kui lehekülg on üleval.
           </p>
+          {% comment %}
+            The already-published path, behind its own legend so that the empty
+            form still reads as the complete thing it is. A `<fieldset>` rather
+            than a heading because the two controls belong together: filling one
+            without the other is the refusal below.
+          {% endcomment %}
+          <fieldset class="cx-fieldset">
+            <legend class="cx-f__lab">Kui ülevaade on juba avaldatud
+              <span class="cx-f__opt">valikuline</span></legend>
+            <div class="cx-grid cx-grid--links">
+              <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
+                <span class="cx-f__lab">{{ website_overview_form.url.label }}</span>
+                {{ website_overview_form.url }}
+              </label>
+              <label class="cx-f cx-f--date"
+                     for="{{ website_overview_form.published_on.id_for_label }}">
+                <span class="cx-f__lab">{{ website_overview_form.published_on.label }}</span>
+                {{ website_overview_form.published_on }}
+              </label>
+            </div>
+            {% if website_overview_form.url.errors %}
+              <p class="field__error" id="{{ website_overview_form.url.auto_id }}_error">
+                {{ website_overview_form.url.errors|first }}</p>
+            {% endif %}
+            {% if website_overview_form.published_on.errors %}
+              <p class="field__error" id="{{ website_overview_form.published_on.auto_id }}_error">
+                {{ website_overview_form.published_on.errors|first }}</p>
+            {% endif %}
+            <p class="cx-note">
+              Täida mõlemad ja ülevaade salvestatakse kohe avaldatuna. Ainult
+              koda.ee aadress, https-kujul.
+            </p>
+          </fieldset>
           <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta</button>
+            <button class="button button--primary" type="submit">Lisa ülevaade</button>
           </div>
         </form>
       </div>

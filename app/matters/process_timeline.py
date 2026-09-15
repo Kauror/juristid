@@ -6,7 +6,8 @@ this strip answers the third question, which is *what course is this file on* �
 the major acts it has been through, and the next dated point it is known to be
 heading for. Five of them exist today:
 
-    Alustatud · Koja arvamus · Arvamuse tähtaeg · Jõustumine · Lõpetatud
+    Alustatud · Tagasiside tähtaeg · Koja arvamus · Arvamuse tähtaeg ·
+    Jõustumine · Lõpetatud
 
 and a Matter draws only the ones it really has. That is the whole vocabulary.
 An earlier version of this module also projected the current `StageVocabulary`,
@@ -15,6 +16,12 @@ made the strip a second, shorter copy of the chronology with the header's
 `Hetkeseis` pinned in the middle of it. Each of those records is still canonical
 and still reads where it belongs; none of them is a major procedural act
 (docs/adr/0074 §12.1).
+
+**`Tagasiside tähtaeg` is the one addition to that list, and it is not that
+retirement being undone** (docs/adr/0083). The `Kaasamine` itself stays off the
+strip: a consultation with no reply-by date draws nothing, however many rounds a
+file has run. What draws a column is the dated point the round is heading for,
+which is the *second* category below rather than the act.
 
 **A known beginning and a known destination.** A newly created Matter with a
 response deadline is not a file with only a start: where its first phase is
@@ -28,6 +35,13 @@ canonical dated points the file is known to be heading for:
 A future column claims nothing about the past. It says *this is the next dated
 point in the process*, which is exactly what the record says (docs/adr/0074
 §12.4).
+
+**Two deadlines, and they are not the same fact.** `Arvamuse tähtaeg` is what
+this office owes to whoever asked; `Tagasiside tähtaeg` is what this office
+asked *of other people* in a consultation round. Neither is derived from the
+other, neither discharges the other, and only the first is an official
+obligation — the second creates no work item, no lateness and no badge
+anywhere, exactly as docs/adr/0078 §3 decided when the column was added.
 
 **Formal, never personal.** `Arvamuse tähtaeg` is `Matter.response_deadline` —
 the day an answer is due to whoever asked for it. A lawyer's own
@@ -113,6 +127,25 @@ SENT_LABEL = "Koja arvamus"
 #: answer falling due is not the end of the proceeding.
 DEADLINE_LABEL = "Arvamuse tähtaeg"
 
+#: `Tagasiside tähtaeg` — `MatterEngagement.feedback_deadline`'s own
+#: `verbose_name`, and the words the `+ Kaasamine` panel asks for it in.
+#:
+#: **A sixth label, and the one widening of §12.1 this module carries.** That
+#: section retired *every* `MatterEngagement` from the strip, and the engagement
+#: itself stays retired: the act of asking members is a chronology row, not a
+#: procedural milestone. What comes back is narrower and belongs to §12.4's
+#: other category — a *canonical dated point the file is known to be heading
+#: for*. A round that asked members to answer by the 22nd is heading for the
+#: 22nd exactly as a Matter with an `Arvamuse tähtaeg` is heading for that, and
+#: a lawyer who has to open the chronology to find it cannot see the course of
+#: the file at a glance, which is what this strip is for (docs/adr/0083).
+#:
+#: **Never `Arvamuse tähtaeg`.** That is `Matter.response_deadline`, what this
+#: office owes to whoever asked; this is what was asked *of other people*, and a
+#: strip that spelled them alike would merge an internal collection date into an
+#: official obligation. Two labels, two sources, two sentences.
+FEEDBACK_DEADLINE_LABEL = "Tagasiside tähtaeg"
+
 #: `Jõustumine` — the noun, matching `MatterEffectiveDate`'s own
 #: `verbose_name`. Not `Jõustub`/`Jõustus`, which the chronology uses because
 #: its sentence has a tense; a strip column is a name, and a rail whose label
@@ -142,10 +175,11 @@ CLOSED_LABEL = "Lõpetatud"
 #: deterministically: sent opinions by `(sent_at, pk)` below, commencements by
 #: `MatterEffectiveDate.Meta.ordering`, which ends in `id`.
 PHASE_STARTED = 0
-PHASE_SENT = 1
-PHASE_DEADLINE = 2
-PHASE_EFFECTIVE = 3
-PHASE_CLOSED = 4
+PHASE_FEEDBACK = 1
+PHASE_SENT = 2
+PHASE_DEADLINE = 3
+PHASE_EFFECTIVE = 4
+PHASE_CLOSED = 5
 
 
 #: The three presentation states a column can be in, and the CSS modifier each
@@ -292,6 +326,7 @@ def process_steps(
     """
     from app.intelligence.enums import FactStatus
     from app.intelligence.selectors import matter_intelligence
+    from app.matters.models import MatterEngagement
     from app.submissions.models import Submission
 
     facts = intelligence if intelligence is not None else matter_intelligence(matter, user)
@@ -322,6 +357,49 @@ def process_steps(
                 detail="",
                 sort_on=started,
                 phase=PHASE_STARTED,
+            )
+        )
+
+    # `Tagasiside tähtaeg` — one column per `Kaasamine` that carries a
+    # reply-by date. Several per Matter is ordinary: a file routinely runs more
+    # than one round, and each round asked for its answers by its own day.
+    #
+    # **The engagement is still not a milestone.** §12.1 retired it and this
+    # does not bring it back: a consultation with no `feedback_deadline` draws
+    # nothing at all, however many of them a Matter has. What draws a column is
+    # the *dated point*, which is §12.4's second category (docs/adr/0083).
+    #
+    # «Keda kaasati» reads as the column's `title`, which is the same mechanism
+    # that tells two `Jõustumine` columns apart. It is the record's own line —
+    # «liikmed», «kaubandusvaldkonna töögrupp» — and not a title invented here,
+    # so two rounds on one file are told apart by what the lawyer actually
+    # wrote.
+    #
+    # **Exact day, always.** `feedback_deadline` is on docs/adr/0079 §11's list
+    # of dates recorded exactly and stayed there when `Kaasamise kuupäev` left
+    # it (docs/adr/0082 §2), so there is no precision to read and
+    # `format_estonian_date` is the whole rendering.
+    #
+    # Scoped through the child's own `visible_to`, like every other source here:
+    # a restricted `Kaasamine` must not change the number of columns, the
+    # connector count or the spacing for a reader who may not open it
+    # (AUTH-003, docs/adr/0074 §13). Ordered by `(feedback_deadline, pk)` so two
+    # rounds due on one day cannot be placed by whatever order the database
+    # returned.
+    feedback_rounds = (
+        MatterEngagement.objects.filter(matter=matter)
+        .visible_to(user)
+        .filter(feedback_deadline__isnull=False)
+        .order_by("feedback_deadline", "pk")
+    )
+    for engagement in feedback_rounds:
+        steps.append(
+            ProcessStep(
+                label=FEEDBACK_DEADLINE_LABEL,
+                display=format_estonian_date(engagement.feedback_deadline),
+                detail=engagement.title,
+                sort_on=engagement.feedback_deadline,
+                phase=PHASE_FEEDBACK,
             )
         )
 

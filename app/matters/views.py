@@ -4491,19 +4491,30 @@ def _website_overview_refusal(
 @business_write_required
 @require_http_methods(["POST"])
 def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Kodulehe ülevaade` — this file is owed a summary on koda.ee.
+    """`+ Kodulehe ülevaade` — a plan, or a page that is already on koda.ee.
 
-    No fields, so nothing to validate here and nothing a refusal could hand
-    back. The one refusal this route can produce is the closed Matter, which the
-    service answers under the row lock — a POST from a tab that was open before
-    somebody else shut the file (R2-02).
+    The panel's two boxes are optional and are read as a pair: neither is the
+    plan, both record a publication in one act, and one on its own is a refusal
+    the form has already put under the box it belongs to (docs/adr/0083).
+
+    A refusal comes back through `_workspace_refusal` with the form still bound,
+    so an address somebody pasted is still in the box — losing it would cost
+    them the one fact they opened the panel to record. The closed-Matter refusal
+    is the service's, answered under the row lock, because a POST may arrive
+    from a tab that was open before somebody else shut the file (R2-02).
     """
     matter = get_visible_matter(request, pk)
     form = CompactWebsiteOverviewForm(request.POST)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="website_overview_form", form=form)
+    publication = form.cleaned_data.get("publication")
     try:
-        workspace.add_matter_website_overview(matter=matter, author=request.user)
+        workspace.add_matter_website_overview(
+            matter=matter,
+            author=request.user,
+            url=publication[0] if publication else "",
+            published_on=publication[1] if publication else None,
+        )
     except DomainError as error:
         return _workspace_refusal(
             request, matter, key="website_overview_form", form=form, error=str(error)

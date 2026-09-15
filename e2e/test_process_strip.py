@@ -722,3 +722,104 @@ def test_the_temporal_rail_survives_the_narrow_scroller(page, base_url, width):
     rail.evaluate("node => { node.scrollLeft = node.scrollWidth; }")
     page.wait_for_timeout(120)
     assert states(page)[-1] == "future"
+
+
+# ---------------------------------------------------------------------------
+# docs/adr/0083 — `Tagasiside tähtaeg`, the sixth label
+# ---------------------------------------------------------------------------
+
+
+def record_a_round(page, matter_url: str, *, audience: str, deadline: str) -> None:
+    """One `+ Kaasamine` with a reply-by date, through the panel a lawyer uses."""
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
+    open_add_panel(page, "lisa-kaasamine")
+    panel = page.locator("#lisa-kaasamine")
+    panel.locator("[name=audience]").fill(audience)
+    panel.locator("[name=feedback_deadline]").fill(deadline)
+    # Wait for the POST itself, not for `networkidle`. The panel saves through
+    # HTMX and swaps `#teema-vaade`; `networkidle` can return before the swap
+    # lands, and the strip read afterwards is then the one from before the save.
+    with page.expect_response(
+        lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
+    ) as caught:
+        panel.get_by_role("button", name="Salvesta").click()
+    assert caught.value.status == 200, f"the round was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_reply_by_date_draws_its_own_column(page, base_url, width):
+    """The whole point of docs/adr/0083 §1: visible without scrolling.
+
+    A round that asked members to answer by a named day is a dated point the
+    file is heading for, exactly as `Arvamuse tähtaeg` is — and until this it
+    could only be read by scrolling into the chronology.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    matter_url = create_matter_with_deadline(
+        page, base_url, f"Käiguriba tagasiside {width}", deadline=et(40)
+    )
+    record_a_round(page, matter_url, audience="liikmed", deadline=et(14))
+
+    assert labels(page) == ["Alustatud", "Tagasiside tähtaeg", "Arvamuse tähtaeg"]
+    # Two deadlines, two different words: what was asked of members, and what
+    # Koda owes. A strip that merged them would promote one into the other.
+    assert "Tagasiside tähtaeg" in strip(page).inner_text()
+    assert "Arvamuse tähtaeg" in strip(page).inner_text()
+    # No urgency asserted, exactly as for every other column.
+    assert not COUNTDOWN.search(strip(page).inner_text()), "the strip counts down"
+    assert_fits(page, width)
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_several_rounds_draw_several_columns_and_still_fit(page, base_url, width):
+    """Several per Matter is ordinary — a file runs more than one round.
+
+    The columns are told apart by «Keda kaasati» in the `title`, which is the
+    same mechanism that separates two `Jõustumine` columns and costs the strip
+    no extra width.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    matter_url = create_matter_with_deadline(
+        page, base_url, f"Käiguriba mitu vooru {width}", deadline=et(40)
+    )
+    record_a_round(page, matter_url, audience="liikmed", deadline=et(10))
+    record_a_round(page, matter_url, audience="töögrupp", deadline=et(20))
+
+    assert labels(page) == [
+        "Alustatud",
+        "Tagasiside tähtaeg",
+        "Tagasiside tähtaeg",
+        "Arvamuse tähtaeg",
+    ]
+    titles = page.locator(".tl-step[title]").evaluate_all(
+        "nodes => nodes.map(node => node.getAttribute('title'))"
+    )
+    assert "liikmed" in titles and "töögrupp" in titles, titles
+    assert_fits(page, width)
+
+
+def test_a_round_with_no_reply_by_date_draws_nothing(page, base_url):
+    """docs/adr/0074 §12.1 stands: the engagement itself is not a milestone."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    matter_url = create_matter_with_deadline(
+        page, base_url, "Käiguriba kaasamine tähtajata", deadline=et(40)
+    )
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
+    open_add_panel(page, "lisa-kaasamine")
+    panel = page.locator("#lisa-kaasamine")
+    panel.locator("[name=audience]").fill("liikmed")
+    with page.expect_response(
+        lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
+    ) as caught:
+        panel.get_by_role("button", name="Salvesta").click()
+    assert caught.value.status == 200
+    page.wait_for_load_state("networkidle")
+
+    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
+    assert "Tagasiside tähtaeg" not in strip(page).inner_text()

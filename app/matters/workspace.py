@@ -417,18 +417,36 @@ def add_matter_work_victory(
 
 
 @transaction.atomic
-def add_matter_website_overview(*, matter: Matter, author: Any) -> WorkspaceResult:
-    """`+ Kodulehe ülevaade` — this file is owed a summary on koda.ee.
+def add_matter_website_overview(
+    *,
+    matter: Matter,
+    author: Any,
+    url: str = "",
+    published_on: Any = None,
+) -> WorkspaceResult:
+    """`+ Kodulehe ülevaade` — a plan, or a page that is already up.
 
-    One button and no fields, which is the honest shape for it. At the moment
-    somebody decides a Matter should be written up there is no address, no
-    publication date and no headline — the page does not exist yet — and a panel
-    that asked for a title would be asking them to invent one that the real page
-    would contradict a week later (docs/adr/0081 §1, §2).
+    docs/adr/0081 §1 gave this one button and no fields, because at the moment
+    somebody decides a Matter should be written up there is no address and no
+    publication date. That holds for the case it describes. What it did not
+    cover is the lawyer recording an overview *after* the page is on koda.ee,
+    who had to file a plan and then publish it from a second control to say a
+    thing that was already true (docs/adr/0083).
 
-    The address arrives later, through `publish_planned_website_overview`, which
-    is a separate act with its own validation because it is a separate thing
-    that happened.
+    So both shapes arrive here. With neither argument this is the plan, byte for
+    byte what it always was. With both, the record is planned and published
+    inside **one** transaction and one `composer_operation`, which is why the
+    publication reuses `publish_website_overview` rather than writing a second
+    direct-to-`PUBLISHED` path: the koda.ee boundary, the both-or-neither rule
+    and the audit events all stay in the one reviewed place, and the lifecycle
+    is the documented `PLANNED → PUBLISHED` rather than a fourth way in.
+
+    **Two audit events, deliberately.** A row created and published in one act
+    genuinely passed through both states, and a history saying only «published»
+    would lose that somebody planned it at all. `expected_revision` is not
+    passed to the publication: the row was created microseconds earlier inside
+    this transaction and nothing else can have moved it, so there is no version
+    to be stale against.
 
     Takes the lock and the closed-Matter question through the same helper as
     every other operation in this module: a closed Teema renders no launcher,
@@ -438,7 +456,15 @@ def add_matter_website_overview(*, matter: Matter, author: Any) -> WorkspaceResu
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
-        result.record = plan_website_overview(matter=locked_matter, actor=author)
+        overview = plan_website_overview(matter=locked_matter, actor=author)
+        if url and published_on is not None:
+            overview = publish_website_overview(
+                overview=overview,
+                url=url,
+                published_on=published_on,
+                actor=author,
+            )
+        result.record = overview
         return result
 
 
