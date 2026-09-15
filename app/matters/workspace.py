@@ -38,9 +38,13 @@ has every field and every button, and its POST reaches a server with no memory
 of which page it came from. Hiding the forms on a fresh GET is the right thing
 to do and it decides nothing (docs/adr/0075 §12, R2-02).
 
-`close_matter_from_workspace` is the one operation here that does not take that
-guard, and must not: closing is what you are allowed to do to an open Matter.
-`close_matter` takes the same row itself and refuses one that is already shut.
+Two operations here do not take that guard, and neither of them may.
+`close_matter_from_workspace` is the act that *produces* the closed state, so
+refusing it on a closed Matter is `close_matter`'s own job — it takes the same
+row itself and answers «Teema on juba suletud.». And
+`correct_matter_website_overview` corrects an address the file already records:
+closure means no new business content, never that a fact recorded wrongly must
+stay wrong, which is the rule `edit_entry` has kept since docs/adr/0075 §12.
 """
 
 from __future__ import annotations
@@ -59,7 +63,15 @@ from app.documents.services import capture_supporting_evidence
 from app.matters.entry_enums import EntryKind
 from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Entry, Matter
-from app.matters.services import add_engagement, add_entry, close_matter
+from app.matters.services import (
+    add_engagement,
+    add_entry,
+    cancel_website_overview,
+    close_matter,
+    correct_website_overview_link,
+    plan_website_overview,
+    publish_website_overview,
+)
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
 from app.workflow.services import complete_next_action
@@ -400,6 +412,124 @@ def add_matter_work_victory(
             record=result.record,
             uploads=_uploads(uploads),
             actor=author,
+        )
+        return result
+
+
+@transaction.atomic
+def add_matter_website_overview(*, matter: Matter, author: Any) -> WorkspaceResult:
+    """`+ Kodulehe ülevaade` — this file is owed a summary on koda.ee.
+
+    One button and no fields, which is the honest shape for it. At the moment
+    somebody decides a Matter should be written up there is no address, no
+    publication date and no headline — the page does not exist yet — and a panel
+    that asked for a title would be asking them to invent one that the real page
+    would contradict a week later (docs/adr/0081 §1, §2).
+
+    The address arrives later, through `publish_planned_website_overview`, which
+    is a separate act with its own validation because it is a separate thing
+    that happened.
+
+    Takes the lock and the closed-Matter question through the same helper as
+    every other operation in this module: a closed Teema renders no launcher,
+    and that decides nothing about a POST arriving from a tab that was open
+    before it was closed (R2-02).
+    """
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = plan_website_overview(matter=locked_matter, actor=author)
+        return result
+
+
+@transaction.atomic
+def publish_planned_website_overview(
+    *,
+    matter: Matter,
+    author: Any,
+    overview: Any,
+    url: str,
+    published_on: Any,
+    expected_revision: str | None = None,
+) -> WorkspaceResult:
+    """`Avalda` — the page is up, and this is its address.
+
+    The guarded half of the pair. Recording a publication is new business
+    content, so the Matter is locked and a closed one refuses before anything is
+    read — which is what stops a stale tab publishing onto a file somebody
+    closed in the meantime.
+
+    Correcting an address that is *already* recorded is the other half, and it
+    deliberately does not come through here: `correct_matter_website_overview`
+    takes no such lock, because a link recorded wrongly on a closed Matter must
+    still be correctable (docs/adr/0081 §5).
+    """
+    lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = publish_website_overview(
+            overview=overview,
+            url=url,
+            published_on=published_on,
+            actor=author,
+            expected_revision=expected_revision,
+        )
+        return result
+
+
+@transaction.atomic
+def cancel_matter_website_overview(
+    *,
+    matter: Matter,
+    author: Any,
+    overview: Any,
+    expected_revision: str | None = None,
+) -> WorkspaceResult:
+    """`Tühista` — the write-up is not going to happen after all.
+
+    Guarded like every other write here. A closure already cancels the plans a
+    Matter still owes, in `close_matter`'s own transaction; this is the same act
+    performed deliberately on one plan while the file is still open.
+    """
+    lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = cancel_website_overview(
+            overview=overview, actor=author, expected_revision=expected_revision
+        )
+        return result
+
+
+@transaction.atomic
+def correct_matter_website_overview(
+    *,
+    author: Any,
+    overview: Any,
+    url: str,
+    published_on: Any,
+    expected_revision: str | None = None,
+) -> WorkspaceResult:
+    """`Paranda link` — what the file says about an existing page was wrong.
+
+    **The one operation in this module that takes no closed-Matter guard, and it
+    must not.** Closure means no new business content; it has never meant that a
+    fact recorded wrongly must stay wrong. The service underneath refuses
+    anything that is not already published, so there is no route from here to
+    publishing a plan on a closed file — the transition that creates a
+    publication is the guarded one (docs/adr/0075 §12, docs/adr/0081 §5).
+
+    It takes no ``matter`` either, for the same reason `edit_entry` does not: the
+    record names its own Matter, and a parameter that could disagree with it is a
+    parameter that will.
+    """
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = correct_website_overview_link(
+            overview=overview,
+            url=url,
+            published_on=published_on,
+            actor=author,
+            expected_revision=expected_revision,
         )
         return result
 

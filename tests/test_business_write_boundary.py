@@ -346,6 +346,61 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: w["matter"].work_victories.count(),
     ),
+    # `Kodulehe ülevaade`, in all four of its write routes. Three of them are
+    # ordinary new business content; the fourth corrects an address the file
+    # already holds, which a *closed* Matter permits — a question about the
+    # Matter and not about who the actor is, exactly like `matters:edit_entry`
+    # above (docs/adr/0081 §5).
+    WriteRoute(
+        name="matters:add_website_overview",
+        label="Kodulehe ülevaate plaani lisamine",
+        request=lambda w: ({"pk": w["matter"].pk}, {}),
+        probe=lambda w: w["matter"].website_overviews.count(),
+    ),
+    WriteRoute(
+        name="matters:publish_website_overview",
+        label="Kodulehe ülevaate avaldamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "overview_id": w["planned_overview"].pk},
+            {"url": "https://koda.ee/uudised/loata-avaldatud", "published_on": "1.12.2026"},
+        ),
+        probe=lambda w: (
+            w["planned_overview"]
+            .__class__.objects.values_list("status", "url")
+            .get(pk=w["planned_overview"].pk)
+        ),
+    ),
+    WriteRoute(
+        name="matters:cancel_website_overview",
+        label="Kodulehe ülevaate plaani tühistamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "overview_id": w["planned_overview"].pk},
+            {},
+        ),
+        probe=lambda w: (
+            w["planned_overview"]
+            .__class__.objects.values_list("status", flat=True)
+            .get(pk=w["planned_overview"].pk)
+        ),
+    ),
+    WriteRoute(
+        name="matters:correct_website_overview",
+        label="Kodulehe ülevaate lingi parandamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "overview_id": w["published_overview"].pk},
+            {
+                "url": "https://koda.ee/uudised/loata-parandatud",
+                "published_on": "1.12.2026",
+                "revision": "",
+            },
+        ),
+        probe=lambda w: (
+            w["published_overview"]
+            .__class__.objects.values_list("url", "published_on")
+            .get(pk=w["published_overview"].pk)
+        ),
+        events=(ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,),
+    ),
     WriteRoute(
         name="matters:close_from_workspace",
         label="Teema lõpetamine töölaualt",
@@ -589,7 +644,12 @@ def _pdf(filename: str):
 @pytest.fixture
 def world(db):
     from app.documents.services import add_evidence_version
-    from app.matters.services import close_matter, create_matter
+    from app.matters.services import (
+        close_matter,
+        create_matter,
+        plan_website_overview,
+        publish_website_overview,
+    )
 
     author = factories.UserFactory()
     # Explicit references in a range the allocator will not reach: `create_matter`
@@ -628,6 +688,18 @@ def world(db):
     # one would have nothing for a forbidden actor to be refused *on*.
     entry = factories.EntryFactory(matter=matter, author=author, body="<p>Algne sõnastus.</p>")
 
+    # A `Kodulehe ülevaade` in each of the two states the write routes act on:
+    # one still owed, for the publish and cancel routes, and one already
+    # published, for the correction route — which, like `matters:edit_entry`,
+    # changes a record that exists rather than creating one.
+    planned_overview = plan_website_overview(matter=matter, actor=author)
+    published_overview = publish_website_overview(
+        overview=plan_website_overview(matter=matter, actor=author),
+        url="https://koda.ee/uudised/olemasolev",
+        published_on=timezone.localdate(),
+        actor=author,
+    )
+
     submission = factories.SubmissionFactory(matter=matter, title="Mustand")
     document = factories.DocumentFactory(matter=matter)
     version = add_evidence_version(
@@ -653,6 +725,8 @@ def world(db):
     return {
         "matter": matter,
         "entry": entry,
+        "planned_overview": planned_overview,
+        "published_overview": published_overview,
         "unowned": unowned,
         "closed": closed,
         "author": author,

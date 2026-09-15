@@ -35,7 +35,7 @@ from app.matters.enums import (
     EngagementKind,
     MatterDataClass,
 )
-from app.matters.models import Matter
+from app.matters.models import WEBSITE_OVERVIEW_URL_MAX_LENGTH, Matter
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
 from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
@@ -4353,6 +4353,114 @@ class CompactWorkVictoryForm(forms.Form):
             "date_precision": precision,
         }
         return cleaned
+
+
+class CompactWebsiteOverviewForm(forms.Form):
+    """`+ Kodulehe ülevaade` — one button, and deliberately not one field.
+
+    At the moment a lawyer decides that this Matter should be written up on
+    koda.ee there is no address, no publication date and no headline: the page
+    does not exist. Every field this panel could offer would therefore be asking
+    somebody to invent something the real page contradicts a week later, and the
+    product decision is that the record's whole content is *that the write-up is
+    owed* (docs/adr/0081 §1, §2).
+
+    So the form has no fields and validates nothing. It exists because every
+    other launcher operation has one: `_workspace_refusal` re-renders the column
+    with one bound form under its own key, `WORKSPACE_PANELS` maps that key to
+    the panel a refusal reopens, and a panel with no form would be the one shape
+    that machinery cannot answer — which is exactly the shape a closed-Matter
+    refusal arrives in.
+
+    The address arrives later, through `WebsiteOverviewLinkForm`, because it is a
+    separate thing that happened.
+    """
+
+    use_required_attribute = False
+
+
+class WebsiteOverviewLinkForm(forms.Form):
+    """The address and the day, for a publication or for a correction to one.
+
+    One form for both because they ask exactly the same two questions and must
+    enforce exactly the same two rules — a second class would be a second place
+    for the koda.ee boundary to be written out, and the day it disagreed with
+    the first would be the day a correction accepted an address a publication
+    would have refused. *Which* of the two operations a POST is answering is
+    decided by the route it arrived on and by the record's own state under a
+    lock, never by the form (docs/adr/0081 §3).
+
+    ``revision`` is the version the form was filled from, carried through the
+    round trip so the service can refuse a save whose record has moved on. The
+    same hidden field `EntryEditForm` carries, for the same reason.
+    """
+
+    use_required_attribute = False
+
+    #: A `CharField` rather than a `URLField`, exactly as `provider_link_field`
+    #: is one: the rule belongs to `normalize_koda_website_url`, which is what
+    #: the service enforces, and running Django's own validator first would
+    #: answer `http://koda.ee/x` with a different sentence depending on which
+    #: layer happened to catch it.
+    url = forms.CharField(
+        label="Kodulehe aadress",
+        required=False,
+        max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "url",
+                "autocomplete": "off",
+                "placeholder": "https://koda.ee/…",
+            }
+        ),
+    )
+    #: Pre-filled with today, and the default is *visible*: it can be read before
+    #: saving, changed, and retyped. Today is the overwhelming case — somebody
+    #: records the publication on the day it happens — and retyping today's date
+    #: every time is the friction people actually complain about (docs/adr/0078
+    #: §2).
+    #:
+    #: What the panel must never do is put a date on the file behind the
+    #: person's back, and it cannot: the service takes the submitted value and
+    #: derives nothing, so an emptied box is a refusal naming the missing date
+    #: rather than a silent stamp of today (docs/adr/0081 §2).
+    published_on = EstonianDateField(
+        label="Avaldamise kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+        initial=timezone.localdate,
+    )
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def clean_url(self) -> str:
+        """The service's own rule, reported under the box somebody typed it in.
+
+        Empty is refused *here* rather than left to the service, because this
+        form is only ever used for an operation that requires an address — and a
+        refusal that lands on the field is a refusal the person can see beside
+        what they typed.
+        """
+        from app.matters.services import (
+            WEBSITE_OVERVIEW_NEEDS_LINK,
+            normalize_koda_website_url,
+        )
+
+        try:
+            url = normalize_koda_website_url(self.cleaned_data.get("url"))
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
+        if not url:
+            raise forms.ValidationError(WEBSITE_OVERVIEW_NEEDS_LINK)
+        return url
+
+    def clean_published_on(self) -> Any:
+        from app.matters.services import WEBSITE_OVERVIEW_NEEDS_DATE
+
+        published_on = self.cleaned_data.get("published_on")
+        if published_on is None:
+            raise forms.ValidationError(WEBSITE_OVERVIEW_NEEDS_DATE)
+        return published_on
 
 
 class CompactClosureForm(ChipChoices, forms.Form):

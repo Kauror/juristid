@@ -246,7 +246,7 @@ def add_panel_chip(page, panel_id: str):
 def open_add_panel(page, panel_id: str) -> None:
     """Open one `LISA TEEMALE` operation and wait for its form.
 
-    The zone is a choice of seven until one is picked, and picking one closes
+    The zone is a choice of eight until one is picked, and picking one closes
     whichever was open (docs/adr/0075 §2). Every browser test that writes
     anything other than the current action's result goes through here, which is
     what made changing the panels from `<details>` to a radio bar on 2026-09-14

@@ -3,7 +3,7 @@
 The main `Teema` view: three zones, in the order a lawyer reads them.
 
   A1 `PRAEGUNE TEGEVUS`            the task, and the one box that finishes it
-  A2 `LISA TEEMALE`                seven choices, one small form at a time
+  A2 `LISA TEEMALE`                eight choices, one small form at a time
   C  `Ajajoon`                     the process strip, then the chronology
   B  the rail                       slow-changing facts, looked up not read
 
@@ -55,7 +55,7 @@ next step and no history renders as a short, deliberate page.
       Zone A, in two clearly separate parts. `PRAEGUNE TEGEVUS` states the task
       this file is waiting on and takes the one answer that finishes it;
       `LISA TEEMALE` is where every other kind of record begins, as a choice of
-      seven operations rather than seven forms held open.
+      eight operations rather than eight forms held open.
 
       This supersedes the `Järgmiseks` row over an open composer. That pair read
       as one act and was one act only by accident: the row's `✓ Tehtud` wrote no
@@ -110,6 +110,23 @@ next step and no history renders as a short, deliberate page.
     {% if matter.is_open and can_write %}
       {% include "matters/partials/add_to_matter.html" %}
     {% endif %}
+
+    {% comment %}
+      `Kodulehe ülevaated` — the write-ups this file still owes koda.ee.
+
+      Under the launcher rather than above it, because `PRAEGUNE TEGEVUS` and
+      `LISA TEEMALE` are what the page is for and an outstanding overview is not
+      a task: it makes no `NextAction`, appears on no work list and never reads
+      as late. It renders at all only when something is planned, so the ordinary
+      Matter is exactly the page it was — there are no permanently visible empty
+      sections here (docs/adr/0081 §4).
+
+      Unlike the launcher it is **not** behind `matter.is_open and can_write`: a
+      reader may see what the file owes, and the strip applies that same pair to
+      its own controls inside it. A published overview is not here at all; it
+      reads in the chronology, off the record that holds it.
+    {% endcomment %}
+    {% include "matters/partials/website_overviews.html" %}
 
     {% if historical %}
       {% comment %}

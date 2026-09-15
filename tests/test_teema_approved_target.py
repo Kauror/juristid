@@ -333,9 +333,13 @@ def test_the_file_control_is_immediately_available_and_there_is_no_manus_panel(
         assert gone not in body
 
 
-def test_lisa_teemale_offers_seven_choices_and_opens_none_of_them(signed_in, normal_matter):
-    """**§18, as ADR 0075 restates it.** Seven operations, each its own form,
-    and the zone is a choice until one is picked."""
+def test_lisa_teemale_offers_eight_choices_and_opens_none_of_them(signed_in, normal_matter):
+    """**§18, as ADR 0075 restates it.** Eight operations, each its own form,
+    and the zone is a choice until one is picked.
+
+    The eighth is `+ Kodulehe ülevaade`, added by docs/adr/0081. The claim this
+    test makes is about the zone's *shape* — a choice of operations, none of
+    them open — and it is unchanged by the number of them."""
     body = _detail(signed_in, normal_matter)
     panels = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
 
@@ -346,10 +350,11 @@ def test_lisa_teemale_offers_seven_choices_and_opens_none_of_them(signed_in, nor
         "+ Oluline tähtaeg",
         "+ Jõustumine",
         "+ Töövõit",
+        "+ Kodulehe ülevaade",
         "+ Lõpeta teema",
     ]
     assert [chip for chip in expected if chip in panels] == expected
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 7
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 8
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -405,10 +410,10 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     assert completion.count('type="submit"') == 1
     assert zone.count('type="submit"') == 2
 
-    # Seven choices under LISA TEEMALE, minus the one hidden while a step is
+    # Eight choices under LISA TEEMALE, minus the one hidden while a step is
     # open, each with exactly one save of its own.
     panels = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
-    assert panels.count('type="submit"') == 6
+    assert panels.count('type="submit"') == 7
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 

@@ -6593,6 +6593,73 @@ button.accordion__action:focus-visible {
   flex: 1;
 }
 
+/* -- Kodulehe ülevaated: what the file still owes the website ---------- */
+
+/* One quiet strip, rendered only when something is planned. It is deliberately
+   *not* a task surface: no danger colour, no overdue treatment, no badge that
+   competes with `PRAEGUNE TEGEVUS` — an outstanding overview is a fact about
+   the file, and nothing anywhere turns it into work (docs/adr/0081 §4). */
+.webrow {
+  padding: var(--spacing-3) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+}
+
+.webrow__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.webrow__item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) 0;
+}
+
+.webrow__state {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.webrow__badge {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+.webrow__says {
+  color: var(--text-body);
+}
+
+/* `Avalda` is a native disclosure — alone on its row, with no siblings to
+   displace and nothing to be chosen instead of it, which is the shape
+   docs/adr/0078 §1 leaves `Muuda` in PRAEGUNE TEGEVUS as. It is a plain flex
+   item; the chip it is drawn as carries its own rule. */
+.webrow__publish {
+  flex: none;
+}
+
+/* The publish form lands on its own full-width line under the row, for the same
+   reason a launcher panel does: the control that opens it must not move
+   (docs/adr/0078 §1). */
+.webrow__form {
+  flex: 1 1 100%;
+  margin-top: var(--spacing-2);
+}
+
+.webrow__cancel {
+  margin: 0;
+}
+
 /* -- the rail --------------------------------------------------------- */
 
 .teema .rail {
@@ -7093,6 +7160,7 @@ button.accordion__action:focus-visible {
   .uxnext,
   .teema .composer,
   .historicalrow,
+  .webrow,
   .accordion__head,
   .accordion__body,
   .teema .rail,

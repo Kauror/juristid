@@ -1,6 +1,6 @@
 """`LISA TEEMALE` does not move when you use it.
 
-The defect this file exists to keep out, measured on 2026-09-14: the seven
+The defect this file exists to keep out, measured on 2026-09-14: the launcher's
 choices were `<details>`, and an open one took `flex: 1 1 100%; order: 1`. So
 clicking `+ Kaasamine` sent the chip that had just been clicked to the head of
 the next line and pushed every other chip along with it — the control moved out
@@ -31,7 +31,7 @@ from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 pytestmark = pytest.mark.e2e
 
 #: The canonical order. `+ Järgmine tegevus` is absent while a step is open, and
-#: this Matter is new, so all seven are here.
+#: this Matter is new, so all eight are here.
 CANONICAL = [
     "+ Märge",
     "+ Järgmine tegevus",
@@ -39,6 +39,7 @@ CANONICAL = [
     "+ Oluline tähtaeg",
     "+ Jõustumine",
     "+ Töövõit",
+    "+ Kodulehe ülevaade",
     "+ Lõpeta teema",
 ]
 
@@ -49,6 +50,7 @@ PANEL_IDS = [
     "lisa-tahtaeg",
     "lisa-joustumine",
     "lisa-toovoit",
+    "lisa-koduleht",
     "lisa-lopeta",
 ]
 
@@ -111,7 +113,7 @@ def a_new_matter(page, base_url: str) -> str:
 def test_no_launcher_control_moves_when_a_form_is_opened(page, base_url):
     """The primary regression, chip by chip.
 
-    Seven clicks, and after each one every control is where it was before the
+    Eight clicks, and after each one every control is where it was before the
     first — not merely where it was before *that* click, which a launcher that
     drifted one row at a time would also satisfy.
     """
@@ -137,9 +139,9 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    #: Each chip's own resting colour. `+ Lõpeta teema` is quieter than the six
+    #: Each chip's own resting colour. `+ Lõpeta teema` is quieter than the seven
     #: above it on purpose, so one shared "quiet" value would be a colour no
-    #: seventh chip ever has.
+    #: last chip ever has.
     resting = {
         panel_id: page.locator(f'label[for="{panel_id}-valik"]').evaluate(
             "n => getComputedStyle(n).color"
@@ -152,7 +154,7 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     active = chosen.evaluate("n => getComputedStyle(n).color")
 
     assert active != resting["lisa-kaasamine"], (
-        "the chosen choice is not distinguished from the six others"
+        "the chosen choice is not distinguished from the seven others"
     )
     accent = page.evaluate(
         "() => getComputedStyle(document.documentElement).getPropertyValue('--accent-link').trim()"
@@ -287,7 +289,7 @@ def test_at_phone_width_the_chips_wrap_and_stay_on_their_rows(page, base_url):
 
     resting = chip_geometry(page)
     rows = sorted({round(row[2]) for row in resting})
-    assert len(rows) > 1, "at 375px the seven chips fit on one line — retune this test, not the CSS"
+    assert len(rows) > 1, "at 375px the eight chips fit on one line — retune this test, not the CSS"
 
     for panel_id in PANEL_IDS:
         panel = open_panel(page, panel_id)

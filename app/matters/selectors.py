@@ -307,6 +307,29 @@ def matter_engagements(matter: Matter, user: Any) -> list[Any]:
     )
 
 
+def planned_website_overviews(matter: Matter, user: Any) -> list[Any]:
+    """The `Kodulehe ülevaated` this Matter still owes, scoped to this reader.
+
+    Planned rows only. A published overview is read in the chronology, off the
+    row that records it, and a strip that listed both would state one fact in two
+    places — the duplication the approved target removed the standing sections to
+    get rid of (docs/adr/0074 §15, docs/adr/0081 §4).
+
+    Evaluated once and ordered oldest first, because the strip is a list of
+    outstanding work and the oldest debt is the one that has been waiting. That
+    is deliberately *not* the model's own ordering, which sorts by publication
+    date and is the right order for records that have one.
+    """
+    from app.matters.models import MatterWebsiteOverview
+
+    return list(
+        MatterWebsiteOverview.objects.filter(matter=matter)
+        .visible_to(user)
+        .planned()
+        .order_by("created_at", "id")
+    )
+
+
 @dataclass(frozen=True)
 class ActiveDeadline:
     """The one deadline the Matter header shows.

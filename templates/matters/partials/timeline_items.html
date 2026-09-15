@@ -70,13 +70,15 @@ record, not professional chronology (master specification 16.5).
             recipient token, and printing it would put somebody's one-time key
             on the page in readable text (docs/adr/0027, amended 2026-09-12).
 
-            No milestone but a `Kaasamine` sets any today
-            (`ChronologyMilestone.links`), and a `Kaasamine` renders its own in
-            the partial above. This stays because the generic branch is where a
-            second kind of record would arrive, and a branch that had quietly
-            lost the loop would drop its links without anybody noticing.
+            No milestone but a `Kaasamine` and a published `Kodulehe ülevaade`
+            sets any today (`ChronologyMilestone.links`). A `Kaasamine` renders
+            its own in the partial above, and an overview renders its own in the
+            block below — because that one is a swap target and this loop is
+            not. This branch stays because it is where a third kind of record
+            would arrive, and a branch that had quietly lost the loop would drop
+            its links without anybody noticing.
           {% endcomment %}
-          {% if item.milestone.links %}
+          {% if item.milestone.links and not item.website_overview %}
             <span class="uxtl__links">
               {% for link in item.milestone.links %}
                 <a class="uxtl__link" href="{{ link.url }}"
@@ -85,6 +87,20 @@ record, not professional chronology (master specification 16.5).
               {% endfor %}
             </span>
           {% endif %}
+        {% endif %}
+        {% comment %}
+          A published `Kodulehe ülevaade` renders its address through its own
+          element instead, because that element is a swap target: `Paranda link`
+          replaces it with a form and every answer replaces it again, while the
+          row around it — the dot, the date, the headline — never moves. The link
+          itself is the same labelled, `target="_blank"`, `rel="noopener
+          noreferrer"` control the block above renders, with the same visually
+          hidden «avaneb uues aknas» (docs/adr/0081 §4).
+
+          A cancelled overview has no address and no form, and renders neither.
+        {% endcomment %}
+        {% if item.website_overview and item.website_overview.is_published %}
+          {% include "matters/partials/website_overview_link.html" with overview=item.website_overview matter=matter website_overview_link_form=None %}
         {% endif %}
         {% comment %}
           The files this milestone's own record carries, in the same compact
