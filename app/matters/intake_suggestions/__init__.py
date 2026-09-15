@@ -2,8 +2,8 @@
 
 When incoming material has been captured and the extraction worker has
 produced its derivatives, this package reads them and proposes Matter
-metadata — a title, the sender, the response deadline, a Menetlusliik,
-Valdkonnad — and surfaces facts that have no canonical field yet: the
+metadata — a title, the sender, the response deadline, a Menetlusliik, an
+Õigusakt, Valdkonnad — and surfaces facts that have no canonical field yet: the
 sender's name and address, an EIS or ministry reference, a link.
 
 It is not an AI feature and does not become one by degrees. Rules,

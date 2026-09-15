@@ -22,8 +22,11 @@ from typing import Any
 from app.matters.intake_suggestions import vocabulary as vocab
 from app.matters.intake_suggestions.textscan import OrganisationPattern, organisation_pattern
 from app.organisations.models import AliasType, Organisation, OrganisationAlias, OrganisationType
-from app.taxonomy.models import PolicyArea
-from app.taxonomy.vocabulary import selectable_policy_areas
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
+from app.taxonomy.vocabulary import (
+    selectable_legal_instrument_types,
+    selectable_policy_areas,
+)
 
 
 @dataclass(frozen=True)
@@ -92,12 +95,39 @@ def load_policy_areas() -> dict[str, PolicyArea]:
     return {area.key: area for area in selectable_policy_areas()}
 
 
-def rule_diagnostics(policy_areas: dict[str, PolicyArea]) -> tuple[str, ...]:
-    """Rules that name an area the vocabulary no longer offers.
+def load_legal_instrument_types() -> dict[str, LegalInstrumentType]:
+    """The offered Õigusakt vocabulary by stable key. One query.
+
+    `Muu` is in what this returns, because it is in what the form offers. It is
+    excluded from *inference* one layer up, at the rules, so that the one place
+    saying «a machine never chooses Muu» is the one place a reader looks for it
+    (`vocabulary.INSTRUMENT_NEVER_INFERRED`, docs/adr/0080 §3).
+    """
+    return {item.key: item for item in selectable_legal_instrument_types()}
+
+
+def rule_diagnostics(
+    policy_areas: dict[str, PolicyArea],
+    legal_instruments: dict[str, LegalInstrumentType] | None = None,
+) -> tuple[str, ...]:
+    """Rules that name a vocabulary row that is no longer offered.
 
     A retired key is a maintenance fact, not a runtime error: the rule is
     simply inert until somebody re-keys it, and the panel says nothing about
     that area rather than guessing which current one was meant.
+
+    ``legal_instruments`` is optional and means *do not check the Õigusakt
+    rules*, which is what a caller that does not read them wants. An empty
+    mapping is a different thing and is checked: that is a database whose
+    instrument vocabulary has not been seeded, and every rule in the table is
+    then inert for a reason somebody should see.
     """
     missing = sorted(key for key in vocab.AREA_RULES if key not in policy_areas)
-    return tuple(f"Valdkonna reegel viitab võtmele, mida ei pakuta: {key}" for key in missing)
+    lines = [f"Valdkonna reegel viitab võtmele, mida ei pakuta: {key}" for key in missing]
+    if legal_instruments is not None:
+        keys = {*vocab.INSTRUMENT_RULES, vocab.INSTRUMENT_DRAFT_KEY}
+        lines += [
+            f"Õigusakti reegel viitab võtmele, mida ei pakuta: {key}"
+            for key in sorted(keys - set(legal_instruments))
+        ]
+    return tuple(lines)

@@ -43,11 +43,13 @@ from app.matters.intake_suggestions.input import (
 )
 from app.matters.intake_suggestions.resolvers import (
     OrganisationCatalogue,
+    load_legal_instrument_types,
     load_organisation_catalogue,
     load_policy_areas,
     rule_diagnostics,
 )
 from app.matters.intake_suggestions.types import (
+    EXCERPT_LIMIT,
     Candidate,
     Confidence,
     DocumentReadiness,
@@ -57,7 +59,7 @@ from app.matters.intake_suggestions.types import (
     SourceKind,
     SuggestedField,
 )
-from app.taxonomy.models import PolicyArea
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
 from app.workflow.enums import Track
 
 #: A heading this strong on a document is the document's formal title.
@@ -90,6 +92,7 @@ class CurrentValues:
     response_deadline: date | None = None
     track: str = ""
     policy_area_ids: frozenset[Any] = frozenset()
+    legal_instrument_ids: frozenset[Any] = frozenset()
 
     @property
     def has_sender(self) -> bool:
@@ -115,6 +118,7 @@ class CurrentValues:
             response_deadline=matter.response_deadline,
             track=matter.track or "",
             policy_area_ids=frozenset(area.pk for area in matter.policy_areas.all()),
+            legal_instrument_ids=frozenset(item.pk for item in matter.legal_instruments.all()),
         )
 
     @classmethod
@@ -163,6 +167,7 @@ def analyse_matter(matter: Any, viewer: Any) -> IntakeAnalysis:
         analysis_input,
         organisations=load_organisation_catalogue(),
         policy_areas=load_policy_areas(),
+        legal_instruments=load_legal_instrument_types(),
         current=CurrentValues.of(matter),
     )
 
@@ -188,6 +193,7 @@ def analyse_intake(session: Any) -> IntakeAnalysis:
         build_intake_analysis_input(session),
         organisations=load_organisation_catalogue(),
         policy_areas=load_policy_areas(),
+        legal_instruments=load_legal_instrument_types(),
         current=CurrentValues(),
     )
 
@@ -197,8 +203,17 @@ def analyse(
     *,
     organisations: OrganisationCatalogue,
     policy_areas: dict[str, PolicyArea],
+    legal_instruments: dict[str, LegalInstrumentType] | None = None,
     current: CurrentValues,
 ) -> IntakeAnalysis:
+    """Every rule, over one already-read envelope. Pure, and writes nothing.
+
+    ``legal_instruments`` is the offered Õigusakt vocabulary by stable key.
+    Omitting it means *do not read Õigusakt at all*, which is what a caller
+    with no vocabulary to resolve against wants — and is a different state from
+    an empty mapping, which is a database whose vocabulary has not been seeded
+    and is reported as a diagnostic (`rule_diagnostics`).
+    """
     builder = _Builder()
     documents = analysis_input.analysed
 
@@ -206,6 +221,7 @@ def analyse(
     _senders(documents, organisations, current, builder)
     _deadlines(documents, current, builder)
     _tracks(documents, current, builder)
+    _instruments(documents, legal_instruments or {}, current, builder)
     _areas(documents, policy_areas, current, builder)
     _contacts(documents, builder)
     _references(documents, builder)
@@ -224,7 +240,7 @@ def analyse(
         fields=fields,
         findings=tuple(sorted(builder.findings, key=_finding_order)),
         other_findings=tuple(sorted(builder.other, key=_finding_order)),
-        diagnostics=rule_diagnostics(policy_areas),
+        diagnostics=rule_diagnostics(policy_areas, legal_instruments),
     )
 
 
@@ -854,6 +870,250 @@ def _tracks(
                 current.track == track,
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Õigusakt
+# ---------------------------------------------------------------------------
+#
+# The one field that is read per document rather than pooled over the envelope,
+# and the reason is what an instrument *is* (docs/adr/0080).
+#
+# Menetlusliik and Valdkond are properties of a file of work: the covering
+# letter, the draft and the memorandum are all about the same subject and all
+# about the same procedure, so evidence from any of them is evidence about the
+# Teema. An instrument is not like that. «Määrus» is what one document *is*, and
+# a comparison table that names a directive in every row is telling the truth
+# about itself and saying nothing about what was submitted. Pooling those
+# signals would let the longest annex in the envelope decide the answer.
+#
+# So each readable document is classified on its own head, the best-speaking
+# document is chosen for the envelope, and everything else may corroborate at
+# MEDIUM and may never outvote it.
+
+
+@dataclass(frozen=True)
+class _HeadReading:
+    """What one document's own head says it is."""
+
+    document: SourceDocument
+    #: Instrument key → the weight its head signals carry. Only keys the
+    #: vocabulary still offers, never `Muu`.
+    scores: dict[str, int]
+    hits: dict[str, tuple[textscan.HeadSignalHit, ...]]
+    #: «eelnõu» or «kavand» with no kind beside it, where the head said one.
+    draft: textscan.HeadSignalHit | None = None
+
+    @property
+    def rank(self) -> int:
+        """Which kind of witness this document is, before any score is read.
+
+        A document's own head outranks a message's subject, which outranks an
+        annex — the order in which each is likely to be describing *the thing
+        that was submitted* rather than something stapled to it or mentioned in
+        passing.
+        """
+        if self.document.is_annex:
+            return 2
+        if self.document.is_email:
+            return 1
+        return 0
+
+    @property
+    def top_key(self) -> str:
+        return max(self.scores, key=lambda key: (self.scores[key], key), default="")
+
+    @property
+    def best(self) -> int:
+        return self.scores.get(self.top_key, 0)
+
+    def capped(self, score: int) -> int:
+        """The score this document is allowed to carry into a confidence.
+
+        Identical to ``score`` for an ordinary document. An annex is held one
+        point below HIGH by `vocab.ANNEX_ONLY_HIGH_MARGIN` — the existing rule,
+        for the existing reason — and a message by
+        `vocab.MESSAGE_ONLY_HIGH_MARGIN`, because a subject line names
+        something the reader has not opened and its attachments are
+        deliberately never unpacked (docs/adr/0072).
+        """
+        if self.document.is_annex:
+            return min(score, vocab.INSTRUMENT_HIGH_THRESHOLD - vocab.ANNEX_ONLY_HIGH_MARGIN)
+        if self.document.is_email:
+            return min(score, vocab.INSTRUMENT_HIGH_THRESHOLD - vocab.MESSAGE_ONLY_HIGH_MARGIN)
+        return score
+
+
+def _read_head(document: SourceDocument, offered: dict[str, Any]) -> _HeadReading | None:
+    """Classify one document from its head alone. Reads no body text.
+
+    The head is read once and every rule table is scored against those lines,
+    so the cost of this field is one walk of a document's opening rather than
+    one per instrument kind.
+    """
+    lines = textscan.head_lines(document)
+    if not lines:
+        return None
+    scores: dict[str, int] = {}
+    hits: dict[str, tuple[textscan.HeadSignalHit, ...]] = {}
+    for key, signals in vocab.INSTRUMENT_RULES.items():
+        if key in vocab.INSTRUMENT_NEVER_INFERRED or key not in offered:
+            continue
+        veto = vocab.INSTRUMENT_LINE_VETOES.get(key)
+        found = tuple(
+            hit
+            for hit in textscan.count_head_signals(lines, signals)
+            if veto is None or veto.search(hit.line.text) is None
+        )
+        if not found:
+            continue
+        scores[key] = sum(hit.weight for hit in found)
+        hits[key] = found
+    for key, blockers in vocab.INSTRUMENT_SUPPRESSED_BY.items():
+        if key in scores and any(blocker in scores for blocker in blockers):
+            del scores[key]
+            del hits[key]
+    draft = None
+    if vocab.INSTRUMENT_DRAFT_KEY in offered:
+        found_draft = textscan.count_head_signals(lines, vocab.INSTRUMENT_DRAFT_MARKERS)
+        draft = found_draft[0] if found_draft else None
+    if not scores and draft is None:
+        return None
+    return _HeadReading(document=document, scores=scores, hits=hits, draft=draft)
+
+
+def _instruments(
+    documents: tuple[SourceDocument, ...],
+    offered: dict[str, Any],
+    current: CurrentValues,
+    builder: _Builder,
+) -> None:
+    if not offered:
+        return
+    readings = [
+        reading for reading in (_read_head(document, offered) for document in documents) if reading
+    ]
+    speaking = [reading for reading in readings if reading.scores]
+
+    # **One document speaks for the envelope.** The best witness of the best
+    # available kind — a document's own head before a message's subject, a
+    # message's subject before an annex's — and only its own kind may ever fill
+    # a control. Everything else corroborates at MEDIUM, so the twelve-page
+    # comparison table cannot outvote the two-line heading on the draft.
+    leader: _HeadReading | None = None
+    conflict = False
+    if speaking:
+        tier = min(reading.rank for reading in speaking)
+        peers = [reading for reading in speaking if reading.rank == tier]
+        leader = max(peers, key=lambda reading: reading.best)
+        # Two documents of the same standing naming different kinds is the same
+        # shape as two formal headings that disagree: the analyser shows both
+        # with their evidence and fills nothing (docs/adr/0060, brief §15).
+        rivals = [
+            reading
+            for reading in peers
+            if reading.top_key != leader.top_key
+            and reading.best >= leader.best - vocab.INSTRUMENT_HIGH_MARGIN
+        ]
+        if rivals:
+            conflict = True
+            builder.notes[SuggestedField.LEGAL_INSTRUMENTS] = (
+                "Dokumendid nimetavad eri liiki õigusakte — vali ise."
+            )
+            builder.conflicts.add(SuggestedField.LEGAL_INSTRUMENTS)
+
+    # An EU act that nothing but an annex names, beside a domestic instrument
+    # that speaks for the envelope, is what the draft is answering to rather
+    # than what was sent (`vocab.INSTRUMENT_EU_BACKGROUND`).
+    background: set[str] = set()
+    if leader is not None and leader.top_key in vocab.INSTRUMENT_DOMESTIC:
+        for key in vocab.INSTRUMENT_EU_BACKGROUND:
+            witnesses = [reading for reading in speaking if key in reading.scores]
+            if witnesses and all(reading.document.is_annex for reading in witnesses):
+                background.add(key)
+
+    chosen: dict[str, Candidate] = {}
+    for reading in speaking:
+        leads = reading is leader
+        for key, score in reading.scores.items():
+            if key in background or score < vocab.INSTRUMENT_MEDIUM_THRESHOLD:
+                continue
+            capped = reading.capped(score)
+            high = (
+                leads
+                and not conflict
+                and key == reading.top_key
+                and capped >= vocab.INSTRUMENT_HIGH_THRESHOLD
+            )
+            candidate = _instrument_candidate(
+                reading=reading,
+                item=offered[key],
+                key=key,
+                score=capped,
+                hits=reading.hits[key],
+                confidence=Confidence.HIGH if high else Confidence.MEDIUM,
+                rule=f"instrument_{key}",
+            )
+            existing = chosen.get(key)
+            if existing is None or (_rank(candidate.confidence), -candidate.score) < (
+                _rank(existing.confidence),
+                -existing.score,
+            ):
+                chosen[key] = candidate
+
+    # **A specific kind beats the generic draft, and they are never offered
+    # together.** `Eelnõu` is the register's answer for «a draft whose kind the
+    # source did not name» — so it is what is left when nothing above it was
+    # evidenced anywhere in the envelope, and adding it beside `Seadus` would
+    # be the reader answering a question the document already answered
+    # (docs/adr/0070 §4, docs/adr/0080 §2).
+    if not chosen:
+        drafts = [(reading, reading.draft) for reading in readings if reading.draft is not None]
+        if drafts:
+            reading, hit = min(drafts, key=lambda pair: (pair[0].rank, -pair[1].weight))
+            capped = reading.capped(hit.weight)
+            chosen[vocab.INSTRUMENT_DRAFT_KEY] = _instrument_candidate(
+                reading=reading,
+                item=offered[vocab.INSTRUMENT_DRAFT_KEY],
+                key=vocab.INSTRUMENT_DRAFT_KEY,
+                score=capped,
+                hits=(hit,),
+                confidence=(
+                    Confidence.HIGH
+                    if capped >= vocab.INSTRUMENT_HIGH_THRESHOLD
+                    else Confidence.MEDIUM
+                ),
+                rule="instrument_eelnou_generic",
+            )
+
+    held = {str(pk) for pk in current.legal_instrument_ids}
+    ranked = sorted(chosen.values(), key=lambda c: (_rank(c.confidence), -c.score, c.display))
+    for candidate in ranked[: vocab.INSTRUMENT_LIMIT]:
+        builder.add(_with_current(candidate, candidate.value in held))
+
+
+def _instrument_candidate(
+    *,
+    reading: _HeadReading,
+    item: Any,
+    key: str,
+    score: int,
+    hits: tuple[textscan.HeadSignalHit, ...],
+    confidence: str,
+    rule: str,
+) -> Candidate:
+    first = hits[0]
+    return Candidate(
+        field=SuggestedField.LEGAL_INSTRUMENTS,
+        value=str(item.pk),
+        display=item.label_et,
+        confidence=confidence,
+        rule=rule,
+        provenance=_provenance(reading.document, first.line.block, header=first.line.is_subject),
+        evidence=textscan.collapse(first.line.text)[:EXCERPT_LIMIT],
+        detail=_cue_line(tuple(hit.label for hit in hits[:4])),
+        score=score,
+    )
 
 
 # ---------------------------------------------------------------------------

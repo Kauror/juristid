@@ -262,7 +262,7 @@
       var failures = 0;
       var MAX_FAILURES = 3;
 
-      /* The five controls a suggestion may fill.
+      /* The six controls a suggestion may fill.
          `title` is here and is not on `Muuda teemat`, which is the one rule
          that differs between the two surfaces. On a saved Matter nothing can
          tell a title a person wrote from one intake derived, so none is ever
@@ -276,6 +276,7 @@
         "source_organisations",
         "response_deadline",
         "track",
+        "legal_instruments",
         "policy_areas",
       ];
       /* Which of them the person has been near, and what we last wrote into

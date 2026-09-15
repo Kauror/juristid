@@ -33,7 +33,7 @@ from dataclasses import dataclass
 
 from app.workflow.enums import Track
 
-RULES_VERSION = "1.0"
+RULES_VERSION = "1.1"
 
 
 @dataclass(frozen=True)
@@ -481,6 +481,205 @@ TRACK_HIGH_MARGIN = 2
 
 
 # ---------------------------------------------------------------------------
+# Õigusakt
+# ---------------------------------------------------------------------------
+#
+# Keyed by `LegalInstrumentType.key` (app/taxonomy/legal_instruments.py). What
+# this answers is *what kind of instrument is in the envelope*, and it is not
+# Menetlusliik: a file can be `ELi õiguse ülevõtmine` about a `Seadus`
+# (docs/adr/0070 §1).
+#
+# **These signals are read from a document's head, never from its body**, and
+# that is the whole difference between this table and the two above. Valdkond
+# and Menetlusliik are properties of an envelope and legitimately pool across
+# it; an instrument is what one document *is*, and it is written where a
+# document says what it is — its title region, or a message's subject
+# (docs/adr/0080). A comparison table naming a directive in every row is
+# telling the truth about its own contents and nothing at all about what was
+# submitted.
+#
+# Weights are therefore larger than the Valdkonna ones and the thresholds sit
+# higher: a head line is a handful of words, each of them chosen, and there is
+# no repetition to count.
+
+#: Signals per instrument key. Two entries may share a label, in which case
+#: they pool at the stronger weight — «seaduse eelnõu» is written several ways
+#: and means one thing, exactly as the Menetlusliik table does it.
+INSTRUMENT_RULES: dict[str, tuple[Signal, ...]] = {
+    "seadus": (
+        Signal(r"seaduse (?:muutmise )?(?:seaduse )?eeln[õo]u", 6, "seaduse eelnõu"),
+        Signal(r"seaduseeln[õo]u", 6, "seaduse eelnõu"),
+        Signal(r"\bseaduse muutmise seadus\b", 5, "seaduse muutmise seadus"),
+        Signal(r"\w{3,}seadus(?:e|t|ega|ele|es|est)?\b", 4, "seadus"),
+        Signal(r"\bseadus(?:e|t|ega|ele|es|est)?\b", 3, "seadus"),
+    ),
+    "maarus": (
+        Signal(r"m[ää]{1,2}ruse (?:eeln[õo]u|kavand)", 6, "määruse eelnõu"),
+        Signal(r"\bvabariigi valitsuse m[ää]{1,2}rus", 6, "Vabariigi Valitsuse määrus"),
+        Signal(r"\bministri m[ää]{1,2}rus", 6, "ministri määrus"),
+        Signal(r"\bm[ää]{1,2}rus(?:e|t|ega|ele|es|est)?\b", 3, "määrus"),
+    ),
+    "el-maarus": (
+        Signal(
+            r"\beuroopa parlamendi ja n[õo]ukogu m[ää]{1,2}rus",
+            6,
+            "Euroopa Parlamendi ja nõukogu määrus",
+        ),
+        Signal(r"\beuroopa komisjoni m[ää]{1,2}rus", 6, "Euroopa Komisjoni määrus"),
+        Signal(r"\b(?:el|eli|euroopa liidu) m[ää]{1,2}rus", 6, "ELi määrus"),
+        Signal(r"\bm[ää]{1,2}rus\w*\s*\(el\)", 6, "määrus (EL)"),
+    ),
+    "direktiiv": (
+        Signal(r"\bdirektiiv(?:i|ile|iga|ist|id|ide)?\b", 6, "direktiiv"),
+        Signal(r"\b\d{4}/\d{1,4}/(?:el|e[üu])\b", 4, "direktiivi number"),
+    ),
+    "vtk": (
+        Signal(r"\bv[äa]ljat[öo][öo]tamiskavatsus", 6, "väljatöötamiskavatsus"),
+        Signal(r"\bvtk\b", 5, "VTK"),
+    ),
+    "strateegia": (
+        Signal(r"\barengustrateegia\w*", 6, "arengustrateegia"),
+        Signal(r"\bstrateegia\w*", 6, "strateegia"),
+    ),
+    "arengukava": (Signal(r"\barengukava\w*", 6, "arengukava"),),
+    "tegevuskava": (Signal(r"\btegevuskava\w*", 6, "tegevuskava"),),
+    "visioon": (
+        Signal(r"\bvisioonidokument\w*", 6, "visioonidokument"),
+        Signal(r"\bvisioon(?:i|ile|iga)?\b", 4, "visioon"),
+    ),
+    "korraldus": (
+        Signal(r"\bkorralduse (?:eeln[õo]u|kavand)", 6, "korralduse eelnõu"),
+        Signal(r"\bvabariigi valitsuse korraldus", 6, "Vabariigi Valitsuse korraldus"),
+        Signal(r"\bkorraldus(?:e|t|ega|ele)?\b", 3, "korraldus"),
+    ),
+    "kaskkiri": (
+        Signal(r"\bk[äa]skkirja (?:eeln[õo]u|kavand)", 6, "käskkirja eelnõu"),
+        Signal(r"\bk[äa]skkir(?:i|ja|jaga|jale)\b", 5, "käskkiri"),
+    ),
+    "el-teatis": (
+        Signal(r"\b(?:euroopa )?komisjoni teatis\w*", 6, "Komisjoni teatis"),
+        Signal(r"\bteatis(?:e|t|ega)?\b", 3, "teatis"),
+    ),
+    "konsultatsioon": (
+        Signal(r"\bkonsultatsioonidokument\w*", 6, "konsultatsioonidokument"),
+        Signal(r"\bavalik\w*\s+konsultatsioon\w*", 6, "avalik konsultatsioon"),
+        Signal(r"\bkonsultatsioon(?:i|ile|iga)?\b", 3, "konsultatsioon"),
+    ),
+    "ettepanek": (
+        Signal(r"\b(?:euroopa )?komisjoni ettepanek\w*", 5, "Komisjoni ettepanek"),
+        Signal(r"\bettepanek(?:u|ut|uga|ule)?\b", 2, "ettepanek"),
+    ),
+    "kusitlus": (Signal(r"\bk[üu]sitlus\w*", 5, "küsitlus"),),
+}
+
+#: What says *a draft* without saying a draft **of what**.
+#:
+#: `Eelnõu` is a real vocabulary row and the register uses it exactly this way:
+#: «Eelnõu, mille liiki allikas täpsemalt ei nimetanud». So it is offered only
+#: when nothing above it has been evidenced anywhere in the envelope — a
+#: specific kind always beats the generic one, and the two are never proposed
+#: together (docs/adr/0080 §2).
+INSTRUMENT_DRAFT_MARKERS: tuple[Signal, ...] = (
+    Signal(r"\beeln[õo]u\w*", 6, "eelnõu"),
+    Signal(r"\bkavand(?:i|it|iga|ile)?\b", 4, "kavand"),
+)
+
+#: The key `INSTRUMENT_DRAFT_MARKERS` produce, when they produce anything.
+INSTRUMENT_DRAFT_KEY = "eelnou"
+
+#: Keys no rule may ever produce, whatever a document says.
+#:
+#: `Muu` is a real vocabulary row and a person may tick it — but ticking it
+#: makes `Õigusakti liik` required (`clean_legal_instrument_answer`), and a
+#: machine has nothing to write there. A suggestion that puts a form into a
+#: state it cannot be saved from is worse than no suggestion, so `Muu` is not
+#: inferred and there is no rule keyed on it (docs/adr/0080 §3).
+INSTRUMENT_NEVER_INFERRED: frozenset[str] = frozenset({"muu"})
+
+#: One key silences another inside the same document's head.
+#:
+#: An EU Regulation is not the Estonian ministerial `Määrus` beside it
+#: (docs/adr/0070 §4), and «Euroopa Parlamendi ja nõukogu määrus» contains the
+#: word that names the domestic kind. Reading both off one phrase would file
+#: every EU regulation under two incomparable answers.
+INSTRUMENT_SUPPRESSED_BY: dict[str, tuple[str, ...]] = {
+    "maarus": ("el-maarus",),
+}
+
+#: The EU acts a domestic file cites rather than submits.
+#:
+#: An annex — a comparison table, an impact assessment — names the Regulation
+#: or the Directive the draft answers to, in every row, because that is what
+#: those documents are for. Where a domestic instrument already speaks for the
+#: envelope, an EU act nothing but an annex names is **background**: it is not
+#: offered at all, rather than offered weakly, because «Direktiiv» beside
+#: «Seadus» on the panel is the reader proposing the wrong answer and inviting
+#: one click to accept it (docs/adr/0070's ELi õiguse ülevõtmine worked
+#: example, docs/adr/0080 §1).
+#:
+#: An EU act named by a document that is *not* an annex is untouched: a
+#: Regulation sent for an opinion in its own right is the instrument, and the
+#: envelope that carries it says so somewhere other than in a table of rows.
+INSTRUMENT_EU_BACKGROUND: frozenset[str] = frozenset({"direktiiv", "el-maarus", "el-teatis"})
+
+#: The kinds whose presence makes the above background: Estonian instruments,
+#: which is what «ülevõtmine» produces.
+INSTRUMENT_DOMESTIC: frozenset[str] = frozenset(
+    {"seadus", "maarus", "vtk", "korraldus", "kaskkiri"}
+)
+
+#: Where a named instrument is the thing being *transposed* rather than the
+#: thing submitted.
+#:
+#: ADR 0070's worked example: a domestic Act that transposes a directive is
+#: `Seadus`, and the directive is background. A head line that says so in as
+#: many words — «Direktiivi (EL) 2024/825 ülevõtmise seaduse eelnõu» — names
+#: the directive and submits the Act, so the directive's own signals are
+#: dropped from that line rather than scored against the Act (docs/adr/0080 §1).
+INSTRUMENT_LINE_VETOES: dict[str, re.Pattern[str]] = {
+    "direktiiv": _compile(r"\b[üu]le\s?v[õo]t|\btranspon|\bharmoneeri"),
+}
+
+#: Below this an instrument is not offered at all: one generic word in a
+#: heading is not a classification.
+INSTRUMENT_MEDIUM_THRESHOLD = 3
+#: From this the best-speaking document's own kind may pre-fill an empty,
+#: untouched control.
+INSTRUMENT_HIGH_THRESHOLD = 6
+#: The lead the best-speaking document needs over an equally-placed document
+#: naming a **different** kind, before its own kind may fill anything.
+#:
+#: One strong head signal. Inside this margin two documents of the same
+#: standing are disagreeing about what the envelope is, and the analyser does
+#: not pick: both are offered with their evidence and nothing is filled in, the
+#: same answer two formal headings that disagree already get (docs/adr/0060).
+#:
+#: A bundle really can be an Act *and* a Regulation — the field is plural and
+#: ADR 0070 §2 says so — but choosing the higher-scoring of the two and filling
+#: that one is not "both", it is the reader picking a winner between two
+#: answers a person can tick in two clicks.
+INSTRUMENT_HIGH_MARGIN = 6
+#: How many instruments the panel offers. The same shape as `AREA_LIMIT`, and
+#: for the same reason: three useful candidates beat a list of everything a
+#: title happened to mention.
+INSTRUMENT_LIMIT = 3
+
+#: **A message on its own may suggest, never fill.**
+#:
+#: A `.msg` or `.eml` staged on `Uus teema` is read for its subject, its body
+#: and its headers, and its attachments are deliberately never unpacked
+#: (docs/adr/0072). So a subject naming an instrument is a person's shorthand
+#: for something the analyser has not seen, and `attachment_count` says how
+#: many files it has not seen rather than what any of them is. That is real
+#: evidence and it is offered with «Kasuta»; it is not evidence strong enough
+#: to fill a control unasked.
+#:
+#: Held one point below HIGH, exactly as `ANNEX_ONLY_HIGH_MARGIN` holds an
+#: annex: what is refused is the confidence, never the finding.
+MESSAGE_ONLY_HIGH_MARGIN = 1
+
+
+# ---------------------------------------------------------------------------
 # Arvamuse tähtaeg
 # ---------------------------------------------------------------------------
 #
@@ -634,6 +833,40 @@ TITLE_PURPOSE_SUFFIX = re.compile(
     r"ettepanekute esitamiseks)\s*$",
     re.IGNORECASE,
 )
+
+#: A line that is a list entry or a numbered section rather than a heading.
+#:
+#: A covering letter ends «Lisad: 1. eelnõu, 2. seletuskiri», and every word in
+#: that list names something the letter is *not*. A draft's own «§ 1.» is where
+#: its body starts. Either one ends the title block: what follows a list or a
+#: section number is not a document saying what it is (docs/adr/0080 §1).
+HEAD_LIST_ENTRY = re.compile(
+    r"^\s*(?:(?:lisa|lisad|manus|manused)\b\s*\d*\s*[:.)\-–—]|\d+\s*[.)]\s|[-–—•*]\s|§)",
+    re.IGNORECASE,
+)
+
+#: How many lines of a document's opening may belong to its title block.
+#:
+#: A letterhead, an addressee, a reference line or two and a heading. Twelve is
+#: generous for that and short enough that a table of rows is not read as one.
+HEAD_MAX_LINES = 12
+
+#: The «Lisa 2.» an annex writes on its own front page, removed from the front
+#: of that annex's own head line and from nowhere else.
+#:
+#: The two cases look identical and are opposites. In a covering letter «Lisa
+#: 2. määruse eelnõu» is one entry in a list of what was enclosed, and reading
+#: it as the letter's type is the false positive this whole reader exists to
+#: avoid. On the annex itself the same words are its title page. What separates
+#: them is which document the line is written on, so the prefix is stripped
+#: only where `SourceDocument.is_annex` already says this file is one — and on
+#: everything else a list entry stays refused outright.
+HEAD_ANNEX_PREFIX = re.compile(r"^\s*(?:lisa|manus)\s*\d*\s*[.:)\-–—]?\s*", re.IGNORECASE)
+
+#: The shortest line the head reader will look at. Shorter than a title's
+#: minimum, because «Määruse eelnõu» is a complete answer about what a file is
+#: while being too short to be the Matter's name.
+HEAD_MIN_LENGTH = 8
 
 
 # ---------------------------------------------------------------------------
