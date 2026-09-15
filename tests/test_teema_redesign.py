@@ -1588,6 +1588,21 @@ def test_the_matter_page_does_not_explode_into_queries(
     the page is the recommendation engine, which is behind
     `Võimalikud seosed` and is asserted separately in
     `tests/test_related_materials.py`.
+
+    **Measured at 38 since docs/adr/0084**, and the eight it added are the
+    reads `+ Väline seisukoht` needs rather than a per-fact cost: the
+    organisation catalogue once, the recorded alias spellings once, the usage
+    ranking behind the shortlist, this Matter's `Kaasamised` for
+    `Seotud kaasamine`, and its external positions for the chronology. Flat in
+    the population, which is the property this test exists to hold — doubling
+    the updates and the engagements leaves all eight where they are.
+
+    The catalogue is read **once** for that panel and both halves of the
+    control are sliced out of it in Python; `organisations_by_usage`, which
+    re-reads the rows it ranked and tops the row up with a second catalogue
+    query, is deliberately not called here (`forms.attach_organisation_picker`).
+    That is three reads turned into one, and it is why this ceiling moved by
+    six rather than by nine.
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
@@ -1600,5 +1615,5 @@ def test_the_matter_page_does_not_explode_into_queries(
             actor=specialist,
         )
 
-    with django_assert_max_num_queries(38):
+    with django_assert_max_num_queries(44):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

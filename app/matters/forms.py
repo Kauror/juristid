@@ -2699,18 +2699,50 @@ def attach_organisation_picker(form: forms.Form, *, viewer: Any) -> None:
     """
     from app.organisations.models import Organisation
 
-    everything = Organisation.objects.order_by("name")
-    set_choices(form, "organisation", everything)
+    # **The catalogue is read once**, and both halves are sliced out of that one
+    # list in Python. `organisations_by_usage` is the shared shortlist helper and
+    # is deliberately *not* called here: it re-reads the rows it ranked and tops
+    # the row up with a second catalogue query, which is the right trade on a
+    # page built around one Organisation question and the wrong one on the Teema
+    # page, where this control is a closed panel that most visits never open.
+    # Three reads became one, and the ranking below is the same ranking
+    # (`tests/test_teema_redesign.py` holds the page's query budget).
+    set_choices(form, "organisation", Organisation.objects.order_by("name"))
     field = cast(Any, form.fields["organisation"])
+    catalogue = list(Organisation.objects.order_by("name"))
+
     if viewer is None:
-        form.organisation_offered = list(everything)  # type: ignore[attr-defined]
+        form.organisation_offered = catalogue  # type: ignore[attr-defined]
         form.organisation_split = None  # type: ignore[attr-defined]
     else:
-        shortlist = organisations_by_usage(viewer)
+        # The same two usage passes `organisations_by_usage` makes, in the same
+        # order and scoped by `visible_to` inside `_usage_order`, so a
+        # restricted Matter still cannot move a chip. The second runs only when
+        # the sender history did not fill the row.
+        ranked: list[Any] = []
+        seen: set[Any] = set()
+        for field_name in ("source_organisations", "addressee_organisation"):
+            if len(ranked) >= SENDER_SHORTLIST_SIZE:
+                break
+            for pk in _usage_order(viewer, field_name, SENDER_SHORTLIST_SIZE):
+                if pk not in seen:
+                    seen.add(pk)
+                    ranked.append(pk)
+        by_pk = {organisation.pk: organisation for organisation in catalogue}
+        shortlist = [by_pk[pk] for pk in ranked[:SENDER_SHORTLIST_SIZE] if pk in by_pk]
+        if len(shortlist) < SENDER_SHORTLIST_SIZE:
+            # Topped up alphabetically, so two readers with no history see the
+            # same eight and neither sees none.
+            chosen = {organisation.pk for organisation in shortlist}
+            shortlist.extend(
+                organisation for organisation in catalogue if organisation.pk not in chosen
+            )
+            shortlist = shortlist[:SENDER_SHORTLIST_SIZE]
         chosen = {organisation.pk for organisation in shortlist}
-        tail = [organisation for organisation in everything if organisation.pk not in chosen]
+        tail = [organisation for organisation in catalogue if organisation.pk not in chosen]
         form.organisation_offered = [*shortlist, *tail]  # type: ignore[attr-defined]
         form.organisation_split = len(shortlist)  # type: ignore[attr-defined]
+
     field.choices = [
         (organisation.pk, organisation.name)
         for organisation in cast(Any, form).organisation_offered
