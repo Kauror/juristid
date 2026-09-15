@@ -8,6 +8,34 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-15
+basis = "deployment"
+# Üks väljalase, kolm ühendust: «Õigusakti» ettetäitmine uue teema vormil,
+# kaasamise kuupäeva täpsus ja kodulehe ülevaated.
+#
+# Kaks punkti, mitte kolm. «Õigusakti» ettetäitmine kirjeldati juba 14. septembri
+# kirjes, kui see ühendus valmis sai; see jõudis kasutajateni alles selle
+# väljalaskega, aga punkt on olemas ja ühte muudatust ei kirjeldata kaks korda.
+# Siin on need kaks, mis olid veel kirjeldamata.
+#
+# Alumine punkt on kaasamise oma: kuupäeva saab nüüd märkida perioodina, kui
+# täpset päeva ei tea. «Tagasisidet ootame kuni» jääb täpseks päevaks nagu enne
+# — see on kuupäev, mille keegi teistele ütles — ja seda siin ei mainita, et
+# lugeja ei arvaks, et ka see muutus ligikaudseks.
+#
+# Teine punkt on kodulehe ülevaadete oma. Plaanitud ülevaade on teema enda märge
+# ega tekita tähtaega, tööülesannet ega teavitust; lugejale on oluline see, et
+# teema juures on nüüd koht, kus see plaan ja hiljem ilmunud lingi seis paistab.
+revisions = [
+  "3c33b48f39a49915fe64465cc89f5f0559e7c17b",
+]
+prs = [217, 218]
+changes = [
+  "Kaasamise kuupäeva saab nüüd märkida nii täpselt, kui see teada on: täpne päev, kuu, kvartal või aasta. Kui kuupäev ei ole teada, võib selle tühjaks jätta.",
+  "Teemale saab nüüd märkida, et kodulehe ülevaade on plaanis, ja hiljem salvestada ilmunud ülevaate koda.ee lingi.",
+]
+
+[[day]]
 date = 2026-09-14
 basis = "deployment"
 # **Kaks väljalaset, üks kirje.** README ütleb, et ühe päeva mitu väljalaset
