@@ -34,6 +34,14 @@ those values are rewritten to a canonical string before the capture as well:
 proved against the calendar rather than against today in the last section of
 this file.
 
+A second table, `SCENARIO_NORMALISED_TEXT`, holds the case the first cannot: a
+date slot whose *class* renders a clock value on one capture and a date the
+fixture chose on another. `.tl-step__date` and `.uxtl__msdate` are that — the
+seeded closed Matter's own «Alustatud» and «Lõpetatud» are the day the run
+happened, while the open Matter's are «Jõustumine 1.1.2028» and a Kaasamine in
+May. Held still on `teema-suletud` alone, so the fixture's own dates stay in
+every other baseline exactly as they are.
+
 Inside a table it is not a line that moves but the whole grid. An auto-layout
 table sizes every column from its content, so one cell that gains a character
 resizes its column and every other column redistributes to pay for it, on every
@@ -446,6 +454,35 @@ MONTH_VIEW_CHIP = ('.uxviews .uxchip:has-text("Tähtaeg sel kuul")',)
 #: The closed banner's «(29.8.2026)», already masked and already required.
 CLOSED_ON = (".banner--closed .banner__text .muted",)
 
+#: The seeded closed Matter's own two days, on the two surfaces of `teema-suletud`
+#: that print them: the process strip's «Alustatud» / «Lõpetatud» dates, and the
+#: `Ajajoon` milestones «Teema suletud» and «Teema loodud».
+#:
+#: All four are one pair of facts. `seed_e2e_data` creates `CLOSED_TITLE` and
+#: closes it in the same transaction, so `Matter.created_at`, `Matter.closed_at`
+#: and the two `MATTER_CREATED` / `MATTER_CLOSED` change events are all stamped
+#: with the wall clock of the run — and every one of them renders through
+#: `format_estonian_date`, which is `j.n.Y`. The page therefore prints the day CI
+#: ran, four times, and prints it in the one format that changes *length*: the
+#: product does not zero-pad, so `12.9.2026` is nine characters and `1.10.2026`
+#: is nine too but a different set of advances, and `9.9.2026` is eight.
+#:
+#: These four were the last clock values on this capture that nothing held: they
+#: are not `<time>` elements, so the bare `time` mask never reached them, and
+#: they are not in `CLOCK_DEPENDENT` under any other name. Unmasked and
+#: unnormalised, every one of them is in the committed baseline as the digits of
+#: the morning it was taken.
+#:
+#: **Scenario-scoped, and this is the whole reason `SCENARIO_NORMALISED_TEXT`
+#: exists.** Both classes render on the open Matter too, where their dates are
+#: nothing of the kind: `teema-ulevaade` prints «Jõustumine 1.1.2028» and
+#: «Kaasamine … 12.5.2026» through the same two selectors, and those are dates
+#: the fixture chose. A global entry would rewrite them into a canonical, move
+#: three baselines that have nothing to do with this, and — far worse — take
+#: real, fixture-chosen content out of the comparison, which is exactly the
+#: masking-too-much failure the rest of this module is written against.
+CLOSED_MATTER_DAYS = (".tl-step__date", ".uxtl__msdate")
+
 #: The Ajajoon summary's «29.8», the `<time>` the timeline preview leads with.
 #:
 #: The `Ajajoon` head's preview quote and its date are both gone: the approved
@@ -523,6 +560,44 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     (EVIDENCE_DATE[0], "6.9.2026"),
 )
 
+#: The same mechanism, for a value whose *selector* is not scenario-specific.
+#:
+#: `NORMALISED_TEXT` is applied to every capture, which is right for every entry
+#: in it: each of those selectors names one element that renders on a handful of
+#: pages and is clock-derived on all of them. `.tl-step__date` and
+#: `.uxtl__msdate` are not like that. They are the process strip's and the
+#: chronology's date slots, and *what* they hold is a property of the Matter
+#: rather than of the class: the seeded closed Matter's are its `created_at` and
+#: `closed_at`, both stamped by the run, while the open Matter's are
+#: «1.1.2028» and «12.5.2026» — dates `seed_e2e_data` chose, which belong in the
+#: baseline and would be silently frozen by a global entry.
+#:
+#: So the scenario is part of the declaration. An entry here holds a value still
+#: on the one capture that renders it from the clock, and leaves the identical
+#: markup alone everywhere else. Anything whose *selector* can carry the scoping
+#: belongs in `NORMALISED_TEXT` above, where it is one list to read; this is for
+#: the case where scoping by selector would mean asserting a fact about the
+#: page's structure that is not the fact being relied on.
+SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
+    # `12.9.2026`, because that is the day the committed baseline was taken and
+    # therefore the string it already holds: stabilising these moves no image,
+    # and no baseline is regenerated to adopt the fix. It is a value the product
+    # really produces — `format_estonian_date` on the twelfth of September.
+    "teema-suletud": tuple((selector, "12.9.2026") for selector in CLOSED_MATTER_DAYS),
+}
+
+
+def normalisations_for(name: str) -> tuple[tuple[str, str], ...]:
+    """Every (selector, canonical) pair that applies to one scenario.
+
+    The two tables are one contract and are read as one everywhere — by the
+    capture, by the declaration check below, and by the tests at the foot of
+    this file. A second reader that forgot the scenario-scoped half is how the
+    halves would drift apart.
+    """
+    return (*NORMALISED_TEXT, *SCENARIO_NORMALISED_TEXT.get(name, ()))
+
+
 #: What each scenario's capture may not silently stop *normalising*.
 #:
 #: The exact hazard `REQUIRED_MASKS` exists for, one mechanism along. A
@@ -556,7 +631,12 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # on arrival. Nothing on this capture renders that date any more, so a mask
     # for it would cover no pixels and requiring it would fail every run
     # (design handoff I11, docs/matter-page-refinement.md).
-    "teema-suletud": CLOSED_ON,
+    #
+    # The process strip's two dates and the two `Ajajoon` milestones join it for
+    # the same reason it is here: the seeded closed Matter is created and closed
+    # by the run, so all four are on this page every time, and an absence means
+    # the markup moved rather than that the world was quiet.
+    "teema-suletud": (*CLOSED_ON, *CLOSED_MATTER_DAYS),
     # The seeded world sends one opinion on `OPEN_TITLE`, so both of these
     # render a `Saadetud <date>` under a filename on every run — and both are
     # the same evidence table, so both carry a `Kuupäev` column whose width is
@@ -572,11 +652,24 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # ordinary work, each on its own line (docs/adr/0074 §14).
 }
 
-assert not {
-    selector for selectors in REQUIRED_NORMALISATIONS.values() for selector in selectors
-} - {selector for selector, _ in NORMALISED_TEXT}, (
-    "a required normalisation is not in NORMALISED_TEXT, so nothing holds it still"
-)
+
+def _assert_every_required_normalisation_is_declared() -> None:
+    """Per scenario, rather than against the union of the two tables.
+
+    A selector required on one capture and normalised only on another holds
+    nothing still on the capture that declared it, and a union would not notice.
+    Run at import, because a declaration that does not hold should stop the
+    module rather than fail one test in it.
+    """
+    for scenario, selectors in REQUIRED_NORMALISATIONS.items():
+        assert not set(selectors) - {selector for selector, _ in normalisations_for(scenario)}, (
+            f"{scenario}: a required normalisation is neither in NORMALISED_TEXT "
+            f"nor in this scenario's SCENARIO_NORMALISED_TEXT, so nothing holds "
+            f"it still"
+        )
+
+
+_assert_every_required_normalisation_is_declared()
 
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "minu-too": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
@@ -656,9 +749,14 @@ def normalise_clock_text(page, name: str) -> None:
     counts that actually occur, and asserts they all come out the same width.
     Testing it through a screenshot would only ever test the month CI happens
     to run in, which is the defect this exists to fix.
+
+    `name` decides two things, not one. It has always said which normalisations
+    this capture may not silently stop making; since `SCENARIO_NORMALISED_TEXT`
+    it also says which ones apply at all, so a rewrite declared for one scenario
+    leaves the identical markup untouched on every other.
     """
     required = REQUIRED_NORMALISATIONS.get(name, ())
-    for selector, canonical in NORMALISED_TEXT:
+    for selector, canonical in normalisations_for(name):
         elements = page.locator(visible(selector))
         count = elements.count()
         assert count or selector not in required, (
@@ -1392,6 +1490,27 @@ CLOSED_ON_VARIANTS = ("(29.8.2026)", "(1.9.2026)", "(31.12.2026)", "(1.1.2027)")
 #: `j.n`, the Ajajoon preview's own format. Same defect one field shorter.
 TIMELINE_ON_VARIANTS = ("29.8", "1.9", "31.12", "1.1")
 
+#: `format_estonian_date`, over the days the seeded closed Matter's own dates
+#: really take. It is `j.n.Y` with no zero-padding, so the string is eight
+#: characters on a single-digit day of a single-digit month, nine on most days
+#: and ten at the end of a long month — and the pair either side of each
+#: boundary is what a baseline taken on one of them and read on the other has to
+#: survive.
+CLOSED_MATTER_DAY_VARIANTS = (
+    "12.9.2026",
+    "9.9.2026",
+    "30.9.2026",
+    "1.10.2026",
+    "31.12.2026",
+    "1.1.2027",
+)
+
+#: The open Matter's two dates through the same two classes, so the scoping test
+#: below is driven by real content rather than by a placeholder. Both are
+#: `seed_e2e_data`'s own choices — a commencement in 2028 and a Kaasamine in May
+#: — and neither moves when the calendar does.
+FIXTURE_DAY_VARIANTS = ("1.1.2028", "12.5.2026")
+
 #: A flex row, so the probe's x position is a direct readout of how wide the
 #: element before it is. Without it the two would stack and a width change would
 #: be invisible — which is how a screenshot suite misses this class in the first
@@ -1427,11 +1546,11 @@ def _geometry(page, selector: str) -> tuple[str, float, float]:
     return element.inner_text().strip(), round(box["width"], 2), round(probe["x"], 2)
 
 
-def _holds_still(page, build, variants, selector: str) -> None:
+def _holds_still(page, build, variants, selector: str, scenario: str = "") -> None:
     seen = set()
     for variant in variants:
         _fixture(page, build(variant))
-        normalise_clock_text(page, "")
+        normalise_clock_text(page, scenario)
         seen.add(_geometry(page, selector))
     assert len(seen) == 1, (
         f"{selector!r} did not come out the same for every variant: {sorted(seen)}. "
@@ -1485,6 +1604,140 @@ def test_the_closed_banner_date_is_the_same_width_on_any_day(page):
 # still serves every other clock value on the page.
 
 
+# ---------------------------------------------------------------------------
+# The closed Matter's own two days, and the scoping that keeps them its own
+# ---------------------------------------------------------------------------
+#
+# Unlike everything above, these two are *not* masked. They are ordinary dark
+# text on the surface, in the baseline as glyphs, and the whole of what they
+# have to do is read the same on every morning — so the assertion is the text
+# and the geometry together, which is what `_holds_still` already measures.
+
+
+def _closed_matter_fixture(page, body: str) -> None:
+    """`teema-suletud`'s three normalised elements, one of them varying.
+
+    All three, because this drives `normalise_clock_text` under the real
+    scenario name and `REQUIRED_NORMALISATIONS` refuses a capture whose declared
+    values are not on the page. That guard is the point of the mechanism and not
+    something to route around, so the fixture satisfies it instead: the banner
+    is rendered after the probe, where it cannot enter the measurement.
+    """
+    page.set_content(
+        f'<div id="row" style="{_ROW}">{body}<span id="probe">·</span></div>'
+        '<div class="banner banner--closed"><p class="banner__text">'
+        '<span class="muted">(29.8.2026)</span></p></div>'
+    )
+
+
+def _closed_matter_days(day: str) -> str:
+    """The process strip's date and the chronology milestone's, both that day.
+
+    Both, in one fixture, because that is how the page renders them: `created_at`
+    and `closed_at` are stamped in the same seeding transaction, so the strip and
+    the chronology print the same string and a fixture that varied only one of
+    them would be measuring a state the product never has.
+    """
+    return f'<span class="tl-step__date">{day}</span><span class="uxtl__msdate">{day}</span>'
+
+
+@pytest.mark.parametrize("selector", CLOSED_MATTER_DAYS)
+def test_the_closed_matter_days_are_the_same_width_on_any_day(page, selector):
+    """The seeded closed Matter is created and closed by the run that renders it.
+
+    So `Alustatud`, `Lõpetatud`, `Teema suletud` and `Teema loodud` all print the
+    morning CI ran, in `j.n.Y` — eight characters on `9.9.2026`, nine on
+    `12.9.2026`, ten on `1.10.2026`. Nothing covers them and nothing sized them,
+    which is why the committed baseline holds the digits of the day it was taken
+    and every later morning differs from it.
+    """
+    seen = set()
+    for day in CLOSED_MATTER_DAY_VARIANTS:
+        _closed_matter_fixture(page, _closed_matter_days(day))
+        normalise_clock_text(page, "teema-suletud")
+        seen.add(_geometry(page, selector))
+    assert len(seen) == 1, (
+        f"{selector!r} did not come out the same for every day: {sorted(seen)}. "
+        f"Each entry is (text, own width, where the next element starts) — two "
+        f"entries means the baseline holds one morning's digits and is red on "
+        f"another's."
+    )
+
+
+@pytest.mark.parametrize("selector", CLOSED_MATTER_DAYS)
+def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, selector):
+    """The hazard itself, before anything is asked to hold it still.
+
+    Without this the test above would pass on a fixture that could not move at
+    all — a class that stopped rendering a date, a selector that matches
+    nothing — and would go on passing after somebody removed the entry it is
+    guarding.
+    """
+    seen = set()
+    for day in CLOSED_MATTER_DAY_VARIANTS:
+        _closed_matter_fixture(page, _closed_matter_days(day))
+        seen.add(_geometry(page, selector))
+    assert len(seen) == len(CLOSED_MATTER_DAY_VARIANTS), (
+        f"{selector!r} rendered {len(seen)} distinct geometries for "
+        f"{len(CLOSED_MATTER_DAY_VARIANTS)} different days: {sorted(seen)}. Either "
+        f"the fixture stopped modelling the element or the date stopped changing "
+        f"— and if the drift is really gone, the test above proves nothing."
+    )
+
+
+@pytest.mark.parametrize("selector", CLOSED_MATTER_DAYS)
+def test_the_closed_matter_days_are_left_alone_on_every_other_scenario(page, selector):
+    """The narrowness, asserted rather than trusted.
+
+    `.tl-step__date` and `.uxtl__msdate` are the open Matter's date slots too,
+    and there they hold «Jõustumine 1.1.2028» and a Kaasamine in May — dates
+    `seed_e2e_data` chose, which move only when somebody changes the fixture and
+    are exactly what `teema-ulevaade`, `teema-1024` and `teema-arhiiv` exist to
+    compare. A global entry would freeze them into a canonical and take real
+    content out of three baselines.
+
+    So the rewrite is asked for under another scenario's name and has to decline.
+    """
+    for day in FIXTURE_DAY_VARIANTS:
+        _closed_matter_fixture(page, _closed_matter_days(day))
+        normalise_clock_text(page, "teema-ulevaade")
+        assert page.locator(selector).inner_text().strip() == day, (
+            f"{selector!r} was rewritten on `teema-ulevaade`, where it holds a "
+            f"date the fixture chose. Normalising it there hides the one thing "
+            f"that baseline is comparing."
+        )
+
+
+def test_a_scenario_normalisation_that_stops_matching_fails_the_capture(page):
+    """`REQUIRED_NORMALISATIONS`, for the scenario-scoped half of the contract.
+
+    A rename of `.tl-step__date` would rewrite nothing, raise nothing and leave
+    `teema-suletud` green — with the run's own date back in the capture and the
+    baseline red on the next morning that spells it differently. This is the
+    assertion that makes that a failure on the day the markup moves, rather than
+    on somebody else's unrelated pull request a fortnight later.
+    """
+    _closed_matter_fixture(page, '<span class="uxtl__msdate">12.9.2026</span>')
+    with pytest.raises(AssertionError, match="matches nothing on this page"):
+        normalise_clock_text(page, "teema-suletud")
+
+
+def test_a_scenario_normalisation_is_declared_by_the_scenario_it_names():
+    """The two tables are one contract, and neither may carry the other's entry.
+
+    Two ways this goes quiet. A selector in `SCENARIO_NORMALISED_TEXT` that its
+    own scenario does not require is a rewrite nothing guards, so a rename makes
+    it stop applying and says nothing. A selector in *both* tables is applied to
+    every capture whatever the scenario map says, which is the global freeze the
+    scoping exists to avoid — and it would read, from the scoped entry alone, as
+    though it were narrow.
+    """
+    for scenario, entries in SCENARIO_NORMALISED_TEXT.items():
+        scoped = {selector for selector, _ in entries}
+        assert scoped <= set(REQUIRED_NORMALISATIONS.get(scenario, ())), scenario
+        assert not scoped & {selector for selector, _ in NORMALISED_TEXT}, scenario
+
+
 def test_a_normalisation_that_stops_matching_fails_the_capture(page):
     """The whole point of `REQUIRED_NORMALISATIONS`.
 
@@ -1507,9 +1760,10 @@ def test_every_scenario_that_renders_a_clock_value_declares_it(page):
     reachable from the same names, so a typo in either is a failing test rather
     than a mask that never paints.
     """
-    normalised = {selector for selector, _ in NORMALISED_TEXT}
     for scenario, selectors in REQUIRED_NORMALISATIONS.items():
-        assert set(selectors) <= normalised, scenario
+        assert set(selectors) <= {selector for selector, _ in normalisations_for(scenario)}, (
+            scenario
+        )
     for scenario, selectors in REQUIRED_MASKS.items():
         assert set(selectors) <= set(CLOCK_DEPENDENT), scenario
 
