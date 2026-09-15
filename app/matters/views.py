@@ -4425,8 +4425,9 @@ def _planned_website_overview_rows(
     `engagement_rows` was (docs/adr/0074 §9, removed with the standing
     `Kaasamine` section): exactly one row may render a *bound* form — the one a
     refusal came back for — and deciding that in the template would mean
-    comparing ids in three places. Every other row gets its own unbound form, so a refused `Avalda` on
-    one plan cannot put somebody's typed address into the box beside another.
+    comparing ids in three places. Every other row gets its own unbound form,
+    so a refused `Avalda` on one plan cannot put somebody's typed address into
+    the box beside another.
     """
     rows = []
     for record in selectors.planned_website_overviews(matter, user):
