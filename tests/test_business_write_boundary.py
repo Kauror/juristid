@@ -383,6 +383,41 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["planned_overview"].pk)
         ),
     ),
+    # `Väline seisukoht`, in both of its write routes: the record, and the
+    # correction to one. Both are ordinary new business content on an open
+    # Matter — unlike the overview's link correction above, a position
+    # correction is refused on a closed file (docs/adr/0084 §8).
+    WriteRoute(
+        name="matters:add_external_position",
+        label="Välise seisukoha lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "organisation": str(w["organisation"].pk),
+                "url": "https://example.org/loata-seisukoht",
+                "position_precision": "EXACT",
+            },
+        ),
+        probe=lambda w: w["matter"].external_positions.count(),
+    ),
+    WriteRoute(
+        name="matters:update_external_position",
+        label="Välise seisukoha parandamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "position_id": w["external_position"].pk},
+            {
+                "organisation": str(w["organisation"].pk),
+                "url": "https://example.org/loata-parandatud",
+                "position_precision": "EXACT",
+                "revision": "",
+            },
+        ),
+        probe=lambda w: (
+            w["external_position"]
+            .__class__.objects.values_list("url", flat=True)
+            .get(pk=w["external_position"].pk)
+        ),
+    ),
     WriteRoute(
         name="matters:correct_website_overview",
         label="Kodulehe ülevaate lingi parandamine",
@@ -649,9 +684,11 @@ def world(db):
         create_matter,
         plan_website_overview,
         publish_website_overview,
+        record_external_position,
     )
 
     author = factories.UserFactory()
+    organisation = factories.OrganisationFactory()
     # Explicit references in a range the allocator will not reach: `create_matter`
     # below allocates from 2026_1 upwards and the factory's own sequence starts
     # there too, so the two collide on the uniqueness constraint.
@@ -692,6 +729,16 @@ def world(db):
     # one still owed, for the publish and cancel routes, and one already
     # published, for the correction route — which, like `matters:edit_entry`,
     # changes a record that exists rather than creating one.
+    # A `Väline seisukoht` already on the file, for the correction route:
+    # `Muuda` changes a record that exists rather than creating one, so a world
+    # without one would have nothing for a forbidden actor to be refused *on*.
+    external_position = record_external_position(
+        matter=matter,
+        organisation=organisation,
+        url="https://example.org/olemasolev-seisukoht",
+        actor=author,
+    )
+
     planned_overview = plan_website_overview(matter=matter, actor=author)
     published_overview = publish_website_overview(
         overview=plan_website_overview(matter=matter, actor=author),
@@ -725,6 +772,7 @@ def world(db):
     return {
         "matter": matter,
         "entry": entry,
+        "external_position": external_position,
         "planned_overview": planned_overview,
         "published_overview": published_overview,
         "unowned": unowned,
@@ -736,7 +784,7 @@ def world(db):
         "review_action": review_action,
         "submission": submission,
         "sent_submission": sent_submission,
-        "organisation": factories.OrganisationFactory(),
+        "organisation": organisation,
         "stage": factories.StageFactory(),
     }
 

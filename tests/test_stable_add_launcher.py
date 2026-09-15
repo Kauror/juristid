@@ -48,6 +48,11 @@ CANONICAL = [
     # last thing done *about* a file, and finishing the file is not routine
     # capture at all (docs/adr/0081 §2).
     "+ Kodulehe ülevaade",
+    # `+ Väline seisukoht` is the last of the capture operations and sits
+    # directly before the closure: what somebody else said about the file is
+    # reference material recorded alongside the work, and finishing the file is
+    # not routine capture at all (docs/adr/0084 §6).
+    "+ Väline seisukoht",
     "+ Lõpeta teema",
 ]
 
@@ -64,6 +69,7 @@ PANEL_IDS = [
     "lisa-joustumine",
     "lisa-toovoit",
     "lisa-koduleht",
+    "lisa-valine-seisukoht",
     "lisa-lopeta",
 ]
 
@@ -89,14 +95,14 @@ def _chips(zone: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_launcher_offers_eight_choices_in_the_canonical_order(signed_in, specialist):
+def test_the_launcher_offers_nine_choices_in_the_canonical_order(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chips(_zone(signed_in, matter)) == CANONICAL
 
 
 def test_an_open_step_removes_only_its_own_chip_and_reorders_nothing(signed_in, specialist):
-    """`+ Järgmine tegevus` goes; the remaining seven keep their relative order."""
+    """`+ Järgmine tegevus` goes; the remaining eight keep their relative order."""
     matter = factories.MatterFactory(owner=specialist)
     set_next_action(
         matter=matter,
@@ -167,7 +173,7 @@ def test_every_chip_is_a_control_and_its_form_is_a_separate_element(signed_in, s
 
 
 def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in, specialist):
-    """One `name`, eight values: the browser enforces the product rule, and it
+    """One `name`, nine values: the browser enforces the product rule, and it
     keeps enforcing it with scripting off."""
     matter = factories.MatterFactory(owner=specialist)
     zone = _zone(signed_in, matter)
@@ -179,7 +185,7 @@ def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in,
 
 
 def test_nothing_is_chosen_until_somebody_chooses(signed_in, specialist):
-    """The zone is a choice of eight, not eight forms."""
+    """The zone is a choice of nine, not nine forms."""
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chosen(_zone(signed_in, matter)) == []

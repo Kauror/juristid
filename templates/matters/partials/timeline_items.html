@@ -49,13 +49,24 @@ record, not professional chronology (master specification 16.5).
         {% endcomment %}
         {% if item.is_engagement %}
           {% comment %}
-            A `Kaasamine` is the one milestone a person can correct in place, so
-            its headline, its date and its links are their own element and their
-            own swap target — the dot, the spine and the files below stay put
-            while the record inside changes
+            A `Kaasamine` is one of the two milestones a person can correct in
+            place, so its headline, its date and its links are their own element
+            and their own swap target — the dot, the spine and the files below
+            stay put while the record inside changes
             (matters/partials/engagement_row.html).
           {% endcomment %}
           {% include "matters/partials/engagement_row.html" with engagement=item.record milestone=item.milestone matter=matter engagement_edit_form=None %}
+        {% elif item.external_position %}
+          {% comment %}
+            A `Väline seisukoht` is the second milestone a person can correct in
+            place, so — like a `Kaasamine` — its headline, its date and its link
+            are their own element and their own swap target: the dot, the spine
+            and the attached files below stay put while the record inside
+            changes. It renders its own link there rather than through the
+            generic block below, because that block is not a swap target
+            (matters/partials/external_position_row.html, docs/adr/0084 §6).
+          {% endcomment %}
+          {% include "matters/partials/external_position_row.html" with position=item.record milestone=item.milestone matter=matter external_position_edit_form=None %}
         {% else %}
           <p class="uxtl__ms">
             <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
@@ -70,13 +81,14 @@ record, not professional chronology (master specification 16.5).
             recipient token, and printing it would put somebody's one-time key
             on the page in readable text (docs/adr/0027, amended 2026-09-12).
 
-            No milestone but a `Kaasamine` and a published `Kodulehe ülevaade`
-            sets any today (`ChronologyMilestone.links`). A `Kaasamine` renders
-            its own in the partial above, and an overview renders its own in the
-            block below — because that one is a swap target and this loop is
-            not. This branch stays because it is where a third kind of record
-            would arrive, and a branch that had quietly lost the loop would drop
-            its links without anybody noticing.
+            Three kinds of milestone set any today: a `Kaasamine`, a
+            `Väline seisukoht` and a published `Kodulehe ülevaade`
+            (`ChronologyMilestone.links`). The first two render their own in
+            their own partials and the overview renders its own in the block
+            below, because each of those three elements is a swap target and
+            this loop is not. This branch stays because it is where a fourth
+            kind of record would arrive, and a branch that had quietly lost the
+            loop would drop its links without anybody noticing.
           {% endcomment %}
           {% if item.milestone.links and not item.website_overview %}
             <span class="uxtl__links">

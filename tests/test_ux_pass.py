@@ -720,7 +720,7 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     # `*_half` stays off the page and on the forms. `Poolaasta` is a real stored
     # precision and is not offered for new input — the register's vocabulary
     # uses halves and this product's does not — so the field exists to keep one
-    # `_precision_fields` shared across **five** surfaces, and nothing posts it
+    # `_precision_fields` shared across **six** surfaces, and nothing posts it
     # (docs/adr/0079 §7). `engagement_half` joined the list when `+ Kaasamine`
     # took the same control (docs/adr/0082 §1), and for exactly the same
     # reason: it is one shared group's unused branch, not a question this panel
@@ -735,6 +735,9 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
         "victory_half",
         "next_half",
         "engagement_half",
+        # `+ Väline seisukoht` took the same shared precision group, so it
+        # carries the same unused branch for the same reason (docs/adr/0084 §2).
+        "position_half",
         "responsible",
     }
 

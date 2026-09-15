@@ -1,7 +1,7 @@
 {% comment %}
 `LISA TEEMALE` — what do I want to add to this file?
 
-Eight choices, not eight forms. The launcher is a row of quiet chips and nothing
+Nine choices, not nine forms. The launcher is a row of quiet chips and nothing
 else until somebody picks one; clicking a chip opens that one operation's small
 form, with its own fields, its own `Salvesta`, its own validation and its own
 atomic business operation (brief §10–§12).
@@ -22,7 +22,7 @@ lawyer ends up believing they have two (brief §15).
 
 **The launcher is a stable choice bar, and picking a choice does not move it.**
 Each operation is a radio, its visible chip, and its form — in that order,
-eight times. The chips are ordinary flex items in the canonical order and never
+nine times. The chips are ordinary flex items in the canonical order and never
 change size, line or position; the one chosen form is the single item with
 `order: 1` and a full-width basis, so it lands on its own line *under* the whole
 row rather than pushing its neighbours sideways.
@@ -416,6 +416,124 @@ row of controls that refuse (brief §30, §31).
           </fieldset>
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Lisa ülevaade</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% comment %}
+      `+ Väline seisukoht`. What somebody *else* said about this file, recorded
+      as factual reference material.
+
+      It is not Koja's own opinion, not a `Submission`, not a `Töövõit` and not
+      a `Märge`: a ministry's published position is a fact about the world, and
+      each of those four would have made it a claim about the Chamber instead.
+      It is not a `Kaasamine` either — an engagement records that Koda *asked*,
+      and this records that somebody *said* — which is why `Seotud kaasamine`
+      relates the two rather than merging them (docs/adr/0084 §1).
+
+      **Two required answers and four optional ones.** The organisation, because
+      a position with no author is an anonymous claim on a professional file;
+      and a source, because a position pointing at nothing is hearsay. Either a
+      link or a file satisfies the second and both together are ordinary — a
+      ministry that publishes a page *and* sends the paper. The date, the
+      explanation and the consultation it answered are each things a real record
+      frequently does not have, and asking for them as requirements would make
+      the commonest position unrecordable (docs/adr/0084 §3).
+
+      The date box carries **no default**, unlike `+ Kaasamine`'s. A
+      consultation is usually written up the day it happens; a position is
+      usually found and filed later, so today would be a date nobody chose
+      sitting one `Salvesta` away from being saved as somebody else's timetable.
+      Blank is «kuupäev teadmata», which is what the column holds.
+
+      It creates no `NextAction`, no deadline row, no work item and no badge, and
+      it moves no `Arvamuse tähtaeg` — so a Matter carrying ten of these never
+      reads as late (docs/adr/0084 §5).
+    {% endcomment %}
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-valine-seisukoht-valik"
+           data-addpick aria-controls="lisa-valine-seisukoht"
+           {% if open_panel == "lisa-valine-seisukoht" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-valine-seisukoht-valik">+ Väline seisukoht</label>
+    <div class="cx-panel" id="lisa-valine-seisukoht" data-addpanel>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-valine-seisukoht" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_external_position' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
+          {% csrf_token %}
+          {% comment %}
+            `Organisatsioon`, through the one control that already answers
+            `Saatja` and `Adressaat` over the one catalogue. A ninth way of
+            naming an institution would be a ninth thing to learn, and the
+            distinction this control protects — typing is a query, `+` is a
+            proposal, the save is the only thing that creates — is exactly the
+            one this panel needs (docs/adr/0073).
+
+            No «Määramata» chip: that is a real answer to *who was this
+            addressed to* and is not one to *whose position is this*.
+          {% endcomment %}
+          {% include "matters/partials/organisation_picker.html" with picker_id="valine-seisukoht" legend=external_position_form.organisation.label chips=external_position_form.organisation_chip_choices tail=external_position_form.organisation_tail_choices typed_field=external_position_form.organisation_name add_label="Lisa uus organisatsioon" single=True clears_group="organisation" only %}
+          {% if external_position_form.organisation.errors %}
+            <p class="field__error" id="{{ external_position_form.organisation.auto_id }}_error">
+              {{ external_position_form.organisation.errors|first }}</p>
+          {% endif %}
+
+          {% include "matters/partials/period_composer.html" with chips=external_position_form.precision_chips date_field=external_position_form.stated_on month_field=external_position_form.position_month quarter_field=external_position_form.position_quarter year_field=external_position_form.position_year only %}
+
+          {% comment %}
+            The source, and the sentence that explains what «either» means.
+
+            One of the two is required and the refusal says so in Estonian
+            rather than marking one control red and leaving the person to guess
+            which of them would satisfy it. The address goes through the
+            service's own door on the way in, so a `javascript:` or a `data:`
+            URL is refused here in the words it is refused in everywhere — and
+            under the box it was typed into (docs/adr/0084 §3).
+          {% endcomment %}
+          <label class="cx-f" for="{{ external_position_form.url.id_for_label }}">
+            <span class="cx-f__lab">{{ external_position_form.url.label }}</span>
+            {{ external_position_form.url }}
+          </label>
+          {% if external_position_form.url.errors %}
+            <p class="field__error" id="{{ external_position_form.url.auto_id }}_error">
+              {{ external_position_form.url.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/add_files.html" with field=external_position_form.attachments %}
+          <p class="cx-note">Lisa link või fail — vähemalt üks allikas on vajalik.</p>
+
+          <label class="cx-f" for="{{ external_position_form.summary.id_for_label }}">
+            <span class="cx-f__lab">{{ external_position_form.summary.label }}
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ external_position_form.summary }}
+          </label>
+          {% if external_position_form.summary.errors %}
+            <p class="field__error" id="{{ external_position_form.summary.auto_id }}_error">
+              {{ external_position_form.summary.errors|first }}</p>
+          {% endif %}
+
+          {% comment %}
+            `Seotud kaasamine`, and it is optional because the commonest
+            external position is unsolicited — published because the ministry
+            chose to publish it, with no round of ours behind it. The blank
+            option says that in words rather than with a dash, so an unrelated
+            position does not read as a question somebody forgot to answer
+            (docs/adr/0084 §4).
+          {% endcomment %}
+          <label class="cx-f" for="{{ external_position_form.engagement.id_for_label }}">
+            <span class="cx-f__lab">{{ external_position_form.engagement.label }}
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ external_position_form.engagement }}
+          </label>
+          {% if external_position_form.engagement.errors %}
+            <p class="field__error" id="{{ external_position_form.engagement.auto_id }}_error">
+              {{ external_position_form.engagement.errors|first }}</p>
+          {% endif %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
           </div>
         </form>
       </div>

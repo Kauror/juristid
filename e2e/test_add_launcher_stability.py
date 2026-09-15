@@ -31,7 +31,7 @@ from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 pytestmark = pytest.mark.e2e
 
 #: The canonical order. `+ Järgmine tegevus` is absent while a step is open, and
-#: this Matter is new, so all eight are here.
+#: this Matter is new, so all nine are here.
 CANONICAL = [
     "+ Märge",
     "+ Järgmine tegevus",
@@ -40,6 +40,7 @@ CANONICAL = [
     "+ Jõustumine",
     "+ Töövõit",
     "+ Kodulehe ülevaade",
+    "+ Väline seisukoht",
     "+ Lõpeta teema",
 ]
 
@@ -51,6 +52,7 @@ PANEL_IDS = [
     "lisa-joustumine",
     "lisa-toovoit",
     "lisa-koduleht",
+    "lisa-valine-seisukoht",
     "lisa-lopeta",
 ]
 
@@ -289,7 +291,7 @@ def test_at_phone_width_the_chips_wrap_and_stay_on_their_rows(page, base_url):
 
     resting = chip_geometry(page)
     rows = sorted({round(row[2]) for row in resting})
-    assert len(rows) > 1, "at 375px the eight chips fit on one line — retune this test, not the CSS"
+    assert len(rows) > 1, "at 375px the nine chips fit on one line — retune this test, not the CSS"
 
     for panel_id in PANEL_IDS:
         panel = open_panel(page, panel_id)

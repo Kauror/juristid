@@ -181,6 +181,25 @@ urlpatterns = [
         views.correct_website_overview_view,
         name="correct_website_overview",
     ),
+    # `+ Väline seisukoht`, and the correction to one. Under `lisa/` because it
+    # is new business content on the Matter, and the correction under the record
+    # because the thing being corrected is that record — the same pair, spelled
+    # the same way and for the same reasons, as `kaasamine/` below
+    # (app/matters/views.py, `update_external_position_view`).
+    #
+    # There is deliberately **no delete route**, on an open Matter or a closed
+    # one: a mistaken position is corrected, because what the file recorded and
+    # who recorded it is part of the file (docs/adr/0084 §8).
+    path(
+        "teemad/<uuid:pk>/lisa/valine-seisukoht/",
+        views.add_external_position,
+        name="add_external_position",
+    ),
+    path(
+        "teemad/<uuid:pk>/valine-seisukoht/<uuid:position_id>/muuda/",
+        views.update_external_position_view,
+        name="update_external_position",
+    ),
     path("teemad/<uuid:pk>/lisa/lopeta/", views.close_from_workspace, name="close_from_workspace"),
     # `+ Järgmine tegevus` and `Muuda` both post here — one endpoint, because
     # setting a step and replacing one are the same canonical act and

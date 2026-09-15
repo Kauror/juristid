@@ -58,6 +58,7 @@ from django.db import transaction
 
 from app.audit.operations import composer_operation
 from app.core.errors import DomainError
+from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
 from app.matters.entry_enums import EntryKind
@@ -413,6 +414,78 @@ def add_matter_work_victory(
             uploads=_uploads(uploads),
             actor=author,
         )
+        return result
+
+
+@transaction.atomic
+def add_matter_external_position(
+    *,
+    matter: Matter,
+    author: Any,
+    organisation: Any,
+    url: str = "",
+    stated_on: Any = None,
+    stated_on_precision: str = DatePrecision.EXACT.value,
+    summary: str = "",
+    engagement: Any = None,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Väline seisukoht` — what another organisation said, and where to read it.
+
+    One operation: the record, its files and the links between them land
+    together or not at all. That is the whole reason this module exists, and it
+    is load-bearing here in a way it is not for a note — a position whose file
+    was refused would be a record claiming a source it does not have
+    (docs/adr/0075 §8).
+
+    **The source rule is decided before anything is written.** The
+    `DocumentLink` cannot exist until the position does, so the service is told
+    how many files are about to be captured rather than being handed them; if
+    the capture then refuses one of them, `UploadRejected` unwinds this
+    transaction and takes the position with it. Neither half can survive without
+    the other (docs/adr/0084 §3).
+
+    **The files carry `EXTERNAL_POSITION`, and this is the one workspace
+    operation whose uploads are not `OTHER`.** Every other panel here captures
+    *supporting evidence for something Koda did*, where the button a file
+    arrived through is not a business role and inventing one to record where it
+    came from is what the link exists to avoid (brief §23). Here the document is
+    the position: a ministry's paper filed against a Matter has a role the
+    product already named, and `DocumentRole.EXTERNAL_POSITION` has existed
+    since the foundational schema with nothing writing it.
+
+    Takes the lock and the closed-Matter question through the same helper as
+    every other operation in this module. A closed Teema renders no launcher,
+    and that decides nothing about a POST arriving from a tab that was open
+    before somebody else shut the file (R2-02).
+    """
+    from app.matters.services import record_external_position, record_external_position_document
+
+    files = _uploads(uploads)
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        position = record_external_position(
+            matter=locked_matter,
+            organisation=organisation,
+            url=url,
+            stated_on=stated_on,
+            stated_on_precision=stated_on_precision,
+            summary=summary,
+            engagement=engagement,
+            attachment_count=len(files),
+            actor=author,
+        )
+        result.record = position
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=position,
+            uploads=files,
+            actor=author,
+            role=DocumentRole.EXTERNAL_POSITION,
+        )
+        for document in result.documents:
+            record_external_position_document(position=position, document=document, actor=author)
         return result
 
 
