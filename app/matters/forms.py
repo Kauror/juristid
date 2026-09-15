@@ -4923,6 +4923,15 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     attachments = workspace_attachments("id_valine_seisukoht_failid")
 
     def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
+        # **Its own `auto_id`, and the field names are untouched.** Nine forms
+        # render on one Teema page and `+ Kodulehe ülevaade` also calls a field
+        # `url`, so Django's default `id_%s` put `id_url` in the document twice
+        # — invalid HTML, a `<label for>` reaching the wrong box and
+        # `getElementById` answering whichever came first. Prefixing the *ids*
+        # fixes exactly that while leaving the POST keys alone, which is the
+        # reasoning docs/adr/0065 gives for preferring `auto_id` over a form
+        # `prefix` (`tests/test_teema_workspace.py`).
+        kwargs.setdefault("auto_id", "id_valine_seisukoht_%s")
         super().__init__(*args, **kwargs)
         # No `record`: this panel only ever creates. The «Muutmata» chip is a
         # correction affordance and there is nothing here to keep unchanged.
