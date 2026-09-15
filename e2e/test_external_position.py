@@ -48,16 +48,31 @@ def chronology(page):
     return page.locator("#ajalugu-loend")
 
 
-def choose_organisation(page, name: str = MINISTRY) -> None:
-    """Answer `Organisatsioon` the way a person does: search, then choose.
+#: The picker's own id inside the panel. Every control the shared organisation
+#: component writes — the search box, the results list, the status region — is
+#: derived from it (`matters/partials/organisation_picker.html`).
+PICKER = "valine-seisukoht"
 
-    The search box posts nothing — it is a filter over controls that are already
-    in the document — so this reveals the chip and ticks it, which is exactly
-    what the server then reads (docs/adr/0073).
+
+def choose_organisation(page, name: str = MINISTRY) -> None:
+    """Answer `Organisatsioon` the way a person does: type, then pick a result.
+
+    The same two steps `e2e/test_unified_organisation_picker.py` uses, and
+    deliberately not a `check()` on the radio: the chips are labels whose input
+    is clipped, and an institution outside the visible shortlist is `hidden`
+    until the search reveals it — so ticking the control directly asserts
+    something the person never does and fails on exactly the bodies the search
+    exists for.
+
+    Typed one key at a time, because that is what the control listens to and
+    what proves there is no button between the keystroke and the list
+    (docs/adr/0073).
     """
-    picker = panel(page).locator("[data-orgfind]")
-    picker.locator("[data-orgfind-input]").fill(name[:6])
-    picker.get_by_role("radio", name=name, exact=True).check()
+    box = page.locator(f"#{PICKER}-otsi")
+    box.click()
+    box.fill("")
+    box.type(name[:8], delay=20)
+    page.locator(f"#{PICKER}-tulemused").get_by_role("option", name=name, exact=True).click()
 
 
 def record_one(page, base_url: str, *, url: str = POSITION_URL) -> None:
