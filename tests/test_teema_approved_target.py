@@ -685,8 +685,22 @@ def test_each_offered_kind_saves(signed_in, normal_matter, value, stored):
     record = MatterEngagement.objects.get(matter=normal_matter)
     assert record.kind == stored
     assert record.title == "liikmed"
-    # The target does not ask for a date; the work is being recorded now.
-    assert record.occurred_on == timezone.localdate()
+    # **No date, where this used to assert today.**
+    #
+    # docs/adr/0074 §9 said the target does not ask for a date and that the
+    # application's convention for «this happened as part of the work I am
+    # writing down now» is today in Europe/Tallinn. docs/adr/0078 §2 withdrew
+    # the second half: a consultation is routinely typed up days or months
+    # after it happened, so filing it as today is a false fact written by the
+    # server with no box on the screen anybody could have corrected.
+    #
+    # `+ Kaasamine` answered that by asking. This composer cannot — it is the
+    # superseded surface, kept for the browsers still posting to it
+    # (docs/adr/0075 §11), and nothing renders it — so it records that the date
+    # is not known, which `occurred_on` has always been able to mean. The first
+    # half of §9 is unchanged and is what this test still covers: the kind and
+    # the audience are what the panel asks for and what gets stored.
+    assert record.occurred_on is None
 
 
 def test_the_response_count_is_real_stored_data(signed_in, normal_matter):

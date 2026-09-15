@@ -429,7 +429,15 @@ The rail holds only what has no honest place on a timeline.
         <div class="pw-events">
           {% for change in work.changes %}
             <a class="pw-event" href="{% url 'matters:matter_detail' pk=change.matter.pk %}">
-              <span class="pw-event__when">{{ change.occurred_on|date:"j.n" }}</span>
+              {% comment %}
+                `compact_display`, not the raw date. A `Kaasamine` may be
+                recorded to a month, a quarter or a year, and the stored value
+                is then the period's first day — `1.10` here would name a day
+                nobody named. A day still reads `12.5`, a month reads `09.26`,
+                and a quarter or a year is spelled out
+                (app/matters/activity.py, docs/adr/0082 §3).
+              {% endcomment %}
+              <span class="pw-event__when">{{ change.compact_display }}</span>
               <span>
                 <span class="pw-event__what">{{ change.label }}</span>
                 <span class="pw-event__matter">{{ change.matter.title }}</span>

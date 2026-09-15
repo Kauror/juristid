@@ -9,7 +9,7 @@ name would describe a change that did not happen (docs/adr/0081 §6).
 validation and display in Django, never a database object, so this migration
 changes the column's Python metadata and touches no data. No existing row
 carries any of the four values — the table they describe is created by
-`matters/0021_matter_website_overview` in the same release — and nothing here
+`matters/0022_matter_website_overview` in the same release — and nothing here
 reads, rewrites or backfills a single audit row.
 
 None of the four is in `matters.timeline.TIMELINE_EVENT_TYPES`. The chronology

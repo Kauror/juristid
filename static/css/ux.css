@@ -408,8 +408,14 @@
 /* One entry's text and the control that corrects it. A plain wrapper: it exists
    to be the swap target, so that a correction replaces the words and nothing
    around them — not the dot, not the date, not the row's place in the
-   chronology (templates/matters/partials/entry_body.html). */
-.uxtl__entry {
+   chronology (templates/matters/partials/entry_body.html).
+
+   `.uxtl__ms-body` is the same wrapper around a `Kaasamine`'s headline, date
+   and links, for the same reason and with the same rule — a correction there
+   replaces the record and leaves the 12 px dot, the spine and the attached
+   files exactly where they were (templates/matters/partials/engagement_row.html). */
+.uxtl__entry,
+.uxtl__ms-body {
   min-width: 0;
 }
 

@@ -301,6 +301,16 @@ class TimelineItem:
         return self.entry is not None
 
     @property
+    def is_engagement(self) -> bool:
+        """Whether this milestone is a `Kaasamine`, and therefore correctable.
+
+        Decided here rather than in the template, which cannot ask what kind of
+        record it is holding without the question being spelled as a string
+        comparison somebody renames a model out from under.
+        """
+        return isinstance(self.record, MatterEngagement)
+
+    @property
     def marker(self) -> str:
         """Which dot the spine draws beside this line.
 
@@ -587,6 +597,92 @@ def _end_of_day(day: date) -> datetime:
     return timezone.make_aware(datetime.combine(day, datetime.max.time()))
 
 
+#: What the chronology prints where a `Kaasamine` has no date of its own.
+#:
+#: Named here because the row and its correction form are rendered from two
+#: different places and a sentence spelled twice is a sentence that drifts.
+ENGAGEMENT_DATE_UNKNOWN = "Kuupäev teadmata"
+
+
+def engagement_chronology_day(engagement: MatterEngagement) -> date:
+    """Where an engagement's row sits in the chronology.
+
+    Its own date when it has one; the day it was written down when it has not.
+
+    **The fallback places the row and never describes it.** A `Kaasamine` with
+    no `occurred_on` is «kuupäev teadmata» (docs/adr/0078 §2), and a row that
+    cannot be placed cannot be read — so it goes where it was recorded, which
+    is the only day this system knows anything about. What must not happen is
+    the two answers being confused: :func:`engagement_milestone` prints
+    :data:`ENGAGEMENT_DATE_UNKNOWN` for exactly these rows, because printing
+    `created_at` beside «Kaasamine: liikmed» states that the consultation
+    happened on the day somebody typed it in, which is the invention this
+    release exists to remove.
+
+    **An approximate date places the row on its anchor**, which is the first
+    day of the period and is exactly what an anchor is for: a month has to sit
+    somewhere in a chronology, and its own first day is the only honest choice
+    that keeps *september* before *oktoober*. Here too the placement is not the
+    description — :func:`engagement_milestone` prints *oktoober 2026*
+    (docs/adr/0079 §2, docs/adr/0082 §4).
+    """
+    return engagement.occurred_on or _local_day(engagement.created_at)
+
+
+def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
+    """One `Kaasamine` as the chronology row a reader sees.
+
+    Built here rather than inline in :func:`projected_milestones`, because the
+    correction form swaps this one row back in place after a save and the two
+    renderings have to be the same rendering — a second copy of the `sub`
+    composition is a second place for `Vastuseid` to gain a separator or for
+    the deadline to lose its label (`app/matters/views.py`, `_engagement_row`).
+    """
+    # `Vastuseid 14`, using the panel's own label rather than a sentence
+    # composed here. `response_count` is nullable and NULL means «nobody
+    # counted», which is not «nobody answered» — so an uncounted engagement
+    # says nothing about responses at all (docs/adr/0074 §5).
+    sub = str(engagement.get_kind_display())
+    if engagement.response_count is not None:
+        sub = f"{sub} · Vastuseid {engagement.response_count}"
+    # `Tagasisidet ootame kuni 22.9.2026` — what the round asked of the
+    # people it went to, in the words the panel asked for it.
+    #
+    # On the row it belongs to and nowhere else. It is not the chronology
+    # date — that is still `occurred_on` — and it is not work: no item, no
+    # badge, no «üle tähtaja», not even when the day has passed. A blank
+    # deadline says nothing at all rather than «Määramata», because most
+    # engagements never had one and an absence the reader has to decode is
+    # worse than silence.
+    if engagement.feedback_deadline:
+        sub = (
+            f"{sub} · Tagasisidet ootame kuni {format_estonian_date(engagement.feedback_deadline)}"
+        )
+    # Read off the row already in hand — no second query, and nothing here
+    # for an engagement that carries neither address, so a row that has no
+    # links renders no empty container for them.
+    links = tuple(
+        ChronologyLink(label=label, url=url)
+        for label, url in (
+            ("Smaily", engagement.smaily_url),
+            ("Alchemer", engagement.alchemer_url),
+        )
+        if url
+    )
+    return ChronologyMilestone(
+        what=f"Kaasamine: {engagement.title}",
+        # The date as it was actually known, or the words «kuupäev teadmata» —
+        # never the day the row happens to sit on, and never the anchor of a
+        # period. `MatterEngagement.display_date` is `format_at_precision`, so a
+        # round recorded as *oktoober 2026* reads that here and not `01.10.2026`
+        # (docs/adr/0079 §3, docs/adr/0082 §3). See
+        # :func:`engagement_chronology_day` for the other half of the rule.
+        display_date=engagement.display_date or ENGAGEMENT_DATE_UNKNOWN,
+        sub=sub,
+        links=links,
+    )
+
+
 def projected_milestones(
     *,
     matter: Matter,
@@ -710,51 +806,10 @@ def projected_milestones(
         )
 
     for engagement in MatterEngagement.objects.filter(matter=matter).visible_to(user):
-        when = engagement.occurred_on or _local_day(engagement.created_at)
+        when = engagement_chronology_day(engagement)
         if when > day:
             continue
-        # `Vastuseid 14`, using the panel's own label rather than a sentence
-        # composed here. `response_count` is nullable and NULL means «nobody
-        # counted», which is not «nobody answered» — so an uncounted engagement
-        # says nothing about responses at all (docs/adr/0074 §5).
-        sub = engagement.get_kind_display()
-        if engagement.response_count is not None:
-            sub = f"{sub} · Vastuseid {engagement.response_count}"
-        # `Tagasisidet ootame kuni 22.9.2026` — what the round asked of the
-        # people it went to, in the words the panel asked for it.
-        #
-        # On the row it belongs to and nowhere else. It is not the chronology
-        # date — that is still `occurred_on` — and it is not work: no item, no
-        # badge, no «üle tähtaja», not even when the day has passed. A blank
-        # deadline says nothing at all rather than «Määramata», because most
-        # engagements never had one and an absence the reader has to decode is
-        # worse than silence.
-        if engagement.feedback_deadline:
-            sub = (
-                f"{sub} · Tagasisidet ootame kuni "
-                f"{format_estonian_date(engagement.feedback_deadline)}"
-            )
-        # Read off the row already in hand — no second query, and nothing here
-        # for an engagement that carries neither address, so a row that has no
-        # links renders no empty container for them.
-        links = tuple(
-            ChronologyLink(label=label, url=url)
-            for label, url in (
-                ("Smaily", engagement.smaily_url),
-                ("Alchemer", engagement.alchemer_url),
-            )
-            if url
-        )
-        add(
-            engagement,
-            _end_of_day(when),
-            ChronologyMilestone(
-                what=f"Kaasamine: {engagement.title}",
-                display_date=format_estonian_date(when),
-                sub=sub,
-                links=links,
-            ),
-        )
+        add(engagement, _end_of_day(when), engagement_milestone(engagement))
 
     # `Kodulehe ülevaade`, and **only the two states that are milestones**.
     #

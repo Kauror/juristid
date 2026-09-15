@@ -160,18 +160,26 @@ row of controls that refuse (brief §30, §31).
             stored as «kuupäev teadmata», which is what the model has always
             meant by a blank date.
 
+            **And it is asked at four precisions**, through the same `Täpsus`
+            control as `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit` and
+            `Järgmine tegevus`. A consultation round is routinely remembered as
+            «oktoobris» or «2019», and a person who knew only that had to
+            choose between naming a day nobody named and recording nothing
+            (docs/adr/0082). One partial, not a second widget: a quarter stated
+            here is the same stored period as a quarter stated anywhere else.
+
             `Tagasisidet ootame kuni` is what was asked of the people who were
-            contacted — «ootan vastuseid kuni 22.09». Optional, blank by
-            default, and deliberately *not* work: it makes no next action, no
-            deadline row, no badge and no count. Labelled `valikuline` because a
-            second date box beside a pre-filled one otherwise reads as required
-            (docs/adr/0027; design feedback 2026-09-14).
+            contacted — «ootan vastuseid kuni 22.09». **An exact day and only
+            that**, deliberately: it is a date somebody named to other people,
+            so it stays where docs/adr/0079 §11 put it while the box above it
+            moved. Optional, blank by default, and deliberately *not* work: it
+            makes no next action, no deadline row, no badge and no count.
+            Labelled `valikuline` because a second date box beside a pre-filled
+            one otherwise reads as required (docs/adr/0027; design feedback
+            2026-09-14).
           {% endcomment %}
+          {% include "matters/partials/period_composer.html" with chips=add_engagement_form.precision_chips date_field=add_engagement_form.occurred_on month_field=add_engagement_form.engagement_month quarter_field=add_engagement_form.engagement_quarter year_field=add_engagement_form.engagement_year only %}
           <div class="cx-grid cx-grid--links">
-            <label class="cx-f cx-f--date">
-              <span class="cx-f__lab">Kaasamise kuupäev</span>
-              {{ add_engagement_form.occurred_on }}
-            </label>
             <label class="cx-f cx-f--date">
               <span class="cx-f__lab">Tagasisidet ootame kuni
                 <span class="cx-f__opt">valikuline</span></span>
@@ -214,10 +222,6 @@ row of controls that refuse (brief §30, §31).
           {% if add_engagement_form.alchemer_url.errors %}
             <p class="field__error" id="{{ add_engagement_form.alchemer_url.auto_id }}_error">
               {{ add_engagement_form.alchemer_url.errors|first }}</p>
-          {% endif %}
-          {% if add_engagement_form.occurred_on.errors %}
-            <p class="field__error" id="{{ add_engagement_form.occurred_on.auto_id }}_error">
-              {{ add_engagement_form.occurred_on.errors|first }}</p>
           {% endif %}
           {% if add_engagement_form.feedback_deadline.errors %}
             <p class="field__error" id="{{ add_engagement_form.feedback_deadline.auto_id }}_error">

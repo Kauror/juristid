@@ -913,7 +913,7 @@ def test_the_table_arrives_with_no_data_migration():
     from django.db.migrations.executor import MigrationExecutor
 
     migration = MigrationExecutor(connection).loader.get_migration(
-        "matters", "0021_matter_website_overview"
+        "matters", "0022_matter_website_overview"
     )
 
     assert [type(operation).__name__ for operation in migration.operations] == ["CreateModel"]
@@ -942,7 +942,7 @@ def test_neither_migration_in_this_release_runs_python_or_sql():
 
     loader = MigrationExecutor(connection).loader
     for app_label, name in (
-        ("matters", "0021_matter_website_overview"),
+        ("matters", "0022_matter_website_overview"),
         ("audit", "0018_website_overview_events"),
     ):
         operations = loader.get_migration(app_label, name).operations

@@ -453,7 +453,15 @@ class ChangeRow:
     """One Matter that moved, and what kind of fact moved it."""
 
     matter: Matter
+    #: The anchor the rail sorts on. A day for eight of the nine activity
+    #: bases; the first day of the period for a `Kaasamine` recorded to a
+    #: month, a quarter or a year (docs/adr/0082).
     occurred_on: date
+    #: How that anchor reads in a column with no room for a year — `12.5`,
+    #: `09.26`, *IV kvartal 2026*. Carried rather than derived in the template,
+    #: which cannot ask what precision the fact behind the row was recorded to
+    #: (`app.matters.activity.MatterActivityFact.compact_display`).
+    compact_display: str
     label: str
 
 
@@ -478,6 +486,7 @@ def recent_changes(user: Any, subject: Any, limit: int = CHANGE_LIMIT) -> list[C
             ChangeRow(
                 matter=matter,
                 occurred_on=activity.occurred_on,
+                compact_display=activity.compact_display,
                 label=BASIS_LABELS.get(activity.basis, ""),
             )
         )

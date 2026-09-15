@@ -1,0 +1,235 @@
+{% comment %}
+One `Kaasamine`'s chronology row, and the way to correct it.
+
+**This element is the whole swap target.** `Muuda` replaces it with itself
+carrying the form; saving replaces it again with the corrected record. The
+`<article>` around it — the 12 px accent dot, the spine, the attached files —
+is never in the response, so a correction cannot move the row, cannot add a
+second line to the chronology and cannot turn a milestone into a work entry
+(matters/partials/timeline_items.html, app/matters/views.py `_engagement_row`).
+
+**The row's date is the record's own, at the precision it is known to, or the
+words «Kuupäev teadmata».** An undated `Kaasamine` still has to sit somewhere,
+so it sits on the day it was written down — but that day is never printed as if
+it were the day the consultation happened. An approximate one sits on its
+period's first day and prints *oktoober 2026*, never `01.10.2026`. Placing a row
+and describing it are two different jobs and the anchor does only the first
+(app/matters/timeline.py, `engagement_chronology_day`,
+`MatterEngagement.display_date`, docs/adr/0078 §2, docs/adr/0082 §3).
+
+**`Muuda` needs a writer *and* an open Teema**, unlike a Sissekanne's. An entry
+correction rewrites narrative and is offered on a closed file; correcting a
+consultation moves dates, channel, audience and links on a structured record
+the chronology, the activity date and the search projection all read, so it is
+normal business work and a finished file refuses it. Reopening is the way out
+(docs/adr/0075 §12, docs/adr/0076 §2). The flag hides the button; it decides
+nothing — `correct_engagement` takes the Matter's row lock and refuses a closed
+one on its own, because the browser that posts may be holding a page from
+before the closure.
+{% endcomment %}
+<div class="uxtl__ms-body" id="kaasamine-{{ engagement.pk }}-sisu">
+  {% if engagement_edit_form %}
+    {% comment %}
+      Edit mode. The form posts to the same address that opened it and swaps
+      this element again, so every answer — saved, refused, conflicted — lands
+      in the one place the reader is looking.
+    {% endcomment %}
+    <form class="uxtl__editform" aria-label="Kaasamise parandamine"
+          hx-post="{% url 'matters:update_engagement' pk=matter.pk engagement_id=engagement.pk %}"
+          hx-target="#kaasamine-{{ engagement.pk }}-sisu"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      {% comment %}
+        Which record is being corrected, in the words the row was reading a
+        moment ago. The form replaces the headline, so without this the boxes
+        would open with nothing above them naming the consultation they belong
+        to — and a page whose whole subject is a list may have two rows open.
+        The stored headline, never the typed one: it says what is being edited,
+        not what the edit would make it.
+
+        Absent on a conflict, where «Praegune kirje» below says the same thing
+        and says more of it. One record named twice in one form is a reader
+        working out whether the two are the same record.
+      {% endcomment %}
+      {% if not engagement_conflict_milestone %}
+        <p class="uxtl__ms">
+          <span class="uxtl__mswhat">{{ milestone.what }}</span>
+        </p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ engagement_edit_form.title.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.title.label }}</span>
+        {{ engagement_edit_form.title }}
+      </label>
+      {% if engagement_edit_form.title.errors %}
+        <p class="field__error">{{ engagement_edit_form.title.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ engagement_edit_form.kind.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.kind.label }}</span>
+        {{ engagement_edit_form.kind }}
+      </label>
+      {% if engagement_edit_form.kind.errors %}
+        <p class="field__error">{{ engagement_edit_form.kind.errors|first }}</p>
+      {% endif %}
+
+      {% comment %}
+        The two dates, in the same order, with the same labels and — for the
+        first of them — through the same `Täpsus` control the `+ Kaasamine`
+        panel asks them in. A person who learns the panel must not have to
+        learn a second vocabulary to fix what they typed into it, and a record
+        must not be correctable into a shape it could never have been created
+        in. One partial serves both, so the two cannot drift
+        (matters/partials/period_composer.html, docs/adr/0082 §3).
+
+        Both are optional. `Kaasamise kuupäev` may be a day, a month, a quarter
+        or a year, and emptying it altogether is a real answer — «kuupäev
+        teadmata» — and is how a row the old panel stamped with today gets told
+        the truth. An approximate record opens on its own chip with the day box
+        left empty: the stored anchor is a place in a sort, not a day to hand
+        back to somebody to re-save (docs/adr/0079 §2).
+
+        `Tagasisidet ootame kuni` stays an exact day and stays inert:
+        correcting it makes no next action, no deadline row, no badge and no
+        count (docs/adr/0078 §2, §3, docs/adr/0079 §11).
+      {% endcomment %}
+      {% include "matters/partials/period_composer.html" with chips=engagement_edit_form.precision_chips date_field=engagement_edit_form.occurred_on month_field=engagement_edit_form.engagement_month quarter_field=engagement_edit_form.engagement_quarter year_field=engagement_edit_form.engagement_year only %}
+      <div class="cx-grid cx-grid--links">
+        <label class="cx-f cx-f--date"
+               for="{{ engagement_edit_form.feedback_deadline.id_for_label }}">
+          <span class="cx-f__lab">{{ engagement_edit_form.feedback_deadline.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {{ engagement_edit_form.feedback_deadline }}
+        </label>
+      </div>
+      {% if engagement_edit_form.feedback_deadline.errors %}
+        <p class="field__error">{{ engagement_edit_form.feedback_deadline.errors|first }}</p>
+      {% endif %}
+
+      <div class="cx-grid cx-grid--links">
+        <label class="cx-f" for="{{ engagement_edit_form.smaily_url.id_for_label }}">
+          <span class="cx-f__lab">{{ engagement_edit_form.smaily_url.label }}</span>
+          {{ engagement_edit_form.smaily_url }}
+        </label>
+        <label class="cx-f" for="{{ engagement_edit_form.alchemer_url.id_for_label }}">
+          <span class="cx-f__lab">{{ engagement_edit_form.alchemer_url.label }}</span>
+          {{ engagement_edit_form.alchemer_url }}
+        </label>
+      </div>
+      {% if engagement_edit_form.smaily_url.errors %}
+        <p class="field__error">{{ engagement_edit_form.smaily_url.errors|first }}</p>
+      {% endif %}
+      {% if engagement_edit_form.alchemer_url.errors %}
+        <p class="field__error">{{ engagement_edit_form.alchemer_url.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ engagement_edit_form.url.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.url.label }}</span>
+        {{ engagement_edit_form.url }}
+      </label>
+      {% if engagement_edit_form.url.errors %}
+        <p class="field__error">{{ engagement_edit_form.url.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ engagement_edit_form.note.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.note.label }}</span>
+        {{ engagement_edit_form.note }}
+      </label>
+      {% if engagement_edit_form.note.errors %}
+        <p class="field__error">{{ engagement_edit_form.note.errors|first }}</p>
+      {% endif %}
+
+      {{ engagement_edit_form.revision }}
+
+      {% if engagement_edit_error %}
+        <p class="formerror" role="alert">{{ engagement_edit_error }}</p>
+      {% endif %}
+
+      {% comment %}
+        The version that beat this one, read-only and under the boxes. Rendered
+        as the chronology row it now is rather than as a second set of fields: a
+        box somebody can type into is a box they will type into, and this one is
+        not theirs to edit — it is what the record now says, offered so the two
+        can be reconciled. Neither version is chosen for them, and nothing was
+        written (app/matters/views.py `update_engagement_view`, and
+        matters/partials/entry_body.html, which answers a refused correction the
+        same way).
+      {% endcomment %}
+      {% if engagement_conflict_milestone %}
+        <div class="uxtl__conflict">
+          <p class="uxtl__conflictnote">Praegune kirje:</p>
+          <p class="uxtl__ms">
+            <span class="uxtl__mswhat">{{ engagement_conflict_milestone.what }}</span>
+            <span class="uxtl__msdate">{{ engagement_conflict_milestone.display_date }}</span>
+          </p>
+          {% if engagement_conflict_milestone.sub %}
+            <span class="uxtl__mssub">{{ engagement_conflict_milestone.sub }}</span>
+          {% endif %}
+          <p class="uxtl__conflictnote">
+            Võrdle oma parandust praeguse kirjega või laadi leht uuesti, et
+            praeguse versiooniga jätkata. Sinu sisestus on ülal alles.
+          </p>
+        </div>
+      {% endif %}
+
+      <p class="uxtl__editactions">
+        <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+        {% comment %}
+          `Tühista` re-fetches this element in its read state, so leaving edit
+          mode restores exactly what the server holds and changes nothing. A GET
+          of the row rather than client-side hiding, because the boxes may be
+          holding values that were never saved and the only honest way to leave
+          them is to go and read what the record actually says.
+        {% endcomment %}
+        <button class="button button--quiet button--tiny" type="button"
+                hx-get="{% url 'matters:update_engagement' pk=matter.pk engagement_id=engagement.pk %}{{ engagement_read_query }}"
+                hx-target="#kaasamine-{{ engagement.pk }}-sisu"
+                hx-swap="outerHTML">Tühista</button>
+      </p>
+    </form>
+  {% else %}
+    <p class="uxtl__ms">
+      <span class="uxtl__mswhat" id="kaasamine-{{ engagement.pk }}-pealkiri">{{ milestone.what }}</span>
+      <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+    </p>
+    {% if milestone.sub %}
+      <span class="uxtl__mssub">{{ milestone.sub }}</span>
+    {% endif %}
+    {% comment %}
+      Where this round's working material lives — the mailing in Smaily, the
+      questionnaire in Alchemer. Named by the tool and never by the address: a
+      campaign URL is mostly tracking parameters and a recipient token, and
+      printing it would put somebody's one-time key on the page in readable
+      text (docs/adr/0027, amended 2026-09-12).
+    {% endcomment %}
+    {% if milestone.links %}
+      <span class="uxtl__links">
+        {% for link in milestone.links %}
+          <a class="uxtl__link" href="{{ link.url }}"
+             target="_blank" rel="noopener noreferrer">{{ link.label }}<span
+             class="visually-hidden"> — avaneb uues aknas</span></a>
+        {% endfor %}
+      </span>
+    {% endif %}
+    {% if can_write_business_content and matter.is_open %}
+      <p class="uxtl__editactions">
+        {% comment %}
+          «Muuda» on its own says which verb and not which record, and a
+          chronology may show a dozen of these. The accessible name is
+          therefore built by reference — the button's own word, then the
+          headline element above it — rather than by repeating the headline
+          into a visually-hidden span. Repeating it would put «Kaasamine:
+          liikmed» into the document twice, which is a second mention for
+          anything reading the page as text and, measured, for the tests that
+          hold one act to one line (tests/test_matter_engagement.py).
+        {% endcomment %}
+        <button class="uxtl__edit" type="button"
+                id="kaasamine-{{ engagement.pk }}-muuda"
+                aria-labelledby="kaasamine-{{ engagement.pk }}-muuda kaasamine-{{ engagement.pk }}-pealkiri"
+                hx-get="{% url 'matters:update_engagement' pk=matter.pk engagement_id=engagement.pk %}"
+                hx-target="#kaasamine-{{ engagement.pk }}-sisu"
+                hx-swap="outerHTML">Muuda</button>
+      </p>
+    {% endif %}
+  {% endif %}
+</div>

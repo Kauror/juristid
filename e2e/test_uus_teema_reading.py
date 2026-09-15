@@ -261,6 +261,87 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
     assert Path(saved.path()).read_bytes() == letter_pdf.read_bytes()
 
 
+def instruments(page):
+    """The Õigusakt chip row, as the create form renders it."""
+    return page.locator("fieldset", has=page.locator("#id_legal_instruments_0")).first
+
+
+def test_the_letter_names_its_own_kind_and_the_teema_keeps_it(page, base_url, letter_pdf) -> None:
+    """Õigusakt, from the file's own heading to the filed Teema.
+
+    The rules are proved sentence by sentence in
+    `tests/test_oigusakt_intake.py` and the pre-fill decision in
+    `tests/test_intake_staging.py`. What only a browser shows is that the
+    decision reaches the control: the island has to know `legal_instruments`
+    is fillable, the value the panel carries has to be the value the checkbox
+    takes, and the tick has to survive `Loo teema` (docs/adr/0080).
+    """
+    sign_in(page, base_url, SANDRA)
+    title = "Pakendiseaduse muudatus, õigusakt loetud loomisel"
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    wait_for_reading(page)
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    expect(page.get_by_text("Õigusakt").first).to_be_visible()
+    row = instruments(page)
+    seadus = row.locator("label.chip", has_text="Seadus").locator("input").first
+    expect(seadus).to_be_checked()
+    # Exactly one, and it is the kind the heading names. «Eelnõu» is the
+    # generic answer for a draft whose kind the source did not say, and this
+    # source said it.
+    expect(row.locator("input:checked")).to_have_count(1)
+    expect(row.locator("label.chip", has_text="Eelnõu").locator("input").first).not_to_be_checked()
+    # `Muu` is never inferred: it would reveal a required free-text box with
+    # nothing honest to write in it.
+    expect(row.locator("label.chip", has_text="Muu").locator("input").first).not_to_be_checked()
+
+    page.locator("#id_title").fill(title)
+    name_a_next_step(page)
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("domcontentloaded")
+    complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
+    assert not complaints, f"the form refused: {complaints}"
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+
+    # And it is what the record now holds, read back off the edit form rather
+    # than out of a database this suite deliberately cannot reach.
+    page.goto(f"{page.url.rstrip('/')}/muuda/")
+    saved = page.locator("fieldset", has=page.locator("#id_legal_instruments_0")).first
+    expect(saved.locator("input:checked")).to_have_count(1)
+    expect(saved.locator("label.chip", has_text="Seadus").locator("input").first).to_be_checked()
+
+
+def test_a_chosen_oigusakt_is_never_replaced_by_the_one_the_file_names(
+    page, base_url, letter_pdf
+) -> None:
+    """A checkbox group somebody has answered is left alone entirely.
+
+    The same rule the Valdkonnad group already proves, asserted on this control
+    too because it is a *different* group and the protection is the browser's
+    rather than the server's (docs/adr/0064, docs/adr/0080 §6).
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    choose(page, [letter_pdf])
+    wait_for_reading(page)
+
+    row = instruments(page)
+    row.locator("label.chip", has_text="Määrus").locator("input").first.check()
+
+    read_staged_files()
+    wait_for_suggestions(page)
+
+    expect(row.locator("input:checked")).to_have_count(1)
+    expect(row.locator("label.chip", has_text="Määrus").locator("input").first).to_be_checked()
+    # Still offered beside what was chosen, so nobody is stuck with the guess
+    # they made first.
+    use = page.locator('button[data-suggest-for="legal_instruments"]').first
+    expect(use).to_be_visible()
+    expect(use).to_have_attribute("aria-pressed", "false")
+
+
 def test_a_suggestion_never_overwrites_what_the_person_typed_first(
     page, base_url, letter_pdf
 ) -> None:

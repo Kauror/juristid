@@ -72,7 +72,7 @@ from app.matters.services import (
     plan_website_overview,
     publish_website_overview,
 )
-from app.workflow.enums import ActionStatus
+from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
 from app.workflow.services import complete_next_action
 
@@ -229,6 +229,7 @@ def add_matter_engagement(
     smaily_url: str = "",
     alchemer_url: str = "",
     occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
@@ -253,6 +254,12 @@ def add_matter_engagement(
     stored as blank. ``feedback_deadline`` is `Tagasisidet ootame kuni` and is
     optional, undefaulted and inert — it is a record of what was asked of other
     people, not a task for this office.
+
+    ``occurred_on_precision`` is the panel's `Täpsus` answer, and ``occurred_on``
+    is then the anchor of the period it names — the same normalisation
+    `+ Oluline tähtaeg` and `+ Jõustumine` go through. `Tagasisidet ootame kuni`
+    takes no precision: docs/adr/0082 widened the first date and left the second
+    on docs/adr/0079 §11's exact-day list.
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
@@ -262,6 +269,7 @@ def add_matter_engagement(
             kind=kind,
             title=audience,
             occurred_on=occurred_on,
+            occurred_on_precision=occurred_on_precision,
             response_count=response_count,
             smaily_url=smaily_url,
             alchemer_url=alchemer_url,

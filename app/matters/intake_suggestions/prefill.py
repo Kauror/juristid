@@ -160,6 +160,23 @@ def prefill_initial(
             initial["track"] = chosen.value
             prefilled[SuggestedField.TRACK] = (chosen.value,)
 
+    # Õigusakt is multi-valued like Valdkonnad and is filled by the same rule —
+    # every HIGH candidate, and nothing at all when they conflict. In practice
+    # at most one is HIGH: only the best-speaking document's own kind may reach
+    # it, and everything corroborating stays at MEDIUM with «Kasuta» beside it
+    # (docs/adr/0080 §1). `Muu` cannot appear here because no rule produces it,
+    # which is what keeps a machine suggestion out of a form state that cannot
+    # be saved — ticking `Muu` makes `Õigusakti liik` required, and there is
+    # nothing honest to write in it (`clean_legal_instrument_answer`).
+    instruments = analysis.fields.get(SuggestedField.LEGAL_INSTRUMENTS)
+    if instruments is not None and not current.legal_instrument_ids:
+        chosen_many = instruments.prefill_candidates
+        if chosen_many:
+            initial["legal_instruments"] = [candidate.value for candidate in chosen_many]
+            prefilled[SuggestedField.LEGAL_INSTRUMENTS] = tuple(
+                candidate.value for candidate in chosen_many
+            )
+
     areas = analysis.fields.get(SuggestedField.POLICY_AREAS)
     if areas is not None and not current.policy_area_ids:
         chosen_many = areas.prefill_candidates

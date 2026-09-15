@@ -208,8 +208,14 @@ urlpatterns = [
     ),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),
     path("teemad/<uuid:pk>/kaasamine/", views.add_engagement_view, name="add_engagement"),
+    # `Muuda` on a filed Kaasamine, under the record rather than under the
+    # Teema, and spelled the way `edit_entry` is — one address for the form and
+    # the save, GET opening the box in the chronology row and POST writing it.
+    # There is no state between them, so a second route would only be a second
+    # place for the authorization to be written out
+    # (app/matters/views.py, `update_engagement_view`).
     path(
-        "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/",
+        "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/muuda/",
         views.update_engagement_view,
         name="update_engagement",
     ),

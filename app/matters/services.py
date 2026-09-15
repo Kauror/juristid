@@ -1447,6 +1447,31 @@ def _engagement_kind(value: str) -> str:
     return value
 
 
+def _engagement_precision(occurred_on: Any, value: Any) -> str:
+    """How exactly `Kaasamise kuupäev` is known, normalised and vouched for.
+
+    Two rules, and both are about a value a form or an importer can get wrong.
+
+    **A date nobody knows has no precision.** `NULL` + `MONTH` is not «an
+    approximate consultation», it is a period with nothing to qualify — and
+    every surface reading it would have to guess whether to print a period or
+    «kuupäev teadmata». So a missing date forces `EXACT`, which is what the
+    column holds for every undated row today.
+
+    **The vocabulary is checked here rather than by the database.** The
+    `CheckConstraint` is the backstop; a `DomainError` from the service names
+    what was wrong, where an `IntegrityError` out of a composer transaction
+    that has already written a note and a next step names a constraint. Same
+    reasoning as `_engagement_kind` and `_engagement_response_count`.
+    """
+    if occurred_on is None:
+        return DatePrecision.EXACT.value
+    precision = value or DatePrecision.EXACT.value
+    if precision not in DatePrecision.values:
+        raise DomainError(f"Tundmatu kuupäeva täpsus {precision!r}.")
+    return precision
+
+
 @transaction.atomic
 def _engagement_response_count(value: Any) -> int | None:
     """`Vastuseid`, or nothing at all.
@@ -1479,6 +1504,8 @@ def record_engagement(
     alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
+    feedback_deadline: Any = None,
     response_count: Any = None,
     actor: Any = None,
 ) -> MatterEngagement:
@@ -1495,6 +1522,12 @@ def record_engagement(
     row is created (R2-02). The Teema overview's `Kaasamine` form posts here;
     the workspace's `+ Kaasamine` takes the same lock itself in
     `app/matters/workspace.py`; the importer keeps the leaf.
+
+    ``feedback_deadline`` is passed straight through, like every other field.
+    It was the one column this door could not carry: `add_engagement` has taken
+    it since docs/adr/0078 §3 and this function did not, so a save arriving
+    here wrote `NULL` however carefully the form had been filled in. A door
+    that silently drops a field is worse than one that does not offer it.
     """
     locked = lock_open_matter_for_business_write(matter.pk)
     return add_engagement(
@@ -1506,6 +1539,8 @@ def record_engagement(
         alchemer_url=alchemer_url,
         note=note,
         occurred_on=occurred_on,
+        occurred_on_precision=occurred_on_precision,
+        feedback_deadline=feedback_deadline,
         response_count=response_count,
         actor=actor,
     )
@@ -1521,6 +1556,7 @@ def add_engagement(
     alchemer_url: str = "",
     note: str = "",
     occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
     response_count: Any = None,
     actor: Any = None,
@@ -1548,11 +1584,26 @@ def add_engagement(
     never derived: a caller that does not name it writes ``NULL`` rather than
     borrowing ``occurred_on`` or today. It is a record of what was asked, so
     nothing here turns it into work — no `NextAction`, no deadline row, no
-    count.
+    count. **It stays an exact day**: docs/adr/0082 widened `Kaasamise kuupäev`
+    and deliberately left this one on docs/adr/0079 §11's list, because a
+    reply-by date is a day somebody named to other people.
+
+    ``occurred_on_precision`` says how exactly ``occurred_on`` is known, and
+    ``occurred_on`` is then the **anchor** of that period — the normalisation
+    every surface goes through is `app.workflow.dates.bounds_for`, so a quarter
+    stated in `+ Kaasamine` is the same stored value as a quarter stated
+    anywhere else. `EXACT` by default, which is what a caller that knows
+    nothing about precision means and what every historical row holds.
+
+    **An unknown date is normalised back to `EXACT`.** A `NULL` date with a
+    stored `MONTH` beside it would be a period with nothing to qualify — a row
+    that renders as neither a date nor «kuupäev teadmata» but as whichever of
+    the two the reading surface guessed. Absence has no precision.
     """
     clean_title = title.strip()
     if not clean_title:
         raise DomainError("Kaasamisel peab olema pealkiri.")
+    precision = _engagement_precision(occurred_on, occurred_on_precision)
 
     engagement = MatterEngagement.objects.create(
         matter=matter,
@@ -1563,6 +1614,7 @@ def add_engagement(
         alchemer_url=normalize_engagement_url(alchemer_url),
         note=note.strip(),
         occurred_on=occurred_on,
+        occurred_on_precision=precision,
         feedback_deadline=feedback_deadline,
         response_count=_engagement_response_count(response_count),
         created_by=actor,
@@ -1576,6 +1628,11 @@ def add_engagement(
         payload={
             "kind": engagement.kind,
             "occurred_on": engagement.occurred_on.isoformat() if engagement.occurred_on else None,
+            # The precision beside the value, never on its own. The stored date
+            # is a period's first day, so an audit row carrying `2026-10-01`
+            # with nothing else says «1 October» to whoever reads it back,
+            # which is the invention docs/adr/0079 §2 exists to refuse.
+            "occurred_on_precision": engagement.occurred_on_precision,
             # The date itself, like `occurred_on` beside it: it is a small
             # value, it is the thing a correction would change, and an audit
             # row saying only «a deadline was set» cannot answer «to when».
@@ -1594,6 +1651,36 @@ def add_engagement(
     return engagement
 
 
+#: What a stale correction is told, in one place because a view, a template and
+#: a test all have to agree about it. The sibling of `ENTRY_EDIT_CONFLICT`, and
+#: deliberately the same shape of sentence.
+ENGAGEMENT_EDIT_CONFLICT = "Kaasamist on vahepeal mujal muudetud."
+
+
+class EngagementEditConflict(DomainError):
+    """The engagement changed elsewhere between rendering a form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see
+    the other side of is a conflict they cannot resolve — the same reasoning,
+    and deliberately the same shape, as :class:`EntryEditConflict`.
+    """
+
+    def __init__(self, current: MatterEngagement) -> None:
+        super().__init__(ENGAGEMENT_EDIT_CONFLICT)
+        self.current = current
+
+
+def engagement_revision_token(engagement: MatterEngagement) -> str:
+    """Which version of an engagement a rendered correction form was filled from.
+
+    ``updated_at``, for the reasons `entry_revision_token` gives: `auto_now`
+    sets it on every write, PostgreSQL stores it to the microsecond so two
+    saves cannot share one, and having it costs no migration — which matters
+    here, because this round adds no schema at all.
+    """
+    return engagement.updated_at.isoformat()
+
+
 @transaction.atomic
 def update_engagement(
     *,
@@ -1605,8 +1692,10 @@ def update_engagement(
     alchemer_url: Any = _UNSET,
     note: Any = _UNSET,
     occurred_on: Any = _UNSET,
+    occurred_on_precision: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
     actor: Any = None,
+    expected_revision: str | None = None,
 ) -> MatterEngagement:
     """Correct an engagement, and say nothing when nothing changed.
 
@@ -1621,7 +1710,38 @@ def update_engagement(
     and no others, so a correction to a title or a date cannot quietly clear a
     reply-by date somebody typed. An explicit ``None`` still clears it, which is
     how a wrong deadline is removed rather than only overwritten.
+
+    **The row is locked and re-read before anything is decided**, and the
+    comparison that produces `changed` is made against *that* row rather than
+    against the instance the caller arrived with. Two people correcting one
+    consultation would otherwise each diff against their own stale copy, and
+    the second writer would file an audit row naming fields that had already
+    moved — or none, and silently discard their own correction as a no-op.
+    `no_key=True` for the reason `app/matters/locks.py` gives: `SearchDocument`
+    carries an `engagement` foreign key and its targeted refresh runs from
+    `post_save` inside this transaction.
+
+    **Optimistic concurrency**, exactly as `edit_entry` has it. A caller that
+    knows which version its form was filled from says so in
+    ``expected_revision``, and a save whose token is not the stored one raises
+    :class:`EngagementEditConflict` and **writes nothing**. ``None`` means «no
+    opinion» and is what every non-interactive caller passes — the importer,
+    the register enrichment, a data fix, a test — none of which is holding an
+    earlier version of anything. The token is compared *before* the no-op
+    check: a stale form carrying the values somebody else already saved has
+    still been overtaken, and answering it with a silent success would teach
+    the person that their copy was current when it was not.
+
+    ``engagement`` is kept consistent with what was written, so a caller that
+    goes on reading the instance it passed — `app.legacy_import.register_outreach`
+    compares its own fields before and after — sees the stored values.
     """
+    locked = MatterEngagement.objects.select_for_update(no_key=True).get(pk=engagement.pk)
+    if expected_revision is not None and engagement_revision_token(locked) != expected_revision:
+        # Read *after* the lock, so the version compared against is the one that
+        # is committed rather than the one that was on screen.
+        raise EngagementEditConflict(locked)
+
     proposed: dict[str, Any] = {}
     if kind is not _UNSET:
         proposed["kind"] = _engagement_kind(kind)
@@ -1645,42 +1765,135 @@ def update_engagement(
         proposed["occurred_on"] = occurred_on
     if feedback_deadline is not _UNSET:
         proposed["feedback_deadline"] = feedback_deadline
+    if occurred_on_precision is not _UNSET:
+        proposed["occurred_on_precision"] = occurred_on_precision
 
-    changed = [field for field, value in proposed.items() if getattr(engagement, field) != value]
+    # The two columns are one fact and are normalised together, against the
+    # date this save *results in* rather than the one it named. Clearing
+    # `Kaasamise kuupäev` on a record stored as *oktoober 2026* would otherwise
+    # leave `MONTH` behind on a row with no anchor — a period the record can no
+    # longer render (`_engagement_precision`). A correction naming neither
+    # column touches neither: the normalised value then equals what is stored
+    # and drops out of `changed`.
+    if "occurred_on" in proposed or "occurred_on_precision" in proposed:
+        proposed["occurred_on_precision"] = _engagement_precision(
+            proposed.get("occurred_on", locked.occurred_on),
+            proposed.get("occurred_on_precision", locked.occurred_on_precision),
+        )
+
+    changed = [field for field, value in proposed.items() if getattr(locked, field) != value]
     if not changed:
-        return engagement
+        return locked
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "kind" in changed:
-        payload["kind_from"] = engagement.kind
+        payload["kind_from"] = locked.kind
         payload["kind_to"] = proposed["kind"]
     if "occurred_on" in changed:
-        payload["occurred_on_from"] = (
-            engagement.occurred_on.isoformat() if engagement.occurred_on else None
-        )
+        payload["occurred_on_from"] = locked.occurred_on.isoformat() if locked.occurred_on else None
         payload["occurred_on_to"] = (
             proposed["occurred_on"].isoformat() if proposed["occurred_on"] else None
         )
+    if "occurred_on_precision" in changed:
+        # Recorded whenever it moves, including when the date itself did not:
+        # *oktoober 2026* corrected to *IV kvartal 2026* keeps `2026-10-01` and
+        # changes what that number means, so an audit row carrying only the
+        # anchor would say nothing had happened.
+        payload["occurred_on_precision_from"] = locked.occurred_on_precision
+        payload["occurred_on_precision_to"] = proposed["occurred_on_precision"]
     if "feedback_deadline" in changed:
         payload["feedback_deadline_from"] = (
-            engagement.feedback_deadline.isoformat() if engagement.feedback_deadline else None
+            locked.feedback_deadline.isoformat() if locked.feedback_deadline else None
         )
         payload["feedback_deadline_to"] = (
             proposed["feedback_deadline"].isoformat() if proposed["feedback_deadline"] else None
         )
 
     for field in changed:
+        setattr(locked, field, proposed[field])
+        # The caller's own instance, kept in step with the row. `register_outreach`
+        # reads its fields back after this returns to decide whether the refresh
+        # changed anything, and an instance left holding pre-write values would
+        # report every corrected row as untouched.
         setattr(engagement, field, proposed[field])
-    engagement.save(update_fields=[*changed, "updated_at"])
+    locked.save(update_fields=[*changed, "updated_at"])
     record_change_event(
         event_type=ChangeEventType.ENGAGEMENT_CHANGED,
-        matter=engagement.matter,
+        matter=locked.matter,
         actor=actor,
-        obj=engagement,
-        summary=engagement.title[:200],
+        obj=locked,
+        summary=locked.title[:200],
         payload=payload,
     )
-    return engagement
+    return locked
+
+
+@transaction.atomic
+def correct_engagement(
+    *,
+    engagement: MatterEngagement,
+    kind: str = _UNSET,
+    title: str = _UNSET,
+    url: Any = _UNSET,
+    smaily_url: Any = _UNSET,
+    alchemer_url: Any = _UNSET,
+    note: Any = _UNSET,
+    occurred_on: Any = _UNSET,
+    occurred_on_precision: Any = _UNSET,
+    feedback_deadline: Any = _UNSET,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterEngagement:
+    """`Muuda` on a `Kaasamine`, by a person, on a Matter that is open.
+
+    The correction sibling of :func:`record_engagement`, and it exists for the
+    same reason: :func:`update_engagement` has a second, legitimate writer that
+    must **not** be held to the open-Matter rule.
+    `app.legacy_import.register_outreach` refreshes consultations on imported
+    Matters and most of those are closed, so a guard in the leaf would break
+    the import rather than protect anything. The rule is therefore stated where
+    a *person* writes (R2-02).
+
+    **Correcting a consultation is normal interactive business work, and a
+    closed Matter refuses it.** This is deliberately *not* the rule
+    `edit_entry` keeps. An entry correction rewrites the wording of a narrative
+    somebody authored and touches no canonical fact; a `Kaasamine` correction
+    moves the dates, the channel, the audience and the links of a structured
+    record that the chronology, the register's activity date and the search
+    projection all read. If that has to change on a finished file, the file is
+    reopened, the work is done and it is closed again — which leaves somebody's
+    name on both decisions (docs/adr/0075 §12, docs/adr/0076 §2).
+
+    The lock is `lock_open_matter_for_business_write`, taken on the way in and
+    held for the whole transaction, so the refusal cannot be raced: a closure
+    committing first makes this refuse, and this committing first makes the
+    engagement part of the file the closure then shuts.
+
+    The child is re-read **through the locked Matter**, so the row about to be
+    corrected provably belongs to the file whose state the lock just answered
+    for. The view has already scoped it through `visible_to`; this is the same
+    invariant stated where the write happens, because a page is not a boundary.
+    """
+    locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
+    try:
+        current = MatterEngagement.objects.get(pk=engagement.pk, matter=locked_matter)
+    except MatterEngagement.DoesNotExist:
+        raise DomainError("Seda kaasamist ei ole sellel teemal.") from None
+
+    return update_engagement(
+        engagement=current,
+        kind=kind,
+        title=title,
+        url=url,
+        smaily_url=smaily_url,
+        alchemer_url=alchemer_url,
+        note=note,
+        occurred_on=occurred_on,
+        occurred_on_precision=occurred_on_precision,
+        feedback_deadline=feedback_deadline,
+        actor=actor,
+        expected_revision=expected_revision,
+    )
 
 
 # ---------------------------------------------------------------------------

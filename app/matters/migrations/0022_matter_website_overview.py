@@ -28,8 +28,13 @@ import app.core.ids
 
 
 class Migration(migrations.Migration):
+    # Renumbered 0021 -> 0022 when this branch integrated main: docs/adr/0082
+    # landed `0021_engagement_occurred_on_precision` first, and two 0021s would
+    # be two leaves in one app. The dependency moves with the number — pointing
+    # at 0020 from a file called 0022 would leave the graph ambiguous while
+    # looking tidy.
     dependencies = [
-        ("matters", "0020_engagement_feedback_deadline"),
+        ("matters", "0021_engagement_occurred_on_precision"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
