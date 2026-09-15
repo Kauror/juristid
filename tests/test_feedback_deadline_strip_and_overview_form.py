@@ -306,7 +306,7 @@ def _add(client, matter, **fields):
 
 
 def test_an_empty_form_still_records_a_plan(signed_in, normal_matter):
-    """ADR 0083 §2. The path the button's own words promise."""
+    """ADR 0083 §2. Both boxes left empty is still a complete answer."""
     response = _add(signed_in, normal_matter)
     assert response.status_code == 200
 

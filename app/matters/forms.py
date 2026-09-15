@@ -4372,8 +4372,7 @@ class CompactWebsiteOverviewForm(forms.Form):
     So the two questions are here, **optional and empty**, and the form answers
     in one of three ways:
 
-    * neither filled — the plan, exactly as before, and the only outcome the
-      button's own words promise;
+    * neither filled — the plan, exactly as before;
     * both filled — a page that already exists, recorded in one act;
     * one filled — a refusal naming the other, with what was typed still in the
       boxes. Half a publication is not a plan with a note attached: silently
