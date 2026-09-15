@@ -322,7 +322,8 @@ def test_the_button_says_what_it_does(signed_in, normal_matter):
     panel = panel[panel.index('id="lisa-koduleht"') :]
     panel = panel[: panel.index("</form>")]
 
-    assert "Lisa planeeritud ülevaade" in panel
+    assert ">Lisa ülevaade<" in panel
+    assert "planeeritud" not in panel
     assert ">Salvesta<" not in panel
     # And the two optional controls are there, labelled, under their own legend.
     assert 'name="url"' in panel

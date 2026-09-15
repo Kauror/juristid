@@ -46,8 +46,10 @@ def chronology(page):
 
 #: What the panel's primary action says. It named the *operation* rather than
 #: the outcome until docs/adr/0083 — a fieldless form and a button saying
-#: `Salvesta` read as a text area that had failed to load.
-PLAN_BUTTON = "Lisa planeeritud ülevaade"
+#: `Salvesta` read as a text area that had failed to load. It names no outcome
+#: either: the one form reaches the plan and the published page alike, so it
+#: cannot promise `planeeritud`.
+PLAN_BUTTON = "Lisa ülevaade"
 
 #: What a planned row offers next. `Avalda` named the lifecycle transition and
 #: left the reader to discover it wanted two things (docs/adr/0083).

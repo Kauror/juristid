@@ -351,11 +351,13 @@ row of controls that refuse (brief §30, §31).
       with no fields and a button saying `Salvesta`, which reads as an unusable
       text box rather than as a finished form (docs/adr/0083).
 
-      So the button says what it does — `Lisa planeeritud ülevaade` — and the
-      two boxes under their own legend say what to do instead when the page
-      already exists. Fill neither and the record is `Plaanis`; fill both and it
-      is recorded as published in one act; fill one and the form refuses,
-      naming the other and keeping what was typed.
+      So the button says what it does — `Lisa ülevaade` — and the two boxes
+      under their own legend say what to do instead when the page already
+      exists. Fill neither and the record is `Plaanis`; fill both and it is
+      recorded as published in one act; fill one and the form refuses, naming
+      the other and keeping what was typed. The button names neither outcome
+      because the one form now reaches both, and a label that said `planeeritud`
+      would be wrong on every submission that carried an address and a day.
 
       Still no title, no description and no attachment: the record's content is
       the address and the day (docs/adr/0081 §2). It is not a `+ Märge`, it is
@@ -413,7 +415,7 @@ row of controls that refuse (brief §30, §31).
             </p>
           </fieldset>
           <div class="addform__actions">
-            <button class="button button--primary" type="submit">Lisa planeeritud ülevaade</button>
+            <button class="button button--primary" type="submit">Lisa ülevaade</button>
           </div>
         </form>
       </div>
