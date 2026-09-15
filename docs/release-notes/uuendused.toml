@@ -8,6 +8,33 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-16
+basis = "deployment"
+# Üks väljalase, kaks ühendust: välise organisatsiooni seisukoht teema juures
+# ja ühe visuaaltesti kuupäeva stabiliseerimine.
+#
+# Üks punkt, mitte kaks. Teine ühendus puudutab ainult testi ennast — ühtegi
+# tööpinda, arvu ega kuupäeva, mida lugeja näeb, see ei muuda. README ütleb, et
+# selline päevatöö punkti ei saa.
+#
+# See üks punkt. Teema juurde saab nüüd kirja panna, mida mõni teine organisatsioon
+# samast asjast arvab — kes, kust see pärineb ja soovi korral millal ning
+# lühidalt mida. Lugejale on oluline ainult see, et selleks on nüüd koht;
+# mis selle taga on, ei ole tema küsimus.
+#
+# Seisukoht on märge teema juures: see ei muuda Koja arvamust, ei tekita
+# tähtaega, tööülesannet ega töövõitu, ja seda siin ei lubata — lugeja ei tohi
+# jääda arvama, et märkimine kuidagi asja ennast edasi liigutab.
+#
+# `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalase veel
+# toimunud, ja toodangu revisjon on teada alles väljalaske raportist. Vale või
+# oletatud revisjoni siia panna oleks halvem kui selle puudumine.
+prs = [221]
+changes = [
+  "Teemale saab nüüd lisada välise organisatsiooni seisukoha: märkida organisatsiooni, lisada lingi või dokumendi ning soovi korral kuupäeva ja lühiselgituse.",
+]
+
+[[day]]
 date = 2026-09-15
 basis = "deployment"
 # Üks väljalase, kolm ühendust: «Õigusakti» ettetäitmine uue teema vormil,
