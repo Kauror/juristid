@@ -444,6 +444,33 @@ def test_a_link_writes_no_chronology_row(signed_in, normal_matter, specialist):
     assert not any("Menetluse link" in (item.summary or "") for item in items)
 
 
+def test_the_rail_card_costs_one_query_however_many_links_there_are(
+    signed_in, normal_matter, specialist
+):
+    """The card is one scoped read, not one per row.
+
+    `_procedural_link_rows` builds a correction form per row, and a form that
+    reached the database for its choices would turn a Matter carrying six
+    references into six extra queries on every render of the Teema page. The
+    Teema page's own budget in `tests/test_matter_workflow.py` is a ceiling and
+    would not notice; this measures the shape.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    url = reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
+    _record(normal_matter, specialist, url=EIS_URL)
+    with CaptureQueriesContext(connection) as one_link:
+        signed_in.get(url)
+
+    for address in (REGISTER_URL, EU_URL, RIIGIKOGU_URL, OTHER_URL, "https://muu.example/x"):
+        _record(normal_matter, specialist, kind=ProceduralLinkKind.OTHER, url=address)
+    with CaptureQueriesContext(connection) as six_links:
+        signed_in.get(url)
+
+    assert len(six_links) == len(one_link)
+
+
 def test_a_link_writes_no_search_row(normal_matter, specialist):
     """§8 of the brief's default: this package changes no search index contract.
 

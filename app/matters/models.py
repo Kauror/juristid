@@ -1533,6 +1533,29 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     def is_cancelled(self) -> bool:
         return self.status == WebsiteOverviewStatus.CANCELLED
 
+    @property
+    def chronology_date(self) -> str:
+        """What the chronology's date cell says about this row, in one place.
+
+        The day this record states, or the words «Kuupäev teadmata» when it
+        states none. **Never** ``created_at``: that places the row and never
+        describes it, and printing it here would say the page went up on the
+        day somebody typed the address in — a fact about somebody else's
+        website, invented by this application (docs/adr/0089 §10).
+
+        A property on the record because two renderings need the same string:
+        `projected_milestones` builds the chronology row, and
+        `website_overview_link.html` swaps this one cell out of band when a
+        correction changes or clears the date. A second spelling of it would be
+        a second place for the two to disagree — which is the reasoning
+        `revision_token` gives for living here rather than in a template.
+        """
+        from app.matters.timeline import WEBSITE_OVERVIEW_DATE_UNKNOWN
+
+        if self.published_on is None:
+            return WEBSITE_OVERVIEW_DATE_UNKNOWN
+        return format_estonian_date(self.published_on)
+
 
 class MatterExternalPositionQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterExternalPositionQuerySet:
