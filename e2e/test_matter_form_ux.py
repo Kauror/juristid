@@ -705,3 +705,167 @@ def test_the_choice_cards_are_real_controls_with_real_labels(page, base_url):
         # the accessible name is the chip's text.
         wrapped = inputs.first.evaluate("node => node.closest('label') !== null")
         assert wrapped, f"{name} chips are not inside a label"
+
+
+# ---------------------------------------------------------------------------
+# `Sarnased teemad` — what the register already holds, while the form is typed
+# ---------------------------------------------------------------------------
+#
+# These live here rather than in a file of their own, and the reason is CI
+# rather than taste. `ci_sharding.partition` weights the browser suite from the
+# committed timings table, so adding a *file* repartitions all six shards —
+# measured here, eight files would have changed shard — and a file that moves
+# shard meets a different world, which is how three rounds were spent after the
+# workspace rebuild. Adding tests to a file that already has a `Measurement`
+# changes nothing until the timings are refreshed, which is a deliberate,
+# measured event rather than a surprise inside a feature PR.
+#
+# They belong here anyway: this is the Uus teema browser file, and what they
+# assert is that the form is still the form after a suggestion arrives. The
+# engine's own rules are held by `tests/test_similar_matters.py`.
+
+#: The region the suggestion fragment lands in. Empty until something is typed.
+SIMILAR_REGION = "#sarnased-teemad"
+SIMILAR_SECTION = ".draftsimilar"
+
+#: A subject the seeded world genuinely holds — `OPEN_TITLE` is about
+#: «pakendiseaduse ... muutmise seaduse eelnõu», so the named-act signal clears
+#: the threshold on its own and the section is not empty for a reason that has
+#: nothing to do with the wiring.
+SIMILAR_SUBJECT = "Pakendiseaduse muutmise eelnõu"
+
+
+def _settle_suggestions(page) -> None:
+    """Let the 600ms debounce fire, then the request land.
+
+    `networkidle` alone is not enough: when the keystroke returns the trigger
+    has not been scheduled yet, so a page idle since load is idle for the wrong
+    reason. Waiting past the debounce first is what makes the subsequent idle
+    mean «the suggestion request finished».
+    """
+    page.wait_for_timeout(800)
+    page.wait_for_load_state("networkidle")
+
+
+def test_an_untouched_form_suggests_nothing_at_all(page, base_url):
+    """No heading, no empty box, no spinner — the page ends at the actions."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    expect(page.locator(SIMILAR_REGION)).to_be_attached()
+    expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
+    assert page.locator(SIMILAR_REGION).inner_html().strip() == ""
+
+
+def test_a_generic_title_still_suggests_nothing(page, base_url):
+    """«Eelnõu kooskõlastamine» is a title half the register shares."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", "Eelnõu kooskõlastamine")
+    _settle_suggestions(page)
+
+    expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
+
+
+def test_a_real_subject_brings_the_similar_section(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+
+    expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+    cards = page.locator(f"{SIMILAR_SECTION} .relatedcard")
+    expect(cards.first).to_be_visible()
+    assert cards.count() <= 5, "the section showed more than five candidates"
+
+
+def test_a_suggestion_never_touches_what_is_typed(page, base_url):
+    """The claim the whole surface stands on.
+
+    Every control the person answered still holds its answer, and the one they
+    are in the middle of still has the caret. A suggestion that cost a lawyer a
+    half-written summary would be worse than no suggestion at all.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    page.fill("#id_brief_summary", "Ministeerium saatis kooskõlastusringile.")
+    page.focus("#id_brief_summary")
+    _settle_suggestions(page)
+
+    expect(page.locator("#id_title")).to_have_value(SIMILAR_SUBJECT)
+    expect(page.locator("#id_brief_summary")).to_have_value(
+        "Ministeerium saatis kooskõlastusringile."
+    )
+    assert page.evaluate("() => document.activeElement.id") == "id_brief_summary"
+
+
+def test_the_similar_section_offers_nothing_to_press(page, base_url):
+    """Read-only, and structurally so: there is no Matter to link anything to."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+
+    expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+    assert page.locator(f"{SIMILAR_SECTION} button").count() == 0
+    assert page.locator(f"{SIMILAR_SECTION} input").count() == 0
+
+
+def test_a_similar_candidate_opens_in_a_new_tab(page, base_url):
+    """The form behind it is unsaved, so the link may not navigate this one."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+
+    link = page.locator(f"{SIMILAR_SECTION} .relatedcard__title").first
+    expect(link).to_have_attribute("target", "_blank")
+    expect(link).to_have_attribute("rel", "noopener noreferrer")
+    # And it says so, for somebody who cannot see that it will.
+    assert "avaneb uues aknas" in link.inner_html().lower()
+
+
+def test_the_similar_reasons_are_a_named_list(page, base_url):
+    """«Miks seda näidatakse» — the explanation is the point of the card."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+
+    reasons = page.locator(f"{SIMILAR_SECTION} .relatedcard__reasons").first
+    expect(reasons).to_have_attribute("aria-label", "Miks seda näidatakse")
+    assert reasons.locator("li").count() >= 1
+    # The score is internal, on this surface as on the Matter page.
+    assert "%" not in page.locator(SIMILAR_SECTION).inner_text()
+
+
+def test_the_similar_card_is_reachable_from_the_keyboard(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+
+    link = page.locator(f"{SIMILAR_SECTION} .relatedcard__title").first
+    link.focus()
+    assert page.evaluate("() => document.activeElement.className") == "relatedcard__title"
+
+
+def test_the_similar_section_survives_a_narrow_screen(page, base_url):
+    """420px: the cards stack and the page does not scroll sideways."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": 420, "height": 900})
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+
+    expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+    assert not _document_overflows(page), "Uus teema scrolls sideways at 420px"

@@ -39,7 +39,7 @@ import functools
 import operator
 import uuid
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
@@ -61,13 +61,19 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.text import normalize_for_matching
+from app.documents.enums import DocumentRole
+from app.documents.models import Document
+from app.intelligence.enums import WorkVictoryStatus
+from app.intelligence.models import MatterWorkVictory
 from app.legacy_import.opinion_access import may_read_archive
 from app.legacy_import.opinion_archive import OpinionMatchCandidate, OpinionSubmissionImport
 from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
 from app.legacy_import.opinion_enums import OpinionCandidateState
 from app.legacy_import.opinion_search import visible_archive
 from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+from app.matters.enums import MatterDataClass
 from app.matters.models import Matter
+from app.organisations.models import Organisation
 from app.related_materials import text
 from app.related_materials.models import (
     MatterBackgroundMaterial,
@@ -78,6 +84,8 @@ from app.search.models import SearchSourceKind
 from app.search.services import WordSimilarity, visible_documents
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
 
 # -- the contract -----------------------------------------------------------
 
@@ -123,6 +131,17 @@ TAG_CAP = 2
 #: A shared policy area — the broadest classification there is, so the least.
 W_AREA_FIRST = 1.0
 W_AREA_SECOND = 0.5
+#: A shared `Õigusakt` — the reviewed instrument *type* on the Matter, not a
+#: named act read out of its title. The two are different facts and both are
+#: kept: `W_ACT` says these two files are about *pakendiseadus*, this says they
+#: are both about a *määrus*. Weighted like a policy area and for the same
+#: reason — seventeen values over the whole register, of which `seadus` alone
+#: covers a large part of it, so on its own it says almost nothing. Two shared
+#: types is the practical maximum a Matter carries; a third adds nothing a
+#: reader would act on.
+W_INSTRUMENT_FIRST = 1.0
+W_INSTRUMENT_SECOND = 0.5
+INSTRUMENT_CAP = 2
 #: The same sender or addressee body, counted once however many roles match.
 W_ORGANISATION = 1.5
 #: The same track. A tie-break between candidates that already qualified,
@@ -144,8 +163,9 @@ W_RELATED_MATTER_MATERIAL = 5.0
 W_ARCHIVE_REVIEWED = 1.0
 
 #: What a candidate must reach. One act (6.0) or one strong title (5.0) clears
-#: it alone; tag + organisation (3.5) clears it; area + organisation (2.5) and
-#: tag + area (3.0) do not.
+#: it alone; tag + organisation (3.5) clears it; area + organisation (2.5),
+#: tag + area (3.0), instrument + organisation (2.5) and instrument + tag (3.0)
+#: do not.
 THRESHOLD = 3.5
 
 KIND_SUBMISSION = "SUBMISSION"
@@ -163,6 +183,35 @@ EMPTY_MESSAGE = "Praegu ei leitud piisavalt tugevaid võimalikke seoseid."
 
 
 @dataclass(frozen=True)
+class MatterOutcome:
+    """What Koda *did* on a candidate Matter, as this reader may see it.
+
+    Three booleans and nothing else. The card's job is to say whether opening
+    the file is worth the click — «there is an opinion in there» — not to
+    summarise what the opinion said. No count, no date, no title, and above all
+    no generated précis: v1 shows what exists and links to where it is read
+    (docs/adr/0087 §3).
+
+    Each is computed under the reader's **own** child visibility, not the
+    Matter's. A visible Matter may carry a restricted opinion, and a pill
+    saying one exists is exactly the kind of existence disclosure the
+    projection rules forbid (ADR 0005, ADR 0038).
+    """
+
+    has_opinion: bool = False
+    has_sent_submission: bool = False
+    has_work_victory: bool = False
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.has_opinion or self.has_sent_submission or self.has_work_victory)
+
+
+#: What a reader with no outcome visibility sees: nothing, on every card.
+NO_OUTCOME = MatterOutcome()
+
+
+@dataclass(frozen=True)
 class RelatedMatterSuggestion:
     """One candidate Matter, with why it is here."""
 
@@ -170,6 +219,7 @@ class RelatedMatterSuggestion:
     score: float
     reasons: tuple[str, ...]
     is_dismissed: bool = False
+    outcome: MatterOutcome = NO_OUTCOME
 
     @property
     def state_label(self) -> str:
@@ -245,12 +295,25 @@ class _TextSignals:
 class SubjectProfile:
     """What the current Matter is about, read once."""
 
-    matter: Matter
+    #: The Matter this profile is *of*, or ``None`` when it is an unsaved draft
+    #: on `Uus teema`. Everything the pools need is named below, so a draft is
+    #: not a half-built Matter object with a null primary key waiting to be
+    #: dereferenced.
+    matter: Matter | None
+    #: Which corpus to search. TEST Matters suggest TEST Matters and REAL
+    #: suggest REAL, so a seeded rehearsal cannot surface beside real work.
+    data_class: str
+    #: This Matter's own key, excluded everywhere. ``None`` for a draft, which
+    #: by definition is not yet anything to exclude.
+    self_id: Any | None
     instruments: tuple[text.LegalInstrument, ...]
     title_terms: tuple[text.Term, ...]
     summary_terms: tuple[text.Term, ...]
     tag_names: dict[Any, str]
     area_names: dict[Any, str]
+    #: The reviewed `Õigusakt` types this Matter carries, `muu` excluded — see
+    #: `_instrument_names`.
+    instrument_names: dict[Any, str]
     organisation_names: dict[Any, str]
     track: str
     related_matter_ids: frozenset[Any]
@@ -266,6 +329,21 @@ class SubjectProfile:
         return (*self.title_terms, *self.summary_terms)
 
     @property
+    def saved_id(self) -> Any:
+        """The key, for the two channels that only ever run on a saved Matter.
+
+        The opinion and archive channels ask «which earlier letter belongs on
+        *this* file», and a draft on `Uus teema` is not a file yet — it has no
+        key to exclude, nothing filed onto it and nothing dismissed from it.
+        `suggestions_for_draft` therefore never calls them, and saying so here
+        keeps the impossibility where it is true rather than threading an
+        optional key through two query builders that cannot use one.
+        """
+        if self.self_id is None:
+            raise ValueError("a draft profile has no Matter of its own")
+        return self.self_id
+
+    @property
     def has_dismissals(self) -> bool:
         return bool(
             self.dismissed_matter_ids or self.dismissed_submission_ids or self.dismissed_binary_ids
@@ -275,6 +353,27 @@ class SubjectProfile:
 # ---------------------------------------------------------------------------
 # The profile
 # ---------------------------------------------------------------------------
+
+
+def _instrument_names(matter: Matter) -> dict[Any, str]:
+    """The `Õigusakt` types a Matter carries, as `{pk: label}`, `muu` dropped.
+
+    `Muu` is the vocabulary's escape hatch, not a kind of instrument: what it
+    actually means lives in `Matter.legal_instrument_other`, which is one
+    Matter's own free text and matches nothing. Two files both answering «muu»
+    have said only that neither fitted the list, and offering that as «Sama
+    õigusakt: Muu» would be the engine reporting a shared absence as a shared
+    fact (`app/taxonomy/legal_instruments.py`, `OTHER_LEGAL_INSTRUMENT_KEY`).
+
+    The free text is deliberately *not* matched either, here or in the pool. It
+    is uncontrolled, it is one Matter's own, and comparing two people's prose
+    for equality is the kind of similarity this engine does not do.
+    """
+    return {
+        instrument.pk: instrument.label_et
+        for instrument in matter.legal_instruments.all()
+        if instrument.key != OTHER_LEGAL_INSTRUMENT_KEY
+    }
 
 
 def build_profile(matter: Matter) -> SubjectProfile:
@@ -294,6 +393,7 @@ def build_profile(matter: Matter) -> SubjectProfile:
 
     tag_names = {tag.pk: tag.name_et for tag in matter.tags.all()}
     area_names = {area.pk: area.name_et for area in matter.policy_areas.all()}
+    instrument_names = _instrument_names(matter)
     organisation_names = {
         organisation.pk: organisation.name for organisation in matter.source_organisations.all()
     }
@@ -341,11 +441,14 @@ def build_profile(matter: Matter) -> SubjectProfile:
 
     return SubjectProfile(
         matter=matter,
+        data_class=matter.data_class,
+        self_id=matter.pk,
         instruments=instruments,
         title_terms=title_terms,
         summary_terms=summary_terms,
         tag_names=tag_names,
         area_names=area_names,
+        instrument_names=instrument_names,
         organisation_names=organisation_names,
         track=matter.track or "",
         related_matter_ids=frozenset(related_ids),
@@ -444,13 +547,14 @@ def _structured_pool(profile: SubjectProfile, viewer: Any) -> list[Any]:
     """
     tag_ids = list(profile.tag_names)
     area_ids = list(profile.area_names)
+    instrument_ids = list(profile.instrument_names)
     organisation_ids = list(profile.organisation_names)
-    if not (tag_ids or area_ids or organisation_ids):
+    if not (tag_ids or area_ids or instrument_ids or organisation_ids):
         return []
 
     rows = (
         Matter.objects.visible_to(viewer)
-        .filter(data_class=profile.matter.data_class)
+        .filter(data_class=profile.data_class)
         .exclude(pk__in=list(profile.excluded_matter_ids))
     )
     # Only the facts this Matter actually carries are asked about: an empty
@@ -466,6 +570,14 @@ def _structured_pool(profile: SubjectProfile, viewer: Any) -> list[Any]:
             "policy_areas", filter=Q(policy_areas__in=area_ids), distinct=True
         )
         parts.append(F("shared_areas"))
+    if instrument_ids:
+        # Worth one, exactly as an area is, so an instrument type alone still
+        # cannot reach `structured__gte=2` and enter the pool on its own. Half
+        # the register is a `seadus`.
+        annotations["shared_instruments"] = Count(
+            "legal_instruments", filter=Q(legal_instruments__in=instrument_ids), distinct=True
+        )
+        parts.append(F("shared_instruments"))
     if organisation_ids:
         annotations["shared_senders"] = Count(
             "source_organisations",
@@ -505,7 +617,7 @@ def _matter_text_pool(
         return {}
     rows = (
         visible_documents(viewer)
-        .filter(source_kind=SearchSourceKind.MATTER, matter__data_class=profile.matter.data_class)
+        .filter(source_kind=SearchSourceKind.MATTER, matter__data_class=profile.data_class)
         .exclude(matter_id__in=list(profile.excluded_matter_ids))
     )
     rows, any_match = _annotate_terms(rows, terms, title_field="title", title_vector="search_title")
@@ -539,7 +651,7 @@ def _fetch_matters(viewer: Any, ids: Iterable[Any]) -> dict[Any, Matter]:
         Matter.objects.visible_to(viewer)
         .filter(pk__in=wanted)
         .select_related("addressee_organisation", "stage")
-        .prefetch_related("tags", "policy_areas", "source_organisations")
+        .prefetch_related("tags", "policy_areas", "legal_instruments", "source_organisations")
     )
     return {matter.pk: matter for matter in rows}
 
@@ -600,6 +712,24 @@ def _matter_signals(
     elif shared_areas:
         score += W_AREA_FIRST + W_AREA_SECOND
         reasons.append(f"Samad valdkonnad: {text.format_list(shared_areas, 2)}")
+
+    # The reviewed instrument type, said in the vocabulary's own words —
+    # «Sama õigusakti liik: Määrus», never «Sama õigusakt: …», which is the
+    # named act above and a different claim. A reader who sees both lines on
+    # one card is being told two true things, not the same thing twice.
+    shared_instruments = sorted(
+        profile.instrument_names[instrument.pk]
+        for instrument in candidate.legal_instruments.all()
+        if instrument.pk in profile.instrument_names
+    )[:INSTRUMENT_CAP]
+    if len(shared_instruments) == 1:
+        score += W_INSTRUMENT_FIRST
+        reasons.append(f"Sama õigusakti liik: {shared_instruments[0]}")
+    elif shared_instruments:
+        score += W_INSTRUMENT_FIRST + W_INSTRUMENT_SECOND
+        reasons.append(
+            f"Samad õigusakti liigid: {text.format_list(shared_instruments, INSTRUMENT_CAP)}"
+        )
 
     # Applied only above the line, so the track orders qualifying candidates
     # and can never lift one over it (see `W_TRACK`).
@@ -759,9 +889,9 @@ def opinion_candidates(
         .filter(
             source_kind=SearchSourceKind.SUBMISSION,
             submission__status=SubmissionStatus.SENT,
-            matter__data_class=profile.matter.data_class,
+            matter__data_class=profile.data_class,
         )
-        .exclude(matter_id=profile.matter.pk)
+        .exclude(matter_id=profile.saved_id)
         .exclude(submission_id__in=list(excluded))
     )
     rows, any_match = _annotate_terms(rows, terms, title_field="title", title_vector="search_title")
@@ -915,7 +1045,7 @@ def _archive_rows(profile: SubjectProfile, viewer: Any) -> QuerySet[OpinionArchi
     rows = rows.exclude(
         Exists(
             OpinionArchiveMatterLink.objects.filter(
-                binary_id=OuterRef("binary_id"), matter_id=profile.matter.pk
+                binary_id=OuterRef("binary_id"), matter_id=profile.saved_id
             )
         )
     )
@@ -1095,6 +1225,196 @@ def hidden_count(profile: SubjectProfile, viewer: Any) -> int:
 
 
 # ---------------------------------------------------------------------------
+# A draft on `Uus teema`
+# ---------------------------------------------------------------------------
+
+#: What an unsaved form must carry before it is asked anything. A title alone
+#: is not enough — «Eelnõu» and «Kooskõlastusring» are titles the whole
+#: register shares — so the test is *subject* words, the same generic-word
+#: filter the saved path uses, or two structured facts that agree.
+#:
+#: Below this the answer is silence. A suggestion list assembled from one
+#: half-typed word is a list a person learns to ignore, and this surface gets
+#: one chance to be worth reading (docs/adr/0087 §4).
+DRAFT_MIN_TERMS = 1
+DRAFT_MIN_FACTS = 2
+
+
+def build_draft_profile(
+    *,
+    title: str = "",
+    summary: str = "",
+    area_ids: Sequence[Any] = (),
+    instrument_ids: Sequence[Any] = (),
+    organisation_ids: Sequence[Any] = (),
+    data_class: str = MatterDataClass.REAL,
+) -> SubjectProfile | None:
+    """What an in-progress `Uus teema` form is about, or ``None`` if too little.
+
+    The same profile the saved path builds, from answers that are not a row
+    yet. **Nothing is written and no Matter is created** — the form's values
+    arrive as a request and leave as a list; a draft Matter created to compute a
+    suggestion would be a file in the register nobody meant to open
+    (docs/adr/0087 §4).
+
+    The catalogue keys are resolved against the reference vocabularies rather
+    than trusted from the request, so a crafted POST naming a key that does not
+    exist contributes nothing and one naming a key that does contributes exactly
+    what the same key would contribute on a saved Matter. `Muu` is dropped from
+    the instruments here for the reason `_instrument_names` gives.
+
+    ``None`` means *do not ask*: there is not enough here for an answer worth
+    reading, and the caller renders nothing at all.
+    """
+    titles = [title or ""]
+    instruments = tuple(text.legal_instruments(" . ".join(titles)))
+    title_terms = tuple(text.subject_terms(*titles, limit=8))
+    summary_terms = tuple(
+        term
+        for term in text.subject_terms(summary or "", limit=8)
+        if not any(text.same_word(term.key, ours.key) for ours in title_terms)
+    )[:4]
+
+    area_names = {
+        area.pk: area.name_et for area in PolicyArea.objects.filter(pk__in=list(area_ids))
+    }
+    instrument_names = {
+        instrument.pk: instrument.label_et
+        for instrument in LegalInstrumentType.objects.filter(pk__in=list(instrument_ids))
+        if instrument.key != OTHER_LEGAL_INSTRUMENT_KEY
+    }
+    organisation_names = {
+        organisation.pk: organisation.name
+        for organisation in Organisation.objects.filter(pk__in=list(organisation_ids))
+    }
+
+    facts = len(area_names) + len(instrument_names) + len(organisation_names)
+    if len(title_terms) < DRAFT_MIN_TERMS and facts < DRAFT_MIN_FACTS:
+        return None
+
+    return SubjectProfile(
+        matter=None,
+        data_class=data_class,
+        self_id=None,
+        instruments=instruments,
+        title_terms=title_terms,
+        summary_terms=summary_terms,
+        # `Uus teema` has no `Sildid` control: a tag is the department's own
+        # vocabulary, applied to a file that exists, and the create form
+        # deliberately asks for none. So a draft carries none, rather than
+        # carrying an empty list that looks like a question nobody answered.
+        tag_names={},
+        area_names=area_names,
+        instrument_names=instrument_names,
+        organisation_names=organisation_names,
+        track="",
+        # A draft has confirmed nothing, dismissed nothing and filed nothing.
+        # These are empty because the facts are empty, not because the draft
+        # path skips a check the saved path makes.
+        related_matter_ids=frozenset(),
+        excluded_matter_ids=frozenset(),
+        dismissed_matter_ids=frozenset(),
+        dismissed_submission_ids=frozenset(),
+        dismissed_binary_ids=frozenset(),
+        background_submission_ids=frozenset(),
+        background_binary_ids=frozenset(),
+    )
+
+
+def suggestions_for_draft(
+    profile: SubjectProfile | None, viewer: Any, *, limit: int = DEFAULT_LIMIT
+) -> tuple[RelatedMatterSuggestion, ...]:
+    """Earlier Matters that resemble an unsaved form, for this reader.
+
+    The **same** engine, the same weights, the same threshold and the same
+    reasons the saved section uses — a lawyer must not learn two vocabularies,
+    and a candidate that qualifies while the file is being typed must still
+    qualify the moment it is saved (docs/adr/0087 §4).
+
+    Matters only. The opinion and archive channels answer «what belongs on this
+    file», which needs a file; and a person who has not yet decided to open a
+    Matter is choosing whether this work is new, not assembling a dossier.
+    """
+    if profile is None:
+        return ()
+    limit = max(1, min(int(limit), MAX_LIMIT))
+    matters, _scores = related_matter_candidates(profile, viewer)
+    return tuple(_with_outcomes(matters[:limit], viewer))
+
+
+# ---------------------------------------------------------------------------
+# What Koda did there
+# ---------------------------------------------------------------------------
+
+
+def outcomes_for(matter_ids: Sequence[Any], viewer: Any) -> dict[Any, MatterOutcome]:
+    """The three indicators for a set of candidate Matters, in three queries.
+
+    Three, whatever the candidate count — the question is asked once per *kind*
+    of record over the whole set, never once per card. The set is at most
+    `MAX_LIMIT` plus the dismissed ones a reader chose to look at, so each query
+    is an `IN` over a short list of primary keys.
+
+    Every one starts from the record's own `visible_to`, which derives the
+    child's effective visibility from its Matter and its own override. That is
+    the point of doing it here rather than trusting the candidate's visibility:
+    a reader may open a Matter and still be refused an opinion filed on it, and
+    a pill is an assertion that the opinion exists.
+
+    An opinion is a `Document` carrying `KODA_SUBMISSION_FINAL`; a send is a
+    `Submission` in `SENT`; a win is a `MatterWorkVictory` in `CONFIRMED`. Each
+    is the same definition the Matter's own page uses, so a card cannot claim
+    something the file itself does not show (`app/submissions/opinions.py`,
+    `templates/matters/partials/opinion_rail.html`).
+    """
+    wanted = list(matter_ids)
+    if not wanted:
+        return {}
+
+    opinions = set(
+        Document.objects.filter(matter_id__in=wanted, role=DocumentRole.KODA_SUBMISSION_FINAL)
+        .visible_to(viewer)
+        .values_list("matter_id", flat=True)
+    )
+    sent = set(
+        Submission.objects.filter(matter_id__in=wanted, status=SubmissionStatus.SENT)
+        .visible_to(viewer)
+        .values_list("matter_id", flat=True)
+    )
+    victories = set(
+        MatterWorkVictory.objects.filter(matter_id__in=wanted, status=WorkVictoryStatus.CONFIRMED)
+        .visible_to(viewer)
+        .values_list("matter_id", flat=True)
+    )
+
+    return {
+        matter_id: MatterOutcome(
+            has_opinion=matter_id in opinions,
+            has_sent_submission=matter_id in sent,
+            has_work_victory=matter_id in victories,
+        )
+        for matter_id in wanted
+    }
+
+
+def _with_outcomes(
+    suggestions: Sequence[RelatedMatterSuggestion], viewer: Any
+) -> list[RelatedMatterSuggestion]:
+    """Attach the indicators to the candidates that will actually be rendered.
+
+    Called **after** the list has been cut to its limit, so the three queries
+    cover five cards rather than the forty-row pool. The indicators decide
+    nothing — not a score, not an order, not the threshold — so computing them
+    late cannot change which candidates appear, and computing them for
+    candidates nobody will see would be work for nothing.
+    """
+    if not suggestions:
+        return list(suggestions)
+    outcomes = outcomes_for([item.matter.pk for item in suggestions], viewer)
+    return [replace(item, outcome=outcomes.get(item.matter.pk, NO_OUTCOME)) for item in suggestions]
+
+
+# ---------------------------------------------------------------------------
 # The entry point
 # ---------------------------------------------------------------------------
 
@@ -1126,8 +1446,11 @@ def suggestions_for(
     else:
         count = hidden_count(profile, viewer)
 
+    shown = _with_outcomes(matters[:limit], viewer)
+    hidden_matters = _with_outcomes(hidden_matters, viewer)
+
     return Suggestions(
-        matters=tuple(matters[:limit]),
+        matters=tuple(shown),
         materials=tuple(materials[:limit]),
         limit=limit,
         more_matters=max(0, min(len(matters), MAX_LIMIT) - limit),

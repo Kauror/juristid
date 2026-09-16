@@ -21,4 +21,8 @@ urlpatterns = [
     ),
     path("teemad/<uuid:pk>/seotud/soovitus/peida/", views.dismiss, name="dismiss"),
     path("teemad/<uuid:pk>/seotud/soovitus/taasta/", views.restore, name="restore"),
+    # The one route here that hangs off no Matter, because the thing it is
+    # about is not one yet. `Uus teema` asks it what the form so far resembles
+    # (docs/adr/0087 §4).
+    path("teemad/uus/sarnased/", views.draft_suggestions, name="draft_suggestions"),
 ]

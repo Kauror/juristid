@@ -43,6 +43,7 @@ from app.submissions.models import Submission
 
 SECTION_TEMPLATE = "related_materials/partials/section.html"
 PAGE_TEMPLATE = "related_materials/section_page.html"
+DRAFT_TEMPLATE = "related_materials/partials/draft_suggestions.html"
 PICKER_TEMPLATE = "related_materials/partials/picker_results.html"
 
 #: How many Matters «Lisa seotud teema» offers for one query. The header
@@ -368,3 +369,68 @@ def restore(request: HttpRequest, pk: Any) -> HttpResponse:
         return _after_write(request, matter, str(error), is_error=True)
     notice = "Soovitus on taastatud." if restored else "See soovitus ei olnud peidetud."
     return _after_write(request, matter, notice)
+
+
+# ---------------------------------------------------------------------------
+# `Uus teema` — earlier Matters that resemble what is being typed
+# ---------------------------------------------------------------------------
+
+
+def _uuid_list(values: list[str], *, limit: int = 40) -> list[uuid.UUID]:
+    """The well-formed keys out of a request, and nothing else.
+
+    A malformed one is dropped rather than refused: this route is answering a
+    half-typed form, and a person who has selected nothing yet, or whose browser
+    sent a blank option, should get the same silence as a person who has not
+    started. The list is bounded because a request may name as many keys as it
+    likes and the catalogues it resolves against are 21, 17 and 15 rows long.
+    """
+    keys: list[uuid.UUID] = []
+    for value in values[:limit]:
+        try:
+            keys.append(uuid.UUID(value))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    return keys
+
+
+@login_required
+@require_GET
+def draft_suggestions(request: HttpRequest) -> HttpResponse:
+    """Earlier Matters resembling the `Uus teema` form as it stands. Read only.
+
+    **GET, and it writes nothing** — no draft Matter, no dismissal, no audit
+    event, no `last_recommended_at`. The form's current answers arrive as query
+    parameters, the engine reads them, and the answer is a fragment of cards.
+    Nothing about this request touches the form: the fragment replaces one
+    region and names no control, so a value being typed cannot be swapped out
+    from under the person typing it (docs/adr/0087 §4).
+
+    Not `business_write_required`, unlike `picker`. This proposes nothing to
+    write — there is no `Lisa` here and no Matter to add anything to — so it is
+    ordinary reading and anybody who may read Matters may read it. What they may
+    read is the whole boundary: the engine's pools start at
+    `Matter.objects.visible_to(request.user)`, so a crafted request naming a
+    ministry that only appears on restricted files gets an empty list, exactly
+    as an honest one would.
+
+    The form's own values are **not** echoed back into the response, so this
+    route cannot be used to reflect content, and the parameters it does read are
+    resolved against reference vocabularies rather than trusted.
+    """
+    profile = engine.build_draft_profile(
+        title=request.GET.get("title") or "",
+        summary=request.GET.get("brief_summary") or "",
+        area_ids=_uuid_list(request.GET.getlist("policy_areas")),
+        instrument_ids=_uuid_list(request.GET.getlist("legal_instruments")),
+        organisation_ids=[
+            *_uuid_list(request.GET.getlist("source_organisations")),
+            *_uuid_list([request.GET.get("addressee_organisation") or ""]),
+        ],
+    )
+    suggestions = engine.suggestions_for_draft(profile, request.user)
+    return render(
+        request,
+        DRAFT_TEMPLATE,
+        {"draft_suggestions": suggestions},
+    )

@@ -691,6 +691,43 @@ p.formnote {
   background: currentColor;
 }
 
+/* What Koda did on a suggested Matter: three optional pills under the reasons.
+ *
+ * The three reuse the semantic badge modifiers so they mean the same thing here
+ * as they do on the file itself — but a suggestion card is a quiet reading
+ * surface and `.badge--sent` is a filled blue pill built to be the loudest
+ * thing in a submissions table. Inside this row they are flattened to one
+ * shape and the distinction is carried by the dot, which keeps each of them
+ * legible without colour because the word is still there.
+ *
+ * `row-gap` as well as `column-gap`: three pills wrap at the rail's 300px and
+ * at 420px, and without it the wrapped line touches the one above. */
+.relatedcard__did {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-15);
+  margin: var(--spacing-15) 0 0;
+}
+
+.relatedcard__did .badge {
+  color: var(--text-secondary);
+  background: var(--surface-elevated);
+  border-color: var(--border-control);
+  font-weight: var(--typography-weight-regular);
+}
+
+.relatedcard__did .badge--opinion .badge__dot {
+  background: var(--accent-link);
+}
+
+.relatedcard__did .badge--sent .badge__dot {
+  background: var(--text-secondary);
+}
+
+.relatedcard__did .badge--success .badge__dot {
+  background: var(--status-success);
+}
+
 .badge--restricted,
 .badge--environment {
   color: var(--status-warning);
@@ -5453,6 +5490,31 @@ a.barchart__row:hover {
   align-items: center;
   gap: var(--spacing-3);
   margin-top: var(--spacing-4);
+}
+
+/* `Sarnased teemad` under the create form: what the register already holds
+ * about this subject, while it is being typed.
+ *
+ * Below the actions on purpose. It answers «has Koda done this before», which
+ * is a question about whether to press `Loo teema` — but it is an aside, and
+ * putting it above the button would make an optional reading surface stand
+ * between a lawyer and the one thing this page is for. There is no empty state
+ * and no reserved height: with nothing to suggest the element is empty and the
+ * page ends at the actions row, exactly as it did before this existed.
+ *
+ * The cards themselves are `.relatedcard`, unforked from the Matter page, so
+ * the two surfaces cannot drift apart. */
+.draftsimilar {
+  margin-top: var(--spacing-6);
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.draftsimilar__lead {
+  margin: var(--spacing-1) 0 var(--spacing-3);
+  max-width: 68ch;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
 }
 
 /* At the far end of the actions row, not tucked behind "Loobu": it is a
