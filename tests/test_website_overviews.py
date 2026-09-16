@@ -296,22 +296,52 @@ def test_an_over_long_address_is_refused_rather_than_truncated():
         normalize_overview_news_url("https://koda.ee/" + "a" * 1000)
 
 
-def test_publishing_without_an_address_or_a_date_is_refused(normal_matter, specialist):
+def test_publishing_without_an_address_is_refused(normal_matter, specialist):
+    """The address is what makes a publication. The date is not.
+
+    docs/adr/0089 §8 split what docs/adr/0081 §2 had joined: a page is published
+    because it is up somewhere a reader can open it, so a date alone is half a
+    record and is refused — while an address alone is a whole one and is
+    accepted by the test directly below.
+    """
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
 
     with pytest.raises(DomainError):
         publish_website_overview(
             overview=overview, url="", published_on=PUBLISHED_ON, actor=specialist
         )
-    with pytest.raises(DomainError):
-        publish_website_overview(
-            overview=overview, url=KODA_URL, published_on=None, actor=specialist
-        )
 
     overview.refresh_from_db()
     assert overview.status == WebsiteOverviewStatus.PLANNED
     assert overview.url == ""
     assert overview.published_on is None
+
+
+def test_publishing_with_an_address_and_no_date_is_the_publication_it_claims_to_be(
+    normal_matter, specialist
+):
+    """`None` is stored as `NULL` and means *unknown* — never today.
+
+    The assertion that carries the whole of docs/adr/0089 §8: the row is
+    `Avaldatud`, it holds the address, and `published_on` is `None`. Nothing in
+    the service, the model or the database substituted the clock for a fact
+    nobody knew.
+    """
+    overview = plan_website_overview(matter=normal_matter, actor=specialist)
+
+    published = publish_website_overview(
+        overview=overview, url=KODA_URL, published_on=None, actor=specialist
+    )
+
+    published.refresh_from_db()
+    assert published.status == WebsiteOverviewStatus.PUBLISHED
+    assert published.url == KODA_URL
+    assert published.published_on is None
+    # And the two facts stay apart: `published_at` records when somebody wrote
+    # the publication down, which exists, while `published_on` records the day
+    # the page went up, which nobody knows.
+    assert published.published_at is not None
+    assert published.published_at.date() != published.published_on
 
 
 # ---------------------------------------------------------------------------
@@ -329,14 +359,24 @@ def test_a_published_row_cannot_exist_without_an_address(normal_matter):
         )
 
 
-def test_a_published_row_cannot_exist_without_a_date(normal_matter):
-    with pytest.raises(IntegrityError), transaction.atomic():
-        MatterWebsiteOverview.objects.create(
-            matter=normal_matter,
-            status=WebsiteOverviewStatus.PUBLISHED,
-            url=KODA_URL,
-            published_at=timezone.now(),
-        )
+def test_a_published_row_may_exist_without_a_date(normal_matter):
+    """The database stopped requiring one, and that is the schema half of ADR 0089.
+
+    The constraint `matters_website_overview_published_has_link_and_date` is
+    gone and `matters_website_overview_published_has_link` stands in its place,
+    so a publication whose day is unknown is storable rather than merely
+    tolerated by a service that then could not save it (migration
+    `matters/0028_overview_news_optional_publication_date`).
+    """
+    overview = MatterWebsiteOverview.objects.create(
+        matter=normal_matter,
+        status=WebsiteOverviewStatus.PUBLISHED,
+        url=KODA_URL,
+        published_at=timezone.now(),
+    )
+
+    overview.refresh_from_db()
+    assert overview.published_on is None
 
 
 def test_an_unpublished_row_cannot_carry_an_address_or_a_date(normal_matter):
@@ -632,7 +672,15 @@ def test_a_refused_address_comes_back_with_what_was_typed(signed_in, normal_matt
     assert overview.status == WebsiteOverviewStatus.PLANNED
 
 
-def test_a_missing_date_is_refused_with_its_own_sentence(signed_in, normal_matter, specialist):
+def test_a_missing_date_publishes_the_row_rather_than_refusing_it(
+    signed_in, normal_matter, specialist
+):
+    """The refusal this used to assert is withdrawn, and its replacement is a save.
+
+    Through the browser's own route, because the sentence a lawyer met was the
+    whole reported defect: they pasted an address, were told the row needed
+    `avaldamise kuupäeva`, and typed today to get past it (docs/adr/0089 §8).
+    """
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
 
     response = _post(
@@ -642,13 +690,12 @@ def test_a_missing_date_is_refused_with_its_own_sentence(signed_in, normal_matte
         {"url": KODA_URL, "published_on": ""},
         overview_id=overview.pk,
     )
-    body = response.content.decode()
 
-    assert response.status_code == 400
-    assert "avaldamise kuupäeva" in body
-    assert KODA_URL in body
+    assert response.status_code == 200
     overview.refresh_from_db()
-    assert overview.status == WebsiteOverviewStatus.PLANNED
+    assert overview.status == WebsiteOverviewStatus.PUBLISHED
+    assert overview.url == KODA_URL
+    assert overview.published_on is None
 
 
 def test_the_chronology_shows_a_labelled_link_and_never_the_address(

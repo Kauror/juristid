@@ -9,29 +9,33 @@ decided on top of it, and nothing else:
 * **the widened address rule**: any syntactically valid public `http`/`https`
   page, with the safety half of ADR 0081 §3 kept intact — a parsed host, no
   userinfo, no non-web scheme, refused rather than truncated;
-* **the date default**, and specifically the two halves of it that are a server
-  contract rather than a script: the panel still renders an *empty* box, and it
-  carries today as the **server** resolved it for the browser to use;
+* **the date contract**, which docs/adr/0089 §8 has since replaced: ADR 0085 §3
+  filled the box with today the moment somebody typed an address, and that
+  default is now withdrawn on both halves — the panel renders an empty box, no
+  page carries today for the browser to use, and an empty box means *unknown*
+  rather than a refusal;
 * **the boundaries that did not move**, asserted here rather than assumed,
   because a rename is exactly the change under which a rule quietly stops being
   enforced (ADR 0085 §4).
 
-The script behaviour itself — a keystroke filling the box, a cleared box staying
-cleared — is `e2e/test_website_overview.py`, which has a browser.
+The publication date's own rules — an address without a date, a date cleared on
+purpose, an existing date left alone — are `tests/test_overview_news_unknown_date.py`,
+which owns docs/adr/0089 §8 the way this file owns ADR 0085.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 
 import pytest
+from django.conf import settings
 from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.dates import format_estonian_date
 from app.core.errors import DomainError
 from app.matters.enums import WebsiteOverviewStatus
 from app.matters.models import MatterWebsiteOverview
@@ -357,72 +361,73 @@ def test_the_same_address_is_still_filed_at_most_once_per_matter(normal_matter, 
 # ---------------------------------------------------------------------------
 
 
-def test_the_server_renders_an_empty_date_box_and_todays_default_beside_it(
-    signed_in, normal_matter
-):
-    """§3. Both halves in one assertion, because they are one decision.
+def test_the_date_box_is_empty_and_no_default_is_offered_anywhere(signed_in, normal_matter):
+    """§3, as docs/adr/0089 §8 replaces it: there is no default left to offer.
 
-    The box is empty, so an untouched submit is still the plan — the property
-    ADR 0083 §2 refused an `initial` to protect. And the default is *there*, as
-    a value the script writes in when somebody starts typing an address, so the
-    published path does not retype today's date.
+    ADR 0085 §3 wrote today into `data-publication-default` and let an island in
+    `ux.js` put it in the box the moment somebody typed an address. Lawyer
+    testing measured what that produced — a plausible date, already there,
+    accepted without being read — so both halves are withdrawn: the attribute,
+    and the `initial` on the publish form's own box.
+
+    All three assertions are the same claim from three sides: the box is empty,
+    nothing tells the browser what today is, and nothing pairs the two boxes.
     """
     panel = _panel(signed_in, normal_matter)
     box = panel[panel.index('name="published_on"') :]
     box = box[: box.index(">")]
 
     assert 'value=""' in box or "value=" not in box, box
-    assert f'data-publication-default="{format_estonian_date(timezone.localdate())}"' in box
+    assert "data-publication-default" not in panel
+    assert "data-publication-trigger" not in panel
 
 
-def test_the_link_box_points_at_the_date_box_it_fills(signed_in, normal_matter):
-    """§3. The pairing is Django's ids, not a string written out in a template.
+def test_no_page_and_no_script_carries_the_publication_default(
+    signed_in, normal_matter, specialist
+):
+    """§3. The island is gone from `ux.js`, not merely unused by this panel.
 
-    A hand-written `id` in HTML stops matching the moment a caller passes its own
-    `auto_id`, which `_website_overview_link_form` already does for the strip.
-    """
-    panel = _panel(signed_in, normal_matter)
-    link_box = panel[panel.index('name="url"') :]
-    link_box = link_box[: link_box.index(">")]
-    date_box = panel[panel.index('name="published_on"') :]
-    date_box = date_box[: date_box.index(">")]
-
-    assert 'data-publication-trigger="id_published_on"' in link_box
-    assert 'id="id_published_on"' in date_box
-
-
-def test_the_date_box_id_is_unique_on_the_page(signed_in, normal_matter, specialist):
-    """§3. `getElementById` answers whichever came first, so there must be one.
-
-    A Matter carrying a planned row renders the strip's publish form as well,
-    and that one takes its own per-row `auto_id` — which is what keeps the
-    panel's default from reaching into a different form's date box.
+    A Matter carrying a planned row renders the strip's publish form as well, so
+    this is the page with the most date boxes on it — and none of them is wired
+    to anything (docs/adr/0089 §8).
     """
     plan_website_overview(matter=normal_matter, actor=specialist)
 
     body = _detail(signed_in, normal_matter)
+    script = (Path(settings.BASE_DIR) / "static" / "js" / "ux.js").read_text(encoding="utf-8")
 
-    assert body.count('id="id_published_on"') == 1
-    assert body.count("data-publication-trigger=") == 1
+    assert "data-publication-default" not in body
+    assert "data-publication-trigger" not in body
+    assert "bindPublicationDate(" not in script
 
 
-def test_nothing_on_the_server_supplies_a_publication_date(normal_matter, specialist):
-    """§3. A default, not a fallback — which is the whole of ADR 0078 §2.
+def test_nothing_anywhere_supplies_a_publication_date(signed_in, normal_matter, specialist):
+    """§3. Not a default and not a fallback — which is the whole of ADR 0078 §2.
 
-    The service refuses rather than reaching for the clock, so the day on the
-    file is always a day somebody looked at.
+    The strongest form of the claim, because it is the one the lawyer feedback
+    actually rests on: an address and no date, through the service *and* through
+    the browser's own route, stores `NULL` on both paths. If anything reached
+    for the clock, one of these two rows would be dated today.
     """
-    overview = plan_website_overview(matter=normal_matter, actor=specialist)
+    through_service = plan_website_overview(matter=normal_matter, actor=specialist)
+    publish_website_overview(
+        overview=through_service, url=NEWS_HTTPS_URL, published_on=None, actor=specialist
+    )
 
-    with pytest.raises(DomainError) as refusal:
-        publish_website_overview(
-            overview=overview, url=NEWS_HTTPS_URL, published_on=None, actor=specialist
-        )
+    response = _add(signed_in, normal_matter, url=NEWS_HTTP_URL, published_on="")
 
-    assert "avaldamise kuupäeva" in str(refusal.value)
-    overview.refresh_from_db()
-    assert overview.status == WebsiteOverviewStatus.PLANNED
-    assert overview.published_on is None
+    assert response.status_code == 200
+    through_service.refresh_from_db()
+    assert through_service.status == WebsiteOverviewStatus.PUBLISHED
+    assert through_service.published_on is None
+
+    through_browser = MatterWebsiteOverview.objects.get(matter=normal_matter, url=NEWS_HTTP_URL)
+    assert through_browser.status == WebsiteOverviewStatus.PUBLISHED
+    assert through_browser.published_on is None
+    assert timezone.localdate() not in {
+        through_service.published_on,
+        through_browser.published_on,
+    }
 
 
 def test_an_untouched_form_still_records_a_plan(signed_in, normal_matter):
@@ -439,7 +444,6 @@ def test_an_untouched_form_still_records_a_plan(signed_in, normal_matter):
 @pytest.mark.parametrize(
     "fields",
     [
-        {"url": NEWS_HTTPS_URL, "published_on": ""},
         {"url": "", "published_on": "14.03.2026"},
         {"url": "https://koda.ee@example.com/x", "published_on": "14.03.2026"},
     ],
@@ -691,7 +695,13 @@ def test_widening_the_address_rule_needed_no_constraint_change():
 
     assert names == {
         "matters_website_overview_status_vocabulary",
-        "matters_website_overview_published_has_link_and_date",
+        # `…_has_link`, not `…_has_link_and_date`: docs/adr/0089 §8 replaced the
+        # first implication with a weaker one, in
+        # `matters/0028_overview_news_optional_publication_date`. Widening the
+        # *address* rule still needed no constraint change — that is what this
+        # test is about — and this name is the one thing on the list that moved
+        # for a different decision.
+        "matters_website_overview_published_has_link",
         "matters_website_overview_unpublished_has_neither",
         "matters_website_overview_published_has_timestamp",
         "matters_website_overview_cancelled_has_timestamp",

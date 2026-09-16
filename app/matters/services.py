@@ -31,6 +31,7 @@ from app.matters.enums import (
     EngagementKind,
     MatterDataClass,
     MatterOrigin,
+    ProceduralLinkKind,
     RecordMode,
     TagAssignmentSource,
     WebsiteOverviewStatus,
@@ -43,6 +44,8 @@ from app.matters.models import (
     ENGAGEMENT_URL_MAX_LENGTH,
     EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
     EXTERNAL_POSITION_URL_MAX_LENGTH,
+    PROCEDURAL_LINK_LABEL_MAX_LENGTH,
+    PROCEDURAL_LINK_URL_MAX_LENGTH,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Entry,
     EntryRevision,
@@ -51,6 +54,7 @@ from app.matters.models import (
     MatterEngagement,
     MatterExternalPosition,
     MatterPersonalNote,
+    MatterProceduralLink,
     MatterReferenceSequence,
     MatterWebsiteOverview,
     TagAssignment,
@@ -2267,7 +2271,6 @@ WEBSITE_OVERVIEW_URL_TOO_LONG = (
     f"Ülevaate või uudise link on liiga pikk — kuni {WEBSITE_OVERVIEW_URL_MAX_LENGTH} tähemärki."
 )
 WEBSITE_OVERVIEW_NEEDS_LINK = "Avaldatud ülevaade või uudis vajab linki."
-WEBSITE_OVERVIEW_NEEDS_DATE = "Avaldatud ülevaade või uudis vajab avaldamise kuupäeva."
 WEBSITE_OVERVIEW_ALREADY_PUBLISHED = (
     "See ülevaade või uudis on juba avaldatud. Linki ja kuupäeva saab parandada."
 )
@@ -2442,19 +2445,23 @@ def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsite
 
 
 def _publication_values(url: Any, published_on: Any) -> tuple[str, Any]:
-    """The two things a publication needs, or the sentence that says which is missing.
+    """The one thing a publication needs, and the one it may not know.
 
-    Both refusals are their own sentence rather than one «täida väljad», because
-    they are different mistakes: an address that is not a public web address is
-    something pasted from the wrong tab, and a missing date is a box they did not
-    reach. The date is checked after the address so that a form with both wrong
-    reports the address first — it is the one that carries the safety rule.
+    **The address is required and the date is not**, which is docs/adr/0089 §8
+    replacing docs/adr/0081 §2. A page is published because it is up somewhere a
+    reader can open it; whether anybody wrote down the day it went up is a
+    second fact, frequently unknown, and refusing the save over it was making
+    people answer «today» to a question they had not checked. `None` is stored
+    as `NULL` and read as *unknown* — never as today, never as the day the row
+    was created, and never as a sentinel date.
+
+    The address rule is unchanged and is still the one that carries the safety
+    half: a value that is not a public `http(s)` address is refused here in the
+    words it is refused in everywhere.
     """
     clean_url = normalize_overview_news_url(url)
     if not clean_url:
         raise DomainError(WEBSITE_OVERVIEW_NEEDS_LINK)
-    if published_on is None:
-        raise DomainError(WEBSITE_OVERVIEW_NEEDS_DATE)
     return clean_url, published_on
 
 
@@ -2469,18 +2476,22 @@ def publish_website_overview(
 ) -> MatterWebsiteOverview:
     """`Plaanis` → `Avaldatud`: the page exists, and this is where it is.
 
-    The one transition that gives a record an address. It requires both a
-    public `http(s)` link and the day the page went up, and it refuses every
-    other starting state by name: an overview or news item that is already
-    published is
+    The one transition that gives a record an address. It requires a public
+    `http(s)` link and **nothing else**, and it refuses every other starting
+    state by name: an overview or news item that is already published is
     corrected rather than published again (`correct_website_overview_link`), and
     a cancelled one is terminal — the honest record of a plan that came back is
     a new plan, not a resurrected one (docs/adr/0081 §1).
 
+    **`published_on` is optional and may be `None`**, which is stored as `NULL`
+    and means *the day is unknown* (docs/adr/0089 §8). It is not defaulted here,
+    not defaulted in the form and not defaulted in the browser.
+
     **The date is the caller's and is never invented here.** `published_at`
     below is a different fact — the moment somebody wrote the publication down —
     and deriving one from the other would put a day on the file that nobody
-    chose (docs/adr/0078 §2).
+    chose. That is the whole of docs/adr/0078 §2 and it is why the audit payload
+    carries `None` rather than a timestamp when the day is not known.
 
     The status is read **from the locked row**, not from the instance the caller
     arrived with: two tabs both showing the same plan, both pressing `Avalda`,
@@ -2525,7 +2536,13 @@ def publish_website_overview(
             # «which». It is a public page: `normalize_overview_news_url` has
             # already refused any address carrying credentials.
             "url": locked.url,
-            "published_on": locked.published_on.isoformat(),
+            # `None` where the day is not known, rather than an invented one.
+            # An audit payload is the last place a guessed business date should
+            # appear: it is what a later reader reconstructs the record from
+            # (docs/adr/0089 §8, §11).
+            "published_on": (
+                locked.published_on.isoformat() if locked.published_on is not None else None
+            ),
         },
     )
     # Keep the caller's instance consistent with what was written, as
@@ -2547,6 +2564,13 @@ def correct_website_overview_link(
     expected_revision: str | None = None,
 ) -> MatterWebsiteOverview:
     """`Avaldatud` → `Avaldatud`: the address or the day was wrong, and is now right.
+
+    **Clearing the day is a correction like any other.** Since docs/adr/0089 §8
+    a published row may carry no publication date, so somebody who realises the
+    date on the file was a guess can empty the box and the row stays exactly
+    what it was: a publication, at an address, whose day is unknown. It does not
+    become planned, it does not become cancelled, its address does not stop
+    being valid and the date does not come back on the next save.
 
     A correction, not a second publication. `published_at` and `published_by`
     stay exactly as they were — they record who wrote the publication down and
@@ -2592,7 +2616,12 @@ def correct_website_overview_link(
         payload["published_on_from"] = (
             locked.published_on.isoformat() if locked.published_on else None
         )
-        payload["published_on_to"] = day.isoformat()
+        # `None` when the correction is somebody *clearing* a date they now know
+        # they do not know — which is an ordinary correction since
+        # docs/adr/0089 §8, and the one the lawyer feedback asked for by name. A
+        # cleared date does not spring back to today on the next save, because
+        # nothing anywhere supplies one.
+        payload["published_on_to"] = day.isoformat() if day is not None else None
 
     locked.url = clean_url
     locked.published_on = day
@@ -2666,6 +2695,326 @@ def cancel_website_overview(
     overview.status = cancelled.status
     overview.cancelled_at = cancelled.cancelled_at
     return cancelled
+
+
+# ---------------------------------------------------------------------------
+# `Menetluse link` — where the official proceeding on a Matter lives
+# ---------------------------------------------------------------------------
+#
+# Every refusal here names *this* record rather than saying merely «link». A
+# Teema page renders four kinds of address now — a `Kaasamine`'s, a `Väline
+# seisukoht`'s, an `Ülevaade / uudis`'s and this one — and a sentence that does
+# not say which one it means is a sentence the reader has to locate before they
+# can act on it (docs/adr/0085 §5, applied once more).
+PROCEDURAL_LINK_URL_NOT_A_URL = "Menetluse link peab olema täielik veebiaadress."
+PROCEDURAL_LINK_URL_NOT_WEB_SCHEME = "Menetluse link peab algama http:// või https:// aadressiga."
+PROCEDURAL_LINK_URL_HAS_CREDENTIALS = "Menetluse link ei tohi sisaldada kasutajanime ega parooli."
+PROCEDURAL_LINK_URL_TOO_LONG = (
+    f"Menetluse link on liiga pikk — kuni {PROCEDURAL_LINK_URL_MAX_LENGTH} tähemärki."
+)
+PROCEDURAL_LINK_NEEDS_URL = "Menetluse link vajab veebiaadressi."
+PROCEDURAL_LINK_NEEDS_KIND = "Vali, millise menetluse allikaga on tegemist."
+PROCEDURAL_LINK_UNKNOWN_KIND = "Tundmatu menetluse allikas."
+PROCEDURAL_LINK_DUPLICATE = (
+    "See aadress on juba selle teema menetluse linkide seas. "
+    "Paranda olemasolevat rida, kui liik või nimetus on vale."
+)
+PROCEDURAL_LINK_CONFLICT = (
+    "Seda menetluse linki on vahepeal mujal muudetud. "
+    "Värskenda lehte ja vaata, mis seal nüüd kirjas on."
+)
+
+
+def normalize_procedural_link_url(value: str | None) -> str:
+    """Trim it, require it, and refuse anything that is not a public web address.
+
+    The one door every writer of `MatterProceduralLink.url` passes through, so
+    it is where the column's own width is enforced and where the safety rule
+    lives.
+
+    **No host allow-list**, and this is the caller where that matters most.
+    `EIS` is not `eelnoud.valitsus.ee` and nothing else: a ministry publishes
+    through more than one document register, the EU side of a file is read on
+    EUR-Lex one month and on a Commission consultation page the next, and a
+    Riigikogu proceeding has more than one path shape. A list of known hosts
+    would have to be widened by whoever needed it widened, one deploy at a time,
+    in response to ordinary editorial decisions somewhere else — and the day a
+    register moved domain the file would refuse to record where the proceeding
+    actually is. The *kind* beside the address is the lawyer's own statement and
+    is not a claim proved from the hostname; that is docs/adr/0089 §2, and it is
+    the same conclusion docs/adr/0084 §3 and docs/adr/0085 §2 reached before it
+    (master specification 11.2).
+
+    **Nothing is rewritten.** No trailing slash is added or removed, no scheme
+    is upgraded, no query parameter is dropped and no punycode is expanded. A
+    document register's deep link is frequently a query and nothing else, and a
+    canonicaliser that «tidied» it would quietly point the row at a different
+    page than the one somebody opened.
+
+    **What is kept** is the safety half, shared with the three other public-link
+    columns through `_normalize_public_link` rather than copied: `http` and
+    `https` only — `javascript:` and `data:` are script delivery dressed as an
+    address and `file:` and `ftp:` point where the reader's browser cannot
+    usefully follow — a **parsed host** rather than a substring, userinfo
+    refused outright, and a value past the column's width refused rather than
+    truncated, because a link cut off is a link that no longer resolves (red-team
+    findings F-1 and F-2).
+
+    Userinfo is refused here for the reason `normalize_overview_news_url`
+    refuses it: this address is pasted *now*, from a page somebody has open, so
+    there is no unreusable historical value to accommodate, and a credential on
+    the file is a credential in an audit payload, on a rendered page and in
+    everybody's browser history.
+
+    **Empty is refused here**, unlike the overview's door, because there is no
+    state of this record that legitimately has no address: a procedural link
+    with nothing to open is not a reference to anything.
+    """
+    url = _normalize_public_link(
+        value,
+        max_length=PROCEDURAL_LINK_URL_MAX_LENGTH,
+        reject_credentials=True,
+        not_a_url=PROCEDURAL_LINK_URL_NOT_A_URL,
+        not_web_scheme=PROCEDURAL_LINK_URL_NOT_WEB_SCHEME,
+        has_credentials=PROCEDURAL_LINK_URL_HAS_CREDENTIALS,
+        too_long=PROCEDURAL_LINK_URL_TOO_LONG,
+    )
+    if not url:
+        raise DomainError(PROCEDURAL_LINK_NEEDS_URL)
+    return url
+
+
+def normalize_procedural_link_kind(value: Any) -> str:
+    """One of the five, or a refusal naming the question rather than the value.
+
+    Read through the enum rather than trusted from a POST, because `kind` is a
+    plain `CharField` and a crafted value would otherwise reach a `CHECK` as a
+    `django.db.utils.IntegrityError` with an aborted transaction — the failure
+    shape every refusal in this module exists to avoid.
+    """
+    if value in (None, ""):
+        raise DomainError(PROCEDURAL_LINK_NEEDS_KIND)
+    kind = str(value)
+    if kind not in ProceduralLinkKind.values:
+        raise DomainError(PROCEDURAL_LINK_UNKNOWN_KIND)
+    return kind
+
+
+def normalize_procedural_link_label(value: str | None) -> str:
+    """A few words, or nothing at all.
+
+    Trimmed and bounded, never required. Demanding a name for every address is
+    exactly what AGENTS.md means by making routine capture slower with optional
+    metadata: a Matter with one EIS link needs no name for it, because the kind
+    beside it already says what it is.
+
+    Refused rather than truncated past the column's width, for
+    `_normalize_public_link`'s reason: a name cut off mid-word is a name that
+    says something its author did not write.
+    """
+    label = (value or "").strip()
+    if len(label) > PROCEDURAL_LINK_LABEL_MAX_LENGTH:
+        raise DomainError(
+            f"Menetluse lingi nimetus on liiga pikk — kuni "
+            f"{PROCEDURAL_LINK_LABEL_MAX_LENGTH} tähemärki."
+        )
+    return label
+
+
+class ProceduralLinkConflict(DomainError):
+    """The link changed elsewhere between rendering a correction form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see the
+    other side of is a conflict they cannot resolve — deliberately the same
+    shape as :class:`WebsiteOverviewConflict` and :class:`PersonalNoteConflict`.
+    """
+
+    def __init__(self, current: MatterProceduralLink) -> None:
+        super().__init__(PROCEDURAL_LINK_CONFLICT)
+        self.current = current
+
+
+def procedural_link_revision(link: MatterProceduralLink) -> str:
+    """The service-side spelling of :attr:`MatterProceduralLink.revision_token`.
+
+    Both a template and this module need the token, and a second spelling of it
+    would produce a different string for the same row and refuse every save.
+    """
+    return link.revision_token
+
+
+def _locked_procedural_link(
+    link: MatterProceduralLink, expected_revision: str | None
+) -> MatterProceduralLink:
+    """Take the row, then decide whether the caller's copy was current.
+
+    The lock first and the comparison second, for `_locked_website_overview`'s
+    reason: two tabs holding the same version would otherwise both read it as
+    current and both write.
+
+    ``no_key=True`` on every row lock in this application — a `FOR UPDATE` here
+    blocks anything that merely references the row and is how two of this
+    project's deadlock cycles were built.
+    """
+    locked = MatterProceduralLink.objects.select_for_update(no_key=True).get(pk=link.pk)
+    if expected_revision is not None and procedural_link_revision(locked) != expected_revision:
+        raise ProceduralLinkConflict(locked)
+    return locked
+
+
+@transaction.atomic
+def record_procedural_link(
+    *,
+    matter: Matter,
+    kind: Any,
+    url: Any,
+    label: str = "",
+    actor: Any = None,
+) -> MatterProceduralLink:
+    """Record where the official proceeding on this Matter lives.
+
+    One row: the kind of source, the address, and optionally a few words naming
+    which proceeding. **Nothing is fetched** — see
+    :class:`~app.matters.models.MatterProceduralLink` for why that boundary is
+    the record rather than a feature it is missing (docs/adr/0089 §4).
+
+    **Idempotent on the address, and only where the answers agree.** A
+    double-click, a browser retry and a stale response all produce the same POST
+    twice, and the second must not leave a Matter carrying one address twice.
+    So a row already holding this address on this Matter is returned unchanged
+    and writes no second audit event — the save the person meant happened, and
+    telling them it failed would be a lie about a record that is there.
+
+    Where the second submission carries a *different* kind or label, it is
+    refused by name instead. Silently ignoring a changed classification would
+    leave somebody looking at a row that says something they have just corrected
+    and were told was saved; the honest answer is to send them to the row's own
+    correction control (docs/adr/0089 §6).
+
+    The database's `matters_procedural_link_one_row_per_address` stands behind
+    both branches, for a write that did not come through here.
+    """
+    clean_url = normalize_procedural_link_url(url)
+    clean_kind = normalize_procedural_link_kind(kind)
+    clean_label = normalize_procedural_link_label(label)
+
+    existing = (
+        MatterProceduralLink.objects.select_for_update(no_key=True)
+        .filter(matter=matter, url=clean_url)
+        .first()
+    )
+    if existing is not None:
+        if existing.kind == clean_kind and existing.label == clean_label:
+            return existing
+        raise DomainError(PROCEDURAL_LINK_DUPLICATE)
+
+    link = MatterProceduralLink.objects.create(
+        matter=matter,
+        kind=clean_kind,
+        url=clean_url,
+        label=clean_label,
+        created_by=actor,
+    )
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_LINK_RECORDED,
+        matter=matter,
+        actor=actor,
+        obj=link,
+        payload={
+            "kind": link.kind,
+            # The address itself, because it is the whole content of this record
+            # and a history saying only «a procedural link was added» could not
+            # answer «which». It is a public page and
+            # `normalize_procedural_link_url` has already refused any address
+            # carrying credentials.
+            "url": link.url,
+            "label": link.label,
+        },
+    )
+    return link
+
+
+@transaction.atomic
+def correct_procedural_link(
+    *,
+    link: MatterProceduralLink,
+    kind: Any,
+    url: Any,
+    label: str = "",
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterProceduralLink:
+    """The kind, the name or the address was wrong, and is now right.
+
+    The only other thing that happens to this record. There is deliberately no
+    deletion, on an open Matter or a closed one: a mistaken row is corrected,
+    because what the file recorded and who recorded it is part of the file — the
+    rule `MatterEngagement` and `MatterExternalPosition` both keep
+    (docs/adr/0084 §8).
+
+    **Allowed on a closed Matter, and that is the point.** Closure means no new
+    business content; it has never meant that an address recorded wrongly must
+    stay wrong. This function deliberately does not so much as read `is_open` —
+    the same rule, and the same reasoning, as `correct_website_overview_link`
+    and `edit_entry` (docs/adr/0075 §12, docs/adr/0081 §5).
+
+    Says nothing when nothing changed, like `update_engagement` — but the
+    revision is compared first, because a stale form that happens to carry the
+    values the other writer saved has still been overtaken, and answering it
+    with a silent success would teach the person that their copy was current.
+
+    A correction onto an address another row on this Matter already holds is
+    refused by name rather than by an `IntegrityError`, for the reason
+    :func:`record_procedural_link` refuses one.
+    """
+    locked = _locked_procedural_link(link, expected_revision)
+    clean_url = normalize_procedural_link_url(url)
+    clean_kind = normalize_procedural_link_kind(kind)
+    clean_label = normalize_procedural_link_label(label)
+
+    if clean_url == locked.url and clean_kind == locked.kind and clean_label == locked.label:
+        return locked
+
+    if (
+        clean_url != locked.url
+        and MatterProceduralLink.objects.filter(matter_id=locked.matter_id, url=clean_url)
+        .exclude(pk=locked.pk)
+        .exists()
+    ):
+        raise DomainError(PROCEDURAL_LINK_DUPLICATE)
+
+    payload: dict[str, Any] = {"fields": []}
+    if clean_kind != locked.kind:
+        payload["fields"].append("kind")
+        payload["kind_from"] = locked.kind
+        payload["kind_to"] = clean_kind
+    if clean_url != locked.url:
+        payload["fields"].append("url")
+        payload["url_from"] = locked.url
+        payload["url_to"] = clean_url
+    if clean_label != locked.label:
+        payload["fields"].append("label")
+        payload["label_from"] = locked.label
+        payload["label_to"] = clean_label
+
+    locked.kind = clean_kind
+    locked.url = clean_url
+    locked.label = clean_label
+    locked.save(update_fields=["kind", "url", "label", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_LINK_CORRECTED,
+        matter=locked.matter,
+        actor=actor,
+        obj=locked,
+        payload=payload,
+    )
+    # Keep the caller's instance consistent with what was written, as
+    # `correct_website_overview_link` does: several callers go on reading the
+    # object they passed.
+    link.kind = locked.kind
+    link.url = locked.url
+    link.label = locked.label
+    return locked
 
 
 def cancel_planned_website_overviews_for_closure(

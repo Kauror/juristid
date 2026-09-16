@@ -22,7 +22,6 @@ from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
-from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
@@ -35,10 +34,13 @@ from app.matters.enums import (
     COMPOSER_ENGAGEMENT_KINDS,
     EngagementKind,
     MatterDataClass,
+    ProceduralLinkKind,
 )
 from app.matters.models import (
     EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
     EXTERNAL_POSITION_URL_MAX_LENGTH,
+    PROCEDURAL_LINK_LABEL_MAX_LENGTH,
+    PROCEDURAL_LINK_URL_MAX_LENGTH,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Matter,
 )
@@ -4634,35 +4636,36 @@ class CompactWebsiteOverviewForm(forms.Form):
     in one of three ways:
 
     * neither filled — the plan, exactly as before;
-    * both filled — a page that already exists, recorded in one act;
-    * one filled — a refusal naming the other, with what was typed still in the
-      boxes. Half a publication is not a plan with a note attached: silently
-      dropping an address somebody pasted would lose the one fact they came to
-      record.
+    * an address, with or without a day — a page that already exists, recorded
+      in one act;
+    * a day and no address — a refusal naming the address, with what was typed
+      still in the boxes. A date on its own is not a plan with a note attached
+      and it is not a publication: it is a fact about a page nobody can open.
 
-    **No `initial` on the date**, unlike `WebsiteOverviewLinkForm`, and the
-    difference is load-bearing. There the form exists only to publish, so today
-    is a helpful default. Here an empty submit *is* a valid answer — the plan —
-    and a pre-filled date would make «neither filled» unreachable: every plan
-    would arrive carrying a publication date nobody typed, and the panel would
-    have no way left to say «this is only owed».
+    **The address alone is enough**, and that is docs/adr/0089 §8 replacing
+    docs/adr/0081 §2. Lawyer testing found the commonest real save to be an
+    address pasted out of a search result or a mail, where the page plainly
+    exists and its publication date is not known, not on the page and not worth
+    a hunt. The old rule refused that save, and what people filed instead was
+    today — a date nobody had checked, on the one column that is the person's
+    own statement.
 
-    **The default arrives when the person takes the published path instead.**
-    `data-publication-default` on the date box carries today, as the *server*
-    resolved it, and `data-publication-trigger` on the link box is what fills it
-    in: the moment somebody starts typing an address they have taken the
-    published path, and retyping today's date after that is the friction people
-    actually complain about (docs/adr/0078 §2, docs/adr/0085 §3). It is a
-    default and not a fallback — it is written into a box the person can read,
-    change and clear, it never fires on a form nobody has touched, and it never
-    fires again once the date box has been edited, so a date somebody cleared on
-    purpose stays cleared. With scripting off the form behaves exactly as it did
-    before: two optional boxes, both typed by hand.
+    **No `initial` on the date and no default written into it by anything.**
+    Not by the form, not by the service, not by the model and — since
+    docs/adr/0089 §8 — not by the browser either: the `data-publication-default`
+    island docs/adr/0085 §3 introduced is withdrawn, because a date that appears
+    in the box the instant somebody pastes a link is a date they accept without
+    reading. An empty box means *unknown*, and unknown is now a thing this
+    record can hold, so the honest default is nothing at all.
+
+    A pre-filled date would also make «neither filled» unreachable — the
+    property docs/adr/0083 §2 refused an `initial` to protect — so the two
+    reasons now point the same way.
 
     Still no title, no description and no attachment, and **no kind selector**.
-    The record's content is the address and the day; which of the two kinds of
-    publication it is, is what the address says (docs/adr/0081 §2,
-    docs/adr/0085 §1).
+    The record's content is the address and, when it is known, the day; which of
+    the two kinds of publication it is, is what the address says
+    (docs/adr/0081 §2, docs/adr/0085 §1).
     """
 
     use_required_attribute = False
@@ -4681,49 +4684,32 @@ class CompactWebsiteOverviewForm(forms.Form):
                 "inputmode": "url",
                 "autocomplete": "off",
                 "placeholder": "https://…",
-                # What `bindPublicationDate` in static/js/ux.js binds to. The
-                # value is the id of the date box it fills, written by the view
-                # so that two panels on one page cannot cross-fill.
-                "data-publication-trigger": "",
             }
         ),
     )
+    #: Optional, empty, and with no default from anywhere — see the class
+    #: docstring. `None` reaches the service as `None` and is stored as `NULL`,
+    #: which means *the day is unknown* (docs/adr/0089 §8).
     published_on = EstonianDateField(
         label="Avaldamise kuupäev",
         required=False,
         widget=EstonianDateInput(),
+        help_text="Kui kuupäev ei ole teada, jäta tühjaks.",
     )
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Wire the two boxes together, and tell the date box what today is.
-
-        The pairing is done here rather than in the template because both halves
-        are the *widget's* attributes and the ids are Django's: an `auto_id`
-        written out by hand in HTML is an id that stops matching the day a
-        caller passes its own, which `_website_overview_link_form` already does
-        for the strip.
-
-        Today is resolved with `timezone.localdate()` — the server's answer, in
-        the project's timezone — rather than read off the browser's clock. A
-        reader whose laptop is set to another day would otherwise pre-fill a
-        publication date this application would never have chosen, and the date
-        is the one column on this record that is nobody's but the person's.
-        """
-        super().__init__(*args, **kwargs)
-        self.fields["url"].widget.attrs["data-publication-trigger"] = self["published_on"].auto_id
-        self.fields["published_on"].widget.attrs["data-publication-default"] = format_estonian_date(
-            timezone.localdate()
-        )
-
     def clean(self) -> dict[str, Any]:
-        """Nothing, both, or a refusal naming what is missing.
+        """Nothing, an address, or a refusal naming the address that is missing.
 
         The address is validated through the service's own door so that a
         refused address is refused here in the words it is refused in
         everywhere, and under the box it was typed into.
+
+        A date without an address is still refused, and that half has not
+        changed: a publication date is a fact *about a page*, so one filed with
+        nothing to open is a claim about nothing. The other half — an address
+        without a date — is now an ordinary publication (docs/adr/0089 §8).
         """
         from app.matters.services import (
-            WEBSITE_OVERVIEW_NEEDS_DATE,
             WEBSITE_OVERVIEW_NEEDS_LINK,
             normalize_overview_news_url,
         )
@@ -4740,13 +4726,13 @@ class CompactWebsiteOverviewForm(forms.Form):
                 self.add_error("url", str(error))
                 return cleaned
 
-        if url and published_on is None:
-            self.add_error("published_on", WEBSITE_OVERVIEW_NEEDS_DATE)
-        elif published_on is not None and not url:
+        if published_on is not None and not url:
             self.add_error("url", WEBSITE_OVERVIEW_NEEDS_LINK)
 
-        # What the view acts on. `None` is the plan; a pair is a publication.
-        cleaned["publication"] = (url, published_on) if url and published_on else None
+        # What the view acts on. `None` is the plan; a pair is a publication,
+        # whose second member may itself be `None` — an address recorded without
+        # a known publication date.
+        cleaned["publication"] = (url, published_on) if url else None
         return cleaned
 
 
@@ -4786,21 +4772,26 @@ class WebsiteOverviewLinkForm(forms.Form):
             }
         ),
     )
-    #: Pre-filled with today, and the default is *visible*: it can be read before
-    #: saving, changed, and retyped. Today is the overwhelming case — somebody
-    #: records the publication on the day it happens — and retyping today's date
-    #: every time is the friction people actually complain about (docs/adr/0078
-    #: §2).
+    #: Optional, empty, and **no longer pre-filled with today**.
     #:
-    #: What the panel must never do is put a date on the file behind the
-    #: person's back, and it cannot: the service takes the submitted value and
-    #: derives nothing, so an emptied box is a refusal naming the missing date
-    #: rather than a silent stamp of today (docs/adr/0081 §2).
+    #: docs/adr/0083 §2 gave this box `initial=timezone.localdate` on the
+    #: reasoning that somebody who opens a publish form has chosen the published
+    #: path, so today is a helpful suggestion they can change. Lawyer testing in
+    #: September 2026 measured what that actually produces: a date is in the box
+    #: before anybody has thought about it, it is already correct-looking, and
+    #: it is accepted. The file then holds a publication date the application
+    #: proposed and nobody verified — which is indistinguishable, afterwards,
+    #: from one somebody knew (docs/adr/0089 §8).
+    #:
+    #: So the box opens empty, and empty means *unknown*. It is also the box a
+    #: correction uses to **clear** a date that turned out to be a guess, which
+    #: is the gesture the lawyer feedback asked for by name: the value goes to
+    #: the service as `None`, is stored as `NULL`, and nothing puts today back.
     published_on = EstonianDateField(
         label="Avaldamise kuupäev",
         required=False,
         widget=EstonianDateInput(),
-        initial=timezone.localdate,
+        help_text="Kui kuupäev ei ole teada, jäta tühjaks.",
     )
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
 
@@ -4825,13 +4816,11 @@ class WebsiteOverviewLinkForm(forms.Form):
             raise forms.ValidationError(WEBSITE_OVERVIEW_NEEDS_LINK)
         return url
 
-    def clean_published_on(self) -> Any:
-        from app.matters.services import WEBSITE_OVERVIEW_NEEDS_DATE
-
-        published_on = self.cleaned_data.get("published_on")
-        if published_on is None:
-            raise forms.ValidationError(WEBSITE_OVERVIEW_NEEDS_DATE)
-        return published_on
+    # There is deliberately **no `clean_published_on`**. It used to refuse an
+    # empty box with `WEBSITE_OVERVIEW_NEEDS_DATE`; since docs/adr/0089 §8 an
+    # empty box is a valid answer meaning *the day is unknown*, on a publication
+    # and on a correction alike. `EstonianDateField` still refuses a value that
+    # is not a date, which is the only thing left to refuse here.
 
 
 def _external_position_organisation_field() -> forms.ModelChoiceField:
@@ -5281,3 +5270,262 @@ class EntryEditForm(forms.Form):
 
     def clean_body(self) -> str:
         return require_written_body(self.cleaned_data.get("body"), "Sissekanne vajab sisu.")
+
+
+def _procedural_link_kind_field(*, initial: Any = None) -> forms.ChoiceField:
+    """`Millise menetlusega on tegemist` — one of five, as chips.
+
+    A radio group rather than a `<select>`, for the reason `Menetlusliik` and
+    `Hetkeseis` are chip rows on `Uus teema`: for a vocabulary of five, a select
+    is a click spent finding out what the options even are.
+
+    ``required=False`` at field level and refused in the service instead, so the
+    sentence a person reads is `PROCEDURAL_LINK_NEEDS_KIND` rather than Django's
+    generic one — the shape `_external_position_organisation_field` uses for the
+    same reason.
+    """
+    return forms.ChoiceField(
+        label="Menetluse allikas",
+        choices=ProceduralLinkKind.choices,
+        required=False,
+        initial=initial,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
+    )
+
+
+def _procedural_link_url_field() -> forms.CharField:
+    """`Link` — the address the proceeding actually lives at.
+
+    A `CharField` rather than a `URLField`, exactly as every other public-link
+    box on a Teema page is one: the rule belongs to
+    `app.matters.services.normalize_procedural_link_url`, which is what the
+    service enforces, and letting Django's own validator answer first would give
+    one refused address two different sentences depending on which layer caught
+    it.
+    """
+    return forms.CharField(
+        label="Link",
+        required=False,
+        max_length=PROCEDURAL_LINK_URL_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "url",
+                "autocomplete": "off",
+                "placeholder": "https://…",
+            }
+        ),
+    )
+
+
+def _procedural_link_label_field() -> forms.CharField:
+    """`Nimetus` — a few words naming *which* proceeding, where that is not obvious.
+
+    Genuinely optional. A Matter with one EIS link needs nothing here, because
+    the kind beside the address already says what it is; a Matter carrying three
+    links from one ministry's register needs something, or the card reads as
+    three identical rows.
+    """
+    return forms.CharField(
+        label="Nimetus",
+        required=False,
+        max_length=PROCEDURAL_LINK_LABEL_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "autocomplete": "off",
+                "placeholder": "Näiteks: Eelnõu 123 SE",
+            }
+        ),
+    )
+
+
+class ProceduralLinkFieldsMixin:
+    """The three questions a `Menetluse link` asks, and the one door they go through.
+
+    Shared by the panel that records one and the form that corrects one, because
+    the two ask exactly the same three questions and must enforce exactly the
+    same rules. A second class would be a second place for the address rule to
+    be written out, and the day it disagreed with the first would be the day a
+    correction accepted an address a recording would have refused
+    (`WebsiteOverviewLinkForm` makes the identical argument).
+
+    Each value is cleaned through the *service's* own normaliser so that a
+    refusal reads in the words it reads in everywhere, and lands under the box
+    it was typed into rather than at the top of the panel.
+    """
+
+    def clean_url(self) -> str:
+        from app.matters.services import normalize_procedural_link_url
+
+        try:
+            return normalize_procedural_link_url(self.cleaned_data.get("url"))  # type: ignore[attr-defined]
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
+
+    def clean_kind(self) -> str:
+        from app.matters.services import normalize_procedural_link_kind
+
+        try:
+            return normalize_procedural_link_kind(self.cleaned_data.get("kind"))  # type: ignore[attr-defined]
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
+
+    def clean_label(self) -> str:
+        from app.matters.services import normalize_procedural_link_label
+
+        try:
+            return normalize_procedural_link_label(self.cleaned_data.get("label"))  # type: ignore[attr-defined]
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
+
+
+class ProceduralLinkForm(ProceduralLinkFieldsMixin, forms.Form):
+    """`+ Menetluse link` — where the official proceeding on this Matter lives.
+
+    Three boxes, of which two are required and one is not: which kind of
+    official source this is, the address, and optionally a few words naming the
+    proceeding.
+
+    **There is no date here and there is no status.** This record is not
+    something that happened on a day — it is *where the file is happening* — so
+    a date would be a column with nothing honest to put in it and a status would
+    be a lifecycle nobody maintains (docs/adr/0089 §5, §11).
+
+    **And there is nothing about fetching.** No «loe leht sisse», no «jälgi
+    muudatusi», no preview: the lawyer gives the address and the application
+    records the address (docs/adr/0089 §4).
+    """
+
+    use_required_attribute = False
+
+    kind = _procedural_link_kind_field()
+    url = _procedural_link_url_field()
+    label = _procedural_link_label_field()
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # **Its own `auto_id`, and the field names are untouched.** Ten forms
+        # render on one Teema page and `+ Ülevaade / uudis` and `+ Väline
+        # seisukoht` both call a field `url`, so Django's default `id_%s` would
+        # put `id_url` in the document three times — invalid HTML, a
+        # `<label for>` reaching the wrong box and `getElementById` answering
+        # whichever came first. Prefixing the *ids* fixes exactly that while
+        # leaving the POST keys alone (docs/adr/0065).
+        kwargs.setdefault("auto_id", "id_menetluse_link_%s")
+        super().__init__(*args, **kwargs)
+
+
+class ProceduralLinkEditForm(ProceduralLinkFieldsMixin, forms.Form):
+    """`Paranda` — the kind, the name or the address on a recorded link was wrong.
+
+    The same three questions, filled from the row, plus the version they were
+    filled from. There is deliberately no delete control and no «eemalda» field:
+    a mistaken row is corrected, because what the file recorded and who recorded
+    it is part of the file (docs/adr/0084 §8, docs/adr/0089 §6).
+
+    ``revision`` is `required=False` for `EntryEditForm`'s reason: an absent
+    token must reach the service as an empty string and be refused there against
+    a real row, rather than answered by a field error that says nothing about
+    what actually went wrong.
+    """
+
+    use_required_attribute = False
+
+    kind = _procedural_link_kind_field()
+    url = _procedural_link_url_field()
+    label = _procedural_link_label_field()
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def __init__(self, *args: Any, link: Any = None, **kwargs: Any) -> None:
+        """One correction form per row, with ids that name the row.
+
+        Several of these render on one page — a Matter may carry four
+        procedural links — so the `auto_id` carries the row's own primary key.
+        Without it every disclosure on the card would contain `id_kind`, and a
+        `<label for>` would reach the first one whichever row somebody opened.
+        """
+        if link is not None:
+            kwargs.setdefault("auto_id", f"id_menetluse_link_{link.pk}_%s")
+            kwargs.setdefault(
+                "initial",
+                {
+                    "kind": link.kind,
+                    "url": link.url,
+                    "label": link.label,
+                    "revision": link.revision_token,
+                },
+            )
+        else:
+            kwargs.setdefault("auto_id", "id_menetluse_link_muuda_%s")
+        super().__init__(*args, **kwargs)
+
+
+class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
+    """One `Menetluse link`, asked while the Teema is being created.
+
+    The lawyer feedback that produced docs/adr/0089 asked for this by name:
+    a Matter frequently arrives *from* a proceeding — an EIS notification, a
+    ministry's covering letter naming its register — and the address is on
+    screen at the moment the file is being opened. Making somebody create the
+    Teema and then go and find that address again is how it ends up in a
+    browser history instead of on the file.
+
+    **One row, not a formset.** A Matter being created has one proceeding
+    behind it in the overwhelming majority of cases, and the second and third
+    addresses turn up later, as the file moves — which is what the Teema page's
+    own `+ Menetluse link` is for. A repeating control here would put an empty
+    table on a form whose whole design is that nothing on it is required
+    (docs/adr/0089 §7).
+
+    **Wholly optional, and silent when untouched.** All three boxes empty is the
+    ordinary submit and writes nothing at all — no row, no event, no empty
+    record. That is the same rule the private `Märkmed` box on this form
+    follows: an empty answer creates no record saying somebody wrote nothing.
+
+    **A `prefix`, not an `auto_id`.** This is the one procedural-link form that
+    shares a `<form>` element with something else — `MatterCreateForm` and
+    `NextActionForm` — and `NextActionForm` already uses `prefix="next"` there
+    for exactly that reason. The prefix namespaces the POST keys as well as the
+    ids, so `MatterCreateForm` cannot be changed in a way that silently collides
+    with a field name here — which matters because the two forms are edited by
+    different people at different times (docs/adr/0089 §13).
+    """
+
+    use_required_attribute = False
+
+    kind = _procedural_link_kind_field(initial=ProceduralLinkKind.EIS.value)
+    url = _procedural_link_url_field()
+    label = _procedural_link_label_field()
+
+    @property
+    def wants_link(self) -> bool:
+        """Whether anybody actually answered this block.
+
+        The address alone decides it. A `kind` on its own is the chip that
+        arrives pre-selected and means nothing, and a `label` on its own is a
+        name for a link that does not exist — neither is a request to record
+        anything, and treating either as one would file a refusal at somebody
+        who had simply not used this part of the form.
+
+        Read from the **raw** data rather than from `cleaned_data`, because the
+        view needs the answer before deciding whether to bind and validate at
+        all — the shape `matter_create` already uses for `Järgmine tegevus`.
+        """
+        if not self.is_bound:
+            return False
+        return bool((self.data.get(self.add_prefix("url")) or "").strip())
+
+    def clean(self) -> dict[str, Any]:
+        """Require the kind only once there is an address to classify.
+
+        `kind` is `required=False` at field level so that the service's sentence
+        is the one a person reads. This form is only ever validated when
+        :attr:`wants_link` already said there is an address, so a missing kind
+        here is a real omission and is refused on the chip row.
+        """
+        from app.matters.services import PROCEDURAL_LINK_NEEDS_KIND
+
+        cleaned = super().clean() or {}
+        if cleaned.get("url") and not cleaned.get("kind"):
+            self.add_error("kind", PROCEDURAL_LINK_NEEDS_KIND)
+        return cleaned

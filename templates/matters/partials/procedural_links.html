@@ -1,0 +1,122 @@
+{% comment %}
+`MENETLUSE LINGID` — where the official proceeding on this file actually lives.
+
+A rail card, because this is look-up material in the exact sense the rail was
+built for: nobody reads it, somebody reaches for it. The question it answers is
+the first one a lawyer asks when they open a file three months later — «kus see
+päriselt käib» — and the answer is an address they want to click, not a
+narrative they want to read (`rail.html`).
+
+**Nothing at all when there are none**, which is the ordinary case on a Matter
+nobody has recorded one for. There are no permanently visible empty sections on
+this page, and an empty table of five placeholder rows would be exactly the
+clutter this design removed the standing sections to be rid of. The one compact
+add affordance is the launcher's own `+ Menetluse link` chip, which is on every
+open Matter a writer can see (TEEMA_TARGET_SPEC §F, docs/adr/0074 §15).
+
+**A reference, and this page says so.** Nothing here is fetched, checked or
+watched, and the card claims nothing about whether the page is still up: a saved
+address is a record of what somebody stated on the day they stated it, and a
+dead link years later is a fact about the web rather than an error in this file
+(docs/adr/0089 §4).
+
+**The link is labelled, never printed.** `display_label` is the lawyer's own
+name for it, or the parsed host, or the kind — never the raw address, which is a
+line a reader has to parse instead of read and the one shape in which a
+look-alike address is believed. `target="_blank"`, `rel="noopener noreferrer"`
+and a visually hidden «— avaneb uues aknas» so the new tab is announced rather
+than merely happening (docs/adr/0081 §4, docs/adr/0085 §2).
+
+`Paranda` is gated on `can_write` alone and deliberately **not** on
+`matter.is_open`: an address recorded wrongly on a closed file must still be
+correctable, which is the same split `correct_website_overview_link` keeps
+(docs/adr/0081 §5, docs/adr/0089 §6). Adding one is the launcher's, which a
+closed Matter does not render at all. The card itself is gated on neither: a
+reader sees where the proceeding is, and no buttons that would refuse them.
+
+There is deliberately **no delete control**. A mistaken row is corrected,
+because what the file recorded and who recorded it is part of the file
+(docs/adr/0084 §8).
+{% endcomment %}
+{% if procedural_links %}
+  <div class="railcard" id="menetluse-lingid">
+    <span class="railcard__label">Menetluse lingid</span>
+    {% for link, edit_form in procedural_links %}
+      <div class="proclink" id="menetluse-link-{{ link.pk }}">
+        <div class="railcard__row">
+          <span class="railcard__key">{{ link.get_kind_display }}</span>
+          <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+            {{ link.display_label }}<span class="visually-hidden"> — avaneb uues aknas</span>
+          </a>
+        </div>
+        {% if can_write %}
+          {% comment %}
+            A native disclosure rather than a launcher radio: it belongs to this
+            row, it has no siblings to displace and there is nothing to be
+            chosen *instead* of it — the same reasoning that leaves `Lisa link
+            ja avaldamiskuupäev` on a planned overview row a `<details>`
+            (docs/adr/0078 §1). A refusal reopens exactly the one it came from.
+          {% endcomment %}
+          <details class="proclink__fix"
+                   {% if procedural_link_open == link.pk|stringformat:"s" %}open{% endif %}>
+            <summary class="disclosure-chip">Paranda</summary>
+            <div class="proclink__form">
+              {% if procedural_link_open == link.pk|stringformat:"s" and procedural_link_error %}
+                <p class="formerror" role="alert">{{ procedural_link_error }}</p>
+              {% endif %}
+              <form class="addform"
+                    hx-post="{% url 'matters:correct_procedural_link' pk=matter.pk link_id=link.pk %}"
+                    hx-target="#teema-vaade" hx-swap="outerHTML">
+                {% csrf_token %}
+                <fieldset class="cx-fieldset">
+                  <legend class="cx-f__lab">{{ edit_form.kind.label }}</legend>
+                  <div class="chiprow">
+                    {% for choice in edit_form.kind %}
+                      <label class="chip">
+                        {{ choice.tag }}
+                        <span class="chip__name">{{ choice.choice_label }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                  {% if edit_form.kind.errors %}
+                    <p class="field__error" id="{{ edit_form.kind.auto_id }}_error">
+                      {{ edit_form.kind.errors|first }}</p>
+                  {% endif %}
+                </fieldset>
+                <label class="cx-f" for="{{ edit_form.url.id_for_label }}">
+                  <span class="cx-f__lab">{{ edit_form.url.label }}</span>
+                  {{ edit_form.url }}
+                </label>
+                {% if edit_form.url.errors %}
+                  <p class="field__error" id="{{ edit_form.url.auto_id }}_error">
+                    {{ edit_form.url.errors|first }}</p>
+                {% endif %}
+                <label class="cx-f" for="{{ edit_form.label.id_for_label }}">
+                  <span class="cx-f__lab">{{ edit_form.label.label }}
+                    <span class="cx-f__opt">valikuline</span></span>
+                  {{ edit_form.label }}
+                </label>
+                {% if edit_form.label.errors %}
+                  <p class="field__error" id="{{ edit_form.label.auto_id }}_error">
+                    {{ edit_form.label.errors|first }}</p>
+                {% endif %}
+                {{ edit_form.revision }}
+                <div class="addform__actions">
+                  <button class="button button--primary" type="submit">Salvesta</button>
+                </div>
+              </form>
+            </div>
+          </details>
+        {% endif %}
+      </div>
+    {% endfor %}
+    {% comment %}
+      A refusal that belongs to no open disclosure — a conflict that arrived
+      after the card was re-read. Printed once, under the rows, rather than
+      nowhere at all (`_procedural_link_refusal`).
+    {% endcomment %}
+    {% if procedural_link_error and not procedural_link_open %}
+      <p class="formerror" role="alert">{{ procedural_link_error }}</p>
+    {% endif %}
+  </div>
+{% endif %}

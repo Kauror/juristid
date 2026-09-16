@@ -110,6 +110,9 @@ from app.matters.forms import (
     NextActionForm,
     PersonalNoteForm,
     PositionForm,
+    ProceduralLinkCreateForm,
+    ProceduralLinkEditForm,
+    ProceduralLinkForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
     edit_initial,
@@ -131,6 +134,7 @@ from app.matters.models import (
     MatterAssignmentNotice,
     MatterEngagement,
     MatterExternalPosition,
+    MatterProceduralLink,
     MatterWebsiteOverview,
 )
 from app.matters.my_work import (
@@ -146,6 +150,7 @@ from app.matters.services import (
     EntryEditConflict,
     ExternalPositionConflict,
     PersonalNoteConflict,
+    ProceduralLinkConflict,
     WebsiteOverviewConflict,
     acknowledge_assignment_notice,
     assign_matter,
@@ -162,6 +167,7 @@ from app.matters.services import (
     personal_note_record,
     personal_note_revision,
     record_engagement,
+    record_procedural_link,
     reopen_matter,
     resolve_addressee,
     resolve_source_organisations,
@@ -1723,6 +1729,13 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         (request.POST.get(key) or "").strip() for key in ("next-text", "next-target_date")
     )
     action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
+    # `Menetluse link`, bound only when somebody actually typed an address — the
+    # rule `wants_action` above states, for the same reason. The chip row
+    # arrives with `EIS` pre-selected, so binding unconditionally would refuse
+    # every save that had not used this block, with «Menetluse link vajab
+    # veebiaadressi.» under a box nobody had touched (docs/adr/0089 §13).
+    procedural_form = ProceduralLinkCreateForm(request.POST or None, prefix="menetlus")
+    wants_procedural_link = procedural_form.wants_link
     uploads: list[Any] = []
     upload_refusals: tuple[str, ...] = ()
     # What an earlier refusal is holding, and which of it this attempt still
@@ -1755,6 +1768,12 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         refused = bool(upload_refusals) or not form.is_valid()
         if wants_action and not action_form.is_valid():
             refused = True
+        # Validated *before* anything is written, like every other half of this
+        # save: a refused address must not leave a Teema behind carrying the
+        # rest. What was typed comes back in the box, because the form travels
+        # bound into `_create_context` (docs/adr/0089 §13).
+        if wants_procedural_link and not procedural_form.is_valid():
+            refused = True
 
         if refused:
             # One message per refused file. The messages block renders each as
@@ -1775,6 +1794,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     request,
                     form,
                     action_form,
+                    procedural_form,
                     held_keys=held_keys,
                     intake_session=intake_session,
                 ),
@@ -1859,6 +1879,31 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 if note:
                     save_personal_note(matter=matter, author=request.user, body=note)
 
+                # `Menetluse link`, inside this same transaction and only where
+                # somebody typed an address. **Atomic with the Teema**: a refusal
+                # anywhere below takes the link with it, and a link the service
+                # refuses takes the Teema with it, so there is no path on which a
+                # Matter exists carrying half of what was submitted
+                # (docs/adr/0089 §13).
+                #
+                # `record_procedural_link` rather than the workspace wrapper,
+                # like `create_matter` and `save_personal_note` directly above:
+                # the wrapper's job is the closed-Matter lock, and this Matter is
+                # being created open inside this transaction.
+                #
+                # A retry after a refusal creates a *different* Teema, so there
+                # is no duplicate to collapse here — and the per-Matter
+                # uniqueness stands behind a double-submitted create either way.
+                if wants_procedural_link:
+                    link = procedural_form.cleaned_data
+                    record_procedural_link(
+                        matter=matter,
+                        kind=link.get("kind"),
+                        url=link.get("url"),
+                        label=link.get("label") or "",
+                        actor=request.user,
+                    )
+
                 if wants_action:
                     # The owner is chosen on this same form, so the Matter does not
                     # exist yet when the action form is read and the service's own
@@ -1890,6 +1935,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     request,
                     form,
                     action_form,
+                    procedural_form,
                     held_keys=[*held_keys, *(item.key for item in newly_held)],
                     intake_session=intake_session,
                 ),
@@ -1926,7 +1972,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "matters/matter_create.html",
-        _create_context(request, form, action_form),
+        _create_context(request, form, action_form, procedural_form),
         status=200,
     )
 
@@ -1935,11 +1981,22 @@ def _create_context(
     request: HttpRequest,
     form: Any,
     action_form: Any,
+    procedural_form: Any,
     *,
     held_keys: list[str] | None = None,
     intake_session: Any = None,
 ) -> dict[str, Any]:
     return {
+        # `Menetluse link`. Bound on a refusal and unbound on a GET, exactly
+        # like the two forms above it, so an address somebody pasted survives a
+        # rejected file or a mistyped valdkond — the property the whole refusal
+        # path on this page exists to keep (docs/adr/0089 §13).
+        #
+        # The partial reads it under the same name the Teema page's launcher
+        # panel reads its own form by, because the two are the same block asking
+        # the same three questions and a second spelling would be a second place
+        # for the template to drift.
+        "procedural_link_form": procedural_form,
         # The form's own answers, so a refused save's redisplay does not propose
         # a sender over one the person has already given. On a GET the form is
         # unbound and `answered_on` is empty, which is what it was before
@@ -2424,6 +2481,31 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # (`_website_overview_refusal`).
         "website_overview_open": "",
         "website_overview_error": "",
+        # `Menetluse lingid` — where this Matter's official proceedings live.
+        #
+        # Read here for the reason everything else on this dict is: the template
+        # must not be able to start querying. Every row, not a filtered subset,
+        # because a procedural link has no lifecycle and no state that would
+        # make one of them not worth showing — a Matter carries the addresses
+        # it carries (docs/adr/0089 §7).
+        #
+        # The card renders nothing at all when this is empty, which is the
+        # ordinary case on a Matter nobody has recorded one for: there are no
+        # permanently visible empty sections on this page, and the one compact
+        # add affordance is the launcher's own chip (TEEMA_TARGET_SPEC §F).
+        #
+        # `(record, form)`, one pair per row. The form is this row's own — its
+        # ids are derived from the record's id, because a Matter may carry
+        # several links and two controls sharing an id is enough to make a label
+        # reach the wrong box — and it carries the row's revision token, so a
+        # correction cannot land on a link that has moved on
+        # (`_procedural_link_rows`).
+        "procedural_links": _procedural_link_rows(matter, request.user),
+        # What a refused `Paranda` came back as. Empty on an ordinary render; a
+        # refusal replaces the pair for its own row and fills these two
+        # (`_procedural_link_refusal`).
+        "procedural_link_open": "",
+        "procedural_link_error": "",
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
         # «Lükka edasi», with the day each option lands on. Offered only on an
@@ -4984,6 +5066,7 @@ WORKSPACE_PANELS: dict[str, str] = {
     "work_victory_form": "lisa-toovoit",
     "website_overview_form": "lisa-koduleht",
     "external_position_form": "lisa-valine-seisukoht",
+    "procedural_link_form": "lisa-menetluse-link",
     "closure_form": "lisa-lopeta",
 }
 
@@ -5038,6 +5121,12 @@ def workspace_forms(
         # the other seven so that a refusal comes back through the same
         # machinery.
         "website_overview_form": CompactWebsiteOverviewForm(),
+        # `+ Menetluse link`. Three boxes, of which two are required: which kind
+        # of official source this is and the address, plus an optional name for
+        # it. No date, no status and nothing about fetching — this record is
+        # where the file is happening, not something that happened to it
+        # (docs/adr/0089 §5).
+        "procedural_link_form": ProceduralLinkForm(),
         # `+ Väline seisukoht`. The one form here that has to be told which
         # Matter it is on and who is looking: `Organisatsioon` is ranked by the
         # institutions *this reader's* visible Matters involve, and
@@ -5438,6 +5527,162 @@ def _external_position_row(
         },
         status=status,
     )
+
+
+def _procedural_link_for(
+    request: HttpRequest, matter: Matter, link_id: Any
+) -> MatterProceduralLink:
+    """The procedural link this request may act on, or a 404.
+
+    Scoped through the child's own `visible_to` rather than fetched by id off
+    the Matter, exactly as `_website_overview_for` and `_entry_for_correction`
+    do it: the record carries its own `visibility_override`, and reading it any
+    other way would bypass that. A restricted link inside a Matter somebody may
+    see is indistinguishable here from one that does not exist (AUTH-003).
+    """
+    return get_object_or_404(
+        MatterProceduralLink.objects.visible_to(request.user).filter(matter=matter),
+        pk=link_id,
+    )
+
+
+def _procedural_link_rows(
+    matter: Matter,
+    user: Any,
+    *,
+    bound_for: Any = None,
+    form: Any = None,
+) -> list[tuple[MatterProceduralLink, Any]]:
+    """Each recorded link with the form that corrects it.
+
+    Paired here rather than in the template for `_planned_website_overview_rows`'
+    reason: exactly one row may render a *bound* form — the one a refusal came
+    back for — and deciding that in the template would mean comparing ids in
+    three places. Every other row gets its own unbound form filled from the
+    record, so a refused correction on one link cannot put somebody's typed
+    address into the box beside another.
+    """
+    rows: list[tuple[MatterProceduralLink, Any]] = []
+    for record in selectors.procedural_links(matter, user):
+        if form is not None and bound_for is not None and str(record.pk) == str(bound_for):
+            rows.append((record, form))
+        else:
+            rows.append((record, ProceduralLinkEditForm(link=record)))
+    return rows
+
+
+def _procedural_link_refusal(
+    request: HttpRequest,
+    matter: Matter,
+    *,
+    link: MatterProceduralLink,
+    form: Any,
+    error: str = "",
+    status: int = 400,
+) -> HttpResponse:
+    """Re-render the workspace with one correction disclosure reopened on its row.
+
+    Deliberately **not** `_workspace_refusal`, for the reason
+    `_website_overview_refusal` is not: that helper reopens a *launcher* panel,
+    and a correction has none — it lives on a row in the rail card, rendered
+    from the Matter's own records rather than from a chip somebody clicked.
+
+    The bound form and the refused row's id travel together, so the card reopens
+    exactly the disclosure the words were typed into and puts them back in it.
+    The stale token deliberately stays in the bound form: advancing it would be
+    this view deciding that the next submit may overwrite what the other writer
+    saved (`edit_entry_view`, QA-09).
+    """
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context["procedural_link_open"] = str(link.pk)
+    context["procedural_links"] = _procedural_link_rows(
+        matter, request.user, bound_for=link.pk, form=form
+    )
+    context["procedural_link_error"] = error
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    return HttpResponse(body, status=status)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_procedural_link(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Menetluse link` — where the official proceeding on this file lives.
+
+    Three boxes and one row. **Nothing is fetched**: the address is recorded,
+    not opened, not read and not watched (docs/adr/0089 §4).
+
+    A refusal comes back through `_workspace_refusal` with the form still bound,
+    so an address somebody pasted is still in the box — losing it would cost
+    them the one fact they opened the panel to record. The closed-Matter refusal
+    is the service's, answered under the Matter's row lock, because a POST may
+    arrive from a tab that was open before somebody else shut the file (R2-02).
+
+    A repeated submit — a double-click, a browser retry, a stale response —
+    lands on `record_procedural_link`'s own idempotency and writes one row, so
+    the answer here is the ordinary re-render rather than a refusal about a save
+    that actually happened (docs/adr/0089 §6).
+    """
+    matter = get_visible_matter(request, pk)
+    form = ProceduralLinkForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="procedural_link_form", form=form)
+    try:
+        workspace.add_matter_procedural_link(
+            matter=matter,
+            author=request.user,
+            kind=form.cleaned_data.get("kind"),
+            url=form.cleaned_data.get("url"),
+            label=form.cleaned_data.get("label") or "",
+        )
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="procedural_link_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def correct_procedural_link_view(request: HttpRequest, pk: Any, link_id: Any) -> HttpResponse:
+    """`Paranda` — the kind, the name or the address on a recorded link was wrong.
+
+    **Allowed on a closed Matter**, like an `Ülevaade / uudis` link correction
+    and unlike a `Väline seisukoht`'s. Closure means no new business content; it
+    has never meant that an address recorded wrongly must stay wrong, and a
+    procedural link carries no date, no organisation and no chronology row for a
+    correction to move — it is a pointer, and a pointer to the wrong page is
+    simply wrong (docs/adr/0075 §12, docs/adr/0081 §5, docs/adr/0089 §6).
+
+    **There is no route that deletes one**, on an open Matter or a closed one.
+
+    A conflict answers 409 with the form still open on this person's values; the
+    card beside it has just been re-read, so what the other writer saved is
+    already on the page.
+    """
+    matter = get_visible_matter(request, pk)
+    link = _procedural_link_for(request, matter, link_id)
+    form = ProceduralLinkEditForm(request.POST, link=link)
+    if not form.is_valid():
+        return _procedural_link_refusal(request, matter, link=link, form=form)
+    try:
+        workspace.correct_matter_procedural_link(
+            author=request.user,
+            link=link,
+            kind=form.cleaned_data.get("kind"),
+            url=form.cleaned_data.get("url"),
+            label=form.cleaned_data.get("label") or "",
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except ProceduralLinkConflict as conflict:
+        return _procedural_link_refusal(
+            request, matter, link=link, form=form, error=str(conflict), status=409
+        )
+    except DomainError as error:
+        return _procedural_link_refusal(request, matter, link=link, form=form, error=str(error))
+    return _render_overview(request, matter)
 
 
 @login_required
