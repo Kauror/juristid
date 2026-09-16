@@ -3004,6 +3004,72 @@
     }
   }
 
+  /* ---- What is chosen, on the door that hides it --------------------------
+   *
+   * A disclosure that folds a vocabulary away has to say what the answer is, or
+   * it has to be opened every time to find out — which is a click added to
+   * every visit in exchange for the height it saved. The server renders the
+   * answer into the summary on load; this keeps it true while somebody is
+   * ticking boxes with the fold open (templates/matters/matter_create.html,
+   * docs/adr/0088 §3).
+   *
+   * Reads the controls the page already has and writes one text node. Nothing
+   * here is posted, nothing here is a control, and with scripting off the
+   * server-rendered summary is still correct on every load — it is only the
+   * live edit in between that this covers.
+   */
+  function bindChipSummaries(scope) {
+    (scope || document).querySelectorAll("[data-chipsummary-for]").forEach(function (target) {
+      if (!once(target, "ChipSummary")) {
+        return;
+      }
+      var name = target.getAttribute("data-chipsummary-for");
+      var form = target.closest("form");
+      if (!form) {
+        return;
+      }
+      /* The group, plus the free-text affordance beside it where there is one.
+         `Valdkond · Muu` is a checkbox that is not a PolicyArea and posts under
+         its own name, and a summary that ignored it would read «Valdkonnad»
+         over a ticked Muu and a sentence of typed text (app/matters/forms.py
+         `policy_area_summary`, which renders exactly this set server-side). */
+      var boxes = form.querySelectorAll(
+        'input[name="' + name + '"], input[name="' + name + '_other_selected"]'
+      );
+      if (!boxes.length) {
+        return;
+      }
+
+      var chipName = function (box) {
+        var label = box.closest(".chip");
+        var text = label ? label.querySelector(".chip__name") : null;
+        /* The `×` is decoration inside the name — `aria-hidden`, and not part
+           of what the chip is called. */
+        return text ? text.textContent.trim().replace(/\s*×$/, "") : "";
+      };
+
+      var sync = function () {
+        var chosen = [];
+        boxes.forEach(function (box) {
+          if (box.checked) {
+            var label = chipName(box);
+            if (label) {
+              chosen.push(label);
+            }
+          }
+        });
+        /* textContent, so a vocabulary label containing a bracket or an
+           ampersand stays a label. */
+        target.textContent = chosen.length ? " · " + chosen.join(", ") : "";
+      };
+
+      boxes.forEach(function (box) {
+        box.addEventListener("change", sync);
+      });
+      sync();
+    });
+  }
+
   /* ---- How many are chosen ------------------------------------------------
    * A count beside the label, for the rows where the chips wrap onto three
    * lines and "did I tick Ehitus?" costs a scan. Reads the controls the page
@@ -3744,6 +3810,7 @@
     bindAddresseeDefault(document);
     bindOpenChosenDetails(document);
     bindChipCounts(document);
+    bindChipSummaries(document);
     bindStageHelp(document);
     bindRequiredAction(document);
     bindSuggestionUse(document);
@@ -3778,6 +3845,7 @@
     bindAddresseeDefault(event.target.querySelector ? event.target : document);
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
+    bindChipSummaries(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
     bindSuggestionUse(event.target.querySelector ? event.target : document);

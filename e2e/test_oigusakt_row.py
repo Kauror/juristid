@@ -208,8 +208,10 @@ def test_the_count_reads_the_number_chosen(page, base_url):
         chips.nth(index).click()
 
     expect(count).to_have_text("3 valitud")
-    areas = page.locator('[data-chipcount-for="policy_areas"]')
-    assert areas.inner_text().strip() == "", "Valdkonnad counted this field's chips"
+    # And Valdkonnad, which since docs/adr/0088 names its answers in its own
+    # summary rather than counting them, says nothing about this field's chips.
+    summary = page.locator("[data-chipsummary-for='policy_areas']")
+    assert (summary.text_content() or "").strip() == "", "Valdkonnad summarised this field's chips"
 
     assert labels() == before, "chips reordered themselves when they were chosen"
 

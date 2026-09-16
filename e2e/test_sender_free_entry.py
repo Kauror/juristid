@@ -74,11 +74,20 @@ def test_the_one_sender_operation_is_on_the_page_at_rest(page, base_url):
     docs/adr/0073 keeps that half and removes the choice between the other two:
     the search box *is* the box for a body the catalogue does not hold, so there
     is one control, it is first, and nothing is folded away (task §2, §3).
+
+    docs/adr/0088 moves it a third time, and again on the load-bearing half's
+    own terms: the quick choices are offered to the search rather than drawn
+    under it. Nothing is folded away, nothing needs opening, and «the body I
+    need is not here» is still answered by the box that is already focused.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    expect(page.locator('input[name="source_organisations"]').first).to_be_visible()
+    # The chips are in the document and out of sight until the search finds one
+    # — the third move, and the one the lawyers asked for: the field opens as a
+    # box rather than as a list to read (docs/adr/0088 §2).
+    assert page.locator('#saatja-valik input[name="source_organisations"]').count()
+    assert page.locator("#saatja-valik label.chip:not([hidden])").count() == 0
     expect(page.locator("#saatja-otsi")).to_be_visible()
     expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_be_visible()
 
@@ -202,7 +211,28 @@ def test_the_count_beside_the_legend_reads_both_halves_of_the_set(page, base_url
         "locator here is a moved element, not an empty catalogue"
     )
 
-    shortlist.first.check()
+    # Chosen through the search, because since docs/adr/0088 that is the only
+    # way a sender is chosen for the first time: the chips are in the document
+    # and `hidden` until the box finds one. What this test is about is the badge
+    # reading two *fields*, and the first of them is still the shortlist one.
+    def choose(name: str) -> None:
+        box = page.locator("#saatja-otsi")
+        box.click()
+        box.fill(name[:5])
+        page.locator("#saatja-tulemused").get_by_role("option", name=name, exact=True).click()
+
+    def chip_names(field: str) -> list[str]:
+        """Every body one of the two sender fields offers, drawn or not."""
+        return page.locator(f'#saatja-valik input[name="{field}"]').evaluate_all(
+            "nodes => nodes.map(node => { const label = node.closest('label');"
+            " const n = label ? label.querySelector('.chip__name') : null;"
+            " return (n ? n.textContent : '').replace(/\\s*×$/, '').trim(); })"
+        )
+
+    first_half = chip_names("source_organisations")
+    assert first_half, "the shortlist field offers nothing at all"
+
+    choose(first_half[0])
     expect(badge).to_have_text("1 valitud")
 
     # The second body through the search, which is where the two halves of the
@@ -224,8 +254,5 @@ def test_the_count_beside_the_legend_reads_both_halves_of_the_set(page, base_url
         "an empty list here is a moved element, not an empty catalogue"
     )
 
-    box = page.locator("#saatja-otsi")
-    box.click()
-    box.fill(others[0][:5])
-    page.locator("#saatja-tulemused").get_by_role("option", name=others[0], exact=True).click()
+    choose(others[0])
     expect(badge).to_have_text("2 valitud")

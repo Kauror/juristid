@@ -28,6 +28,7 @@ import pathlib
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 
 from app.documents.enums import DocumentRole, ExtractionState
@@ -452,6 +453,13 @@ CREATE = reverse("matters:matter_create")
 STAGE = reverse("matters:intake_stage")
 STATUS = reverse("matters:intake_status")
 
+#: The four assertions below are about what `Uus teema` *shows*, and the
+#: suggestion area is withdrawn from that page by default (docs/adr/0088). They
+#: describe the capability switched on: what the reader finds in a law draft and
+#: how the Õigusakt control receives it. Everything else in this module is about
+#: the rules themselves and is unaffected either way.
+READING_ON = override_settings(MATTER_INTAKE_SUGGESTIONS_ENABLED=True)
+
 
 def stage(client, *files):
     """Upload through the real staging route, the way the browser does."""
@@ -485,6 +493,7 @@ def test_the_vocabulary_the_reader_resolves_against_is_the_one_the_form_offers()
 
 
 @pytest.mark.django_db
+@READING_ON
 def test_a_staged_law_draft_pre_fills_the_oigusakt_control(signed_in, evidence_root) -> None:
     """The whole path, through `parse_source` and out at the browser contract.
 
@@ -508,6 +517,7 @@ def test_a_staged_law_draft_pre_fills_the_oigusakt_control(signed_in, evidence_r
 
 
 @pytest.mark.django_db
+@READING_ON
 def test_a_medium_suggestion_is_offered_and_never_proposed(signed_in, evidence_root) -> None:
     """MEDIUM stays reviewable: it reaches the panel and not the pre-fill."""
     session = stage(
@@ -526,6 +536,7 @@ def test_a_medium_suggestion_is_offered_and_never_proposed(signed_in, evidence_r
 
 
 @pytest.mark.django_db
+@READING_ON
 def test_a_conflicting_envelope_proposes_nothing(signed_in, evidence_root) -> None:
     session = stage(
         signed_in,
@@ -563,6 +574,7 @@ def test_a_readable_outlook_message_gives_medium_and_its_attachment_none(
 
 
 @pytest.mark.django_db
+@READING_ON
 def test_the_suggested_value_is_a_value_the_real_control_accepts(
     signed_in, evidence_root, specialist
 ) -> None:

@@ -51,13 +51,17 @@ from app.taxonomy.reference_data import (
     POLICY_AREA_SOURCE_V1_URL,
     POLICY_AREA_SOURCE_VERIFIED_ON,
     POLICY_AREA_WITHDRAWAL_SOURCE_TITLE,
+    POLICY_AREA_WITHDRAWAL_V3_SOURCE_TITLE,
+    POLICY_AREA_WITHDRAWAL_V3_VERIFIED_ON,
     POLICY_AREA_WITHDRAWAL_VERIFIED_ON,
     REFERENCE_POLICY_AREA_KEYS,
     REFERENCE_POLICY_AREA_VERSION,
     REFERENCE_POLICY_AREAS_V1,
     REFERENCE_POLICY_AREAS_V2,
+    REFERENCE_POLICY_AREAS_V3,
     RETIRED_POLICY_AREA_KEYS_V1,
     RETIRED_POLICY_AREA_KEYS_V2,
+    RETIRED_POLICY_AREA_KEYS_V3,
 )
 
 pytestmark = pytest.mark.django_db
@@ -69,6 +73,9 @@ MIGRATION = importlib.import_module("app.taxonomy.migrations.0003_working_policy
 #: The withdrawal, kept addressable for the same drift guard.
 MIGRATION_V3 = importlib.import_module(
     "app.taxonomy.migrations.0004_retire_catchall_and_deadline_areas"
+)
+MIGRATION_V4 = importlib.import_module(
+    "app.taxonomy.migrations.0007_retire_coalition_and_transposition_areas"
 )
 
 #: Everything ``taxonomy/0003`` seeded — the twenty-three the department named
@@ -106,11 +113,18 @@ SEEDED_V2 = [
 #: subject area; `Muud teemad` is the free-text `Muu` affordance a second time.
 WITHDRAWN_V2 = ["muud-teemad", "olulised-tahtajad"]
 
-#: What may be chosen today: the seeded twenty-three less the withdrawn two,
-#: still in the department's order and still carrying its gaps at 200 and 220.
-#: Those gaps are the point — the sequence is the one the department reviewed,
-#: not a ranking to be closed up.
-EXPECTED = [row for row in SEEDED_V2 if row[0] not in WITHDRAWN_V2]
+#: The two the lawyers' first feedback round withdrew on 2026-09-16, written out
+#: for the same reason again. `Koalitsioonilepped` names a *source document* and
+#: belongs to `Õigusakt`; `ELi õiguse ülevõtmine` is `Menetlusliik` spelled
+#: twice — `Track.NATIONAL_TRANSPOSITION` carries those exact four words
+#: (docs/adr/0088 §3).
+WITHDRAWN_V3 = ["koalitsioonilepped", "eli-oiguse-ulevotmine"]
+
+#: What may be chosen today: the seeded twenty-three less the four withdrawn
+#: since, still in the department's order and still carrying its gaps at 50,
+#: 200, 210 and 220. Those gaps are the point — the sequence is the one the
+#: department reviewed, not a ranking to be closed up.
+EXPECTED = [row for row in SEEDED_V2 if row[0] not in WITHDRAWN_V2 + WITHDRAWN_V3]
 
 #: The four names that appear in both the retired nine and the working list.
 #: Their rows carry over untouched — same key, same primary key, same relations
@@ -143,18 +157,17 @@ def test_every_seeded_working_area_is_still_a_row():
     assert len(rows) == 23
 
 
-def test_the_offered_vocabulary_is_exactly_the_twenty_one_in_order():
+def test_the_offered_vocabulary_is_exactly_the_nineteen_in_order():
     """One governed list, and it is what every surface offers.
 
     The set *and* the order: the department sequenced these, and a control that
-    rearranged them would be answering a question nobody asked. Twenty-one plus
-    the free-text `Muu` affordance is the twenty-two the approved design names
-    — and `Muu` is not in this list because it is not a `PolicyArea` at all
-    (app/taxonomy/vocabulary.py, Uus teema redesign §7).
+    rearranged them would be answering a question nobody asked. Nineteen plus
+    the free-text `Muu` affordance — and `Muu` is not in this list because it is
+    not a `PolicyArea` at all (app/taxonomy/vocabulary.py, docs/adr/0088 §3).
     """
     from app.taxonomy.vocabulary import selectable_policy_areas
 
-    assert len(EXPECTED) == 21
+    assert len(EXPECTED) == 19
     assert [area.name_et for area in selectable_policy_areas()] == [
         name for _key, name, _order in EXPECTED
     ]
@@ -289,13 +302,75 @@ def test_the_withdrawal_migration_and_the_manifest_agree():
     # The offered manifest is exactly the seeded one minus those two, in the
     # order it already had. Derived rather than retyped, and checked rather
     # than assumed.
-    offered = [area.key for area in REFERENCE_POLICY_AREAS_V1]
+    # Version 3.0's own manifest, rather than whatever is offered today: this
+    # test is about the edit `taxonomy/0004` accompanied, and reading the
+    # current list here would make it fail every time a *later* version
+    # withdrew something — which is a different claim about a different
+    # migration.
+    offered = [area.key for area in REFERENCE_POLICY_AREAS_V3]
     assert offered == [
         area.key
         for area in REFERENCE_POLICY_AREAS_V2
         if area.key not in RETIRED_POLICY_AREA_KEYS_V2
     ]
     assert set(offered).isdisjoint(set(RETIRED_POLICY_AREA_KEYS_V2))
+
+
+def test_the_second_withdrawal_migration_and_the_manifest_agree():
+    """The same drift guard, one vocabulary version later.
+
+    `taxonomy/0007` carries its own frozen copy of the two keys it withdraws,
+    and the manifest that stops offering them is a separate edit. If the two
+    ever disagreed, a fresh database would offer a label a migrated one does
+    not (docs/adr/0088 §3).
+    """
+    assert list(MIGRATION_V4.WITHDRAWN) == list(RETIRED_POLICY_AREA_KEYS_V3)
+
+    offered = [area.key for area in REFERENCE_POLICY_AREAS_V1]
+    assert offered == [
+        area.key
+        for area in REFERENCE_POLICY_AREAS_V2
+        if area.key not in RETIRED_POLICY_AREA_KEYS_V2 + RETIRED_POLICY_AREA_KEYS_V3
+    ]
+    assert set(offered).isdisjoint(set(RETIRED_POLICY_AREA_KEYS_V3))
+
+
+def test_the_two_newly_withdrawn_areas_keep_their_rows_and_their_matters():
+    """Withdrawal stops a label being offered. It changes no record.
+
+    The assertion that matters here is the negative one: nothing has *moved*.
+    In particular a Matter filed under the `ELi õiguse ülevõtmine` area has not
+    been given the `NATIONAL_TRANSPOSITION` track that shares its name — the
+    two answer different questions, a Matter may carry either or both, and
+    inferring one from the other would write a classification nobody reviewed
+    (`taxonomy/0007`).
+    """
+    from app.matters.models import Matter
+    from app.workflow.enums import Track
+
+    area = PolicyArea.objects.get(key="eli-oiguse-ulevotmine")
+    matter = Matter.objects.create(title="Direktiivi ülevõtmine")
+    matter.policy_areas.add(area)
+
+    MIGRATION_V4.retire(global_apps, None)
+
+    area.refresh_from_db()
+    matter.refresh_from_db()
+    assert not area.is_active
+    assert list(matter.policy_areas.all()) == [area]
+    assert matter.track == ""
+    assert Track.NATIONAL_TRANSPOSITION.label == area.name_et, (
+        "the two share a label, which is the whole reason the area was withdrawn "
+        "— and the whole reason nothing may be derived from the other"
+    )
+
+
+def test_the_second_withdrawal_refuses_a_row_somebody_has_renamed():
+    """The same refusal, for the same reason (`taxonomy/0007`)."""
+    PolicyArea.objects.filter(key="koalitsioonilepped").update(name_et="Koalitsioonileping")
+
+    with pytest.raises(RuntimeError, match="Koalitsioonileping"):
+        MIGRATION_V4.retire(global_apps, None)
 
 
 def test_the_withdrawal_refuses_a_row_somebody_has_renamed():
@@ -338,7 +413,7 @@ def test_the_business_source_is_recorded():
     assert POLICY_AREA_SOURCE_PUBLISHER.startswith("Eesti Kaubandus-Tööstuskoda")
     assert "Teema redesign" in POLICY_AREA_SOURCE_TITLE
     assert POLICY_AREA_SOURCE_VERIFIED_ON == "2026-08-24"
-    assert REFERENCE_POLICY_AREA_VERSION == "3.0"
+    assert REFERENCE_POLICY_AREA_VERSION == "4.0"
 
     # The withdrawal keeps its own trail. The list still came from the Teema
     # redesign review on the 24th; stopping two of its labels being offered was
@@ -346,6 +421,12 @@ def test_the_business_source_is_recorded():
     # the earlier one unanswerable.
     assert "Uus teema" in POLICY_AREA_WITHDRAWAL_SOURCE_TITLE
     assert POLICY_AREA_WITHDRAWAL_VERIFIED_ON == "2026-08-25"
+
+    # And version 4.0's withdrawal keeps a third trail, for the same reason:
+    # it came from the lawyers using the demo rather than from a design review,
+    # which is a different kind of evidence and is dated separately.
+    assert "tagasiside" in POLICY_AREA_WITHDRAWAL_V3_SOURCE_TITLE
+    assert POLICY_AREA_WITHDRAWAL_V3_VERIFIED_ON == "2026-09-16"
 
 
 def test_the_earlier_vocabularys_provenance_is_kept():

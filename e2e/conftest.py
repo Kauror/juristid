@@ -320,6 +320,24 @@ def open_next_action_form(page) -> None:
     page.locator("#id_target_date").wait_for(state="visible")
 
 
+def open_valdkond(page) -> None:
+    """Unfold Valdkonnad on `Uus teema`, which arrives shut.
+
+    The vocabulary moved behind a disclosure when the lawyers' first feedback
+    round asked for the creation form to stop sitting permanently open
+    (docs/adr/0088 §3). A closed `<details>` keeps its contents in the document
+    — every `to_be_attached` and every `evaluate` over the chips still works
+    through it — but nobody can *click* what nobody can see, so a test that
+    ticks an area opens the field first. That is also what the person does.
+
+    Idempotent, so a test may call it without knowing whether an earlier
+    refusal already rendered the disclosure open.
+    """
+    disclosure = page.locator("[data-valdkond-disclosure]")
+    if disclosure.count() and not disclosure.evaluate("node => node.open"):
+        disclosure.locator("> summary").click()
+
+
 def open_composer(page) -> None:
     """`+ Märge` — where something that happened gets written down.
 
