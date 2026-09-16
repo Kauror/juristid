@@ -10,28 +10,40 @@
 [[day]]
 date = 2026-09-16
 basis = "deployment"
-# Üks väljalase, kaks ühendust: välise organisatsiooni seisukoht teema juures
-# ja ühe visuaaltesti kuupäeva stabiliseerimine.
+# Üks väljalase, kolm ühendust: välise organisatsiooni seisukoht teema juures,
+# tagasiside tähtaja nähtavus ajajoonel ja kodulehe ülevaate lisamise teine tee.
 #
-# Üks punkt, mitte kaks. Teine ühendus puudutab ainult testi ennast — ühtegi
-# tööpinda, arvu ega kuupäeva, mida lugeja näeb, see ei muuda. README ütleb, et
-# selline päevatöö punkti ei saa.
+# Kolm punkti, mitte neli. Kolmas ühendus puudutab ainult üht visuaaltesti ja
+# selle kinnisel kuupäeval seismist — ühtegi tööpinda, arvu ega kuupäeva, mida
+# lugeja näeb, see ei muuda. README ütleb, et selline päevatöö punkti ei saa.
 #
-# See üks punkt. Teema juurde saab nüüd kirja panna, mida mõni teine organisatsioon
-# samast asjast arvab — kes, kust see pärineb ja soovi korral millal ning
-# lühidalt mida. Lugejale on oluline ainult see, et selleks on nüüd koht;
-# mis selle taga on, ei ole tema küsimus.
+# Esimene punkt. Teema juurde saab nüüd kirja panna, mida mõni teine
+# organisatsioon samast asjast arvab — kes, kust see pärineb ja soovi korral
+# millal ning lühidalt mida. Lugejale on oluline ainult see, et selleks on nüüd
+# koht; mis selle taga on, ei ole tema küsimus.
 #
 # Seisukoht on märge teema juures: see ei muuda Koja arvamust, ei tekita
 # tähtaega, tööülesannet ega töövõitu, ja seda siin ei lubata — lugeja ei tohi
 # jääda arvama, et märkimine kuidagi asja ennast edasi liigutab.
 #
+# Teine punkt on tagasiside tähtaja oma. Tähtaeg ise sai kirja panna juba
+# 14. septembrist; uus on see, et ta paistab ajajoone ülaosas välja, mitte ainult
+# kaasamise rea sees. Punkt ütleb seda ja mitte rohkem — tähtajast ei teki
+# endiselt järgmist tegevust ega tööülesannet.
+#
+# Kolmas punkt on kodulehe ülevaate oma, ja see **ei korda** 15. septembri punkti.
+# Seal sai ülevaate märkida plaanituks ja lingi hiljem salvestada. Siin on juurde
+# tulnud teine tee: juba ilmunud ülevaate saab lisada kohe, koos lingi ja
+# avaldamise kuupäevaga, ilma seda enne plaaniks märkimata.
+#
 # `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalase veel
 # toimunud, ja toodangu revisjon on teada alles väljalaske raportist. Vale või
 # oletatud revisjoni siia panna oleks halvem kui selle puudumine.
-prs = [221]
+prs = [220, 221]
 changes = [
   "Teemale saab nüüd lisada välise organisatsiooni seisukoha: märkida organisatsiooni, lisada lingi või dokumendi ning soovi korral kuupäeva ja lühiselgituse.",
+  "Teema ajajoone ülaosas kuvatakse nüüd ka kaasamise juurde märgitud tagasiside tähtaeg.",
+  "Kodulehe ülevaate saab nüüd lisada kas plaanituna või kohe koos koda.ee lingi ja avaldamise kuupäevaga.",
 ]
 
 [[day]]
