@@ -11,6 +11,20 @@
   `Muuda teemat`: a suggestion must read the same wherever it is met, and only
   the framing around it legitimately differs.
 
+  **Since 2026-09-16 the ordinary visit renders none of the reading.** The
+  product decision withdrew the suggestion area from the lawyer-facing creation
+  form, so `intake_suggestions_offered` is false and everything below that
+  describes, waits for or proposes a *reading* is not rendered at all — the
+  «Failist leitud» section, the prefill markers, the reading and stalled
+  states, and the button that stops the wait. What is left is the one hidden
+  field that names the staging session, plus the upload notice and the refusals,
+  which are about files rather than about what is in them
+  (docs/adr/0088, app/matters/views.py `_intake_context`).
+
+  Not deleted, and the switch is a setting rather than a template edit: this
+  partial is what the feature looks like when it is on, and it is how it comes
+  back (config/settings.py `MATTER_INTAKE_SUGGESTIONS_ENABLED`).
+
   One thing that partial can render never appears here, and deliberately:
   «vormil eeltäidetud». On the edit page the GET fills the control itself and
   can say so. Here the browser decides, and declines wherever somebody has
@@ -71,6 +85,7 @@
     thing this feature may never do. So the server says what it would fill and
     the browser decides whether it still may (task §10, static/js/app.js).
   {% endcomment %}
+  {% if intake_suggestions_offered %}
   {% for name, value in intake_prefill %}
     <span class="visually-hidden" data-prefill-for="{{ name }}" data-prefill-value="{{ value }}"></span>
   {% endfor %}
@@ -147,5 +162,6 @@
 
       {% include "matters/partials/intake_suggestion_rows.html" %}
     </section>
+  {% endif %}
   {% endif %}
 </div>

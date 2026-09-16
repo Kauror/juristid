@@ -122,9 +122,18 @@ ANNEX_MARKERS = (
 # ---------------------------------------------------------------------------
 #
 # Keyed by the current PolicyArea.key values (app/taxonomy/reference_data.py,
-# vocabulary version 3.0). The descriptions in that manifest say what each
+# vocabulary version 4.0). The descriptions in that manifest say what each
 # area is meant to hold; the signals below are the words a document uses when
 # it is about that thing.
+#
+# Every key here names an area that is *offered* today, and
+# `tests/test_assisted_intake.py` holds the two lists to each other. A rule for
+# a retired area is not preserved work, it is a rule that can never fire — the
+# resolver reads `selectable_policy_areas()`, so it would match text, score it
+# and then resolve to nothing. Version 4.0 withdrew `koalitsioonilepped` and
+# `eli-oiguse-ulevotmine`, and their signal blocks went with them; the rows,
+# the relations and every Matter filed under either are untouched
+# (docs/adr/0088 §3, `taxonomy/0007`).
 #
 # Weights: 5 — a law's name or a term that belongs to one area only; 3–4 — a
 # specific legal term; 2 — a domain word; 1 — a generic word that only
@@ -165,11 +174,6 @@ AREA_RULES: dict[str, tuple[Signal, ...]] = {
         Signal(r"\binvesteeringutoetus", 3, "investeeringutoetus"),
         Signal(r"\brahastamisvahend", 2, "rahastamisvahend"),
         Signal(r"\btoetus", 1, "toetus"),
-    ),
-    "koalitsioonilepped": (
-        Signal(r"\bkoalitsioonilep", 5, "koalitsioonilepe"),
-        Signal(r"\bvalitsuse tegevusprogramm", 4, "valitsuse tegevusprogramm"),
-        Signal(r"\btegevusprogramm", 2, "tegevusprogramm"),
     ),
     "oigusloome": (
         Signal(r"\bhea õigusloome", 5, "hea õigusloome"),
@@ -344,14 +348,6 @@ AREA_RULES: dict[str, tuple[Signal, ...]] = {
         Signal(r"\bsüsinik", 2, "süsinik"),
         Signal(r"\bkeskkon", 2, "keskkond"),
         Signal(r"\bvee", 1, "vesi"),
-    ),
-    "eli-oiguse-ulevotmine": (
-        Signal(r"\bülevõtmi", 5, "ülevõtmine"),
-        Signal(r"\bülereguleeri", 4, "ülereguleerimine"),
-        Signal(r"\büle võ[te]", 3, "üle võtta"),
-        Signal(r"\bharmoneeri", 3, "harmoneerimine"),
-        Signal(r"\bdirektiiv", 3, "direktiiv"),
-        Signal(r"\(el\)\s*\d{4}/\d+", 2, "ELi õigusakti number"),
     ),
     "arengukavad-strateegiad": (
         Signal(r"\barengustrateegi", 5, "arengustrateegia"),

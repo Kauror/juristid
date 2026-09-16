@@ -5124,6 +5124,23 @@ a.barchart__row:hover {
   margin-top: var(--spacing-2);
 }
 
+/* And the same for Valdkonnad, which became a disclosure for the same reason
+   Adressaat is one: a field whose answer is short and whose vocabulary is long
+   should cost one line when it is not being answered. No panel, for the reason
+   above — the chip row inside already draws itself (docs/adr/0088 §3). */
+.createform__valdkond {
+  margin-top: var(--spacing-2);
+}
+
+/* The vocabulary is nineteen labels and `Muu`, which is three wrapped rows at
+   this width. It scrolls inside the open disclosure rather than pushing
+   Hetkeseis and everything under it down the page, exactly as the catalogue
+   inside `.chipdetails__body` does. */
+.createform__valdkond > .chiprow {
+  max-height: 190px;
+  overflow-y: auto;
+}
+
 .chipdetails__body .chiprow {
   margin-top: 0;
   /* A catalogue of ministries is long. It scrolls inside its own box rather

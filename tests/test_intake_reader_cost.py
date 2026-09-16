@@ -39,6 +39,19 @@ from tests import synthetic_corpus as corpus
 
 pytestmark = pytest.mark.django_db
 
+
+@pytest.fixture(autouse=True)
+def _reading_is_offered(settings):
+    """This module measures the reader and the page that shows what it found.
+
+    The lawyer-facing half of that page is withdrawn by default
+    (docs/adr/0088), so what is measured here is the capability switched on —
+    the only state in which these numbers mean anything, and the state a
+    reinstatement has to be checked against.
+    """
+    settings.MATTER_INTAKE_SUGGESTIONS_ENABLED = True
+
+
 STAGE = reverse("matters:intake_stage")
 STATUS = reverse("matters:intake_status")
 PDF = "application/pdf"

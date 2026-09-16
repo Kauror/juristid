@@ -71,6 +71,24 @@ Callers pass:
     clears_group  the radio group `bindExclusiveName` empties this field for
     sender_row    marks the row the Adressaat default reads (Saatja only)
     typed_hook    `sender` or `addressee` — which control the carrier is
+    quiet         true where the field starts empty: the shortlist is offered
+                  to the search rather than drawn under the box
+
+**`quiet`, and why it is a flag rather than an empty `chips` list.** A caller
+could pass the shortlist as `tail` and get most of this, and it would be lying
+about what the two lists are: `chips` is what the form ranked as worth offering
+and `tail` is the rest of the catalogue, and the ranking is still read — by
+`bindAddresseeDefault`, which promotes a chosen sender, and by the form itself.
+What `quiet` changes is *when the offer is made*, which is a presentation
+decision and belongs here (docs/adr/0088, task §2).
+
+The behaviour it asks for is one the script already has. A chip marked
+`data-orgfind-tail` is hidden while the box is empty and shown the moment it is
+searched out or chosen, and a chip that is an *answer* is never hidden at all —
+so an empty field, a field being searched and a field carrying a body somebody
+picked before a refused save are the three states this already draws, and
+`quiet` only decides which chips are in the second group (static/js/app.js
+`bindOrganisationPickers` `paint`).
 {% endcomment %}
 {% comment %}
   No cardinality flag on this element, deliberately. The script never has to be
@@ -113,7 +131,7 @@ Callers pass:
       <span class="field__label">{{ typed_field.label }}</span>
       {{ typed_field }}
     </label>
-    {% if tail %}
+    {% if tail or quiet %}
       {% comment %}
         The rest of the catalogue, for a browser that cannot search it.
 
@@ -121,10 +139,29 @@ Callers pass:
         written out rather than rendered from the subwidget: the same subwidget
         twice would put one `id` on two inputs, and a checked twin down here
         would keep a sender ticked after somebody unticked its chip above.
+
+        **Under `quiet` the shortlist is in here too**, and it has to be: the
+        chips above are hidden until a search finds them, and a browser that
+        cannot run the search would otherwise be shown an empty field with no
+        way to reach the catalogue at all. This is the one arrangement in which
+        the fallback offers *more* than the scripted control does at rest, and
+        it is what stops the quiet field being a regression without scripting
+        (task §22, docs/adr/0088).
       {% endcomment %}
       <fieldset class="field orgfind__fallbackfield">
         <legend class="field__label">Vali nimekirjast</legend>
         <div class="chiprow">
+          {% if quiet %}
+            {% for choice in chips %}
+              {% if not choice.data.selected %}
+                <label class="chip">
+                  <input class="chip__input" type="{% if single %}radio{% else %}checkbox{% endif %}"
+                         name="{{ choice.data.name }}" value="{{ choice.data.value }}">
+                  <span class="chip__name">{{ choice.choice_label }}</span>
+                </label>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
           {% for choice in tail %}
             {% if not choice.data.selected %}
               <label class="chip">
@@ -202,7 +239,13 @@ Callers pass:
     {% endif %}
 
     {% for choice in chips %}
-      <label class="chip">
+      {% comment %}
+        `quiet` moves the shortlist behind the search without moving it out of
+        the document: the control is still here, still posts the same name and
+        the same value, and is still the thing `choose()` ticks — it simply is
+        not drawn until it is asked for or answered.
+      {% endcomment %}
+      <label class="chip"{% if quiet %} data-orgfind-tail{% if not choice.data.selected %} hidden{% endif %}{% endif %}>
         {{ choice.tag }}
         <span class="chip__name">{{ choice.choice_label }}{% if clearable %}<span class="chip__clear" aria-hidden="true">×</span>{% endif %}</span>
       </label>

@@ -21,7 +21,7 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, go_to, sign_in
+from e2e.conftest import MARTIN, go_to, open_valdkond, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -145,6 +145,10 @@ def test_several_policy_areas_can_be_ticked_at_once(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
+    # Valdkonnad is a disclosure since docs/adr/0088: the controls are in the
+    # document either way, and nobody can click what nobody can see.
+    open_valdkond(page)
+
     boxes = page.locator('input[type="checkbox"][name="policy_areas"]')
     if boxes.count() < 2:
         pytest.skip("this world has fewer than two policy areas")
@@ -168,7 +172,12 @@ def test_the_catalogue_list_does_not_repeat_the_shortlist_above_it(page, base_ur
     create_form(page, base_url)
 
     frequent = page.locator('input[type="checkbox"][name="source_organisations"]')
-    expect(frequent.first).to_be_visible()
+    # Attached rather than visible: since docs/adr/0088 the shortlist is
+    # offered to the search rather than drawn under the box. What this test is
+    # about — that the two fields never name the same body twice — is a
+    # property of the markup and is unchanged by which of it is on screen.
+    expect(frequent.first).to_be_attached()
+    assert frequent.count(), "the shortlist field offers nothing at all"
     chips = set(frequent.evaluate_all("nodes => nodes.map(node => node.value)"))
 
     rest = page.locator('input[type="checkbox"][name="source_organisations_other"]')
@@ -666,7 +675,15 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_brief_summary", "Mida see teema ettevõtjatele tähendab.")
-    page.locator('input[name="policy_areas"]').first.check()
+    open_valdkond(page)
+    area = page.locator('input[name="policy_areas"]').first
+    chosen = (
+        (area.locator("xpath=ancestor::label[1]").locator(".chip__name").text_content() or "")
+        .strip()
+        .rstrip("×")
+        .strip()
+    )
+    area.check()
     page.locator("form.createform").evaluate("form => form.noValidate = true")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
@@ -676,6 +693,16 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     )
     expect(page.locator('input[name="policy_areas"]').first).to_be_checked()
     expect(page.locator(".field__error").first).to_be_visible()
+
+    # «and must not need a click to show them what went wrong» — the half that
+    # docs/adr/0088 had to answer differently. Valdkonnad comes back *shut* on
+    # a refusal it is not about, so the answer it is holding is said in the
+    # summary instead of by unfolding the vocabulary over a person who is being
+    # asked to fix something else.
+    summary = page.locator("[data-valdkond-disclosure] > summary")
+    assert chosen and chosen in (summary.inner_text() or ""), (
+        f"the refused form does not say it still holds {chosen!r}"
+    )
 
 
 @pytest.mark.parametrize("width", [1024, 420])

@@ -180,8 +180,38 @@ def _pick_some_addressee(page) -> tuple:
     raise AssertionError("the Adressaat quick row offered nothing to choose by hand")
 
 
+def _sender_names(page) -> list[str]:
+    """Every institution the Saatja picker holds, whether or not it is drawn.
+
+    `text_content` rather than `inner_text`: since docs/adr/0088 the chips are
+    `hidden` until the search finds one, and `inner_text` returns the empty
+    string for an element nobody can see — which would silently turn "the two
+    bodies this world offers" into two empty names.
+    """
+    return [
+        (text or "").strip().rstrip("×").strip()
+        for text in page.locator(f"{SENDER_CHIPS} > label.chip .chip__name").all_text_contents()
+    ]
+
+
 def _tick_sender(page, name: str) -> None:
-    page.locator(f"{SENDER_FIELD} label.chip", has_text=name).first.click()
+    """Choose — or un-choose — one sender, the way a person now does it.
+
+    Saatja opens as an empty box: the chips are in the document and `hidden`
+    until the search finds one or somebody has chosen it, so the first answer
+    has to be typed for (docs/adr/0088 §2). Once chosen the chip is visible and
+    stays visible even after it is unticked, so the toggling these tests do
+    goes straight to the chip — which is also what the person does.
+    """
+    chip = page.locator(f"{SENDER_FIELD} label.chip", has_text=name).first
+    if chip.is_visible():
+        chip.click()
+        return
+
+    box = page.locator("#saatja-otsi")
+    box.click()
+    box.fill(name)
+    page.locator("#saatja-tulemused [role=option]", has_text=name).first.click()
 
 
 # ---------------------------------------------------------------------------
@@ -294,13 +324,12 @@ def test_swapping_the_sender_moves_the_answer_with_it(page, base_url):
     """
     create_form(page, base_url)
 
-    chips = page.locator(f"{SENDER_CHIPS} > label.chip")
-    assert chips.count() >= 2, (
+    names = _sender_names(page)
+    assert len(names) >= 2, (
         "the seeded world offers two institutions and this needs both — a skip "
         "here means the selector stopped matching, not that the world shrank"
     )
-    first = (chips.nth(0).inner_text() or "").strip().rstrip("×").strip()
-    second = (chips.nth(1).inner_text() or "").strip().rstrip("×").strip()
+    first, second = names[0], names[1]
 
     _tick_sender(page, first)
     assert _summary(page) == f"Adressaat · {first}"
@@ -322,13 +351,12 @@ def test_a_second_sender_does_not_replace_the_answer_the_first_gave(page, base_u
     """
     create_form(page, base_url)
 
-    chips = page.locator(f"{SENDER_CHIPS} > label.chip")
-    assert chips.count() >= 2, (
+    names = _sender_names(page)
+    assert len(names) >= 2, (
         "the seeded world offers two institutions and this needs both — a skip "
         "here means the selector stopped matching, not that the world shrank"
     )
-    first = (chips.nth(0).inner_text() or "").strip().rstrip("×").strip()
-    second = (chips.nth(1).inner_text() or "").strip().rstrip("×").strip()
+    first, second = names[0], names[1]
 
     _tick_sender(page, first)
     _tick_sender(page, second)
