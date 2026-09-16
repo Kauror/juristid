@@ -4,8 +4,26 @@
 concern*. It is not `Menetlusliik` and the two are never merged: `Track` says
 what kind of **procedure** a Matter belongs to, this says what kind of
 **instrument** it is about. A file can be `ELi õiguse ülevõtmine` (procedure)
-about a `Seadus` (instrument), or an `ELi algatus` about an `EL määrus`, and
-neither answer can be derived from the other (docs/adr/0070).
+about a `Seadus` (instrument), and neither answer can be derived from the other
+(docs/adr/0070).
+
+Two versions, and both are in this module
+-----------------------------------------
+
+**Version 1.0** is the seventeen concepts the historical register's own
+spellings collapse to, and it is what the aliases below belong to. It is still
+the whole of how a historical `ÕIGUSAKT` cell is read.
+
+**Version 2.0** is the ten types the lawyers reviewed on 2026-09-17, and it is
+what a person is offered today. Twelve version-1.0 rows stop being offered —
+deactivated, never deleted and never remapped — five are new and two are reused
+under a clearer name. The reviewed list names *siseriiklik* or *ELiga seotud* in
+the label, which is what lets the high-level classification be read off the
+chosen type instead of asked again as `Menetlusliik` (docs/adr/0089).
+
+The two live side by side on purpose. The offered list is a decision about what
+to ask people now; the seventeen are a decision about what the register meant,
+and that one cannot be revised by a later preference.
 
 Where the vocabulary comes from
 -------------------------------
@@ -32,6 +50,11 @@ exist for one record and neither is derivable from the other after the fact
 
 Where EU-ness lives, and where it does not
 ------------------------------------------
+
+*What follows is version 1.0's reading of the register, and it is unchanged.
+Version 2.0 puts the European group on the label of the four types it offers —
+see `EU_LEGAL_INSTRUMENT_KEYS` — which answers the question for new work
+without revising what any historical cell meant.*
 
 The register writes `EL määrus`, `EL strateegia`, `EL konsultatsioon` and
 `EL direktiiv` — but those four prefixes are not one rule.
@@ -71,7 +94,7 @@ from app.core.text import normalize_for_matching
 #: alias is added to one of them. Pinned by the reference-data test so that
 #: growing the vocabulary is a decision somebody made rather than a diff that
 #: slipped through.
-REFERENCE_LEGAL_INSTRUMENT_VERSION = "1.0"
+REFERENCE_LEGAL_INSTRUMENT_VERSION = "2.0"
 
 #: Where the business list came from, and when. Quoted in the ADR and asserted
 #: by the source-contract test, so changing the vocabulary without changing this
@@ -97,6 +120,23 @@ LEGAL_INSTRUMENT_SOURCE_DISTINCT_SPELLINGS = 58
 #: the department's own answer or invent a category it never chose.
 OTHER_LEGAL_INSTRUMENT_KEY = "muu"
 
+#: Every row that means *some other kind*, version 1.0's and version 2.0's.
+#:
+#: The reviewed list splits `Muu` along the one axis it cares about — `Muu
+#: siseriiklik` and `Muu ELi dokument` — so "which row reveals the free-text
+#: box" stopped being one key and became a set. The behaviour it governs is
+#: unchanged and is version 1.0's: the box appears when one of these is chosen,
+#: it is refused empty, and unticking the row clears it, because `Muu` alone
+#: records that the instrument was none of the listed kinds and says nothing
+#: about which (docs/adr/0070 §8).
+#:
+#: `OTHER_LEGAL_INSTRUMENT_KEY` above stays the *historical* one, and is what
+#: the register's 1130 literal «muu» cells resolve to. Nothing about the
+#: importer's reading moves here.
+OTHER_LEGAL_INSTRUMENT_KEYS: frozenset[str] = frozenset(
+    {OTHER_LEGAL_INSTRUMENT_KEY, "muu-siseriiklik", "muu-eli-dokument"}
+)
+
 
 @dataclass(frozen=True)
 class ReferenceLegalInstrumentType:
@@ -117,7 +157,14 @@ class ReferenceLegalInstrumentType:
     description: str = ""
 
 
-REFERENCE_LEGAL_INSTRUMENT_TYPES: tuple[ReferenceLegalInstrumentType, ...] = (
+#: Version 1.0 — the seventeen concepts read out of the historical register and
+#: seeded by ``taxonomy/0006``, under the labels it seeded them with.
+#:
+#: Kept rather than overwritten. Every alias below is the property of a
+#: *historical* spelling, so this is what ``canonical_legal_instrument_keys``
+#: reads; and the migration that reworks the offered vocabulary needs the old
+#: labels in order to refuse a row somebody else has already edited.
+REFERENCE_LEGAL_INSTRUMENT_TYPES_V1: tuple[ReferenceLegalInstrumentType, ...] = (
     ReferenceLegalInstrumentType(
         key="seadus",
         label_et="Seadus",
@@ -272,11 +319,267 @@ REFERENCE_LEGAL_INSTRUMENT_TYPES: tuple[ReferenceLegalInstrumentType, ...] = (
     ),
 )
 
-#: The stable keys, in reviewed order. Read by the seed migration, the
-#: reference-data test and `seed_dev_data`, so none of the three grows its own
-#: copy of the list.
+
+# ---------------------------------------------------------------------------
+# Version 2.0 — the vocabulary the lawyers reviewed
+# ---------------------------------------------------------------------------
+#
+# The second structured feedback round on the demo, 2026-09-17, replaced the
+# offered list with ten types in two named groups. Version 1.0 was derived from
+# a decade of the register's own spellings and is right about what the register
+# *says*; it is not what a lawyer wants to be asked. Seventeen kinds — four of
+# them administrative acts nobody had filed under in years, three of them
+# separate rows for strategy, development plan and action plan — is a menu, and
+# the department reads `Direktiiv` and `Konsultatsioon` without being able to
+# tell from the label which of them is European.
+#
+# So the reviewed list names the group in the label, and the two groups are the
+# one distinction the lawyers asked to keep: *siseriiklik* and *ELiga seotud*.
+# Which of the two a Matter belongs to is therefore answerable from the chosen
+# type alone, and Menetlusliik stops being a second question about it
+# (docs/adr/0089).
+#
+# **Nothing is remapped and nothing is deleted.** Twelve version-1.0 rows stop
+# being offered by `is_active=False` and by nothing else — they keep their row,
+# their key, their relations, their place in every statistic, their register
+# filter and their chip on the Matters that carry them. Nothing guesses that a
+# Matter filed under `Strateegia` meant the new combined row, or that one filed
+# under `Konsultatsioon` meant `ELi konsultatsioon`: the first would be true of
+# some of them and the second is false of the domestic ones, and writing either
+# down is a fuzzy migration over somebody else's judgement.
+
+#: The twelve version-1.0 keys the reviewed list does not contain.
+#:
+#: Kept as data because two places have to agree about them — the migration that
+#: deactivates them and the test that proves no Matter moved — and never as a
+#: mapping table, for the reason `app.taxonomy.reference_data` gives its own
+#: retirement lists: there is no reviewed equivalence between any of these and
+#: any new label, and writing one down is how a guess becomes a fact.
+RETIRED_LEGAL_INSTRUMENT_KEYS_V2: tuple[str, ...] = (
+    "eelnou",
+    "el-teatis",
+    "konsultatsioon",
+    "strateegia",
+    "arengukava",
+    "tegevuskava",
+    "visioon",
+    "korraldus",
+    "kaskkiri",
+    "ettepanek",
+    "kusitlus",
+    "muu",
+)
+
+#: The two version-1.0 rows the reviewed list keeps under a clearer name, as
+#: ``key -> (label, description)``.
+#:
+#: Reused rather than replaced, because each is *objectively identical* to the
+#: reviewed concept and a new row beside it would split one classification in
+#: two for no gain. A directive has no domestic equivalent — version 1.0 says so
+#: in its own description — and `EL määrus` and `ELi määrus` are the same three
+#: words. The keys, the rows, the relations and every historical alias are
+#: untouched; only what the label says is.
+#:
+#: `Konsultatsioon` is deliberately **not** in this table. It covers a domestic
+#: public consultation as well, which its version-1.0 description states
+#: outright, so calling it `ELi konsultatsioon` would relabel a row into
+#: something some of its Matters are not.
+RELABELLED_LEGAL_INSTRUMENT_TYPES_V2: dict[str, tuple[str, str]] = {
+    "direktiiv": (
+        "ELi direktiiv",
+        "Euroopa Liidu direktiiv. Direktiiv on alati ELi akt.",
+    ),
+    "el-maarus": (
+        "ELi määrus",
+        (
+            "Euroopa Liidu määrus, sealhulgas Euroopa Komisjoni oma. Eraldi liik "
+            "Määrusest: ELi määrus kehtib vahetult ja seda ei võeta üle."
+        ),
+    ),
+}
+
+#: The five types version 2.0 adds.
+#:
+#: **No aliases, deliberately.** An alias is a claim that the historical register
+#: wrote this concept down under that spelling, and none of these five was ever
+#: a category the register had: three of them are broader or narrower than
+#: anything in it, and two are `Muu` split along the one axis the reviewed list
+#: cares about. Giving them the retired rows' spellings would silently
+#: reclassify a decade of filing the next time an import ran.
+NEW_LEGAL_INSTRUMENT_TYPES_V2: tuple[ReferenceLegalInstrumentType, ...] = (
+    ReferenceLegalInstrumentType(
+        key="koja-ettepanek",
+        label_et="Koja ettepanek või pöördumine",
+        sort_order=40,
+        description=(
+            "Koja enda algatatud ettepanek või pöördumine. Euroopa Komisjoni või "
+            "muu asutuse ettepanek ei ole see."
+        ),
+    ),
+    ReferenceLegalInstrumentType(
+        key="strateegia-arengukava-tegevuskava",
+        label_et="Strateegia, arengukava või tegevuskava",
+        sort_order=50,
+        description=(
+            "Riigisisene strateegiline dokument: strateegia, arengukava või "
+            "tegevuskava. Üks liik, sest menetlus on neil kõigil sama."
+        ),
+    ),
+    ReferenceLegalInstrumentType(
+        key="muu-siseriiklik",
+        label_et="Muu siseriiklik",
+        sort_order=60,
+        description=(
+            "Mõni muu riigisisene akt või dokument. Vali ka «Õigusakti liik» ja "
+            "kirjuta, millega on tegemist — sellest ei teki uut liiki."
+        ),
+    ),
+    ReferenceLegalInstrumentType(
+        key="eli-konsultatsioon",
+        label_et="ELi konsultatsioon",
+        sort_order=70,
+        description=(
+            "Euroopa Liidu institutsiooni avalik konsultatsioon või arvamuse "
+            "küsimine. Riigisisene konsultatsioon ei ole see."
+        ),
+    ),
+    ReferenceLegalInstrumentType(
+        key="muu-eli-dokument",
+        label_et="Muu ELi dokument",
+        sort_order=100,
+        description=(
+            "Mõni muu Euroopa Liidu dokument — teatis, roheline raamat, "
+            "ettepanek. Vali ka «Õigusakti liik» ja kirjuta, millega on tegemist."
+        ),
+    ),
+)
+
+#: The reviewed sequence, as ``key -> sort_order``, for the ten offered types.
+#:
+#: The five reused version-1.0 rows are renumbered because the reviewed order
+#: genuinely changed — `VTK` comes first now, and the two European acts moved
+#: into the European group. The twelve retired rows keep the numbers
+#: ``taxonomy/0006`` gave them: they are never in the same ordered list as these
+#: (`selectable_legal_instrument_types` filters on `is_active`, and the edit
+#: form appends a Matter's own retired rows after the offered ones), so moving
+#: them would be churn nobody could see.
+REVIEWED_SORT_ORDER_V2: dict[str, int] = {
+    "vtk": 10,
+    "seadus": 20,
+    "maarus": 30,
+    "koja-ettepanek": 40,
+    "strateegia-arengukava-tegevuskava": 50,
+    "muu-siseriiklik": 60,
+    "eli-konsultatsioon": 70,
+    "direktiiv": 80,
+    "el-maarus": 90,
+    "muu-eli-dokument": 100,
+}
+
+
+def _version_2(item: ReferenceLegalInstrumentType) -> ReferenceLegalInstrumentType:
+    """One version-1.0 row as version 2.0 offers it: reworded, renumbered."""
+    label, description = RELABELLED_LEGAL_INSTRUMENT_TYPES_V2.get(
+        item.key, (item.label_et, item.description)
+    )
+    return ReferenceLegalInstrumentType(
+        key=item.key,
+        label_et=label,
+        sort_order=REVIEWED_SORT_ORDER_V2.get(item.key, item.sort_order),
+        aliases=item.aliases,
+        description=description,
+    )
+
+
+#: Version 2.0 — the ten types a person may choose today, in reviewed order.
+#:
+#: Derived rather than retyped, for the reason `app.taxonomy.reference_data`
+#: derives each of its versions: the transcription is above and is not copied a
+#: second time.
+OFFERED_LEGAL_INSTRUMENT_TYPES_V2: tuple[ReferenceLegalInstrumentType, ...] = tuple(
+    sorted(
+        (
+            *(
+                _version_2(item)
+                for item in REFERENCE_LEGAL_INSTRUMENT_TYPES_V1
+                if item.key not in RETIRED_LEGAL_INSTRUMENT_KEYS_V2
+            ),
+            *NEW_LEGAL_INSTRUMENT_TYPES_V2,
+        ),
+        key=lambda item: (item.sort_order, item.label_et),
+    )
+)
+
+#: Every row the vocabulary has, offered or not, in database order.
+#:
+#: This is what the rest of the module means by "the vocabulary": the alias
+#: table is built from it and `canonical_legal_instrument_keys` orders by it, so
+#: a historical spelling goes on resolving to the retired concept it has always
+#: meant. What a *person* may choose is `OFFERED_LEGAL_INSTRUMENT_TYPES_V2`
+#: above, and in the database it is `is_active` — one flag, read by
+#: `app.taxonomy.vocabulary.selectable_legal_instrument_types`.
+REFERENCE_LEGAL_INSTRUMENT_TYPES: tuple[ReferenceLegalInstrumentType, ...] = tuple(
+    sorted(
+        (
+            *(_version_2(item) for item in REFERENCE_LEGAL_INSTRUMENT_TYPES_V1),
+            *NEW_LEGAL_INSTRUMENT_TYPES_V2,
+        ),
+        key=lambda item: (item.sort_order, item.label_et),
+    )
+)
+
+#: The stable keys of every row, in database order. Read by the reference-data
+#: test and `seed_dev_data`, so neither grows its own copy of the list.
 REFERENCE_LEGAL_INSTRUMENT_KEYS: tuple[str, ...] = tuple(
     item.key for item in REFERENCE_LEGAL_INSTRUMENT_TYPES
+)
+
+#: The keys a person may choose today, in reviewed order.
+OFFERED_LEGAL_INSTRUMENT_KEYS: tuple[str, ...] = tuple(
+    item.key for item in OFFERED_LEGAL_INSTRUMENT_TYPES_V2
+)
+
+
+# ---------------------------------------------------------------------------
+# Siseriiklik or ELiga seotud — read off the type, never asked twice
+# ---------------------------------------------------------------------------
+#
+# The lawyers kept the distinction and dropped the question. `Menetlusliik` and
+# `Õigusakt` were two controls on `Uus teema` and the second already contained
+# the first's commonest answer, so the reviewed list names the group in the
+# label and the high-level classification is derived from it (docs/adr/0089).
+#
+# **Only for the two groups the reviewed list draws.** These sets cover the ten
+# offered types and nothing else: a retired version-1.0 row is in neither, which
+# is the honest answer — `Konsultatsioon` may be European or domestic and
+# `Eelnõu` says nothing about it — and a Matter carrying one derives no track at
+# all rather than a guessed one.
+#
+# **Transposition is never inferred.** A `Seadus` implementing a directive is
+# still a domestic legal instrument, and `Track.NATIONAL_TRANSPOSITION` is a
+# statement about the *procedure* that no instrument type entails. It stays a
+# value somebody chooses on `Muuda teemat` and is never written from here.
+
+#: The six domestic types.
+DOMESTIC_LEGAL_INSTRUMENT_KEYS: frozenset[str] = frozenset(
+    {
+        "vtk",
+        "seadus",
+        "maarus",
+        "koja-ettepanek",
+        "strateegia-arengukava-tegevuskava",
+        "muu-siseriiklik",
+    }
+)
+
+#: The four European types.
+EU_LEGAL_INSTRUMENT_KEYS: frozenset[str] = frozenset(
+    {
+        "eli-konsultatsioon",
+        "direktiiv",
+        "el-maarus",
+        "muu-eli-dokument",
+    }
 )
 
 
