@@ -481,7 +481,7 @@
    Quiet, because it is a state and not an alarm: a round collecting answers
    until the 22nd is ordinary work in progress. It takes the danger colour only
    once its own day has gone, and what that says is that there is post to read —
-   never that the people who were asked are late (docs/adr/0085 §4). */
+   never that the people who were asked are late (docs/adr/0086 §4). */
 .uxtl__wait {
   margin: 2px 0 0;
   font: 400 11.5px/1.4 var(--typography-font-sans);

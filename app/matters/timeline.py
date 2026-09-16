@@ -667,7 +667,7 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
     # A historical `Küsitlus`, `Koosolek`, `Kirjade voor` or `Kaasamiskutse
     # veebis` is a real answer somebody gave and still reads exactly as it did.
     # An older row stored as `OTHER` loses a word that carried no information
-    # either way (docs/adr/0085 §1).
+    # either way (docs/adr/0086 §1).
     parts = []
     if engagement.kind != EngagementKind.OTHER:
         parts.append(str(engagement.get_kind_display()))
@@ -684,7 +684,7 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
     # round. It is a *state* now — waiting, due, or finished — with three
     # wordings and a colour of its own, so it is rendered as its own line by
     # `matters/partials/engagement_row.html`. Saying it in both places would
-    # state one fact twice on one row (docs/adr/0085 §3, §4).
+    # state one fact twice on one row (docs/adr/0086 §3, §4).
     sub = " · ".join(parts)
     # Read off the row already in hand — no second query, and nothing here
     # for an engagement that carries neither address, so a row that has no

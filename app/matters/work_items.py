@@ -83,7 +83,7 @@ by the 22nd, and on the 22nd somebody has to read what came back and write it
 down. That is a real task with a real day on it, and before this source existed
 it was on no list anywhere — the deadline was drawn on the Teema page's process
 strip and nowhere else, so a file could sit waiting for three months without
-appearing in a single work surface (docs/adr/0085 §3).
+appearing in a single work surface (docs/adr/0086 §3).
 
 What it is *not* is an obligation this office owes anybody outside the building.
 It is therefore deliberately **absent from** :func:`real_deadlines`, so it enters
@@ -92,7 +92,7 @@ group: those three name what Koda promised, and «we asked our members by the
 22nd» is not one of them. It touches ``Matter.response_deadline`` in no way, it
 discharges nothing, it creates no ``NextAction``, and it appears beside an open
 one rather than instead of it — two true facts about one file, which is what a
-chronological list of work is for (docs/adr/0085 §3, §4).
+chronological list of work is for (docs/adr/0086 §3, §4).
 
 **Authorization before arithmetic.** Every queryset starts from
 ``visible_to(user)``. A restricted Matter the reader may not see contributes
@@ -145,7 +145,7 @@ SOURCE_RESPONSE_DEADLINE = "RESPONSE_DEADLINE"
 #: An open `Kaasamine` feedback wait, read as work. Like the response deadline
 #: it is a projection of columns that were already canonical and deliberately
 #: not a stored row of its own: what ends it is `feedback_closed_at` on the
-#: consultation, which is where a reader can see it (docs/adr/0085 §3).
+#: consultation, which is where a reader can see it (docs/adr/0086 §3).
 SOURCE_FEEDBACK_WAIT = "FEEDBACK_WAIT"
 
 #: The annotation :func:`annotate_response_obligation` writes: whether the
@@ -184,7 +184,7 @@ MEANING_RESPONSE = "ARVAMUSE TÄHTAEG"
 #: outside body, one to a watched milestone, one a lawyer set for themselves —
 #: and this is the department waiting for somebody else. The row can still be
 #: late, because the *reading* is what is late: after the day it asked for, the
-#: round is a thing whose answers are sitting unread (docs/adr/0085 §4).
+#: round is a thing whose answers are sitting unread (docs/adr/0086 §4).
 MEANING_FEEDBACK_WAIT = "OOTAME TAGASISIDET"
 
 _SEMANTICS_MEANING: dict[str, str] = {
@@ -317,7 +317,7 @@ class WorkItem:
         Read by the row's overflow menu, which offers `Lõpeta kaasamine…` for
         exactly these and nothing for the rest: an `Oluline tähtaeg` has no
         completion workflow, and offering one would be inventing it here
-        (docs/adr/0085 §4).
+        (docs/adr/0086 §4).
         """
         return self.source_type == SOURCE_FEEDBACK_WAIT
 
@@ -753,14 +753,14 @@ def _feedback_wait_item(engagement: MatterEngagement, today: date) -> WorkItem:
     which is a different question. On a Matter with no owner this is ``None``,
     which puts the row on the department's *vastutajata* surfaces and on nobody's
     personal desk — the honest place for work nobody has been given, and the
-    reason no duplicate is created for every lawyer (§4.2, docs/adr/0085 §4).
+    reason no duplicate is created for every lawyer (§4.2, docs/adr/0086 §4).
 
     ``is_overdue`` is the day having passed. That is a reading of *this office's*
     unread post and not an accusation against the people who were asked: the
     round asked for answers by a day, the day has gone, and what is late is
     looking at them. Nothing about the membership's own timeliness is stated
     anywhere, and a wait still inside its window is simply upcoming
-    (docs/adr/0085 §4).
+    (docs/adr/0086 §4).
     """
     deadline = engagement.feedback_deadline
     return WorkItem(
@@ -777,7 +777,7 @@ def _feedback_wait_item(engagement: MatterEngagement, today: date) -> WorkItem:
         meaning=MEANING_FEEDBACK_WAIT,
         # Who was asked. The row names the Matter and states its meaning, and
         # this is the one thing neither of those says — «liikmed» is what
-        # distinguishes two rounds running on one file (docs/adr/0085 §4).
+        # distinguishes two rounds running on one file (docs/adr/0086 §4).
         text=engagement.title,
         is_overdue=deadline is not None and deadline < today,
         is_review_ripe=False,
@@ -1414,7 +1414,7 @@ def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
     the register's deadline groups would start counting consultations as
     promises. It is still work, still banded and still capable of being late —
     those are readings of the *list*, and this predicate is about the *word*
-    (docs/adr/0085 §3).
+    (docs/adr/0086 §3).
 
     Here rather than in :mod:`app.matters.overview` because the register now
     filters on it too: a *Tähtajad* group that opens a list assembled by a

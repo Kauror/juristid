@@ -1,6 +1,6 @@
 """`Kaasamine` waits for answers, and somebody finishes it.
 
-docs/adr/0085 turns `MatterEngagement.feedback_deadline` from a recorded fact
+docs/adr/0086 turns `MatterEngagement.feedback_deadline` from a recorded fact
 into a state. A round that asked members to answer by the 22nd is an **open
 waiting activity**: it shows on `PRAEGUNE TEGEVUS`, it shows as work on the
 responsible lawyer's Minu asjad, it turns due on the day it named, and it ends

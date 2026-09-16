@@ -652,7 +652,7 @@ def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter)
 
 
 def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in, normal_matter):
-    """docs/adr/0085 §1 retires the chips this used to count.
+    """docs/adr/0086 §1 retires the chips this used to count.
 
     `Küsitlus` / `Koosolek` / `Kirjade voor` was the panel's first control and
     answered a question nothing read back. `COMPOSER_ENGAGEMENT_KINDS` survives

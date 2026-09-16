@@ -1,7 +1,14 @@
-# 0085 — A `Kaasamine` waits for answers, and somebody finishes it
+# 0086 — A `Kaasamine` waits for answers, and somebody finishes it
 
 **Status:** accepted
 **Date:** 2026-09-16
+
+*Numbered 0086 rather than 0085.* Both numbers were free on `main` at
+`a4393b73`, and two branches off that base each took the next one — PR #226,
+which renames `Kodulehe ülevaade` to a neutral publication activity, claimed
+0085 first and cites it from its own migrations. The repository's rule is that
+the record cited from a reviewed migration keeps the number and the other
+renumbers, so this one moved. Nothing in it changed with the digits.
 
 **Narrows ADR 0078 §3** and **ADR 0083 §1** on one point: a
 `MatterEngagement.feedback_deadline` that is still open is work, and it draws a

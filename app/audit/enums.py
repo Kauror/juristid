@@ -170,7 +170,7 @@ class ChangeEventType(models.TextChoices):
     # had come back» is a question about a *decision*, and a history that buried
     # it in a sorted list of field names could not answer it — the reasoning
     # `EXTERNAL_POSITION_SOURCE_CHANGED` already carries one model along
-    # (docs/adr/0085 §6).
+    # (docs/adr/0086 §6).
     #
     # The payload names the closure's reason — a person, or the Matter shutting
     # underneath the wait — and says whether anything was written down, never

@@ -161,7 +161,7 @@ def test_the_field_stores_a_real_date_object():
 # ---------------------------------------------------------------------------
 #
 # `Tagasisidet ootame kuni` offers `1 kuu` beside `1 nädal` and `2 nädalat`
-# (docs/adr/0085 §2). The first two are spans in days and need no arithmetic of
+# (docs/adr/0086 §2). The first two are spans in days and need no arithmetic of
 # their own; the third cannot be one, because somebody picking it means «the
 # same day next month» and not «thirty days».
 #

@@ -317,7 +317,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         # The wait's own state, not a row count: completing one creates nothing,
         # so a probe that counted engagements would be satisfied by a refusal
-        # *and* by a successful completion (docs/adr/0085 §6).
+        # *and* by a successful completion (docs/adr/0086 §6).
         probe=lambda w: (
             w["waiting_engagement"]
             .__class__.objects.values_list("feedback_closed_at", "feedback_received")
@@ -762,7 +762,7 @@ def world(db):
     # `Lõpeta kaasamine` ends a wait that exists rather than creating one, so a
     # world without one would have nothing for a forbidden actor to be refused
     # *on* — and the refusal would be indistinguishable from the service's own
-    # «this round is not waiting» (docs/adr/0085 §6).
+    # «this round is not waiting» (docs/adr/0086 §6).
     waiting_engagement = add_engagement(
         matter=matter,
         kind=EngagementKind.SURVEY,

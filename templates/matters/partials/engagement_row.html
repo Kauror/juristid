@@ -71,7 +71,7 @@ before the closure.
         have to learn a second vocabulary to fix what they typed into it, and a
         record must not be correctable into a shape it could never have been
         created in — which is why the `Täpsus` control went from here when it
-        went from the panel (docs/adr/0085 §1).
+        went from the panel (docs/adr/0086 §1).
 
         Both are optional. Emptying `Kaasamise kuupäev` is a real answer —
         «kuupäev teadmata» — and is how a row the old panel stamped with today
@@ -83,7 +83,7 @@ before the closure.
         opens empty — and an empty box on such a row therefore means «leave the
         period alone» rather than «clear the date». The sentence under the label
         states the stored period, and `Kustuta salvestatud kuupäev` is how it is
-        removed on purpose (docs/adr/0079 §2, docs/adr/0085 §1).
+        removed on purpose (docs/adr/0079 §2, docs/adr/0086 §1).
 
         `Tagasisidet ootame kuni` is what the round asked of other people, and
         it is what makes this row current work: set, the consultation waits on
@@ -91,7 +91,7 @@ before the closure.
         somebody finishes it. Emptying it here says the round is not waiting for
         anything — including on a round whose wait was already finished, where
         the closure then has nothing left to be a closure of
-        (docs/adr/0085 §3, §6).
+        (docs/adr/0086 §3, §6).
       {% endcomment %}
       <div class="cx-grid cx-grid--links">
         <label class="cx-f cx-f--date"
@@ -129,7 +129,7 @@ before the closure.
         round was closed as well as before. A lawyer who typed the answers in a
         hurry has to be able to fix them, and the correction takes the Matter's
         lock, the revision token and its own audit row like every other field
-        here (docs/adr/0085 §6).
+        here (docs/adr/0086 §6).
       {% endcomment %}
       <label class="cx-f" for="{{ engagement_edit_form.feedback_received.id_for_label }}">
         <span class="cx-f__lab">{{ engagement_edit_form.feedback_received.label }}
@@ -254,7 +254,7 @@ before the closure.
       after it. What changes at the deadline is the wording — «Ootame
       tagasisidet kuni» becomes «Tagasiside tähtaeg möödus», which is a
       statement about this office's unread post and not about whether the people
-      who were asked were late (docs/adr/0085 §4).
+      who were asked were late (docs/adr/0086 §4).
 
       A completed round says who finished it and when, because that is the fact
       a reader of a chronology is checking. The feedback itself is rendered
@@ -295,7 +295,7 @@ before the closure.
               records that the round is over and nothing came back, which is a
               real and common outcome — a completion that demanded prose would
               make «keegi ei vastanud» the one result a lawyer could not file
-              (docs/adr/0085 §6).
+              (docs/adr/0086 §6).
             {% endcomment %}
             <label class="cx-f" for="{{ engagement.feedback_form.feedback_received.id_for_label }}">
               <span class="cx-f__lab">{{ engagement.feedback_form.feedback_received.label }}

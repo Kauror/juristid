@@ -33,7 +33,7 @@ editors; it does not tell the second that their browser was holding an old copy.
 The `revision` token does, and a save carrying a stale one writes nothing.
 
 Both dates are **exact days** and there is no precision control, since
-docs/adr/0085 §1 took the four-way `Täpsus` chips off both `Kaasamine`
+docs/adr/0086 §1 took the four-way `Täpsus` chips off both `Kaasamine`
 surfaces — an editor may not offer a precision the creating panel cannot write,
 which is the rule that put them on both forms in docs/adr/0082 and the rule that
 now takes them off both. A record already dated to a period is preserved rather
@@ -164,7 +164,7 @@ def _chronology_row(client, matter, engagement) -> str:
     date's three wordings are a *state* rendered as their own line by
     `matters/partials/engagement_row.html` — they are deliberately not part of
     `milestone.sub`, which would state one fact twice on one row
-    (docs/adr/0085 §3, §4).
+    (docs/adr/0086 §3, §4).
     """
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     start = body.index(f'id="kaasamine-{engagement.pk}-sisu"')
@@ -226,7 +226,7 @@ def test_the_form_opens_filled_from_the_record(signed_in, normal_matter, engagem
 def test_the_form_asks_both_dates_as_days_and_offers_no_precision_control(
     signed_in, normal_matter, engagement
 ):
-    """docs/adr/0085 §1, narrowing docs/adr/0082 §1.
+    """docs/adr/0086 §1, narrowing docs/adr/0082 §1.
 
     The four-way `Täpsus` control came off both `Kaasamine` surfaces: it was two
     decisions deep on a panel whose overwhelming case is «this happened today»,
@@ -308,7 +308,7 @@ def test_a_feedback_deadline_round_trips_through_the_form(
     assert engagement.feedback_deadline == deadline
     # Visibly stated on the row it belongs to — as its own line now rather than
     # inside the metadata sentence, because it is a state with three wordings
-    # and a colour of its own (docs/adr/0085 §3, §4).
+    # and a colour of its own (docs/adr/0086 §3, §4).
     #
     # **This one reads as due**, because `RECORDED` is thirty days ago and the
     # deadline ten days after it: the round asked for answers three weeks ago
@@ -775,7 +775,7 @@ def test_the_correction_writes_no_entry_and_no_second_engagement(
 def test_correcting_the_dates_writes_no_other_record(signed_in, normal_matter, specialist):
     """Before and after, over the records a deadline could have become.
 
-    A deadline **in the past** on purpose. Since docs/adr/0085 §3 the reply-by
+    A deadline **in the past** on purpose. Since docs/adr/0086 §3 the reply-by
     date *is* read as work — one derived `WorkItem`, which is why the work
     surface is no longer part of the comparison below — but it still **writes**
     nothing: no `NextAction`, no `MatterImportantDate`, no

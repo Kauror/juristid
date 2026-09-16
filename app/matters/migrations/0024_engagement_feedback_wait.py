@@ -1,7 +1,7 @@
 """`Kaasamine` learns that a feedback wait can be finished, and what came back.
 
 Three additive nullable/blank columns and one `CHECK`, and nothing else
-(docs/adr/0085 §6).
+(docs/adr/0086 §6).
 
 * ``feedback_received`` — `Saadud tagasiside / arvamused`, a `TextField` that
   defaults to the empty string every existing row already means. Blank is a

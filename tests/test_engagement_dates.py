@@ -84,7 +84,7 @@ def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_a_week(sign
     reply-by date, so a pre-filled one would be answered by pressing
     `Salvesta`» — which is an argument against defaulting to *today*, not
     against defaulting. A week out is what a round asks for when nobody says
-    otherwise, and since docs/adr/0085 §3 an empty box is the difference between
+    otherwise, and since docs/adr/0086 §3 an empty box is the difference between
     a consultation that shows up as work and one that disappears.
 
     Still clearable, and clearing it is a real answer: `tests/…::
@@ -111,7 +111,7 @@ def test_the_panel_offers_the_three_reply_by_spans_with_the_days_they_land_on(
     contract `Järgmine tegevus`'s quick dates already keep: working it out in the
     browser would answer in the reader's own timezone. `1 kuu` is a calendar
     month rather than thirty days, because that is what somebody picking it
-    means (docs/adr/0085 §2).
+    means (docs/adr/0086 §2).
     """
     matter = factories.MatterFactory(owner=specialist)
     today = timezone.localdate()
@@ -216,7 +216,7 @@ def test_a_refused_save_hands_both_cleared_boxes_back_empty(signed_in, specialis
     Django's own `is_bound` is what prevents it, and this is the assertion that
     says so — for the cleared case specifically, because the typed case above
     passes even on a form that re-applies its initial to an *absent* field
-    (docs/adr/0085 §2).
+    (docs/adr/0086 §2).
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -370,7 +370,7 @@ def test_the_feedback_deadline_is_stored_and_read_back_exactly(signed_in, specia
 
     # Shown on the round's own chronology row, as the state it is: its own line
     # with three wordings and a colour, rather than a third fragment of the
-    # metadata sentence (docs/adr/0085 §3, §4).
+    # metadata sentence (docs/adr/0086 §3, §4).
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()

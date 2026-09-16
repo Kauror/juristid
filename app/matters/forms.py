@@ -2473,7 +2473,7 @@ def _precision_fields(
 #: date». That is true of *today* and is the argument for defaulting to
 #: something else rather than for defaulting to nothing: today + 7 is not a day
 #: anybody would press `Salvesta` past without reading, and it is visible,
-#: changeable and clearable exactly like the box above it (docs/adr/0085 §2).
+#: changeable and clearable exactly like the box above it (docs/adr/0086 §2).
 FEEDBACK_DEADLINE_DEFAULT_DAYS = 7
 
 
@@ -3479,7 +3479,7 @@ class EngagementForm(forms.Form):
     could never have been created in, which is the rule this form has always
     kept — read the other way round. Every stored kind is left exactly as it is,
     historical rows keep printing theirs, and nothing in the database refuses
-    one (docs/adr/0085 §1).
+    one (docs/adr/0086 §1).
 
     Creating a `Kaasamine` is `CompactEngagementForm` and the `+ Kaasamine`
     panel. The two forms stay separate — a creator may default a box and an
@@ -3509,7 +3509,7 @@ class EngagementForm(forms.Form):
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
     #: `Kaasamise kuupäev`, as an exact day — the one precision the simplified
-    #: panel writes and therefore the one this editor offers (docs/adr/0085 §1).
+    #: panel writes and therefore the one this editor offers (docs/adr/0086 §1).
     #:
     #: An emptied control stores `NULL`, which is «kuupäev teadmata» and is what
     #: the chronology then prints (`app/matters/timeline.py`,
@@ -3524,7 +3524,7 @@ class EngagementForm(forms.Form):
     #: because the box the anchor could not be shown in came back empty would
     #: destroy what somebody actually recorded. Typing a day replaces the period
     #: with that day; :attr:`clear_occurred_on` is how the period is removed on
-    #: purpose (:meth:`clean`, docs/adr/0085 §1).
+    #: purpose (:meth:`clean`, docs/adr/0086 §1).
     #:
     #: **`initial` is today, and it belongs to the add route rather than to the
     #: editor.** `matters:add_engagement` still posts this form, and every date
@@ -3548,7 +3548,7 @@ class EngagementForm(forms.Form):
     #: A checkbox rather than a fifth precision chip. The question it asks is
     #: «remove this», not «at what precision is it known», and the control that
     #: asked the second question is exactly what this round retired
-    #: (docs/adr/0085 §1).
+    #: (docs/adr/0086 §1).
     clear_occurred_on = forms.BooleanField(
         label="Kustuta salvestatud kuupäev",
         required=False,
@@ -3564,7 +3564,7 @@ class EngagementForm(forms.Form):
     #: `Salvesta` away from being saved. Emptying it means the round is no
     #: longer waiting for anything, which also ends a wait somebody had already
     #: finished — the closure has nothing left to be a closure *of*
-    #: (`update_engagement`, docs/adr/0085 §6).
+    #: (`update_engagement`, docs/adr/0086 §6).
     feedback_deadline = EstonianDateField(
         label="Tagasisidet ootame kuni", required=False, widget=DATE_WIDGET
     )
@@ -3574,7 +3574,7 @@ class EngagementForm(forms.Form):
     #: the answers in a hurry has to be able to fix them, and the correction goes
     #: through `correct_engagement` with the Matter's lock, the revision token
     #: and its own audit row, exactly as every other field on this form does
-    #: (docs/adr/0085 §6).
+    #: (docs/adr/0086 §6).
     feedback_received = forms.CharField(
         label="Saadud tagasiside / arvamused",
         required=False,
@@ -3636,7 +3636,7 @@ class EngagementForm(forms.Form):
           the stored precision, unchanged. The box was empty when the form
           opened, because an anchor is not a day and may not be printed as one,
           so an empty box here is the person not touching the date rather than
-          the person clearing it (docs/adr/0079 §2, docs/adr/0085 §1).
+          the person clearing it (docs/adr/0079 §2, docs/adr/0086 §1).
         * **an empty box anywhere else, or `Kustuta salvestatud kuupäev`** —
           `None` at `EXACT`, which is «kuupäev teadmata». An unknown date has no
           precision, and the service normalises it back to `EXACT` on every path
@@ -4156,7 +4156,7 @@ class CompactEngagementForm(forms.Form):
     """`+ Kaasamine` — who was engaged, when, by when answers were asked for.
 
     **Four questions and a file box**, which is the whole of the simplified
-    round (docs/adr/0085 §2):
+    round (docs/adr/0086 §2):
 
     * `Keda kaasati` — required, and the one thing that identifies the record;
     * `Kaasamise kuupäev` — optional, visibly pre-filled with today, clearable;
@@ -4177,14 +4177,14 @@ class CompactEngagementForm(forms.Form):
     written here is `EngagementKind.OTHER`, the value the column has always
     defaulted to, and the chronology prints no channel for it rather than
     printing «Muu». Historical rows keep the kind they were given and keep
-    printing it (docs/adr/0085 §1, `app/matters/timeline.py`).
+    printing it (docs/adr/0086 §1, `app/matters/timeline.py`).
 
     **And `Täpsus` is gone with it.** `Kaasamise kuupäev` is an exact day here,
     which is what a round somebody is recording as it happens always has. What
     docs/adr/0082 bought — an engagement remembered as «oktoobris» — is kept
     where it was actually earned: existing approximate rows render and sort
     exactly as they did, and `EngagementForm` refuses to overwrite one with an
-    empty day box (docs/adr/0085 §1).
+    empty day box (docs/adr/0086 §1).
     """
 
     use_required_attribute = False
@@ -4230,7 +4230,7 @@ class CompactEngagementForm(forms.Form):
     #: `NULL` — «kuupäev teadmata» is a fact `MatterEngagement` has always been
     #: able to hold, and **nothing downstream puts today back**: the value the
     #: service receives is what this control says, and the service invents
-    #: nothing (docs/adr/0078 §2, docs/adr/0085 §2).
+    #: nothing (docs/adr/0078 §2, docs/adr/0086 §2).
     occurred_on = EstonianDateField(
         label="Kaasamise kuupäev",
         required=False,
@@ -4246,7 +4246,7 @@ class CompactEngagementForm(forms.Form):
     #: of *today*, and an argument for a plausible default rather than for none.
     #: A week is what a consultation asks for when nobody says otherwise, the
     #: chips beside the box offer the two other common answers, and an emptied
-    #: box means there is no wait at all (docs/adr/0085 §2).
+    #: box means there is no wait at all (docs/adr/0086 §2).
     #:
     #: A past date is accepted: a consultation recorded months later had a
     #: deadline months ago, and refusing it would make the historical record
@@ -4266,7 +4266,7 @@ class CompactEngagementForm(forms.Form):
     #: round is routinely written up after it finished: somebody records the
     #: consultation and the answers in one save, and a field that only existed
     #: behind `Lõpeta kaasamine` would make them file an empty round and then
-    #: immediately close it (docs/adr/0085 §5).
+    #: immediately close it (docs/adr/0086 §5).
     #:
     #: Writing here does **not** close a wait. Recording what came back and
     #: deciding the round is over are two acts, and only the second is a
@@ -4302,7 +4302,7 @@ class CompactEngagementForm(forms.Form):
         `occurred_on_value` and `occurred_on_precision` are still the names the
         view and the service read, and they still travel together — the column
         pair is unchanged and every row written here is `EXACT`. What went is
-        the control that could say anything else (docs/adr/0085 §1).
+        the control that could say anything else (docs/adr/0086 §1).
         """
         cleaned = super().clean() or {}
         cleaned["occurred_on_value"] = cleaned.get("occurred_on")
@@ -4318,7 +4318,7 @@ class EngagementFeedbackForm(forms.Form):
     deliberately not `EngagementForm` with fewer fields: the two answer different
     questions, and a completion form carrying the audience, the links and both
     dates would invite somebody finishing a round to change what the round *was*
-    (docs/adr/0085 §6).
+    (docs/adr/0086 §6).
 
     **Nothing is required.** Pressing the button with an empty box records that
     the wait is over and nothing came back, which is a real and common outcome —

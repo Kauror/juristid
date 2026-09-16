@@ -262,19 +262,19 @@ def add_matter_engagement(
     ``kind`` defaults to `Muu` because the panel stopped asking. It stays a
     parameter for the importer and for the shell, which do know which channel a
     round used; what went is the question the panel put to a lawyer, whose
-    answer nothing ever read back (docs/adr/0085 §1).
+    answer nothing ever read back (docs/adr/0086 §1).
 
     ``feedback_received`` is `Saadud tagasiside / arvamused`, optional, and it
     completes nothing: a round created carrying both a deadline and some text is
     a wait that is open and already has something written in it. Ending the wait
     is `add_engagement_feedback`, and it is a decision with a name on it
-    (docs/adr/0085 §6).
+    (docs/adr/0086 §6).
 
     ``occurred_on_precision`` is `EXACT` for everything this panel writes — it
     asks for a day and offers no other precision. The parameter stays because
     the importer and the register enrichment do carry periods, and because an
     existing approximate row must be able to travel back through the same
-    service unchanged (docs/adr/0082, narrowed by docs/adr/0085 §1).
+    service unchanged (docs/adr/0082, narrowed by docs/adr/0086 §1).
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:

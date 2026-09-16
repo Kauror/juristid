@@ -547,7 +547,7 @@ def test_the_composer_panel_asks_for_both_dates(signed_in, specialist):
     often typed up days or months after it happened, and the panel answered that
     by storing today anyway, silently, with no box on the screen saying so.
 
-    `Tagasisidet ootame kuni` is the second date, and since docs/adr/0085 §3 it
+    `Tagasisidet ootame kuni` is the second date, and since docs/adr/0086 §3 it
     is what turns the round into current work. `Saadud tagasiside / arvamused`
     is where the answers go when there is no separate file.
 
@@ -595,7 +595,7 @@ def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):
 def _post_add(client, matter, **data):
     """Post the add form. It no longer asks which channel a round used.
 
-    `Liik` came off both `Kaasamine` surfaces in docs/adr/0085 §1: it was a
+    `Liik` came off both `Kaasamine` surfaces in docs/adr/0086 §1: it was a
     classification nothing read back, so the panel's first control was a
     decision with no consequence. Every row written through a write surface is
     now `EngagementKind.OTHER`.
@@ -610,7 +610,7 @@ def test_the_add_form_writes_the_neutral_kind_and_ignores_a_posted_one(signed_in
     The form has no such field any more, so Django drops the value and the view
     names `OTHER` itself. The refusal this replaces — a 400 for a kind the form
     did not offer — was protecting a vocabulary the product has stopped putting
-    to anybody (docs/adr/0085 §1).
+    to anybody (docs/adr/0086 §1).
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -689,7 +689,7 @@ def test_editing_through_the_page_updates_the_record(signed_in, specialist):
     # The stored kind is **left alone**, including against a crafted POST naming
     # another one. The editor stopped offering `Liik` with the panel, so the
     # view never names it and `update_engagement`'s `_UNSET` protects it —
-    # a historical `Kaasamiskutse veebis` keeps saying so (docs/adr/0085 §1).
+    # a historical `Kaasamiskutse veebis` keeps saying so (docs/adr/0086 §1).
     assert engagement.kind == EngagementKind.WEB_CALL
 
 

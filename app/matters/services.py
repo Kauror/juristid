@@ -1639,7 +1639,7 @@ def add_engagement(
     `Matter.response_deadline`, no deadline row and no count. The wait is a
     *reading* of this record by `app/matters/work_items.py`, which is why
     closing it is one column on this table rather than a state machine
-    somewhere else (docs/adr/0085 §3).
+    somewhere else (docs/adr/0086 §3).
 
     ``feedback_received`` is `Saadud tagasiside / arvamused`, and it is
     independent of the deadline: a round recorded after the fact may arrive
@@ -1647,7 +1647,7 @@ def add_engagement(
     completed here — a row created carrying feedback and a deadline is a wait
     that is open and already has something in it, because writing down what
     came back and deciding the round is over are two acts and only the second
-    one is a decision (docs/adr/0085 §6).
+    one is a decision (docs/adr/0086 §6).
 
     ``occurred_on_precision`` says how exactly ``occurred_on`` is known, and
     ``occurred_on`` is then the **anchor** of that period — the normalisation
@@ -2003,7 +2003,7 @@ def correct_engagement(
 #
 # `Lõpeta kaasamine`. A `Kaasamine` carrying `Tagasisidet ootame kuni` is an
 # open wait and shows as current work; this is the one act that ends it
-# (docs/adr/0085 §6).
+# (docs/adr/0086 §6).
 #
 # Every rule is here rather than on a form, because a form is what one browser
 # was shown and a POST is what arrives.
@@ -2044,7 +2044,7 @@ def _close_one_feedback_wait(
 
     ``feedback_received`` is `_UNSET` for the Matter-closure path, which writes
     no words of anybody's: a file being shut is not a statement about what came
-    back (docs/adr/0085 §7).
+    back (docs/adr/0086 §7).
     """
     engagement.feedback_closed_at = timezone.now()
     engagement.feedback_closed_by = actor
@@ -2088,7 +2088,7 @@ def complete_engagement_feedback(
 
     The act the waiting state exists to be ended by. Until it happens the round
     is an open `WorkItem` on the responsible lawyer's desk, before its deadline
-    and after it; afterwards it is chronology (docs/adr/0085 §6).
+    and after it; afterwards it is chronology (docs/adr/0086 §6).
 
     **Nothing has to have come back.** ``feedback_received`` is optional and an
     empty one is a real answer — «keegi ei vastanud» is a result, and a
@@ -2176,7 +2176,7 @@ def close_open_feedback_waits_for_closure(
     third thing a closed file could otherwise keep owing: an open wait draws a
     work item, every route that could finish one refuses a closed Matter, and
     the item would therefore sit on somebody's desk permanently unfinishable
-    (docs/adr/0085 §7).
+    (docs/adr/0086 §7).
 
     **Closure is never blocked by them.** There is no precondition here and no
     refusal: the waits are ended, each with its own auditable event naming the
@@ -3122,7 +3122,7 @@ def close_matter(
     # `Kaasamine` feedback wait is ended here, in this transaction and under
     # this lock, each with its own audit event naming the closure — so the file
     # either shuts with its waits ended or does not shut at all. Closure is
-    # never *blocked* by one (docs/adr/0085 §7).
+    # never *blocked* by one (docs/adr/0086 §7).
     close_open_feedback_waits_for_closure(matter=matter, actor=actor)
 
     record_change_event(

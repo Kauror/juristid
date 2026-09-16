@@ -70,7 +70,7 @@ DATE_UNKNOWN = "Kuupäev teadmata"
 #: The fixed dates above are in the past on purpose — a chronology row only
 #: renders once its day has arrived — and a reply-by date in the past reads as
 #: «Tagasiside tähtaeg möödus» rather than «Ootame tagasisidet kuni»
-#: (docs/adr/0085 §4). The completion scenarios below are about a round that is
+#: (docs/adr/0086 §4). The completion scenarios below are about a round that is
 #: still collecting, so they need a day that is still ahead. Three weeks out,
 #: which is wider than any clock skew between this process and the server.
 REPLY_BY_AHEAD = (dt.date.today() + dt.timedelta(days=21)).strftime("%d.%m.%Y")
@@ -80,7 +80,7 @@ def _file_an_engagement(page, *, occurred_on: str = HELD_ON, reply_by: str = "")
     """Record one consultation through the real `+ Kaasamine` panel.
 
     ``reply_by`` defaults to **empty**, and that is deliberate: the panel
-    pre-fills `Tagasisidet ootame kuni` with a week out (docs/adr/0085 §2), so a
+    pre-fills `Tagasisidet ootame kuni` with a week out (docs/adr/0086 §2), so a
     helper that left the box alone would file every fixture as a waiting round
     and the correction tests below would be measuring a state they never set.
     Clearing it here is also the shortest proof that the default is an initial
@@ -153,7 +153,7 @@ def test_a_filed_kaasamine_can_be_corrected_in_place(page, base_url):
     row = _row(page)
     expect(row).to_contain_text(f"Kaasamine: {CORRECTED_AUDIENCE}")
     # `REPLY_BY` is in the past, so the row reads as due rather than as waiting
-    # — three wordings, one state machine (docs/adr/0085 §4).
+    # — three wordings, one state machine (docs/adr/0086 §4).
     expect(row).to_contain_text("Tagasiside tähtaeg möödus")
     expect(page.locator(".uxtl__ms-body")).to_have_count(1)
     expect(page.locator(".uxtl__editform")).to_have_count(0)
@@ -270,12 +270,12 @@ def test_a_reader_is_offered_no_correction(page, base_url):
 
 
 # ---------------------------------------------------------------------------
-# `Lõpeta kaasamine` — the half of docs/adr/0085 only a browser can answer
+# `Lõpeta kaasamine` — the half of docs/adr/0086 only a browser can answer
 # ---------------------------------------------------------------------------
 #
 # The two `Täpsus` scenarios that stood here went with the control they drove.
 # `+ Kaasamine` and `Muuda` no longer offer the four precision chips
-# (docs/adr/0085 §1), so a browser test that clicked one would be driving markup
+# (docs/adr/0086 §1), so a browser test that clicked one would be driving markup
 # the product does not render; what a stored period does instead is asserted in
 # `tests/test_engagement_date_precision.py`, which needs no rendering engine
 # because the claim is about a form's initial values and a service's writes.
@@ -292,7 +292,7 @@ def _finish_panel(page):
 
 
 def test_a_waiting_round_is_finished_on_its_own_row(page, base_url):
-    """docs/adr/0085 §6, end to end: the wait, the answers, the completed row.
+    """docs/adr/0086 §6, end to end: the wait, the answers, the completed row.
 
     The disclosure is closed at rest, opens in place, and its save swaps the
     same element the row already is — so the completed record lands where the

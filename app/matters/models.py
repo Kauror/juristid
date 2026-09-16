@@ -935,7 +935,7 @@ class MatterEngagement(VisibilityInheritingModel):
     #: nowhere on the file to put it, so it lived in the mailing and in
     #: somebody's memory.
     #:
-    #: **Set, it opens a wait, and the wait is work** (docs/adr/0085 §3).
+    #: **Set, it opens a wait, and the wait is work** (docs/adr/0086 §3).
     #: docs/adr/0078 §3 made this column inert - no work item, no badge, no
     #: reading of lateness - on a rule that is right about the *fact* and wrong
     #: about the *state*: what was asked of a ministry is indeed not an
@@ -969,7 +969,7 @@ class MatterEngagement(VisibilityInheritingModel):
     #: pointer to where it was asked and a count of how many answered, and the
     #: answers themselves lived in a mail folder: «liikmed toetasid, v.a
     #: kaubandus» had to go into a `Sissekanne` that then said nothing about
-    #: which round it belonged to (docs/adr/0085 §5).
+    #: which round it belonged to (docs/adr/0086 §5).
     #:
     #: Separate from :attr:`note`, deliberately. `Märkus` is what the person
     #: recording the round wanted to say *about the round* - where the list came
@@ -979,13 +979,13 @@ class MatterEngagement(VisibilityInheritingModel):
     #:
     #: **Not required to close a wait**, and blank is a real answer: «keegi ei
     #: vastanud» is a result, and a completion that demanded prose would make
-    #: the commonest disappointing outcome unrecordable (docs/adr/0085 §6).
+    #: the commonest disappointing outcome unrecordable (docs/adr/0086 §6).
     #:
     #: **Not indexed.** The search projection reads `title`, `note` and the link
     #: hosts, and this round does not widen it - what a member wrote to Koda in
     #: confidence is not a thing to make findable from the header search box
     #: without the visibility question being asked first
-    #: (`app/search/child_indexing.py`, docs/adr/0085 §9).
+    #: (`app/search/child_indexing.py`, docs/adr/0086 §9).
     feedback_received = models.TextField(blank=True, verbose_name="saadud tagasiside")
     #: When the wait was closed - the moment a person said «this round is
     #: finished», or the moment the Matter closed underneath it.
@@ -1050,7 +1050,7 @@ class MatterEngagement(VisibilityInheritingModel):
             # is what opens the wait, so a closure timestamp without one would be
             # a row claiming to have finished waiting for something nobody asked
             # for - and `has_open_feedback_wait` would read it as neither open
-            # nor closed (docs/adr/0085 §6).
+            # nor closed (docs/adr/0086 §6).
             models.CheckConstraint(
                 condition=models.Q(feedback_closed_at__isnull=True)
                 | models.Q(feedback_deadline__isnull=False),
@@ -1119,7 +1119,7 @@ class MatterEngagement(VisibilityInheritingModel):
         service all read, so «is this still open» cannot be answered two ways.
         A deadline that has gone by is still *open* — the day passing is not a
         result, and nothing closes a wait except somebody saying so or the
-        Matter shutting underneath it (docs/adr/0085 §4, §6).
+        Matter shutting underneath it (docs/adr/0086 §4, §6).
         """
         return self.feedback_deadline is not None and self.feedback_closed_at is None
 
@@ -1134,7 +1134,7 @@ class MatterEngagement(VisibilityInheritingModel):
         Inclusive of the day itself: «vastake 22. septembriks» is a thing to
         look at *on* the 22nd, not on the 23rd. Before that day the round is
         waiting and says so; from it, it is the lawyer's to finish
-        (docs/adr/0085 §4).
+        (docs/adr/0086 §4).
 
         `False` for a closed wait and for a round that never had a deadline,
         so a caller can ask this without asking `has_open_feedback_wait` first

@@ -739,7 +739,7 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     # still wins over the owner default (ADR 0036 §5).
     #
     # **`engagement_half` is not on this list any more, and neither is any other
-    # `engagement_*` period field.** docs/adr/0085 §1 took the whole `Täpsus`
+    # `engagement_*` period field.** docs/adr/0086 §1 took the whole `Täpsus`
     # control off both `Kaasamine` surfaces, so `CompactEngagementForm` no longer
     # carries the shared group at all — there is no unused branch to declare,
     # because there is no branch. The column, its values and every surface that

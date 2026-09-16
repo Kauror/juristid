@@ -2456,7 +2456,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # last. Read here rather than in the template, like everything else on
         # this dict, and read through the child's own `visible_to`: a restricted
         # round must not put a line on `PRAEGUNE TEGEVUS` for a reader who may
-        # not open it (AUTH-003, docs/adr/0085 §4).
+        # not open it (AUTH-003, docs/adr/0086 §4).
         #
         # Beside the open step rather than instead of it. Both are true, both
         # are the reader's, and a page that showed one of them would be choosing
@@ -3097,7 +3097,7 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             # `Liik` was a classification nothing read back, and a door that
             # kept writing `Küsitlus` on rounds nobody described that way would
             # be the one surface still manufacturing the fact the panel stopped
-            # asking for (docs/adr/0085 §1).
+            # asking for (docs/adr/0086 §1).
             kind=EngagementKind.OTHER.value,
             title=form.cleaned_data["title"],
             url=form.cleaned_data.get("url") or "",
@@ -3148,7 +3148,7 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
     # what tells `EngagementForm.clean` that this row is dated to a period, and
     # therefore that an empty day box means «leave it alone» rather than «clear
     # it». A bound form built without it would quietly destroy the period on
-    # every refused-and-resubmitted save (docs/adr/0085 §1).
+    # every refused-and-resubmitted save (docs/adr/0086 §1).
     if data is not None:
         return EngagementForm(data, auto_id=auto_id, record=engagement)
     return EngagementForm(
@@ -3163,7 +3163,7 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
             # period stated in words beside it: the stored anchor is a place in
             # a sort and not a day anybody named, so handing back `01.10.2025`
             # would invite somebody to re-save an invented day
-            # (docs/adr/0079 §2, docs/adr/0085 §1).
+            # (docs/adr/0079 §2, docs/adr/0086 §1).
             "occurred_on": (None if engagement.has_approximate_date else engagement.occurred_on),
             "feedback_deadline": engagement.feedback_deadline,
             "feedback_received": engagement.feedback_received,
@@ -3242,7 +3242,7 @@ def attach_feedback_form(
     `matters/partials/engagement_row.html` is included once per row from inside
     a loop — so a single context variable would give every row the same form,
     with the same ids and the same revision token, and pressing `Lõpeta` on the
-    second round would post the first one's version (docs/adr/0085 §6).
+    second round would post the first one's version (docs/adr/0086 §6).
 
     One name, set by both callers: the page render walks its timeline items
     through here, and the fragment view does the same for the one row it is
@@ -3361,7 +3361,7 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             engagement=engagement,
             # No `kind`. The editor stopped offering it, so `_UNSET` leaves
             # whatever is stored exactly as it is — a historical `Kaasamiskutse
-            # veebis` keeps saying so (docs/adr/0085 §1).
+            # veebis` keeps saying so (docs/adr/0086 §1).
             title=form.cleaned_data["title"],
             url=form.cleaned_data.get("url") or "",
             smaily_url=form.cleaned_data.get("smaily_url") or "",
@@ -3420,7 +3420,7 @@ def complete_engagement_feedback_view(
     POST only. The form it posts is rendered inside the chronology row by
     `_engagement_row`, which is also every answer's swap target — saved, refused
     or conflicted, the reader is looking at one element and the answer lands in
-    it (docs/adr/0085 §6).
+    it (docs/adr/0086 §6).
 
     **Every rule is the service's.** A closed Matter, a round nobody is waiting
     on, a wait somebody already finished and a stale revision are all refused
@@ -3648,7 +3648,7 @@ def quick_date_choices(today: date) -> list[dict[str, Any]]:
 #: Three spans and a calendar, which is what a consultation round actually asks
 #: for. They are spelled as the periods themselves — `1 nädal`, not `+1 nädal` —
 #: because the question above them is «until when», not «how much later»
-#: (docs/adr/0085 §2).
+#: (docs/adr/0086 §2).
 #:
 #: `1 kuu` is a **calendar** month and is therefore not in this tuple: a span in
 #: days cannot say «the 31st of January plus one month», and the whole point of
@@ -5228,7 +5228,7 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     both dates now, each pre-filled with a plausible answer and each clearable,
     and what the person left in a box is what is stored. An emptied
     `Kaasamise kuupäev` stores nothing; an emptied `Tagasisidet ootame kuni`
-    opens no wait (docs/adr/0085 §2).
+    opens no wait (docs/adr/0086 §2).
     """
     matter = get_visible_matter(request, pk)
     form = CompactEngagementForm(request.POST, request.FILES)

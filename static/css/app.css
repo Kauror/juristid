@@ -10208,7 +10208,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 /* A single checkbox on a workspace form, with its label beside it rather than
    above it. The only one in this zone is `Kustuta salvestatud kuupäev`, which
    is a question with two answers and not a field with a value
-   (docs/adr/0085 §1). */
+   (docs/adr/0086 §1). */
 #teema-vaade-wrap .cx-check {
   display: flex;
   align-items: center;
@@ -11070,7 +11070,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * than below it like `Arvamuse tähtaeg`. Without a bottom margin it reads as the
  * caption of `Mida tegid?`, which is a form about something else entirely. Its
  * own modifier rather than a margin on `.curact__owed`, so the official
- * obligation's geometry — and its baseline — does not move (docs/adr/0085 §3). */
+ * obligation's geometry — and its baseline — does not move (docs/adr/0086 §3). */
 .curact__owed--wait {
   margin-bottom: var(--spacing-3);
 }
@@ -11095,7 +11095,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 /* The round a `Ootame tagasisidet` line belongs to, as a link down to its own
  * chronology row. A file may be running three at once, so the line has to name
  * which one — and the name is the one thing `Ootame tagasisidet kuni 22.9` does
- * not say (docs/adr/0085 §4). */
+ * not say (docs/adr/0086 §4). */
 .curact__owedlink {
   font-size: var(--typography-size-sm);
   color: var(--text-secondary);

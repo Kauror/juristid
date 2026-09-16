@@ -118,7 +118,7 @@ row of controls that refuse (brief §30, §31).
       a classification nothing ever read back and a precision an as-it-happens
       round never needs. Both are gone: every row written here is `Muu` and an
       exact day, historical rows keep whatever they were given, and correcting
-      one is `Muuda` on its chronology row (docs/adr/0085 §1).
+      one is `Muuda` on its chronology row (docs/adr/0086 §1).
 
       **The two dates both start filled and both clear.** `Kaasamise kuupäev`
       is today because recording something that just happened is the usual
@@ -126,13 +126,13 @@ row of controls that refuse (brief §30, §31).
       round asks for when nobody says otherwise. Each can be read before
       saving, changed, and emptied — and emptying the second one is the way to
       say there is no wait, not an oversight the server corrects
-      (docs/adr/0078 §2, docs/adr/0085 §2).
+      (docs/adr/0078 §2, docs/adr/0086 §2).
 
       **The reply-by date is what makes this work rather than a filed fact.**
       Left set, the round shows on `PRAEGUNE TEGEVUS` and on the responsible
       lawyer's Minu asjad until somebody finishes it with `Lõpeta kaasamine`.
       It still creates no `Järgmiseks`, still is not `Arvamuse tähtaeg`, and
-      still counts towards no deadline statistic (docs/adr/0085 §3).
+      still counts towards no deadline statistic (docs/adr/0086 §3).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-kaasamine-valik"
            data-addpick aria-controls="lisa-kaasamine"
@@ -175,7 +175,7 @@ row of controls that refuse (brief §30, §31).
             typing over it is the whole interaction. Each chip's label grows to
             carry the day it landed on once it is pressed, because nobody should
             set a collection date for a day they did not read
-            (`static/js/ux.js`, `bindQuickDates`; docs/adr/0085 §2).
+            (`static/js/ux.js`, `bindQuickDates`; docs/adr/0086 §2).
 
             `1 kuu` is a calendar month — the same day next month, or that
             month's last day where there is no such day — and it is resolved on

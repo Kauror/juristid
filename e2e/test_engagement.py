@@ -79,7 +79,7 @@ def test_the_matter_page_carries_no_standalone_kaasamine_section(page, base_url)
 def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_questions(page, base_url):
     """`Keda kaasati`, two dates, the feedback box — and no `Liik`, no `Täpsus`.
 
-    **docs/adr/0085 §1, §2.** The panel used to open on a row of `Liik` chips
+    **docs/adr/0086 §1, §2.** The panel used to open on a row of `Liik` chips
     and a four-way precision control, so the first two decisions a lawyer made
     were a classification nothing read back and a precision an as-it-happens
     round never needs. Both are gone. What is left is who was engaged, when it
@@ -129,7 +129,7 @@ def test_the_reply_by_spans_write_into_the_box_beside_them(page, base_url):
     `feedback_deadline`, which is what the server reads, and the label then grows
     to carry the date it landed on so nobody sets a collection day they did not
     read. The same contract `Järgmine tegevus`'s quick dates have, on the panel
-    that replaced the kind chips (docs/adr/0085 §2).
+    that replaced the kind chips (docs/adr/0086 §2).
     """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
@@ -175,10 +175,10 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     expect(chronology(page)).to_contain_text("Vastuseid 9")
     # And **no channel**, because the panel no longer asks for one: every row it
     # writes is `Muu`, and printing «Muu» would be the chronology stating a
-    # classification nobody chose (docs/adr/0085 §1).
+    # classification nobody chose (docs/adr/0086 §1).
     expect(chronology(page)).not_to_contain_text("Muu ·")
     # The round is waiting, because the panel's reply-by date defaults to a week
-    # out and nothing here cleared it (docs/adr/0085 §2, §3).
+    # out and nothing here cleared it (docs/adr/0086 §2, §3).
     expect(chronology(page)).to_contain_text("Ootame tagasisidet kuni")
     # The note, as a work row of its own.
     expect(chronology(page).locator(".richtext").first).to_contain_text(

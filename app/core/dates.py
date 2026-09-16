@@ -183,7 +183,7 @@ def add_months(value: date, months: int) -> date:
     Only `Tagasisidet ootame kuni`'s quick choices call it today, and it is in
     this module rather than beside them because a second copy of month
     arithmetic is a second copy that eventually rounds a day differently
-    (docs/adr/0085 §2).
+    (docs/adr/0086 §2).
     """
     total = value.month - 1 + months
     year = value.year + total // 12

@@ -222,7 +222,7 @@ def test_a_passed_reply_by_date_writes_no_record_and_the_strip_says_nothing(
 ):
     """The decision ADR 0083 says is most worth stating, as it stands now.
 
-    Two halves, and docs/adr/0085 §3 moved exactly one of them.
+    Two halves, and docs/adr/0086 §3 moved exactly one of them.
 
     **What is unchanged**: a reply-by date writes nothing. No `NextAction`, no
     `Oluline tähtaeg`, no `Arvamuse tähtaeg` — a consultation recorded months
@@ -289,7 +289,7 @@ def test_a_reply_by_date_reaches_no_search_or_watched_deadline_surface(signed_in
 
     # And `Olulised tähtajad` is about dates somebody else announced rather than
     # about what this office asked for, so the label never reaches it. The wait
-    # *is* work since docs/adr/0085 §3 — as a `WorkItem`, which is deliberately
+    # *is* work since docs/adr/0086 §3 — as a `WorkItem`, which is deliberately
     # outside `real_deadlines` and therefore outside every *Tähtajad* surface
     # (`tests/test_engagement_feedback_wait.py`).
     tahtajad = signed_in.get(reverse("intelligence:important_dates"), follow=True)

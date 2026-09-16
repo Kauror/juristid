@@ -1,7 +1,7 @@
 """An approximate `Kaasamise kuupäev` keeps meaning what it meant.
 
 docs/adr/0082 took one date off docs/adr/0079 §11's exact-only list and gave
-`+ Kaasamine` the four-way `Täpsus` control. docs/adr/0085 §1 takes the control
+`+ Kaasamine` the four-way `Täpsus` control. docs/adr/0086 §1 takes the control
 back off both `Kaasamine` surfaces — it was two decisions deep on a panel whose
 overwhelming case is «this happened today» — and **pays for that by preserving
 everything already recorded through it.**
@@ -20,7 +20,7 @@ What this module holds
   and **no surface prints its anchor as a day**;
 * the correction form opens such a record with the day box *empty*, names the
   stored period beside it, and treats an empty box on save as «leave it alone».
-  That rule is the whole of docs/adr/0085 §1's preservation, and the regression
+  That rule is the whole of docs/adr/0086 §1's preservation, and the regression
   it guards is a lawyer fixing a typo in the audience and silently deleting
   «oktoober 2025»;
 * `Kustuta salvestatud kuupäev` is the one deliberate way to remove such a
@@ -100,7 +100,7 @@ def _stored(matter, precision, anchor, **extra):
     of this whole module now: the forms cannot state a period any more, and
     these are the rows that were written while they could. The importer and the
     register enrichment write the same shapes, so this is not a fixture-only
-    state (docs/adr/0085 §1).
+    state (docs/adr/0086 §1).
     """
     return add_engagement(
         matter=matter,
@@ -127,7 +127,7 @@ def _edit(client, engagement, **extra):
 
     `occurred_on` is deliberately **not** defaulted here. Leaving it out is what
     a person does when they open the form on an approximate record and change
-    something else, and that is the case docs/adr/0085 §1's preservation rule is
+    something else, and that is the case docs/adr/0086 §1's preservation rule is
     about.
     """
     payload = {
@@ -174,7 +174,7 @@ def _fact(matter: Matter, user):
 
 
 def test_the_panel_offers_no_precision_control(signed_in, specialist):
-    """docs/adr/0085 §1. `+ Kaasamine` asks for a day, and asks once.
+    """docs/adr/0086 §1. `+ Kaasamine` asks for a day, and asks once.
 
     Asserted as the radio group rather than as the labels, because the labels
     are also on three other panels of the same page: what has to be true is that
@@ -210,7 +210,7 @@ def test_the_correction_form_offers_no_precision_control(signed_in, specialist):
 
 
 def test_neither_surface_offers_a_kind_control(signed_in, specialist):
-    """docs/adr/0085 §1's other subtraction, checked on both write surfaces.
+    """docs/adr/0086 §1's other subtraction, checked on both write surfaces.
 
     `Liik` was a classification nothing read back. The column keeps every value
     it holds; what went is the question.
@@ -236,7 +236,7 @@ def test_the_simplified_panel_stores_an_exact_day(signed_in, specialist):
 
     `EXACT` and the day in the box. The column and its vocabulary are untouched
     — this is the only value the forms can now produce, not the only value the
-    model can hold (docs/adr/0085 §1).
+    model can hold (docs/adr/0086 §1).
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -302,7 +302,7 @@ def test_the_timeline_read_model_says_the_same_thing_as_the_page(
 def test_the_edit_form_opens_a_period_with_an_empty_box_and_says_so(
     signed_in, specialist, precision, anchor, reads
 ):
-    """docs/adr/0079 §2 and docs/adr/0085 §1, stated where it is easiest to break.
+    """docs/adr/0079 §2 and docs/adr/0086 §1, stated where it is easiest to break.
 
     An editor that opened `01.10.2025` in the date box for a record meaning
     *oktoober 2025* would invite the person to save the invented day back. The
@@ -352,7 +352,7 @@ def test_saving_a_period_back_with_an_empty_day_box_keeps_it(
     audience and presses `Salvesta`. The day box was empty when the form opened,
     because an anchor is not a day — so a form that read «empty» as «clear the
     date» would delete what somebody recorded, silently, on a save about
-    something else entirely (docs/adr/0085 §1).
+    something else entirely (docs/adr/0086 §1).
     """
     matter = factories.MatterFactory(owner=specialist)
     engagement = _stored(matter, precision, anchor)
@@ -387,7 +387,7 @@ def test_a_period_can_be_corrected_to_the_exact_day_somebody_found(signed_in, sp
 
 
 def test_no_write_surface_can_create_a_new_period(signed_in, specialist):
-    """The accepted cost of docs/adr/0085 §1, asserted rather than assumed.
+    """The accepted cost of docs/adr/0086 §1, asserted rather than assumed.
 
     A crafted POST carrying the retired control's field names writes an exact
     day — the fields do not exist, Django drops them, and the form resolves the
@@ -435,7 +435,7 @@ def test_an_empty_date_stays_unknown_and_takes_no_precision(signed_in, specialis
 
 
 def test_the_clear_checkbox_removes_a_period_and_its_precision(signed_in, specialist):
-    """docs/adr/0082 §5 and docs/adr/0085 §1. Deliberate, and only deliberate.
+    """docs/adr/0082 §5 and docs/adr/0086 §1. Deliberate, and only deliberate.
 
     `NULL` + `MONTH` is a period with nothing to qualify — a record in that
     state renders as neither a date nor «kuupäev teadmata» but as whichever the
@@ -752,7 +752,7 @@ def test_a_reply_by_date_before_the_whole_period_is_still_refused(signed_in, spe
 def test_an_approximate_engagement_creates_no_deadline_record_of_its_own(specialist):
     """§2, §5. A period never grows an end, and never becomes a stored deadline.
 
-    An open feedback wait is read as work since docs/adr/0085 §3, and that is a
+    An open feedback wait is read as work since docs/adr/0086 §3, and that is a
     *reading* — no `NextAction`, no `MatterImportantDate` and no
     `Matter.response_deadline` is written, which is what this has always
     guarded.
@@ -831,7 +831,7 @@ def test_a_crafted_precision_cannot_reach_the_column_through_a_form(signed_in, s
     assert response.status_code == 200, response.content.decode()[:2000]
     engagement.refresh_from_db()
     # Untouched: the day box was empty and the record carries a period, so the
-    # save left it alone (docs/adr/0085 §1).
+    # save left it alone (docs/adr/0086 §1).
     assert engagement.occurred_on_precision == DatePrecision.MONTH
     assert engagement.occurred_on == dt.date(2025, 10, 1)
 
