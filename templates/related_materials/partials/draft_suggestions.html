@@ -1,0 +1,78 @@
+{% comment %}
+`Sarnased teemad` on `Uus teema` — earlier files that resemble what is being
+typed, before anything is saved.
+
+**The whole element, including its heading, is the swap target.** When the
+engine finds nothing the response is empty, so the heading goes with the cards
+and a form with nothing to suggest carries no empty box, no «midagi ei
+leitud» and no spinner. That is the one place this feature hides itself:
+the saved Matter's «Võimalikud seosed» keeps its deferred disclosure and its
+honest-emptiness message, because computing a count there would cost the
+computation the disclosure exists to defer (docs/adr/0062 §7, docs/adr/0087 §4).
+
+**Read-only, and it proposes nothing.** No `Lisa`, no `Ei ole seotud`, no
+form control of any kind: there is no Matter yet for a relation to attach to,
+and a suggestion that could write would be a second way to create one. A card
+is a title, why it is here, what Koda did there, and a link that opens it in a
+new tab — because the person is in the middle of filling in a form and taking
+them away from it would lose what they typed.
+
+The cards are deliberately the same shape and the same reason vocabulary the
+Matter page uses. A lawyer should recognise the answer, not learn a second
+one (docs/adr/0087 §2).
+{% endcomment %}
+{% if draft_suggestions %}
+  <section class="draftsimilar" aria-labelledby="sarnased-teemad-heading">
+    <h2 class="rowlabel" id="sarnased-teemad-heading">Sarnased teemad</h2>
+    <p class="draftsimilar__lead">
+      Varasemad teemad, mis sellega sarnanevad. Midagi ei seota ega muudeta —
+      vaata üle, kas Koda on sellega juba tegelenud.
+    </p>
+    <ul class="relatedmaterials__cards">
+      {% for item in draft_suggestions %}
+        <li class="relatedcard" data-draft-candidate="{{ item.matter.pk }}">
+          <div class="relatedcard__main">
+            <span class="relatedcard__label">Teema</span>
+            {% comment %}
+              A new window, and said out loud. The form behind this is
+              half-filled and unsaved; navigating away from it in the same tab
+              would throw that work away to answer a question the person asked
+              in passing.
+            {% endcomment %}
+            <a class="relatedcard__title"
+               href="{% url 'matters:matter_detail' pk=item.matter.pk %}"
+               target="_blank" rel="noopener noreferrer">{{ item.matter.title }}<span
+               class="visually-hidden"> — avaneb uues aknas</span></a>
+            <span class="relatedcard__meta">
+              {% if item.matter.display_reference %}{{ item.matter.display_reference }} · {% endif %}{{ item.state_label }}{% if item.matter.addressee_organisation %} · {{ item.matter.addressee_organisation.name }}{% endif %}
+            </span>
+            {% if item.reasons %}
+              <ul class="relatedcard__reasons" aria-label="Miks seda näidatakse">
+                {% for reason in item.reasons %}<li>{{ reason }}</li>{% endfor %}
+              </ul>
+            {% endif %}
+            {% if not item.outcome.is_empty %}
+              <p class="relatedcard__did">
+                {% if item.outcome.has_opinion %}
+                  <span class="badge badge--opinion">
+                    <span class="badge__dot" aria-hidden="true"></span>Arvamus olemas
+                  </span>
+                {% endif %}
+                {% if item.outcome.has_sent_submission %}
+                  <span class="badge badge--sent">
+                    <span class="badge__dot" aria-hidden="true"></span>Välja saadetud
+                  </span>
+                {% endif %}
+                {% if item.outcome.has_work_victory %}
+                  <span class="badge badge--success">
+                    <span class="badge__dot" aria-hidden="true"></span>Töövõit
+                  </span>
+                {% endif %}
+              </p>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

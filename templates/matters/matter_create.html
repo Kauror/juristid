@@ -671,6 +671,50 @@
       <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
       <span class="createform__note">Ülejäänud andmeid saab lisada ka hiljem teema lehel.</span>
     </div>
+
+    {% comment %}
+      `Sarnased teemad` — what the register already holds about this subject,
+      asked while the form is being filled in.
+
+      **Inside the form element, and it is not part of the form.** It sits here
+      because `hx-include` reads a CSS selector and `closest form` is the
+      honest one; nothing in the swapped fragment is a control, carries a
+      `name`, or is read by `matter_create`. The only element this touches is
+      the `<div>` below, which starts empty and is replaced by cards or by
+      nothing at all.
+
+      **GET, so it writes nothing, and no draft Matter is created** to compute
+      it (docs/adr/0087 §4). The response is bounded to five cards.
+
+      **The trigger is the four fields that decide the answer.** Typing in
+      `Märkmed`, picking a `Hetkeseis` or choosing a deadline recomputes
+      nothing, because none of them is a matching signal — a round trip per
+      keystroke on a field that cannot change the result is a round trip that
+      only costs. 600ms rather than the 250ms the register's search uses: this
+      runs several pool queries where that runs one, and a person typing a
+      title is composing a sentence rather than hunting for a row.
+
+      `changed` on every text trigger, so arrow keys and tabbing through do not
+      re-ask. `from:` names each control explicitly rather than listening at
+      the form, because the organisation pickers and the intake reader write
+      hidden inputs continuously and every one of those writes would otherwise
+      be a request.
+
+      The form's own values are preserved by construction: the fragment replaces
+      only `#sarnased-teemad`, so a refusal, an intake swap or a chip being
+      picked leaves whatever is typed exactly where it is.
+    {% endcomment %}
+    <div id="sarnased-teemad"
+         hx-get="{% url 'related_materials:draft_suggestions' %}"
+         hx-trigger="input changed delay:600ms from:#id_title,
+                     input changed delay:600ms from:#id_brief_summary,
+                     change from:#id_policy_areas,
+                     change from:#id_legal_instruments,
+                     change from:#id_source_organisations,
+                     change from:#id_addressee_organisation"
+         hx-include="closest form"
+         hx-target="this"
+         hx-swap="innerHTML"></div>
   </form>
 </div>
 {% endblock %}

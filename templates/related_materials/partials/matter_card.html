@@ -16,6 +16,44 @@ decisions are explicit buttons (docs/adr/0062 §6, §7).
         {% for reason in item.reasons %}<li>{{ reason }}</li>{% endfor %}
       </ul>
     {% endif %}
+    {% comment %}
+      What Koda actually did there — the question a lawyer asks next, answered
+      before they spend the click. Three pills, each one either present or
+      absent: whether an opinion is on the file, whether one went out, and
+      whether a win was confirmed.
+
+      **Existence, never content.** No count, no date, no title, no summary:
+      the card says the file has an opinion in it and links to where it is
+      read. Generating a précis of somebody else's opinion is the thing this
+      feature explicitly does not do (docs/adr/0087 §3).
+
+      Each pill is computed under this reader's own child visibility, not the
+      candidate's, so an opinion they may not open produces no pill — the pill
+      would otherwise be a statement that a restricted record exists
+      (`engine.outcomes_for`, ADR 0005, ADR 0038).
+
+      The dot-and-word pattern the state badges use, so none of the three is
+      carried by colour alone.
+    {% endcomment %}
+    {% if not item.outcome.is_empty %}
+      <p class="relatedcard__did">
+        {% if item.outcome.has_opinion %}
+          <span class="badge badge--opinion">
+            <span class="badge__dot" aria-hidden="true"></span>Arvamus olemas
+          </span>
+        {% endif %}
+        {% if item.outcome.has_sent_submission %}
+          <span class="badge badge--sent">
+            <span class="badge__dot" aria-hidden="true"></span>Välja saadetud
+          </span>
+        {% endif %}
+        {% if item.outcome.has_work_victory %}
+          <span class="badge badge--success">
+            <span class="badge__dot" aria-hidden="true"></span>Töövõit
+          </span>
+        {% endif %}
+      </p>
+    {% endif %}
   </div>
   {% if can_write %}
     <div class="relatedcard__actions">
