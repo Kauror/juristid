@@ -43,11 +43,11 @@ CANONICAL = [
     "+ Oluline tähtaeg",
     "+ Jõustumine",
     "+ Töövõit",
-    # `+ Kodulehe ülevaade` goes after the win and before the closure, which is
+    # `+ Ülevaade / uudis` goes after the win and before the closure, which is
     # where the reasoning puts it: telling the membership what happened is the
     # last thing done *about* a file, and finishing the file is not routine
     # capture at all (docs/adr/0081 §2).
-    "+ Kodulehe ülevaade",
+    "+ Ülevaade / uudis",
     # `+ Väline seisukoht` is the last of the capture operations and sits
     # directly before the closure: what somebody else said about the file is
     # reference material recorded alongside the work, and finishing the file is

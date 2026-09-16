@@ -3,6 +3,17 @@
 **Status:** accepted
 **Date:** 2026-09-15
 
+> **§2 is narrowed by ADR 0085 (2026-09-16), on one point and no other.** The
+> panel's two optional boxes and its three answers are exactly as decided here,
+> and the date still carries **no `initial`** — a pre-filled one would make
+> «neither filled» unreachable, which is this section's own reasoning and is
+> still right. What is new is that the box fills itself *visibly* at the moment
+> somebody starts typing an address, which is the moment the published path is
+> chosen; an untouched form still submits two empty boxes. The record is also
+> now called `Ülevaade / uudis` and its address may be any public
+> `http`/`https` page, which supersedes ADR 0081 §3 rather than anything here.
+> §1, the feedback-deadline half, is untouched.
+
 Two findings from using the Teema page after the 2026-09-15 release. They are
 unrelated as defects and are decided together because each one narrows a
 decision the same page already carries.

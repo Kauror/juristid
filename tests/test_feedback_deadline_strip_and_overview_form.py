@@ -15,11 +15,12 @@ a reading of a record, and the whole risk of drawing it is that somewhere
 downstream it grows an obligation: a work item, a badge, a lateness reading, a
 row in a deadline list. None of that may happen, and §B holds it.
 
-**The `+ Kodulehe ülevaade` panel.** ADR 0081 §1 made it one button and no
+**The `+ Ülevaade / uudis` panel.** ADR 0081 §1 made it one button and no
 fields. That is right for planning and silent about recording a page that is
 already up, and what a reader met first was a fieldless form with a vague
 `Salvesta` that reads as a broken text box. §C holds the three answers the form
-now gives, and that the koda.ee boundary is unchanged.
+now gives. The address rule it once pinned is now `Ülevaade / uudis`'s and
+lives in `tests/test_overview_news_publication.py` (docs/adr/0085 §2).
 """
 
 from __future__ import annotations
@@ -322,21 +323,24 @@ def test_the_button_says_what_it_does(signed_in, normal_matter):
     panel = panel[panel.index('id="lisa-koduleht"') :]
     panel = panel[: panel.index("</form>")]
 
-    assert ">Lisa ülevaade<" in panel
+    assert ">Lisa ülevaade / uudis<" in panel
     assert "planeeritud" not in panel
     assert ">Salvesta<" not in panel
     # And the two optional controls are there, labelled, under their own legend.
     assert 'name="url"' in panel
     assert 'name="published_on"' in panel
-    assert "Kodulehe link" in panel
+    assert "Avaldatud ülevaate või uudise link" in panel
     assert "Avaldamise kuupäev" in panel
-    assert "Kui ülevaade on juba avaldatud" in panel
+    assert "Kui ülevaade või uudis on juba avaldatud" in panel
 
 
 def test_the_date_box_is_not_pre_filled(signed_in, normal_matter):
     """Load-bearing: a pre-filled date would make «neither filled» unreachable.
 
-    Every plan would then arrive carrying a publication date nobody typed.
+    Every plan would then arrive carrying a publication date nobody typed. ADR
+    0085 §3 added a default that arrives when somebody starts typing an address
+    — in the browser, on the person's own action — and this is the assertion
+    that says the *server* still sends an empty box.
     """
     panel = _detail(signed_in, normal_matter)
     panel = panel[panel.index('id="lisa-koduleht"') :]
@@ -394,29 +398,39 @@ def test_half_a_publication_is_refused_and_keeps_what_was_typed(
 @pytest.mark.parametrize(
     "bad_url",
     [
-        "http://koda.ee/uudised/x",
-        "https://koda.ee.example.com/uudised/x",
-        "https://notkoda.ee/uudised/x",
         "https://koda.ee@evil.example/x",
-        "https://example.com/uudised/x",
+        "http://kasutaja:parool@example.com/x",
         "ftp://koda.ee/x",
+        "javascript:alert(1)",
+        "https:///uudised/x",
+        "ei ole aadress",
     ],
 )
-def test_the_koda_boundary_is_unchanged_on_the_new_path(signed_in, normal_matter, bad_url):
-    """ADR 0081 §3's trust boundary, reached through the panel rather than the strip."""
+def test_the_address_rule_reaches_the_new_path_too(signed_in, normal_matter, bad_url):
+    """The safety half of docs/adr/0081 §3, kept by docs/adr/0085 §2, reached
+    through the panel rather than the strip."""
     response = _add(signed_in, normal_matter, url=bad_url, published_on="14.03.2026")
 
     assert response.status_code == 400
     assert not MatterWebsiteOverview.objects.filter(matter=normal_matter).exists()
 
 
-def test_a_subdomain_of_koda_ee_is_still_accepted(signed_in, normal_matter):
-    response = _add(
-        signed_in, normal_matter, url="https://www.koda.ee/uudised/x", published_on="14.03.2026"
-    )
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.koda.ee/uudised/x",
+        "https://aripaev.ee/uudised/2026/03/14/kaubanduskoda-hoiatab",
+        "http://vana.uudisteportaal.ee/2019/artikkel",
+    ],
+)
+def test_any_public_web_host_is_accepted_on_the_new_path(signed_in, normal_matter, url):
+    """docs/adr/0085 §2. koda.ee still works; so does everywhere else."""
+    response = _add(signed_in, normal_matter, url=url, published_on="14.03.2026")
 
     assert response.status_code == 200
-    assert MatterWebsiteOverview.objects.get().status == WebsiteOverviewStatus.PUBLISHED
+    overview = MatterWebsiteOverview.objects.get(matter=normal_matter)
+    assert overview.status == WebsiteOverviewStatus.PUBLISHED
+    assert overview.url == url
 
 
 def test_a_closed_matter_refuses_the_published_path_too(signed_in, specialist):

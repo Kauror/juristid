@@ -6593,7 +6593,7 @@ button.accordion__action:focus-visible {
   flex: 1;
 }
 
-/* -- Kodulehe ülevaated: what the file still owes the website ---------- */
+/* -- Ülevaated / uudised: what the file still owes a reader -------------- */
 
 /* One quiet strip, rendered only when something is planned. It is deliberately
    *not* a task surface: no danger colour, no overdue treatment, no badge that
@@ -10128,7 +10128,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 /* An optional group inside a panel form — today only «Kui ülevaade on juba
- * avaldatud» under `+ Kodulehe ülevaade`.
+ * avaldatud» under `+ Ülevaade / uudis`.
  *
  * A real `<fieldset>`, because the two controls inside it are one answer and a
  * screen reader should hear the legend before either of them. The browser's own

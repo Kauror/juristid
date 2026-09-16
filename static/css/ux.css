@@ -419,7 +419,7 @@
   min-width: 0;
 }
 
-/* A published `Kodulehe ülevaade`'s address, and the control that corrects it.
+/* A published `Ülevaade / uudis` address, and the control that corrects it.
    The same plain wrapper `.uxtl__entry` is, and for the same reason: it exists
    to be the swap target, so `Paranda link` replaces the link and nothing around
    it — not the dot, not the date, not the row's place in the chronology

@@ -22,6 +22,7 @@ from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
@@ -4535,15 +4536,15 @@ class CompactWorkVictoryForm(forms.Form):
 
 
 class CompactWebsiteOverviewForm(forms.Form):
-    """`+ Kodulehe ülevaade` — a plan, or a page that is already up.
+    """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
     docs/adr/0081 §1 shaped this panel as one button and no fields, on the
     reasoning that at the moment somebody decides a Matter should be written up
     there is no address and no publication date, so every field would be asking
     them to invent something the real page contradicts a week later. That
     reasoning is right about the case it describes and wrong about the one it
-    did not: a lawyer frequently records the overview **after** the page is
-    already on koda.ee, and the panel made them file a plan and then publish it
+    did not: a lawyer frequently records the write-up **after** the page is
+    already published, and the panel made them file a plan and then publish it
     from a second control to say so. Worse, what they met first was a panel with
     no fields at all and a button saying `Salvesta` — which reads as an unusable
     text box rather than as a complete form (docs/adr/0083).
@@ -4565,19 +4566,32 @@ class CompactWebsiteOverviewForm(forms.Form):
     would arrive carrying a publication date nobody typed, and the panel would
     have no way left to say «this is only owed».
 
-    Still no title, no description and no attachment. The record's content is
-    the address and the day, and a headline invented at planning time would sit
-    beside the real one the day the page appears (docs/adr/0081 §2).
+    **The default arrives when the person takes the published path instead.**
+    `data-publication-default` on the date box carries today, as the *server*
+    resolved it, and `data-publication-trigger` on the link box is what fills it
+    in: the moment somebody starts typing an address they have taken the
+    published path, and retyping today's date after that is the friction people
+    actually complain about (docs/adr/0078 §2, docs/adr/0085 §3). It is a
+    default and not a fallback — it is written into a box the person can read,
+    change and clear, it never fires on a form nobody has touched, and it never
+    fires again once the date box has been edited, so a date somebody cleared on
+    purpose stays cleared. With scripting off the form behaves exactly as it did
+    before: two optional boxes, both typed by hand.
+
+    Still no title, no description and no attachment, and **no kind selector**.
+    The record's content is the address and the day; which of the two kinds of
+    publication it is, is what the address says (docs/adr/0081 §2,
+    docs/adr/0085 §1).
     """
 
     use_required_attribute = False
 
     #: The same `CharField`-not-`URLField` shape as `WebsiteOverviewLinkForm`,
-    #: and for the same reason: the rule is `normalize_koda_website_url`'s, and
-    #: letting Django's validator answer first would give `http://koda.ee/x` a
+    #: and for the same reason: the rule is `normalize_overview_news_url`'s, and
+    #: letting Django's validator answer first would give a refused address a
     #: different sentence depending on which layer caught it.
     url = forms.CharField(
-        label="Kodulehe link",
+        label="Avaldatud ülevaate või uudise link",
         required=False,
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
         widget=forms.TextInput(
@@ -4585,7 +4599,11 @@ class CompactWebsiteOverviewForm(forms.Form):
                 "class": "field__input field__input--compact",
                 "inputmode": "url",
                 "autocomplete": "off",
-                "placeholder": "https://koda.ee/…",
+                "placeholder": "https://…",
+                # What `bindPublicationDate` in static/js/ux.js binds to. The
+                # value is the id of the date box it fills, written by the view
+                # so that two panels on one page cannot cross-fill.
+                "data-publication-trigger": "",
             }
         ),
     )
@@ -4595,17 +4613,38 @@ class CompactWebsiteOverviewForm(forms.Form):
         widget=EstonianDateInput(),
     )
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Wire the two boxes together, and tell the date box what today is.
+
+        The pairing is done here rather than in the template because both halves
+        are the *widget's* attributes and the ids are Django's: an `auto_id`
+        written out by hand in HTML is an id that stops matching the day a
+        caller passes its own, which `_website_overview_link_form` already does
+        for the strip.
+
+        Today is resolved with `timezone.localdate()` — the server's answer, in
+        the project's timezone — rather than read off the browser's clock. A
+        reader whose laptop is set to another day would otherwise pre-fill a
+        publication date this application would never have chosen, and the date
+        is the one column on this record that is nobody's but the person's.
+        """
+        super().__init__(*args, **kwargs)
+        self.fields["url"].widget.attrs["data-publication-trigger"] = self["published_on"].auto_id
+        self.fields["published_on"].widget.attrs["data-publication-default"] = format_estonian_date(
+            timezone.localdate()
+        )
+
     def clean(self) -> dict[str, Any]:
         """Nothing, both, or a refusal naming what is missing.
 
         The address is validated through the service's own door so that a
-        look-alike host is refused here in the words it is refused in
+        refused address is refused here in the words it is refused in
         everywhere, and under the box it was typed into.
         """
         from app.matters.services import (
             WEBSITE_OVERVIEW_NEEDS_DATE,
             WEBSITE_OVERVIEW_NEEDS_LINK,
-            normalize_koda_website_url,
+            normalize_overview_news_url,
         )
 
         cleaned = super().clean() or {}
@@ -4615,7 +4654,7 @@ class CompactWebsiteOverviewForm(forms.Form):
         url = ""
         if raw_url:
             try:
-                url = normalize_koda_website_url(raw_url)
+                url = normalize_overview_news_url(raw_url)
             except DomainError as error:
                 self.add_error("url", str(error))
                 return cleaned
@@ -4635,11 +4674,11 @@ class WebsiteOverviewLinkForm(forms.Form):
 
     One form for both because they ask exactly the same two questions and must
     enforce exactly the same two rules — a second class would be a second place
-    for the koda.ee boundary to be written out, and the day it disagreed with
-    the first would be the day a correction accepted an address a publication
-    would have refused. *Which* of the two operations a POST is answering is
-    decided by the route it arrived on and by the record's own state under a
-    lock, never by the form (docs/adr/0081 §3).
+    for the address rule to be written out, and the day it disagreed with the
+    first would be the day a correction accepted an address a publication would
+    have refused. *Which* of the two operations a POST is answering is decided
+    by the route it arrived on and by the record's own state under a lock, never
+    by the form (docs/adr/0081 §3).
 
     ``revision`` is the version the form was filled from, carried through the
     round trip so the service can refuse a save whose record has moved on. The
@@ -4649,12 +4688,12 @@ class WebsiteOverviewLinkForm(forms.Form):
     use_required_attribute = False
 
     #: A `CharField` rather than a `URLField`, exactly as `provider_link_field`
-    #: is one: the rule belongs to `normalize_koda_website_url`, which is what
+    #: is one: the rule belongs to `normalize_overview_news_url`, which is what
     #: the service enforces, and running Django's own validator first would
-    #: answer `http://koda.ee/x` with a different sentence depending on which
+    #: answer a refused address with a different sentence depending on which
     #: layer happened to catch it.
     url = forms.CharField(
-        label="Kodulehe aadress",
+        label="Avaldatud ülevaate või uudise link",
         required=False,
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
         widget=forms.TextInput(
@@ -4662,7 +4701,7 @@ class WebsiteOverviewLinkForm(forms.Form):
                 "class": "field__input field__input--compact",
                 "inputmode": "url",
                 "autocomplete": "off",
-                "placeholder": "https://koda.ee/…",
+                "placeholder": "https://…",
             }
         ),
     )
@@ -4694,11 +4733,11 @@ class WebsiteOverviewLinkForm(forms.Form):
         """
         from app.matters.services import (
             WEBSITE_OVERVIEW_NEEDS_LINK,
-            normalize_koda_website_url,
+            normalize_overview_news_url,
         )
 
         try:
-            url = normalize_koda_website_url(self.cleaned_data.get("url"))
+            url = normalize_overview_news_url(self.cleaned_data.get("url"))
         except DomainError as error:
             raise forms.ValidationError(str(error)) from error
         if not url:
@@ -4924,7 +4963,7 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
 
     def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
         # **Its own `auto_id`, and the field names are untouched.** Nine forms
-        # render on one Teema page and `+ Kodulehe ülevaade` also calls a field
+        # render on one Teema page and `+ Ülevaade / uudis` also calls a field
         # `url`, so Django's default `id_%s` put `id_url` in the document twice
         # — invalid HTML, a `<label for>` reaching the wrong box and
         # `getElementById` answering whichever came first. Prefixing the *ids*

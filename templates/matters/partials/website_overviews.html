@@ -1,8 +1,8 @@
 {% comment %}
-`KODULEHE ÜLEVAATED` — what this file still owes the Chamber's website.
+`ÜLEVAATED / UUDISED` — what this file still owes a reader somewhere.
 
 **Planned rows only, and nothing at all when there are none.** A published
-overview reads in the chronology, off the record that holds it, where a dated
+record reads in the chronology, off the record that holds it, where a dated
 fact belongs; listing it here as well would state one thing in two places, which
 is exactly what the approved target removed the standing sections to be rid of.
 And a Matter that owes no write-up renders no strip, no heading and no «ei ole
@@ -10,7 +10,7 @@ veel» — there are no permanently visible empty sections on this page
 (TEEMA_TARGET_SPEC §F, docs/adr/0074 §15, docs/adr/0081 §4).
 
 **It is not a task.** Nothing here makes a `NextAction`, a work item, a deadline
-or a badge: an overview that is owed appears on this Matter and on no work list,
+or a badge: a write-up that is owed appears on this Matter and on no work list,
 no `Minu asjad`, no `Tähtajad` and no department view. This strip is the one
 place that says the write-up is outstanding, which is why it says so in a
 sentence rather than by colour alone (docs/adr/0081 §4).
@@ -18,7 +18,7 @@ sentence rather than by colour alone (docs/adr/0081 §4).
 The controls are `can_write and matter.is_open` — the same pair `overview.html`
 gates the launcher on — and the strip itself is not. A reader, and anybody
 looking at a closed file, sees what the Matter owes and no buttons that would
-refuse them. Closure cancels every planned overview in its own transaction, so
+refuse them. Closure cancels every planned row in its own transaction, so
 on a closed Matter this list is normally empty by construction rather than by
 hiding; when a row does survive by some other route, the page shows it without
 controls and every write route still refuses it under the row lock
@@ -26,7 +26,7 @@ controls and every write route still refuses it under the row lock
 {% endcomment %}
 {% if planned_website_overviews %}
   <section class="webrow" id="kodulehe-ulevaated" aria-labelledby="kodulehe-ulevaated-heading">
-    <h2 class="rowlabel" id="kodulehe-ulevaated-heading">Kodulehe ülevaated</h2>
+    <h2 class="rowlabel" id="kodulehe-ulevaated-heading">Ülevaated / uudised</h2>
     <ul class="webrow__list">
       {% for overview, publish_form in planned_website_overviews %}
         <li class="webrow__item" id="kodulehe-ulevaade-{{ overview.pk }}">
@@ -37,7 +37,7 @@ controls and every write route still refuses it under the row lock
           {% endcomment %}
           <p class="webrow__state">
             <span class="webrow__badge">{{ overview.get_status_display }}</span>
-            <span class="webrow__says">Ülevaade on plaanis, aga veel avaldamata.</span>
+            <span class="webrow__says">Ülevaade või uudis on plaanis, aga veel avaldamata.</span>
           </p>
           {% if can_write and matter.is_open %}
             {% comment %}
@@ -88,7 +88,7 @@ controls and every write route still refuses it under the row lock
                       {{ publish_form.published_on.errors|first }}</p>
                   {% endif %}
                   {{ publish_form.revision }}
-                  <p class="cx-note">Ainult koda.ee aadress, https-kujul.</p>
+                  <p class="cx-note">Avalik http:// või https:// aadress.</p>
                   <div class="addform__actions">
                     <button class="button button--primary" type="submit">Salvesta avaldatuna</button>
                   </div>
@@ -104,7 +104,7 @@ controls and every write route still refuses it under the row lock
               The revision travels with it for the reason it travels with
               `Avalda`: the row may have been published from another tab while
               this page sat open, and a cancellation that landed on it anyway
-              would have the file claiming a page on koda.ee was never published.
+              would have the file claiming a published page was never published.
             {% endcomment %}
             <form class="webrow__cancel"
                   hx-post="{% url 'matters:cancel_website_overview' pk=matter.pk overview_id=overview.pk %}"

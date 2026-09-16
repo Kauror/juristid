@@ -132,6 +132,18 @@ _MILESTONE_LABELS: dict[str, str] = {
     ChangeEventType.SUBMISSION_SENT.value: "Arvamus välja",
 }
 
+#: What a published or cancelled `Ülevaade / uudis` is called on the chronology,
+#: and what its link says.
+#:
+#: Named here rather than written into `projected_milestones` twice, because the
+#: published row and the cancelled one have to agree — a rename that reached one
+#: and not the other would put two names for one activity on one page. The link
+#: says `Ava ülevaade või uudis` rather than naming a site: since docs/adr/0085
+#: §2 the address may be anywhere on the public web, and `Ava kodulehel` would
+#: have promised a page on koda.ee that the row no longer guarantees.
+WEBSITE_OVERVIEW_MILESTONE = "Ülevaade / uudis"
+WEBSITE_OVERVIEW_LINK_LABEL = "Ava ülevaade või uudis"
+
 
 def _join(verbs: Any) -> str:
     """ "lisas märkuse, lisas dokumendi ja määras järgmise sammu"."""
@@ -293,7 +305,7 @@ class TimelineItem:
 
     @property
     def website_overview(self) -> Any:
-        """The `Kodulehe ülevaade` this row stands for, when it stands for one.
+        """The `Ülevaade / uudis` this row stands for, when it stands for one.
 
         A named property rather than the template comparing `item_type` to a
         class name: the chronology offers `Paranda link` on exactly these rows,
@@ -750,7 +762,7 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     **The link is labelled by its host, never printed as an address.** A raw URL
     as a row's own text is a line a reader has to parse instead of read, and it
     is the one shape in which a look-alike address would be believed — the rule
-    a published `Kodulehe ülevaade` already follows. `link_label` falls back to
+    a published `Ülevaade / uudis` already follows. `link_label` falls back to
     `Ava seisukoht` where the address has no host to name, and the template
     gives every one of these `target="_blank"`, `rel="noopener noreferrer"` and
     a visually hidden «avaneb uues aknas» (docs/adr/0081 §4).
@@ -925,10 +937,10 @@ def projected_milestones(
             continue
         add(position, _end_of_day(when), external_position_milestone(position))
 
-    # `Kodulehe ülevaade`, and **only the two states that are milestones**.
+    # `Ülevaade / uudis`, and **only the two states that are milestones**.
     #
-    # A published overview and a cancelled plan are things that happened to the
-    # file: the page went up on koda.ee, or the write-up was called off. A
+    # A published record and a cancelled plan are things that happened to the
+    # file: the page went up, or the write-up was called off. A
     # *planned* one has not happened — it is work the file still owes — and it
     # reads in its own strip above, where it can be acted on. Projecting it here
     # would put an intention in a list that means «what has already occurred»
@@ -948,17 +960,19 @@ def projected_milestones(
                 overview,
                 _end_of_day(published_on),
                 ChronologyMilestone(
-                    what="Kodulehe ülevaade",
+                    what=WEBSITE_OVERVIEW_MILESTONE,
                     display_date=format_estonian_date(published_on),
                     sub=str(overview.get_status_display()),
                     # **The label, never the address.** A raw URL as the row's
                     # own text is a line a reader has to parse instead of read,
                     # and it is the one shape in which a look-alike address would
-                    # be believed. `Ava kodulehel` says what the link is for; the
-                    # template gives it `target="_blank"`, `rel="noopener
-                    # noreferrer"` and a visually-hidden «avaneb uues aknas»
+                    # be believed. `Ava ülevaade või uudis` says what the link is
+                    # for without claiming which site it is on, which the address
+                    # no longer promises (docs/adr/0085 §2); the template gives
+                    # it `target="_blank"`, `rel="noopener noreferrer"` and a
+                    # visually-hidden «avaneb uues aknas»
                     # (templates/matters/partials/timeline_items.html).
-                    links=(ChronologyLink(label="Ava kodulehel", url=overview.url),),
+                    links=(ChronologyLink(label=WEBSITE_OVERVIEW_LINK_LABEL, url=overview.url),),
                 ),
             )
             continue
@@ -974,7 +988,7 @@ def projected_milestones(
                 overview,
                 _end_of_day(cancelled_on),
                 ChronologyMilestone(
-                    what="Kodulehe ülevaade",
+                    what=WEBSITE_OVERVIEW_MILESTONE,
                     display_date=format_estonian_date(cancelled_on),
                     sub=str(overview.get_status_display()),
                 ),

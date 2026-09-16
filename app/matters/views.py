@@ -2392,7 +2392,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `Tagasisidet ootame kuni` box they know nothing about. A consultation
         # is read on its chronology row and corrected in place there
         # (`matters/partials/engagement_row.html`).
-        # `Kodulehe ülevaated`, and only the ones this Matter still owes.
+        # `Ülevaated / uudised`, and only the ones this Matter still owes.
         #
         # Read here for the reason everything else on this dict is: the template
         # must not be able to start querying. Planned rows only — a published
@@ -4208,7 +4208,7 @@ ENTRY_READ_PARAM = "vaade"
 ENTRY_READ_VALUE = "lugemine"
 ENTRY_READ_QUERY = f"?{ENTRY_READ_PARAM}={ENTRY_READ_VALUE}"
 
-#: The same question, for the `Kodulehe ülevaade` link a chronology row shows.
+#: The same question, for the `Ülevaade / uudis` link a chronology row shows.
 #: Its own constants rather than the entry's reused, so the two controls can
 #: never be tied to each other by a value one of them changes.
 WEBSITE_OVERVIEW_READ_PARAM = "vaade"
@@ -4364,7 +4364,7 @@ def edit_entry_view(request: HttpRequest, pk: Any, entry_id: Any) -> HttpRespons
 
 
 # ---------------------------------------------------------------------------
-# `Kodulehe ülevaade`
+# `Ülevaade / uudis`
 # ---------------------------------------------------------------------------
 #
 # Four routes for four things that happen to one record: a plan is recorded, it
@@ -4498,7 +4498,7 @@ def _website_overview_refusal(
 @business_write_required
 @require_http_methods(["POST"])
 def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Kodulehe ülevaade` — a plan, or a page that is already on koda.ee.
+    """`+ Ülevaade / uudis` — a plan, or a page that is already published.
 
     The panel's two boxes are optional and are read as a pair: neither is the
     plan, both record a publication in one act, and one on its own is a refusal
@@ -4533,11 +4533,11 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def publish_website_overview_view(request: HttpRequest, pk: Any, overview_id: Any) -> HttpResponse:
-    """`Avalda` — the page is up on koda.ee, and this is where it is.
+    """`Avalda` — the page is up, and this is where it is.
 
     New business content, so a closed Matter refuses it under the lock rather
     than by not rendering the control. The address goes through
-    `normalize_koda_website_url` on the form *and* in the service: the first is
+    `normalize_overview_news_url` on the form *and* in the service: the first is
     where a person sees the refusal beside what they typed, and the second is
     what a crafted POST meets.
     """
@@ -4791,12 +4791,12 @@ def workspace_forms(
         "important_date_form": CompactImportantDateForm(),
         "effective_date_form": CompactEffectiveDateForm(),
         "work_victory_form": CompactWorkVictoryForm(),
-        # `+ Kodulehe ülevaade`. A form with no fields, because at the moment
-        # somebody decides a Matter should be written up on koda.ee there is no
-        # address and no date to ask for. It is built here like the other seven
-        # so that a refusal — the closed Matter, which is the only one this
-        # operation can produce — comes back through the same machinery
-        # (docs/adr/0081 §2).
+        # `+ Ülevaade / uudis`. Two optional boxes and no kind selector: an
+        # empty submit is the plan, both boxes filled record a page that is
+        # already up, and which of the two kinds of publication it is, is what
+        # the address says (docs/adr/0083, docs/adr/0085 §1). Built here like
+        # the other seven so that a refusal comes back through the same
+        # machinery.
         "website_overview_form": CompactWebsiteOverviewForm(),
         # `+ Väline seisukoht`. The one form here that has to be told which
         # Matter it is on and who is looking: `Organisatsioon` is ranked by the

@@ -146,12 +146,16 @@ COMPOSER_ENGAGEMENT_KINDS: tuple[tuple[str, str], ...] = (
 
 
 class WebsiteOverviewStatus(models.TextChoices):
-    """Where one `Kodulehe ülevaade` stands.
+    """Where one `Ülevaade / uudis` stands.
 
     Three states and no fourth. A lawyer decides that a Matter deserves a
-    summary on koda.ee, somebody writes and publishes it, and the address goes
-    on the file; or the plan is dropped and that is part of the file too
-    (docs/adr/0081).
+    write-up — an overview on the Chamber's own site, or a news item somewhere
+    else — somebody publishes it, and the address goes on the file; or the plan
+    is dropped and that is part of the file too (docs/adr/0081, docs/adr/0085).
+
+    **The states do not encode which of the two it is**, because the record does
+    not: one publication activity, told apart by its address rather than by a
+    type nobody could correct (docs/adr/0085 §1).
 
     ``PLANNED`` carries no address and no date, because neither exists yet:
     the whole point of the record is to hold the intention before there is

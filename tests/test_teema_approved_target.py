@@ -337,7 +337,7 @@ def test_lisa_teemale_offers_nine_choices_and_opens_none_of_them(signed_in, norm
     """**§18, as ADR 0075 restates it.** Nine operations, each its own form,
     and the zone is a choice until one is picked.
 
-    The eighth is `+ Kodulehe ülevaade`, added by docs/adr/0081, and the ninth
+    The eighth is `+ Ülevaade / uudis`, added by docs/adr/0081, and the ninth
     is `+ Väline seisukoht`, added by docs/adr/0084. The claim this test makes
     is about the zone's *shape* — a choice of operations, none of them open —
     and it is unchanged by the number of them."""
@@ -351,7 +351,7 @@ def test_lisa_teemale_offers_nine_choices_and_opens_none_of_them(signed_in, norm
         "+ Oluline tähtaeg",
         "+ Jõustumine",
         "+ Töövõit",
-        "+ Kodulehe ülevaade",
+        "+ Ülevaade / uudis",
         "+ Väline seisukoht",
         "+ Lõpeta teema",
     ]

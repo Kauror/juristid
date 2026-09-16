@@ -43,7 +43,6 @@ from app.matters.models import (
     ENGAGEMENT_URL_MAX_LENGTH,
     EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
     EXTERNAL_POSITION_URL_MAX_LENGTH,
-    KODA_WEBSITE_HOST,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Entry,
     EntryRevision,
@@ -1395,7 +1394,16 @@ def add_source_derived_policy_areas(
 ENGAGEMENT_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
-def _normalize_public_link(value: str | None, *, max_length: int) -> str:
+def _normalize_public_link(
+    value: str | None,
+    *,
+    max_length: int,
+    reject_credentials: bool = False,
+    not_a_url: str = "Link peab sisaldama veebiaadressi.",
+    not_web_scheme: str = "Link peab algama http:// või https:// aadressiga.",
+    has_credentials: str = "Link ei tohi sisaldada kasutajanime ega parooli.",
+    too_long: str | None = None,
+) -> str:
     """One implementation of «a public http(s) address, or nothing».
 
     Factored out of :func:`normalize_engagement_url` when `Väline seisukoht`
@@ -1403,9 +1411,25 @@ def _normalize_public_link(value: str | None, *, max_length: int) -> str:
     not the kind that may exist twice: it is the difference between a clickable
     control on a page a lawyer trusts and a script-delivery vector, and a second
     copy is a second place for `javascript:` to be forgotten. ``max_length`` is
-    the only thing the two callers disagree about, and both of them state their
-    own — the refusal sentence is built from it, so neither caller's wording
-    changed when this was extracted.
+    the only thing the first two callers disagreed about, and both of them state
+    their own — the refusal sentence is built from it, so neither caller's
+    wording changed when this was extracted.
+
+    The refusal sentences are parameters for the third caller,
+    :func:`normalize_overview_news_url`, which names its own record in every one
+    of them. A shared «Link peab sisaldama veebiaadressi.» would have been the
+    only sentence on a Teema page that did not say *which* link it meant, on a
+    page that now renders three different kinds of them.
+
+    ``reject_credentials`` is off by default and the default is the older
+    behaviour, deliberately. `https://user:pw@host/` has a perfectly good host,
+    and for a campaign address out of the historical register — which this
+    department did not choose and cannot re-issue — refusing it would mean
+    refusing to record what actually happened. An `Ülevaade / uudis` address is
+    one somebody is pasting *now*, from a page they have open, so there is no
+    such history to accommodate and a credential on the file is a credential in
+    an audit payload, on a rendered page and in everybody's browser history
+    (docs/adr/0081 §3, kept by docs/adr/0085 §2).
     """
     from urllib.parse import urlsplit
 
@@ -1415,21 +1439,29 @@ def _normalize_public_link(value: str | None, *, max_length: int) -> str:
     try:
         parts = urlsplit(url)
     except ValueError:
-        raise DomainError("Link peab sisaldama veebiaadressi.") from None
+        raise DomainError(not_a_url) from None
     if parts.scheme.lower() not in ENGAGEMENT_URL_SCHEMES:
-        raise DomainError("Link peab algama http:// või https:// aadressiga.")
+        raise DomainError(not_web_scheme)
     try:
         hostname = parts.hostname
+        username = parts.username
+        password = parts.password
     except ValueError:
         # A malformed authority — an unbracketed IPv6 literal, a port that is
         # not a number. A refusal, not an unhandled exception from a parser.
         hostname = None
+        username = password = None
+    if reject_credentials and (username or password):
+        raise DomainError(has_credentials)
     if not hostname:
-        raise DomainError("Link peab sisaldama veebiaadressi.")
+        raise DomainError(not_a_url)
     if len(url) > max_length:
         raise DomainError(
-            f"Link on liiga pikk — kuni {max_length} tähemärki. "
-            "Lühenda aadressi või salvesta see märkusesse."
+            too_long
+            or (
+                f"Link on liiga pikk — kuni {max_length} tähemärki. "
+                "Lühenda aadressi või salvesta see märkusesse."
+            )
         )
     return url
 
@@ -1470,12 +1502,15 @@ def normalize_external_position_url(value: str | None) -> str:
     substring, refused rather than truncated — and that half is shared rather
     than copied (docs/adr/0084 §3).
 
-    **No host allow-list**, deliberately, and this is the difference from
-    `normalize_koda_website_url`. That one guards the Chamber's own site and can
-    name it; this one records where another organisation published its
-    position, and the set of those is every institution in Estonia and the EU.
-    A list would be a list somebody has to maintain, and the day a ministry
-    moves domain the file would refuse to record what actually happened.
+    **No host allow-list**, deliberately, and for the reason
+    `normalize_overview_news_url` now gives as well: this records where another
+    organisation published its position, and the set of those is every
+    institution in Estonia and the EU. A list would be a list somebody has to
+    maintain, and the day a ministry moves domain the file would refuse to
+    record what actually happened. The one rule the two do *not* share is
+    userinfo, which this one tolerates and that one refuses — an `Ülevaade /
+    uudis` address is pasted from a page somebody has open, where a position's
+    may come out of a historical register nobody can re-issue.
 
     Empty is not a refusal here either. A position may carry a document and no
     address at all, and which of the two it has is decided by
@@ -1940,127 +1975,109 @@ def correct_engagement(
 
 
 # ---------------------------------------------------------------------------
-# `Kodulehe ülevaade`
+# `Ülevaade / uudis`
 # ---------------------------------------------------------------------------
 #
-# The record, its three states and the one address it is allowed to point at.
+# The record, its three states and the addresses it is allowed to point at.
 # Every rule here is in this module rather than on a form, because a form is
-# what one browser was shown and a POST is what arrives (docs/adr/0081).
-
-#: The only scheme a published overview may use.
-#:
-#: `http` is not on this list and that is the point. An engagement link is a
-#: pointer to whatever a campaign tool happened to serve, and the historical
-#: register is full of addresses this department did not choose; a Koda website
-#: overview is the Chamber's own page on the Chamber's own site, and there is no
-#: version of that which is legitimately unencrypted.
-KODA_WEBSITE_URL_SCHEME = "https"
+# what one browser was shown and a POST is what arrives (docs/adr/0081, as
+# amended by docs/adr/0085).
 
 #: What a refused address says. Named because three surfaces print these and the
 #: tests assert on them.
-WEBSITE_OVERVIEW_URL_NOT_A_URL = "Kodulehe ülevaate link peab olema täielik veebiaadress."
-WEBSITE_OVERVIEW_URL_NOT_HTTPS = "Kodulehe ülevaate link peab algama https:// aadressiga."
-WEBSITE_OVERVIEW_URL_WRONG_HOST = (
-    f"Kodulehe ülevaate link peab viitama {KODA_WEBSITE_HOST} aadressile "
-    f"(nt https://{KODA_WEBSITE_HOST}/…)."
+#:
+#: Each one says `ülevaate või uudise` rather than merely «link», because a
+#: Teema page now renders three kinds of address — a `Kaasamine`'s, a
+#: `Väline seisukoht`'s and this one — and a refusal that does not name its own
+#: record is a refusal the reader has to locate before they can act on it.
+WEBSITE_OVERVIEW_URL_NOT_A_URL = "Ülevaate või uudise link peab olema täielik veebiaadress."
+WEBSITE_OVERVIEW_URL_NOT_WEB_SCHEME = (
+    "Ülevaate või uudise link peab algama http:// või https:// aadressiga."
 )
 WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS = (
-    "Kodulehe ülevaate link ei tohi sisaldada kasutajanime ega parooli."
+    "Ülevaate või uudise link ei tohi sisaldada kasutajanime ega parooli."
 )
-WEBSITE_OVERVIEW_NEEDS_LINK = "Avaldatud kodulehe ülevaade vajab linki."
-WEBSITE_OVERVIEW_NEEDS_DATE = "Avaldatud kodulehe ülevaade vajab avaldamise kuupäeva."
+WEBSITE_OVERVIEW_URL_TOO_LONG = (
+    f"Ülevaate või uudise link on liiga pikk — kuni {WEBSITE_OVERVIEW_URL_MAX_LENGTH} tähemärki."
+)
+WEBSITE_OVERVIEW_NEEDS_LINK = "Avaldatud ülevaade või uudis vajab linki."
+WEBSITE_OVERVIEW_NEEDS_DATE = "Avaldatud ülevaade või uudis vajab avaldamise kuupäeva."
 WEBSITE_OVERVIEW_ALREADY_PUBLISHED = (
-    "See kodulehe ülevaade on juba avaldatud. Linki ja kuupäeva saab parandada."
+    "See ülevaade või uudis on juba avaldatud. Linki ja kuupäeva saab parandada."
 )
 WEBSITE_OVERVIEW_CANCELLED_IS_FINAL = (
-    "Tühistatud kodulehe ülevaadet ei saa enam avaldada ega muuta. Lisa uus ülevaade."
+    "Tühistatud ülevaadet või uudist ei saa enam avaldada ega muuta. Lisa uus ülevaade / uudis."
 )
 WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE = (
-    "Avaldatud kodulehe ülevaadet ei saa tühistada — leht on juba kodulehel. "
+    "Avaldatud ülevaadet või uudist ei saa tühistada — see on juba avaldatud. "
     "Paranda link või kuupäev."
 )
 WEBSITE_OVERVIEW_NOT_PUBLISHED = (
-    "Seda kodulehe ülevaadet ei ole avaldatud, seega ei ole linki ega kuupäeva parandada."
+    "Seda ülevaadet või uudist ei ole avaldatud, seega ei ole linki ega kuupäeva parandada."
 )
 WEBSITE_OVERVIEW_CONFLICT = (
-    "Seda kodulehe ülevaadet on vahepeal mujal muudetud. "
+    "Seda ülevaadet või uudist on vahepeal mujal muudetud. "
     "Värskenda lehte ja vaata, mis seal nüüd kirjas on."
 )
 
 
-def _koda_hostname(parts: Any) -> str:
-    """The host an address points at, refusing every shape that is not one.
-
-    `urlsplit(url).netloc` is the URL's **authority** — ``userinfo@host:port`` —
-    and the difference is exactly what a look-alike address is built out of:
-    ``https://koda.ee@evil.example/`` has `koda.ee` in its authority and
-    `evil.example` as its host, and a substring check reads the first. So the
-    comparison below is against `parsed.hostname`, which drops the userinfo and
-    the port and lowercases what is left, and the same reasoning
-    `MatterEngagement._hostname` records (red-team finding F-2, 2026-09-12).
-
-    Userinfo is refused outright rather than merely ignored. A link that carries
-    it resolves perfectly well and is printed to a reader as `Ava kodulehel`;
-    there is no legitimate koda.ee page behind ``user:pw@``, and a credential on
-    the file is a credential in an audit payload, a rendered page and anybody's
-    browser history.
-    """
-    try:
-        hostname = parts.hostname
-    except ValueError:
-        # A malformed authority — an unbracketed IPv6 literal, a port that is
-        # not a number. A refusal with a sentence, not a parser exception.
-        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_A_URL) from None
-    if parts.username or parts.password:
-        raise DomainError(WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS)
-    if not hostname:
-        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_A_URL)
-    return hostname
-
-
-def normalize_koda_website_url(value: str | None) -> str:
-    """Trim it, allow it to be empty, and refuse anything that is not a koda.ee page.
+def normalize_overview_news_url(value: str | None) -> str:
+    """Trim it, allow it to be empty, and refuse anything that is not a public web address.
 
     The one door every writer of `MatterWebsiteOverview.url` passes through, so
-    it is where the trust boundary and the column's own width are both enforced.
+    it is where the column's own width is enforced and where the safety rule
+    lives.
 
-    **A parsed host, never a substring.** `koda.ee.example.com` contains
-    `koda.ee`, ends in nothing this accepts, and is somebody else's domain;
-    `https://koda.ee@evil.example/` contains it in the *userinfo*. Both are
-    refused because the comparison is `hostname == "koda.ee"` or
-    `hostname.endswith(".koda.ee")` on the parsed host, with a leading dot that
-    is doing real work — without it `notkoda.ee` would pass (docs/adr/0081 §3).
+    **No host allow-list**, and that is docs/adr/0085 §2 replacing
+    docs/adr/0081 §3. The record used to be `Kodulehe ülevaade` — a page on
+    koda.ee and nothing else — and the boundary was a parsed host equal to
+    `koda.ee` or ending in `.koda.ee`. It is now `Ülevaade / uudis`: the same
+    write-up may appear on koda.ee, in a trade paper, on a partner
+    organisation's site or in a ministry's news feed, and the set of those is
+    not a list anybody can maintain. A boundary that cannot be maintained is a
+    boundary that gets widened by whoever needs it widened, one host at a time,
+    which is worse than not having one.
+
+    Nothing is given up by that, because the boundary was never load-bearing for
+    access: this address is not fetched, not crawled and not resolved anywhere
+    on the server. It is rendered as one labelled link in a new tab with
+    `rel="noopener noreferrer"`, exactly as `Väline seisukoht`'s address already
+    is (docs/adr/0084 §3), and the rules that actually protect the reader are
+    the ones kept below.
+
+    **What is kept.** `http` and `https` only — `javascript:` and `data:` are
+    script delivery dressed as an address and `file:` and `ftp:` point somewhere
+    the reader's browser cannot usefully follow. A **parsed host**, never a
+    substring, so `https://user:pw@/path` — a non-empty authority with no host
+    at all — is refused. Userinfo is refused outright rather than merely
+    ignored: there is no published page behind `user:pw@`, and a credential on
+    the file is a credential in an audit payload, on a rendered page and in
+    everybody's browser history (red-team finding F-2).
 
     **Refused, never truncated**, for the reason `normalize_engagement_url`
     gives: a link cut off at a thousand characters is a link that no longer
     resolves, and a stored pointer that is quietly wrong is worse than a refusal
-    naming the row.
+    naming the row (finding F-1).
+
+    **Nothing here says the page is still there.** No request is made, and a
+    saved address is a record of what somebody stated, not a claim that it
+    resolves today — an overview published in 2019 whose site has since been
+    rebuilt is still a true record of what the Chamber did.
 
     An empty value is returned as an empty string rather than refused. Whether
     emptiness is allowed is a question about the *state* the record is in — a
     plan legitimately has no address — and that question is answered by
     `publish_website_overview`, which is the only caller that requires one.
     """
-    from urllib.parse import urlsplit
-
-    url = (value or "").strip()
-    if not url:
-        return ""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_A_URL) from None
-    if parts.scheme.lower() != KODA_WEBSITE_URL_SCHEME:
-        raise DomainError(WEBSITE_OVERVIEW_URL_NOT_HTTPS)
-    hostname = _koda_hostname(parts)
-    if hostname != KODA_WEBSITE_HOST and not hostname.endswith(f".{KODA_WEBSITE_HOST}"):
-        raise DomainError(WEBSITE_OVERVIEW_URL_WRONG_HOST)
-    if len(url) > WEBSITE_OVERVIEW_URL_MAX_LENGTH:
-        raise DomainError(
-            f"Kodulehe ülevaate link on liiga pikk — kuni "
-            f"{WEBSITE_OVERVIEW_URL_MAX_LENGTH} tähemärki."
-        )
-    return url
+    return _normalize_public_link(
+        value,
+        max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
+        reject_credentials=True,
+        not_a_url=WEBSITE_OVERVIEW_URL_NOT_A_URL,
+        not_web_scheme=WEBSITE_OVERVIEW_URL_NOT_WEB_SCHEME,
+        has_credentials=WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS,
+        too_long=WEBSITE_OVERVIEW_URL_TOO_LONG,
+    )
 
 
 class WebsiteOverviewConflict(DomainError):
@@ -2118,13 +2135,19 @@ def _locked_website_overview(
 
 @transaction.atomic
 def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsiteOverview:
-    """Record that this Matter is owed a summary on koda.ee.
+    """Record that this Matter is owed an overview or a news item.
 
     No address, no date, and no title. The record's whole content is *that the
     write-up is owed*, and asking for anything else at this moment would be
     asking a question nobody can answer yet — the page does not exist. A title
     invented here would be a title nobody chose, and it would sit beside the
     real one the day the page is published (docs/adr/0081 §1).
+
+    **No kind is asked for either**, and that is docs/adr/0085 §1: an overview
+    Koda writes about itself and a news item written about the file are one
+    publication activity, and the one thing that tells a reader which they are
+    looking at is the address — which a plan does not have yet and a published
+    row prints as a link.
 
     Writes no `Entry`. One action must not become two records that can disagree,
     which is `add_engagement`'s rule and is this one's for the same reason.
@@ -2156,12 +2179,12 @@ def _publication_values(url: Any, published_on: Any) -> tuple[str, Any]:
     """The two things a publication needs, or the sentence that says which is missing.
 
     Both refusals are their own sentence rather than one «täida väljad», because
-    they are different mistakes: an address that is not a koda.ee page is a link
-    somebody pasted from the wrong tab, and a missing date is a box they did not
+    they are different mistakes: an address that is not a public web address is
+    something pasted from the wrong tab, and a missing date is a box they did not
     reach. The date is checked after the address so that a form with both wrong
-    reports the address first — it is the one that carries the trust boundary.
+    reports the address first — it is the one that carries the safety rule.
     """
-    clean_url = normalize_koda_website_url(url)
+    clean_url = normalize_overview_news_url(url)
     if not clean_url:
         raise DomainError(WEBSITE_OVERVIEW_NEEDS_LINK)
     if published_on is None:
@@ -2180,9 +2203,10 @@ def publish_website_overview(
 ) -> MatterWebsiteOverview:
     """`Plaanis` → `Avaldatud`: the page exists, and this is where it is.
 
-    The one transition that gives an overview an address. It requires both an
-    `https://koda.ee/…` link and the day the page went up, and it refuses every
-    other starting state by name: an overview that is already published is
+    The one transition that gives a record an address. It requires both a
+    public `http(s)` link and the day the page went up, and it refuses every
+    other starting state by name: an overview or news item that is already
+    published is
     corrected rather than published again (`correct_website_overview_link`), and
     a cancelled one is terminal — the honest record of a plan that came back is
     a new plan, not a resurrected one (docs/adr/0081 §1).
@@ -2232,9 +2256,8 @@ def publish_website_overview(
             "status": locked.status,
             # The address itself, because it is the whole content of this record
             # and a history saying only «a link was recorded» could not answer
-            # «which». It is a public koda.ee page: there is no token in it, and
-            # `normalize_koda_website_url` has already refused any address
-            # carrying credentials.
+            # «which». It is a public page: `normalize_overview_news_url` has
+            # already refused any address carrying credentials.
             "url": locked.url,
             "published_on": locked.published_on.isoformat(),
         },
@@ -2361,12 +2384,12 @@ def cancel_website_overview(
     for (Stage-2G brief 5, 33).
 
     **`Avaldatud` → `Tühistatud` is refused**, and not for want of a state to
-    move to. The page is on koda.ee: a record claiming it was never published
-    would be the file disagreeing with the website, and the honest correction to
-    an overview that was taken down is a decision this product has not been asked
-    to make (docs/adr/0081 §1). Cancelling an already-cancelled one is refused
-    for the ordinary reason — it would write a second cancellation event for an
-    act that happened once.
+    move to. The page is up: a record claiming it was never published would be
+    the file disagreeing with the world, and the honest correction to an
+    overview or news item that was taken down is a decision this product has not
+    been asked to make (docs/adr/0081 §1, unchanged by docs/adr/0085).
+    Cancelling an already-cancelled one is refused for the ordinary reason — it
+    would write a second cancellation event for an act that happened once.
     """
     locked = _locked_website_overview(overview, expected_revision)
     if locked.status == WebsiteOverviewStatus.PUBLISHED:
@@ -2386,7 +2409,7 @@ def cancel_planned_website_overviews_for_closure(
 
     Called from inside `close_matter`, in its transaction and under its lock, so
     a closure either shuts the Matter *and* cancels its plans or does neither.
-    A closed file that still says «a kodulehe ülevaade is owed» would be an
+    A closed file that still says «an ülevaade / uudis is owed» would be an
     instruction nobody can act on: every route that could publish or cancel one
     refuses a closed Matter, so the plan would sit there permanently owed
     (docs/adr/0081 §5).
@@ -2844,7 +2867,7 @@ def close_matter(
     end_open_action_for_closure(matter=matter, actor=actor)
 
     # Nor keep owing the website a summary nobody is allowed to publish any
-    # more. Every planned `Kodulehe ülevaade` is cancelled here, in this
+    # more. Every planned `Ülevaade / uudis` is cancelled here, in this
     # transaction and under this lock, each with its own audit event naming the
     # closure — so the file either shuts with its plans dropped or does not shut
     # at all. Closure is never *blocked* by them: an open plan is not a

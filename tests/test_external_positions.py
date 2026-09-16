@@ -784,7 +784,7 @@ def test_a_closed_matter_refuses_a_correction(normal_matter, specialist, ministr
 
 
 def test_closing_a_matter_leaves_recorded_positions_alone(normal_matter, specialist, ministry):
-    """Unlike a planned `Kodulehe ülevaade`, a position is not an outstanding
+    """Unlike a planned `Ülevaade / uudis`, a position is not an outstanding
     obligation — it is a fact that already happened, so closure does nothing to
     it at all."""
     position = _recorded(normal_matter, ministry, specialist, url=POSITION_URL)

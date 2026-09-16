@@ -1,19 +1,22 @@
-"""`Kodulehe ülevaade` in a real browser: plan one, publish it, and read it back.
+"""`Ülevaade / uudis` in a real browser: plan one, publish it, and read it back.
 
 The rules this file is here for are the ones only a running page can settle:
 
 * that the eighth launcher choice opens, saves through HTMX, and puts the
   planned strip on the page without a reload;
 * that publishing a plan moves it off the strip and onto the chronology in the
-  same swap, as a labelled `Ava kodulehel` that opens in a new tab — never as a
-  printed address;
+  same swap, as a labelled `Ava ülevaade või uudis` that opens in a new tab —
+  never as a printed address;
 * that a refused address comes back with what was typed still in the box;
+* that the publication date fills itself when somebody starts typing a link, and
+  that a form nobody touched still records the plan — script behaviour, and
+  therefore only provable here (docs/adr/0085 §3);
 * that the whole thing is reachable from the keyboard and does not make the page
   scroll sideways at phone width.
 
-The service-level rules — the `koda.ee` boundary, the lifecycle, the closed
-Matter, the audit trail — are `tests/test_website_overviews.py`, which is cheap
-and runs everywhere.
+The service-level rules — the address rule, the lifecycle, the closed Matter,
+the audit trail — are `tests/test_website_overviews.py` and
+`tests/test_overview_news_publication.py`, which are cheap and run everywhere.
 
 **Everything here happens on a Matter the test creates.** The screenshot suite
 opens `OPEN_TITLE`, and a chronology that grew while these ran would make that
@@ -33,7 +36,7 @@ KODA_URL = "https://koda.ee/uudised/e2e-ulevaade"
 
 
 def a_new_matter(page, base_url: str) -> str:
-    return create_matter(page, base_url, unique_title("Kodulehe ülevaade"))
+    return create_matter(page, base_url, unique_title("Ülevaade uudis"))
 
 
 def strip(page):
@@ -48,8 +51,9 @@ def chronology(page):
 #: the outcome until docs/adr/0083 — a fieldless form and a button saying
 #: `Salvesta` read as a text area that had failed to load. It names no outcome
 #: either: the one form reaches the plan and the published page alike, so it
-#: cannot promise `planeeritud`.
-PLAN_BUTTON = "Lisa ülevaade"
+#: cannot promise `planeeritud`. `/ uudis` since docs/adr/0085 §1, because the
+#: write-up is as often a news item as a Koda overview.
+PLAN_BUTTON = "Lisa ülevaade / uudis"
 
 #: What a planned row offers next. `Avalda` named the lifecycle transition and
 #: left the reader to discover it wanted two things (docs/adr/0083).
@@ -57,7 +61,7 @@ PUBLISH_DISCLOSURE = "Lisa link ja avaldamiskuupäev"
 
 
 def plan_one(page, base_url: str) -> None:
-    """`+ Kodulehe ülevaade` → the plan, on a Matter that has just been made."""
+    """`+ Ülevaade / uudis` → the plan, on a Matter that has just been made."""
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-koduleht")
     page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).click()
@@ -90,10 +94,10 @@ def test_the_eighth_choice_records_a_plan_without_a_reload(page, base_url):
     sign_in(page, base_url, SANDRA)
     plan_one(page, base_url)
 
-    expect(strip(page)).to_contain_text("Ülevaade on plaanis, aga veel avaldamata.")
+    expect(strip(page)).to_contain_text("Ülevaade või uudis on plaanis, aga veel avaldamata.")
     # A plan is not a milestone: the chronology says nothing about it until
     # something actually happens (docs/adr/0081 §4).
-    expect(chronology(page)).not_to_contain_text("Kodulehe ülevaade")
+    expect(chronology(page)).not_to_contain_text("Ülevaade / uudis")
 
 
 def test_the_panel_asks_for_no_address_and_no_date(page, base_url):
@@ -110,7 +114,7 @@ def test_the_panel_asks_for_no_address_and_no_date(page, base_url):
     expect(panel.get_by_role("button", name=PLAN_BUTTON)).to_be_visible()
     expect(panel.locator("[name=url]")).to_be_visible()
     expect(panel.locator("[name=published_on]")).to_be_visible()
-    expect(panel.get_by_text("Kui ülevaade on juba avaldatud")).to_be_visible()
+    expect(panel.get_by_text("Kui ülevaade või uudis on juba avaldatud")).to_be_visible()
     expect(panel.locator("textarea")).to_have_count(0)
     expect(panel.locator("input[type=file]")).to_have_count(0)
 
@@ -127,7 +131,7 @@ def test_publishing_moves_the_row_onto_the_chronology_as_a_labelled_link(page, b
     # The plan is discharged, so the strip goes with it.
     expect(strip(page)).to_have_count(0)
 
-    link = chronology(page).get_by_role("link", name="Ava kodulehel")
+    link = chronology(page).get_by_role("link", name="Ava ülevaade või uudis")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", KODA_URL)
     expect(link).to_have_attribute("target", "_blank")
@@ -146,11 +150,11 @@ def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
     disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
-    chronology(page).get_by_role("link", name="Ava kodulehel").wait_for()
+    chronology(page).get_by_role("link", name="Ava ülevaade või uudis").wait_for()
 
     name = (
         chronology(page)
-        .get_by_role("link", name="Ava kodulehel")
+        .get_by_role("link", name="Ava ülevaade või uudis")
         .evaluate("node => node.textContent.replace(/\\s+/g, ' ').trim()")
     )
 
@@ -158,24 +162,25 @@ def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
 
 
 def test_a_refused_address_comes_back_with_what_was_typed(page, base_url):
-    """`https://koda.ee.example.com/…` contains `koda.ee` and is somebody else's
-    domain. The refusal arrives as an HTMX swap, the panel is still open, and
-    nothing that was typed is gone (docs/adr/0081 §3)."""
+    """`https://koda.ee@example.com/…` puts the Chamber's name in the *userinfo*,
+    which every browser ignores when resolving. The refusal arrives as an HTMX
+    swap, the panel is still open, and nothing that was typed is gone
+    (docs/adr/0081 §3, kept by docs/adr/0085 §2)."""
     sign_in(page, base_url, SANDRA)
     plan_one(page, base_url)
 
     disclosure = open_publish_form(page)
-    disclosure.locator("[name=url]").fill("https://koda.ee.example.com/uudised/x")
+    disclosure.locator("[name=url]").fill("https://koda.ee@example.com/uudised/x")
     disclosure.locator("[name=published_on]").fill("14.03.2026")
     disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
     page.wait_for_timeout(400)
 
     reopened = strip(page).locator("details.webrow__publish").first
-    expect(reopened.locator("[name=url]")).to_have_value("https://koda.ee.example.com/uudised/x")
+    expect(reopened.locator("[name=url]")).to_have_value("https://koda.ee@example.com/uudised/x")
     expect(reopened.locator("[name=published_on]")).to_have_value("14.03.2026")
-    expect(strip(page)).to_contain_text("koda.ee")
+    expect(strip(page)).to_contain_text("kasutajanime ega parooli")
     # And the plan is still a plan.
-    expect(strip(page)).to_contain_text("Ülevaade on plaanis, aga veel avaldamata.")
+    expect(strip(page)).to_contain_text("Ülevaade või uudis on plaanis, aga veel avaldamata.")
 
 
 def test_cancelling_a_plan_leaves_it_on_the_chronology(page, base_url):
@@ -186,7 +191,7 @@ def test_cancelling_a_plan_leaves_it_on_the_chronology(page, base_url):
     strip(page).get_by_role("button", name="Tühista").click()
 
     expect(strip(page)).to_have_count(0)
-    expect(chronology(page)).to_contain_text("Kodulehe ülevaade")
+    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
     expect(chronology(page)).to_contain_text("Tühistatud")
 
 
@@ -199,7 +204,7 @@ def test_a_published_address_can_be_corrected_from_its_own_row(page, base_url):
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
     disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
-    chronology(page).get_by_role("link", name="Ava kodulehel").wait_for()
+    chronology(page).get_by_role("link", name="Ava ülevaade või uudis").wait_for()
 
     chronology(page).get_by_role("button", name="Paranda link").click()
     region = chronology(page).locator(".uxtl__weblink")
@@ -211,7 +216,7 @@ def test_a_published_address_can_be_corrected_from_its_own_row(page, base_url):
     # this row has already made (docs/adr/0081 §5).
     region.get_by_role("button", name="Salvesta", exact=True).click()
 
-    link = chronology(page).get_by_role("link", name="Ava kodulehel")
+    link = chronology(page).get_by_role("link", name="Ava ülevaade või uudis")
     expect(link).to_have_attribute("href", f"{KODA_URL}-parandatud")
 
 
@@ -261,7 +266,7 @@ def test_the_strip_and_its_form_fit_a_phone(page, base_url):
 
     assert not page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    ), "the Kodulehe ülevaated strip makes the Teema page scroll sideways at 375px"
+    ), "the Ülevaated / uudised strip makes the Teema page scroll sideways at 375px"
     expect(strip(page).locator("[name=url]").first).to_be_visible()
     expect(strip(page).get_by_role("button", name="Tühista")).to_be_visible()
 
@@ -291,7 +296,7 @@ def test_the_panel_can_record_a_page_that_is_already_up(page, base_url):
     # left behind on the strip.
     expect(chronology(page)).to_contain_text("Avaldatud")
     expect(strip(page)).to_have_count(0)
-    expect(chronology(page).get_by_role("link", name="Ava kodulehel")).to_be_visible()
+    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
 
 
 def test_half_a_publication_is_refused_and_keeps_what_was_typed(page, base_url):
@@ -318,14 +323,14 @@ def test_half_a_publication_is_refused_and_keeps_what_was_typed(page, base_url):
     expect(strip(page)).to_have_count(0)
 
 
-def test_a_look_alike_host_is_refused_from_the_panel_too(page, base_url):
-    """The koda.ee boundary is the service's and reaches the new path unchanged."""
+def test_a_credential_bearing_address_is_refused_from_the_panel_too(page, base_url):
+    """The address rule is the service's and reaches the new path unchanged."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-koduleht")
 
     panel = page.locator("#lisa-koduleht")
-    panel.locator("[name=url]").fill("https://koda.ee.example.com/uudised/x")
+    panel.locator("[name=url]").fill("https://kasutaja:parool@example.com/uudised/x")
     panel.locator("[name=published_on]").fill("14.03.2026")
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     page.wait_for_timeout(200)
@@ -356,4 +361,159 @@ def test_the_panel_fits_a_phone_with_both_boxes(page, base_url):
     expect(panel.locator("[name=published_on]")).to_be_visible()
     assert not page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    ), "the + Kodulehe ülevaade panel makes the Teema page scroll sideways at 375px"
+    ), "the + Ülevaade / uudis panel makes the Teema page scroll sideways at 375px"
+
+
+# ---------------------------------------------------------------------------
+# docs/adr/0085 — one neutral activity, any public address, and a date default
+# that arrives with the published path
+# ---------------------------------------------------------------------------
+
+
+def panel_of(page):
+    return page.locator("#lisa-koduleht")
+
+
+def today_estonian(page) -> str:
+    """The day the *server* believes it is, read off the control that carries it.
+
+    Not `datetime.date.today()` in the test process: the point of
+    `data-publication-default` is that the value is the server's, and a test
+    that recomputed it here would pass on a machine whose clock disagreed —
+    which is the exact failure the attribute exists to prevent.
+    """
+    return panel_of(page).locator("[name=published_on]").get_attribute("data-publication-default")
+
+
+def test_the_panel_offers_one_activity_and_no_kind_selector(page, base_url):
+    """docs/adr/0085 §1. An overview and a news item are the same act.
+
+    The chip says so, and there is nothing on the panel asking which of the two
+    this is — no radios, no select, no chip group. The link is what tells them
+    apart, and a plan does not have one yet.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    expect(page.get_by_text("+ Ülevaade / uudis", exact=True)).to_be_visible()
+    panel = panel_of(page)
+    expect(panel.locator("input[type=radio]")).to_have_count(0)
+    expect(panel.locator("select")).to_have_count(0)
+    expect(panel.locator("[data-chipgroup]")).to_have_count(0)
+    # And still nothing else: no title, no description, no attachment
+    # (docs/adr/0081 §2).
+    expect(panel.locator("textarea")).to_have_count(0)
+    expect(panel.locator("input[type=file]")).to_have_count(0)
+
+
+def test_typing_a_link_fills_the_publication_date_with_today(page, base_url):
+    """docs/adr/0085 §3. The default arrives when the published path is chosen.
+
+    Read after a single keystroke rather than after the whole address, because
+    the trigger is the *transition* out of an empty box and nothing later.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = panel_of(page)
+    today = today_estonian(page)
+    assert today, "the date box carries no server-resolved default"
+    expect(panel.locator("[name=published_on]")).to_have_value("")
+
+    panel.locator("[name=url]").type("h")
+
+    expect(panel.locator("[name=published_on]")).to_have_value(today)
+
+
+def test_the_prefilled_date_can_be_changed_and_is_what_gets_stored(page, base_url):
+    """It is a default, not a stamp: what is in the box at submit is what is filed."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = panel_of(page)
+    panel.locator("[name=url]").fill(KODA_URL)
+    expect(panel.locator("[name=published_on]")).to_have_value(today_estonian(page))
+
+    panel.locator("[name=published_on]").fill("14.03.2026")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    chronology(page).wait_for(state="visible")
+
+    expect(chronology(page)).to_contain_text("14.3.2026")
+    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
+
+
+def test_a_date_cleared_on_purpose_stays_cleared(page, base_url):
+    """The one way a default becomes a stamp is by coming back after a refusal.
+
+    Clearing the box marks it the person's; editing the address afterwards must
+    not quietly refill it, or an empty submit would be impossible to express.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = panel_of(page)
+    panel.locator("[name=url]").fill(KODA_URL)
+    expect(panel.locator("[name=published_on]")).not_to_have_value("")
+
+    panel.locator("[name=published_on]").fill("")
+    panel.locator("[name=url]").fill("")
+    panel.locator("[name=url]").type("https://uudised.example/x")
+
+    expect(panel.locator("[name=published_on]")).to_have_value("")
+
+
+def test_an_untouched_panel_still_records_a_plan(page, base_url):
+    """The property docs/adr/0083 §2 refused an `initial` to protect, still true.
+
+    Nobody touches the link box, so nothing fills the date box, so the submit is
+    two empty fields — and that is the plan.
+    """
+    sign_in(page, base_url, SANDRA)
+    plan_one(page, base_url)
+
+    expect(strip(page)).to_contain_text("Ülevaade või uudis on plaanis, aga veel avaldamata.")
+    expect(chronology(page)).not_to_contain_text("Avaldatud")
+
+
+def test_a_news_item_on_somebody_elses_site_is_recorded(page, base_url):
+    """docs/adr/0085 §2. The write-up is as often in a trade paper as on koda.ee."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    news = "https://uudised.example/2026/03/kaubanduskoda-hoiatab"
+    panel = panel_of(page)
+    panel.locator("[name=url]").fill(news)
+    panel.locator("[name=published_on]").fill("14.03.2026")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    chronology(page).wait_for(state="visible")
+
+    link = chronology(page).get_by_role("link", name="Ava ülevaade või uudis")
+    expect(link).to_have_attribute("href", news)
+    expect(link).to_have_attribute("rel", "noopener noreferrer")
+    # Labelled, never printed — which matters more now that the host is not fixed.
+    expect(chronology(page)).not_to_contain_text(news)
+
+
+def test_a_refusal_keeps_an_emptied_date_empty(page, base_url):
+    """A swap preserves what was typed *and* what was deliberately not typed."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = panel_of(page)
+    panel.locator("[name=url]").fill(KODA_URL)
+    panel.locator("[name=published_on]").fill("")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    page.wait_for_timeout(300)
+
+    reopened = panel_of(page)
+    expect(reopened).to_be_visible()
+    assert reopened.locator("[name=url]").input_value() == KODA_URL
+    assert reopened.locator("[name=published_on]").input_value() == ""
+    expect(reopened.locator(".field__error").first).to_be_visible()
+    expect(strip(page)).to_have_count(0)

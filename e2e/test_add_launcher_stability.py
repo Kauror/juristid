@@ -39,7 +39,7 @@ CANONICAL = [
     "+ Oluline tähtaeg",
     "+ Jõustumine",
     "+ Töövõit",
-    "+ Kodulehe ülevaade",
+    "+ Ülevaade / uudis",
     "+ Väline seisukoht",
     "+ Lõpeta teema",
 ]

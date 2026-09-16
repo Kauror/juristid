@@ -1,12 +1,13 @@
-"""`Kodulehe ülevaade` — a Matter owes koda.ee a summary, and later has one.
+"""`Ülevaade / uudis` — a Matter owes a write-up somewhere, and later has one.
 
-Three states, two columns, and one trust boundary. The rules this file is most
+Three states, two columns, and one address rule. The rules this file is most
 careful about are the ones a screenshot cannot show:
 
 * a plan carries no address and no date, and publishing is what gives it both;
-* the only address a published overview may hold is a `koda.ee` page over
-  `https`, decided by a **parsed host** rather than by a substring — which is the
-  difference between `https://koda.ee/x` and `https://koda.ee.example.com/x`;
+* the address is any public `http`/`https` page, decided by a **parsed host**
+  rather than by a substring, with userinfo refused outright (docs/adr/0085 §2
+  supersedes the `koda.ee` allow-list; the rename and the widened rule have
+  their own file, `tests/test_overview_news_publication.py`);
 * the publication date is the person's and is never stamped by the server;
 * a closed Matter refuses every new record and still permits a correction to an
   address it already holds;
@@ -37,7 +38,7 @@ from app.matters.services import (
     cancel_website_overview,
     close_matter,
     correct_website_overview_link,
-    normalize_koda_website_url,
+    normalize_overview_news_url,
     plan_website_overview,
     publish_website_overview,
     website_overview_revision,
@@ -138,8 +139,8 @@ def test_publishing_keeps_the_date_the_person_supplied(normal_matter, specialist
     assert event.payload["published_on"] == PUBLISHED_ON.isoformat()
 
 
-def test_a_subdomain_of_koda_ee_is_a_koda_page(normal_matter, specialist):
-    """§3. `www.koda.ee` and every other subdomain are the Chamber's own site."""
+def test_a_subdomain_is_an_ordinary_host(normal_matter, specialist):
+    """§3. `www.koda.ee` is a host like any other now (docs/adr/0085 §2)."""
     published = publish_website_overview(
         overview=_planned(normal_matter, specialist),
         url=KODA_SUBDOMAIN_URL,
@@ -177,8 +178,8 @@ def test_a_plan_can_be_cancelled_and_the_row_stays(normal_matter, specialist):
 
 
 def test_a_published_overview_cannot_be_cancelled(normal_matter, specialist):
-    """§1. The page is on koda.ee. A record claiming it was never published
-    would be the file disagreeing with the website."""
+    """§1. The page is up. A record claiming it was never published would be
+    the file disagreeing with the world."""
     overview = _published(normal_matter, specialist)
 
     with pytest.raises(DomainError):
@@ -225,35 +226,42 @@ def test_publishing_an_already_published_overview_is_refused(normal_matter, spec
 
 # ---------------------------------------------------------------------------
 # §3 — the address, and everything that only looks like one
+#
+# The host allow-list is gone (docs/adr/0085 §2). What is left is the safety
+# half, and it is the half that was doing the work: a scheme allow-list, a
+# parsed host, userinfo refused outright, and a refusal rather than a silent
+# truncation. `tests/test_overview_news_publication.py` owns the widened rule
+# itself; these are the shapes that must stay refused whatever the host is.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "url",
     [
-        "http://koda.ee/uudised/x",
-        "https://koda.ee.example.com/uudised/x",
-        "https://notkoda.ee/uudised/x",
-        "https://example.com/koda.ee/uudised",
-        "https://koda.ee@example.com/uudised",
-        "https://example.com/?u=https://koda.ee/x",
         "ftp://koda.ee/uudised/x",
         "javascript:alert('koda.ee')",
+        "data:text/html,<script>alert(1)</script>",
+        "file:///c:/uudised/x",
+        "mailto:info@koda.ee",
         "koda.ee/uudised/x",
         "https:///uudised/x",
+        "https://user:pw@/uudised/x",
+        "https://koda.ee@example.com/uudised",
+        "http://kasutaja:parool@example.com/uudised/x",
         "see ei ole aadress",
     ],
 )
-def test_an_address_that_is_not_a_koda_page_is_refused(url):
-    """§3. Parsed host, never a substring.
+def test_an_address_that_is_not_a_public_web_page_is_refused(url):
+    """§3, as docs/adr/0085 §2 keeps it.
 
-    Every entry here contains the string `koda.ee` or claims to be a URL, and not
-    one of them is a page on the Chamber's website. `koda.ee.example.com` is
-    somebody else's domain; `https://koda.ee@example.com/` puts it in the
-    *userinfo*, which is what a browser ignores and a substring check believes.
+    Not a web scheme, no host at all, or a credential in the authority. The
+    userinfo cases are the ones worth staring at: `https://koda.ee@example.com/`
+    resolves to `example.com` in every browser and to `koda.ee` in a substring
+    check, and a password in a stored address is a password in an audit payload
+    and in everybody's browser history.
     """
     with pytest.raises(DomainError):
-        normalize_koda_website_url(url)
+        normalize_overview_news_url(url)
 
 
 @pytest.mark.parametrize(
@@ -267,15 +275,17 @@ def test_an_address_that_is_not_a_koda_page_is_refused(url):
         "  https://koda.ee/uudised/x  ",
     ],
 )
-def test_a_koda_page_over_https_is_accepted(url):
-    assert normalize_koda_website_url(url) == url.strip()
+def test_a_koda_page_is_still_accepted(url):
+    """Widening the rule took nothing away: every address that was legal on
+    2026-09-15 is legal now, which is why no row needed rewriting."""
+    assert normalize_overview_news_url(url) == url.strip()
 
 
 def test_an_empty_address_is_not_a_refusal_on_its_own():
     """Whether emptiness is allowed is a question about the *state* a record is
     in, and it is answered by the operation that requires an address."""
-    assert normalize_koda_website_url("") == ""
-    assert normalize_koda_website_url(None) == ""
+    assert normalize_overview_news_url("") == ""
+    assert normalize_overview_news_url(None) == ""
 
 
 def test_an_over_long_address_is_refused_rather_than_truncated():
@@ -283,7 +293,7 @@ def test_an_over_long_address_is_refused_rather_than_truncated():
     resolves, and a stored pointer that is quietly wrong is worse than a refusal
     (red-team finding F-1)."""
     with pytest.raises(DomainError):
-        normalize_koda_website_url("https://koda.ee/" + "a" * 1000)
+        normalize_overview_news_url("https://koda.ee/" + "a" * 1000)
 
 
 def test_publishing_without_an_address_or_a_date_is_refused(normal_matter, specialist):
@@ -467,7 +477,7 @@ def test_a_current_revision_is_accepted(normal_matter, specialist):
 
 
 def test_closing_a_matter_cancels_every_plan_it_still_owed(normal_matter, specialist):
-    """§5. A closed file that still said «a kodulehe ülevaade is owed» would be
+    """§5. A closed file that still said «an ülevaade / uudis is owed» would be
     an instruction nobody can act on — every route that could publish or cancel
     one refuses a closed Matter."""
     first = plan_website_overview(matter=normal_matter, actor=specialist)
@@ -574,7 +584,7 @@ def test_a_planned_overview_reads_in_its_own_strip(signed_in, normal_matter, spe
     body = _detail(signed_in, normal_matter)
 
     assert 'id="kodulehe-ulevaated"' in body
-    assert "Ülevaade on plaanis, aga veel avaldamata." in body
+    assert "Ülevaade või uudis on plaanis, aga veel avaldamata." in body
 
 
 def test_a_matter_with_nothing_planned_renders_no_strip(signed_in, normal_matter):
@@ -603,7 +613,7 @@ def test_a_refused_address_comes_back_with_what_was_typed(signed_in, normal_matt
     """§2. What somebody entered survives the refusal, and the sentence says
     which condition was violated rather than «viga»."""
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
-    typed = "http://koda.ee.example.com/uudised/x"
+    typed = "https://koda.ee@example.com/uudised/x"
 
     response = _post(
         signed_in,
@@ -617,7 +627,7 @@ def test_a_refused_address_comes_back_with_what_was_typed(signed_in, normal_matt
     assert response.status_code == 400
     assert typed in body
     assert "14.03.2026" in body
-    assert "https://" in body
+    assert "kasutajanime ega parooli" in body
     overview.refresh_from_db()
     assert overview.status == WebsiteOverviewStatus.PLANNED
 
@@ -644,14 +654,15 @@ def test_a_missing_date_is_refused_with_its_own_sentence(signed_in, normal_matte
 def test_the_chronology_shows_a_labelled_link_and_never_the_address(
     signed_in, normal_matter, specialist
 ):
-    """§4. `Ava kodulehel`, in a new tab, said out loud for a screen reader —
-    and the URL itself is in the `href` and nowhere a reader has to parse it."""
+    """§4. `Ava ülevaade või uudis`, in a new tab, said out loud for a screen
+    reader — and the URL itself is in the `href` and nowhere a reader has to
+    parse it."""
     _published(normal_matter, specialist)
 
     body = _detail(signed_in, normal_matter)
     row = body[body.index('id="ajajoon"') :]
 
-    assert "Ava kodulehel" in row
+    assert "Ava ülevaade või uudis" in row
     assert 'target="_blank"' in row
     assert 'rel="noopener noreferrer"' in row
     assert "avaneb uues aknas" in row
@@ -675,8 +686,8 @@ def test_the_chronology_records_published_and_cancelled_and_not_planned(normal_m
         WebsiteOverviewStatus.CANCELLED,
     }
     assert [item.milestone.what for item in overviews] == [
-        "Kodulehe ülevaade",
-        "Kodulehe ülevaade",
+        "Ülevaade / uudis",
+        "Ülevaade / uudis",
     ]
 
 
@@ -907,7 +918,7 @@ def test_the_table_arrives_with_no_data_migration():
     This record did not exist before, so every Matter in the register has zero
     of them — which is what an empty table means, with no `RunPython`, no
     `RunSQL` and no backfill. Deriving a planned overview from a note, a tag, an
-    engagement of kind `Kaasamiskutse veebis` or a koda.ee address somebody once
+    engagement of kind `Kaasamiskutse veebis` or an address somebody once
     pasted somewhere would put an intention on the file that nobody stated.
     """
     from django.db.migrations.executor import MigrationExecutor
