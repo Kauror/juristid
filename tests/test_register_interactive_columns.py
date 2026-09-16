@@ -539,8 +539,19 @@ def test_a_restricted_step_moves_neither_the_date_nor_the_row(client, specialist
     reader who may see it the row sorts first; to the reader who may not, the
     row shows — and sorts on — the Matter's own deadline, and its position says
     nothing about a step that reader cannot read.
+
+    **Three weeks, and not one day.** `estonian(hidden_day) not in body_of(...)`
+    is a search of the whole page, so it is only an answer about the restricted
+    step while no *other* cell can print that same day. `Viimane tegevus`
+    prints the row's own activity date, which for a Matter created by this test
+    is the wall clock — and `TODAY` is read when pytest imports this module,
+    minutes earlier. On 2026-09-16 a shard imported at 20:57 UTC and asserted at
+    21:03, which is 23:57 and 00:03 in `Europe/Tallinn`: `TODAY + 1` became the
+    day the page was rendering anyway, and a test about disclosure failed over a
+    date nobody hid. A day the calendar cannot walk into is the fix; the
+    column-scoped assertions below are what makes the proof independent of it.
     """
-    hidden_day = TODAY + timedelta(days=1)
+    hidden_day = TODAY - timedelta(days=21)
     subject = matter(
         owner=specialist,
         title="Piiratud sammuga teema",
@@ -562,12 +573,66 @@ def test_a_restricted_step_moves_neither_the_date_nor_the_row(client, specialist
         estonian(TODAY + timedelta(days=5)),
         estonian(TODAY + timedelta(days=40)),
     ]
+    assert estonian(hidden_day) not in dates_rendered(theirs)
+    assert estonian(hidden_day) not in last_activity_rendered(theirs)
+    assert "Varjatud samm" not in body_of(theirs)
     assert estonian(hidden_day) not in body_of(theirs)
 
     client.force_login(specialist)
     mine = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
 
     assert titles_on(mine) == [subject.title, other.title]
+    assert dates_rendered(mine)[0] == estonian(hidden_day)
+
+
+def test_a_restricted_step_dated_today_is_still_nowhere_on_the_page(client, specialist):
+    """The collision the test above now keeps out of its own way, driven on
+    purpose.
+
+    A restricted step dated *today* prints the same digits as the row's own
+    `Viimane tegevus`, so a whole-page string search cannot tell the two apart
+    — which is exactly the state a run that crosses midnight in `Europe/Tallinn`
+    produces by accident, and the reason the assertions that matter are scoped
+    to the two columns that would carry a leak.
+
+    Nothing here waits for a clock: `timezone.localdate()` is read inside the
+    test, so the restricted day *is* the rendering day on every day of the year.
+    """
+    today = timezone.localdate()
+    subject = matter(
+        owner=specialist,
+        title="Piiratud samm täna",
+        response_deadline=today + timedelta(days=40),
+    )
+    action = open_action(subject, text="Varjatud tänane samm", target_date=today)
+    action.visibility_override = Visibility.RESTRICTED
+    action.save(update_fields=["visibility_override"])
+    other = matter(
+        owner=specialist, title="Tavaline teema", response_deadline=today + timedelta(days=5)
+    )
+
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+    client.force_login(stranger)
+    theirs = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
+
+    # The row is still sorted and dated on the Matter's own deadline, and the
+    # step's own words never reach the page.
+    assert titles_on(theirs) == [other.title, subject.title]
+    assert dates_rendered(theirs) == [
+        estonian(today + timedelta(days=5)),
+        estonian(today + timedelta(days=40)),
+    ]
+    assert "Varjatud tänane samm" not in body_of(theirs)
+    # `Viimane tegevus` is the one column whose digits may equal today's, and it
+    # may only do so because the row was touched — never because a restricted
+    # child carries that day.
+    assert estonian(today) not in dates_rendered(theirs)
+
+    client.force_login(specialist)
+    mine = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
+
+    assert titles_on(mine) == [subject.title, other.title]
+    assert dates_rendered(mine)[0] == estonian(today)
 
 
 def test_an_approximate_step_sorts_on_its_day_and_prints_its_quarter(signed_in, specialist):
