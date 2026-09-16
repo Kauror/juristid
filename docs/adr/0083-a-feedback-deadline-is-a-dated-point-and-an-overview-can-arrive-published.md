@@ -95,6 +95,13 @@ reader was that it was broken.
 * The primary action says **`Lisa planeeritud ülevaade`** rather than
   `Salvesta`. A button has to promise the thing the empty form does, and the
   empty form is the common case.
+
+  **Superseded on 2026-09-16 for the label and its rationale — see the
+  amendment at the end of this document.** The button reads `Lisa ülevaade`.
+  The reasoning above is right about `Salvesta` and wrong about what replaced
+  it: the empty form is the common case, but it is no longer the only one this
+  form reaches, and a label naming it is untrue of every submission that
+  carries an address and a day.
 * The optional pair sits under its own legend — «Kui ülevaade on juba
   avaldatud» — with a note saying plainly that filling both records it as
   published. The alternative is explained where the decision is made rather
@@ -169,3 +176,92 @@ stored row untouched — the strip is derived and there is no table behind it.
 Removing the two optional boxes leaves `plan_website_overview` and
 `publish_website_overview` exactly as they are, because the panel calls them
 rather than replacing them.
+
+---
+
+## Amendment, 2026-09-16 — the button names the record, not one of its states
+
+- Status: accepted, amending the primary-action bullet in §2's *Decision*
+- Scope: the label on `+ Kodulehe ülevaade`'s submit button, and the reasoning
+  that chose it. Nothing about the lifecycle, the two-path form, the koda.ee
+  boundary, the refusal, the audit events or the closed-Matter rules changes.
+
+### What was decided before
+
+§2 decided one form with two optional boxes and three answers, and then chose
+the button's words from the first of the three: **`Lisa planeeritud
+ülevaade`**, because «a button has to promise the thing the empty form does,
+and the empty form is the common case».
+
+### Why it is superseded
+
+The argument is sound against `Salvesta`, which promises nothing, and it stops
+being sound the moment the same decision gives the form a second outcome. A
+button that says `planeeritud` describes one of the two records this form can
+create, and is untrue of the other: on every submission that carries a
+`Kodulehe link` and an `Avaldamise kuupäev` the row is filed `PUBLISHED`, and
+the control that did it named a plan.
+
+That is worse than vague. `Salvesta` left the reader to work out what the form
+produced; `Lisa planeeritud ülevaade` told them, incorrectly, and told them
+before they had filled anything in — so the label that was chosen to stop the
+panel reading as broken would instead have contradicted the panel's own
+`Kui ülevaade on juba avaldatud` legend two lines below it.
+
+The common-case argument also proves less than it was asked to. Which outcome
+is common is a fact about this month's usage; which outcomes exist is a fact
+about the form. A primary action is named from the second.
+
+### What is decided now
+
+**The primary action is `Lisa ülevaade`.** It names the record the form
+creates, and is true of both paths through it:
+
+| filled in | outcome | is `Lisa ülevaade` true of it |
+| --- | --- | --- |
+| neither | `PLANNED` | yes — an overview was added |
+| both | `PLANNED → PUBLISHED` in one act | yes — an overview was added |
+| one | refused, naming the other | nothing was added, and nothing was promised |
+
+The word `planeeritud` is gone from the form altogether rather than moved: the
+plan is still the empty form's outcome, and the place that says so is the
+optional pair's own legend, where the reader is choosing between the two.
+
+Implemented on main in `2e97c9b` («Say `Lisa ülevaade`, because the form no
+longer only plans»), which is why this is recorded as an amendment rather than
+a decision waiting to be built.
+
+### What this amendment does not change
+
+- **The two-path form, unchanged.** Neither box filled is a `PLANNED` row; both
+  filled is `PLANNED → PUBLISHED` in one act through the existing
+  `publish_website_overview`; one filled is refused, naming the other, with
+  what was typed still in the boxes.
+- **The koda.ee URL boundary, the audit vocabulary and the two audit events**
+  are exactly as §2 decided. The publication still goes through one reviewed
+  service rather than a second way in.
+- **`PLANNED → PUBLISHED / CANCELLED`** and its terminal states, the correction
+  path for an address already recorded including on a closed Matter (ADR 0081
+  §5), the closed-Matter guard on everything that creates business content, and
+  optimistic concurrency — all untouched.
+- **No `initial` on the date**, for the reason §2 gave: a pre-filled date would
+  make «neither filled» unreachable.
+- **A planned row's disclosure still reads `Lisa link ja avaldamiskuupäev`.**
+  That label already named the next action rather than the transition, and this
+  amendment is about the panel's button alone.
+- **§1 is untouched.** `Tagasiside tähtaeg` is still a process-strip column, one
+  per `Kaasamine` carrying a reply-by date, with no lateness reading and no work
+  item — and everything that decision left alone is still left alone.
+- **Still no title, no description, no attachment, and no option on Uus teema**
+  (ADR 0081 §2).
+- **No migration and no data change.** The stored rows, their states and their
+  history are what they were; a button's words are not a fact about a record.
+
+### Reversibility
+
+Higher than the decision it amends: the label is one string in
+`templates/matters/partials/add_to_matter.html`, pinned by
+`tests/test_feedback_deadline_strip_and_overview_form.py` and by
+`e2e/test_website_overview.py`'s `PLAN_BUTTON`. Reverting it would mean
+re-adopting a sentence that is false on one of the form's two paths, which is
+the reason this amendment exists.
