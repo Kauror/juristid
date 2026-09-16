@@ -346,7 +346,13 @@
         </legend>
         <div class="chiprow">
           {% for choice in form.legal_instruments %}
-            {% if choice.data.value|stringformat:"s" == form.other_instrument_value %}
+            {% comment %}
+              `in`, not `==`: there are several `Muu` rows now — see
+              `matter_create.html`. This page renders the free text in a row of
+              its own regardless, so nothing here reveals anything; the class is
+              what marks the escape-hatch chips apart from the reviewed kinds.
+            {% endcomment %}
+            {% if choice.data.value|stringformat:"s" in form.other_instrument_values %}
               <label class="chip chip--other">
                 {{ choice.tag }}
                 <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>

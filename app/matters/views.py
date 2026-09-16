@@ -157,6 +157,7 @@ from app.matters.services import (
     correct_engagement,
     correct_external_position,
     create_matter,
+    derived_track,
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
@@ -205,7 +206,7 @@ from app.submissions.opinions import (
     sent_submission_by_document,
     unregistered_opinion_documents,
 )
-from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
@@ -1792,19 +1793,21 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # write. A rejected attachment, a refused next action or any
                 # other late failure below takes the institution with it rather
                 # than leaving an orphan in the catalogue nobody asked for
-                # (§6, app/matters/services.py `resolve_addressee`).
-                addressee = resolve_addressee(
-                    chosen=data.get("addressee_organisation"),
-                    typed_name=data.get("addressee_name") or "",
-                )
-                # And the sender side, which may now name a body the catalogue
-                # does not hold either. Same catalogue, same reuse-or-create
-                # rule, same transaction — a different question about it
-                # (`resolve_source_organisations`).
+                # (§6, app/matters/services.py `resolve_source_organisations`).
+                #
+                # **Only the sender side.** `Uus teema` no longer asks Adressaat
+                # and no longer answers it from Saatja, so a Matter is created
+                # with no addressee and gains one when Koda decides who to send
+                # to (docs/adr/0089 §5).
                 senders = resolve_source_organisations(
                     chosen=data.get("source_organisations"),
                     typed_name=data.get("sender_name") or "",
                 )
+                # `Menetlusliik`, read off `Õigusakt` rather than asked a second
+                # time. Empty whenever the chosen types do not unambiguously
+                # name one of the two groups, which is most of the ways this can
+                # be uncertain (`derived_track`, docs/adr/0089 §4).
+                instruments = list(data.get("legal_instruments") or [])
                 matter = create_matter(
                     title=data["title"],
                     actor=request.user,
@@ -1815,9 +1818,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # (app/matters/models.py, Teema redesign §6).
                     brief_summary=data.get("brief_summary") or "",
                     stage=data.get("stage"),
-                    track=data.get("track") or "",
+                    track=derived_track(instruments),
                     source_organisations=senders,
-                    addressee_organisation=addressee,
                     received_date=data.get("received_date"),
                     response_deadline=data.get("response_deadline"),
                     policy_areas=list(data.get("policy_areas") or []),
@@ -1827,7 +1829,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # transaction, one MATTER_CREATED event, and no path where
                     # a Teema exists for an instant carrying a classification
                     # nobody chose (task §17, §19).
-                    legal_instruments=list(data.get("legal_instruments") or []),
+                    legal_instruments=instruments,
                     legal_instrument_other=data.get("legal_instrument_other") or "",
                     # Decided here, never read from the form. The control is gone
                     # from the page and an omitted field must not become a blank
@@ -2555,7 +2557,12 @@ def _legal_instrument_line(matter: Matter) -> list[str]:
     labels: list[str] = []
     matched = False
     for instrument in matter.legal_instruments.all():
-        if instrument.key == OTHER_LEGAL_INSTRUMENT_KEY and other:
+        # Onto the *first* `Muu` row only. There are three of them now — version
+        # 1.0's `Muu` and the reviewed `Muu siseriiklik` and `Muu ELi dokument`
+        # — and `legal_instrument_other` is one column, so a Matter carrying two
+        # of them would otherwise read as having said the same sentence twice
+        # (docs/adr/0089 §3).
+        if instrument.key in OTHER_LEGAL_INSTRUMENT_KEYS and other and not matched:
             labels.append(f"{instrument.label_et}: {other}")
             matched = True
         else:
@@ -4176,7 +4183,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 #: Fields whose control is not in the header band. `_header_context` already
 #: carries everything the rail reads, so one context serves both.
 #:
-#: The redesign moved four of them: Menetlusliik, Kellelt, Kellele and Saabus
+#: The redesign moved four of them: Menetlusliik, Saatja, Kellele and Saabus
 #: are looked-up facts rather than glance facts, so they are edited in the rail
 #: where they are now shown. Swapping the header for one of them would leave the
 #: value on screen unchanged while claiming it had saved (Teema redesign §22.1).

@@ -84,7 +84,7 @@ from app.search.models import SearchSourceKind
 from app.search.services import WordSimilarity, visible_documents
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import LegalInstrumentType, PolicyArea
 
 # -- the contract -----------------------------------------------------------
@@ -356,14 +356,20 @@ class SubjectProfile:
 
 
 def _instrument_names(matter: Matter) -> dict[Any, str]:
-    """The `Õigusakt` types a Matter carries, as `{pk: label}`, `muu` dropped.
+    """The `Õigusakt` types a Matter carries, as `{pk: label}`, the `Muu` rows dropped.
 
     `Muu` is the vocabulary's escape hatch, not a kind of instrument: what it
     actually means lives in `Matter.legal_instrument_other`, which is one
     Matter's own free text and matches nothing. Two files both answering «muu»
     have said only that neither fitted the list, and offering that as «Sama
     õigusakt: Muu» would be the engine reporting a shared absence as a shared
-    fact (`app/taxonomy/legal_instruments.py`, `OTHER_LEGAL_INSTRUMENT_KEY`).
+    fact (`app/taxonomy/legal_instruments.py`, `OTHER_LEGAL_INSTRUMENT_KEYS`).
+
+    **Every row meaning «some other kind»**, not only version 1.0's `Muu`. The
+    reviewed vocabulary splits it into `Muu siseriiklik` and `Muu ELi
+    dokument`, and the argument above is exactly as true of those two: a shared
+    «neither of these fitted the list» is a shared absence whichever half of
+    the list it was said about (docs/adr/0089 §3).
 
     The free text is deliberately *not* matched either, here or in the pool. It
     is uncontrolled, it is one Matter's own, and comparing two people's prose
@@ -372,7 +378,7 @@ def _instrument_names(matter: Matter) -> dict[Any, str]:
     return {
         instrument.pk: instrument.label_et
         for instrument in matter.legal_instruments.all()
-        if instrument.key != OTHER_LEGAL_INSTRUMENT_KEY
+        if instrument.key not in OTHER_LEGAL_INSTRUMENT_KEYS
     }
 
 
@@ -1281,7 +1287,7 @@ def build_draft_profile(
     instrument_names = {
         instrument.pk: instrument.label_et
         for instrument in LegalInstrumentType.objects.filter(pk__in=list(instrument_ids))
-        if instrument.key != OTHER_LEGAL_INSTRUMENT_KEY
+        if instrument.key not in OTHER_LEGAL_INSTRUMENT_KEYS
     }
     organisation_names = {
         organisation.pk: organisation.name
