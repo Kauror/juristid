@@ -748,15 +748,21 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     Built here rather than inline in :func:`projected_milestones` because the
     correction form swaps this one row back in place after a save, and the two
     renderings have to be the same rendering — a second copy of the `sub`
-    composition is a second place for the `Selgitus` to gain a separator or for
+    composition is a second place for the `Seisukoht` to gain a separator or for
     the linked consultation to lose its label (`app/matters/views.py`,
     `_external_position_row`).
 
     **The headline names the organisation and nothing else.** «Väline
     seisukoht: Rahandusministeerium» is what a reader scanning six months is
-    looking for; what the ministry actually said is the `Selgitus` under it and
-    the source beside it, and folding either into the headline would make one
-    line say three things (docs/adr/0084 §6).
+    looking for; what the ministry actually said is the `Seisukoht` under it and
+    the link or file beside it, and folding any of them into the headline would
+    make one line say three things (docs/adr/0084 §6).
+
+    **A row with no link is an ordinary row.** Since docs/adr/0084's 2026-09-16
+    amendment the written `Seisukoht` is a source in its own right, so a
+    position recorded from an e-mail renders as a headline, a date and the text
+    — no empty link control, no «allikas puudub», and nothing claiming the
+    record is incomplete, because it is not.
 
     **The link is labelled by its host, never printed as an address.** A raw URL
     as a row's own text is a line a reader has to parse instead of read, and it

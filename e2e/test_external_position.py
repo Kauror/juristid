@@ -7,8 +7,12 @@ The rules this file is here for are the ones only a running page can settle:
 * that the shared organisation control works inside the panel — the search
   narrows the catalogue, and choosing a body is choosing a real control that was
   already in the document (docs/adr/0073);
-* that a save with no source comes back with everything typed still in the
-  boxes, and says in Estonian which of the two is missing;
+* that a written `Seisukoht` alone saves — the commonest real case, with no
+  file and no published page behind it — and that a save recording none of the
+  three comes back with everything typed still in the boxes, saying in Estonian
+  what all three of them are;
+* that the date box opens on today, that emptying it is a real answer, and that
+  an emptied box does not refill itself on a refused save;
 * that the link renders as its host in a new tab and never as a printed
   address;
 * that the whole thing is reachable from the keyboard and does not make the page
@@ -75,13 +79,26 @@ def choose_organisation(page, name: str = MINISTRY) -> None:
     page.locator(f"#{PICKER}-tulemused").get_by_role("option", name=name, exact=True).click()
 
 
-def record_one(page, base_url: str, *, url: str = POSITION_URL) -> None:
+def record_one(page, base_url: str, *, url: str = POSITION_URL, summary: str = "") -> None:
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-valine-seisukoht")
     choose_organisation(page)
-    panel(page).locator("[name=url]").fill(url)
+    if url:
+        panel(page).locator("[name=url]").fill(url)
+    if summary:
+        panel(page).locator("[name=summary]").fill(summary)
     panel(page).get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("Väline seisukoht:").first.wait_for()
+
+
+def today_in_estonian(page) -> str:
+    """The day the *server* is on, as the date box writes it.
+
+    Read off the box the page rendered rather than computed here: a browser
+    running either side of midnight from the server would make a computed string
+    a flake nobody could reproduce.
+    """
+    return panel(page).locator("[name=stated_on]").input_value()
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +111,11 @@ def test_the_ninth_choice_records_a_position_without_a_reload(page, base_url):
     record_one(page, base_url)
 
     expect(chronology(page)).to_contain_text(f"Väline seisukoht: {MINISTRY}")
-    expect(chronology(page)).to_contain_text("Kuupäev teadmata")
+    # The date box's visible default was accepted, so the row carries a day
+    # rather than «Kuupäev teadmata» — which is what
+    # `test_emptying_the_date_box_is_a_real_answer` covers instead
+    # (docs/adr/0084 §2, amended 2026-09-16).
+    expect(chronology(page)).not_to_contain_text("Kuupäev teadmata")
 
 
 def test_the_panel_asks_for_the_six_things_and_nothing_else(page, base_url):
@@ -103,16 +124,102 @@ def test_the_panel_asks_for_the_six_things_and_nothing_else(page, base_url):
     open_add_panel(page, "lisa-valine-seisukoht")
 
     expect(panel(page).locator("[data-orgfind]")).to_be_visible()
+    expect(panel(page).locator("[name=summary]")).to_be_visible()
     expect(panel(page).locator("[name=url]")).to_be_visible()
     expect(panel(page).locator("input[type=file]")).to_have_count(1)
-    expect(panel(page).locator("[name=summary]")).to_be_visible()
     expect(panel(page).locator("[name=engagement]")).to_be_visible()
     # The four precisions, through the one shared control.
     for label in ("Täpne päev", "Kuu", "Kvartal", "Aasta"):
         expect(panel(page).get_by_text(label, exact=True).first).to_be_visible()
-    # The date box is empty: a position is filed after it was stated, so today
-    # would be a date nobody chose (docs/adr/0084 §2).
-    expect(panel(page).locator("[name=stated_on]")).to_have_value("")
+    # The date box opens on today: a visible suggestion somebody reads, changes
+    # or empties, which is what docs/adr/0078 §2 allows and a stamp is not
+    # (docs/adr/0084 §2, amended 2026-09-16).
+    expect(panel(page).locator("[name=stated_on]")).not_to_have_value("")
+
+
+def test_the_written_position_leads_the_three_sources(page, base_url):
+    """`Seisukoht` is above `Link`, because it is the one always available.
+
+    A reply that arrived by e-mail has no published address and no attachment,
+    and a page that put the link box first read as though a source somewhere
+    else were the point (docs/adr/0084 §3, amended 2026-09-16).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-valine-seisukoht")
+
+    order = panel(page).evaluate(
+        """node => {
+            const controls = [...node.querySelectorAll('[name=summary], [name=url]')];
+            return controls.map(c => c.getAttribute('name'));
+        }"""
+    )
+
+    assert order == ["summary", "url"]
+    expect(panel(page)).to_contain_text("vähemalt üks neist on vajalik")
+
+
+def test_a_written_position_alone_is_a_complete_record(page, base_url):
+    """No link, no file, and the row is an ordinary chronology row.
+
+    The case the source rule was widened for, end to end in a browser: a member
+    association's two-sentence answer with nowhere else to live.
+    """
+    sign_in(page, base_url, SANDRA)
+    record_one(page, base_url, url="", summary="Toetab eelnõu, kuid soovib pikemat üleminekuaega.")
+
+    expect(chronology(page)).to_contain_text(f"Väline seisukoht: {MINISTRY}")
+    expect(chronology(page)).to_contain_text("Toetab eelnõu, kuid soovib pikemat üleminekuaega.")
+    row = chronology(page).locator("article.uxtl__item").first
+    expect(row.locator(".uxtl__links")).to_have_count(0)
+
+
+def test_the_date_box_opens_on_today_and_the_saved_row_reads_it_back(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-valine-seisukoht")
+    choose_organisation(page)
+    today = today_in_estonian(page)
+    panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
+    panel(page).get_by_role("button", name="Salvesta").click()
+    chronology(page).get_by_text("Väline seisukoht:").first.wait_for()
+
+    # `j.n.Y` on the row against `dd.mm.yyyy` in the box: the same day, written
+    # the way each surface writes it.
+    day, month, year = today.split(".")
+    expect(chronology(page)).to_contain_text(f"{int(day)}.{int(month)}.{year}")
+    expect(chronology(page)).not_to_contain_text("Kuupäev teadmata")
+
+
+def test_emptying_the_date_box_is_a_real_answer(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-valine-seisukoht")
+    choose_organisation(page)
+    panel(page).locator("[name=stated_on]").fill("")
+    panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
+    panel(page).get_by_role("button", name="Salvesta").click()
+    chronology(page).get_by_text("Väline seisukoht:").first.wait_for()
+
+    expect(chronology(page)).to_contain_text("Kuupäev teadmata")
+
+
+def test_a_recorded_position_reopens_on_its_own_date_and_never_on_today(page, base_url):
+    """`Muuda` carries no default. An undated row opens undated."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-valine-seisukoht")
+    choose_organisation(page)
+    panel(page).locator("[name=stated_on]").fill("")
+    panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
+    panel(page).get_by_role("button", name="Salvesta").click()
+    chronology(page).get_by_text("Kuupäev teadmata").first.wait_for()
+
+    chronology(page).get_by_role("button", name="Muuda").first.click()
+    form = chronology(page).locator("form[aria-label='Välise seisukoha parandamine']")
+    form.wait_for(state="visible")
+
+    expect(form.locator("[name=stated_on]")).to_have_value("")
 
 
 def test_the_chronology_renders_the_host_and_never_the_address(page, base_url):
@@ -140,20 +247,38 @@ def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
     assert "avaneb uues aknas" in name
 
 
-def test_a_save_with_no_source_comes_back_with_what_was_typed(page, base_url):
-    """A link or a file is required, and the refusal says so in Estonian with
-    the explanation still in its box (docs/adr/0084 §3)."""
+def test_a_save_recording_nothing_comes_back_with_what_was_typed(page, base_url):
+    """All three boxes empty is the only refusal left, and it names all three.
+
+    The date the person had already answered is still in its box, so the
+    refusal costs them nothing but the one answer that was missing
+    (docs/adr/0084 §3, amended 2026-09-16).
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-valine-seisukoht")
     choose_organisation(page)
-    panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
+    panel(page).locator("[name=stated_on]").fill("14.03.2026")
     panel(page).get_by_role("button", name="Salvesta").click()
     page.wait_for_timeout(400)
 
-    expect(panel(page)).to_contain_text("Lisa link või fail")
-    expect(panel(page).locator("[name=summary]")).to_have_value("Toetab eelnõu.")
+    expect(panel(page)).to_contain_text("vähemalt üks neist on vajalik")
+    expect(panel(page).locator("[name=stated_on]")).to_have_value("14.03.2026")
     expect(chronology(page)).not_to_contain_text("Väline seisukoht:")
+
+
+def test_an_emptied_date_box_does_not_refill_itself_on_a_refusal(page, base_url):
+    """An `initial` that reasserted itself would hand back a date somebody removed."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-valine-seisukoht")
+    choose_organisation(page)
+    panel(page).locator("[name=stated_on]").fill("")
+    panel(page).get_by_role("button", name="Salvesta").click()
+    page.wait_for_timeout(400)
+
+    expect(panel(page)).to_contain_text("vähemalt üks neist on vajalik")
+    expect(panel(page).locator("[name=stated_on]")).to_have_value("")
 
 
 def test_a_hostile_address_is_refused_with_the_value_returned(page, base_url):
@@ -226,7 +351,7 @@ def test_every_control_in_the_panel_is_reachable_by_tabbing(page, base_url):
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-valine-seisukoht")
 
-    for name in ("url", "summary", "engagement", "stated_on"):
+    for name in ("summary", "url", "engagement", "stated_on"):
         control = panel(page).locator(f"[name={name}]")
         control.focus()
         expect(control).to_be_focused()

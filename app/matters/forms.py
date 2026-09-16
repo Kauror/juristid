@@ -2563,18 +2563,25 @@ def external_position_period_initial(record: Any) -> dict[str, Any]:
     empty, so the anchor never reaches a screen as `01.10.2026`
     (docs/adr/0079 §2).
 
-    Unlike `engagement_period_initial` there is no explicit ``stated_on=None``
-    underneath it, because this form's day box declares no ``initial``: a
-    position is routinely recorded long after it was stated, so today is not the
-    likely answer and a pre-filled one would be a date nobody chose sitting one
-    `Salvesta` away from being saved (docs/adr/0084 §2).
+    An explicit ``stated_on=None`` underneath, exactly as
+    `engagement_period_initial` carries one and for the same reason.
+    `+ Väline seisukoht`'s day box declares ``initial=timezone.localdate``, and
+    a record with no date at all makes `period_initial` return ``{}`` — so
+    without this line a form that inherited that default would open an undated
+    position showing today, one `Salvesta` away from being saved as a date the
+    other organisation never gave. `ExternalPositionEditForm` declares its own
+    field without the default, and this says so a second time rather than
+    trusting two declarations to stay apart (docs/adr/0084 §2).
     """
-    return period_initial(
-        EXTERNAL_POSITION_PREFIX,
-        getattr(record, "stated_on", None),
-        getattr(record, "stated_on_precision", "") or DatePrecision.EXACT.value,
-        date_field="stated_on",
-    )
+    return {
+        "stated_on": None,
+        **period_initial(
+            EXTERNAL_POSITION_PREFIX,
+            getattr(record, "stated_on", None),
+            getattr(record, "stated_on_precision", "") or DatePrecision.EXACT.value,
+            date_field="stated_on",
+        ),
+    }
 
 
 def attach_organisation_picker(form: forms.Form, *, viewer: Any) -> None:
@@ -4788,15 +4795,29 @@ def _external_position_link_field() -> forms.CharField:
 
 
 def _external_position_summary_field() -> forms.CharField:
-    """`Selgitus` — a short line on what they actually said. Optional."""
+    """`Seisukoht` — what the other organisation actually said, in writing.
+
+    Optional on its own and **one of the three answers to the source rule**: a
+    member association's two-sentence reply, or what an official said on the
+    telephone, is a complete record with no file and no published address
+    behind it. It was `Selgitus` and a caption under a link before this, which
+    is what made ordinary written feedback unrecordable (docs/adr/0084 §2, §3,
+    amended 2026-09-16).
+
+    Three rows rather than two, because the question changed: a caption under a
+    link is one line, and a position somebody received is a short paragraph. It
+    is still bounded at `EXTERNAL_POSITION_SUMMARY_MAX_LENGTH` — a box that
+    invited pages would make this record a second, worse copy of the document
+    that belongs beside it.
+    """
     return forms.CharField(
-        label="Selgitus",
+        label="Seisukoht",
         required=False,
         max_length=EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
         widget=forms.Textarea(
             attrs={
                 "class": "field__input field__input--compact",
-                "rows": 2,
+                "rows": 3,
                 "placeholder": "nt toetab eelnõu, kuid soovib pikemat üleminekuaega",
             }
         ),
@@ -4838,6 +4859,11 @@ class ExternalPositionFieldsMixin:
     created in. A second spelling of the source rule is a second place for it to
     drift, and the day the two disagreed would be the day a correction accepted
     a position the panel would have refused (docs/adr/0084 §2).
+
+    The source is **one of three** — the written `Seisukoht`, a public address,
+    or an attached file — and the two forms differ only in where the third one
+    is counted from: an upload control the person is holding, or the link table
+    the record already carries (docs/adr/0084 §3, amended 2026-09-16).
     """
 
     fields: dict[str, forms.Field]
@@ -4903,12 +4929,20 @@ class ExternalPositionFieldsMixin:
             else:
                 cleaned["url"] = url
 
-        # 3. A source. Reported on `url` because that is the box on the screen
-        #    the sentence is about; the file control beside it is named in the
-        #    sentence itself, which is how a refusal points at two controls
-        #    without being printed twice.
-        if not url and not has_file and not self.errors.get("url"):
-            self.add_error("url", EXTERNAL_POSITION_NEEDS_SOURCE)
+        # 3. The written position, trimmed the way the service trims it, so the
+        #    two cannot disagree about whether three spaces are a position.
+        summary = (cleaned.get("summary") or "").strip()
+        cleaned["summary"] = summary
+
+        # 4. A source — the text, the address, or the file. Reported on
+        #    `summary` because that is the first of the three on the screen and
+        #    the one a person most often meant to have filled; the other two are
+        #    named in the sentence itself, which is how one refusal points at
+        #    three controls without being printed three times. Suppressed while
+        #    the address is already refused on its own field, so a hostile URL
+        #    gets one sentence about what is wrong with it rather than two.
+        if not summary and not url and not has_file and not self.errors.get("url"):
+            self.add_error("summary", EXTERNAL_POSITION_NEEDS_SOURCE)
 
         # The date control's answer, resolved to an anchor and a precision.
         anchor, precision = external_position_period(cast(Any, self))
@@ -4925,12 +4959,20 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     explanation and the consultation it answered, each of which a real record
     frequently does not have.
 
-    **The date has no `initial`**, unlike `+ Kaasamine`'s. A consultation is
-    usually recorded the day it happens, so today is the useful default there; a
-    position is usually found and filed some time after it was stated, so today
-    would be a date nobody chose sitting one `Salvesta` away from being saved as
-    a fact. Blank is «kuupäev teadmata», which is what the column holds
-    (docs/adr/0078 §2, docs/adr/0084 §2).
+    **The date opens on today, and clearing it is a real answer.** This panel
+    argued itself out of a default once, on the ground that a position is filed
+    some time after it was stated. What that produced in use was the opposite of
+    an honest record: the commonest case is feedback that arrived this week and
+    is being written up now, and a box that started empty made «kuupäev
+    teadmata» the path of least resistance for exactly those. So the box carries
+    `initial=timezone.localdate`, as `+ Kaasamine`'s does and for the reason
+    docs/adr/0078 §2 allows one — the default is **visible** in the box before
+    anything is saved, readable, changeable and clearable, which is a suggestion
+    a person accepts rather than a stamp applied behind their back. An emptied
+    box still stores `NULL` and still reads «Kuupäev teadmata», and
+    `ExternalPositionEditForm` deliberately declares no such default: a
+    correction that opened a recorded position showing today would be one
+    `Salvesta` from a change nobody made (docs/adr/0084 §2, amended 2026-09-16).
     """
 
     use_required_attribute = False
@@ -4944,6 +4986,7 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
         label="Seisukoha kuupäev",
         required=False,
         widget=EstonianDateInput(),
+        initial=timezone.localdate,
     )
     attachments = workspace_attachments("id_valine_seisukoht_failid")
 
@@ -4982,11 +5025,13 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
     `DocumentLink` projection and are not re-posted here — so a correction can
     never silently detach one either (docs/adr/0084 §8).
 
-    That is also why the source rule reads the link table rather than a box:
-    a position whose only source is an attached document may have its address
-    emptied and stay sourced, and one whose only source is the address may not.
-    `app.matters.services.correct_external_position` decides that under the row
-    lock; this form only needs to know whether to print the sentence.
+    That is also why the source rule reads the link table rather than a box: a
+    position whose source is an attached document may have its address emptied
+    and stay sourced, and so may one whose `Seisukoht` says what the ministry
+    wrote — but a correction that empties the last of the three unsources the
+    record and is refused. `app.matters.services.correct_external_position`
+    decides that under the row lock; this form only needs to know whether to
+    print the sentence.
 
     ``revision`` is the version the form was filled from, carried through the
     round trip so the service can refuse a save whose record has moved on. The

@@ -453,20 +453,23 @@ row of controls that refuse (brief §30, §31).
       and this records that somebody *said* — which is why `Seotud kaasamine`
       relates the two rather than merging them (docs/adr/0084 §1).
 
-      **Two required answers and four optional ones.** The organisation, because
-      a position with no author is an anonymous claim on a professional file;
-      and a source, because a position pointing at nothing is hearsay. Either a
-      link or a file satisfies the second and both together are ordinary — a
-      ministry that publishes a page *and* sends the paper. The date, the
-      explanation and the consultation it answered are each things a real record
-      frequently does not have, and asking for them as requirements would make
-      the commonest position unrecordable (docs/adr/0084 §3).
+      **Two required answers and three optional ones.** The organisation,
+      because a position with no author is an anonymous claim on a professional
+      file; and something recorded, because a position holding nothing is
+      hearsay. **Any one of three satisfies the second** — the written
+      `Seisukoht`, a link, or a file — and any combination is ordinary: a
+      ministry that publishes a page, sends the paper and summarises it in a
+      covering mail has stated one position with three sources. Text alone is
+      the case this was widened for, because the commonest feedback a
+      department receives is two sentences from a member association with no
+      file and no published address behind them (docs/adr/0084 §3, amended
+      2026-09-16).
 
-      The date box carries **no default**, unlike `+ Kaasamine`'s. A
-      consultation is usually written up the day it happens; a position is
-      usually found and filed later, so today would be a date nobody chose
-      sitting one `Salvesta` away from being saved as somebody else's timetable.
-      Blank is «kuupäev teadmata», which is what the column holds.
+      The date box opens on **today**, as `+ Kaasamine`'s does. The default is
+      visible in the box before anything is saved, so it is a suggestion
+      somebody accepts rather than a stamp applied behind their back — and
+      clearing it is a real answer that stores `NULL` and reads «kuupäev
+      teadmata» (docs/adr/0078 §2, docs/adr/0084 §2 as amended).
 
       It creates no `NextAction`, no deadline row, no work item and no badge, and
       it moves no `Arvamuse tähtaeg` — so a Matter carrying ten of these never
@@ -506,15 +509,33 @@ row of controls that refuse (brief §30, §31).
           {% include "matters/partials/period_composer.html" with chips=external_position_form.precision_chips date_field=external_position_form.stated_on month_field=external_position_form.position_month quarter_field=external_position_form.position_quarter year_field=external_position_form.position_year only %}
 
           {% comment %}
-            The source, and the sentence that explains what «either» means.
+            The three sources, and the sentence that explains what «vähemalt
+            üks» means.
 
-            One of the two is required and the refusal says so in Estonian
-            rather than marking one control red and leaving the person to guess
-            which of them would satisfy it. The address goes through the
-            service's own door on the way in, so a `javascript:` or a `data:`
-            URL is refused here in the words it is refused in everywhere — and
-            under the box it was typed into (docs/adr/0084 §3).
+            `Seisukoht` comes first because it is what the record is *about* —
+            what the organisation said — and because it is the one of the three
+            that is always available: a reply that arrived by e-mail has no
+            published address and no attachment, and putting the link box ahead
+            of it made the page read as though a source somewhere else were the
+            point.
+
+            One refusal names all three rather than marking one control red and
+            leaving the person to guess which of them would satisfy it, and it
+            is printed under this box because this is the one they most often
+            meant to have filled. The address still goes through the service's
+            own door on the way in, so a `javascript:` or a `data:` URL is
+            refused in the words it is refused in everywhere — and under the box
+            it was typed into (docs/adr/0084 §3, amended 2026-09-16).
           {% endcomment %}
+          <label class="cx-f" for="{{ external_position_form.summary.id_for_label }}">
+            <span class="cx-f__lab">{{ external_position_form.summary.label }}</span>
+            {{ external_position_form.summary }}
+          </label>
+          {% if external_position_form.summary.errors %}
+            <p class="field__error" id="{{ external_position_form.summary.auto_id }}_error">
+              {{ external_position_form.summary.errors|first }}</p>
+          {% endif %}
+
           <label class="cx-f" for="{{ external_position_form.url.id_for_label }}">
             <span class="cx-f__lab">{{ external_position_form.url.label }}</span>
             {{ external_position_form.url }}
@@ -524,17 +545,7 @@ row of controls that refuse (brief §30, §31).
               {{ external_position_form.url.errors|first }}</p>
           {% endif %}
           {% include "matters/partials/add_files.html" with field=external_position_form.attachments %}
-          <p class="cx-note">Lisa link või fail — vähemalt üks allikas on vajalik.</p>
-
-          <label class="cx-f" for="{{ external_position_form.summary.id_for_label }}">
-            <span class="cx-f__lab">{{ external_position_form.summary.label }}
-              <span class="cx-f__opt">valikuline</span></span>
-            {{ external_position_form.summary }}
-          </label>
-          {% if external_position_form.summary.errors %}
-            <p class="field__error" id="{{ external_position_form.summary.auto_id }}_error">
-              {{ external_position_form.summary.errors|first }}</p>
-          {% endif %}
+          <p class="cx-note">Kirjuta seisukoht, lisa link või fail — vähemalt üks neist on vajalik.</p>
 
           {% comment %}
             `Seotud kaasamine`, and it is optional because the commonest

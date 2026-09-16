@@ -497,12 +497,14 @@ def add_matter_external_position(
     was refused would be a record claiming a source it does not have
     (docs/adr/0075 §8).
 
-    **The source rule is decided before anything is written.** The
-    `DocumentLink` cannot exist until the position does, so the service is told
-    how many files are about to be captured rather than being handed them; if
-    the capture then refuses one of them, `UploadRejected` unwinds this
-    transaction and takes the position with it. Neither half can survive without
-    the other (docs/adr/0084 §3).
+    **The source rule is decided before anything is written.** One of three
+    satisfies it — the written `Seisukoht`, a public address, or a file — and
+    the third of those is the awkward one: the `DocumentLink` cannot exist until
+    the position does, so the service is told how many files are about to be
+    captured rather than being handed them. If the capture then refuses one of
+    them, `UploadRejected` unwinds this transaction and takes the position with
+    it, so a record that promised a file and got none does not survive its own
+    save (docs/adr/0084 §3, amended 2026-09-16).
 
     **The files carry `EXTERNAL_POSITION`, and this is the one workspace
     operation whose uploads are not `OTHER`.** Every other panel here captures

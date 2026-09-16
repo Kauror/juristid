@@ -769,12 +769,14 @@ WEBSITE_OVERVIEW_URL_MAX_LENGTH = 1000
 #: rather than truncating, with the column behind it as the defence.
 EXTERNAL_POSITION_URL_MAX_LENGTH = 1000
 
-#: How long the optional `Selgitus` on a `Väline seisukoht` may be.
+#: How long the `Seisukoht` a `Väline seisukoht` carries may be.
 #:
-#: A short explanation of what the other organisation actually said, not a
-#: summary of their document: the document is attached and the link is
-#: recorded, and a box that invited paragraphs would make this record a second,
-#: worse copy of the source it points at (docs/adr/0084 §2).
+#: A concise written position or comment received from the other organisation
+#: — enough to hold «toetab eelnõu, kuid soovib pikemat üleminekuaega» or the
+#: two sentences a member association sent back by e-mail, and not enough to
+#: invite somebody to paste a position paper in here instead of attaching it.
+#: The document is still the document and the link is still the link
+#: (docs/adr/0084 §2, amended 2026-09-16).
 EXTERNAL_POSITION_SUMMARY_MAX_LENGTH = 1000
 
 
@@ -1507,12 +1509,29 @@ class MatterExternalPosition(VisibilityInheritingModel):
 
     The source minimum
     ------------------
-    A position with no source is hearsay on a file, so one of the two is
-    required: a public ``url``, an attached `Document` through the ordinary
-    `DocumentLink` architecture, or both. The URL half is a column and the
-    document half is a row in another table, so the rule cannot be a `CHECK`;
-    it lives in `app.matters.services.record_external_position`, which is the
-    one door a person's save comes through (docs/adr/0084 §3).
+    A position with no source is hearsay on a file, so **one of three** is
+    required: the written :attr:`summary` — what the organisation actually
+    said, in their words or a faithful paraphrase of them — a public ``url``,
+    or an attached `Document` through the ordinary `DocumentLink`
+    architecture. Any one of them alone is enough and any combination is
+    ordinary.
+
+    The commonest feedback a department receives has neither a file nor a
+    public address: a member association answers a consultation in two
+    sentences by e-mail, or a ministry official says something on the telephone
+    that is worth recording against the file. Refusing those was refusing to
+    record ordinary feedback, and what it actually bought was a fabricated
+    source — a made-up description or a URL pointing at something else — which
+    is worse than the record it was protecting (docs/adr/0084 §3, amended
+    2026-09-16).
+
+    Two of the three are columns on this row and the third is a row in another
+    table, so the rule still cannot be a `CHECK`: a constraint sees one row and
+    cannot count `documents_documentlink`. It lives in
+    `app.matters.services._external_position_source`, called by
+    `record_external_position` before the insert and by
+    `correct_external_position` under the row lock, which are the two doors a
+    person's save comes through.
 
     Zero, one or many
     -----------------
@@ -1550,8 +1569,10 @@ class MatterExternalPosition(VisibilityInheritingModel):
     )
     #: Where the position was published, when it was published anywhere.
     #:
-    #: Optional on its own and never optional together with the attachment: see
-    #: the class docstring. `http` and `https` only, refused rather than
+    #: Optional on its own, and one of the three answers to the source rule in
+    #: the class docstring — a position whose `Seisukoht` says what the
+    #: organisation wrote needs no address at all. `http` and `https` only,
+    #: refused rather than
     #: truncated past :data:`EXTERNAL_POSITION_URL_MAX_LENGTH`, and checked by a
     #: parsed host so that an address whose «host» is nothing but credentials
     #: cannot be stored (`normalize_external_position_url`).
@@ -1587,13 +1608,18 @@ class MatterExternalPosition(VisibilityInheritingModel):
         default=DatePrecision.EXACT,
         verbose_name="kuupäeva täpsus",
     )
-    #: `Selgitus` — a short note on what they actually said.
+    #: `Seisukoht` — what the other organisation actually said, in writing.
     #:
-    #: Optional, and deliberately bounded. The source is the source; this is the
-    #: line that lets a colleague scanning the chronology decide whether to open
-    #: it. Nothing extracts it, nothing indexes it and nothing summarises the
-    #: linked document into it (docs/adr/0084 §6).
-    summary = models.TextField(blank=True, verbose_name="selgitus")
+    #: Optional on its own and one of the three answers to the source rule
+    #: above: a position recorded here and nowhere else is a complete record,
+    #: because a two-sentence reply by e-mail is the commonest feedback a
+    #: department gets and it has neither a file nor a published address.
+    #:
+    #: It is a faithful record of somebody else's words and never this office's
+    #: reading of them: nothing extracts it, nothing generates it, nothing
+    #: indexes it, nothing summarises the linked document into it, and no
+    #: stance vocabulary is derived from it (docs/adr/0084 §2, §6).
+    summary = models.TextField(blank=True, verbose_name="seisukoht")
     #: `Seotud kaasamine` — the round this position answered, where it answered
     #: one.
     #:
