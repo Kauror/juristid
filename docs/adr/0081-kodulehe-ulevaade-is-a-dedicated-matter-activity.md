@@ -1,6 +1,23 @@
 # 0081 — `Kodulehe ülevaade` is a dedicated Matter activity, and `koda.ee` is its boundary
 
-*Accepted 2026-09-14.*
+> **The name and §3 are superseded by ADR 0085 (2026-09-16).** The record is
+> called `Ülevaade / uudis`, and a published one may point at **any public
+> `http`/`https` address** rather than at `koda.ee` and its subdomains. Read
+> «`Kodulehe ülevaade`» throughout this document as that record's former name,
+> and read §3 as history: the parsed-host reasoning, the userinfo refusal and
+> the refuse-rather-than-truncate rule all survive in
+> `normalize_overview_news_url`, and only the host allow-list is gone. The
+> premise it rested on — «the Chamber's own page on the Chamber's own site» —
+> stopped being true when the same write-up started appearing in trade papers
+> and on partners' sites.
+>
+> **Everything else below still holds and is still enforced**: §1's reasons for
+> a dedicated record, §2's three states and their transitions, §4's two surfaces
+> and its eleven deliberate absences, §5's closed-Matter rules and §6's audit
+> vocabulary, constraints and indexes. ADR 0085 §4 restates them one by one so
+> that a rename cannot be mistaken for a relaxation.
+
+*Accepted 2026-09-14. Name and address boundary superseded by ADR 0085.*
 
 A lawyer finishing a round of work frequently decides that the membership should
 be told about it on the Chamber's own website. The file has never been able to
@@ -114,6 +131,14 @@ wrote the publication down — and a correction months later moves the first and
 never the second.
 
 ## 3 — The address: `koda.ee`, `https`, and a parsed host
+
+> **Superseded in whole by ADR 0085 §2 (2026-09-16).** What follows is the rule
+> as it stood, kept because its *reasoning about look-alike addresses* is what
+> the current rule is still built from. What changed: the host allow-list is
+> gone, `http` is accepted, and `KODA_WEBSITE_HOST` no longer exists. What did
+> not: a parsed host rather than a substring, userinfo refused outright, an
+> over-long address refused rather than truncated, and one function that every
+> writer of the column passes through.
 
 A published overview may point at **`https://koda.ee/…` or `https://<anything>.koda.ee/…`**
 and nothing else.

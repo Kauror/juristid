@@ -191,7 +191,7 @@ class ChangeEventType(models.TextChoices):
     MATTER_RELATION_REMOVED = "MATTER_RELATION_REMOVED", "Teemade seos eemaldatud"
     BACKGROUND_MATERIAL_ADDED = "BACKGROUND_MATERIAL_ADDED", "Taustmaterjal lisatud"
     BACKGROUND_MATERIAL_REMOVED = "BACKGROUND_MATERIAL_REMOVED", "Taustmaterjal eemaldatud"
-    # -- Kodulehe ülevaade --------------------------------------------------
+    # -- Ülevaade / uudis ---------------------------------------------------
     #
     # Four events, because the record has four things that can happen to it and
     # a history that could not tell them apart would be a history nobody trusts.
@@ -200,23 +200,29 @@ class ChangeEventType(models.TextChoices):
     # "overview changed" could not answer whether a plan was dropped or an
     # address corrected (docs/adr/0081).
     #
+    # **The four stored values keep their `WEBSITE_OVERVIEW_` spelling**, and
+    # deliberately: they are written into `ChangeEvent.event_type` on every row
+    # this record has ever produced, and renaming a stored value is a data
+    # migration in return for a word nobody reads. The *labels* are what a human
+    # sees, and those say `Ülevaade / uudis` (docs/adr/0085 §5).
+    #
     # The published and the cancelled ones are the two *milestones*, and unlike
     # every other structured fact on the Matter they are deliberately absent
     # from `matters.timeline.TIMELINE_EVENT_TYPES` for the usual reason: the
     # chronology renders those two from the canonical record itself, through
     # `projected_milestones`, so reading the event as well would state one act
     # twice (docs/adr/0074 §14).
-    WEBSITE_OVERVIEW_PLANNED = "WEBSITE_OVERVIEW_PLANNED", "Kodulehe ülevaade plaanis"
-    WEBSITE_OVERVIEW_PUBLISHED = "WEBSITE_OVERVIEW_PUBLISHED", "Kodulehe ülevaade avaldatud"
-    WEBSITE_OVERVIEW_CANCELLED = "WEBSITE_OVERVIEW_CANCELLED", "Kodulehe ülevaade tühistatud"
+    WEBSITE_OVERVIEW_PLANNED = "WEBSITE_OVERVIEW_PLANNED", "Ülevaade / uudis plaanis"
+    WEBSITE_OVERVIEW_PUBLISHED = "WEBSITE_OVERVIEW_PUBLISHED", "Ülevaade / uudis avaldatud"
+    WEBSITE_OVERVIEW_CANCELLED = "WEBSITE_OVERVIEW_CANCELLED", "Ülevaade / uudis tühistatud"
     # A correction to an address or a publication date that was already
     # recorded. Its own event rather than a second PUBLISHED one, because the
-    # first says a page appeared on koda.ee and this one says the file was
+    # first says a page appeared and this one says the file was
     # wrong about where or when — and a closed Matter accepts the second while
     # refusing the first.
     WEBSITE_OVERVIEW_LINK_CORRECTED = (
         "WEBSITE_OVERVIEW_LINK_CORRECTED",
-        "Kodulehe ülevaate linki või kuupäeva parandatud",
+        "Ülevaate või uudise linki või kuupäeva parandatud",
     )
     # -- Väline seisukoht ---------------------------------------------------
     #

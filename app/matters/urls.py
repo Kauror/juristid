@@ -148,10 +148,17 @@ urlpatterns = [
         name="add_effective_date",
     ),
     path("teemad/<uuid:pk>/lisa/toovoit/", views.add_work_victory, name="add_work_victory"),
-    # `+ Kodulehe ülevaade`, and the three things that happen to one afterwards.
+    # `+ Ülevaade / uudis`, and the three things that happen to one afterwards.
     #
-    # `lisa/koduleht/` is the launcher's eighth operation and records nothing but
-    # the intention. The other three are addressed *under the record*, because
+    # **The paths keep their `koduleht` spelling**, and deliberately. docs/adr/
+    # 0085 renamed what a lawyer reads; these are HTMX endpoints that no reader
+    # sees, every reference to them goes through `reverse()`, and renaming a
+    # route is how a bookmark, a test and a template stop agreeing about one
+    # name for no gain to anybody (docs/adr/0085 §5).
+    #
+    # `lisa/koduleht/` is the launcher's eighth operation and records either the
+    # intention or, when both boxes are filled, a page that is already up. The
+    # other three are addressed *under the record*, because
     # the thing being published, dropped or corrected is that record and the
     # route says so — the Matter stays in the path so the view can prove the two
     # belong together before it reads either (`edit_entry`, which is addressed

@@ -82,7 +82,7 @@ record, not professional chronology (master specification 16.5).
             on the page in readable text (docs/adr/0027, amended 2026-09-12).
 
             Three kinds of milestone set any today: a `Kaasamine`, a
-            `Väline seisukoht` and a published `Kodulehe ülevaade`
+            `Väline seisukoht` and a published `Ülevaade / uudis`
             (`ChronologyMilestone.links`). The first two render their own in
             their own partials and the overview renders its own in the block
             below, because each of those three elements is a swap target and
@@ -101,7 +101,7 @@ record, not professional chronology (master specification 16.5).
           {% endif %}
         {% endif %}
         {% comment %}
-          A published `Kodulehe ülevaade` renders its address through its own
+          A published `Ülevaade / uudis` renders its address through its own
           element instead, because that element is a swap target: `Paranda link`
           replaces it with a form and every answer replaces it again, while the
           row around it — the dot, the date, the headline — never moves. The link

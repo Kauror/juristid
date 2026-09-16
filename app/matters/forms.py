@@ -22,6 +22,7 @@ from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
@@ -2563,18 +2564,25 @@ def external_position_period_initial(record: Any) -> dict[str, Any]:
     empty, so the anchor never reaches a screen as `01.10.2026`
     (docs/adr/0079 §2).
 
-    Unlike `engagement_period_initial` there is no explicit ``stated_on=None``
-    underneath it, because this form's day box declares no ``initial``: a
-    position is routinely recorded long after it was stated, so today is not the
-    likely answer and a pre-filled one would be a date nobody chose sitting one
-    `Salvesta` away from being saved (docs/adr/0084 §2).
+    An explicit ``stated_on=None`` underneath, exactly as
+    `engagement_period_initial` carries one and for the same reason.
+    `+ Väline seisukoht`'s day box declares ``initial=timezone.localdate``, and
+    a record with no date at all makes `period_initial` return ``{}`` — so
+    without this line a form that inherited that default would open an undated
+    position showing today, one `Salvesta` away from being saved as a date the
+    other organisation never gave. `ExternalPositionEditForm` declares its own
+    field without the default, and this says so a second time rather than
+    trusting two declarations to stay apart (docs/adr/0084 §2).
     """
-    return period_initial(
-        EXTERNAL_POSITION_PREFIX,
-        getattr(record, "stated_on", None),
-        getattr(record, "stated_on_precision", "") or DatePrecision.EXACT.value,
-        date_field="stated_on",
-    )
+    return {
+        "stated_on": None,
+        **period_initial(
+            EXTERNAL_POSITION_PREFIX,
+            getattr(record, "stated_on", None),
+            getattr(record, "stated_on_precision", "") or DatePrecision.EXACT.value,
+            date_field="stated_on",
+        ),
+    }
 
 
 def attach_organisation_picker(form: forms.Form, *, viewer: Any) -> None:
@@ -4560,15 +4568,15 @@ class CompactWorkVictoryForm(forms.Form):
 
 
 class CompactWebsiteOverviewForm(forms.Form):
-    """`+ Kodulehe ülevaade` — a plan, or a page that is already up.
+    """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
     docs/adr/0081 §1 shaped this panel as one button and no fields, on the
     reasoning that at the moment somebody decides a Matter should be written up
     there is no address and no publication date, so every field would be asking
     them to invent something the real page contradicts a week later. That
     reasoning is right about the case it describes and wrong about the one it
-    did not: a lawyer frequently records the overview **after** the page is
-    already on koda.ee, and the panel made them file a plan and then publish it
+    did not: a lawyer frequently records the write-up **after** the page is
+    already published, and the panel made them file a plan and then publish it
     from a second control to say so. Worse, what they met first was a panel with
     no fields at all and a button saying `Salvesta` — which reads as an unusable
     text box rather than as a complete form (docs/adr/0083).
@@ -4590,19 +4598,32 @@ class CompactWebsiteOverviewForm(forms.Form):
     would arrive carrying a publication date nobody typed, and the panel would
     have no way left to say «this is only owed».
 
-    Still no title, no description and no attachment. The record's content is
-    the address and the day, and a headline invented at planning time would sit
-    beside the real one the day the page appears (docs/adr/0081 §2).
+    **The default arrives when the person takes the published path instead.**
+    `data-publication-default` on the date box carries today, as the *server*
+    resolved it, and `data-publication-trigger` on the link box is what fills it
+    in: the moment somebody starts typing an address they have taken the
+    published path, and retyping today's date after that is the friction people
+    actually complain about (docs/adr/0078 §2, docs/adr/0085 §3). It is a
+    default and not a fallback — it is written into a box the person can read,
+    change and clear, it never fires on a form nobody has touched, and it never
+    fires again once the date box has been edited, so a date somebody cleared on
+    purpose stays cleared. With scripting off the form behaves exactly as it did
+    before: two optional boxes, both typed by hand.
+
+    Still no title, no description and no attachment, and **no kind selector**.
+    The record's content is the address and the day; which of the two kinds of
+    publication it is, is what the address says (docs/adr/0081 §2,
+    docs/adr/0085 §1).
     """
 
     use_required_attribute = False
 
     #: The same `CharField`-not-`URLField` shape as `WebsiteOverviewLinkForm`,
-    #: and for the same reason: the rule is `normalize_koda_website_url`'s, and
-    #: letting Django's validator answer first would give `http://koda.ee/x` a
+    #: and for the same reason: the rule is `normalize_overview_news_url`'s, and
+    #: letting Django's validator answer first would give a refused address a
     #: different sentence depending on which layer caught it.
     url = forms.CharField(
-        label="Kodulehe link",
+        label="Avaldatud ülevaate või uudise link",
         required=False,
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
         widget=forms.TextInput(
@@ -4610,7 +4631,11 @@ class CompactWebsiteOverviewForm(forms.Form):
                 "class": "field__input field__input--compact",
                 "inputmode": "url",
                 "autocomplete": "off",
-                "placeholder": "https://koda.ee/…",
+                "placeholder": "https://…",
+                # What `bindPublicationDate` in static/js/ux.js binds to. The
+                # value is the id of the date box it fills, written by the view
+                # so that two panels on one page cannot cross-fill.
+                "data-publication-trigger": "",
             }
         ),
     )
@@ -4620,17 +4645,38 @@ class CompactWebsiteOverviewForm(forms.Form):
         widget=EstonianDateInput(),
     )
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Wire the two boxes together, and tell the date box what today is.
+
+        The pairing is done here rather than in the template because both halves
+        are the *widget's* attributes and the ids are Django's: an `auto_id`
+        written out by hand in HTML is an id that stops matching the day a
+        caller passes its own, which `_website_overview_link_form` already does
+        for the strip.
+
+        Today is resolved with `timezone.localdate()` — the server's answer, in
+        the project's timezone — rather than read off the browser's clock. A
+        reader whose laptop is set to another day would otherwise pre-fill a
+        publication date this application would never have chosen, and the date
+        is the one column on this record that is nobody's but the person's.
+        """
+        super().__init__(*args, **kwargs)
+        self.fields["url"].widget.attrs["data-publication-trigger"] = self["published_on"].auto_id
+        self.fields["published_on"].widget.attrs["data-publication-default"] = format_estonian_date(
+            timezone.localdate()
+        )
+
     def clean(self) -> dict[str, Any]:
         """Nothing, both, or a refusal naming what is missing.
 
         The address is validated through the service's own door so that a
-        look-alike host is refused here in the words it is refused in
+        refused address is refused here in the words it is refused in
         everywhere, and under the box it was typed into.
         """
         from app.matters.services import (
             WEBSITE_OVERVIEW_NEEDS_DATE,
             WEBSITE_OVERVIEW_NEEDS_LINK,
-            normalize_koda_website_url,
+            normalize_overview_news_url,
         )
 
         cleaned = super().clean() or {}
@@ -4640,7 +4686,7 @@ class CompactWebsiteOverviewForm(forms.Form):
         url = ""
         if raw_url:
             try:
-                url = normalize_koda_website_url(raw_url)
+                url = normalize_overview_news_url(raw_url)
             except DomainError as error:
                 self.add_error("url", str(error))
                 return cleaned
@@ -4660,11 +4706,11 @@ class WebsiteOverviewLinkForm(forms.Form):
 
     One form for both because they ask exactly the same two questions and must
     enforce exactly the same two rules — a second class would be a second place
-    for the koda.ee boundary to be written out, and the day it disagreed with
-    the first would be the day a correction accepted an address a publication
-    would have refused. *Which* of the two operations a POST is answering is
-    decided by the route it arrived on and by the record's own state under a
-    lock, never by the form (docs/adr/0081 §3).
+    for the address rule to be written out, and the day it disagreed with the
+    first would be the day a correction accepted an address a publication would
+    have refused. *Which* of the two operations a POST is answering is decided
+    by the route it arrived on and by the record's own state under a lock, never
+    by the form (docs/adr/0081 §3).
 
     ``revision`` is the version the form was filled from, carried through the
     round trip so the service can refuse a save whose record has moved on. The
@@ -4674,12 +4720,12 @@ class WebsiteOverviewLinkForm(forms.Form):
     use_required_attribute = False
 
     #: A `CharField` rather than a `URLField`, exactly as `provider_link_field`
-    #: is one: the rule belongs to `normalize_koda_website_url`, which is what
+    #: is one: the rule belongs to `normalize_overview_news_url`, which is what
     #: the service enforces, and running Django's own validator first would
-    #: answer `http://koda.ee/x` with a different sentence depending on which
+    #: answer a refused address with a different sentence depending on which
     #: layer happened to catch it.
     url = forms.CharField(
-        label="Kodulehe aadress",
+        label="Avaldatud ülevaate või uudise link",
         required=False,
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
         widget=forms.TextInput(
@@ -4687,7 +4733,7 @@ class WebsiteOverviewLinkForm(forms.Form):
                 "class": "field__input field__input--compact",
                 "inputmode": "url",
                 "autocomplete": "off",
-                "placeholder": "https://koda.ee/…",
+                "placeholder": "https://…",
             }
         ),
     )
@@ -4719,11 +4765,11 @@ class WebsiteOverviewLinkForm(forms.Form):
         """
         from app.matters.services import (
             WEBSITE_OVERVIEW_NEEDS_LINK,
-            normalize_koda_website_url,
+            normalize_overview_news_url,
         )
 
         try:
-            url = normalize_koda_website_url(self.cleaned_data.get("url"))
+            url = normalize_overview_news_url(self.cleaned_data.get("url"))
         except DomainError as error:
             raise forms.ValidationError(str(error)) from error
         if not url:
@@ -4788,15 +4834,29 @@ def _external_position_link_field() -> forms.CharField:
 
 
 def _external_position_summary_field() -> forms.CharField:
-    """`Selgitus` — a short line on what they actually said. Optional."""
+    """`Seisukoht` — what the other organisation actually said, in writing.
+
+    Optional on its own and **one of the three answers to the source rule**: a
+    member association's two-sentence reply, or what an official said on the
+    telephone, is a complete record with no file and no published address
+    behind it. It was `Selgitus` and a caption under a link before this, which
+    is what made ordinary written feedback unrecordable (docs/adr/0084 §2, §3,
+    amended 2026-09-16).
+
+    Three rows rather than two, because the question changed: a caption under a
+    link is one line, and a position somebody received is a short paragraph. It
+    is still bounded at `EXTERNAL_POSITION_SUMMARY_MAX_LENGTH` — a box that
+    invited pages would make this record a second, worse copy of the document
+    that belongs beside it.
+    """
     return forms.CharField(
-        label="Selgitus",
+        label="Seisukoht",
         required=False,
         max_length=EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
         widget=forms.Textarea(
             attrs={
                 "class": "field__input field__input--compact",
-                "rows": 2,
+                "rows": 3,
                 "placeholder": "nt toetab eelnõu, kuid soovib pikemat üleminekuaega",
             }
         ),
@@ -4838,6 +4898,11 @@ class ExternalPositionFieldsMixin:
     created in. A second spelling of the source rule is a second place for it to
     drift, and the day the two disagreed would be the day a correction accepted
     a position the panel would have refused (docs/adr/0084 §2).
+
+    The source is **one of three** — the written `Seisukoht`, a public address,
+    or an attached file — and the two forms differ only in where the third one
+    is counted from: an upload control the person is holding, or the link table
+    the record already carries (docs/adr/0084 §3, amended 2026-09-16).
     """
 
     fields: dict[str, forms.Field]
@@ -4903,12 +4968,20 @@ class ExternalPositionFieldsMixin:
             else:
                 cleaned["url"] = url
 
-        # 3. A source. Reported on `url` because that is the box on the screen
-        #    the sentence is about; the file control beside it is named in the
-        #    sentence itself, which is how a refusal points at two controls
-        #    without being printed twice.
-        if not url and not has_file and not self.errors.get("url"):
-            self.add_error("url", EXTERNAL_POSITION_NEEDS_SOURCE)
+        # 3. The written position, trimmed the way the service trims it, so the
+        #    two cannot disagree about whether three spaces are a position.
+        summary = (cleaned.get("summary") or "").strip()
+        cleaned["summary"] = summary
+
+        # 4. A source — the text, the address, or the file. Reported on
+        #    `summary` because that is the first of the three on the screen and
+        #    the one a person most often meant to have filled; the other two are
+        #    named in the sentence itself, which is how one refusal points at
+        #    three controls without being printed three times. Suppressed while
+        #    the address is already refused on its own field, so a hostile URL
+        #    gets one sentence about what is wrong with it rather than two.
+        if not summary and not url and not has_file and not self.errors.get("url"):
+            self.add_error("summary", EXTERNAL_POSITION_NEEDS_SOURCE)
 
         # The date control's answer, resolved to an anchor and a precision.
         anchor, precision = external_position_period(cast(Any, self))
@@ -4925,12 +4998,20 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     explanation and the consultation it answered, each of which a real record
     frequently does not have.
 
-    **The date has no `initial`**, unlike `+ Kaasamine`'s. A consultation is
-    usually recorded the day it happens, so today is the useful default there; a
-    position is usually found and filed some time after it was stated, so today
-    would be a date nobody chose sitting one `Salvesta` away from being saved as
-    a fact. Blank is «kuupäev teadmata», which is what the column holds
-    (docs/adr/0078 §2, docs/adr/0084 §2).
+    **The date opens on today, and clearing it is a real answer.** This panel
+    argued itself out of a default once, on the ground that a position is filed
+    some time after it was stated. What that produced in use was the opposite of
+    an honest record: the commonest case is feedback that arrived this week and
+    is being written up now, and a box that started empty made «kuupäev
+    teadmata» the path of least resistance for exactly those. So the box carries
+    `initial=timezone.localdate`, as `+ Kaasamine`'s does and for the reason
+    docs/adr/0078 §2 allows one — the default is **visible** in the box before
+    anything is saved, readable, changeable and clearable, which is a suggestion
+    a person accepts rather than a stamp applied behind their back. An emptied
+    box still stores `NULL` and still reads «Kuupäev teadmata», and
+    `ExternalPositionEditForm` deliberately declares no such default: a
+    correction that opened a recorded position showing today would be one
+    `Salvesta` from a change nobody made (docs/adr/0084 §2, amended 2026-09-16).
     """
 
     use_required_attribute = False
@@ -4944,12 +5025,13 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
         label="Seisukoha kuupäev",
         required=False,
         widget=EstonianDateInput(),
+        initial=timezone.localdate,
     )
     attachments = workspace_attachments("id_valine_seisukoht_failid")
 
     def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
         # **Its own `auto_id`, and the field names are untouched.** Nine forms
-        # render on one Teema page and `+ Kodulehe ülevaade` also calls a field
+        # render on one Teema page and `+ Ülevaade / uudis` also calls a field
         # `url`, so Django's default `id_%s` put `id_url` in the document twice
         # — invalid HTML, a `<label for>` reaching the wrong box and
         # `getElementById` answering whichever came first. Prefixing the *ids*
@@ -4982,11 +5064,13 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
     `DocumentLink` projection and are not re-posted here — so a correction can
     never silently detach one either (docs/adr/0084 §8).
 
-    That is also why the source rule reads the link table rather than a box:
-    a position whose only source is an attached document may have its address
-    emptied and stay sourced, and one whose only source is the address may not.
-    `app.matters.services.correct_external_position` decides that under the row
-    lock; this form only needs to know whether to print the sentence.
+    That is also why the source rule reads the link table rather than a box: a
+    position whose source is an attached document may have its address emptied
+    and stay sourced, and so may one whose `Seisukoht` says what the ministry
+    wrote — but a correction that empties the last of the three unsources the
+    record and is refused. `app.matters.services.correct_external_position`
+    decides that under the row lock; this form only needs to know whether to
+    print the sentence.
 
     ``revision`` is the version the form was filled from, carried through the
     round trip so the service can refuse a save whose record has moved on. The

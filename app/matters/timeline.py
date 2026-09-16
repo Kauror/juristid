@@ -133,6 +133,18 @@ _MILESTONE_LABELS: dict[str, str] = {
     ChangeEventType.SUBMISSION_SENT.value: "Arvamus välja",
 }
 
+#: What a published or cancelled `Ülevaade / uudis` is called on the chronology,
+#: and what its link says.
+#:
+#: Named here rather than written into `projected_milestones` twice, because the
+#: published row and the cancelled one have to agree — a rename that reached one
+#: and not the other would put two names for one activity on one page. The link
+#: says `Ava ülevaade või uudis` rather than naming a site: since docs/adr/0085
+#: §2 the address may be anywhere on the public web, and `Ava kodulehel` would
+#: have promised a page on koda.ee that the row no longer guarantees.
+WEBSITE_OVERVIEW_MILESTONE = "Ülevaade / uudis"
+WEBSITE_OVERVIEW_LINK_LABEL = "Ava ülevaade või uudis"
+
 
 def _join(verbs: Any) -> str:
     """ "lisas märkuse, lisas dokumendi ja määras järgmise sammu"."""
@@ -294,7 +306,7 @@ class TimelineItem:
 
     @property
     def website_overview(self) -> Any:
-        """The `Kodulehe ülevaade` this row stands for, when it stands for one.
+        """The `Ülevaade / uudis` this row stands for, when it stands for one.
 
         A named property rather than the template comparing `item_type` to a
         class name: the chronology offers `Paranda link` on exactly these rows,
@@ -748,20 +760,26 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     Built here rather than inline in :func:`projected_milestones` because the
     correction form swaps this one row back in place after a save, and the two
     renderings have to be the same rendering — a second copy of the `sub`
-    composition is a second place for the `Selgitus` to gain a separator or for
+    composition is a second place for the `Seisukoht` to gain a separator or for
     the linked consultation to lose its label (`app/matters/views.py`,
     `_external_position_row`).
 
     **The headline names the organisation and nothing else.** «Väline
     seisukoht: Rahandusministeerium» is what a reader scanning six months is
-    looking for; what the ministry actually said is the `Selgitus` under it and
-    the source beside it, and folding either into the headline would make one
-    line say three things (docs/adr/0084 §6).
+    looking for; what the ministry actually said is the `Seisukoht` under it and
+    the link or file beside it, and folding any of them into the headline would
+    make one line say three things (docs/adr/0084 §6).
+
+    **A row with no link is an ordinary row.** Since docs/adr/0084's 2026-09-16
+    amendment the written `Seisukoht` is a source in its own right, so a
+    position recorded from an e-mail renders as a headline, a date and the text
+    — no empty link control, no «allikas puudub», and nothing claiming the
+    record is incomplete, because it is not.
 
     **The link is labelled by its host, never printed as an address.** A raw URL
     as a row's own text is a line a reader has to parse instead of read, and it
     is the one shape in which a look-alike address would be believed — the rule
-    a published `Kodulehe ülevaade` already follows. `link_label` falls back to
+    a published `Ülevaade / uudis` already follows. `link_label` falls back to
     `Ava seisukoht` where the address has no host to name, and the template
     gives every one of these `target="_blank"`, `rel="noopener noreferrer"` and
     a visually hidden «avaneb uues aknas» (docs/adr/0081 §4).
@@ -936,10 +954,10 @@ def projected_milestones(
             continue
         add(position, _end_of_day(when), external_position_milestone(position))
 
-    # `Kodulehe ülevaade`, and **only the two states that are milestones**.
+    # `Ülevaade / uudis`, and **only the two states that are milestones**.
     #
-    # A published overview and a cancelled plan are things that happened to the
-    # file: the page went up on koda.ee, or the write-up was called off. A
+    # A published record and a cancelled plan are things that happened to the
+    # file: the page went up, or the write-up was called off. A
     # *planned* one has not happened — it is work the file still owes — and it
     # reads in its own strip above, where it can be acted on. Projecting it here
     # would put an intention in a list that means «what has already occurred»
@@ -959,17 +977,19 @@ def projected_milestones(
                 overview,
                 _end_of_day(published_on),
                 ChronologyMilestone(
-                    what="Kodulehe ülevaade",
+                    what=WEBSITE_OVERVIEW_MILESTONE,
                     display_date=format_estonian_date(published_on),
                     sub=str(overview.get_status_display()),
                     # **The label, never the address.** A raw URL as the row's
                     # own text is a line a reader has to parse instead of read,
                     # and it is the one shape in which a look-alike address would
-                    # be believed. `Ava kodulehel` says what the link is for; the
-                    # template gives it `target="_blank"`, `rel="noopener
-                    # noreferrer"` and a visually-hidden «avaneb uues aknas»
+                    # be believed. `Ava ülevaade või uudis` says what the link is
+                    # for without claiming which site it is on, which the address
+                    # no longer promises (docs/adr/0085 §2); the template gives
+                    # it `target="_blank"`, `rel="noopener noreferrer"` and a
+                    # visually-hidden «avaneb uues aknas»
                     # (templates/matters/partials/timeline_items.html).
-                    links=(ChronologyLink(label="Ava kodulehel", url=overview.url),),
+                    links=(ChronologyLink(label=WEBSITE_OVERVIEW_LINK_LABEL, url=overview.url),),
                 ),
             )
             continue
@@ -985,7 +1005,7 @@ def projected_milestones(
                 overview,
                 _end_of_day(cancelled_on),
                 ChronologyMilestone(
-                    what="Kodulehe ülevaade",
+                    what=WEBSITE_OVERVIEW_MILESTONE,
                     display_date=format_estonian_date(cancelled_on),
                     sub=str(overview.get_status_display()),
                 ),

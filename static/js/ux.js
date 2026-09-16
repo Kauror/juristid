@@ -240,6 +240,66 @@
     });
   }
 
+  /* ---- The publication date fills itself once the link is being typed ----
+   * `+ Ülevaade / uudis` records two things: a write-up that is *owed*, which
+   * has no address and no date because the page does not exist, and one that is
+   * already published, which has both. One form reaches both, and the boxes are
+   * optional precisely so that an untouched submit still files the plan.
+   *
+   * That is why the date box carries no server-side `initial`: a pre-filled
+   * date would make «neither filled» unreachable and every plan would arrive
+   * carrying a publication date nobody typed (ADR 0083 §2). But it also left
+   * the other path retyping today's date every time, which is the friction
+   * people actually complain about (ADR 0078 §2).
+   *
+   * So the default arrives at the moment the published path is *chosen*. The
+   * link box carries `data-publication-trigger`, whose value is the id of its
+   * date box; the date box carries `data-publication-default`, which is today
+   * as the **server** resolved it — a reader whose laptop is set to another day
+   * must not file a publication date this application would never have chosen.
+   *
+   * Three rules keep it a default rather than a stamp:
+   *
+   *   - it only fires on the transition from an empty link box to a non-empty
+   *     one, so a form nobody has touched still submits two empty boxes;
+   *   - it never overwrites a date that is already there;
+   *   - once the person has touched the date box themselves — including
+   *     clearing it — it never fires again, so a date deliberately emptied
+   *     stays empty through the rest of the form's life.
+   *
+   * With scripting off this is two plain text boxes, exactly as before, and the
+   * server neither knows nor cares which of the two filled the date in: what is
+   * submitted is what is stored (ADR 0085 §3).
+   */
+  function bindPublicationDate(scope) {
+    scope.querySelectorAll("[data-publication-trigger]").forEach(function (link) {
+      if (!once(link, "PublicationDate")) {
+        return;
+      }
+      var target = document.getElementById(link.getAttribute("data-publication-trigger"));
+      if (!target) {
+        return;
+      }
+      var today = target.getAttribute("data-publication-default") || "";
+      if (!today) {
+        return;
+      }
+      var owned = true;
+      target.addEventListener("input", function () {
+        /* Typed in, corrected or cleared by hand — the box is theirs now. */
+        owned = false;
+      });
+      var wasEmpty = link.value.trim() === "";
+      link.addEventListener("input", function () {
+        var filled = link.value.trim() !== "";
+        if (filled && wasEmpty && owned && target.value.trim() === "") {
+          target.value = today;
+        }
+        wasEmpty = !filled;
+      });
+    });
+  }
+
   /* ---- The Järgmiseks row opens the composer -----------------------------
    * The row says what is owed and the box below it is where the answer is
    * written, so reaching one from the other should not need aim: a click
@@ -788,6 +848,7 @@
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     bindQuickDates(root);
+    bindPublicationDate(root);
     bindComposerToggle(root);
     bindChipGroups(root);
     bindAddPanels(root);

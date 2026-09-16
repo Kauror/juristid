@@ -3,8 +3,13 @@
 One record, one organisation, one source minimum. The rules this file is most
 careful about are the ones a screenshot cannot show:
 
-* a position needs an author and a source — a link, an attached document, or
-  both — and a save carrying neither is refused with everything typed intact;
+* a position needs an author and **one of three** sources — the written
+  `Seisukoht`, a link, or an attached document — and a save carrying none of
+  them is refused with everything typed intact (docs/adr/0084 §3, amended
+  2026-09-16);
+* the organisation comes from the one shared catalogue `Saatja` and `Adressaat`
+  already answer, validated against the whole of it and created only through
+  `resolve_organisation_name`;
 * the link is a public `http(s)` address checked by a **parsed host**, rendered
   by its hostname or as `Ava seisukoht`, and never printed as chronology text;
 * the document goes through the existing upload/`Document`/`DocumentVersion`/
@@ -30,6 +35,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, transaction
 from django.urls import reverse
+from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -53,8 +59,13 @@ from app.matters.services import (
     external_position_revision,
     normalize_external_position_url,
 )
-from app.matters.timeline import TIMELINE_EVENT_TYPES, matter_timeline
+from app.matters.timeline import (
+    EXTERNAL_POSITION_DATE_UNKNOWN,
+    TIMELINE_EVENT_TYPES,
+    matter_timeline,
+)
 from app.matters.workspace import add_matter_external_position
+from app.organisations.models import Organisation
 from app.search.indexing import rebuild_all
 from app.search.models import SearchDocument
 from app.workflow.enums import DatePrecision, Disposition
@@ -120,12 +131,78 @@ def test_a_position_may_carry_both_sources(normal_matter, specialist, ministry, 
     assert position.document_links.count() == 1
 
 
-def test_a_position_with_neither_source_is_refused(normal_matter, specialist, ministry):
+def test_a_position_with_none_of_the_three_sources_is_refused(normal_matter, specialist, ministry):
     with pytest.raises(DomainError) as refusal:
         _recorded(normal_matter, ministry, specialist)
 
     assert str(refusal.value) == EXTERNAL_POSITION_NEEDS_SOURCE
     assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+
+def test_a_text_only_position_is_recorded(normal_matter, specialist, ministry):
+    """The case the source rule was widened for: feedback with nowhere else to live.
+
+    A member association answers a consultation in two sentences by e-mail. No
+    file worth keeping, no page anybody published — and before this the record
+    was refused, which is what made people paste a ministry's front page into
+    the link box to get past it (docs/adr/0084 §3, amended 2026-09-16).
+    """
+    position = _recorded(
+        normal_matter,
+        ministry,
+        specialist,
+        summary="Toetab eelnõu, kuid soovib pikemat üleminekuaega.",
+    )
+
+    assert position.summary == "Toetab eelnõu, kuid soovib pikemat üleminekuaega."
+    assert position.url == ""
+    assert position.document_links.count() == 0
+    assert position.organisation_id == ministry.pk
+
+
+def test_whitespace_is_not_a_written_position(normal_matter, specialist, ministry):
+    """A `Seisukoht` of three spaces records nothing, and the service says so.
+
+    The text is trimmed *before* the source rule reads it, so the one thing that
+    cannot happen is a record that passed the rule and then stored an empty
+    column (`_external_position_source`).
+    """
+    with pytest.raises(DomainError) as refusal:
+        _recorded(normal_matter, ministry, specialist, summary="   \n  ")
+
+    assert str(refusal.value) == EXTERNAL_POSITION_NEEDS_SOURCE
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+
+@pytest.mark.parametrize(
+    "sources",
+    [
+        pytest.param({"summary": "Toetab."}, id="text"),
+        pytest.param({"url": POSITION_URL}, id="link"),
+        pytest.param({"summary": "Toetab.", "url": POSITION_URL}, id="text+link"),
+        pytest.param({"summary": "Toetab.", "uploads": [_pdf()]}, id="text+file"),
+        pytest.param({"url": POSITION_URL, "uploads": [_pdf()]}, id="link+file"),
+        pytest.param(
+            {"summary": "Toetab.", "url": POSITION_URL, "uploads": [_pdf()]},
+            id="text+link+file",
+        ),
+    ],
+)
+def test_every_combination_of_the_three_sources_saves(
+    normal_matter, specialist, ministry, evidence_root, sources
+):
+    """Any one alone is enough and any combination is ordinary.
+
+    A ministry that publishes a page, sends the paper *and* summarises it in a
+    covering mail has stated one position with three sources, not three
+    positions (docs/adr/0084 §3, amended 2026-09-16).
+    """
+    position = _recorded(normal_matter, ministry, specialist, **sources)
+
+    assert MatterExternalPosition.objects.filter(matter=normal_matter).count() == 1
+    assert bool(position.summary) == ("summary" in sources)
+    assert bool(position.url) == ("url" in sources)
+    assert position.document_links.count() == len(sources.get("uploads", ()))
 
 
 def test_a_position_with_no_organisation_is_refused(normal_matter, specialist):
@@ -704,7 +781,7 @@ def test_a_current_revision_is_accepted(normal_matter, specialist, ministry):
     assert corrected.summary == "Täpsustus."
 
 
-def test_a_correction_may_not_unsource_the_record(normal_matter, specialist, ministry):
+def test_a_correction_may_not_empty_the_last_of_the_three(normal_matter, specialist, ministry):
     position = _recorded(normal_matter, ministry, specialist, url=POSITION_URL)
 
     with pytest.raises(DomainError) as refusal:
@@ -722,6 +799,70 @@ def test_a_correction_may_not_unsource_the_record(normal_matter, specialist, min
     assert str(refusal.value) == EXTERNAL_POSITION_NEEDS_SOURCE
     position.refresh_from_db()
     assert position.url == POSITION_URL
+
+
+def test_a_text_backed_position_may_lose_its_address(normal_matter, specialist, ministry):
+    """The correction reads what the save would *result* in, not what is stored.
+
+    Emptying the link of a position whose `Seisukoht` holds what the ministry
+    wrote leaves a fully sourced record, so it is an ordinary correction — the
+    same shape as the document-backed case below it, through the third source
+    rather than the second (docs/adr/0084 §3, amended 2026-09-16).
+    """
+    position = _recorded(normal_matter, ministry, specialist, url=POSITION_URL)
+
+    corrected = correct_external_position(
+        position=position,
+        organisation=ministry,
+        url="",
+        stated_on=None,
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetab eelnõu.",
+        engagement=None,
+        actor=specialist,
+    )
+
+    assert corrected.url == ""
+    assert corrected.summary == "Toetab eelnõu."
+
+
+def test_a_text_only_position_may_not_have_its_text_emptied(normal_matter, specialist, ministry):
+    position = _recorded(normal_matter, ministry, specialist, summary="Toetab eelnõu.")
+
+    with pytest.raises(DomainError) as refusal:
+        correct_external_position(
+            position=position,
+            organisation=ministry,
+            url="",
+            stated_on=None,
+            stated_on_precision=DatePrecision.EXACT.value,
+            summary="",
+            engagement=None,
+            actor=specialist,
+        )
+
+    assert str(refusal.value) == EXTERNAL_POSITION_NEEDS_SOURCE
+    position.refresh_from_db()
+    assert position.summary == "Toetab eelnõu."
+
+
+def test_a_text_only_position_may_have_its_text_replaced(normal_matter, specialist, ministry):
+    """Correcting the wording is not unsourcing the record."""
+    position = _recorded(normal_matter, ministry, specialist, summary="Toetab eelnõu.")
+
+    corrected = correct_external_position(
+        position=position,
+        organisation=ministry,
+        url="",
+        stated_on=None,
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetab eelnõu, kuid soovib pikemat üleminekuaega.",
+        engagement=None,
+        actor=specialist,
+    )
+
+    assert corrected.summary == "Toetab eelnõu, kuid soovib pikemat üleminekuaega."
+    assert corrected.url == ""
 
 
 def test_a_document_backed_position_may_lose_its_address(
@@ -784,7 +925,7 @@ def test_a_closed_matter_refuses_a_correction(normal_matter, specialist, ministr
 
 
 def test_closing_a_matter_leaves_recorded_positions_alone(normal_matter, specialist, ministry):
-    """Unlike a planned `Kodulehe ülevaade`, a position is not an outstanding
+    """Unlike a planned `Ülevaade / uudis`, a position is not an outstanding
     obligation — it is a fact that already happened, so closure does nothing to
     it at all."""
     position = _recorded(normal_matter, ministry, specialist, url=POSITION_URL)
@@ -887,6 +1028,38 @@ def _post(client, name, matter, data=None, **kwargs):
     )
 
 
+def _tag_with(body: str, needle: str) -> str:
+    """The one element whose markup carries ``needle``, for attribute assertions.
+
+    Attribute order in a rendered control is Django's widget template's, not
+    ours, so asserting `value="x" checked` as a substring tests the template
+    rather than the answer being held — and `class="chip__input"` sits between
+    those two on a chip. This returns the tag so an assertion can ask whether it
+    is checked without also asserting where the class went.
+
+    It also scopes the question to one control. A Teema page renders several
+    date boxes and `+ Kaasamine`'s carries today as well, so «today is not on
+    this page» is never the claim; «today is not in *this* box» is.
+    """
+    index = body.index(needle)
+    return body[body.rindex("<", 0, index) : body.index(">", index) + 1]
+
+
+def _stated_on_box(body: str) -> str:
+    return _tag_with(body, 'name="stated_on"')
+
+
+def _as_typed(day: dt.date) -> str:
+    """One day, the way `EstonianDateInput` writes it into an unbound box.
+
+    `j.n.Y` — no leading zeros — which is not the `dd.mm.yyyy` a person types
+    and a bound form hands straight back. Both are accepted on the way in, and
+    a test that assumed one shape held for both would pass on the bound path
+    and fail on the initial one (`app.core.widgets`).
+    """
+    return f"{day.day}.{day.month}.{day.year}"
+
+
 def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matter, ministry):
     body = _detail(signed_in, normal_matter)
 
@@ -931,7 +1104,7 @@ def test_the_panel_records_a_file_only_position(signed_in, normal_matter, minist
     assert position.document_links.count() == 1
 
 
-def test_a_sourceless_save_is_refused_and_keeps_what_was_typed(signed_in, normal_matter, ministry):
+def test_the_panel_records_a_text_only_position(signed_in, normal_matter, ministry):
     response = _post(
         signed_in,
         "add_external_position",
@@ -942,12 +1115,54 @@ def test_a_sourceless_save_is_refused_and_keeps_what_was_typed(signed_in, normal
             "summary": "Ministeerium toetab eelnõu.",
         },
     )
+
+    assert response.status_code == 200
+    position = MatterExternalPosition.objects.get(matter=normal_matter)
+    assert position.summary == "Ministeerium toetab eelnõu."
+    assert position.url == ""
+    assert position.document_links.count() == 0
+
+
+def test_a_save_recording_nothing_is_refused_and_keeps_what_was_typed(
+    signed_in, normal_matter, ministry
+):
+    """All three boxes empty is the only refusal left, and it names all three.
+
+    The organisation, the date and the `Seotud kaasamine` the person had already
+    answered come back in their controls: losing them would cost somebody the
+    record they opened the panel to make (docs/adr/0084 §3, amended
+    2026-09-16).
+    """
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="liikmed",
+        occurred_on=dt.date(2026, 2, 1),
+        actor=None,
+    )
+
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation": str(ministry.pk),
+            "position_precision": "EXACT",
+            "stated_on": "14.03.2026",
+            "engagement": str(engagement.pk),
+            "summary": "",
+            "url": "",
+        },
+    )
     body = response.content.decode()
 
     assert response.status_code == 400
     assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
     assert EXTERNAL_POSITION_NEEDS_SOURCE in body
-    assert "Ministeerium toetab eelnõu." in body
+    # Everything the person had already answered is still in its control.
+    assert 'value="14.03.2026"' in _stated_on_box(body)
+    assert "selected" in _tag_with(body, f'value="{engagement.pk}"')
+    assert "checked" in _tag_with(body, f'value="{ministry.pk}"')
 
 
 def test_a_hostile_address_is_refused_on_the_page_with_the_value_returned(
@@ -1168,3 +1383,621 @@ def test_a_reader_may_not_open_the_correction_form(
     )
 
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# §16 — the organisation catalogue is the shared one
+#
+# `Organisatsioon` is answered by the control docs/adr/0073 built for `Saatja`
+# and `Adressaat`, over the one `organisations.Organisation` catalogue and
+# through `resolve_organisation_name`. These assert that it is *the same pool*
+# rather than a ministry shortlist that happens to look like one — the failure
+# mode is a picker that renders eight chips and silently validates against
+# eight rows, which reads correctly right up to the day somebody needs the
+# ninth body.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def catalogue(db, ministry):
+    """A catalogue bigger than any shortlist, so «the tail» is a real state."""
+    bodies = [ministry]
+    bodies.extend(
+        factories.OrganisationFactory(name=name)
+        for name in (
+            "Eesti Kaubandus-Tööstuskoda",
+            "Eesti Tööandjate Keskliit",
+            "Justiitsministeerium",
+            "Kliimaministeerium",
+            "Majandus- ja Kommunikatsiooniministeerium",
+            "Rahvusraamatukogu",
+            "Riigikantselei",
+            "Sotsiaalministeerium",
+            "Tartu Ülikool",
+            "Ühistranspordikeskus",
+        )
+    )
+    return bodies
+
+
+def test_the_panel_validates_against_the_whole_shared_catalogue(catalogue, specialist):
+    """The same pool `Adressaat` validates against, not the chips on screen.
+
+    Both forms point their field at `Organisation.objects.order_by("name")`;
+    narrowing either to what is rendered would refuse a correct answer given
+    through the search, which is the defect docs/adr/0073 names by hand.
+    """
+    from app.matters.forms import CompactExternalPositionForm, MatterCreateForm
+
+    panel = CompactExternalPositionForm(viewer=specialist)
+    uus_teema = MatterCreateForm(viewer=specialist)
+
+    pool = {organisation.pk for organisation in Organisation.objects.all()}
+    assert {row.pk for row in panel.fields["organisation"].queryset} == pool
+    assert {row.pk for row in uus_teema.fields["addressee_organisation"].queryset} == pool
+    assert len(pool) == len(catalogue)
+
+
+def test_every_institution_is_offered_even_when_it_is_not_a_chip(catalogue, specialist):
+    """The shortlist is presentation; the tail is rendered too, and `hidden`.
+
+    `organisation_split` is where one stops and the other starts, and the union
+    of the two is the whole catalogue — which is what lets the search reveal a
+    body rather than describe one.
+    """
+    from app.matters.forms import CompactExternalPositionForm
+
+    panel = CompactExternalPositionForm(viewer=specialist)
+
+    offered = {organisation.pk for organisation in panel.organisation_offered}
+    assert offered == {organisation.pk for organisation in Organisation.objects.all()}
+    assert panel.organisation_split is not None
+    assert len(panel.organisation_chip_choices) == panel.organisation_split
+    assert panel.organisation_tail_choices, "a catalogue this size must have a searchable tail"
+
+
+def test_the_recorded_spellings_reach_the_control(catalogue, specialist):
+    """«MKM» finds the ministry it names, through a recorded alias.
+
+    The same `organisation_alias_terms()` the Uus teema picker is given. A
+    search that fell back to substring matching would find nothing for an
+    abbreviation nobody typed into the name.
+    """
+    from app.matters.forms import CompactExternalPositionForm
+    from app.organisations.models import OrganisationAlias
+
+    mkm = Organisation.objects.get(name="Majandus- ja Kommunikatsiooniministeerium")
+    OrganisationAlias.objects.create(organisation=mkm, alias="MKM")
+
+    panel = CompactExternalPositionForm(viewer=specialist)
+
+    assert (
+        "mkm" in str(panel.fields["organisation"].widget.alias_terms.get(str(mkm.pk), "")).lower()
+    )
+
+
+def test_a_body_outside_the_shortlist_saves_from_the_panel(signed_in, normal_matter, catalogue):
+    """The answer the search exists for, posted the way the browser posts it."""
+    from app.matters.forms import CompactExternalPositionForm
+
+    panel = CompactExternalPositionForm(viewer=None)
+    tail_body = Organisation.objects.order_by("name").last()
+
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation": str(tail_body.pk),
+            "position_precision": "EXACT",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 200
+    assert panel.fields["organisation"].queryset.filter(pk=tail_body.pk).exists()
+    assert MatterExternalPosition.objects.get(matter=normal_matter).organisation_id == tail_body.pk
+
+
+def test_a_new_organisation_is_created_through_the_picker_and_then_selected(
+    signed_in, normal_matter
+):
+    """`+ Lisa uus organisatsioon` — the shared add-new path, not a second one.
+
+    The typed name posts as `organisation_name`, `resolve_addressee` hands it to
+    `resolve_organisation_name` inside the save's own transaction, and the
+    position points at the row that came back (docs/adr/0073, docs/adr/0084 §2).
+    """
+    before = Organisation.objects.count()
+
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation_name": "Eesti Uus Selts MTÜ",
+            "position_precision": "EXACT",
+            "summary": "Ei toeta eelnõu praegusel kujul.",
+        },
+    )
+
+    assert response.status_code == 200
+    assert Organisation.objects.count() == before + 1
+    created = Organisation.objects.get(name="Eesti Uus Selts MTÜ")
+    assert MatterExternalPosition.objects.get(matter=normal_matter).organisation_id == created.pk
+
+
+def test_a_typed_name_that_already_names_a_body_reuses_it(signed_in, normal_matter, ministry):
+    """Typing is not creating. The normalisation is the shared one, so «  Rahandus­
+    ministeerium » with stray whitespace is the institution it already names."""
+    before = Organisation.objects.count()
+
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation_name": "   Rahandusministeerium  ",
+            "position_precision": "EXACT",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 200
+    assert Organisation.objects.count() == before
+    assert MatterExternalPosition.objects.get(matter=normal_matter).organisation_id == ministry.pk
+
+
+def test_a_typed_alias_reuses_the_body_it_names(signed_in, normal_matter, ministry):
+    from app.organisations.models import OrganisationAlias
+
+    OrganisationAlias.objects.create(organisation=ministry, alias="RaM")
+    before = Organisation.objects.count()
+
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation_name": "RaM",
+            "position_precision": "EXACT",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 200
+    assert Organisation.objects.count() == before
+    assert MatterExternalPosition.objects.get(matter=normal_matter).organisation_id == ministry.pk
+
+
+def test_a_typed_name_wins_over_a_chip_that_was_merely_left_selected(
+    signed_in, normal_matter, ministry
+):
+    """`resolve_addressee`'s precedence, shared rather than restated here."""
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation": str(ministry.pk),
+            "organisation_name": "Eesti Uus Selts MTÜ",
+            "position_precision": "EXACT",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 200
+    position = MatterExternalPosition.objects.get(matter=normal_matter)
+    assert position.organisation.name == "Eesti Uus Selts MTÜ"
+
+
+def test_an_ambiguous_typed_name_is_refused_rather_than_guessed(signed_in, normal_matter):
+    """Two bodies answering one spelling is a question for a person.
+
+    The shared refusal, reached through this panel: nothing is created, nothing
+    is picked, and no position is written (`resolve_organisation_name` §7D).
+    """
+    from app.organisations.models import OrganisationAlias
+
+    first = factories.OrganisationFactory(name="Eesti Kaubandus-Tööstuskoda")
+    second = factories.OrganisationFactory(name="Eesti Kaubanduskoda")
+    for organisation in (first, second):
+        OrganisationAlias.objects.create(organisation=organisation, alias="Koda")
+    before = Organisation.objects.count()
+
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation_name": "Koda",
+            "position_precision": "EXACT",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "vali nimekirjast" in response.content.decode()
+    assert Organisation.objects.count() == before
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+
+def test_no_position_exists_without_an_organisation_even_by_crafted_post(signed_in, normal_matter):
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {"position_precision": "EXACT", "summary": "Toetab eelnõu."},
+    )
+
+    assert response.status_code == 400
+    assert EXTERNAL_POSITION_NEEDS_ORGANISATION in response.content.decode()
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+
+# ---------------------------------------------------------------------------
+# §17 — the date box, its default, and clearing it
+#
+# docs/adr/0084 §2 as amended 2026-09-16: `+ Väline seisukoht` opens on today at
+# `Täpne päev`, visibly; `Muuda` opens on what the record holds and never on
+# today; and an emptied box is a real answer that survives a refused save.
+# ---------------------------------------------------------------------------
+
+
+def test_the_panel_opens_on_today_at_exact_precision(signed_in, normal_matter, ministry):
+    from app.matters.forms import CompactExternalPositionForm
+
+    panel = CompactExternalPositionForm(matter=normal_matter, viewer=None)
+    today = timezone.localdate()
+
+    assert panel["stated_on"].value() == today
+    assert panel["position_precision"].value() == DatePrecision.EXACT.value
+    body = _detail(signed_in, normal_matter)
+    assert f'value="{_as_typed(today)}"' in _stated_on_box(body)
+
+
+def test_today_is_a_visible_suggestion_and_the_posted_value_is_what_is_stored(
+    signed_in, normal_matter, ministry
+):
+    """A default in a box a person reads is not a stamp behind their back.
+
+    What reaches the database is whatever the browser posted — the suggestion
+    if they accepted it, their own day if they typed one (docs/adr/0078 §2).
+    """
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation": str(ministry.pk),
+            "position_precision": "EXACT",
+            "stated_on": "14.03.2026",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 200
+    position = MatterExternalPosition.objects.get(matter=normal_matter)
+    assert position.stated_on == dt.date(2026, 3, 14)
+    assert position.stated_on_precision == DatePrecision.EXACT.value
+
+
+def test_a_cleared_box_stores_nothing_and_stays_cleared(signed_in, normal_matter, ministry):
+    """«Kuupäev teadmata» is a real answer, and the default does not override it."""
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation": str(ministry.pk),
+            "position_precision": "EXACT",
+            "stated_on": "",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 200
+    position = MatterExternalPosition.objects.get(matter=normal_matter)
+    assert position.stated_on is None
+    assert position.stated_on_precision == DatePrecision.EXACT.value
+    assert EXTERNAL_POSITION_DATE_UNKNOWN in response.content.decode()
+
+
+def test_a_cleared_box_survives_a_refused_save_still_cleared(signed_in, normal_matter, ministry):
+    """The bound form is re-rendered, so today does not creep back in.
+
+    An `initial` that reasserted itself on a refusal would hand the person a
+    date they had deliberately removed, one `Salvesta` from storing it.
+    """
+    response = _post(
+        signed_in,
+        "add_external_position",
+        normal_matter,
+        {
+            "organisation": str(ministry.pk),
+            "position_precision": "EXACT",
+            "stated_on": "",
+            "summary": "",
+            "url": "",
+        },
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert 'value=""' in _stated_on_box(body) or "value=" not in _stated_on_box(body)
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+
+def test_an_undated_record_reopens_undated_and_not_on_today(
+    signed_in, normal_matter, specialist, ministry
+):
+    """`Muuda` shows what the record holds. Here that is nothing."""
+    position = _recorded(normal_matter, ministry, specialist, summary="Toetab eelnõu.")
+
+    response = signed_in.get(
+        reverse(
+            "matters:update_external_position",
+            kwargs={"pk": normal_matter.pk, "position_id": position.pk},
+        )
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 200
+    box = _stated_on_box(body)
+    assert 'value=""' in box or "value=" not in box
+    assert _as_typed(timezone.localdate()) not in box
+
+
+def test_a_dated_record_reopens_on_its_own_day(signed_in, normal_matter, specialist, ministry):
+    position = _recorded(
+        normal_matter, ministry, specialist, summary="Toetab.", stated_on=STATED_ON
+    )
+
+    response = signed_in.get(
+        reverse(
+            "matters:update_external_position",
+            kwargs={"pk": normal_matter.pk, "position_id": position.pk},
+        )
+    )
+
+    assert 'value="14.3.2026"' in _stated_on_box(response.content.decode())
+
+
+def test_an_approximate_record_reopens_on_its_period_and_never_on_its_anchor(
+    signed_in, normal_matter, specialist, ministry
+):
+    """The anchor is a place in a sort, not a day to hand back to somebody."""
+    position = _recorded(
+        normal_matter,
+        ministry,
+        specialist,
+        summary="Toetab.",
+        stated_on=dt.date(2026, 10, 1),
+        stated_on_precision=DatePrecision.MONTH.value,
+    )
+
+    response = signed_in.get(
+        reverse(
+            "matters:update_external_position",
+            kwargs={"pk": normal_matter.pk, "position_id": position.pk},
+        )
+    )
+    body = response.content.decode()
+
+    assert "01.10.2026" not in body
+    assert _as_typed(timezone.localdate()) not in _stated_on_box(body)
+    assert 'value="2026"' in body
+
+
+def test_a_correction_that_names_no_date_leaves_the_record_undated(
+    normal_matter, specialist, ministry
+):
+    """The correction form carries no `initial`, so an undated row stays undated."""
+    position = _recorded(normal_matter, ministry, specialist, summary="Toetab.")
+
+    corrected = correct_external_position(
+        position=position,
+        organisation=ministry,
+        url="",
+        stated_on=None,
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetab endiselt.",
+        engagement=None,
+        actor=specialist,
+    )
+
+    assert corrected.stated_on is None
+    assert corrected.stated_on_precision == DatePrecision.EXACT.value
+
+
+# ---------------------------------------------------------------------------
+# §18 — what a text-only position does to the rest of the product
+#
+# Nothing. The same absences §13 and §15 hold for a linked one, asserted again
+# through the source that has no link and no file — because «it reaches no
+# metric» is a claim about the record, not about its URL column.
+# ---------------------------------------------------------------------------
+
+
+def test_a_text_only_position_reads_on_the_chronology_with_no_link(
+    normal_matter, specialist, ministry
+):
+    position = _recorded(
+        normal_matter,
+        ministry,
+        specialist,
+        summary="Toetab eelnõu, kuid soovib pikemat üleminekuaega.",
+        stated_on=STATED_ON,
+    )
+
+    rows = [item for item in _timeline(normal_matter, specialist) if item.external_position]
+
+    assert len(rows) == 1
+    milestone = rows[0].milestone
+    assert milestone.what == "Väline seisukoht: Rahandusministeerium"
+    assert milestone.sub == "Toetab eelnõu, kuid soovib pikemat üleminekuaega."
+    assert milestone.links == ()
+    assert milestone.display_date == "14.3.2026"
+    assert rows[0].external_position.pk == position.pk
+
+
+def test_a_text_only_position_creates_no_work_and_reaches_no_projection(
+    normal_matter, specialist, ministry
+):
+    rebuild_all()
+    before = SearchDocument.objects.count()
+
+    _recorded(
+        normal_matter,
+        ministry,
+        specialist,
+        summary="Toetab eelnõu.",
+        stated_on=STATED_ON,
+    )
+    normal_matter.refresh_from_db()
+
+    assert SearchDocument.objects.count() == before
+    assert normal_matter.response_deadline is None
+    assert work_items.work_items(specialist) == []
+    assert build_my_work(specialist).has_work is False
+    assert not Entry.objects.filter(matter=normal_matter).exists()
+
+
+def test_a_text_only_position_is_refused_on_a_closed_matter(closed_matter, signed_in, ministry):
+    """The panel is not rendered, and that decides nothing: the POST still lands."""
+    response = _post(
+        signed_in,
+        "add_external_position",
+        closed_matter,
+        {
+            "organisation": str(ministry.pk),
+            "position_precision": "EXACT",
+            "summary": "Toetab eelnõu.",
+        },
+    )
+
+    assert response.status_code == 400
+    assert not MatterExternalPosition.objects.filter(matter=closed_matter).exists()
+
+
+def test_a_reader_may_not_record_a_text_only_position(client, reader, normal_matter, ministry):
+    client.force_login(reader)
+
+    response = client.post(
+        reverse("matters:add_external_position", kwargs={"pk": normal_matter.pk}),
+        {"organisation": str(ministry.pk), "summary": "Toetab eelnõu."},
+    )
+
+    assert response.status_code == 404
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+
+def test_a_stale_correction_of_a_text_only_position_writes_nothing(
+    normal_matter, specialist, ministry
+):
+    position = _recorded(normal_matter, ministry, specialist, summary="Toetab eelnõu.")
+    stale = external_position_revision(position)
+    correct_external_position(
+        position=position,
+        organisation=ministry,
+        url="",
+        stated_on=None,
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetab eelnõu osaliselt.",
+        engagement=None,
+        actor=specialist,
+        expected_revision=stale,
+    )
+
+    with pytest.raises(ExternalPositionConflict):
+        correct_external_position(
+            position=position,
+            organisation=ministry,
+            url="",
+            stated_on=None,
+            stated_on_precision=DatePrecision.EXACT.value,
+            summary="Ei toeta eelnõu.",
+            engagement=None,
+            actor=specialist,
+            expected_revision=stale,
+        )
+
+    position.refresh_from_db()
+    assert position.summary == "Toetab eelnõu osaliselt."
+
+
+# ---------------------------------------------------------------------------
+# §19 — the audit trail of a written position
+# ---------------------------------------------------------------------------
+
+
+def test_a_text_only_creation_records_it_and_writes_no_source_event(
+    normal_matter, specialist, ministry
+):
+    """`EXTERNAL_POSITION_SOURCE_CHANGED` stays the address's own event.
+
+    It exists because an address that quietly became a different page is the one
+    way this record can lie (docs/adr/0084 §7). A position with no address has
+    no such history to write, and `has_summary` on the recorded event is what
+    says a written position is there.
+    """
+    _recorded(normal_matter, ministry, specialist, summary="Toetab eelnõu.")
+
+    recorded = _events(normal_matter, ChangeEventType.EXTERNAL_POSITION_RECORDED)
+    assert recorded.count() == 1
+    payload = recorded.get().payload
+    assert payload["has_summary"] is True
+    assert payload["has_url"] is False
+    assert not _events(normal_matter, ChangeEventType.EXTERNAL_POSITION_SOURCE_CHANGED).exists()
+
+
+def test_a_corrected_position_names_the_field_and_never_quotes_it(
+    normal_matter, specialist, ministry
+):
+    """What moved, not what it now says. The `update_engagement` rule.
+
+    A payload carrying another organisation's words would put the same text in
+    two places with two lifetimes, and the audit copy is the one nobody can
+    correct.
+    """
+    position = _recorded(normal_matter, ministry, specialist, summary="Toetab eelnõu.")
+
+    correct_external_position(
+        position=position,
+        organisation=ministry,
+        url="",
+        stated_on=None,
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetab eelnõu, kuid soovib pikemat üleminekuaega.",
+        engagement=None,
+        actor=specialist,
+        expected_revision=external_position_revision(position),
+    )
+
+    corrected = _events(normal_matter, ChangeEventType.EXTERNAL_POSITION_CORRECTED)
+    assert corrected.count() == 1
+    payload = corrected.get().payload
+    assert payload["fields"] == ["summary"]
+    assert "Toetab eelnõu" not in str(payload)
+    assert "üleminekuaega" not in str(payload)
+
+
+def test_gaining_an_address_is_still_a_source_event(normal_matter, specialist, ministry):
+    """A text-only position that later gets a link records where it now points."""
+    position = _recorded(normal_matter, ministry, specialist, summary="Toetab eelnõu.")
+
+    correct_external_position(
+        position=position,
+        organisation=ministry,
+        url=POSITION_URL,
+        stated_on=None,
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetab eelnõu.",
+        engagement=None,
+        actor=specialist,
+        expected_revision=external_position_revision(position),
+    )
+
+    source = _events(normal_matter, ChangeEventType.EXTERNAL_POSITION_SOURCE_CHANGED)
+    assert source.count() == 1
+    assert source.get().payload == {"url_from": None, "url_to": POSITION_URL}

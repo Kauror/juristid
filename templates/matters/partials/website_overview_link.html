@@ -1,5 +1,5 @@
 {% comment %}
-One published `Kodulehe ülevaade`'s address, and the way to correct it.
+One published `Ülevaade / uudis` address, and the way to correct it.
 
 **This element is the whole swap target.** `Paranda link` replaces it with
 itself carrying the form; saving replaces it again with the corrected address.
@@ -17,9 +17,11 @@ and says nothing about the Matter's state — deliberately, because
 controls that would publish or cancel a plan (docs/adr/0075 §12,
 docs/adr/0081 §5).
 
-**The link is labelled and never printed.** `Ava kodulehel` says what the link
-is for; a raw URL as the row's own text is a line a reader has to parse instead
-of read, and it is the one shape in which a look-alike address would be believed.
+**The link is labelled and never printed.** `Ava ülevaade või uudis` says what
+the link is for without naming a site the address no longer promises (docs/adr/
+0085 §2); a raw URL as the row's own text is a line a reader has to parse
+instead of read, and it is the one shape in which a look-alike address would be
+believed.
 It opens in a new tab because the reader is in the middle of a file and should
 come back to it, with `rel="noopener noreferrer"` and a visually hidden sentence
 saying so, which is the same treatment every external link on this page gets.
@@ -87,7 +89,7 @@ saying so, which is the same treatment every external link on this page gets.
     </form>
   {% else %}
     <a class="uxtl__link" href="{{ overview.url }}"
-       target="_blank" rel="noopener noreferrer">Ava kodulehel<span
+       target="_blank" rel="noopener noreferrer">Ava ülevaade või uudis<span
        class="visually-hidden"> — avaneb uues aknas</span></a>
     {% if can_write_business_content %}
       <button class="uxtl__edit" type="button"
