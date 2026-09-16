@@ -8965,9 +8965,11 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
-/* A policy area the department has retired, still on a Matter that was filed
-   under it. Marked in words on the chip — never by colour alone — because
-   unticking it has to stay a deliberate act (Teema redesign §7.2). */
+/* A vocabulary value the department has retired — a Valdkond a Matter was filed
+   under, or the Hetkeseis it still stands in — offered back on the Matter that
+   carries it. Marked in words on the chip, never by colour alone, because
+   letting go of it has to stay a deliberate act (Teema redesign §7.2,
+   docs/adr/0032 §Amendment). */
 .chip--retired .chip__name {
   color: var(--text-muted);
 }

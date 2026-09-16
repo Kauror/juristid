@@ -210,6 +210,7 @@ from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
 from app.workflow.models import NextAction, StageVocabulary
+from app.workflow.selectors import stages_including
 from app.workflow.services import (
     acknowledge_review,
     complete_next_action,
@@ -2583,7 +2584,13 @@ def _header_context(
         # offering more than the form accepts is a save that fails on submit
         # (app/accounts/selectors.py).
         "owners": assignable_including(matter.owner),
-        "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
+        # The offered vocabulary plus whatever this Matter already stands in,
+        # for the reason the owner list above is widened: a select offering less
+        # than the form accepts refuses the value it is displaying, and
+        # `Hetkeseis` being optional that refusal would read as a cleared stage
+        # rather than as an error (app/workflow/selectors.py, docs/adr/0032
+        # §Amendment).
+        "stages": stages_including(matter.stage),
         "organisations": Organisation.objects.order_by("name"),
         # Resolved once here rather than read off the Matter inside the loop
         # over every organisation: the sender checkboxes iterate the whole

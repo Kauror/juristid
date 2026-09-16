@@ -4,6 +4,7 @@
 - **Date:** 2026-08-25
 - **Builds on** ADR 0009 (design-token foundation), ADR 0010 (Stage-1 interaction model and browser testing), ADR 0011 (NextAction modelling), ADR 0024 (real/test classification), ADR 0025 (multiple senders, singular addressee), ADR 0029 (reference data), ADR 0030 (the Teema workspace redesign and the twenty-three working Valdkonnad), ADR 0031 (what a working session on real data changed).
 - **Amends** ADR 0030 §7 on one point: two of the twenty-three Valdkonnad it recorded are withdrawn from the offered vocabulary.
+- **Amended** 2026-09-16 — see *Amendment* at the foot of this record. §4 borrowed §3's `is_active` rule for the stage vocabulary and took only half of it, leaving retirement able to clear a Matter's `Hetkeseis`. Read §4 with that amendment.
 
 ## Context
 
@@ -215,3 +216,108 @@ the new Adressaat chips.
 - The chip control is scoped to `Uus teema`. `Muuda teemat`, the Teema header's
   inline Valdkonnad editor, the composer and the rail keep `.checkitem`, where a
   visible native box beside a full-width label is the right density.
+
+## Amendment, 2026-09-16 — retiring a Hetkeseis preserves the Matters standing in it
+
+- Status: accepted, amending §4 *Hetkeseis explains itself, on the row* and the
+  `app.workflow.selectors` contract it created
+- Scope: which stages the three controls that edit an **existing** Matter offer
+  and accept. Nothing about the tooltip, the chip control, the vocabulary's
+  contents, the seeded help texts, `Matter.stage`, `Matter.track`, the register's
+  `?hetkeseis=` filter or the stage-change audit event changes. **No stage is
+  retired by this amendment.** It makes future retirement safe.
+
+### What was decided before
+
+§3 withdrew two Valdkonnad and wrote down what withdrawing means:
+
+> **Withdrawn is `is_active`, never a delete and never a remap.** The rows stay,
+> the relations stay, statistics still count them, and the Teema header still
+> offers a retired area back under its "varasem valdkond" note so that
+> correcting one field on an old Matter cannot silently drop its filing.
+
+§4 then created `app.workflow.selectors` for the stage vocabulary, and
+`selectable_stages` took the first half of that rule — `is_active` decides what
+is offered — while stating in its own docstring that this was «exactly as it is
+for Valdkonnad». It was not. The second half, the clause about offering a
+withdrawn value back on the record that carries it, was never implemented for
+`StageVocabulary`, and nothing in §4 noticed that the borrowed rule had been
+borrowed by half.
+
+### Why that half is not optional
+
+Package 2 discovery went looking for what would happen the first time the
+department retired a stage. `StageVocabulary.is_active = False` was not safe for
+a Matter already holding that stage:
+
+1. `MatterEditForm` validated `stage` against the active rows, so `Muuda teemat`
+   did not offer the Matter's own stage back;
+2. `MatterFieldForm` did the same, so the header's inline control answered
+   «Vigane väärtus.» to the value it was itself displaying;
+3. the header's `stages` context was the active rows, so the select had no
+   option for the stage the Matter was standing in.
+
+The third consequence is the one that decides this. `Hetkeseis` is **optional**.
+An optional field whose queryset refuses the value the record carries does not
+fail loudly — it validates as empty and the service writes NULL. So an edit that
+meant to correct a title would have cleared the Matter's stage, in silence, with
+an audit event saying a lawyer had changed it. A flag on reference data was able
+to destroy a recorded fact about a file, which is the exact outcome §3's rule
+exists to prevent, and the reason `assignable_including` exists for `owner`.
+
+The asymmetry also had no defence of its own. `PolicyArea` is many-valued and
+`LegalInstrumentType` is many-valued; `Hetkeseis` holds one value. That makes the
+loss *worse* rather than smaller — a dropped area leaves the others, a dropped
+stage leaves nothing — and there is no reading on which a one-valued field
+deserves less protection than a many-valued one.
+
+### What is decided now
+
+**`is_active` decides what may be chosen; the record decides what may be kept.**
+The rule §3 wrote for Valdkonnad now holds for `Hetkeseis`, word for word, and
+is implemented once:
+
+`app.workflow.selectors.stages_including(stage)` is the offered vocabulary plus
+the one stage a Matter already holds — and only that one. The three surfaces that
+edit an existing Matter read it: `MatterEditForm`, `MatterFieldForm` and the
+Teema header's inline select. `selectable_stages` is unchanged and is still what
+`Uus teema` reads, because a Matter being created has nothing to preserve.
+
+| POST names | on a Matter holding it | on any other Matter |
+| --- | --- | --- |
+| an active stage | accepted | accepted |
+| the stage it holds, now retired | accepted, and kept | refused |
+| some other retired stage | refused | refused |
+
+So a retired stage is reachable from exactly the records that already carry it,
+and a crafted POST cannot spread it. `Uus teema` cannot select one at all.
+
+**A preserved stage is marked, never disguised.** On `Muuda teemat` the chip
+carries `· kasutusest väljas` and `.chip--retired`, which is the marking the
+retired Valdkonna chips beside it already use; in the header's select the option
+reads `— varasem hetkeseis`, matching the `varasem valdkond` note on the
+Valdkonna control in the same band. The department's explanation for the stage
+survives the retirement with it: `stage_help_texts` is read over the offered list
+rather than the active one, so the one chip a reader is least likely to recognise
+is not the one chip with nothing explaining it.
+
+### Consequences
+
+- No migration, no data migration, no backfill, and no reference-data version
+  change. `is_active` is untouched on every seeded row; this changes only how the
+  flag is *read*.
+- No change to the register's `?hetkeseis=` filter, which addresses a stage by
+  key and never consulted `is_active`. A Matter carrying a retired stage stays
+  findable, and the applied-filter chip still names the stage rather than echoing
+  a UUID.
+- No change to `change_stage` or to `MATTER_STAGE_CHANGED`. Retiring a stage
+  rewrites no history.
+- The register's Hetkeseis **filter** option list stays the active vocabulary.
+  A filter and a chooser are different controls (docs/adr/0071 §Amendment,
+  `owner_filter_choices`), and widening that list is a separate decision about
+  discovery rather than about preservation. It is not made here.
+- The Teema header's inline **Valdkonnad** control renders retired areas from
+  `matter_policy_areas`, which is its own arrangement and is not touched. The
+  stage control could not borrow it: `Hetkeseis` is one value, so the retired
+  option has to be inside the same `<select>` as the active ones rather than
+  appended after the group.
