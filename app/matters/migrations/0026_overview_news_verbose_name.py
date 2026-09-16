@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("matters", "0023_matter_external_position"),
+        ("matters", "0025_external_position_seisukoht"),
     ]
 
     operations = [

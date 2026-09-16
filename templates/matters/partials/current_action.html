@@ -127,6 +127,8 @@ task above it is a form asking about work nobody has named. The route to work is
       </p>
     {% endif %}
 
+    {% include "matters/partials/feedback_waits.html" %}
+
     {% if can_write %}
       <form class="curact__form" data-composer
             hx-post="{% url 'matters:complete_current_action' pk=matter.pk %}"
@@ -180,5 +182,13 @@ task above it is a form asking about work nobody has named. The route to work is
     {% else %}
       <p class="curact__empty">Järgmine samm on määramata</p>
     {% endif %}
+    {% comment %}
+      The waits again, and this is the branch they were added for: a Matter whose
+      only live work is «ootame vastuseid» used to end here, at «Järgmine samm on
+      määramata», with the round drawn on the strip below the fold and on no work
+      surface at all (matters/partials/feedback_waits.html, docs/adr/0086 §3).
+    {% endcomment %}
+    {% include "matters/partials/feedback_waits.html" %}
   {% endif %}
+
 </section>

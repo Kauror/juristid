@@ -91,6 +91,17 @@ control on this row: the row itself is the link.
           <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Vaatasin üle…</a>
         {% endif %}
       {% endif %}
+      {% if item.is_feedback_wait %}
+        {% comment %}
+          An open consultation round. The one act that ends it is
+          `Lõpeta kaasamine`, which asks what came back — so like every other
+          item here this navigates rather than completing anything, and it
+          navigates to the round's own chronology row rather than to the top of
+          the page: a file may be running three at once
+          (`WorkItem.record_url`, docs/adr/0086 §6).
+        {% endcomment %}
+        <a class="rowmenu__item" href="{{ item.record_url }}">Lõpeta kaasamine…</a>
+      {% endif %}
       <a class="rowmenu__item" href="{{ item.matter_url }}">Ava teema</a>
     </div>
   </details>

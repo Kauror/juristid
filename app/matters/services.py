@@ -1584,6 +1584,7 @@ def record_engagement(
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
+    feedback_received: str = "",
     response_count: Any = None,
     actor: Any = None,
 ) -> MatterEngagement:
@@ -1619,6 +1620,7 @@ def record_engagement(
         occurred_on=occurred_on,
         occurred_on_precision=occurred_on_precision,
         feedback_deadline=feedback_deadline,
+        feedback_received=feedback_received,
         response_count=response_count,
         actor=actor,
     )
@@ -1636,6 +1638,7 @@ def add_engagement(
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
+    feedback_received: str = "",
     response_count: Any = None,
     actor: Any = None,
 ) -> MatterEngagement:
@@ -1660,11 +1663,26 @@ def add_engagement(
     ``feedback_deadline`` is `Tagasisidet ootame kuni` — the day the people who
     were asked were told to answer by. Optional, stored exactly as given, and
     never derived: a caller that does not name it writes ``NULL`` rather than
-    borrowing ``occurred_on`` or today. It is a record of what was asked, so
-    nothing here turns it into work — no `NextAction`, no deadline row, no
-    count. **It stays an exact day**: docs/adr/0082 widened `Kaasamise kuupäev`
-    and deliberately left this one on docs/adr/0079 §11's list, because a
-    reply-by date is a day somebody named to other people.
+    borrowing ``occurred_on`` or today. **It stays an exact day**: docs/adr/0082
+    widened `Kaasamise kuupäev` and deliberately left this one on
+    docs/adr/0079 §11's list, because a reply-by date is a day somebody named to
+    other people.
+
+    Naming it **opens a feedback wait**, and the wait is work until somebody
+    finishes it (:func:`complete_engagement_feedback`). What that does *not* do
+    is create anything: no `NextAction`, no `MatterImportantDate`, no
+    `Matter.response_deadline`, no deadline row and no count. The wait is a
+    *reading* of this record by `app/matters/work_items.py`, which is why
+    closing it is one column on this table rather than a state machine
+    somewhere else (docs/adr/0086 §3).
+
+    ``feedback_received`` is `Saadud tagasiside / arvamused`, and it is
+    independent of the deadline: a round recorded after the fact may arrive
+    with the answers already written down and no wait ever opened. Nothing is
+    completed here — a row created carrying feedback and a deadline is a wait
+    that is open and already has something in it, because writing down what
+    came back and deciding the round is over are two acts and only the second
+    one is a decision (docs/adr/0086 §6).
 
     ``occurred_on_precision`` says how exactly ``occurred_on`` is known, and
     ``occurred_on`` is then the **anchor** of that period — the normalisation
@@ -1694,6 +1712,7 @@ def add_engagement(
         occurred_on=occurred_on,
         occurred_on_precision=precision,
         feedback_deadline=feedback_deadline,
+        feedback_received=(feedback_received or "").strip(),
         response_count=_engagement_response_count(response_count),
         created_by=actor,
     )
@@ -1717,6 +1736,11 @@ def add_engagement(
             "feedback_deadline": (
                 engagement.feedback_deadline.isoformat() if engagement.feedback_deadline else None
             ),
+            # Whether anything came back in writing, not what it said. The
+            # words are on the record where they can be corrected; an audit
+            # table holding a second copy of them would be a worse copy nobody
+            # maintains (Agent-F brief 26).
+            "has_feedback_received": bool(engagement.feedback_received),
             "has_url": bool(engagement.url),
             "has_smaily_url": bool(engagement.smaily_url),
             "has_alchemer_url": bool(engagement.alchemer_url),
@@ -1772,6 +1796,7 @@ def update_engagement(
     occurred_on: Any = _UNSET,
     occurred_on_precision: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
+    feedback_received: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterEngagement:
@@ -1839,6 +1864,8 @@ def update_engagement(
         proposed["alchemer_url"] = normalize_engagement_url(alchemer_url)
     if note is not _UNSET:
         proposed["note"] = (note or "").strip()
+    if feedback_received is not _UNSET:
+        proposed["feedback_received"] = (feedback_received or "").strip()
     if occurred_on is not _UNSET:
         proposed["occurred_on"] = occurred_on
     if feedback_deadline is not _UNSET:
@@ -1858,6 +1885,25 @@ def update_engagement(
             proposed.get("occurred_on", locked.occurred_on),
             proposed.get("occurred_on_precision", locked.occurred_on_precision),
         )
+
+    # A wait that no longer exists cannot stay completed. Clearing
+    # `Tagasisidet ootame kuni` on a round whose wait somebody had already
+    # finished would otherwise leave a closure timestamp with nothing behind
+    # it — a row the `matters_engagement_feedback_closure_needs_deadline`
+    # check refuses and `has_open_feedback_wait` could read as neither open nor
+    # closed. So the two closure columns are normalised against the deadline
+    # this save *results in*, in the service, where the refusal is a sentence
+    # rather than an `IntegrityError` out of a composer transaction.
+    #
+    # The other direction is deliberately not symmetrical: **setting** a
+    # deadline on a round that has none opens a new wait and leaves the closure
+    # columns exactly as they are, which for every such row is `NULL`. A
+    # correction cannot reopen a wait somebody closed, because the deadline it
+    # was closed against is still there and this branch is not reached.
+    if proposed.get("feedback_deadline", locked.feedback_deadline) is None:
+        if locked.feedback_closed_at is not None:
+            proposed["feedback_closed_at"] = None
+            proposed["feedback_closed_by_id"] = None
 
     changed = [field for field, value in proposed.items() if getattr(locked, field) != value]
     if not changed:
@@ -1879,6 +1925,16 @@ def update_engagement(
         # anchor would say nothing had happened.
         payload["occurred_on_precision_from"] = locked.occurred_on_precision
         payload["occurred_on_precision_to"] = proposed["occurred_on_precision"]
+    if "feedback_received" in changed:
+        # Whether the field is now filled, never its contents. Feedback runs to
+        # paragraphs and lives on the record where it can be corrected.
+        payload["feedback_received_filled"] = bool(proposed["feedback_received"])
+    if "feedback_closed_at" in changed:
+        # Only ever a clearance: this function never *sets* the timestamp —
+        # `complete_engagement_feedback` does — so reaching here means a
+        # correction removed the deadline the wait hung off, and the history has
+        # to say that the completed wait stopped existing.
+        payload["feedback_wait_reopened"] = True
     if "feedback_deadline" in changed:
         payload["feedback_deadline_from"] = (
             locked.feedback_deadline.isoformat() if locked.feedback_deadline else None
@@ -1919,6 +1975,7 @@ def correct_engagement(
     occurred_on: Any = _UNSET,
     occurred_on_precision: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
+    feedback_received: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterEngagement:
@@ -1969,9 +2026,218 @@ def correct_engagement(
         occurred_on=occurred_on,
         occurred_on_precision=occurred_on_precision,
         feedback_deadline=feedback_deadline,
+        feedback_received=feedback_received,
         actor=actor,
         expected_revision=expected_revision,
     )
+
+
+# ---------------------------------------------------------------------------
+# Finishing a feedback wait
+# ---------------------------------------------------------------------------
+#
+# `Lõpeta kaasamine`. A `Kaasamine` carrying `Tagasisidet ootame kuni` is an
+# open wait and shows as current work; this is the one act that ends it
+# (docs/adr/0086 §6).
+#
+# Every rule is here rather than on a form, because a form is what one browser
+# was shown and a POST is what arrives.
+
+#: What a completion aimed at a round nobody is waiting on is told.
+ENGAGEMENT_FEEDBACK_NOT_AWAITED = (
+    "Sellel kaasamisel ei ole tagasiside tähtaega, nii et ootamist ei ole vaja lõpetada."
+)
+#: What a second completion is told. Named, because the view prints it and the
+#: tests assert on it, and a sentence spelled twice drifts.
+ENGAGEMENT_FEEDBACK_ALREADY_CLOSED = "Selle kaasamise tagasiside ootamine on juba lõpetatud."
+
+#: Why a wait stopped, in the audit payload. Two values and no third: a person
+#: said the round was finished, or the Matter shut underneath it.
+FEEDBACK_CLOSED_BY_PERSON = "completed"
+FEEDBACK_CLOSED_BY_MATTER_CLOSURE = "matter_closed"
+
+
+def _close_one_feedback_wait(
+    engagement: MatterEngagement,
+    *,
+    matter: Matter,
+    actor: Any,
+    reason: str,
+    feedback_received: Any = _UNSET,
+) -> MatterEngagement:
+    """Write the closure on one already-locked row, and audit it.
+
+    The leaf both doors share. It does not lock, does not check the Matter and
+    does not decide whether the wait may be closed — its callers have done all
+    three, under the Matter's own row lock, and a second opinion here would be a
+    second place for those rules to be written out.
+
+    ``matter`` is the row the caller is already holding, passed rather than read
+    off ``engagement.matter``: both callers have it under lock, and the lazy
+    descriptor would fetch it again — once per round on a closure that ends
+    three of them.
+
+    ``feedback_received`` is `_UNSET` for the Matter-closure path, which writes
+    no words of anybody's: a file being shut is not a statement about what came
+    back (docs/adr/0086 §7).
+    """
+    engagement.feedback_closed_at = timezone.now()
+    engagement.feedback_closed_by = actor
+    fields = ["feedback_closed_at", "feedback_closed_by", "updated_at"]
+    if feedback_received is not _UNSET:
+        engagement.feedback_received = (feedback_received or "").strip()
+        fields.insert(0, "feedback_received")
+    engagement.save(update_fields=fields)
+    record_change_event(
+        event_type=ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
+        matter=matter,
+        actor=actor,
+        obj=engagement,
+        summary=engagement.title[:200],
+        payload={
+            "reason": reason,
+            # The deadline the wait was closed against, so the history can say
+            # whether it was finished before or after the day it asked for.
+            "feedback_deadline": (
+                engagement.feedback_deadline.isoformat()
+                if engagement.feedback_deadline is not None
+                else None
+            ),
+            "closed_at": engagement.feedback_closed_at.isoformat(),
+            # Whether anything was written down, never what it said.
+            "has_feedback_received": bool(engagement.feedback_received),
+        },
+    )
+    return engagement
+
+
+@transaction.atomic
+def complete_engagement_feedback(
+    *,
+    engagement: MatterEngagement,
+    feedback_received: Any = _UNSET,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterEngagement:
+    """`Lõpeta kaasamine` — a person says this consultation round is finished.
+
+    The act the waiting state exists to be ended by. Until it happens the round
+    is an open `WorkItem` on the responsible lawyer's desk, before its deadline
+    and after it; afterwards it is chronology (docs/adr/0086 §6).
+
+    **Nothing has to have come back.** ``feedback_received`` is optional and an
+    empty one is a real answer — «keegi ei vastanud» is a result, and a
+    completion that demanded prose would make the commonest disappointing
+    outcome the one thing a lawyer could not record. Files are attached by the
+    caller through the ordinary evidence path
+    (`app.documents.services.capture_supporting_evidence`), so nothing here
+    knows about uploads.
+
+    ``_UNSET`` leaves the stored text exactly as it is, which is what a caller
+    that is not editing the words means. An explicit ``""`` clears them, which
+    is how a wrongly-pasted answer is removed rather than only overwritten — the
+    sentinel discipline :func:`update_engagement` already keeps.
+
+    **A closed Matter refuses it**, like every other interactive write on this
+    record. Completing a round is a decision somebody makes about live work, and
+    a finished file is reopened for it, which leaves a name on both decisions
+    (docs/adr/0075 §12, docs/adr/0076 §2). The lock is
+    `lock_open_matter_for_business_write`, taken on the way in and held for the
+    whole transaction, so the refusal cannot be raced by a closure committing
+    beside it.
+
+    **Optimistic concurrency, and no partial write.** ``expected_revision`` is
+    the version the form was rendered from; a save whose token is not the stored
+    one raises :class:`EngagementEditConflict` and writes *nothing* — not the
+    feedback text, not the timestamp. The token is read from the row **after**
+    it is locked, so the version compared against is the committed one. ``None``
+    means «no opinion» and is what a shell or a test passes.
+
+    The two refusals below are the state machine, and both are asked of the
+    locked row rather than of the instance the caller arrived with:
+
+    * a round with no `Tagasisidet ootame kuni` has no wait to finish —
+      :data:`ENGAGEMENT_FEEDBACK_NOT_AWAITED`;
+    * a wait somebody already finished is not finished twice —
+      :data:`ENGAGEMENT_FEEDBACK_ALREADY_CLOSED`. A second press writes no
+      second audit row and does not move the timestamp, so «who ended this round
+      and when» keeps one answer.
+    """
+    locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
+    try:
+        # Re-read **through the locked Matter**, so the row about to be written
+        # provably belongs to the file whose state the lock just answered for.
+        # `no_key=True` for the reason `app/matters/locks.py` gives:
+        # `SearchDocument` carries an `engagement` foreign key and its targeted
+        # refresh runs from `post_save` inside this transaction.
+        current = MatterEngagement.objects.select_for_update(no_key=True).get(
+            pk=engagement.pk, matter=locked_matter
+        )
+    except MatterEngagement.DoesNotExist:
+        raise DomainError("Seda kaasamist ei ole sellel teemal.") from None
+
+    if expected_revision is not None and engagement_revision_token(current) != expected_revision:
+        raise EngagementEditConflict(current)
+    if current.feedback_deadline is None:
+        raise DomainError(ENGAGEMENT_FEEDBACK_NOT_AWAITED)
+    if current.feedback_closed_at is not None:
+        raise DomainError(ENGAGEMENT_FEEDBACK_ALREADY_CLOSED)
+
+    closed = _close_one_feedback_wait(
+        current,
+        matter=locked_matter,
+        actor=actor,
+        reason=FEEDBACK_CLOSED_BY_PERSON,
+        feedback_received=feedback_received,
+    )
+    # The caller's own instance, kept in step with the row — the discipline
+    # :func:`update_engagement` keeps, and for the same reason: a view that goes
+    # on rendering the object it passed must not render a wait that is open.
+    engagement.feedback_received = closed.feedback_received
+    engagement.feedback_closed_at = closed.feedback_closed_at
+    engagement.feedback_closed_by = closed.feedback_closed_by
+    return closed
+
+
+def close_open_feedback_waits_for_closure(
+    *, matter: Matter, actor: Any = None
+) -> list[MatterEngagement]:
+    """Every round this Matter was still waiting on, ended with the file.
+
+    Called from inside `close_matter`, in its transaction and under its lock, so
+    a closure either shuts the Matter *and* ends its waits or does neither. This
+    is the rule `end_open_action_for_closure` and
+    `cancel_planned_website_overviews_for_closure` already keep, arriving at the
+    third thing a closed file could otherwise keep owing: an open wait draws a
+    work item, every route that could finish one refuses a closed Matter, and
+    the item would therefore sit on somebody's desk permanently unfinishable
+    (docs/adr/0086 §7).
+
+    **Closure is never blocked by them.** There is no precondition here and no
+    refusal: the waits are ended, each with its own auditable event naming the
+    Matter closure as the reason, and closing a file with three of them is the
+    same gesture as closing one with none.
+
+    **No feedback text is written.** A file being shut says nothing about what
+    members answered, and inventing «nobody replied» for them would be a result
+    nobody recorded. The rounds keep whatever was already written down.
+
+    **Reopening does not reopen them**, exactly as it does not revive a
+    cancelled `NextAction` or an abandoned website plan. A reopened file that is
+    genuinely still waiting gets a new deadline from somebody who has decided it
+    is still waiting, which is a statement with a name on it.
+    """
+    waiting = (
+        MatterEngagement.objects.select_for_update(no_key=True)
+        .filter(matter=matter, feedback_deadline__isnull=False, feedback_closed_at__isnull=True)
+        .order_by("created_at", "id")
+    )
+    return [
+        _close_one_feedback_wait(
+            engagement, matter=matter, actor=actor, reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE
+        )
+        for engagement in waiting
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -2442,10 +2708,15 @@ def cancel_planned_website_overviews_for_closure(
 # form, because a form is what one browser was shown and a POST is what arrives
 # (docs/adr/0084).
 
-#: What a position with no source is told. Named because the form, the view and
-#: the tests all print or assert on it, and a sentence spelled twice drifts.
+#: What a position carrying nothing at all is told. Named because the form, the
+#: view and the tests all print or assert on it, and a sentence spelled twice
+#: drifts.
+#:
+#: It names all three answers, in the order the panel asks them, because a
+#: refusal that named only two would send somebody looking for a file they do
+#: not have (docs/adr/0084 §3, amended 2026-09-16).
 EXTERNAL_POSITION_NEEDS_SOURCE = (
-    "Lisa link või fail — välist seisukohta ei saa salvestada ilma allikata."
+    "Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik."
 )
 EXTERNAL_POSITION_NEEDS_ORGANISATION = "Vali organisatsioon, kelle seisukoht see on."
 #: A `Seotud kaasamine` naming a round on somebody else's file. The same
@@ -2521,20 +2792,38 @@ def _external_position_engagement(matter: Matter, engagement: Any) -> MatterEnga
     return engagement
 
 
-def _external_position_source(url: str, *, attachments: int, documents: int = 0) -> None:
-    """Refuse a position that would point at nothing.
+def _external_position_source(
+    url: str, *, attachments: int, documents: int = 0, summary: str = ""
+) -> None:
+    """Refuse a position that records nothing at all.
 
-    One of the two is required and either alone is enough: a public address, or
-    a document captured through the ordinary evidence pipeline. Both together
-    are ordinary too — a ministry that publishes a page *and* sends the paper.
+    **One of three is required and any one alone is enough**: the written
+    position — what the organisation said, typed into `Seisukoht` — a public
+    address, or a document captured through the ordinary evidence pipeline. Any
+    combination is ordinary too: a ministry that publishes a page, sends the
+    paper *and* summarises it in a covering mail is one position with three
+    sources, not three positions.
 
-    It cannot be a database constraint: the address is a column on this row and
-    the document is a row in `documents_documentlink`, and a `CHECK` sees
-    neither of the other. So it is stated here, at the one door a person's save
-    comes through, and it is stated *before* anything is written so that a
-    refusal leaves nothing behind (docs/adr/0084 §3).
+    Text alone is the case this rule was widened for. The commonest feedback a
+    department receives is two sentences in an e-mail from a member
+    association, or something an official said on the telephone that is worth
+    keeping against the file; neither has a file and neither has a published
+    address. Refusing them did not make the record better sourced — it made
+    people invent a source, which is the one failure this record exists to
+    prevent (docs/adr/0084 §3, amended 2026-09-16).
+
+    It still cannot be a database constraint: two of the three are columns on
+    this row and the third is a row in `documents_documentlink`, and a `CHECK`
+    sees one row and cannot count another table. So it is stated here, at the
+    two doors a person's save comes through, and it is stated *before* anything
+    is written so that a refusal leaves nothing behind.
+
+    ``summary`` is the already-stripped text the caller is about to store, not
+    the raw box: a `Seisukoht` of three spaces is not a written position, and
+    deciding that here rather than at each call site is what stops the two
+    doors from disagreeing about it.
     """
-    if url or attachments or documents:
+    if url or attachments or documents or summary:
         return
     raise DomainError(EXTERNAL_POSITION_NEEDS_SOURCE)
 
@@ -2567,7 +2856,9 @@ def record_external_position(
     against this record. It is a count rather than the documents themselves
     because the `DocumentLink` cannot exist until this row does, so the source
     rule has to be decided from what the caller *holds* — and deciding it here,
-    before the insert, is what makes a sourceless save leave nothing behind.
+    before the insert, is what makes a save that records nothing leave nothing
+    behind. It is one of three answers: ``summary`` and ``url`` are the other
+    two, and a position carrying only the first is an ordinary complete record.
     The caller then captures the files in the same transaction, so «promised a
     file and captured none» unwinds the position with it
     (`app.matters.workspace.add_matter_external_position`).
@@ -2588,7 +2879,10 @@ def record_external_position(
     if organisation is None:
         raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
     clean_url = normalize_external_position_url(url)
-    _external_position_source(clean_url, attachments=attachment_count)
+    # Trimmed *before* the source rule reads it, so a `Seisukoht` of three
+    # spaces cannot be the thing that makes an otherwise empty record savable.
+    clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
 
@@ -2598,7 +2892,7 @@ def record_external_position(
         url=clean_url,
         stated_on=stated_on,
         stated_on_precision=precision,
-        summary=(summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH],
+        summary=clean_summary,
         engagement=related,
         created_by=actor,
     )
@@ -2723,20 +3017,23 @@ def correct_external_position(
     if organisation is None:
         raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
     clean_url = normalize_external_position_url(url)
-    # The source rule, asked again and against what this save would *result* in.
-    # A correction that empties the address of a position carrying no document
-    # would leave a record pointing at nothing, which is the one state this
-    # record may never be in — and the document half is counted from the link
-    # table rather than assumed, because the files were captured by a different
-    # operation than this one.
+    clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    # The source rule, asked again and against what this save would *result*
+    # in — not against what the record holds now. A correction that empties the
+    # address of a position whose `Seisukoht` says what the ministry wrote is
+    # an ordinary correction; one that empties the last of the three leaves a
+    # record holding nothing, which is the one state this record may never be
+    # in. The document half is counted from the link table rather than assumed,
+    # because the files were captured by a different operation than this one
+    # and this form does not render them.
     _external_position_source(
         clean_url,
         attachments=0,
         documents=current.document_links.count(),
+        summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
-    clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
 
     proposed: dict[str, Any] = {
         "organisation_id": organisation.pk,
@@ -2874,6 +3171,13 @@ def close_matter(
     # precondition and there is nothing here that can refuse
     # (docs/adr/0081 §5).
     cancel_planned_website_overviews_for_closure(matter=matter, actor=actor)
+
+    # Nor keep waiting for answers nobody can record any more. Every open
+    # `Kaasamine` feedback wait is ended here, in this transaction and under
+    # this lock, each with its own audit event naming the closure — so the file
+    # either shuts with its waits ended or does not shut at all. Closure is
+    # never *blocked* by one (docs/adr/0086 §7).
+    close_open_feedback_waits_for_closure(matter=matter, actor=actor)
 
     record_change_event(
         event_type=ChangeEventType.MATTER_CLOSED,

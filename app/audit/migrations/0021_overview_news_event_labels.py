@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("audit", "0019_external_position_events"),
+        ("audit", "0020_engagement_feedback_closed_event"),
     ]
 
     operations = [
@@ -70,6 +70,7 @@ class Migration(migrations.Migration):
                     ("MATTER_SOURCE_FIELDS_REFRESHED", "Väljad uuendatud registri põhjal"),
                     ("ENGAGEMENT_ADDED", "Kaasamine lisatud"),
                     ("ENGAGEMENT_CHANGED", "Kaasamist muudetud"),
+                    ("ENGAGEMENT_FEEDBACK_CLOSED", "Kaasamise tagasiside laekunud"),
                     ("MATTER_RELATION_ADDED", "Teema seotud teise teemaga"),
                     ("MATTER_RELATION_REMOVED", "Teemade seos eemaldatud"),
                     ("BACKGROUND_MATERIAL_ADDED", "Taustmaterjal lisatud"),

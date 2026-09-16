@@ -22,7 +22,10 @@ creates a table, and the two sources keep their separate domain objects:
 * an active :class:`~app.intelligence.models.MatterImportantDate` — a milestone
   the department watches;
 * an outstanding ``Matter.response_deadline`` — the day Koda's own opinion is
-  due, which is the commonest deadline on the whole register.
+  due, which is the commonest deadline on the whole register;
+* an open :class:`~app.matters.models.MatterEngagement` feedback wait — a
+  consultation round that asked for answers by a named day and has not been
+  finished.
 
 The third one is a projection of a column that was already canonical, and it is
 here because it was missing: a Matter carrying nothing but an *Arvamuse
@@ -72,6 +75,25 @@ Thursday and an opinion due on Thursday are both Thursday's problem, so they
 share one timeline. What they are not is the same obligation, which is why every
 row states its meaning in words beside the date.
 
+**A feedback wait is work, and it is not a deadline.** The fourth source is the
+one added last and the one most easily misread, so it says what it is in three
+sentences. A `Kaasamine` carrying `Tagasisidet ootame kuni` is a round this
+office started and has not finished: somebody asked the membership for answers
+by the 22nd, and on the 22nd somebody has to read what came back and write it
+down. That is a real task with a real day on it, and before this source existed
+it was on no list anywhere — the deadline was drawn on the Teema page's process
+strip and nowhere else, so a file could sit waiting for three months without
+appearing in a single work surface (docs/adr/0086 §3).
+
+What it is *not* is an obligation this office owes anybody outside the building.
+It is therefore deliberately **absent from** :func:`real_deadlines`, so it enters
+no *Tähtajad* panel, no deadline window population and no register deadline
+group: those three name what Koda promised, and «we asked our members by the
+22nd» is not one of them. It touches ``Matter.response_deadline`` in no way, it
+discharges nothing, it creates no ``NextAction``, and it appears beside an open
+one rather than instead of it — two true facts about one file, which is what a
+chronological list of work is for (docs/adr/0086 §3, §4).
+
 **Authorization before arithmetic.** Every queryset starts from
 ``visible_to(user)``. A restricted Matter the reader may not see contributes
 nothing to a count, a band or a row — so nothing downstream has to remember to
@@ -95,7 +117,7 @@ from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.register_semantics import OPINION_WORK_COMPLETE_STATES
 from app.matters.enums import RecordMode
-from app.matters.models import Matter
+from app.matters.models import Matter, MatterEngagement
 from app.matters.register_dates import RESPONSE_DEADLINE_LABEL
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
@@ -120,6 +142,11 @@ SOURCE_IMPORTANT_DEADLINE = "IMPORTANT_DEADLINE"
 #: deliberately not one: the column is canonical and a second copy of it in a
 #: deadline table is a second thing to keep in step.
 SOURCE_RESPONSE_DEADLINE = "RESPONSE_DEADLINE"
+#: An open `Kaasamine` feedback wait, read as work. Like the response deadline
+#: it is a projection of columns that were already canonical and deliberately
+#: not a stored row of its own: what ends it is `feedback_closed_at` on the
+#: consultation, which is where a reader can see it (docs/adr/0086 §3).
+SOURCE_FEEDBACK_WAIT = "FEEDBACK_WAIT"
 
 #: The annotation :func:`annotate_response_obligation` writes: whether the
 #: official response obligation on this Matter has been **discharged**.
@@ -150,6 +177,15 @@ MEANING_IMPORTANT = "OLULINE TÄHTAEG"
 #: old dashboard's *Eesolevad tähtajad* table and this row all say the same two
 #: words, because a synonym invented here would be a fourth name for one date.
 MEANING_RESPONSE = "ARVAMUSE TÄHTAEG"
+#: What an open consultation round says about its date.
+#:
+#: «Ootame tagasisidet» and not «TÄHTAEG», in the words the panel asked the
+#: question in. The three constants above are obligations — one owed to an
+#: outside body, one to a watched milestone, one a lawyer set for themselves —
+#: and this is the department waiting for somebody else. The row can still be
+#: late, because the *reading* is what is late: after the day it asked for, the
+#: round is a thing whose answers are sitting unread (docs/adr/0086 §4).
+MEANING_FEEDBACK_WAIT = "OOTAME TAGASISIDET"
 
 _SEMANTICS_MEANING: dict[str, str] = {
     DateSemantics.DEADLINE.value: MEANING_DEADLINE,
@@ -273,6 +309,32 @@ class WorkItem:
     @property
     def is_action(self) -> bool:
         return self.source_type == SOURCE_NEXT_ACTION
+
+    @property
+    def is_feedback_wait(self) -> bool:
+        """Whether this row is an unfinished consultation round.
+
+        Read by the row's overflow menu, which offers `Lõpeta kaasamine…` for
+        exactly these and nothing for the rest: an `Oluline tähtaeg` has no
+        completion workflow, and offering one would be inventing it here
+        (docs/adr/0086 §4).
+        """
+        return self.source_type == SOURCE_FEEDBACK_WAIT
+
+    @property
+    def record_url(self) -> str:
+        """Where the record behind this row is read, which is not always the top
+        of the Matter page.
+
+        A file may be running three consultations at once, so a link to the
+        Matter leaves the reader to find which of them this row was about. The
+        engagement's own chronology element carries an id and that is what the
+        row points at; every other source has no such element and points at the
+        Matter, which is exactly what it did before.
+        """
+        if self.source_type == SOURCE_FEEDBACK_WAIT:
+            return f"{self.matter_url}#kaasamine-{self.object_id}-sisu"
+        return self.matter_url
 
     @property
     def matter_url(self) -> str:
@@ -668,6 +730,93 @@ def _response_deadline_item(matter: Matter, today: date) -> WorkItem:
         is_review_ripe=False,
         today=today,
     )
+
+
+def _feedback_wait_item(engagement: MatterEngagement, today: date) -> WorkItem:
+    """One open `Kaasamine` feedback wait, as a row of work.
+
+    ``object_id`` is the engagement's own primary key, because the consultation
+    *is* the record this wait lives on — `Lõpeta kaasamine` is offered against
+    exactly this row and there is no task object to point at instead.
+
+    Exact by construction. `Tagasisidet ootame kuni` stayed on docs/adr/0079
+    §11's exact-day list when `Kaasamise kuupäev` left it (docs/adr/0082 §2), so
+    ``period_end`` is the same day and the row never claims a month nobody
+    named. ``action_kind`` stays empty: this is not a ``NextAction`` and must
+    never be dressed as one.
+
+    **The responsible person is the Matter's current owner**, the reading an
+    `Oluline tähtaeg` and an `Arvamuse tähtaeg` already get. A consultation
+    round belongs to whoever carries the file rather than to whoever happened to
+    type it in, so a reassignment moves the wait with the Matter and nobody
+    edits anything; and `created_by` is a record of who wrote the row down,
+    which is a different question. On a Matter with no owner this is ``None``,
+    which puts the row on the department's *vastutajata* surfaces and on nobody's
+    personal desk — the honest place for work nobody has been given, and the
+    reason no duplicate is created for every lawyer (§4.2, docs/adr/0086 §4).
+
+    ``is_overdue`` is the day having passed. That is a reading of *this office's*
+    unread post and not an accusation against the people who were asked: the
+    round asked for answers by a day, the day has gone, and what is late is
+    looking at them. Nothing about the membership's own timeliness is stated
+    anywhere, and a wait still inside its window is simply upcoming
+    (docs/adr/0086 §4).
+    """
+    deadline = engagement.feedback_deadline
+    return WorkItem(
+        source_type=SOURCE_FEEDBACK_WAIT,
+        object_id=engagement.pk,
+        matter=engagement.matter,
+        responsible=engagement.matter.owner,
+        action_kind="",
+        date_semantics=DateSemantics.DEADLINE.value,
+        when=deadline,
+        period_end=deadline,
+        date_precision=DatePrecision.EXACT,
+        display_date=format_estonian_date(deadline),
+        meaning=MEANING_FEEDBACK_WAIT,
+        # Who was asked. The row names the Matter and states its meaning, and
+        # this is the one thing neither of those says — «liikmed» is what
+        # distinguishes two rounds running on one file (docs/adr/0086 §4).
+        text=engagement.title,
+        is_overdue=deadline is not None and deadline < today,
+        is_review_ripe=False,
+        today=today,
+    )
+
+
+def open_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEngagement]:
+    """Unfinished consultation rounds on open Matters, scoped to the reader.
+
+    ``visible_to`` is the engagement's **own** scope, not the Matter's. A
+    `Kaasamine` may carry a stricter visibility override than the file it hangs
+    off, so a restricted round must contribute nothing at all for a reader who
+    may not open it — not a row, not a count, not a band boundary (AUTH-003,
+    docs/adr/0038).
+
+    ``owner`` filters by ``Matter.owner``, for the reason
+    :func:`important_deadlines` does: the wait belongs to whoever carries the
+    file. An ownerless Matter's wait therefore reaches nobody's Minu asjad and
+    appears as *vastutajata* on the department surfaces.
+
+    The clauses beyond that are the ones every source here keeps —
+    :func:`open_matters` narrows to open ``FULL`` records, so the decade of
+    imported ``ARCHIVE`` consultations reaches no work surface however many of
+    them carry a reply-by date.
+    """
+    queryset = (
+        MatterEngagement.objects.visible_to(user)
+        .filter(
+            feedback_deadline__isnull=False,
+            feedback_closed_at__isnull=True,
+            matter__is_open=True,
+            matter__record_mode=RecordMode.FULL,
+        )
+        .select_related("matter", "matter__stage", "matter__owner")
+    )
+    if owner is not None:
+        queryset = queryset.filter(matter__owner=owner)
+    return queryset
 
 
 def dated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextAction]:
@@ -1070,7 +1219,7 @@ def work_items(
 ) -> list[WorkItem]:
     """Every dated work item this reader may see, chronologically.
 
-    Three queries, not one per row — one per source, each already narrowed by
+    Four queries, not one per row — one per source, each already narrowed by
     ``visible_to``. ``latest`` bounds the future so a page that only shows five
     weeks does not drag a decade of milestones through Python. Nothing bounds
     the past: work that is late is exactly what these pages exist to surface.
@@ -1086,14 +1235,17 @@ def work_items(
     actions = dated_actions(user, responsible=responsible)
     deadlines = important_deadlines(user, owner=responsible)
     responses = outstanding_response_deadlines(user, owner=responsible)
+    waits = open_feedback_waits(user, owner=responsible)
     if latest is not None:
         actions = actions.filter(target_date__lte=latest)
         deadlines = deadlines.filter(date_value__lte=latest)
         responses = responses.filter(response_deadline__lte=latest)
+        waits = waits.filter(feedback_deadline__lte=latest)
 
     items = [action_item(action, today) for action in actions]
     items += [_deadline_item(record, today) for record in deadlines]
     items += [_response_deadline_item(matter, today) for matter in responses]
+    items += [_feedback_wait_item(engagement, today) for engagement in waits]
     return sort_items(items)
 
 
@@ -1254,6 +1406,15 @@ def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
     The response deadline joins the other two rather than softening them: it is
     the day Koda promised its opinion, which is a commitment in exactly the
     sense a review date is not.
+
+    **An open feedback wait is not one of them**, and the omission is a decision
+    rather than an oversight. «Vastake 22. septembriks» is a day this office
+    named to its own members; putting it in a table headed *Tähtajad* beside
+    `Arvamuse tähtaeg` would read as a fourth obligation the Chamber owes, and
+    the register's deadline groups would start counting consultations as
+    promises. It is still work, still banded and still capable of being late —
+    those are readings of the *list*, and this predicate is about the *word*
+    (docs/adr/0086 §3).
 
     Here rather than in :mod:`app.matters.overview` because the register now
     filters on it too: a *Tähtajad* group that opens a list assembled by a
@@ -1571,9 +1732,11 @@ __all__ = [
     "DISCHARGED",
     "MEANING_DEADLINE",
     "MEANING_EXPECTED",
+    "MEANING_FEEDBACK_WAIT",
     "MEANING_IMPORTANT",
     "MEANING_RESPONSE",
     "MEANING_REVIEW",
+    "SOURCE_FEEDBACK_WAIT",
     "SOURCE_IMPORTANT_DEADLINE",
     "SOURCE_NEXT_ACTION",
     "SOURCE_RESPONSE_DEADLINE",
@@ -1602,6 +1765,7 @@ __all__ = [
     "full_matters",
     "important_deadlines",
     "matters_without_action",
+    "open_feedback_waits",
     "open_matters",
     "outstanding_response_deadlines",
     "overdue_items",

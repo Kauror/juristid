@@ -162,6 +162,27 @@ class ChangeEventType(models.TextChoices):
     # (Agent-F brief 20, 22).
     ENGAGEMENT_ADDED = "ENGAGEMENT_ADDED", "Kaasamine lisatud"
     ENGAGEMENT_CHANGED = "ENGAGEMENT_CHANGED", "Kaasamist muudetud"
+    # `Lõpeta kaasamine` — the round stopped waiting for answers.
+    #
+    # Its own event rather than an `ENGAGEMENT_CHANGED` naming two more moved
+    # columns, because it is the one act on this record that a reader audits.
+    # «Who decided this consultation was finished, when, and what did they say
+    # had come back» is a question about a *decision*, and a history that buried
+    # it in a sorted list of field names could not answer it — the reasoning
+    # `EXTERNAL_POSITION_SOURCE_CHANGED` already carries one model along
+    # (docs/adr/0086 §6).
+    #
+    # The payload names the closure's reason — a person, or the Matter shutting
+    # underneath the wait — and says whether anything was written down, never
+    # what was written. Feedback runs to paragraphs and is on the record where
+    # it can be corrected; an audit table holding a second copy of it would be
+    # a worse copy nobody maintains (Agent-F brief 26).
+    #
+    # Deliberately absent from `matters.timeline.TIMELINE_EVENT_TYPES`, like
+    # every other structured fact since docs/adr/0074 §14: the chronology
+    # renders the completed round from the record itself, and reading the event
+    # as well would state one act twice.
+    ENGAGEMENT_FEEDBACK_CLOSED = "ENGAGEMENT_FEEDBACK_CLOSED", "Kaasamise tagasiside laekunud"
     # Seotud materjalid: the four human decisions the section records. A
     # dismissal («Ei ole seotud») keeps its actor and time on its own row and
     # writes no event, because it is a preference about what to suggest rather

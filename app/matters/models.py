@@ -9,6 +9,7 @@ so that archive rows never have to invent a stage, an owner or a date
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from django.conf import settings
@@ -768,12 +769,14 @@ WEBSITE_OVERVIEW_URL_MAX_LENGTH = 1000
 #: rather than truncating, with the column behind it as the defence.
 EXTERNAL_POSITION_URL_MAX_LENGTH = 1000
 
-#: How long the optional `Selgitus` on a `Väline seisukoht` may be.
+#: How long the `Seisukoht` a `Väline seisukoht` carries may be.
 #:
-#: A short explanation of what the other organisation actually said, not a
-#: summary of their document: the document is attached and the link is
-#: recorded, and a box that invited paragraphs would make this record a second,
-#: worse copy of the source it points at (docs/adr/0084 §2).
+#: A concise written position or comment received from the other organisation
+#: — enough to hold «toetab eelnõu, kuid soovib pikemat üleminekuaega» or the
+#: two sentences a member association sent back by e-mail, and not enough to
+#: invite somebody to paste a position paper in here instead of attaching it.
+#: The document is still the document and the link is still the link
+#: (docs/adr/0084 §2, amended 2026-09-16).
 EXTERNAL_POSITION_SUMMARY_MAX_LENGTH = 1000
 
 
@@ -934,22 +937,85 @@ class MatterEngagement(VisibilityInheritingModel):
     #: nowhere on the file to put it, so it lived in the mailing and in
     #: somebody's memory.
     #:
-    #: **A recorded fact, not an instruction.** It creates no `NextAction`, it
-    #: is not `Matter.response_deadline`, it is not a `MatterImportantDate`, and
-    #: nothing counts, filters, sorts or badges it. A column that generated a
-    #: task would make every historical consultation somebody types in overdue
-    #: on the day it is entered: what was *asked of others* is a different claim
-    #: from what is *owed by us*, and only the second is work.
+    #: **Set, it opens a wait, and the wait is work** (docs/adr/0086 §3).
+    #: docs/adr/0078 §3 made this column inert - no work item, no badge, no
+    #: reading of lateness - on a rule that is right about the *fact* and wrong
+    #: about the *state*: what was asked of a ministry is indeed not an
+    #: obligation this office owes anybody, but a lawyer who asked for answers
+    #: by the 22nd has a thing to do on the 22nd, which is to read what came
+    #: back and write it down. So the deadline still creates no `NextAction`,
+    #: is still not `Matter.response_deadline`, is still not a
+    #: `MatterImportantDate` and still contributes to no response-deadline
+    #: statistic, no work-victory metric, no search row and no archive
+    #: projection - and it now draws one `WorkItem` of its own, which
+    #: :attr:`feedback_closed_at` ends (`app/matters/work_items.py`).
+    #:
+    #: The historical-row objection docs/adr/0078 §3 raised is answered by
+    #: *where* the wait is read rather than by keeping the column inert: only
+    #: an **open FULL** Matter reaches a work surface, and a decade of imported
+    #: consultations are `ARCHIVE` rows no work source has ever looked at.
     #:
     #: Null for every row that predates the question and for every row somebody
     #: leaves blank. Nothing is inferred from `occurred_on`, `created_at`, the
     #: note or the provider links — a date guessed from a neighbouring column is
     #: a date nobody chose.
     #:
-    #: Not indexed, because nothing reads it that way yet. An index built for a
-    #: query that does not exist is a write cost with no reader.
+    #: Not indexed. The work source reads it through the Matter it hangs off,
+    #: which is the index this table already carries.
     feedback_deadline = models.DateField(
         null=True, blank=True, verbose_name="tagasisidet ootame kuni"
+    )
+    #: `Saadud tagasiside / arvamused` — what came back, in writing.
+    #:
+    #: The half of a consultation the file could never hold. A round produced a
+    #: pointer to where it was asked and a count of how many answered, and the
+    #: answers themselves lived in a mail folder: «liikmed toetasid, v.a
+    #: kaubandus» had to go into a `Sissekanne` that then said nothing about
+    #: which round it belonged to (docs/adr/0086 §5).
+    #:
+    #: Separate from :attr:`note`, deliberately. `Märkus` is what the person
+    #: recording the round wanted to say *about the round* - where the list came
+    #: from, why it was sent late. This is what the people who were asked said
+    #: back. One column carrying both would be a column whose meaning depends on
+    #: who wrote the sentence.
+    #:
+    #: **Not required to close a wait**, and blank is a real answer: «keegi ei
+    #: vastanud» is a result, and a completion that demanded prose would make
+    #: the commonest disappointing outcome unrecordable (docs/adr/0086 §6).
+    #:
+    #: **Not indexed.** The search projection reads `title`, `note` and the link
+    #: hosts, and this round does not widen it - what a member wrote to Koda in
+    #: confidence is not a thing to make findable from the header search box
+    #: without the visibility question being asked first
+    #: (`app/search/child_indexing.py`, docs/adr/0086 §9).
+    feedback_received = models.TextField(blank=True, verbose_name="saadud tagasiside")
+    #: When the wait was closed - the moment a person said «this round is
+    #: finished», or the moment the Matter closed underneath it.
+    #:
+    #: `NULL` while the wait is open and for every row that never had a
+    #: deadline. Paired with :attr:`feedback_deadline` by
+    #: `matters_engagement_feedback_closure_needs_deadline`: a wait that does
+    #: not exist cannot be completed, so clearing the deadline clears the
+    #: closure with it (`app.matters.services.update_engagement`).
+    #:
+    #: A timestamp rather than a date, because the act is a save somebody made
+    #: at a moment and the audit row beside it says so to the microsecond. What
+    #: it is emphatically *not* is the day the feedback arrived: nobody is asked
+    #: that, and inventing it from the save would be the same manufactured fact
+    #: docs/adr/0078 §2 removed from `occurred_on`.
+    feedback_closed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="tagasiside ootamine lõpetatud"
+    )
+    #: Who closed the wait. Null for a closure written by no person - the
+    #: Matter closure path passes whatever actor closed the file, and a shell
+    #: or a fixture passes nothing.
+    feedback_closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="closed_engagement_feedback",
+        verbose_name="tagasiside ootamise lõpetas",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -981,6 +1047,16 @@ class MatterEngagement(VisibilityInheritingModel):
             models.CheckConstraint(
                 condition=models.Q(occurred_on_precision__in=DatePrecision.values),
                 name="matters_engagement_occurred_precision_vocabulary",
+            ),
+            # A wait that does not exist cannot be completed. `feedback_deadline`
+            # is what opens the wait, so a closure timestamp without one would be
+            # a row claiming to have finished waiting for something nobody asked
+            # for - and `has_open_feedback_wait` would read it as neither open
+            # nor closed (docs/adr/0086 §6).
+            models.CheckConstraint(
+                condition=models.Q(feedback_closed_at__isnull=True)
+                | models.Q(feedback_deadline__isnull=False),
+                name="matters_engagement_feedback_closure_needs_deadline",
             ),
             models.CheckConstraint(
                 condition=models.Q(
@@ -1025,6 +1101,50 @@ class MatterEngagement(VisibilityInheritingModel):
         approximate one, and the two say different things to a reader.
         """
         return self.occurred_on is not None and is_approximate(self.occurred_on_precision)
+
+    @property
+    def has_feedback_wait(self) -> bool:
+        """Whether a reply-by date was ever named on this round.
+
+        The question `has_open_feedback_wait` and `feedback_wait_is_closed`
+        partition. A round with no deadline is in neither state, which is what
+        every row written before docs/adr/0078 §3 is and what most rows will
+        always be.
+        """
+        return self.feedback_deadline is not None
+
+    @property
+    def has_open_feedback_wait(self) -> bool:
+        """Whether this round is still waiting for the answers it asked for.
+
+        The one predicate the work surfaces, the Teema page and the completion
+        service all read, so «is this still open» cannot be answered two ways.
+        A deadline that has gone by is still *open* — the day passing is not a
+        result, and nothing closes a wait except somebody saying so or the
+        Matter shutting underneath it (docs/adr/0086 §4, §6).
+        """
+        return self.feedback_deadline is not None and self.feedback_closed_at is None
+
+    @property
+    def feedback_wait_is_closed(self) -> bool:
+        """Whether a wait that existed has been completed."""
+        return self.feedback_deadline is not None and self.feedback_closed_at is not None
+
+    def feedback_wait_is_due(self, today: date | None = None) -> bool:
+        """Whether an open wait has reached the day it asked to be answered by.
+
+        Inclusive of the day itself: «vastake 22. septembriks» is a thing to
+        look at *on* the 22nd, not on the 23rd. Before that day the round is
+        waiting and says so; from it, it is the lawyer's to finish
+        (docs/adr/0086 §4).
+
+        `False` for a closed wait and for a round that never had a deadline,
+        so a caller can ask this without asking `has_open_feedback_wait` first
+        and get the honest answer either way.
+        """
+        if not self.has_open_feedback_wait or self.feedback_deadline is None:
+            return False
+        return self.feedback_deadline <= (today or timezone.localdate())
 
     @staticmethod
     def _hostname(url: str) -> str:
@@ -1391,12 +1511,29 @@ class MatterExternalPosition(VisibilityInheritingModel):
 
     The source minimum
     ------------------
-    A position with no source is hearsay on a file, so one of the two is
-    required: a public ``url``, an attached `Document` through the ordinary
-    `DocumentLink` architecture, or both. The URL half is a column and the
-    document half is a row in another table, so the rule cannot be a `CHECK`;
-    it lives in `app.matters.services.record_external_position`, which is the
-    one door a person's save comes through (docs/adr/0084 §3).
+    A position with no source is hearsay on a file, so **one of three** is
+    required: the written :attr:`summary` — what the organisation actually
+    said, in their words or a faithful paraphrase of them — a public ``url``,
+    or an attached `Document` through the ordinary `DocumentLink`
+    architecture. Any one of them alone is enough and any combination is
+    ordinary.
+
+    The commonest feedback a department receives has neither a file nor a
+    public address: a member association answers a consultation in two
+    sentences by e-mail, or a ministry official says something on the telephone
+    that is worth recording against the file. Refusing those was refusing to
+    record ordinary feedback, and what it actually bought was a fabricated
+    source — a made-up description or a URL pointing at something else — which
+    is worse than the record it was protecting (docs/adr/0084 §3, amended
+    2026-09-16).
+
+    Two of the three are columns on this row and the third is a row in another
+    table, so the rule still cannot be a `CHECK`: a constraint sees one row and
+    cannot count `documents_documentlink`. It lives in
+    `app.matters.services._external_position_source`, called by
+    `record_external_position` before the insert and by
+    `correct_external_position` under the row lock, which are the two doors a
+    person's save comes through.
 
     Zero, one or many
     -----------------
@@ -1434,8 +1571,10 @@ class MatterExternalPosition(VisibilityInheritingModel):
     )
     #: Where the position was published, when it was published anywhere.
     #:
-    #: Optional on its own and never optional together with the attachment: see
-    #: the class docstring. `http` and `https` only, refused rather than
+    #: Optional on its own, and one of the three answers to the source rule in
+    #: the class docstring — a position whose `Seisukoht` says what the
+    #: organisation wrote needs no address at all. `http` and `https` only,
+    #: refused rather than
     #: truncated past :data:`EXTERNAL_POSITION_URL_MAX_LENGTH`, and checked by a
     #: parsed host so that an address whose «host» is nothing but credentials
     #: cannot be stored (`normalize_external_position_url`).
@@ -1471,13 +1610,18 @@ class MatterExternalPosition(VisibilityInheritingModel):
         default=DatePrecision.EXACT,
         verbose_name="kuupäeva täpsus",
     )
-    #: `Selgitus` — a short note on what they actually said.
+    #: `Seisukoht` — what the other organisation actually said, in writing.
     #:
-    #: Optional, and deliberately bounded. The source is the source; this is the
-    #: line that lets a colleague scanning the chronology decide whether to open
-    #: it. Nothing extracts it, nothing indexes it and nothing summarises the
-    #: linked document into it (docs/adr/0084 §6).
-    summary = models.TextField(blank=True, verbose_name="selgitus")
+    #: Optional on its own and one of the three answers to the source rule
+    #: above: a position recorded here and nowhere else is a complete record,
+    #: because a two-sentence reply by e-mail is the commonest feedback a
+    #: department gets and it has neither a file nor a published address.
+    #:
+    #: It is a faithful record of somebody else's words and never this office's
+    #: reading of them: nothing extracts it, nothing generates it, nothing
+    #: indexes it, nothing summarises the linked document into it, and no
+    #: stance vocabulary is derived from it (docs/adr/0084 §2, §6).
+    summary = models.TextField(blank=True, verbose_name="seisukoht")
     #: `Seotud kaasamine` — the round this position answered, where it answered
     #: one.
     #:

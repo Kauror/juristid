@@ -218,20 +218,36 @@ def test_a_reply_by_date_is_not_the_official_deadline(normal_matter, specialist)
     assert DEADLINE_LABEL not in _labels(normal_matter, specialist)
 
 
-def test_a_passed_reply_by_date_is_never_late_and_makes_no_work(normal_matter, specialist):
-    """The decision ADR 0083 says is most worth stating.
+def test_a_passed_reply_by_date_writes_no_record_and_the_strip_says_nothing(
+    normal_matter, specialist
+):
+    """The decision ADR 0083 says is most worth stating, as it stands now.
 
-    A consultation recorded months after the fact has a reply-by date months in
-    the past. It must not make the file overdue on the day it is typed in.
+    Two halves, and docs/adr/0086 §3 moved exactly one of them.
+
+    **What is unchanged**: a reply-by date writes nothing. No `NextAction`, no
+    `Oluline tähtaeg`, no `Arvamuse tähtaeg` — a consultation recorded months
+    after the fact creates no record that says the file owes anybody anything.
+
+    **What the strip says is unchanged too.** The column carries the label and
+    the date and no urgency at all: the strip is a reading of the file's course,
+    and a red countdown there would be the page accusing the people who were
+    asked (ADR 0083 §1's own *Alternatives*).
+
+    **What moved**: the round is now an open *waiting activity* on the work
+    surfaces until somebody finishes it, which is what
+    `tests/test_engagement_feedback_wait.py` holds. That is a reading of this
+    office's unfinished work, not a claim about anybody's lateness, and it is
+    why the work-surface assertion that used to sit here has moved there.
     """
-    from app.matters import work_items
     from app.workflow.models import NextAction
 
     _round(normal_matter, deadline=dt.date(2020, 1, 1), occurred=dt.date(2019, 12, 1))
 
     assert not NextAction.objects.filter(matter=normal_matter).exists()
     assert not normal_matter.important_dates.exists()
-    assert all(item.matter.pk != normal_matter.pk for item in work_items.work_items(specialist))
+    normal_matter.refresh_from_db()
+    assert normal_matter.response_deadline is None
 
     # And the strip itself asserts no urgency: no countdown, no «üle», no
     # «praegu» — the words are the label and the date.
@@ -245,7 +261,7 @@ def test_a_passed_reply_by_date_is_never_late_and_makes_no_work(normal_matter, s
     assert "praegu" not in step.date_line
 
 
-def test_a_reply_by_date_reaches_no_work_or_archive_surface(signed_in, specialist):
+def test_a_reply_by_date_reaches_no_search_or_watched_deadline_surface(signed_in, specialist):
     """The deadline is isolated from the engagement, which *is* indexed.
 
     A `Kaasamine` has been a search source since docs/adr/0027 — that is how a
@@ -255,7 +271,6 @@ def test_a_reply_by_date_reaches_no_work_or_archive_surface(signed_in, specialis
     with **no** reply-by date: whatever the deadline costs must be the
     difference between the two, and it is nothing.
     """
-    from app.matters import work_items
     from app.search.indexing import rebuild_all
     from app.search.models import SearchDocument
 
@@ -273,9 +288,11 @@ def test_a_reply_by_date_reaches_no_work_or_archive_surface(signed_in, specialis
         assert not SearchDocument.objects.filter(body_text__icontains=spelling).exists(), spelling
         assert not SearchDocument.objects.filter(title__icontains=spelling).exists(), spelling
 
-    # No work item on either, and the watched-deadline surface is about dates
-    # somebody else announced rather than what this office asked for.
-    assert work_items.work_items(specialist) == []
+    # And `Olulised tähtajad` is about dates somebody else announced rather than
+    # about what this office asked for, so the label never reaches it. The wait
+    # *is* work since docs/adr/0086 §3 — as a `WorkItem`, which is deliberately
+    # outside `real_deadlines` and therefore outside every *Tähtajad* surface
+    # (`tests/test_engagement_feedback_wait.py`).
     tahtajad = signed_in.get(reverse("intelligence:important_dates"), follow=True)
     assert FEEDBACK_DEADLINE_LABEL not in tahtajad.content.decode()
 

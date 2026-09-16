@@ -669,8 +669,8 @@ def test_the_rename_migrations_are_state_only():
 
     loader = MigrationExecutor(connection).loader
     expected = {
-        ("matters", "0024_overview_news_verbose_name"): ["AlterModelOptions"],
-        ("audit", "0020_overview_news_event_labels"): ["AlterField"],
+        ("matters", "0026_overview_news_verbose_name"): ["AlterModelOptions"],
+        ("audit", "0021_overview_news_event_labels"): ["AlterField"],
     }
     for (app_label, name), operations in expected.items():
         migration = loader.get_migration(app_label, name)

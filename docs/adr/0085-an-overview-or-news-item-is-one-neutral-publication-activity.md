@@ -290,8 +290,8 @@ Two, and **both are state-only**:
 
 | migration | operation | what it touches in the database |
 | --- | --- | --- |
-| `matters/0024_overview_news_verbose_name` | one `AlterModelOptions` | nothing — `verbose_name` is Python metadata |
-| `audit/0020_overview_news_event_labels` | one `AlterField` over a `choices` list | nothing — `choices` is validation and display in Django, never a database object |
+| `matters/0026_overview_news_verbose_name` | one `AlterModelOptions` | nothing — `verbose_name` is Python metadata |
+| `audit/0021_overview_news_event_labels` | one `AlterField` over a `choices` list | nothing — `choices` is validation and display in Django, never a database object |
 
 **No schema change was needed to widen the address rule**, because the boundary
 never lived in the database: no `CHECK`, no validator on the column and no

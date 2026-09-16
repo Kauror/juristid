@@ -245,6 +245,17 @@ urlpatterns = [
         views.update_engagement_view,
         name="update_engagement",
     ),
+    # `Lõpeta kaasamine` on a round that is still waiting for answers. Its own
+    # address rather than a flag on the correction route, because the two are
+    # different acts on the same record: one rewrites what the round *was* and
+    # this one decides it is over. POST only — there is no state to GET, since
+    # the form is rendered inside the chronology row the answer swaps
+    # (app/matters/views.py, `complete_engagement_feedback_view`).
+    path(
+        "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/lopeta/",
+        views.complete_engagement_feedback_view,
+        name="complete_engagement_feedback",
+    ),
     path(
         "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/valmis/",
         views.complete_action,

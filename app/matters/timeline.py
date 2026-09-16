@@ -38,6 +38,7 @@ from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.dates import format_estonian_date
 from app.matters.entry_enums import EntryKind
+from app.matters.enums import EngagementKind
 from app.matters.models import (
     Entry,
     Matter,
@@ -667,26 +668,36 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
     composition is a second place for `Vastuseid` to gain a separator or for
     the deadline to lose its label (`app/matters/views.py`, `_engagement_row`).
     """
+    # The channel, **for the rows that were asked for one**.
+    #
+    # `+ Kaasamine` stopped asking which channel a round used, and every row it
+    # writes now carries `OTHER` — the column's own default. Printing «Muu»
+    # for those would be the chronology stating a classification nobody chose
+    # and nothing reads, which is precisely what the panel stopped collecting;
+    # printing nothing is the honest rendering of a question that was not put.
+    #
+    # A historical `Küsitlus`, `Koosolek`, `Kirjade voor` or `Kaasamiskutse
+    # veebis` is a real answer somebody gave and still reads exactly as it did.
+    # An older row stored as `OTHER` loses a word that carried no information
+    # either way (docs/adr/0086 §1).
+    parts = []
+    if engagement.kind != EngagementKind.OTHER:
+        parts.append(str(engagement.get_kind_display()))
     # `Vastuseid 14`, using the panel's own label rather than a sentence
     # composed here. `response_count` is nullable and NULL means «nobody
     # counted», which is not «nobody answered» — so an uncounted engagement
     # says nothing about responses at all (docs/adr/0074 §5).
-    sub = str(engagement.get_kind_display())
     if engagement.response_count is not None:
-        sub = f"{sub} · Vastuseid {engagement.response_count}"
-    # `Tagasisidet ootame kuni 22.9.2026` — what the round asked of the
-    # people it went to, in the words the panel asked for it.
+        parts.append(f"Vastuseid {engagement.response_count}")
+    # **The reply-by date is deliberately not here.**
     #
-    # On the row it belongs to and nowhere else. It is not the chronology
-    # date — that is still `occurred_on` — and it is not work: no item, no
-    # badge, no «üle tähtaja», not even when the day has passed. A blank
-    # deadline says nothing at all rather than «Määramata», because most
-    # engagements never had one and an absence the reader has to decode is
-    # worse than silence.
-    if engagement.feedback_deadline:
-        sub = (
-            f"{sub} · Tagasisidet ootame kuni {format_estonian_date(engagement.feedback_deadline)}"
-        )
+    # docs/adr/0078 §3 put it in this string, after the kind and the response
+    # count, and that was right while it was one more recorded fact about the
+    # round. It is a *state* now — waiting, due, or finished — with three
+    # wordings and a colour of its own, so it is rendered as its own line by
+    # `matters/partials/engagement_row.html`. Saying it in both places would
+    # state one fact twice on one row (docs/adr/0086 §3, §4).
+    sub = " · ".join(parts)
     # Read off the row already in hand — no second query, and nothing here
     # for an engagement that carries neither address, so a row that has no
     # links renders no empty container for them.
@@ -749,15 +760,21 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     Built here rather than inline in :func:`projected_milestones` because the
     correction form swaps this one row back in place after a save, and the two
     renderings have to be the same rendering — a second copy of the `sub`
-    composition is a second place for the `Selgitus` to gain a separator or for
+    composition is a second place for the `Seisukoht` to gain a separator or for
     the linked consultation to lose its label (`app/matters/views.py`,
     `_external_position_row`).
 
     **The headline names the organisation and nothing else.** «Väline
     seisukoht: Rahandusministeerium» is what a reader scanning six months is
-    looking for; what the ministry actually said is the `Selgitus` under it and
-    the source beside it, and folding either into the headline would make one
-    line say three things (docs/adr/0084 §6).
+    looking for; what the ministry actually said is the `Seisukoht` under it and
+    the link or file beside it, and folding any of them into the headline would
+    make one line say three things (docs/adr/0084 §6).
+
+    **A row with no link is an ordinary row.** Since docs/adr/0084's 2026-09-16
+    amendment the written `Seisukoht` is a source in its own right, so a
+    position recorded from an e-mail renders as a headline, a date and the text
+    — no empty link control, no «allikas puudub», and nothing claiming the
+    record is incomplete, because it is not.
 
     **The link is labelled by its host, never printed as an address.** A raw URL
     as a row's own text is a line a reader has to parse instead of read, and it

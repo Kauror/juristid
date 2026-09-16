@@ -74,29 +74,33 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       {% include "matters/partials/period_composer.html" with chips=external_position_edit_form.precision_chips date_field=external_position_edit_form.stated_on month_field=external_position_edit_form.position_month quarter_field=external_position_edit_form.position_quarter year_field=external_position_edit_form.position_year only %}
 
       {% comment %}
-        The source. **No upload control here**: adding a second piece of
-        evidence to a position is a different act with a different audit trail,
-        and a correction form that also captured bytes would make «what
-        changed» unanswerable from one event. Emptying the address of a
-        position that carries a file is an ordinary correction; emptying the
-        address of one that carries nothing else unsources the record and is
-        refused (docs/adr/0084 §8).
+        The three sources, in the order the panel asks them, because a record
+        must be correctable in the shape it was created in and a person who
+        learns one must not have to re-learn the other.
+
+        **No upload control here**: adding a second piece of evidence to a
+        position is a different act with a different audit trail, and a
+        correction form that also captured bytes would make «what changed»
+        unanswerable from one event. Emptying the address of a position that
+        carries a file — or one whose `Seisukoht` says what the organisation
+        wrote — is an ordinary correction; emptying the last of the three
+        unsources the record and is refused under the row lock
+        (docs/adr/0084 §3, §8).
       {% endcomment %}
+      <label class="cx-f" for="{{ external_position_edit_form.summary.id_for_label }}">
+        <span class="cx-f__lab">{{ external_position_edit_form.summary.label }}</span>
+        {{ external_position_edit_form.summary }}
+      </label>
+      {% if external_position_edit_form.summary.errors %}
+        <p class="field__error">{{ external_position_edit_form.summary.errors|first }}</p>
+      {% endif %}
+
       <label class="cx-f" for="{{ external_position_edit_form.url.id_for_label }}">
         <span class="cx-f__lab">{{ external_position_edit_form.url.label }}</span>
         {{ external_position_edit_form.url }}
       </label>
       {% if external_position_edit_form.url.errors %}
         <p class="field__error">{{ external_position_edit_form.url.errors|first }}</p>
-      {% endif %}
-
-      <label class="cx-f" for="{{ external_position_edit_form.summary.id_for_label }}">
-        <span class="cx-f__lab">{{ external_position_edit_form.summary.label }}
-          <span class="cx-f__opt">valikuline</span></span>
-        {{ external_position_edit_form.summary }}
-      </label>
-      {% if external_position_edit_form.summary.errors %}
-        <p class="field__error">{{ external_position_edit_form.summary.errors|first }}</p>
       {% endif %}
 
       <label class="cx-f" for="{{ external_position_edit_form.engagement.id_for_label }}">
