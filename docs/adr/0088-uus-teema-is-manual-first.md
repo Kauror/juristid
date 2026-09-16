@@ -180,10 +180,36 @@ shrinks, which is the contract `taxonomy/0004` already set.
 The brief's later packages were inspected far enough to be sure this one does
 not make them harder, and then left alone:
 
-- **Hetkeseis.** `StageVocabulary.is_active` is the same safe retirement
-  mechanism `PolicyArea` has, and `selectable_stages()` is the single read. The
-  proposed vocabulary is a seed-plus-retirement migration of the same shape as
-  `taxonomy/0007`, plus new `help_text` for the tooltips.
+- **Hetkeseis.** `StageVocabulary` has `is_active`, and `selectable_stages()`
+  is the single read of it. **It is not yet the same safe retirement mechanism
+  `PolicyArea` has** — this sentence said it was, and the Package 2
+  investigation established by running the code that it is not. Three surfaces
+  narrow the *validating* queryset to active rows without unioning in the
+  stage a Matter already holds:
+
+  * `MatterEditForm.__init__` — `set_choices(self, "stage", active_stages())`;
+  * `MatterFieldForm.__init__` — the same line;
+  * `_header_context` — `"stages": StageVocabulary.objects.filter(is_active=True)`,
+    which is what the header's inline stage `<select>` renders.
+
+  So on a Matter holding a stage that has since been retired, the chip is not
+  offered, posting that stage back is refused as an invalid choice, and saving
+  **any unrelated field** — a corrected title — clears `Matter.stage` to
+  `NULL` through `change_stage(matter, stage=None)`. `PolicyArea` and
+  `LegalInstrumentType` do not behave this way: `MatterEditForm` unions each
+  Matter's own held rows into the offered list and validates against the whole
+  table.
+
+  **This does not affect this PR.** Package 1 retires two `PolicyArea` labels
+  and **no `Hetkeseis` value whatsoever**; `taxonomy/0007` does not touch
+  `StageVocabulary`, and no stage row has ever been retired, which is why the
+  defect is latent rather than live. But a dedicated retention fix on those
+  three surfaces — shaped exactly like the Valdkond and Õigusakt unions, plus a
+  template marker so a retired chip reads as a former answer — is **required
+  before any future stage retirement**, and therefore before the Package 2
+  Hetkeseis work. The proposed Package 2 vocabulary is in any case
+  label-only on the ten existing rows, so it retires nothing and does not
+  itself depend on the fix.
 - **Õigusakt.** `LegalInstrumentType` also has `is_active` and `sort_order`, and
   `MatterEditForm` already unions in a Matter's own retired types. Multiple
   selection is real and must survive (ADR 0070); `legal_instrument_raw` on
@@ -192,11 +218,18 @@ not make them harder, and then left alone:
 - **Menetlusliik.** This one is *not* safe by the same mechanism.
   `Matter.track` is a `TextChoices` column, not a vocabulary table, so there is
   no `is_active` to set; it is referenced by `StageVocabulary.applicable_tracks`
-  (an `ArrayField` of the same choices), by the reporting projection, by imports
-  and by migrations under its stored keys. Removing it from the visible form
-  while keeping a domestic/EU distinction is a design decision that needs its
-  own ADR, and it is the one place where the later packages could be got wrong
+  (an `ArrayField` of the same choices), by the reporting projection and by
+  migrations under its stored keys. Removing it from the visible form while
+  keeping a domestic/EU distinction is a design decision that needs its own
+  ADR, and it is the one place where the later packages could be got wrong
   cheaply.
+
+  **Not by imports.** This sentence listed imports among those references and
+  it should not have. `app/legacy_import/` does not populate or reference
+  `track` anywhere — the historical register did not carry a Menetlusliik
+  column at all, which the metric catalogue states in the product's own words
+  on `MATTERS_BY_TRACK`: *«Register ei sisaldanud menetlusliiki; see täidetakse
+  selles süsteemis.»* The rest of the dependency list above stands as written.
 - **Saatja/Adressaat duplication.** `Matter.source_organisations` (many) and
   `Matter.addressee_organisation` (one) are distinct relations with distinct
   meanings, and `Submission.recipients` is a third, independent of both — so an
