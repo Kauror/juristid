@@ -205,6 +205,49 @@ def test_a_refused_save_hands_the_typed_date_back_rather_than_todays(signed_in, 
     assert f'value="{format_estonian_date(timezone.localdate())}"' not in _panel(body)
 
 
+def test_a_refused_save_hands_both_cleared_boxes_back_empty(signed_in, specialist):
+    """The half of the refusal contract a bound form is easiest to lose.
+
+    Both dates open pre-filled, so a panel that came back **unbound** after a
+    refusal would look like it had worked: the boxes would be holding today and
+    today + 7 again, and the person who deliberately emptied them would press
+    `Salvesta` a second time and file the two dates they had just removed.
+
+    Django's own `is_bound` is what prevents it, and this is the assertion that
+    says so — for the cleared case specifically, because the typed case above
+    passes even on a form that re-applies its initial to an *absent* field
+    (docs/adr/0085 §2).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post(signed_in, matter, audience="", occurred_on="", feedback_deadline="")
+    panel = _panel(response.content.decode())
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.exists()
+    for name in ("occurred_on", "feedback_deadline"):
+        field = panel[panel.index(f'name="{name}"') :]
+        field = field[: field.index(">")]
+        assert 'value=""' in field or "value=" not in field, f"{name} came back filled: {field}"
+
+
+def test_a_cleared_reply_by_date_is_stored_as_no_deadline(signed_in, specialist):
+    """§2, §3. An emptied box is the answer «this round is not waiting».
+
+    The default is a form `initial` and nothing else: no view and no service
+    supplies a day the form did not send, so clearing it reaches the column as
+    `NULL` rather than as the week the panel opened on.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post(signed_in, matter, feedback_deadline="")
+
+    assert response.status_code == 200
+    engagement = MatterEngagement.objects.get()
+    assert engagement.feedback_deadline is None
+    assert engagement.has_feedback_wait is False
+
+
 # ---------------------------------------------------------------------------
 # D2 — the *other* write path, which kept the stamp after the panel lost it
 # ---------------------------------------------------------------------------

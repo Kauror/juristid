@@ -358,3 +358,44 @@ def test_finishing_with_an_empty_box_records_that_nothing_came_back(page, base_u
     row = _row(page)
     expect(row).to_contain_text("Tagasiside ootamine lõpetatud")
     expect(row.locator(".uxtl__finish")).to_have_count(0)
+
+
+def test_the_finish_disclosure_is_reachable_and_usable_from_the_keyboard(page, base_url):
+    """Every control here is native, and this is what that buys.
+
+    The disclosure is a `<summary>` and the save is a `<button type=submit>`, so
+    Tab reaches both and Enter works on both without a line of script. A
+    completion that could only be started with a mouse would be a workflow half
+    the department cannot use (AGENTS.md, *UX quality*).
+
+    Driven through the keyboard rather than through `.click()`, because clicking
+    proves the handler and says nothing about whether anybody can get to it.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Kaasamise lopetamine klaviatuurilt"))
+    _file_an_engagement(page, reply_by=REPLY_BY_AHEAD)
+
+    summary = _finish_panel(page).locator("summary")
+    summary.focus()
+    expect(summary).to_be_focused()
+    page.keyboard.press("Enter")
+
+    box = _finish_panel(page).locator("textarea[name=feedback_received]")
+    expect(box).to_be_visible()
+    box.focus()
+    page.keyboard.type("Vastas kaks liiget.")
+
+    # Tab past the file control to the save, and press it. The exact number of
+    # stops is not asserted — that is markup detail — but the save has to be
+    # *reachable*, and `Enter` on a focused submit has to submit.
+    with page.expect_response(
+        lambda response: "/lopeta/" in response.url and response.request.method == "POST"
+    ) as caught:
+        _finish_panel(page).locator("button[type=submit]").focus()
+        page.keyboard.press("Enter")
+    assert caught.value.status == 200, f"the completion was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+
+    row = _row(page)
+    expect(row).to_contain_text("Tagasiside ootamine lõpetatud")
+    expect(row).to_contain_text("Vastas kaks liiget.")

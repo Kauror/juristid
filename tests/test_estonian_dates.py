@@ -154,3 +154,58 @@ def test_the_field_stores_a_real_date_object():
     cleaned = EstonianDateField(required=False).clean("7.9.2026")
     assert isinstance(cleaned, date)
     assert cleaned.isoformat() == "2026-09-07"
+
+
+# ---------------------------------------------------------------------------
+# `1 kuu` is a calendar month, and the end of one is where that is decided
+# ---------------------------------------------------------------------------
+#
+# `Tagasisidet ootame kuni` offers `1 kuu` beside `1 nädal` and `2 nädalat`
+# (docs/adr/0085 §2). The first two are spans in days and need no arithmetic of
+# their own; the third cannot be one, because somebody picking it means «the
+# same day next month» and not «thirty days».
+#
+# The only place the two readings disagree is the end of a month, and the rule
+# there is the one every calendar keeps: there is no 31 February to land on, so
+# it clamps.
+
+
+@pytest.mark.parametrize(
+    ("start", "months", "expected"),
+    [
+        # The ordinary case: the day of the month is kept.
+        (date(2026, 9, 16), 1, date(2026, 10, 16)),
+        # Across a year boundary, where a naive `month + 1` produces month 13.
+        (date(2026, 12, 31), 1, date(2027, 1, 31)),
+        # The clamp, in a common year and in a leap year.
+        (date(2027, 1, 31), 1, date(2027, 2, 28)),
+        (date(2028, 1, 31), 1, date(2028, 2, 29)),
+        # A 31-day month into a 30-day one.
+        (date(2026, 10, 31), 1, date(2026, 11, 30)),
+        # The last day of February is not «the last day» of March.
+        (date(2027, 2, 28), 1, date(2027, 3, 28)),
+        # Several months, and backwards, because the helper takes a number.
+        (date(2026, 9, 16), 4, date(2027, 1, 16)),
+        (date(2026, 3, 31), -1, date(2026, 2, 28)),
+    ],
+)
+def test_a_calendar_month_keeps_the_day_or_clamps_to_the_shorter_month(start, months, expected):
+    from app.core.dates import add_months
+
+    assert add_months(start, months) == expected
+
+
+def test_a_month_is_not_thirty_days():
+    """The claim `1 kuu` makes, stated as the difference it is there for.
+
+    Both starts are in 31-day months, which is where the two readings part: a
+    round opened on 15 May collects until 15 June, and thirty days would say the
+    14th. January is the sharper one — the clamp and the span disagree by three
+    days.
+    """
+    from datetime import timedelta
+
+    from app.core.dates import add_months
+
+    assert add_months(date(2026, 1, 31), 1) != date(2026, 1, 31) + timedelta(days=30)
+    assert add_months(date(2026, 5, 15), 1) != date(2026, 5, 15) + timedelta(days=30)
