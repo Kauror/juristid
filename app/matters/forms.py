@@ -5559,6 +5559,55 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
     label = _procedural_link_label_field()
 
     @property
+    def chosen_summary(self) -> str:
+        """What the collapsed disclosure says after the word itself.
+
+        «Menetluse link · EIS», or the kind and the lawyer's own name for it
+        where they wrote one. The same affordance `policy_area_summary` gives
+        `Valdkond`, for the same reason: a shut field is quieter than a row of
+        chips and two boxes, and a shut field that also hid *the answer* would
+        be quieter and worse, because then it has to be opened every time to
+        find out (docs/adr/0088 §3).
+
+        Empty until there is an address. The `EIS` chip arrives selected and
+        means nothing on its own, so a summary reading «· EIS» on an untouched
+        form would state an answer nobody had given — which is the shape of
+        mistake this whole package is about.
+
+        Read off the raw data rather than `cleaned_data`, because a refused save
+        must still say what it is holding, and a refusal may be *why* there is
+        no cleaned value.
+        """
+        if not self.is_bound:
+            return ""
+        url = (self.data.get(self.add_prefix("url")) or "").strip()
+        if not url:
+            return ""
+        kind = (self.data.get(self.add_prefix("kind")) or "").strip()
+        name = dict(ProceduralLinkKind.choices).get(kind, "")
+        label = (self.data.get(self.add_prefix("label")) or "").strip()
+        if name and label:
+            return f"{name}: {label}"
+        return label or str(name)
+
+    @property
+    def disclosure_open(self) -> bool:
+        """Whether the block renders open.
+
+        Server-decided and server-rendered, so a browser with scripting off gets
+        the same page. Open on a refusal this block owns — the box somebody has
+        to correct must be reachable — and closed otherwise, including on a
+        refused save whose problem is somewhere else: the summary already says
+        what is held, and unfolding it to prove that would undo the fold on the
+        one path where somebody is already being asked to fix something else.
+        `policy_area_disclosure_open` takes the same position, and this follows
+        it deliberately (docs/adr/0088 §3).
+        """
+        if not self.is_bound:
+            return False
+        return bool(self.errors)
+
+    @property
     def wants_link(self) -> bool:
         """Whether anybody actually answered this block.
 

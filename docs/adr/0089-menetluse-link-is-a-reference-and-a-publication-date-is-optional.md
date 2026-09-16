@@ -429,6 +429,31 @@ later, and the Teema page's own chip records those. A repeating control would
 put an empty table on a form whose whole design is that nothing on it is
 required.
 
+**And it is folded**, which is not a detail. ADR 0088 — from the *same* round of
+lawyer feedback — is about this exact page, and its complaint is that too much
+on it asks for attention before a question has been answered: three blocks
+expanded at once made the capture screen read as a survey again. A fourth,
+permanently expanded, would be that complaint answered and re-created by the
+very next package.
+
+So this block takes the shape ADR 0088 gave `Valdkond`: one
+`<details class="chipdetails chipdetails--field">`, a summary naming the thing,
+and the answer beside the name once there is one — `Valdkond · Energeetika` and
+`Menetluse link · Riigikogu: Eelnõu 123 SE` are the same affordance, for ADR
+0088 §3's reason. A shut field is quieter than a chip row and two boxes; a shut
+field that also hid *the answer* would be quieter and worse.
+
+Three rules keep the fold honest, and each is tested:
+
+* it is **shut on arrival**, and `data-stay-closed` stops the pre-selected `EIS`
+  chip unfolding it — a chip nobody clicked is not an answer;
+* the **summary says nothing until there is an address**, for the same reason;
+* a refusal **this block owns** renders it open, server-side, so the box
+  somebody has to correct is reachable with scripting off. A refusal somewhere
+  else on the page leaves it shut, because the summary already says what it is
+  holding — the position `policy_area_disclosure_open` takes, followed
+  deliberately rather than re-argued.
+
 **Atomic.** The Matter and its link land inside one `transaction.atomic()`: a
 refusal anywhere takes both, a refused address leaves no Matter behind, and a
 refused Matter leaves no orphan link. A refused save re-renders the bound form,

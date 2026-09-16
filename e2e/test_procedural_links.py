@@ -58,6 +58,21 @@ def card(page):
     return page.locator("#menetluse-lingid")
 
 
+def open_create_block(page):
+    """Unfold `Menetluse link` on `Uus teema`, the way a person does.
+
+    It arrives shut, because docs/adr/0088 is about this page having too much
+    expanded at once, and `data-stay-closed` keeps the pre-selected `EIS` chip
+    from unfolding it. A click is what opens it and a click is what shuts it, so
+    this looks first rather than toggling blindly.
+    """
+    block = page.locator("#menetluse-link")
+    if not block.evaluate("node => node.open"):
+        block.locator("summary").click()
+    block.locator("[name='menetlus-url']").wait_for(state="visible")
+    return block
+
+
 def record_one(page, base_url, *, url: str = EIS_URL, kind: str = "EIS", label: str = "") -> None:
     """Open the panel, answer it, save, and wait for the card to appear."""
     a_new_matter(page, base_url)
@@ -220,7 +235,7 @@ def test_a_reference_can_be_recorded_while_the_teema_is_created(page, base_url):
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Menetluse link loomisel"))
-    block = page.locator("#menetluse-link")
+    block = open_create_block(page)
     block.get_by_role("radio", name="EIS", exact=True).check()
     block.locator("[name='menetlus-url']").fill(EIS_URL)
     block.locator("[name='menetlus-label']").fill("Eelnõu 123 SE")
@@ -245,12 +260,15 @@ def test_a_refused_create_keeps_the_typed_address(page, base_url):
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Menetluse link keeldumisel"))
-    block = page.locator("#menetluse-link")
+    block = open_create_block(page)
     block.get_by_role("radio", name="Riigikogu", exact=True).check()
     block.locator("[name='menetlus-url']").fill("javascript:alert(1)")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
+    # A refusal this block owns opens it again, so the box to correct is on
+    # screen rather than behind a fold nobody was told to open.
+    assert page.locator("#menetluse-link").evaluate("node => node.open")
     expect(page.locator("[name='menetlus-url']")).to_have_value("javascript:alert(1)")
     expect(page.locator("#menetluse-link")).to_contain_text("http:// või https://")
     expect(page.get_by_role("radio", name="Riigikogu", exact=True)).to_be_checked()
@@ -320,12 +338,49 @@ def test_a_long_register_address_does_not_destroy_the_layout(page, base_url, wid
     assert not overflows, "a long register address makes the Teema page scroll sideways"
 
 
+def test_the_create_block_arrives_folded_and_opens_on_a_click(page, base_url):
+    """docs/adr/0088's complaint, answered rather than re-created.
+
+    The same feedback that asked for this block said the capture page reads as a
+    survey when too much on it is expanded at once — so it is shut on arrival,
+    the pre-selected `EIS` chip does not unfold it, and one click reaches
+    everything.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.goto(f"{base_url}/teemad/uus/")
+    page.wait_for_load_state("networkidle")
+
+    block = page.locator("#menetluse-link")
+    assert not block.evaluate("node => node.open")
+    expect(block.locator("[name='menetlus-url']")).to_be_hidden()
+
+    block.locator("summary").click()
+
+    expect(block.locator("[name='menetlus-url']")).to_be_visible()
+    expect(block.get_by_role("radio", name="EIS", exact=True)).to_be_checked()
+
+
+def test_the_summary_is_reachable_and_operable_from_the_keyboard(page, base_url):
+    """A `<summary>` is a native control, and it has to stay one."""
+    sign_in(page, base_url, SANDRA)
+    page.goto(f"{base_url}/teemad/uus/")
+    page.wait_for_load_state("networkidle")
+
+    summary = page.locator("#menetluse-link summary")
+    summary.focus()
+    expect(summary).to_be_focused()
+    page.keyboard.press("Enter")
+
+    expect(page.locator("#menetluse-link [name='menetlus-url']")).to_be_visible()
+
+
 @pytest.mark.parametrize("width", [420, 375])
 def test_the_uus_teema_block_does_not_scroll_the_form_sideways(page, base_url, width):
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": 812})
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
+    open_create_block(page)
     page.locator("[name='menetlus-url']").fill(LONG_REGISTER_URL)
 
     expect(page.locator("#menetluse-link")).to_be_visible()

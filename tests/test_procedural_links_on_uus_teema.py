@@ -66,9 +66,72 @@ def test_the_block_is_on_the_form_and_asks_three_optional_questions(signed_in):
     assert body.count('name="menetlus-url"') == 1
     # `EIS` arrives selected, because that is where most files come from — and
     # it records nothing on its own.
-    kind_boxes = body[body.index('id="menetluse-link"') :]
-    kind_boxes = kind_boxes[: kind_boxes.index("</div>\n</div>")]
-    assert 'value="EIS"' in kind_boxes
+    block = body[body.index('id="menetluse-link"') :]
+    block = block[: block.index("</details>")]
+    assert 'value="EIS"' in block
+
+
+def test_the_block_arrives_folded_and_says_nothing_it_does_not_hold(signed_in):
+    """docs/adr/0088's complaint, answered rather than re-created.
+
+    The same round of lawyer feedback that asked for this block also said the
+    capture page reads as a survey when too much on it is expanded at once. So
+    it takes `Valdkond`'s own shape: a closed disclosure, `data-stay-closed` so
+    the pre-selected `EIS` chip does not unfold it, and no summary suffix until
+    there is an address to summarise.
+    """
+    body = _form(signed_in)
+    block = body[body.index('id="menetluse-link"') :]
+    head = block[: block.index("</summary>")]
+
+    assert "chipdetails" in head
+    assert "data-stay-closed" in head
+    assert " open" not in head.split(">", 1)[0]
+    # The word, and nothing claiming an answer nobody gave.
+    assert "Menetluse link" in head
+    assert "EIS" not in head
+
+
+def test_a_filled_block_says_so_on_its_summary_without_being_opened(signed_in):
+    """A shut field that hid the answer would be quieter and worse.
+
+    After a refusal elsewhere on the page the fold stays shut — the summary is
+    what says it is holding something, so nobody has to open it to find out.
+    """
+    response = _create(
+        signed_in,
+        title="",
+        **{
+            "menetlus-kind": ProceduralLinkKind.RIIGIKOGU.value,
+            "menetlus-url": EIS_URL,
+            "menetlus-label": "Eelnõu 123 SE",
+        },
+    )
+    body = response.content.decode()
+    block = body[body.index('id="menetluse-link"') :]
+    head = block[: block.index("</summary>")]
+
+    assert response.status_code == 400
+    assert "Riigikogu: Eelnõu 123 SE" in head
+    # Nothing is wrong *inside* this block, so it does not unfold itself.
+    assert " open" not in head.split(">", 1)[0]
+
+
+def test_a_refusal_this_block_owns_opens_it(signed_in):
+    """The box somebody has to correct must be reachable, with scripting off too."""
+    response = _create(
+        signed_in,
+        **{
+            "menetlus-kind": ProceduralLinkKind.EIS.value,
+            "menetlus-url": "javascript:alert(1)",
+        },
+    )
+    body = response.content.decode()
+    block = body[body.index('id="menetluse-link"') :]
+
+    assert response.status_code == 400
+    assert " open" in block.split(">", 1)[0]
+    assert "http:// või https://" in block
 
 
 def test_creating_a_matter_with_a_link_saves_both(signed_in, specialist):
