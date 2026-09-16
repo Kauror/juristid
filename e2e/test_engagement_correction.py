@@ -26,6 +26,8 @@ rewriting a row `e2e/test_ui_regression.py` photographs.
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 from playwright.sync_api import expect
 
@@ -62,6 +64,16 @@ REPLY_BY = "18.03.2026"
 HELD_ON_READ = "4.3.2026"
 REPLY_BY_READ = "18.3.2026"
 DATE_UNKNOWN = "Kuupäev teadmata"
+
+#: A reply-by date that has **not** gone by, computed against the clock.
+#:
+#: The fixed dates above are in the past on purpose — a chronology row only
+#: renders once its day has arrived — and a reply-by date in the past reads as
+#: «Tagasiside tähtaeg möödus» rather than «Ootame tagasisidet kuni»
+#: (docs/adr/0085 §4). The completion scenarios below are about a round that is
+#: still collecting, so they need a day that is still ahead. Three weeks out,
+#: which is wider than any clock skew between this process and the server.
+REPLY_BY_AHEAD = (dt.date.today() + dt.timedelta(days=21)).strftime("%d.%m.%Y")
 
 
 def _file_an_engagement(page, *, occurred_on: str = HELD_ON, reply_by: str = "") -> None:
@@ -140,7 +152,9 @@ def test_a_filed_kaasamine_can_be_corrected_in_place(page, base_url):
     # Same row, corrected, and no second line underneath it.
     row = _row(page)
     expect(row).to_contain_text(f"Kaasamine: {CORRECTED_AUDIENCE}")
-    expect(row).to_contain_text("Ootame tagasisidet kuni")
+    # `REPLY_BY` is in the past, so the row reads as due rather than as waiting
+    # — three wordings, one state machine (docs/adr/0085 §4).
+    expect(row).to_contain_text("Tagasiside tähtaeg möödus")
     expect(page.locator(".uxtl__ms-body")).to_have_count(1)
     expect(page.locator(".uxtl__editform")).to_have_count(0)
 
@@ -212,7 +226,7 @@ def test_a_refused_correction_keeps_what_was_typed(page, base_url):
 
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(_row(page)).not_to_contain_text("Ootame tagasisidet kuni")
+    expect(_row(page)).not_to_contain_text("Tagasiside tähtaeg")
 
 
 def test_a_closed_teema_offers_no_correction(page, base_url):
@@ -286,7 +300,7 @@ def test_a_waiting_round_is_finished_on_its_own_row(page, base_url):
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Kaasamise lõpetamise brauserikatse"))
-    _file_an_engagement(page, reply_by=REPLY_BY)
+    _file_an_engagement(page, reply_by=REPLY_BY_AHEAD)
 
     row = _row(page)
     expect(row).to_contain_text("Ootame tagasisidet kuni")
@@ -294,7 +308,7 @@ def test_a_waiting_round_is_finished_on_its_own_row(page, base_url):
     expect(panel).to_have_count(1)
     expect(panel.locator("textarea[name=feedback_received]")).not_to_be_visible()
 
-    panel.get_by_role("button", name="Lõpeta kaasamine", exact=True).click()
+    panel.locator("summary").click()
     panel.locator("textarea[name=feedback_received]").fill("Kaks vastust, mõlemad toetavad.")
     with page.expect_response(
         lambda response: "/lopeta/" in response.url and response.request.method == "POST"
@@ -330,10 +344,10 @@ def test_finishing_with_an_empty_box_records_that_nothing_came_back(page, base_u
     """§6. «Keegi ei vastanud» is a result, and the button has to accept it."""
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Kaasamine ilma vastusteta"))
-    _file_an_engagement(page, reply_by=REPLY_BY)
+    _file_an_engagement(page, reply_by=REPLY_BY_AHEAD)
 
     panel = _finish_panel(page)
-    panel.get_by_role("button", name="Lõpeta kaasamine", exact=True).click()
+    panel.locator("summary").click()
     with page.expect_response(
         lambda response: "/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:

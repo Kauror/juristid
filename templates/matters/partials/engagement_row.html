@@ -307,8 +307,17 @@ before the closure.
             {% endif %}
             {% include "matters/partials/add_files.html" with field=engagement.feedback_form.attachments %}
             {{ engagement.feedback_form.revision }}
+            {% comment %}
+              **`Salvesta ja lõpeta`, not `Lõpeta kaasamine`.** The disclosure
+              above already says those two words, and two controls in one region
+              answering to one accessible name is a control a screen reader
+              cannot distinguish and a test cannot address. The verb pair also
+              says what the press actually does — writes what came back *and*
+              ends the wait — which is the promise a button owes (docs/adr/0083
+              §2's reasoning about `Lisa planeeritud ülevaade`).
+            {% endcomment %}
             <div class="addform__actions">
-              <button class="button button--primary button--tiny" type="submit">Lõpeta kaasamine</button>
+              <button class="button button--primary button--tiny" type="submit">Salvesta ja lõpeta</button>
             </div>
           </form>
         </div>

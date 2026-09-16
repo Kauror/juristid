@@ -11066,6 +11066,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: var(--typography-size-sm);
 }
 
+/* A waiting round, which sits **above** the box that finishes the task rather
+ * than below it like `Arvamuse tähtaeg`. Without a bottom margin it reads as the
+ * caption of `Mida tegid?`, which is a form about something else entirely. Its
+ * own modifier rather than a margin on `.curact__owed`, so the official
+ * obligation's geometry — and its baseline — does not move (docs/adr/0085 §3). */
+.curact__owed--wait {
+  margin-bottom: var(--spacing-3);
+}
+
 .curact__owedlabel {
   font-size: var(--typography-size-chip);
   letter-spacing: 0.05em;

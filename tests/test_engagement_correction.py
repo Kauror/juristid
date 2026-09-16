@@ -309,8 +309,13 @@ def test_a_feedback_deadline_round_trips_through_the_form(
     # Visibly stated on the row it belongs to — as its own line now rather than
     # inside the metadata sentence, because it is a state with three wordings
     # and a colour of its own (docs/adr/0085 §3, §4).
+    #
+    # **This one reads as due**, because `RECORDED` is thirty days ago and the
+    # deadline ten days after it: the round asked for answers three weeks ago
+    # and nobody has finished it. The sentence is about this office's unread
+    # post, which is why it is «tähtaeg möödus» and not «te jäite hiljaks».
     row = _chronology_row(signed_in, normal_matter, engagement)
-    assert f"Ootame tagasisidet kuni {format_estonian_date(deadline)}" in row
+    assert f"Tagasiside tähtaeg möödus {format_estonian_date(deadline)}" in row
 
     # And the form it is read back into is holding it.
     html = _open_form(signed_in, normal_matter, engagement).content.decode()

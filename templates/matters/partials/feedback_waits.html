@@ -1,0 +1,46 @@
+{% comment %}
+The consultation rounds this file is still waiting on, as lines under the task.
+
+**Beside the task, never instead of it.** An open `Järgmiseks` is what a lawyer
+does next and stays the first thing in this zone; a round that asked members for
+answers by the 22nd is a second true fact about the same file, and a page that
+showed one of them would be choosing which half of somebody's day to withhold.
+Both are rendered, and neither overwrites, cancels or supersedes the other —
+nothing here writes anything (docs/adr/0085 §3).
+
+**Its own partial because it belongs in two places.** `PRAEGUNE TEGEVUS` has two
+shapes — a task with its completion box, and no task at all — and the waits read
+directly under the task line in the first and under the «Järgmine samm on
+määramata» line in the second. Below the completion form they would read as an
+afterthought to the save button. One file, included twice, rather than two copies
+of four lines that will eventually disagree.
+
+The no-step case is the one this was really added for: a Matter whose only live
+work is «ootame liikmetelt vastuseid kuni 30.9» used to say «Järgmine samm on
+määramata» and nothing else, while the wait was drawn on the process strip below
+the fold and on no work surface anywhere.
+
+Nothing renders on a closed Matter, and not because the list is filtered twice:
+`close_matter` ends every open wait in the transaction that shuts the file, so a
+closed Teema has none (docs/adr/0085 §7). The guard is here because a page must
+not depend on a service having been correct.
+
+The wording and the colour change at the deadline. Before it, the file is
+waiting; on the day and after, the answers are sitting unread and reading them is
+this office's job. Neither reading says anything about whether the people who
+were asked replied on time (docs/adr/0085 §4).
+
+`Lõpeta kaasamine` lives on the round's own chronology row, because that is where
+the record is and where the answers get written down. The link navigates there
+rather than completing anything — the rule every work surface in this product
+keeps.
+{% endcomment %}
+{% if matter.is_open %}
+  {% for wait in feedback_waits %}
+    <p class="curact__owed curact__owed--wait">
+      <span class="curact__owedlabel">Ootame tagasisidet</span>
+      <span class="curact__oweddate{% if wait.feedback_wait_is_due %} curact__oweddate--overdue{% endif %}">kuni {{ wait.feedback_deadline|date:"j.n.Y" }}</span>
+      <a class="curact__owedlink" href="#kaasamine-{{ wait.pk }}-sisu">{{ wait.title }}</a>
+    </p>
+  {% endfor %}
+{% endif %}
