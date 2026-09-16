@@ -318,7 +318,15 @@ def test_work_with_nobody_on_it_is_counted_and_reachable(page, base_url):
 
     figure(page, "vastutajata").click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".pagehead__context")).to_have_text(f"{counted} teemat")
+    # The count and its case, the way the page itself decides them:
+    # `{{ total|counted:"teema,teemat" }}` prints the nominative at one and the
+    # partitive everywhere else (`app/core/templatetags/counts.py`). Spelling
+    # only the partitive here made this assertion pass on a world where some
+    # earlier file had already filed a second ownerless Matter, and fail on a
+    # freshly seeded one, where «vastutajata» is 1.
+    expect(page.locator(".pagehead__context")).to_have_text(
+        f"{counted} {'teema' if counted == 1 else 'teemat'}"
+    )
 
 
 def test_the_wording_the_handoff_settled_on_is_what_is_on_screen(page, base_url):
