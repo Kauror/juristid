@@ -29,6 +29,7 @@ wrong half the time without ever saying so.
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, timedelta
 
@@ -163,6 +164,31 @@ def end_of_month(value: date) -> date:
         1,
     )
     return first_next - timedelta(days=1)
+
+
+def add_months(value: date, months: int) -> date:
+    """``value`` plus ``months`` calendar months, clamped to the shorter month.
+
+    «1 kuu» is a calendar month and not thirty days, because that is what
+    somebody who picks it means: a round opened on the 15th collects until the
+    15th. The only place the two readings can disagree is the end of a month,
+    and the rule there is the one every calendar keeps — 31 January plus one
+    month is 28 February, or 29 in a leap year, because there is no 31st to
+    land on.
+
+    Written here rather than with `dateutil.relativedelta` for the reason
+    :func:`end_of_month` is written by hand: the dependency is not in this
+    project and one function of month arithmetic does not earn one.
+
+    Only `Tagasisidet ootame kuni`'s quick choices call it today, and it is in
+    this module rather than beside them because a second copy of month
+    arithmetic is a second copy that eventually rounds a day differently
+    (docs/adr/0086 §2).
+    """
+    total = value.month - 1 + months
+    year = value.year + total // 12
+    month = total % 12 + 1
+    return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
 
 
 def short_range(start: date | None, end: date | None) -> str:

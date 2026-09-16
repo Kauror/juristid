@@ -32,11 +32,13 @@ stored fact nobody could change or remove (docs/adr/0078 §3).
 editors; it does not tell the second that their browser was holding an old copy.
 The `revision` token does, and a save carrying a stale one writes nothing.
 
-Both dates stay **exact days**. No precision control is offered here, because
-`Kaasamise kuupäev` and `Tagasisidet ootame kuni` are on docs/adr/0079 §11's
-list of dates that are recorded exactly, and an editor that offered a precision
-the panel cannot write would let a record be corrected into a shape it could
-never have been created in.
+Both dates are **exact days** and there is no precision control, since
+docs/adr/0086 §1 took the four-way `Täpsus` chips off both `Kaasamine`
+surfaces — an editor may not offer a precision the creating panel cannot write,
+which is the rule that put them on both forms in docs/adr/0082 and the rule that
+now takes them off both. A record already dated to a period is preserved rather
+than rewritten, and that contract lives in
+`tests/test_engagement_date_precision.py`.
 """
 
 from __future__ import annotations
@@ -135,6 +137,7 @@ def _fields(engagement, **changes) -> dict[str, str]:
             if engagement.feedback_deadline
             else ""
         ),
+        "feedback_received": engagement.feedback_received,
         "revision": engagement_revision_token(engagement),
     }
     payload.update(changes)
@@ -152,6 +155,20 @@ def _close(matter, actor):
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=actor, reason="QA")
     matter.refresh_from_db()
     return matter
+
+
+def _chronology_row(client, matter, engagement) -> str:
+    """The markup of this engagement's own chronology row, as the page renders it.
+
+    Read from the page rather than from the milestone, because the reply-by
+    date's three wordings are a *state* rendered as their own line by
+    `matters/partials/engagement_row.html` — they are deliberately not part of
+    `milestone.sub`, which would state one fact twice on one row
+    (docs/adr/0086 §3, §4).
+    """
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    start = body.index(f'id="kaasamine-{engagement.pk}-sisu"')
+    return body[start : body.index("</article>", start)]
 
 
 def _milestone(matter, user, engagement):
@@ -206,25 +223,27 @@ def test_the_form_opens_filled_from_the_record(signed_in, normal_matter, engagem
     assert f"id_kaasamine_{engagement.pk}_occurred_on" in html
 
 
-def test_the_form_asks_the_engagement_date_at_four_precisions_and_the_deadline_at_one(
+def test_the_form_asks_both_dates_as_days_and_offers_no_precision_control(
     signed_in, normal_matter, engagement
 ):
-    """docs/adr/0082 §2, §3, narrowing docs/adr/0079 §11 for one date only.
+    """docs/adr/0086 §1, narrowing docs/adr/0082 §1.
 
-    `Kaasamise kuupäev` is a statement about something that happened out in the
-    world and may honestly be a month, a quarter or a year. `Tagasisidet ootame
-    kuni` is a day somebody named to other people, so there is nothing for a
-    period to mean and it keeps its place on §11's list.
+    The four-way `Täpsus` control came off both `Kaasamine` surfaces: it was two
+    decisions deep on a panel whose overwhelming case is «this happened today»,
+    and the editor may not offer a precision the creating panel cannot write.
+    Both dates are exact days here, and neither has a group of chips.
 
-    One precision group on this form, and it belongs to the first of the two.
-    The matrix itself is `tests/test_engagement_date_precision.py`.
+    What a stored period does instead is
+    `tests/test_engagement_date_precision.py`: it is preserved, named on this
+    form in words, and removable only on purpose.
     """
     html = _open_form(signed_in, normal_matter, engagement).content.decode()
 
-    assert html.count("precision__chips") == 1
-    assert 'name="engagement_precision"' in html
-    assert "Täpsus" in html
+    assert "precision__chips" not in html
+    assert 'name="engagement_precision"' not in html
     assert 'name="feedback_deadline_precision"' not in html
+    assert 'name="occurred_on"' in html
+    assert 'name="feedback_deadline"' in html
     # `Poolaasta` is a stored precision and not an offered chip, here as
     # everywhere else (docs/adr/0079 §7).
     assert "Poolaasta" not in html
@@ -287,9 +306,16 @@ def test_a_feedback_deadline_round_trips_through_the_form(
     assert response.status_code == 200
     engagement.refresh_from_db()
     assert engagement.feedback_deadline == deadline
-    # Visibly labelled, on the row it belongs to.
-    milestone = _milestone(normal_matter, specialist, engagement)
-    assert f"Tagasisidet ootame kuni {format_estonian_date(deadline)}" in milestone.sub
+    # Visibly stated on the row it belongs to — as its own line now rather than
+    # inside the metadata sentence, because it is a state with three wordings
+    # and a colour of its own (docs/adr/0086 §3, §4).
+    #
+    # **This one reads as due**, because `RECORDED` is thirty days ago and the
+    # deadline ten days after it: the round asked for answers three weeks ago
+    # and nobody has finished it. The sentence is about this office's unread
+    # post, which is why it is «tähtaeg möödus» and not «te jäite hiljaks».
+    row = _chronology_row(signed_in, normal_matter, engagement)
+    assert f"Tagasiside tähtaeg möödus {format_estonian_date(deadline)}" in row
 
     # And the form it is read back into is holding it.
     html = _open_form(signed_in, normal_matter, engagement).content.decode()
@@ -746,18 +772,16 @@ def test_the_correction_writes_no_entry_and_no_second_engagement(
 # consultation is exactly the shape an overdue queue would pick up.
 
 
-def _work_surface(user):
-    """Every dated work item this reader has, and the Matters behind them."""
-    from app.matters.work_items import work_items
+def test_correcting_the_dates_writes_no_other_record(signed_in, normal_matter, specialist):
+    """Before and after, over the records a deadline could have become.
 
-    return sorted((item.matter.pk, item.target_date, item.text) for item in work_items(user))
-
-
-def test_correcting_the_dates_moves_nothing_else(signed_in, normal_matter, specialist):
-    """§11. Before and after, over the surfaces a deadline would show up on.
-
-    A deadline **in the past** on purpose: if any of this were wired up, an
-    overdue item would appear the moment the correction is saved.
+    A deadline **in the past** on purpose. Since docs/adr/0086 §3 the reply-by
+    date *is* read as work — one derived `WorkItem`, which is why the work
+    surface is no longer part of the comparison below — but it still **writes**
+    nothing: no `NextAction`, no `MatterImportantDate`, no
+    `Matter.response_deadline`, and no closure. That is the half of
+    docs/adr/0078 §3 this release keeps, and the half that would be expensive to
+    lose quietly.
     """
     from app.intelligence.models import MatterImportantDate
     from app.workflow.models import NextAction
@@ -769,7 +793,6 @@ def test_correcting_the_dates_moves_nothing_else(signed_in, normal_matter, speci
         occurred_on=RECORDED,
         actor=specialist,
     )
-    before_work = _work_surface(specialist)
     before_deadline = normal_matter.response_deadline
     before_actions = list(
         NextAction.objects.filter(matter=normal_matter).values_list("pk", flat=True)
@@ -796,7 +819,6 @@ def test_correcting_the_dates_moves_nothing_else(signed_in, normal_matter, speci
         == before_actions
     )
     assert not MatterImportantDate.objects.filter(matter=normal_matter).exists()
-    assert _work_surface(specialist) == before_work
 
 
 def test_correcting_only_the_dates_leaves_the_search_projection_alone(

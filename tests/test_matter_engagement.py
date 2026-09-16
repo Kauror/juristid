@@ -537,7 +537,7 @@ def test_an_undated_engagement_is_readable_without_a_manufactured_day(signed_in,
 
 
 def test_the_composer_panel_asks_for_both_dates(signed_in, specialist):
-    """`Liik`, `Keda kaasati`, `Vastuseid` — and, since 2026-09-14, two dates.
+    """`Keda kaasati`, `Vastuseid`, two dates, and the feedback box.
 
     **This reverses docs/adr/0074 §9.** The panel used to ask for no date, on
     the reasoning that an engagement recorded here is work being written down
@@ -547,8 +547,9 @@ def test_the_composer_panel_asks_for_both_dates(signed_in, specialist):
     often typed up days or months after it happened, and the panel answered that
     by storing today anyway, silently, with no box on the screen saying so.
 
-    `Tagasisidet ootame kuni` is the second date and the new one — what was
-    asked of the people who were contacted, which the file had nowhere to hold.
+    `Tagasisidet ootame kuni` is the second date, and since docs/adr/0086 §3 it
+    is what turns the round into current work. `Saadud tagasiside / arvamused`
+    is where the answers go when there is no separate file.
 
     How those boxes behave is `tests/test_engagement_dates.py`; this is the
     inventory of what the panel asks.
@@ -559,13 +560,14 @@ def test_the_composer_panel_asks_for_both_dates(signed_in, specialist):
     ).content.decode()
     panel = body[body.index('id="lisa-kaasamine"') : body.index('id="lisa-tahtaeg"')]
 
-    assert 'name="kind"' in panel
     assert 'name="audience"' in panel
     assert 'name="response_count"' in panel
     assert 'name="occurred_on"' in panel
     assert "Kaasamise kuupäev" in panel
     assert 'name="feedback_deadline"' in panel
     assert "Tagasisidet ootame kuni" in panel
+    assert 'name="feedback_received"' in panel
+    assert "Saadud tagasiside / arvamused" in panel
 
 
 def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):
@@ -591,25 +593,31 @@ def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):
 
 
 def _post_add(client, matter, **data):
-    """Post the add form, using a kind the *form* offers.
+    """Post the add form. It no longer asks which channel a round used.
 
-    `WEB_CALL` is still a valid stored value and every historical row carrying
-    it still reads correctly — but the creation control offers three options
-    now, and a form that accepted a fourth would be a form that does not mean
-    what it shows (Teema redesign §14).
+    `Liik` came off both `Kaasamine` surfaces in docs/adr/0086 §1: it was a
+    classification nothing read back, so the panel's first control was a
+    decision with no consequence. Every row written through a write surface is
+    now `EngagementKind.OTHER`.
     """
-    payload = {"kind": EngagementKind.SURVEY, "title": "Kaasamiskutse", **data}
+    payload = {"title": "Kaasamiskutse", **data}
     return client.post(reverse("matters:add_engagement", kwargs={"pk": matter.pk}), payload)
 
 
-def test_the_add_form_refuses_a_kind_it_does_not_offer(signed_in, specialist):
-    """The three approved options are the vocabulary, not a suggestion."""
+def test_the_add_form_writes_the_neutral_kind_and_ignores_a_posted_one(signed_in, specialist):
+    """A crafted `kind` in the POST changes nothing, because nothing reads it.
+
+    The form has no such field any more, so Django drops the value and the view
+    names `OTHER` itself. The refusal this replaces — a 400 for a kind the form
+    did not offer — was protecting a vocabulary the product has stopped putting
+    to anybody (docs/adr/0086 §1).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     response = _post_add(signed_in, matter, kind=EngagementKind.WEB_CALL)
 
-    assert response.status_code == 400
-    assert not MatterEngagement.objects.filter(matter=matter).exists()
+    assert response.status_code == 200
+    assert MatterEngagement.objects.get(matter=matter).kind == EngagementKind.OTHER
 
 
 def test_a_legacy_kind_stays_creatable_through_the_service(specialist):
@@ -678,7 +686,11 @@ def test_editing_through_the_page_updates_the_record(signed_in, specialist):
     assert response.status_code == 200
     engagement.refresh_from_db()
     assert engagement.title == "Pärast"
-    assert engagement.kind == EngagementKind.SURVEY
+    # The stored kind is **left alone**, including against a crafted POST naming
+    # another one. The editor stopped offering `Liik` with the panel, so the
+    # view never names it and `update_engagement`'s `_UNSET` protects it —
+    # a historical `Kaasamiskutse veebis` keeps saying so (docs/adr/0086 §1).
+    assert engagement.kind == EngagementKind.WEB_CALL
 
 
 # -- authorization -----------------------------------------------------------

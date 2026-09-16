@@ -10267,6 +10267,19 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-right: var(--spacing-1);
 }
 
+/* A single checkbox on a workspace form, with its label beside it rather than
+   above it. The only one in this zone is `Kustuta salvestatud kuupäev`, which
+   is a question with two answers and not a field with a value
+   (docs/adr/0086 §1). */
+#teema-vaade-wrap .cx-check {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 #teema-vaade-wrap .cx-note {
   margin: 0;
   font-size: 11.5px;
@@ -11115,6 +11128,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: var(--typography-size-sm);
 }
 
+/* A waiting round, which sits **above** the box that finishes the task rather
+ * than below it like `Arvamuse tähtaeg`. Without a bottom margin it reads as the
+ * caption of `Mida tegid?`, which is a form about something else entirely. Its
+ * own modifier rather than a margin on `.curact__owed`, so the official
+ * obligation's geometry — and its baseline — does not move (docs/adr/0086 §3). */
+.curact__owed--wait {
+  margin-bottom: var(--spacing-3);
+}
+
 .curact__owedlabel {
   font-size: var(--typography-size-chip);
   letter-spacing: 0.05em;
@@ -11130,6 +11152,26 @@ section:has(.pw-more[open]) tbody.uxextra {
 .curact__oweddate--overdue {
   color: var(--status-danger);
   font-weight: var(--typography-weight-semibold);
+}
+
+/* The round a `Ootame tagasisidet` line belongs to, as a link down to its own
+ * chronology row. A file may be running three at once, so the line has to name
+ * which one — and the name is the one thing `Ootame tagasisidet kuni 22.9` does
+ * not say (docs/adr/0086 §4). */
+.curact__owedlink {
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.curact__owedlink:hover,
+.curact__owedlink:focus-visible {
+  color: var(--accent-link);
+  text-decoration: underline;
 }
 
 .curact__flag {

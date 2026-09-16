@@ -737,12 +737,18 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     # `responsible` is the same kind of exception and predates this round: no
     # template renders it, and it stays on `NextActionForm` so an explicit POST
     # still wins over the owner default (ADR 0036 §5).
+    #
+    # **`engagement_half` is not on this list any more, and neither is any other
+    # `engagement_*` period field.** docs/adr/0086 §1 took the whole `Täpsus`
+    # control off both `Kaasamine` surfaces, so `CompactEngagementForm` no longer
+    # carries the shared group at all — there is no unused branch to declare,
+    # because there is no branch. The column, its values and every surface that
+    # renders an approximate engagement are unchanged; what went is the question.
     derived = {
         "deadline_half",
         "effective_half",
         "victory_half",
         "next_half",
-        "engagement_half",
         # `+ Väline seisukoht` took the same shared precision group, so it
         # carries the same unused branch for the same reason (docs/adr/0084 §2).
         "position_half",
