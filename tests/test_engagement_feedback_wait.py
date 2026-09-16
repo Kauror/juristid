@@ -649,6 +649,16 @@ def test_a_stale_completion_writes_nothing_at_all(signed_in, specialist):
     assert engagement.title == "kaubandusvaldkonna töögrupp"
     assert len(_waits(specialist)) == 1
 
+    # The panel comes back open, holding what was typed, with the version that
+    # beat it beside to read — neither is chosen for them, and the hidden token
+    # is *not* advanced, which is what stops the next submit overwriting the
+    # other writer's save (`update_engagement_view`, QA-09).
+    body = response.content.decode()
+    assert "vananenud vastus" in body
+    assert "Praegune kirje:" in body
+    assert "kaubandusvaldkonna töögrupp" in body
+    assert f'value="{stale}"' in body
+
 
 def test_the_service_refuses_a_stale_completion_too(specialist):
     """Below the view, because the view is not the only caller."""

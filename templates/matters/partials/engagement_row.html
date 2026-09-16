@@ -308,6 +308,32 @@ before the closure.
             {% include "matters/partials/add_files.html" with field=engagement.feedback_form.attachments %}
             {{ engagement.feedback_form.revision }}
             {% comment %}
+              The version that beat this one, read-only and under the box.
+
+              A completion refused as stale writes nothing — not the words, not
+              the timestamp — and the hidden token above is deliberately *not*
+              advanced, so the reader has to be able to see what the record now
+              says before deciding whether their own answer still applies. The
+              same reasoning, and the same shape, as the correction form's
+              conflict block (`update_engagement_view`, QA-09).
+            {% endcomment %}
+            {% if engagement_conflict_milestone %}
+              <div class="uxtl__conflict">
+                <p class="uxtl__conflictnote">Praegune kirje:</p>
+                <p class="uxtl__ms">
+                  <span class="uxtl__mswhat">{{ engagement_conflict_milestone.what }}</span>
+                  <span class="uxtl__msdate">{{ engagement_conflict_milestone.display_date }}</span>
+                </p>
+                {% if engagement_conflict_milestone.sub %}
+                  <span class="uxtl__mssub">{{ engagement_conflict_milestone.sub }}</span>
+                {% endif %}
+                <p class="uxtl__conflictnote">
+                  Võrdle oma vastust praeguse kirjega või laadi leht uuesti, et
+                  praeguse versiooniga jätkata. Sinu sisestus on ülal alles.
+                </p>
+              </div>
+            {% endif %}
+            {% comment %}
               **`Salvesta ja lõpeta`, not `Lõpeta kaasamine`.** The disclosure
               above already says those two words, and two controls in one region
               answering to one accessible name is a control a screen reader
