@@ -2419,10 +2419,15 @@ def cancel_planned_website_overviews_for_closure(
 # form, because a form is what one browser was shown and a POST is what arrives
 # (docs/adr/0084).
 
-#: What a position with no source is told. Named because the form, the view and
-#: the tests all print or assert on it, and a sentence spelled twice drifts.
+#: What a position carrying nothing at all is told. Named because the form, the
+#: view and the tests all print or assert on it, and a sentence spelled twice
+#: drifts.
+#:
+#: It names all three answers, in the order the panel asks them, because a
+#: refusal that named only two would send somebody looking for a file they do
+#: not have (docs/adr/0084 §3, amended 2026-09-16).
 EXTERNAL_POSITION_NEEDS_SOURCE = (
-    "Lisa link või fail — välist seisukohta ei saa salvestada ilma allikata."
+    "Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik."
 )
 EXTERNAL_POSITION_NEEDS_ORGANISATION = "Vali organisatsioon, kelle seisukoht see on."
 #: A `Seotud kaasamine` naming a round on somebody else's file. The same
@@ -2498,20 +2503,38 @@ def _external_position_engagement(matter: Matter, engagement: Any) -> MatterEnga
     return engagement
 
 
-def _external_position_source(url: str, *, attachments: int, documents: int = 0) -> None:
-    """Refuse a position that would point at nothing.
+def _external_position_source(
+    url: str, *, attachments: int, documents: int = 0, summary: str = ""
+) -> None:
+    """Refuse a position that records nothing at all.
 
-    One of the two is required and either alone is enough: a public address, or
-    a document captured through the ordinary evidence pipeline. Both together
-    are ordinary too — a ministry that publishes a page *and* sends the paper.
+    **One of three is required and any one alone is enough**: the written
+    position — what the organisation said, typed into `Seisukoht` — a public
+    address, or a document captured through the ordinary evidence pipeline. Any
+    combination is ordinary too: a ministry that publishes a page, sends the
+    paper *and* summarises it in a covering mail is one position with three
+    sources, not three positions.
 
-    It cannot be a database constraint: the address is a column on this row and
-    the document is a row in `documents_documentlink`, and a `CHECK` sees
-    neither of the other. So it is stated here, at the one door a person's save
-    comes through, and it is stated *before* anything is written so that a
-    refusal leaves nothing behind (docs/adr/0084 §3).
+    Text alone is the case this rule was widened for. The commonest feedback a
+    department receives is two sentences in an e-mail from a member
+    association, or something an official said on the telephone that is worth
+    keeping against the file; neither has a file and neither has a published
+    address. Refusing them did not make the record better sourced — it made
+    people invent a source, which is the one failure this record exists to
+    prevent (docs/adr/0084 §3, amended 2026-09-16).
+
+    It still cannot be a database constraint: two of the three are columns on
+    this row and the third is a row in `documents_documentlink`, and a `CHECK`
+    sees one row and cannot count another table. So it is stated here, at the
+    two doors a person's save comes through, and it is stated *before* anything
+    is written so that a refusal leaves nothing behind.
+
+    ``summary`` is the already-stripped text the caller is about to store, not
+    the raw box: a `Seisukoht` of three spaces is not a written position, and
+    deciding that here rather than at each call site is what stops the two
+    doors from disagreeing about it.
     """
-    if url or attachments or documents:
+    if url or attachments or documents or summary:
         return
     raise DomainError(EXTERNAL_POSITION_NEEDS_SOURCE)
 
@@ -2544,7 +2567,9 @@ def record_external_position(
     against this record. It is a count rather than the documents themselves
     because the `DocumentLink` cannot exist until this row does, so the source
     rule has to be decided from what the caller *holds* — and deciding it here,
-    before the insert, is what makes a sourceless save leave nothing behind.
+    before the insert, is what makes a save that records nothing leave nothing
+    behind. It is one of three answers: ``summary`` and ``url`` are the other
+    two, and a position carrying only the first is an ordinary complete record.
     The caller then captures the files in the same transaction, so «promised a
     file and captured none» unwinds the position with it
     (`app.matters.workspace.add_matter_external_position`).
@@ -2565,7 +2590,10 @@ def record_external_position(
     if organisation is None:
         raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
     clean_url = normalize_external_position_url(url)
-    _external_position_source(clean_url, attachments=attachment_count)
+    # Trimmed *before* the source rule reads it, so a `Seisukoht` of three
+    # spaces cannot be the thing that makes an otherwise empty record savable.
+    clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
 
@@ -2575,7 +2603,7 @@ def record_external_position(
         url=clean_url,
         stated_on=stated_on,
         stated_on_precision=precision,
-        summary=(summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH],
+        summary=clean_summary,
         engagement=related,
         created_by=actor,
     )
@@ -2700,20 +2728,23 @@ def correct_external_position(
     if organisation is None:
         raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
     clean_url = normalize_external_position_url(url)
-    # The source rule, asked again and against what this save would *result* in.
-    # A correction that empties the address of a position carrying no document
-    # would leave a record pointing at nothing, which is the one state this
-    # record may never be in — and the document half is counted from the link
-    # table rather than assumed, because the files were captured by a different
-    # operation than this one.
+    clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    # The source rule, asked again and against what this save would *result*
+    # in — not against what the record holds now. A correction that empties the
+    # address of a position whose `Seisukoht` says what the ministry wrote is
+    # an ordinary correction; one that empties the last of the three leaves a
+    # record holding nothing, which is the one state this record may never be
+    # in. The document half is counted from the link table rather than assumed,
+    # because the files were captured by a different operation than this one
+    # and this form does not render them.
     _external_position_source(
         clean_url,
         attachments=0,
         documents=current.document_links.count(),
+        summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
-    clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
 
     proposed: dict[str, Any] = {
         "organisation_id": organisation.pk,

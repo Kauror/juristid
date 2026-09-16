@@ -1,6 +1,7 @@
 # 0084 — `Väline seisukoht` is a dedicated Matter activity, and its source is the boundary
 
-*Accepted 2026-09-15.*
+*Accepted 2026-09-15. Amended 2026-09-16 — see the amendment at the end of this
+document.*
 
 A lawyer working a file learns, constantly, what other people think about it.
 The ministry publishes a press release. An association sends its position paper.
@@ -16,6 +17,13 @@ Teema at all.
 This records a dedicated Matter activity for it: one organisation, one source
 minimum, an optional date at the precision it is known to, and deliberately
 nothing else.
+
+**Superseded on 2026-09-16 for what counts as a source, and for the date box's
+default — see the amendment at the end of this document.** The source minimum is
+now one of *three*: the written position, a public address, or an attached
+document. `Selgitus` is renamed `Seisukoht` and is one of them, so ordinary
+written feedback with no file and no published page is recordable; and the date
+box opens on today rather than empty.
 
 ## 1 — Why it is its own record
 
@@ -86,6 +94,10 @@ not one to *whose position is this*.
 
 **A source is required**, and §3 is the whole of that rule.
 
+**Superseded on 2026-09-16 — see the amendment.** Still required; what satisfies
+it is now one of three rather than one of two, the third being the written
+`Seisukoht` below.
+
 **`Seisukoha kuupäev` is optional and carries its precision.** A position found
 months later frequently has no date anybody could defend, and one remembered as
 «kevadel 2019» had two answers before this — an invented day or an empty field —
@@ -100,10 +112,21 @@ position is usually found and filed some time after it was stated, so a
 pre-filled today would be a date nobody chose sitting one `Salvesta` away from
 being saved as another organisation's timetable (docs/adr/0078 §2).
 
+**Superseded on 2026-09-16 — see the amendment.** `+ Väline seisukoht`'s date
+box now opens on today, visibly and clearably, the way `+ Kaasamine`'s does. The
+correction form still carries no default, and clearing the box is still a real
+answer that stores `NULL`.
+
 **`Selgitus` is optional and short.** It is the line that lets a colleague
 scanning the chronology decide whether to open the source. It is not a summary
 of the document — the document is attached — and nothing extracts, generates or
 indexes it.
+
+**Superseded on 2026-09-16 — see the amendment.** The field is renamed
+`Seisukoht` and is what the other organisation said rather than a caption for
+something stored elsewhere, which makes it one of the three things that can
+satisfy the source rule. Everything else about it holds: still optional on its
+own, still bounded, still never extracted, generated, summarised or indexed.
 
 **No title, no kind, no stance and no weight.** A headline would be somebody
 writing a second name for a page that already has one. A `toetab` / `vastu`
@@ -113,6 +136,11 @@ itself; when the department asks for that, it is a new column with its own
 vocabulary and its own ADR, not a reuse of `Selgitus`.
 
 ## 3 — The source: a public address, an attached document, or both
+
+**Superseded on 2026-09-16 for the count — see the amendment at the end of this
+document.** The written `Seisukoht` is a third source and any one of the three
+alone is enough; everything this section says about the address, the document,
+the role, the visibility boundary and where the rule is enforced is unchanged.
 
 **One of the two is required and either alone is enough.**
 
@@ -394,3 +422,148 @@ and the deletion of one panel, one chronology branch and one row partial. Adding
 search, a stance vocabulary, a response-obligation reading of the `Kaasamine`
 relation, or a closed-Matter correction rule is additive in each case, and §2,
 §4, §5 and §8 say what each would have to decide.
+
+---
+
+## Amendment, 2026-09-16 — a written position is a source, and the date opens on today
+
+- Status: accepted, amending §2's `Selgitus` and date-default paragraphs and
+  §3's «one of the two is required»
+- Scope: what satisfies `Väline seisukoht`'s source rule, what the free-text
+  field is called and means, and what `+ Väline seisukoht`'s date box opens on.
+  Nothing else in this ADR moves.
+
+### What was decided before
+
+A `Väline seisukoht` needed **a public address or an attached document**, and
+either alone was enough. The free-text field was `Selgitus` — deliberately a
+caption, «the line that lets a colleague scanning the chronology decide whether
+to open the source» — and explicitly not the position itself, because the
+position was assumed to be somewhere else. And the date box opened **empty**, on
+the reasoning that a position is usually found and filed some time after it was
+stated, so a pre-filled today would be a date nobody chose.
+
+### Why it is superseded
+
+**The commonest feedback a department receives has neither a file nor a
+published page.** A member association answers a consultation in two sentences
+by e-mail. An official says something on the telephone that is worth recording
+against the file. A ministry's position arrives inside a longer message about
+something else. None of that is published anywhere, none of it is a document
+worth attaching, and all of it is exactly the material the Chamber's own
+position is argued against — which is what §1 says this record exists for.
+
+The two-source rule refused all of it, and what it bought was not a
+better-sourced file. It bought **a fabricated source**: a URL pointing at the
+ministry's front page because the box demanded one, or a PDF printout of an
+e-mail attached to satisfy a constraint rather than because the bytes matter.
+Both are worse than the record the rule was protecting, and both are the
+manufactured certainty this product refuses everywhere else. A rule people work
+around by inventing data is the shape the original §3 already recognised when it
+rejected requiring *both* a link and a document — this is the same objection one
+step further in.
+
+So the written position is promoted from caption to source. It is not a new
+field and not a new kind of record: it is the column that was already there,
+asked a better question. `Selgitus` invited a description *of* something;
+`Seisukoht` asks what they said.
+
+**The date.** §2's reasoning about when a position is filed is sound and is not
+the reasoning that matters in use. An empty box makes «kuupäev teadmata» the
+path of least resistance for every record, including the many where the person
+knows the date perfectly well because the mail arrived this week. docs/adr/0078
+§2's rule is not «never default a date» — it is that a date must never be
+*stamped behind somebody's back*. A default sitting visibly in the box, which
+the person reads, changes or empties before pressing `Salvesta`, is a suggestion
+and not a stamp; that is why `+ Kaasamine` has one.
+
+### What is decided now
+
+**The source is one of three, and any one alone is enough.** The written
+`Seisukoht`, a public `http(s)` address, or an attached `Document`. Every
+combination is ordinary — a ministry that publishes a page, sends the paper and
+summarises it in a covering mail has stated *one* position with three sources.
+A record holding none of the three is refused, in Estonian, naming all three:
+«Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik.»
+
+**`Selgitus` is renamed `Seisukoht`.** Same column
+(`matters_matterexternalposition.summary`), same type, same bound, same
+`blank=True`; one `AlterField` over a `verbose_name`, which is Python metadata
+and emits no SQL. Rows written before today keep their text exactly as it was
+typed — a short explanation of what an organisation said *is* a written
+position, read under a truer label, and rewriting any of it would be this
+application editing somebody else's words. The control is three rows rather than
+two, because a caption is one line and a position is a short paragraph, and it
+leads the three sources on both the panel and the correction form because it is
+the one of them that is always available.
+
+**Where the rule lives has not changed and cannot.** Two of the three sources
+are columns on this row and the third is a row in `documents_documentlink`; a
+`CHECK` sees one row and cannot count another table. So
+`app.matters.services._external_position_source` stays the one place that
+decides it — before the insert in `record_external_position`, and again under
+the row lock in `correct_external_position` against what the save would *result*
+in, reading the link table rather than assuming. A correction may empty the
+address of a position whose `Seisukoht` holds what the ministry wrote; it may
+not empty the last of the three.
+
+**`+ Väline seisukoht`'s date box opens on today, at `Täpne päev`.** Visible,
+readable, changeable, and clearable: an emptied box stores `NULL`, survives a
+refused save still empty, and reads «Kuupäev teadmata» on the chronology.
+`ExternalPositionEditForm` keeps **no** default, and `external_position_period_initial`
+states `stated_on=None` explicitly, so opening `Muuda` on a recorded position
+shows what that record holds — its own day, its own period, or nothing — and
+never today.
+
+### What this amendment does not change
+
+* **§1 in its entirety.** This is still its own record, still not a `Märge`, a
+  `Submission`, a `Töövõit`, a `NextAction`, a `Document` alone or a
+  `Kaasamine`, and a Matter may still carry zero, one or many including several
+  from one organisation.
+* **The organisation requirement, and the control that answers it.** Required,
+  from the one shared catalogue that already answers `Saatja` and `Adressaat`,
+  through docs/adr/0073's search-and-`+` picker with validation against the
+  *whole* catalogue and creation only through `resolve_organisation_name` inside
+  the save's own transaction. There is still no «Määramata» chip.
+* **Everything §3 says about the address.** `http`/`https` only, checked against
+  the parsed host so `https://user:pw@/uudised` is refused, refused rather than
+  truncated past a thousand characters, no host allow-list, and nothing fetched
+  — no `HEAD`, no crawl, no preview, no title scrape. The widening is about
+  which sources exist, not about what a URL may be.
+* **The document half.** The ordinary upload, `Document`, `DocumentVersion`,
+  `DocumentLink` pipeline; `DocumentRole.EXTERNAL_POSITION` on the files; no
+  second evidence store; `DocumentLink.visible_to` as the conjunction of both
+  ends.
+* **§4's optional `Kaasamine` relation**, including the same-Matter refusal and
+  the rule that it is not a response obligation and not a count.
+* **§5's reading surfaces and its list of absences.** One surface, the
+  chronology; the link still labelled by its host and never printed as an
+  address; no standing strip; no `NextAction`, no `MatterImportantDate`, no
+  effect on `Matter.response_deadline`, no lateness, no work item, no row in
+  `Minu asjad`, `Tähtajad` or `Ülevaade`, no metric, no count, no filter, no
+  register sort, no badge, **no search projection and no archive projection**.
+  A `Seisukoht` that now carries a position rather than a caption is still not
+  indexed, and the linked document's own document-search behaviour is unchanged.
+* **§2's refusal of a stance vocabulary.** `Seisukoht` holds what the
+  organisation said. It is not `toetab` / `vastu` / `osaliselt` under another
+  name, nothing derives such a value from it, and the day the department asks
+  for one it is a new column with its own vocabulary and its own ADR.
+* **§6's launcher contract** — nine chips, fixed order, one radio `name`, one
+  open panel — and the correction-in-place interaction on the chronology row.
+* **§7's four audit events and their payload rules.** `EXTERNAL_POSITION_RECORDED`
+  already carried `has_summary`, and a corrected `Seisukoht` appears in
+  `EXTERNAL_POSITION_CORRECTED`'s `fields` list. The **text itself is never in a
+  payload**, which is the `update_engagement` rule and is why widening the
+  source rule adds no event: `EXTERNAL_POSITION_SOURCE_CHANGED` stays the
+  address's own event, because an address that quietly became a different page
+  is the specific lie it exists to catch.
+* **§8 in its entirety.** A closed Matter refuses a new position *and* a
+  correction; there is no delete route, service or state; corrections observe
+  ADR 0077's optimistic concurrency, compared after the row lock and before
+  anything is decided, answering 409 with the form still holding what was typed
+  and the hidden token not advanced.
+* **§9's migration posture.** This amendment adds exactly one migration,
+  `matters/0024_external_position_seisukoht`, and it is an `AlterField` over a
+  `verbose_name`. No `RunPython`, no `RunSQL`, no backfill, no reindex, no
+  archive rebuild, and `INDEX_VERSION` does not move.
