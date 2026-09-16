@@ -413,7 +413,7 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "+ Oluline tähtaeg",
         "+ Jõustumine",
         "+ Töövõit",
-        "+ Kodulehe ülevaade",
+        "+ Ülevaade / uudis",
         "+ Väline seisukoht",
         "+ Lõpeta teema",
     ):

@@ -558,22 +558,22 @@ def add_matter_website_overview(
     url: str = "",
     published_on: Any = None,
 ) -> WorkspaceResult:
-    """`+ Kodulehe ülevaade` — a plan, or a page that is already up.
+    """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
     docs/adr/0081 §1 gave this one button and no fields, because at the moment
     somebody decides a Matter should be written up there is no address and no
     publication date. That holds for the case it describes. What it did not
-    cover is the lawyer recording an overview *after* the page is on koda.ee,
-    who had to file a plan and then publish it from a second control to say a
-    thing that was already true (docs/adr/0083).
+    cover is the lawyer recording a write-up *after* the page is published, who
+    had to file a plan and then publish it from a second control to say a thing
+    that was already true (docs/adr/0083).
 
     So both shapes arrive here. With neither argument this is the plan, byte for
     byte what it always was. With both, the record is planned and published
     inside **one** transaction and one `composer_operation`, which is why the
     publication reuses `publish_website_overview` rather than writing a second
-    direct-to-`PUBLISHED` path: the koda.ee boundary, the both-or-neither rule
-    and the audit events all stay in the one reviewed place, and the lifecycle
-    is the documented `PLANNED → PUBLISHED` rather than a fourth way in.
+    direct-to-`PUBLISHED` path: the address rule, the both-or-neither rule and
+    the audit events all stay in the one reviewed place, and the lifecycle is the
+    documented `PLANNED → PUBLISHED` rather than a fourth way in.
 
     **Two audit events, deliberately.** A row created and published in one act
     genuinely passed through both states, and a history saying only «published»

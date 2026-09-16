@@ -359,37 +359,53 @@ row of controls that refuse (brief §30, §31).
     </div>
 
     {% comment %}
-      `+ Kodulehe ülevaade`. This file should be written up for the membership
-      on koda.ee.
+      `+ Ülevaade / uudis`. This file should be written up somewhere the public
+      can read it — an overview for the membership on the Chamber's own site, or
+      a news item somewhere else.
+
+      **One activity and no type selector.** The record used to be
+      `Kodulehe ülevaade` and could point only at koda.ee, which made the file
+      unable to record the same write-up appearing in a trade paper or on a
+      partner's site. It is neutral now, and it stays *one* control rather than
+      growing a `liik` chip: an overview and a news item are the same act, and
+      the address the row already carries is what tells a reader which they are
+      looking at (docs/adr/0085 §1).
 
       **Two optional boxes, and an empty form is still a complete answer.**
       docs/adr/0081 §1 gave this panel one button and no fields, because at the
       moment somebody decides a Matter should be written up there is no address
       and no publication date. That is true of the planning case and false of the
-      other one: an overview is frequently recorded *after* the page is up, and
+      other one: a write-up is frequently recorded *after* the page is up, and
       the panel made those people file a plan and then publish it from a second
       control to state something already true. What they met first was a panel
       with no fields and a button saying `Salvesta`, which reads as an unusable
       text box rather than as a finished form (docs/adr/0083).
 
-      So the button says what it does — `Lisa ülevaade` — and the two boxes
-      under their own legend say what to do instead when the page already
+      So the button says what it does — `Lisa ülevaade / uudis` — and the two
+      boxes under their own legend say what to do instead when the page already
       exists. Fill neither and the record is `Plaanis`; fill both and it is
       recorded as published in one act; fill one and the form refuses, naming
       the other and keeping what was typed. The button names neither outcome
-      because the one form now reaches both, and a label that said `planeeritud`
-      would be wrong on every submission that carried an address and a day.
+      because the one form now reaches both.
+
+      **The date fills itself only once somebody starts the published path.**
+      `data-publication-trigger` on the link box points at the date box, which
+      carries today in `data-publication-default` — the server's day, not the
+      browser's. Typing an address is the moment the published path is chosen,
+      and the date appears *visibly* then, where it can be read, changed or
+      cleared. An untouched form still submits two empty boxes, which is what
+      keeps the plan reachable (docs/adr/0085 §3).
 
       Still no title, no description and no attachment: the record's content is
       the address and the day (docs/adr/0081 §2). It is not a `+ Märge`, it is
-      not a `+ Töövõit`, and it is not a deadline — an overview that is owed
+      not a `+ Töövõit`, and it is not a deadline — a write-up that is owed
       makes no `NextAction`, no work item and no badge, so a Matter carrying one
       never reads as late (docs/adr/0081 §4).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-koduleht-valik"
            data-addpick aria-controls="lisa-koduleht"
            {% if open_panel == "lisa-koduleht" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-koduleht-valik">+ Kodulehe ülevaade</label>
+    <label class="disclosure-chip" for="lisa-koduleht-valik">+ Ülevaade / uudis</label>
     <div class="cx-panel" id="lisa-koduleht" data-addpanel>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-koduleht" and workspace_error %}
@@ -400,7 +416,7 @@ row of controls that refuse (brief §30, §31).
               hx-target="#teema-vaade" hx-swap="outerHTML">
           {% csrf_token %}
           <p class="cx-note">
-            Märgib, et sellest teemast peaks tulema ülevaade koda.ee lehel.
+            Märgib, et sellest teemast peaks tulema ülevaade või uudis.
           </p>
           {% comment %}
             The already-published path, behind its own legend so that the empty
@@ -409,7 +425,7 @@ row of controls that refuse (brief §30, §31).
             without the other is the refusal below.
           {% endcomment %}
           <fieldset class="cx-fieldset">
-            <legend class="cx-f__lab">Kui ülevaade on juba avaldatud
+            <legend class="cx-f__lab">Kui ülevaade või uudis on juba avaldatud
               <span class="cx-f__opt">valikuline</span></legend>
             <div class="cx-grid cx-grid--links">
               <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
@@ -431,12 +447,14 @@ row of controls that refuse (brief §30, §31).
                 {{ website_overview_form.published_on.errors|first }}</p>
             {% endif %}
             <p class="cx-note">
-              Täida mõlemad ja ülevaade salvestatakse kohe avaldatuna. Ainult
-              koda.ee aadress, https-kujul.
+              Täida mõlemad ja ülevaade või uudis salvestatakse kohe avaldatuna.
+              Link peab olema avalik http:// või https:// aadress. Kuupäev
+              täidetakse linki sisestades tänasega — muuda või kustuta see, kui
+              avaldati mõnel muul päeval.
             </p>
           </fieldset>
           <div class="addform__actions">
-            <button class="button button--primary" type="submit">Lisa ülevaade</button>
+            <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
           </div>
         </form>
       </div>

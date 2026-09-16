@@ -752,12 +752,12 @@ class EntryRevision(AppendOnlyModel):
 #: rather than the first validator (red-team finding F-1, 2026-09-12).
 ENGAGEMENT_URL_MAX_LENGTH = 1000
 
-#: The same bound, for the same reason, on a `Kodulehe ülevaade`'s address.
+#: The same bound, for the same reason, on an `Ülevaade / uudis` address.
 #: Stated separately rather than shared with the engagement columns because the
 #: two are different product decisions that happen to agree today: an engagement
 #: link is a campaign address full of tracking parameters, and this one is a
-#: koda.ee page. `normalize_koda_website_url` enforces it, refusing rather than
-#: truncating, and the column stays the defence behind it.
+#: published page. `normalize_overview_news_url` enforces it, refusing rather
+#: than truncating, and the column stays the defence behind it.
 WEBSITE_OVERVIEW_URL_MAX_LENGTH = 1000
 
 #: The same bound again, on the public address a `Väline seisukoht` points at.
@@ -1236,15 +1236,6 @@ class MatterEngagement(VisibilityInheritingModel):
         return list(dict.fromkeys(terms))
 
 
-#: The one host a `Kodulehe ülevaade` may point at, and every subdomain of it.
-#:
-#: Named here rather than written into the validator, because the model's
-#: docstring, the refusal sentence and `normalize_koda_website_url` all have to
-#: agree about it — and because the day the Chamber publishes under a second
-#: domain, this is the line that moves and the only one (docs/adr/0081).
-KODA_WEBSITE_HOST = "koda.ee"
-
-
 class MatterWebsiteOverviewQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterWebsiteOverviewQuerySet:
         """The only supported entry point for reading website overviews."""
@@ -1258,13 +1249,14 @@ class MatterWebsiteOverviewQuerySet(models.QuerySet):
 
 
 class MatterWebsiteOverview(VisibilityInheritingModel):
-    """`Kodulehe ülevaade` — a summary of this Matter that belongs on koda.ee.
+    """`Ülevaade / uudis` — this Matter, written up somewhere the public can read it.
 
-    A lawyer finishing a round of work frequently decides that the membership
-    should be told about it on the Chamber's own website. Until now the file had
-    nowhere to hold that: the intention lived in somebody's head until the page
-    appeared, and the published address lived in a browser history. The question
-    «did we ever write this up, and where is it» had no answer on the Teema.
+    A lawyer finishing a round of work frequently decides that it should be
+    written up: an overview for the membership on the Chamber's own site, or a
+    news item somewhere else. Until now the file had nowhere to hold that: the
+    intention lived in somebody's head until the page appeared, and the
+    published address lived in a browser history. The question «did we ever
+    write this up, and where is it» had no answer on the Teema.
 
     So it is a record with three states and two columns. `Plaanis` says the
     write-up is owed and carries neither an address nor a date, because neither
@@ -1272,11 +1264,21 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     the plan was dropped, which is part of the file rather than something to
     delete (docs/adr/0081).
 
+    One activity, and no kind column
+    --------------------------------
+    The record was `Kodulehe ülevaade` and could point only at koda.ee. It is
+    now neutral, and **there is deliberately no type selector**: an overview and
+    a news item are the same act — this file, published where somebody can read
+    it — and the only thing that distinguishes them is the address, which the
+    row already carries. A `kind` here would be a question asked at planning
+    time, when the answer is not yet known, and every consumer would then have
+    to branch on a value nobody could correct (docs/adr/0085 §1).
+
     What it is not
     --------------
-    Not a `Märge`: a note is narrative, and «kodulehe ülevaade on plaanis»
-    written as prose is a sentence nothing can ask a question of. Not a
-    `Document`: nothing is uploaded here and koda.ee is not the evidence store.
+    Not a `Märge`: a note is narrative, and «ülevaade on plaanis» written as
+    prose is a sentence nothing can ask a question of. Not a `Document`: nothing
+    is uploaded here and a published web page is not the evidence store.
     Not `Tulemuse tõend` and not a `Submission`: a summary written for the
     membership is not the Chamber's formal outbound opinion, and folding it into
     that vocabulary would corrupt every submission statistic. Not a `Töövõit`:
@@ -1319,7 +1321,7 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     url = models.URLField(
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH, blank=True, verbose_name="link"
     )
-    #: The day the overview went up on koda.ee, as a person states it.
+    #: The day the overview or news item went up, as a person states it.
     #:
     #: **Never stamped by the server.** The panel that records a publication
     #: offers today because today is the usual answer, and what the person left
@@ -1357,8 +1359,8 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     objects = MatterWebsiteOverviewQuerySet.as_manager()
 
     class Meta:
-        verbose_name = "kodulehe ülevaade"
-        verbose_name_plural = "kodulehe ülevaated"
+        verbose_name = "ülevaade / uudis"
+        verbose_name_plural = "ülevaated / uudised"
         # Newest publication first, and a row that has not been published sorts
         # *last* rather than first: `NULLS LAST` is what stops a plan reading as
         # though it went up today. The same ordering, for the same reason, as
@@ -1373,7 +1375,7 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
             # that state has an address and a day; one in any other state has
             # neither. Written as a single implication each way so that no row
             # can exist claiming a publication with nothing to show, and none
-            # can carry a koda.ee link while saying it was never published.
+            # can carry a link while saying it was never published.
             models.CheckConstraint(
                 condition=(
                     ~models.Q(status=WebsiteOverviewStatus.PUBLISHED)

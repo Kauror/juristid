@@ -363,20 +363,20 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: w["matter"].work_victories.count(),
     ),
-    # `Kodulehe ülevaade`, in all four of its write routes. Three of them are
+    # `Ülevaade / uudis`, in all four of its write routes. Three of them are
     # ordinary new business content; the fourth corrects an address the file
     # already holds, which a *closed* Matter permits — a question about the
     # Matter and not about who the actor is, exactly like `matters:edit_entry`
     # above (docs/adr/0081 §5).
     WriteRoute(
         name="matters:add_website_overview",
-        label="Kodulehe ülevaate plaani lisamine",
+        label="Ülevaate / uudise plaani lisamine",
         request=lambda w: ({"pk": w["matter"].pk}, {}),
         probe=lambda w: w["matter"].website_overviews.count(),
     ),
     WriteRoute(
         name="matters:publish_website_overview",
-        label="Kodulehe ülevaate avaldamine",
+        label="Ülevaate / uudise avaldamine",
         request=lambda w: (
             {"pk": w["matter"].pk, "overview_id": w["planned_overview"].pk},
             {"url": "https://koda.ee/uudised/loata-avaldatud", "published_on": "1.12.2026"},
@@ -389,7 +389,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     ),
     WriteRoute(
         name="matters:cancel_website_overview",
-        label="Kodulehe ülevaate plaani tühistamine",
+        label="Ülevaate / uudise plaani tühistamine",
         request=lambda w: (
             {"pk": w["matter"].pk, "overview_id": w["planned_overview"].pk},
             {},
@@ -437,7 +437,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     ),
     WriteRoute(
         name="matters:correct_website_overview",
-        label="Kodulehe ülevaate lingi parandamine",
+        label="Ülevaate / uudise lingi parandamine",
         request=lambda w: (
             {"pk": w["matter"].pk, "overview_id": w["published_overview"].pk},
             {
@@ -744,7 +744,7 @@ def world(db):
     # one would have nothing for a forbidden actor to be refused *on*.
     entry = factories.EntryFactory(matter=matter, author=author, body="<p>Algne sõnastus.</p>")
 
-    # A `Kodulehe ülevaade` in each of the two states the write routes act on:
+    # An `Ülevaade / uudis` in each of the two states the write routes act on:
     # one still owed, for the publish and cancel routes, and one already
     # published, for the correction route — which, like `matters:edit_entry`,
     # changes a record that exists rather than creating one.
