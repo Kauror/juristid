@@ -60,7 +60,7 @@ from app.workflow.enums import (
     Track,
 )
 from app.workflow.models import StageVocabulary
-from app.workflow.selectors import selectable_stages, stage_help_texts
+from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
 
 
 def _entry_moment(value: date | None) -> datetime | None:
@@ -261,6 +261,21 @@ def active_stages() -> Any:
     (Uus teema redesign §8).
     """
     return selectable_stages()
+
+
+def stages_including_held(matter: Matter | None) -> Any:
+    """The offered Hetkeseis vocabulary **plus** the one this Matter holds.
+
+    One line, for the reason `active_stages` above is one line: the rule is
+    `app.workflow.selectors.stages_including`, and the two forms that edit an
+    existing Matter must not each decide separately what a retired stage means.
+
+    `active_stages` is what `Uus teema` uses and stays that way. This is the
+    *edit* answer: a Matter holding a since-retired stage is offered it back and
+    may keep it, exactly as it may keep a retired Valdkond or Õigusakt, and no
+    other Matter gains it as a choice (docs/adr/0032 §Amendment).
+    """
+    return stages_including(matter.stage if matter else None)
 
 
 def offered_policy_areas() -> list[PolicyArea]:
@@ -1645,12 +1660,24 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
         # being optional that would not even fail loudly — it would clear an
         # owner nobody asked to remove (app/accounts/selectors.py).
         set_choices(self, "owner", assignable_including(matter.owner if matter else None))
-        set_choices(self, "stage", active_stages())
+
+        # The offered vocabulary *plus* the stage this Matter already holds —
+        # the shape `owner` uses one line up and `policy_areas` uses below, for
+        # the same reason. `Hetkeseis` is optional, so narrowing this to the
+        # active rows would not even fail loudly on a Matter left holding a
+        # retired stage: the unchanged value would simply be refused, and a
+        # title correction would clear a stage nobody asked to remove
+        # (app/workflow/selectors.py, docs/adr/0032 §Amendment).
+        offered_stages = stages_including_held(matter)
+        set_choices(self, "stage", offered_stages)
 
         # The same per-stage explanations `Uus teema` shows, on the same
         # control. One mapping, two forms: a sentence written twice is a
         # sentence that stops matching (app/workflow/selectors.py).
-        self.stage_help = stage_help_texts()
+        #
+        # Read over the *offered* list rather than the active one, so the
+        # retired chip below keeps the department's sentence about it.
+        self.stage_help = stage_help_texts(offered_stages)
         cast(Any, self.fields["stage"].widget).descriptions = self.stage_help
 
         # Every organisation is a *valid* answer; only the offered chips are
@@ -1756,6 +1783,22 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
         self.retired_area_ids = {
             area.pk for area in offered if not getattr(area, "is_active", True)
         }
+        #: And the same for `Hetkeseis`, which is one value rather than a set.
+        #: A retired stage is offered back — that is the whole point — but it is
+        #: not an ordinary chip, and a control that presented it as one would be
+        #: inviting a second Matter's worth of new work into a stage the
+        #: department has stopped using.
+        #:
+        #: Read off the Matter rather than by filtering the offered list, which
+        #: would be a second query over the same eleven rows: `stages_including`
+        #: adds exactly one row to the active vocabulary, so the only stage that
+        #: can be retired *and* offered here is the one this Matter holds.
+        #: A set of at most one, because that is the shape the template's `in`
+        #: test takes for the areas beside it.
+        held_stage = matter.stage if matter else None
+        self.retired_stage_ids = (
+            {held_stage.pk} if held_stage is not None and not held_stage.is_active else set()
+        )
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
@@ -3449,7 +3492,13 @@ class MatterFieldForm(forms.Form):
         # save and naming any *other* non-assignable account is a refusal
         # (app/accounts/selectors.py, docs/adr/0036).
         set_choices(self, "owner", assignable_including(matter.owner if matter else None))
-        set_choices(self, "stage", active_stages())
+        # The offered vocabulary *plus* this Matter's own stage, for exactly the
+        # reason the owner field is widened one line up: re-submitting the value
+        # already on the record has to be a save, and naming any *other* retired
+        # stage has to stay a refusal. Without it the header's Hetkeseis control
+        # answers "Vigane väärtus." to the value it is displaying
+        # (app/workflow/selectors.py, docs/adr/0032 §Amendment).
+        set_choices(self, "stage", stages_including_held(matter))
         set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
         # The offered vocabulary *plus* whatever this Matter already carries.

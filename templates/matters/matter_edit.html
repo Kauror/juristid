@@ -228,10 +228,35 @@
           accessible name is the three words on the chip
           (app/workflow/selectors.py, Uus teema redesign §8).
         {% endcomment %}
+        {% comment %}
+          Plus the stage this Matter already stands in, on the same terms the
+          Valdkonna chips above carry a withdrawn area: offered back, marked
+          «kasutusest väljas», and kept unless somebody deliberately chooses
+          another. `Hetkeseis` holds one value and is optional, so a control
+          narrowed to the active rows would not merely refuse the unchanged
+          stage — it would clear it on the next unrelated correction
+          (app/workflow/selectors.py, docs/adr/0032 §Amendment).
+        {% endcomment %}
         <div class="chiprow">
           {% for choice in form.stage %}
             {% with help=form.stage_help|stage_help:choice.data.value %}
-              {% if help %}
+              {% if choice.data.value in form.retired_stage_ids %}
+                {% if help %}
+                  <span class="chip chip--explained chip--retired">
+                    <label class="chip__hit">
+                      {{ choice.tag }}
+                      <span class="chip__name">{{ choice.choice_label }} · kasutusest väljas</span>
+                    </label>
+                    <span class="stagehelp" role="tooltip"
+                          id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
+                  </span>
+                {% else %}
+                  <label class="chip chip--retired">
+                    {{ choice.tag }}
+                    <span class="chip__name">{{ choice.choice_label }} · kasutusest väljas</span>
+                  </label>
+                {% endif %}
+              {% elif help %}
                 <span class="chip chip--explained">
                   <label class="chip__hit">
                     {{ choice.tag }}
