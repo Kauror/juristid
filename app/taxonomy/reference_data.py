@@ -86,6 +86,40 @@ particular nothing guesses that a Matter filed under ``Muud teemad`` meant
 ``Muu`` — that would be a fuzzy migration over somebody else's judgement, and
 the free-text box it would have to fill has nothing truthful to put in it
 (`taxonomy/0004`, Uus teema redesign §7).
+
+Version 4.0, and the two labels it withdrew
+-------------------------------------------
+
+The first structured feedback from the lawyers using the demo withdrew two more
+of the twenty-one, on 2026-09-16. Both had the same defect, and it is the
+defect version 3.0 found twice already: the label answers a question the field
+does not ask.
+
+**``Koalitsioonilepped`` names a document, not an area of law.** A coalition
+agreement is a source — a thing a Matter is *about* — in the same way a
+ministry's draft or a Riigikogu bill is, and the product has a field for that
+kind of answer: ``Õigusakt`` carries the reviewed instrument vocabulary, and
+``Koda ettepanek või pöördumine`` and its neighbours are how a source is named
+(docs/adr/0070). A tax measure announced in a coalition agreement is Maksud ja
+toll, and filing it under the agreement instead is how it leaves the tax report.
+
+**``ELi õiguse ülevõtmine`` is Menetlusliik, spelled twice.** ``Track`` has
+carried ``NATIONAL_TRANSPOSITION`` under exactly that label since the first
+migration, and it is the field that answers *what kind of procedure is this*.
+The same four words in the subject vocabulary made transposition look like an
+area of law, so a directive about construction was filed under the procedure and
+not under Ehitus — and the two answers then disagreed about the same file. The
+Menetlusliik value is untouched here: this withdraws the ``PolicyArea`` and
+nothing else, and every Matter carrying the *track* keeps it
+(``app/workflow/enums.py``).
+
+**Deactivated, never remapped, never deleted**, exactly as versions 2.0 and 3.0
+treated the seven before them. Nothing guesses that a Matter filed under
+``ELi õiguse ülevõtmine`` meant the Menetlusliik — a Matter may already carry
+both, may carry neither, and inferring one from the other would write a
+classification nobody reviewed. The rows stay, the relations stay, statistics
+still count them, and the Teema header still offers them back under its
+"varasem valdkond" note (`taxonomy/0007`, docs/adr/0088 §3).
 """
 
 from __future__ import annotations
@@ -95,7 +129,7 @@ from dataclasses import dataclass
 #: Bumped when the *set* of reviewed areas changes, not when wording is fixed.
 #: Recorded in the reference-data plan digest so a plan built under one
 #: vocabulary can never be applied under another.
-REFERENCE_POLICY_AREA_VERSION = "3.0"
+REFERENCE_POLICY_AREA_VERSION = "4.0"
 
 #: Where the business list came from, and when. Quoted in the ADR and asserted
 #: by the source-contract test, so that changing the vocabulary without changing
@@ -110,6 +144,12 @@ POLICY_AREA_SOURCE_VERIFIED_ON = "2026-08-24"
 #: decided to stop offering those two, and when".
 POLICY_AREA_WITHDRAWAL_SOURCE_TITLE = "Koda Õigusloome — Uus teema, kinnitatud disain"
 POLICY_AREA_WITHDRAWAL_VERIFIED_ON = "2026-08-25"
+
+#: Version 4.0's own provenance, for the same reason version 3.0 has one. The
+#: lawyers' first structured feedback round on the demo, which is a different
+#: kind of evidence from a design review and is recorded as such.
+POLICY_AREA_WITHDRAWAL_V3_SOURCE_TITLE = "Koda Õigusloome — juristide tagasiside, Uus teema"
+POLICY_AREA_WITHDRAWAL_V3_VERIFIED_ON = "2026-09-16"
 
 #: Version 1.0's provenance, kept rather than overwritten. The nine areas it
 #: describes are still in the database — four of them active — and a reader
@@ -358,13 +398,38 @@ REFERENCE_POLICY_AREAS_V3: tuple[ReferencePolicyArea, ...] = tuple(
     area for area in REFERENCE_POLICY_AREAS_V2 if area.key not in RETIRED_POLICY_AREA_KEYS_V2
 )
 
-#: The name the rest of the codebase imports. Neither retirement deletes
-#: anything: version 1.0's nine are still rows (four of them active, five
-#: deactivated by `taxonomy/0003`), and version 2.0's two withdrawn labels are
-#: still rows deactivated by `taxonomy/0004`, each keeping every relation it
-#: had. What the manifest governs is which areas are *offered*, and that is now
-#: these twenty-one.
-REFERENCE_POLICY_AREAS_V1: tuple[ReferencePolicyArea, ...] = REFERENCE_POLICY_AREAS_V3
+#: The two version-3.0 keys the lawyers' feedback withdrew on 2026-09-16. Kept
+#: as data for the same reason the two lists above are, and with the same
+#: prohibition: there is no reviewed equivalence between `Koalitsioonilepped`
+#: and any `Õigusakt` row, nor between the `ELi õiguse ülevõtmine` *area* and
+#: the `NATIONAL_TRANSPOSITION` *track* that shares its name, and writing either
+#: one down is how a guess becomes a fact (docs/adr/0088 §3).
+RETIRED_POLICY_AREA_KEYS_V3: tuple[str, ...] = (
+    "koalitsioonilepped",
+    "eli-oiguse-ulevotmine",
+)
+
+#: Version 4.0: the nineteen areas that remain offered.
+#:
+#: Derived by exclusion from version 3.0, for the reason version 3.0 was derived
+#: by exclusion from version 2.0 — the transcription of what the department
+#: wrote down is above and is not retyped, so a comma cannot go missing in a
+#: second copy of it. The `sort_order` gaps this leaves at 50 and 210 are kept
+#: for the same reason version 3.0 kept its own: the numbers are the
+#: department's sequence, and renumbering would move every label below the gap
+#: for no reason a reader could see.
+REFERENCE_POLICY_AREAS_V4: tuple[ReferencePolicyArea, ...] = tuple(
+    area for area in REFERENCE_POLICY_AREAS_V3 if area.key not in RETIRED_POLICY_AREA_KEYS_V3
+)
+
+#: The name the rest of the codebase imports. No retirement deletes anything:
+#: version 1.0's nine are still rows (four of them active, five deactivated by
+#: `taxonomy/0003`), version 2.0's two withdrawn labels are still rows
+#: deactivated by `taxonomy/0004`, and version 3.0's two are still rows
+#: deactivated by `taxonomy/0007` — each keeping every relation it had. What the
+#: manifest governs is which areas are *offered*, and that is now these
+#: nineteen.
+REFERENCE_POLICY_AREAS_V1: tuple[ReferencePolicyArea, ...] = REFERENCE_POLICY_AREAS_V4
 
 #: The five version-1.0 keys whose names the working vocabulary does not
 #: contain. Kept here as data because two places need to agree about them: the

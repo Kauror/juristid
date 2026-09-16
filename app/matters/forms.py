@@ -1265,6 +1265,67 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
         return ""
 
     @property
+    def policy_area_summary(self) -> str:
+        """The Valdkonnad this form currently holds, as labels to read.
+
+        What the collapsed Valdkond disclosure says after the word itself:
+        «Valdkonnad · Ehitus, Keskkond», or «Valdkonnad» when nothing is chosen.
+        The whole argument for folding the vocabulary away is that a shut field
+        is quieter than twenty-two chips; a shut field that also hid *the
+        answer* would be quieter and worse, because then it has to be opened
+        every time to find out (docs/adr/0088 §3).
+
+        Read off the rendered choices rather than by fetching the rows, for the
+        reason `addressee_summary` reads off its own: the catalogue is already
+        on the page as `(pk, name)` pairs and a query per render buys nothing.
+
+        `Muu` is included by name when it is ticked, because it *is* an answer
+        here — it is the affordance that reveals the free-text box, and a
+        summary reading «Valdkonnad» over a ticked `Muu` and a sentence of typed
+        text would be wrong about the one state somebody has to come back to.
+
+        Unbound — the ordinary first visit — is empty by construction: nothing
+        is chosen, so there is nothing to say.
+        """
+        if not self.is_bound:
+            return ""
+        # `_raw_value` and not `form.data.getlist`: a `CheckboxSelectMultiple`
+        # already knows how to read its own many-valued answer out of a
+        # `QueryDict` or an ordinary dict, and asking the widget is what keeps
+        # this working on a form a caller constructed by hand.
+        chosen = {str(value) for value in (_raw_value(self, "policy_areas") or [])}
+        # `fields[...]` is typed as the base Field, which has no `choices`. This
+        # one is a ModelMultipleChoiceField by construction.
+        names = [
+            str(label)
+            for value, label in cast(Any, self.fields["policy_areas"]).choices
+            if str(value) in chosen
+        ]
+        if _raw_value(self, "policy_area_other_selected"):
+            names.append(str(self.fields["policy_area_other_selected"].label))
+        return ", ".join(names)
+
+    @property
+    def policy_area_disclosure_open(self) -> bool:
+        """Whether the Valdkond disclosure renders open.
+
+        Server-decided and server-rendered, so a browser with scripting off gets
+        the same page: a refusal to read, or a `Muu` whose free-text box is
+        inside the fold and has to be reachable.
+
+        Deliberately *not* opened merely by an answer being present. A refused
+        save that comes back with two areas ticked says so in the summary, and
+        unfolding the vocabulary to prove it would undo the whole change on the
+        one path where somebody is already being asked to fix something else
+        (`addressee_disclosure_open` takes the same position, task §11 C).
+        """
+        if not self.is_bound:
+            return False
+        if self.errors.get("policy_areas") or self.errors.get("policy_area_other"):
+            return True
+        return bool(_raw_value(self, "policy_area_other_selected"))
+
+    @property
     def addressee_disclosure_open(self) -> bool:
         """Whether the Adressaat disclosure renders open.
 

@@ -10,6 +10,11 @@
   PROCESSING are how it is stored, and a person filing a Teema has no use for
   the difference (task §5, `app.matters.views.INTAKE_STATE_LABELS`).
 
+  And no word at all while the suggestion area is withdrawn: the reading still
+  happens, the form no longer shows what it found, and a row announcing «Loetud»
+  over a page with nothing to show for it would be the one piece of the
+  withdrawn feature still talking (docs/adr/0088).
+
   Rendered inline by `matter_create.html` and again inside `intake_region.html`
   on every answer from the staging routes, so a refused save and a poll produce
   the same markup from the same template (docs/adr/0064).
@@ -20,7 +25,15 @@
     <li class="dropzone__file" data-intake-file="{{ file.id }}">
       <span class="dropzone__name">{{ file.filename }}</span>
       <span class="dropzone__size">{{ file.size }}</span>
-      <span class="dropzone__read dropzone__read--{{ file.tone }}">{{ file.label }}</span>
+      {% comment %}
+        Only where there is a reading to report. With the suggestion area
+        withdrawn the server sends no label, and an empty badge would be a
+        third column of nothing between the size and the × — the row says what
+        the browser's own preview says (docs/adr/0088, `_intake_context`).
+      {% endcomment %}
+      {% if file.label %}
+        <span class="dropzone__read dropzone__read--{{ file.tone }}">{{ file.label }}</span>
+      {% endif %}
       <button type="button" class="dropzone__drop" data-intake-remove="{{ file.id }}"
               aria-label="Eemalda fail {{ file.filename }}">×</button>
     </li>

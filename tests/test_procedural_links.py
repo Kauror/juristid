@@ -343,6 +343,48 @@ def test_the_same_address_under_a_different_kind_is_refused_by_name(normal_matte
     assert MatterProceduralLink.objects.filter(matter=normal_matter).count() == 1
 
 
+def test_losing_the_race_to_insert_answers_like_a_second_click(
+    normal_matter, specialist, monkeypatch
+):
+    """Two identical POSTs arriving *together* still leave one row and no 500.
+
+    `select_for_update` locks the rows it finds, and before the first insert
+    there are none to lock — so both transactions reach the insert and the
+    unique index decides between them. The loser has to meet the same answer as
+    a second click a moment later, not an unhandled `IntegrityError` telling
+    somebody their save failed when it had actually succeeded.
+
+    The race is simulated rather than threaded: the lookup is made to answer
+    «nothing here» once, after a row has been written, which is exactly the
+    state the losing transaction is in when it reaches the insert. A threaded
+    version would need `transaction=True` and would be the slowest test in this
+    file for the same assertion.
+    """
+    first = _record(normal_matter, specialist, url=EIS_URL, label="Toimik")
+
+    original = MatterProceduralLink.objects.filter
+    calls = {"n": 0}
+
+    def blind_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return original(pk=None)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(MatterProceduralLink.objects, "filter", blind_once)
+    same = _record(normal_matter, specialist, url=EIS_URL, label="Toimik")
+    monkeypatch.undo()
+
+    assert same.pk == first.pk
+    assert MatterProceduralLink.objects.filter(matter=normal_matter).count() == 1
+    assert (
+        ChangeEvent.objects.filter(
+            matter=normal_matter, event_type=ChangeEventType.PROCEDURAL_LINK_RECORDED
+        ).count()
+        == 1
+    )
+
+
 def test_the_database_refuses_one_address_twice_on_one_matter(normal_matter, specialist):
     """The constraint behind the service, for a write that did not come through it."""
     _record(normal_matter, specialist, url=EIS_URL)

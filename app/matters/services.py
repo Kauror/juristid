@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
@@ -2898,23 +2898,44 @@ def record_procedural_link(
     clean_kind = normalize_procedural_link_kind(kind)
     clean_label = normalize_procedural_link_label(label)
 
+    def _answer_for(existing: MatterProceduralLink) -> MatterProceduralLink:
+        """What to do about an address this Matter already holds.
+
+        The same rule whichever way the row is found — by looking first, or by
+        losing the race to insert it — because they are the same situation and a
+        second copy of the decision is a second place for it to drift.
+        """
+        if existing.kind == clean_kind and existing.label == clean_label:
+            return existing
+        raise DomainError(PROCEDURAL_LINK_DUPLICATE)
+
     existing = (
         MatterProceduralLink.objects.select_for_update(no_key=True)
         .filter(matter=matter, url=clean_url)
         .first()
     )
     if existing is not None:
-        if existing.kind == clean_kind and existing.label == clean_label:
-            return existing
-        raise DomainError(PROCEDURAL_LINK_DUPLICATE)
+        return _answer_for(existing)
 
-    link = MatterProceduralLink.objects.create(
-        matter=matter,
-        kind=clean_kind,
-        url=clean_url,
-        label=clean_label,
-        created_by=actor,
-    )
+    try:
+        # Its own savepoint, so that losing the race below leaves this
+        # transaction usable. `select_for_update` above locks the rows it finds
+        # and there are none to lock, so two identical POSTs arriving together
+        # both reach this insert and the unique index decides between them. The
+        # loser must meet the same answer as a second click that arrived a
+        # moment later — not a 500, which is what an unhandled `IntegrityError`
+        # would give somebody whose save had actually succeeded
+        # (docs/adr/0089 §6).
+        with transaction.atomic():
+            link = MatterProceduralLink.objects.create(
+                matter=matter,
+                kind=clean_kind,
+                url=clean_url,
+                label=clean_label,
+                created_by=actor,
+            )
+    except IntegrityError:
+        return _answer_for(MatterProceduralLink.objects.get(matter=matter, url=clean_url))
     record_change_event(
         event_type=ChangeEventType.PROCEDURAL_LINK_RECORDED,
         matter=matter,

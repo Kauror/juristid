@@ -125,6 +125,7 @@ from app.matters.intake_suggestions import (
     SuggestedField,
     analyse_intake,
     analyse_matter,
+    create_form_suggestions_offered,
     prefill_controls,
     prefill_initial,
 )
@@ -2098,6 +2099,16 @@ def _intake_context(
     anyway would load the organisation catalogue and the policy vocabulary on
     every poll to produce an empty answer.
     """
+    # Whether this page may say anything at all about what is *in* the files.
+    #
+    # Read once and consulted three times below, because the withdrawal has to
+    # be one decision: a panel suppressed while the prefill markers still
+    # rendered would be exactly the "invisible automatic form mutation behind a
+    # hidden UI" the product decision forbids, and a reading state printed with
+    # nothing to report at the end of it is a spinner that promises something
+    # that is never coming (docs/adr/0088).
+    offered = create_form_suggestions_offered()
+
     files = intake_staging.live_files(session) if session is not None else []
     rows = []
     for staged in files:
@@ -2107,21 +2118,31 @@ def _intake_context(
                 "id": staged.pk,
                 "filename": staged.original_filename,
                 "size": human_size(staged.size_bytes),
-                "label": label,
-                "tone": tone,
+                # «Loen faili…» / «Loetud» describe a reading whose result this
+                # page no longer shows. With suggestions withdrawn the staged
+                # row says what the browser's own preview and the held-file list
+                # say — a name, a size and a way to drop it — because that is
+                # all that is true about it here (task §1, §6).
+                "label": label if offered else "",
+                "tone": tone if offered else "quiet",
             }
         )
 
     if not files:
         state = "empty"
-    elif any(staged.is_reading for staged in files):
+    elif offered and any(staged.is_reading for staged in files):
         state = "reading"
     else:
+        # Never `reading` with the suggestions withdrawn, and that is what stops
+        # the poll rather than a second switch in the browser: `schedule()` asks
+        # again only while the panel says `reading`, so a page that never says
+        # it stages its files, renders their rows once and then leaves the
+        # network alone (static/js/app.js).
         state = "ready"
 
     assisted = None
     prefill: list[tuple[str, str]] = []
-    if any(staged.extraction_state == ExtractionState.DONE for staged in files):
+    if offered and any(staged.extraction_state == ExtractionState.DONE for staged in files):
         assisted = analyse_intake(session)
         # The same pre-fill decision `Muuda teemat` makes, asked here so that
         # the two surfaces cannot drift apart about which confidence may fill a
@@ -2165,7 +2186,7 @@ def _intake_context(
         prefill = prefill_controls(decided)
 
     unreadable = ""
-    if files and not any(staged.is_reading for staged in files) and assisted is None:
+    if offered and files and not any(staged.is_reading for staged in files) and assisted is None:
         # Every file finished and none of them produced text. Said as one calm
         # sentence rather than as a per-file error: what a person needs to know
         # is that the automatic help is not coming and that nothing is lost
@@ -2183,6 +2204,13 @@ def _intake_context(
         "intake_errors": tuple(errors),
         "intake_unreadable": unreadable,
         "assisted": assisted,
+        # The template renders the reading's own furniture — the stalled and
+        # abandoned sentences, the «Jätka ilma automaatse lugemiseta» button —
+        # on every visit and lets CSS decide which is on screen. With the
+        # reading withdrawn none of those states is reachable, so the markup
+        # for them is not rendered either: a page that cannot stall must not
+        # carry a sentence about stalling (`intake_panel.html`).
+        "intake_suggestions_offered": offered,
     }
 
 

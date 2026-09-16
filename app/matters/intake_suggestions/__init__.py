@@ -27,6 +27,7 @@ Layout::
     resolvers.py   the organisation and policy-area catalogues, loaded once
     analysis.py    findings to suggestions: precedence, confidence, conflict
     prefill.py     which suggestions may pre-fill an empty form control
+    availability.py whether `Uus teema` offers any of it at all
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from app.matters.intake_suggestions.analysis import (
     analyse_intake,
     analyse_matter,
 )
+from app.matters.intake_suggestions.availability import create_form_suggestions_offered
 from app.matters.intake_suggestions.input import (
     AnalysisInput,
     build_analysis_input,
@@ -70,6 +72,7 @@ __all__ = [
     "analyse_matter",
     "build_analysis_input",
     "build_intake_analysis_input",
+    "create_form_suggestions_offered",
     "prefill_controls",
     "prefill_initial",
 ]

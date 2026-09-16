@@ -24,6 +24,7 @@ from datetime import timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 
 from app.core.enums import Visibility
@@ -40,6 +41,18 @@ from tests import factories
 from tests import synthetic_corpus as corpus
 
 pytestmark = pytest.mark.django_db
+
+#: The suggestion area is withdrawn from the lawyer-facing `Uus teema`, and the
+#: reading behind it is not (docs/adr/0088). Every assertion in this module
+#: about what the *form* shows therefore has to say which of the two states it
+#: is describing, and the ones below describe the feature switched on: they are
+#: what proves the capability still works and what a reinstatement is checked
+#: against. Everything without it runs under the shipped default, so staging,
+#: promotion, permissions and the refusal path are exercised as they ship.
+#:
+#: `tests/test_intake_suggestions_withdrawn.py` is the other half: that the
+#: ordinary form offers none of this.
+READING_ON = override_settings(MATTER_INTAKE_SUGGESTIONS_ENABLED=True)
 
 CREATE = reverse("matters:matter_create")
 STAGE = reverse("matters:intake_stage")
@@ -244,6 +257,7 @@ def test_a_title_is_offered_and_never_pre_filled(signed_in, evidence_root, minis
     assert all(name != SuggestedField.TITLE for name, _ in prefill_controls(annotated))
 
 
+@READING_ON
 def test_the_panel_claims_no_pre_fill_it_cannot_know_about(signed_in, evidence_root, ministry):
     """The server proposes; the browser decides. So the server does not say it
     decided.
@@ -294,6 +308,7 @@ def test_no_scan_state_can_keep_a_staged_file_out_of_the_queue(signed_in, eviden
             )
 
 
+@READING_ON
 def test_a_file_that_cannot_be_read_is_still_kept_and_still_becomes_evidence(
     signed_in, evidence_root
 ):
@@ -323,6 +338,7 @@ def test_a_file_that_cannot_be_read_is_still_kept_and_still_becomes_evidence(
     assert document.current_version.original_filename == "katki.pdf"
 
 
+@READING_ON
 def test_reading_is_reported_in_words_rather_than_states(signed_in, evidence_root):
     session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
 
@@ -515,6 +531,7 @@ def test_two_documents_disagreeing_about_the_deadline_pre_fill_nothing(
     assert SuggestedField.RESPONSE_DEADLINE not in filled
 
 
+@READING_ON
 def test_a_refused_save_keeps_the_staged_files_the_suggestions_and_the_typing(
     signed_in, evidence_root, ministry
 ):
@@ -953,6 +970,7 @@ def _proposed(response) -> dict:
     return dict(response.context["intake_prefill"])
 
 
+@READING_ON
 def test_a_letter_alone_still_pre_fills_the_sender_it_names(signed_in, evidence_root, ministry):
     """A. Nothing manual, one HIGH sender — the feature still works (§24)."""
     session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
@@ -988,6 +1006,7 @@ def test_a_provisional_sender_is_never_proposed_over(signed_in, evidence_root, m
     assert refused.context["form"].data.get("sender_name") == "Kliimakaitse Liit"
 
 
+@READING_ON
 def test_the_other_suggestions_survive_the_sender_rule(signed_in, evidence_root, ministry):
     """D. Narrow. A sender the person answered must not silence the deadline.
 
@@ -1032,6 +1051,7 @@ def test_correcting_the_refused_field_saves_only_the_intended_sender(
     assert ministry.name not in names
 
 
+@READING_ON
 def test_an_explicit_choice_still_applies_the_suggested_sender(
     signed_in, evidence_root, ministry, specialist
 ):
@@ -1061,6 +1081,7 @@ def test_an_explicit_choice_still_applies_the_suggested_sender(
     assert [o.name for o in matter.source_organisations.all()] == [ministry.name]
 
 
+@READING_ON
 def test_text_left_in_the_search_box_is_not_an_answer(signed_in, evidence_root, ministry):
     """G. Typing is not creating, and it is not answering either.
 
@@ -1143,12 +1164,14 @@ def _state_value(body: str) -> str:
     return found.group(1)
 
 
+@READING_ON
 def test_the_create_form_carries_an_empty_selection_state_on_a_fresh_get(signed_in):
     """A GET has nothing to remember, and says so with an empty box."""
     body = signed_in.get(CREATE).content.decode()
     assert _state_value(body) == ""
 
 
+@READING_ON
 def test_a_refused_save_hands_the_selection_state_straight_back(signed_in, evidence_root, ministry):
     """**F.** The unrelated refusal does not also forget what was chosen.
 
@@ -1215,6 +1238,7 @@ def test_the_selection_state_is_not_a_matter_field(signed_in, evidence_root, min
     assert matter.title == "Pakendiseaduse muutmise seaduse eelnõu"
 
 
+@READING_ON
 def test_the_state_field_sits_outside_the_panel_the_poller_replaces(signed_in):
     """The status poll swaps `#intake-panel` every 1.2 s. A field inside it would
     be reset to the server's copy on every swap, which is the whole selection
@@ -1233,6 +1257,7 @@ def test_the_state_field_sits_outside_the_panel_the_poller_replaces(signed_in):
 # and these four state that as a property rather than as a reading of the view.
 
 
+@READING_ON
 def test_a_crafted_selection_state_cannot_close_the_attribute_it_sits_in(
     signed_in, evidence_root, ministry
 ):
@@ -1306,6 +1331,7 @@ def test_a_selection_state_naming_another_persons_session_is_still_just_a_string
     assert refused.context["intake_session"].pk == session.pk
 
 
+@READING_ON
 def test_the_selection_state_is_not_remembered_across_a_fresh_get(
     signed_in, evidence_root, ministry
 ):

@@ -230,14 +230,13 @@ def test_the_note_belongs_to_its_author_and_to_nobody_else(client, specialist, o
 # ---------------------------------------------------------------------------
 
 
-#: What a lawyer may pick today, in the department's order. Twenty-one governed
+#: What a lawyer may pick today, in the department's order. Nineteen governed
 #: areas and the free-text `Muu` affordance, which is not a PolicyArea at all.
 APPROVED = [
     "Maksejõuetus",
     "Raamatupidamine",
     "Intellektuaalomand",
     "Toetusmeetmed",
-    "Koalitsioonilepped",
     "Õigusloome",
     "Energeetika",
     "Riigihanked",
@@ -252,13 +251,12 @@ APPROVED = [
     "Maksud ja toll",
     "Töösuhted, töökeskkond",
     "Keskkond",
-    "ELi õiguse ülevõtmine",
     "Arengukavad, strateegiad",
 ]
 
 
-def test_the_form_offers_exactly_the_approved_twenty_two(signed_in, specialist):
-    """Twenty-one chips plus `Muu`, and `Muu` is not one of the twenty-one.
+def test_the_form_offers_exactly_the_approved_twenty(signed_in, specialist):
+    """Nineteen chips plus `Muu`, and `Muu` is not one of the nineteen.
 
     Written out longhand rather than read from the manifest the form reads: a
     test that consults the same source it is checking agrees with any edit,
@@ -278,12 +276,30 @@ def test_the_form_offers_exactly_the_approved_twenty_two(signed_in, specialist):
     assert 'name="policy_area_other_selected"' in body
 
 
-@pytest.mark.parametrize("withdrawn", ["Muud teemad", "Olulised tähtajad"])
+@pytest.mark.parametrize(
+    "withdrawn",
+    [
+        "Muud teemad",
+        "Olulised tähtajad",
+        "Koalitsioonilepped",
+        "ELi õiguse ülevõtmine",
+    ],
+)
 def test_the_withdrawn_labels_are_not_offered_anywhere_on_the_page(
     signed_in, specialist, withdrawn
 ):
-    """`Olulised tähtajad` is a watch list, not a subject area. `Muud teemad`
-    is `Muu` a second time (Uus teema redesign §7)."""
+    """Four labels, withdrawn in two rounds for two kinds of reason.
+
+    `Olulised tähtajad` is a watch list and `Muud teemad` is `Muu` a second
+    time (Uus teema redesign §7). `Koalitsioonilepped` names a source document
+    and belongs to `Õigusakt`, and `ELi õiguse ülevõtmine` is `Menetlusliik`
+    spelled twice — `Track.NATIONAL_TRANSPOSITION` carries those exact four
+    words, and this page still offers *that* (docs/adr/0088 §3).
+
+    «ELi õiguse ülevõtmine» is checked against the Valdkond row rather than
+    against the page as a whole for that reason: the words are still on the
+    screen, on the Menetlusliik chip they have always been on.
+    """
     offered = [
         str(label)
         for _value, label in MatterCreateForm(viewer=specialist).fields["policy_areas"].choices
@@ -291,7 +307,8 @@ def test_the_withdrawn_labels_are_not_offered_anywhere_on_the_page(
     assert withdrawn not in offered
 
     body = signed_in.get(CREATE).content.decode()
-    assert withdrawn not in body
+    start = body.index("data-valdkond-disclosure")
+    assert withdrawn not in body[start : body.index("</details>", start)]
 
 
 def test_a_matter_already_filed_under_a_withdrawn_label_keeps_it(signed_in, specialist):

@@ -13,7 +13,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, open_valdkond, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -164,8 +164,21 @@ def test_several_senders_can_be_ticked(page, base_url):
     expect(senders.first).to_have_attribute("type", "checkbox")
     assert senders.count() >= 2, "the seeded world needs two senders for this to mean anything"
 
-    senders.nth(0).check()
-    senders.nth(1).check()
+    # Chosen the way a person chooses them since docs/adr/0088: Saatja opens as
+    # an empty box and the chips are drawn as the search finds them. What this
+    # test is about is untouched by that — it is the browser's own behaviour
+    # when a second box in the group is ticked, which is where a radio group
+    # disguised as checkboxes would give itself away.
+    def choose(index: int) -> None:
+        label = senders.nth(index).locator("xpath=ancestor::label[1]")
+        name = (label.locator(".chip__name").text_content() or "").strip().rstrip("×").strip()
+        box = page.locator("#saatja-otsi")
+        box.click()
+        box.fill(name)
+        page.locator("#saatja-tulemused").get_by_role("option", name=name, exact=True).click()
+
+    choose(0)
+    choose(1)
     expect(senders.nth(0)).to_be_checked()
     expect(senders.nth(1)).to_be_checked()
 
@@ -201,6 +214,10 @@ def test_several_policy_areas_can_be_ticked(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
+    # Valdkonnad is a disclosure since docs/adr/0088. The controls are in the
+    # document either way; ticking one is a click, and a click needs it open.
+    open_valdkond(page)
+
     areas = page.locator("input[name='policy_areas']")
     expect(areas.first).to_have_attribute("type", "checkbox")
     assert areas.count() >= 2, "the seeded world needs two areas for this to mean anything"
@@ -219,6 +236,7 @@ def test_two_ticked_areas_both_survive_the_save(page, base_url):
     # Scoped to the policy-area boxes by their input name. Every control on the
     # page is a chip now and four rows of them sit above this one — an unscoped
     # nth(0) reads a ministry and then looks for it among the tags.
+    open_valdkond(page)
     area_labels = page.locator("label.chip:has(input[name='policy_areas'])")
     chosen = [area_labels.nth(index).inner_text().strip() for index in (0, 1)]
     page.locator("#id_title").fill("Kahe valdkonnaga teema")
@@ -242,6 +260,7 @@ def test_muu_reveals_its_own_text_field(page, base_url):
     text = page.locator("#valdkond-muu-tekst")
     expect(text).to_be_hidden()
 
+    open_valdkond(page)
     page.locator("#id_policy_area_other_selected").check()
     expect(text).to_be_visible()
 
