@@ -328,7 +328,11 @@ def test_the_engagement_panel_shows_both_dates_and_only_one_default(page, base_u
 
     expect(panel.get_by_text("Kaasamise kuupäev")).to_be_visible()
     expect(panel.get_by_text("Tagasisidet ootame kuni")).to_be_visible()
-    expect(panel.locator("[name=feedback_deadline]")).to_have_value("")
     assert panel.locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied where nobody can see it"
+    )
+    # And the reply-by date the same way, since docs/adr/0086 §2 gave it a
+    # default of its own: a week out, on the screen, before the save.
+    assert panel.locator("[name=feedback_deadline]").input_value(), (
+        "the reply-by date opens empty, so a round would file as waiting on nothing"
     )
