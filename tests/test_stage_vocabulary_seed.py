@@ -89,10 +89,17 @@ def test_an_era_specific_mapping_still_wins_over_the_seed():
     assert resolve_legacy_status("muu", "2026").stage.key == "other"
 
 
-def test_stages_are_marked_provisional_until_the_workshop_confirms_them():
-    """The list matches the workbook; the wording is still the department's call."""
+def test_the_vocabulary_is_no_longer_provisional():
+    """`workflow/0004` set the flag with a stated condition. It has been met.
+
+    The condition was *until the department head and the lawyers have reviewed
+    the stage vocabulary*, and the second structured feedback round on the demo
+    did exactly that on 2026-09-17 — rewording three labels and adding one stage
+    (`workflow/0007`, docs/adr/0089 §1). A flag that outlived its condition
+    would say the wording is still somebody's open question.
+    """
     seeded = StageVocabulary.objects.filter(key__in=CANONICAL_KEYS)
-    assert all(stage.is_provisional for stage in seeded)
+    assert not any(stage.is_provisional for stage in seeded)
 
 
 def test_stages_have_a_deterministic_display_order():

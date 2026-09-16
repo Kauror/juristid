@@ -13,8 +13,8 @@ transactional test's teardown:
 | table                        | migrated | after a flush |
 | ---------------------------- | -------- | ------------- |
 | `taxonomy.PolicyArea`        | 28       | 0             |
-| `taxonomy.LegalInstrumentType` | 17     | 0             |
-| `workflow.StageVocabulary`   | 10       | 0             |
+| `taxonomy.LegalInstrumentType` | 22     | 0             |
+| `workflow.StageVocabulary`   | 11       | 0             |
 | `workflow.LegacyStatusMapping` | 11     | 0             |
 | `contenttypes.ContentType`   | 61       | 61            |
 | `auth.Permission`            | 244      | 244           |

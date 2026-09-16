@@ -51,6 +51,26 @@ CREATE = reverse("matters:matter_create")
 PLACEHOLDER = "Otsi või lisa asutus…"
 
 
+def edit_url(specialist) -> str:
+    """`Muuda teemat` for a fresh Matter owned by this person.
+
+    The one form that asks both counterparty questions. `Uus teema` asks only
+    who sent the file (docs/adr/0089 §5), so a claim about *both* controls has
+    to be made here.
+    """
+    return reverse(
+        "matters:matter_edit", kwargs={"pk": factories.MatterFactory(owner=specialist).pk}
+    )
+
+
+def both_teema_pages(signed_in, specialist) -> list[tuple[str, int]]:
+    """Each Teema form, with how many organisation pickers it draws."""
+    return [
+        (scripted(signed_in.get(CREATE).content.decode()), 1),
+        (scripted(signed_in.get(edit_url(specialist)).content.decode()), 2),
+    ]
+
+
 def scripted(page: str) -> str:
     """The document an ordinary browser builds, without the `<noscript>` half.
 
@@ -120,16 +140,25 @@ def crowded(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_both_fields_offer_the_same_search_and_add_control(signed_in, crowded):
-    """Saatja and Adressaat are two questions about one catalogue (task §13)."""
-    page = scripted(signed_in.get(CREATE).content.decode())
+def test_both_fields_offer_the_same_search_and_add_control(signed_in, specialist, crowded):
+    """Saatja and Adressaat are two questions about one catalogue (task §13).
 
-    assert page.count(PLACEHOLDER) == 2
-    assert "Lisa uus saatja" in page
-    assert "Lisa uus adressaat" in page
+    Two questions, two pages: `Uus teema` asks who sent the file and `Muuda
+    teemat` asks both, so the control is asserted on each page for the questions
+    that page asks (docs/adr/0089 §5).
+    """
+    create = scripted(signed_in.get(CREATE).content.decode())
+    assert create.count(PLACEHOLDER) == 1
+    assert "Lisa uus saatja" in create
+    assert "Lisa uus adressaat" not in create
+
+    edit = scripted(signed_in.get(edit_url(specialist)).content.decode())
+    assert edit.count(PLACEHOLDER) == 2
+    assert "Lisa uus saatja" in edit
+    assert "Lisa uus adressaat" in edit
 
 
-def test_the_add_button_arrives_disabled(signed_in, crowded):
+def test_the_add_button_arrives_disabled(signed_in, specialist, crowded):
     """Nothing to add from an empty box, and the button says so honestly.
 
     A real `disabled`, never `aria-disabled` on a working control: a screen
@@ -137,48 +166,53 @@ def test_the_add_button_arrives_disabled(signed_in, crowded):
     a defect this application has already paid for once (Uus teema redesign §8,
     task §4).
     """
-    page = scripted(signed_in.get(CREATE).content.decode())
+    for page, expected in both_teema_pages(signed_in, specialist):
+        buttons = re.findall(r"<button[^>]*data-orgfind-add[^>]*>", page)
 
-    buttons = re.findall(r"<button[^>]*data-orgfind-add[^>]*>", page)
-
-    assert len(buttons) == 2
-    assert all("disabled" in button for button in buttons)
-    assert not any("aria-disabled" in button for button in buttons)
+        assert len(buttons) == expected
+        assert all("disabled" in button for button in buttons)
+        assert not any("aria-disabled" in button for button in buttons)
 
 
-def test_the_search_box_posts_nothing(signed_in, crowded):
+def test_the_search_box_posts_nothing(signed_in, specialist, crowded):
     """The whole of «typing is not creating», in one assertion.
 
     A box that posted would turn a half-typed «Kliima» — left behind after
     somebody chose `Kliimaministeerium` from the list it filtered — into an
     institution called «Kliima» (task §9, §25).
     """
-    page = scripted(signed_in.get(CREATE).content.decode())
+    for page, expected in both_teema_pages(signed_in, specialist):
+        boxes = [tag for tag in re.findall(r"<input[^>]*>", page) if "data-orgfind-input" in tag]
 
-    boxes = [tag for tag in re.findall(r"<input[^>]*>", page) if "data-orgfind-input" in tag]
-
-    assert len(boxes) == 2
-    for tag in boxes:
-        assert 'type="search"' in tag
-        assert "name=" not in tag, tag
+        assert len(boxes) == expected
+        for tag in boxes:
+            assert 'type="search"' in tag
+            assert "name=" not in tag, tag
 
 
-def test_the_typed_field_still_posts_behind_the_button(signed_in, crowded):
+def test_the_typed_field_still_posts_behind_the_button(signed_in, specialist, crowded):
     """`+` needs somewhere to write, and it is the field that always carried this.
 
     Hidden rather than removed: the distinction between *finding* a body and
     *naming* one survives in the posted data, which is what lets the server keep
     deciding what a name means (task §9, §21).
     """
-    page = scripted(signed_in.get(CREATE).content.decode())
+    page = scripted(signed_in.get(edit_url(specialist)).content.decode())
 
     for name in ("sender_name", "addressee_name"):
         tags = [tag for tag in re.findall(r"<input[^>]*>", page) if f'name="{name}"' in tag]
         assert len(tags) == 1, f"{name} should post exactly once with scripting on"
         assert 'type="hidden"' in tags[0]
 
+    # And `Uus teema`, which asks the sender question alone.
+    create = scripted(signed_in.get(CREATE).content.decode())
+    sender = [tag for tag in re.findall(r"<input[^>]*>", create) if 'name="sender_name"' in tag]
+    assert len(sender) == 1
+    assert 'type="hidden"' in sender[0]
+    assert 'name="addressee_name"' not in create
 
-def test_the_fallback_box_is_written_after_the_carrier(signed_in, crowded):
+
+def test_the_fallback_box_is_written_after_the_carrier(signed_in, specialist, crowded):
     """Document order, because with scripting off both of them post.
 
     Django reads the *last* value a request carries for a text field, so the box
@@ -188,7 +222,7 @@ def test_the_fallback_box_is_written_after_the_carrier(signed_in, crowded):
     only way this can go wrong is silently, by somebody moving a block
     (templates/matters/partials/organisation_picker.html, task §22).
     """
-    page = signed_in.get(CREATE).content.decode()
+    page = signed_in.get(edit_url(specialist)).content.decode()
 
     for name in ("sender_name", "addressee_name"):
         tags = [tag for tag in re.findall(r"<input[^>]*>", page) if f'name="{name}"' in tag]
@@ -196,20 +230,28 @@ def test_the_fallback_box_is_written_after_the_carrier(signed_in, crowded):
         assert 'type="hidden"' in tags[0], "the carrier is not first"
         assert 'type="hidden"' not in tags[1], "the fallback box is not second"
 
+    create = signed_in.get(CREATE).content.decode()
+    sender = [tag for tag in re.findall(r"<input[^>]*>", create) if 'name="sender_name"' in tag]
+    assert len(sender) == 2
+    assert 'type="hidden"' in sender[0]
+    assert 'type="hidden"' not in sender[1]
+
 
 # ---------------------------------------------------------------------------
 # The catalogue is on the page, and only the shortlist is on screen
 # ---------------------------------------------------------------------------
 
 
-def test_every_institution_is_a_real_control_in_both_fields(signed_in, crowded, ministry):
+def test_every_institution_is_a_real_control_in_both_fields(
+    signed_in, specialist, crowded, ministry
+):
     """What makes the search select a row rather than describe one.
 
     The search finds a chip that is already in the document and ticks it, so
     choosing an existing body reaches the server as an identifier and can never
     become a second institution spelled the same way (task §7, §24).
     """
-    page = scripted(signed_in.get(CREATE).content.decode())
+    page = scripted(signed_in.get(edit_url(specialist)).content.decode())
     everything = {str(pk) for pk in Organisation.objects.values_list("pk", flat=True)}
 
     senders = set(chip_tags(page, "source_organisations")) | set(
@@ -219,6 +261,13 @@ def test_every_institution_is_a_real_control_in_both_fields(signed_in, crowded, 
 
     assert senders == everything
     assert addressees == everything
+
+    create = scripted(signed_in.get(CREATE).content.decode())
+    assert (
+        set(chip_tags(create, "source_organisations"))
+        | set(chip_tags(create, "source_organisations_other"))
+        == everything
+    )
 
 
 def test_saatja_opens_as_an_empty_box_with_the_whole_catalogue_behind_it(
@@ -272,19 +321,24 @@ def test_a_browser_without_scripting_can_still_reach_every_sender(signed_in, cro
         assert f'value="{organisation.pk}"' in fallback, organisation.name
 
 
-def test_a_recorded_alias_reaches_the_control_it_belongs_to(signed_in, ministry):
+def test_a_recorded_alias_reaches_the_control_it_belongs_to(signed_in, specialist, ministry):
     """«MKM» has to find the ministry, and the alias is not in the label.
 
     Normalised by `OrganisationAlias.save`, handed to the browser as it is
     stored, so nothing on the page re-implements `normalize_for_matching`
     (task §6, §21).
+
+    Asserted on the sender control on `Uus teema` and on both controls on
+    `Muuda teemat`, because one alias table feeds every picker
+    (docs/adr/0073, docs/adr/0089 §5).
     """
     ministry.aliases.create(alias="KLIM")
-    page = scripted(signed_in.get(CREATE).content.decode())
 
-    tag = chip_tags(page, "addressee_organisation")[str(ministry.pk)]
+    create = scripted(signed_in.get(CREATE).content.decode())
+    assert 'data-aliases="klim"' in chip_tags(create, "source_organisations")[str(ministry.pk)]
 
-    assert 'data-aliases="klim"' in tag
+    edit = scripted(signed_in.get(edit_url(specialist)).content.decode())
+    assert 'data-aliases="klim"' in chip_tags(edit, "addressee_organisation")[str(ministry.pk)]
 
 
 def test_reading_the_page_creates_no_institution(signed_in, crowded):
@@ -332,21 +386,25 @@ def test_a_refused_save_brings_a_non_shortlist_sender_back_in_sight(signed_in, c
     assert "hidden" not in label, "the chosen sender came back out of sight"
 
 
-def test_a_refused_save_brings_a_non_shortlist_addressee_back_in_sight(signed_in, crowded):
+def test_a_refused_save_brings_a_non_shortlist_addressee_back_in_sight(
+    signed_in, specialist, crowded
+):
     """The same claim for the field that holds one value.
 
     Adressaat's own shortlist is `addressees_by_usage`, and a body chosen
-    through the search is no more likely to be in it.
+    through the search is no more likely to be in it. On `Muuda teemat`, which
+    is where the question is asked now (docs/adr/0089 §5).
     """
     outside = Organisation.objects.order_by("name").last()
     assert outside is not None
+    matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
-        CREATE,
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
         {
             "title": "",
+            "visibility": matter.visibility,
             "addressee_organisation": str(outside.pk),
-            "addressee_is_manual": "1",
         },
     )
     page = scripted(response.content.decode())

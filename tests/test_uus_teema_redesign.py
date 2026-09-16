@@ -27,7 +27,7 @@ from app.documents.models import Document, DocumentVersion
 from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
-from app.taxonomy.models import PolicyArea
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Track
 from app.workflow.models import NextAction
 from tests import factories
@@ -131,8 +131,8 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     """One POST, one Matter, and every fact on it traceable to a control."""
     stage = factories.StageFactory(label_et="Kooskõlastusringil")
     ministry = factories.OrganisationFactory(name="Kliimaministeerium")
-    committee = factories.OrganisationFactory(name="Riigikogu majanduskomisjon")
     area = factories.PolicyAreaFactory(name_et="Pakendid")
+    seadus = LegalInstrumentType.objects.get(key="seadus")
 
     signed_in.post(
         CREATE,
@@ -146,8 +146,10 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
             "source_organisations": [ministry.pk],
             "policy_areas": [area.pk],
             "stage": stage.pk,
-            "track": Track.DOMESTIC,
-            "addressee_organisation": committee.pk,
+            # `Menetlusliik` is no longer a control on this page: it is read off
+            # the chosen `Õigusakt`, and `Seadus` is domestic
+            # (docs/adr/0089 §4). `Adressaat` is not a control here either.
+            "legal_instruments": [seadus.pk],
             "files": upload("eelnou.pdf", corpus.government_pdf()),
             "next-text": "Loen eelnõu läbi ja koostan liikmete küsitluse",
             "next-target_date": "5.9.2026",
@@ -162,8 +164,9 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     assert list(matter.source_organisations.all()) == [ministry]
     assert list(matter.policy_areas.all()) == [area]
     assert matter.stage == stage
+    assert list(matter.legal_instruments.all()) == [seadus]
     assert matter.track == Track.DOMESTIC
-    assert matter.addressee_organisation == committee
+    assert matter.addressee_organisation is None
     assert matter.visibility == Visibility.NORMAL
 
     # The private note is a MatterPersonalNote belonging to its author, not a
@@ -597,21 +600,28 @@ def test_a_department_head_may_still_create(client, department_head):
     assert Matter.objects.filter(title="Osakonnajuhi teema").exists()
 
 
-def test_the_form_still_creates_no_organisation(signed_in):
-    """Reference data is edited deliberately, under its own surface — including
-    from the Adressaat control, which is new to this page as chips
-    (master specification 14.7, ADR 0025)."""
+def test_a_name_where_a_key_belongs_creates_no_organisation(signed_in):
+    """Reference data is edited deliberately, under its own surface.
+
+    The chip group carries identifiers; a spelling in that field is a malformed
+    request and not an instruction to grow the catalogue. Naming a body that is
+    genuinely new has its own control and its own resolver (docs/adr/0063,
+    master specification 14.7, ADR 0025).
+
+    On `Saatja`, because `Adressaat` is no longer a control on this page
+    (docs/adr/0089 §5).
+    """
     from app.organisations.models import Organisation
 
     before = Organisation.objects.count()
     signed_in.post(
         CREATE,
-        {"title": "Tundmatu adressaadiga", "addressee_organisation": "Uus Ministeerium"},
+        {"title": "Tundmatu saatjaga", "source_organisations": ["Uus Ministeerium"]},
     )
 
     assert Organisation.objects.count() == before
     # A name where a primary key belongs is refused, not resolved.
-    assert not Matter.objects.filter(title="Tundmatu adressaadiga").exists()
+    assert not Matter.objects.filter(title="Tundmatu saatjaga").exists()
 
 
 def test_a_posted_visibility_is_still_ignored(signed_in):
