@@ -1788,7 +1788,17 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
         #: not an ordinary chip, and a control that presented it as one would be
         #: inviting a second Matter's worth of new work into a stage the
         #: department has stopped using.
-        self.retired_stage_ids = {stage.pk for stage in offered_stages if not stage.is_active}
+        #:
+        #: Read off the Matter rather than by filtering the offered list, which
+        #: would be a second query over the same eleven rows: `stages_including`
+        #: adds exactly one row to the active vocabulary, so the only stage that
+        #: can be retired *and* offered here is the one this Matter holds.
+        #: A set of at most one, because that is the shape the template's `in`
+        #: test takes for the areas beside it.
+        held_stage = matter.stage if matter else None
+        self.retired_stage_ids = (
+            {held_stage.pk} if held_stage is not None and not held_stage.is_active else set()
+        )
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
