@@ -76,19 +76,16 @@ def test_the_matter_page_carries_no_standalone_kaasamine_section(page, base_url)
     expect(page.get_by_text("+ Lisa kaasamine")).to_have_count(0)
 
 
-def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, base_url):
-    """`Liik`, `Keda kaasati`, `Vastuseid`, the two provider pointers, two dates.
+def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_questions(page, base_url):
+    """`Keda kaasati`, two dates, the feedback box — and no `Liik`, no `Täpsus`.
 
-    It asked three things until 2026-09-12, when the provider links arrived —
-    optional, external, contacting nothing — because one consultation routinely
-    has a mailing *and* a questionnaire and `url` held one address
-    (docs/adr/0027, amended).
-
-    **The dates arrived on 2026-09-14 and reverse docs/adr/0074 §9.** The panel
-    asked for no date and the view stamped today on every row, so a consultation
-    from March written up in September was stored as a September consultation.
-    `Kaasamise kuupäev` is that value, made visible and editable, and
-    `Tagasisidet ootame kuni` is what was asked of the people contacted.
+    **docs/adr/0085 §1, §2.** The panel used to open on a row of `Liik` chips
+    and a four-way precision control, so the first two decisions a lawyer made
+    were a classification nothing read back and a precision an as-it-happens
+    round never needs. Both are gone. What is left is who was engaged, when it
+    happened, by when answers were asked for, and what came back — plus the
+    optional count and the two provider pointers, which cost a reader nothing
+    when they are empty (docs/adr/0027, amended 2026-09-12).
 
     The old five-field form is still not back: no generic `Link`, no `Märkus`.
     """
@@ -98,46 +95,57 @@ def test_the_panel_opens_from_the_launcher_and_asks_what_the_target_asks(page, b
     expect(panel(page)).not_to_be_visible()
     open_panel(page)
 
-    for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
-        expect(panel(page).locator(".uxchip", has_text=label)).to_have_count(1)
     expect(panel(page).locator("[name=audience]")).to_be_visible()
     expect(panel(page).locator("[name=response_count]")).to_be_visible()
+    expect(panel(page).locator("[name=feedback_received]")).to_be_visible()
     expect(panel(page).locator("[name=smaily_url]")).to_be_visible()
     expect(panel(page).locator("[name=alchemer_url]")).to_be_visible()
-    # The questions the target does not ask. `url` in particular: the two named
-    # pointers are beside the generic one, not a rename of it.
+    # The two retired controls, and the questions the target never asked. `url`
+    # in particular: the two named pointers are beside the generic one, not a
+    # rename of it.
+    expect(panel(page).locator("[name=kind]")).to_have_count(0)
+    expect(panel(page).locator("[name=engagement_precision]")).to_have_count(0)
+    expect(panel(page).locator(".precision__chips")).to_have_count(0)
     expect(panel(page).locator("[name=url]")).to_have_count(0)
     expect(panel(page).locator("[name=note]")).to_have_count(0)
-    # The two dates, and the difference between their defaults: today is the
-    # usual engagement date and never a plausible reply-by date.
-    expect(panel(page).locator("[name=occurred_on]")).to_be_visible()
-    expect(panel(page).locator("[name=feedback_deadline]")).to_be_visible()
-    expect(panel(page).locator("[name=feedback_deadline]")).to_have_value("")
+    # Both dates arrive pre-filled and visible: today, and a week out. A reader
+    # can see what is about to be saved before saving it, which is the whole
+    # difference from the version that stamped a date behind their back.
     assert panel(page).locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied out of sight"
+    )
+    assert panel(page).locator("[name=feedback_deadline]").input_value(), (
+        "the reply-by date opens empty, so a round would file as waiting on nothing"
     )
     # And its own save, which commits this operation and nothing else
     # (docs/adr/0075 §2).
     expect(panel(page).locator("button[type=submit]")).to_have_count(1)
 
 
-def test_the_kind_chips_are_single_select_over_the_field_that_is_submitted(page, base_url):
-    """The chip stores nothing of its own: it writes into the hidden field, which
-    is what the server validates — the same contract the quick dates have."""
+def test_the_reply_by_spans_write_into_the_box_beside_them(page, base_url):
+    """`1 nädal` · `2 nädalat` · `1 kuu` — chips over the field that is submitted.
+
+    The chip stores nothing of its own: it writes the day into
+    `feedback_deadline`, which is what the server reads, and the label then grows
+    to carry the date it landed on so nobody sets a collection day they did not
+    read. The same contract `Järgmine tegevus`'s quick dates have, on the panel
+    that replaced the kind chips (docs/adr/0085 §2).
+    """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
     open_panel(page)
 
-    field = panel(page).locator("input[name=kind]")
-    # `Küsitlus` is selected on open, which is what the target shows.
-    expect(field).to_have_value("SURVEY")
-    expect(panel(page).locator(".uxchip.is-selected")).to_have_count(1)
+    field = panel(page).locator("[name=feedback_deadline]")
+    default = field.input_value()
+    for label in ("1 nädal", "2 nädalat", "1 kuu"):
+        expect(panel(page).locator("[data-quickdate]", has_text=label)).to_have_count(1)
 
-    panel(page).locator(".uxchip", has_text="Koosolek").click()
+    panel(page).locator("[data-quickdate]", has_text="1 kuu").click()
 
-    expect(field).to_have_value("MEETING")
-    expect(panel(page).locator(".uxchip.is-selected")).to_have_count(1)
-    expect(panel(page).locator(".uxchip.is-selected")).to_have_text("Koosolek")
+    assert field.input_value() != default, "the span wrote nothing into the box"
+    chosen = panel(page).locator("[data-quickdate].is-selected")
+    expect(chosen).to_have_count(1)
+    expect(chosen).to_contain_text("1 kuu →")
 
 
 def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
@@ -156,20 +164,22 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     page.wait_for_load_state("networkidle")
 
     open_panel(page)
-    panel(page).locator(".uxchip", has_text="Kirjade voor").click()
     panel(page).locator("[name=audience]").fill("liikmed")
     panel(page).locator("[name=response_count]").fill("9")
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    # The engagement, as a milestone row carrying its kind and its count.
+    # The engagement, as a milestone row carrying its count and its wait.
     milestone = chronology(page).locator(".uxtl__mswhat", has_text="Kaasamine: liikmed")
     expect(milestone).to_have_count(1)
     expect(chronology(page)).to_contain_text("Vastuseid 9")
-    # The word the chip said, read back unchanged. This line asserted
-    # «E-kiri või kampaania» — the chip that wrote the row said «Kirjade voor»,
-    # so the test was recording the defect R2-06 reports (post-QA R2-06).
-    expect(chronology(page)).to_contain_text("Kirjade voor")
+    # And **no channel**, because the panel no longer asks for one: every row it
+    # writes is `Muu`, and printing «Muu» would be the chronology stating a
+    # classification nobody chose (docs/adr/0085 §1).
+    expect(chronology(page)).not_to_contain_text("Muu ·")
+    # The round is waiting, because the panel's reply-by date defaults to a week
+    # out and nothing here cleared it (docs/adr/0085 §2, §3).
+    expect(chronology(page)).to_contain_text("Ootame tagasisidet kuni")
     # The note, as a work row of its own.
     expect(chronology(page).locator(".richtext").first).to_contain_text(
         "Küsisin liikmetelt tagasisidet"
@@ -177,12 +187,11 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # One act, one line: the audit event does not also print a clause.
     expect(chronology(page)).not_to_contain_text("lisas kaasamise")
 
-    # And it did **not** reach the process strip. A consultation is a canonical
-    # record, a chronology row and detail information; it is not automatically a
-    # major procedural act, and treating every `Kaasamine` as an identifiable
-    # `Arvamuste kogumine` round would assert one nobody recorded
-    # (docs/adr/0074 §12.1).
-    expect(page.locator(".tl-step__what", has_text="Kirjade voor")).to_have_count(0)
+    # The consultation itself did **not** become a strip milestone. A round is a
+    # canonical record, a chronology row and detail information; it is not
+    # automatically a major procedural act (docs/adr/0074 §12.1). What *does*
+    # draw a column is its reply-by date, and only that (docs/adr/0083 §1).
+    expect(page.locator(".tl-step__what", has_text="Kaasamine: liikmed")).to_have_count(0)
     # The strip is still drawn, and still says what it always said about this
     # Matter — so the assertion above is about the source, not about a strip
     # that stopped rendering.

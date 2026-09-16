@@ -814,6 +814,12 @@ def test_a_round_with_no_reply_by_date_draws_nothing(page, base_url):
     open_add_panel(page, "lisa-kaasamine")
     panel = page.locator("#lisa-kaasamine")
     panel.locator("[name=audience]").fill("liikmed")
+    # **Cleared, not left alone.** The panel pre-fills `Tagasisidet ootame kuni`
+    # with a week out since docs/adr/0085 §2, so a round saved without touching
+    # that box *does* carry a dated point and *would* draw a column. Emptying it
+    # is what «a consultation with no reply-by date» now means, and it is the
+    # state docs/adr/0083 §1 says draws nothing.
+    panel.locator("[name=feedback_deadline]").fill("")
     with page.expect_response(
         lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
     ) as caught:

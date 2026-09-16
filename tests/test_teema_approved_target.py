@@ -32,7 +32,7 @@ from app.documents.models import Document
 from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, MatterWorkVictory
 from app.matters import process_timeline
-from app.matters.enums import COMPOSER_ENGAGEMENT_KINDS, EngagementKind, MatterOrigin
+from app.matters.enums import EngagementKind, MatterOrigin
 from app.matters.forms import ComposerForm
 from app.matters.models import Entry, MatterEngagement
 from app.matters.process_timeline import process_steps
@@ -651,18 +651,24 @@ def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter)
 # ===========================================================================
 
 
-def test_the_engagement_panel_offers_the_three_target_kinds(signed_in, normal_matter):
+def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in, normal_matter):
+    """docs/adr/0085 §1 retires the chips this used to count.
+
+    `Küsitlus` / `Koosolek` / `Kirjade voor` was the panel's first control and
+    answered a question nothing read back. `COMPOSER_ENGAGEMENT_KINDS` survives
+    for the superseded composer, which nothing renders; what this asserts is
+    that no chip of it reaches the panel a person actually uses.
+
+    The two questions the approved target asked for — `Keda kaasati` and
+    `Vastuseid` — are unchanged, and the old five-field form is still gone.
+    """
     body = _detail(signed_in, normal_matter)
     panel = body[body.index('id="lisa-kaasamine"') :]
     panel = panel[: panel.index('id="lisa-tahtaeg"')]
 
-    assert [label for _value, label in COMPOSER_ENGAGEMENT_KINDS] == [
-        "Küsitlus",
-        "Koosolek",
-        "Kirjade voor",
-    ]
+    assert 'name="kind"' not in panel
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
-        assert f">{label}<" in panel
+        assert f">{label}<" not in panel
     assert "Keda kaasati" in panel
     assert "Vastuseid" in panel
     # And none of the old five-field form.

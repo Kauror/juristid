@@ -772,15 +772,20 @@ def test_the_collapsed_timeline_does_not_render_everything(signed_in, specialist
 # ---------------------------------------------------------------------------
 
 
-def test_the_new_engagement_form_offers_exactly_three_types():
-    from app.matters.forms import EngagementForm
+def test_the_engagement_correction_form_no_longer_asks_which_type():
+    """docs/adr/0085 §1. The three offered labels went with the question.
 
-    labels = [label for _value, label in EngagementForm().fields["kind"].choices]
+    `Liik` was a classification nothing read back — no filter, no statistic, no
+    grouping — so the panel's first control was a decision with no consequence,
+    which is ADR 0054's finding about `NextAction.kind` arriving on a second
+    model. The column, the vocabulary and every stored row are untouched; what
+    went is the question, from both `Kaasamine` surfaces at once so that neither
+    can write a shape the other cannot.
+    """
+    from app.matters.forms import CompactEngagementForm, EngagementForm
 
-    # The labels are `EngagementKind`'s own. This form used to call
-    # `EMAIL_CAMPAIGN` «Otsepostitus» while the composer called it «Kirjade
-    # voor» and the chronology called it «E-kiri või kampaania» (post-QA R2-06).
-    assert labels == ["Küsitlus", "Kirjade voor", "Muu"]
+    assert "kind" not in EngagementForm().fields
+    assert "kind" not in CompactEngagementForm().fields
 
 
 def test_a_legacy_engagement_kind_is_still_readable(signed_in, specialist):

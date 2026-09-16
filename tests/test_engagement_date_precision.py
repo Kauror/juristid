@@ -1,43 +1,44 @@
-"""`Kaasamise kuupäev` at the precision it is actually known to.
+"""An approximate `Kaasamise kuupäev` keeps meaning what it meant.
 
-docs/adr/0082 takes one date off docs/adr/0079 §11's exact-only list. A
-consultation round is routinely remembered as «oktoobris» or «2019» — it is a
-statement about something that happened out in the world, not a day this office
-recorded or owes — and before this a person who knew only that had two answers
-available, an invented day or an empty field, both of them worse than the one
-they had.
+docs/adr/0082 took one date off docs/adr/0079 §11's exact-only list and gave
+`+ Kaasamine` the four-way `Täpsus` control. docs/adr/0085 §1 takes the control
+back off both `Kaasamine` surfaces — it was two decisions deep on a panel whose
+overwhelming case is «this happened today» — and **pays for that by preserving
+everything already recorded through it.**
+
+So this module changed sides. It used to prove that a period could be *entered*;
+it now proves that one already stored is not lost, not misread and not quietly
+rewritten by a simplified form that cannot express it. The column, the stored
+anchors, `format_at_precision` and every surface that renders an approximate
+engagement are untouched.
 
 What this module holds
 ----------------------
-The four precisions through the two real write paths (`+ Kaasamine` and
-`Muuda`), and for every one of them the three claims that have to hold
-together: what was stored, what the chronology *says*, and what the edit form
-reopens on. Storing ``2026-10-01`` + ``MONTH`` correctly and then printing
-``1.10.2026`` is the same defect arriving one layer later, and the anchors here
-are deliberately the awkward ones — a quarter and a year whose first day is not
-a day anybody would have typed.
-
-Beside the matrix, the rules that are easy to get right in the create path and
-wrong everywhere else:
-
+* the two write surfaces offer **no** precision control and store exact days;
+* every stored period still renders as the period — the chronology, the
+  timeline read model, *Viimane tegevus*, *Viimati muudetud*, the register row —
+  and **no surface prints its anchor as a day**;
+* the correction form opens such a record with the day box *empty*, names the
+  stored period beside it, and treats an empty box on save as «leave it alone».
+  That rule is the whole of docs/adr/0085 §1's preservation, and the regression
+  it guards is a lawyer fixing a typo in the audience and silently deleting
+  «oktoober 2025»;
+* `Kustuta salvestatud kuupäev` is the one deliberate way to remove such a
+  date, and it is rendered only for the records that need it;
 * an **unknown** date stays unknown, through every live write path including
   the superseded `sissekanne/` composer, and is never an approximate one;
-* no surface renders an anchor as a day — not the chronology, not *Viimane
-  tegevus*, not *Viimati muudetud*, not the correction form;
-* `Tagasisidet ootame kuni` stays an exact day and stays inert (§2);
-* the correction protections this PR already had — concurrency, validation,
-  permissions, closed Matters, crafted POSTs — still hold with a period in the
-  form.
+* the correction protections — concurrency, validation, permissions, closed
+  Matters, crafted POSTs — still hold with a period on the record.
 
 Not held here: `tests/test_engagement_correction.py` owns the correction
-contract itself, and `tests/test_engagement_dates.py` owns the *no stamped
-today* regression that preceded this.
+contract itself, `tests/test_engagement_dates.py` owns the date defaults and the
+*no stamped today* regression, and `tests/test_engagement_feedback_wait.py` owns
+the waiting workflow.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import re
 
 import pytest
 from django.urls import reverse
@@ -66,8 +67,7 @@ pytestmark = pytest.mark.django_db
 # Harness
 # ---------------------------------------------------------------------------
 
-#: ``(precision, the fields that precision asks for, the stored anchor, how it
-#: reads)``.
+#: ``(precision, the stored anchor, how it reads)``.
 #:
 #: The anchors are chosen so a surface that fell back to rendering one prints
 #: something visibly wrong rather than something plausible: nobody recording a
@@ -79,49 +79,42 @@ pytestmark = pytest.mark.django_db
 #: and read back from nowhere — a test written around one asserts on an empty
 #: page and passes for the wrong reason.
 PERIODS = [
-    (
-        DatePrecision.EXACT,
-        {"occurred_on": "15.10.2025"},
-        dt.date(2025, 10, 15),
-        "15.10.2025",
-    ),
-    (
-        DatePrecision.MONTH,
-        {"engagement_month": "10", "engagement_year": "2025"},
-        dt.date(2025, 10, 1),
-        "oktoober 2025",
-    ),
-    (
-        DatePrecision.QUARTER,
-        {"engagement_quarter": "4", "engagement_year": "2025"},
-        dt.date(2025, 10, 1),
-        "IV kvartal 2025",
-    ),
-    (
-        DatePrecision.YEAR,
-        {"engagement_year": "2019"},
-        dt.date(2019, 1, 1),
-        "2019",
-    ),
+    (DatePrecision.EXACT, dt.date(2025, 10, 15), "15.10.2025"),
+    (DatePrecision.MONTH, dt.date(2025, 10, 1), "oktoober 2025"),
+    (DatePrecision.QUARTER, dt.date(2025, 10, 1), "IV kvartal 2025"),
+    (DatePrecision.YEAR, dt.date(2019, 1, 1), "2019"),
 ]
 
-PERIOD_IDS = [str(precision) for precision, _, _, _ in PERIODS]
+PERIOD_IDS = [str(precision) for precision, _, _ in PERIODS]
 
 #: The anchors that are *not* days anybody typed. Used where the point of the
 #: test is that an anchor must not be printed, which an exact date cannot show.
 APPROXIMATE = [row for row in PERIODS if row[0] != DatePrecision.EXACT]
-APPROXIMATE_IDS = [str(precision) for precision, _, _, _ in APPROXIMATE]
+APPROXIMATE_IDS = [str(precision) for precision, _, _ in APPROXIMATE]
 
 
-def _add(client, matter, precision, answers, **extra):
-    """One `+ Kaasamine` save, through the route a person actually uses."""
-    payload = {
-        "kind": EngagementKind.SURVEY,
-        "audience": "liikmed",
-        "engagement_precision": precision,
-        **answers,
+def _stored(matter, precision, anchor, **extra):
+    """One engagement already dated to a period, written by the service.
+
+    Through `add_engagement` rather than through a form, and that is the point
+    of this whole module now: the forms cannot state a period any more, and
+    these are the rows that were written while they could. The importer and the
+    register enrichment write the same shapes, so this is not a fixture-only
+    state (docs/adr/0085 §1).
+    """
+    return add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="liikmed",
+        occurred_on=anchor,
+        occurred_on_precision=precision,
         **extra,
-    }
+    )
+
+
+def _add(client, matter, **extra):
+    """One `+ Kaasamine` save, through the route a person actually uses."""
+    payload = {"audience": "liikmed", **extra}
     return client.post(
         reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
         payload,
@@ -129,14 +122,17 @@ def _add(client, matter, precision, answers, **extra):
     )
 
 
-def _edit(client, engagement, precision, answers, **extra):
-    """One `Muuda` save on an existing row, through its own route."""
+def _edit(client, engagement, **extra):
+    """One `Muuda` save on an existing row, through its own route.
+
+    `occurred_on` is deliberately **not** defaulted here. Leaving it out is what
+    a person does when they open the form on an approximate record and change
+    something else, and that is the case docs/adr/0085 §1's preservation rule is
+    about.
+    """
     payload = {
-        "kind": engagement.kind,
         "title": engagement.title,
-        "engagement_precision": precision,
         "revision": engagement.updated_at.isoformat(),
-        **answers,
         **extra,
     }
     return client.post(_edit_url(engagement), payload, headers={"HX-Request": "true"})
@@ -173,94 +169,111 @@ def _fact(matter: Matter, user):
 
 
 # ===========================================================================
-# A — the control exists, and it is the shared one
+# A — the control is gone from both surfaces
 # ===========================================================================
 
 
-def test_the_panel_offers_the_same_four_precisions_as_every_other_period(signed_in, specialist):
-    """§3. One composer, four chips, real radios — not a second widget.
+def test_the_panel_offers_no_precision_control(signed_in, specialist):
+    """docs/adr/0085 §1. `+ Kaasamine` asks for a day, and asks once.
 
     Asserted as the radio group rather than as the labels, because the labels
-    are also on three other panels of the same page: what has to be true is
-    that `+ Kaasamine` grew *this* control.
+    are also on three other panels of the same page: what has to be true is that
+    `+ Kaasamine` no longer carries *this* control.
     """
     matter = factories.MatterFactory(owner=specialist)
 
     panel = _panel(_detail(signed_in, matter))
 
-    radios = re.findall(r'<input[^>]*type="radio"[^>]*name="engagement_precision"[^>]*>', panel)
-    assert len(radios) == 4, f"{len(radios)} precision radios on + Kaasamine"
-    assert all("precision__radio" in radio for radio in radios)
-    chips = panel[panel.index("precision__chips") : panel.index("</fieldset>")]
-    assert 'type="hidden"' not in chips, "the precision is unstateable without JavaScript"
-    # The day box is still `occurred_on`, still inside the composer, and still
-    # pre-filled with today: widening the question did not change the answer
-    # people give nine times out of ten.
+    assert 'name="engagement_precision"' not in panel
+    assert "precision__chips" not in panel
+    # The day box is still `occurred_on`, still inside the panel, and still
+    # pre-filled with today: what went is the question about how exactly the
+    # answer is known, not the answer.
     assert 'name="occurred_on"' in panel
     assert f'value="{format_estonian_date(timezone.localdate())}"' in panel
 
 
-def test_the_reply_by_date_is_not_given_a_precision_control(signed_in, specialist):
-    """§2. `Tagasisidet ootame kuni` stays on docs/adr/0079 §11's list.
+def test_the_correction_form_offers_no_precision_control(signed_in, specialist):
+    """And the editor with it, including on a record that carries a period.
 
-    It is a day somebody named to other people — «vastake 22. septembriks» — so
-    there is nothing for a period to mean. One precision group on this panel,
-    and it belongs to the engagement date.
+    A form that could write a precision the creating panel cannot would be a
+    record correctable into a shape it could never have been created in — the
+    rule `EngagementForm` already keeps, read the other way round.
     """
     matter = factories.MatterFactory(owner=specialist)
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
-    panel = _panel(_detail(signed_in, matter))
+    form = signed_in.get(_edit_url(engagement)).content.decode()
 
-    assert 'name="feedback_deadline"' in panel
-    assert panel.count("precision__chips") == 1
-    assert 'name="feedback_deadline_precision"' not in panel
-    assert re.search(r'name="feedback_deadline"[^>]*type="date"', panel) is None
+    assert 'name="engagement_precision"' not in form
+    assert "precision__chips" not in form
 
 
-def test_no_half_year_chip_is_offered_on_the_engagement_date(signed_in, specialist):
-    """§3 and docs/adr/0079 §7. Four chips, and `Poolaasta` is not one of them."""
+def test_neither_surface_offers_a_kind_control(signed_in, specialist):
+    """docs/adr/0085 §1's other subtraction, checked on both write surfaces.
+
+    `Liik` was a classification nothing read back. The column keeps every value
+    it holds; what went is the question.
+    """
     matter = factories.MatterFactory(owner=specialist)
+    engagement = _stored(matter, DatePrecision.EXACT, dt.date(2025, 10, 15))
 
     panel = _panel(_detail(signed_in, matter))
+    form = signed_in.get(_edit_url(engagement)).content.decode()
+    row = form[form.index(f'id="kaasamine-{engagement.pk}-sisu"') :]
 
-    radios = re.findall(r'name="engagement_precision"[^>]*value="([A-Z_]+)"', panel)
-    assert radios == ["EXACT", "MONTH", "QUARTER", "YEAR"]
+    assert 'name="kind"' not in panel
+    assert 'name="kind"' not in row
 
 
 # ===========================================================================
-# B — the matrix: create, render, reopen
+# B — a stored period still reads as itself, everywhere
 # ===========================================================================
 
 
-@pytest.mark.parametrize(("precision", "answers", "anchor", "reads"), PERIODS, ids=PERIOD_IDS)
-def test_the_panel_stores_the_period_it_was_given(
-    signed_in, specialist, precision, answers, anchor, reads
-):
-    """§1, §4. The anchor and the precision together, normalised the one way.
+def test_the_simplified_panel_stores_an_exact_day(signed_in, specialist):
+    """What the one remaining write shape actually writes.
 
-    `bounds_for` is the shared normaliser, so a quarter stated here is the same
-    stored value as a quarter stated on `+ Oluline tähtaeg`. A second
-    normalisation would put one period in two places in a sort.
+    `EXACT` and the day in the box. The column and its vocabulary are untouched
+    — this is the only value the forms can now produce, not the only value the
+    model can hold (docs/adr/0085 §1).
     """
     matter = factories.MatterFactory(owner=specialist)
 
-    response = _add(signed_in, matter, precision, answers)
+    response = _add(signed_in, matter, occurred_on="15.10.2025")
     assert response.status_code == 200, response.content.decode()[:2000]
 
     engagement = MatterEngagement.objects.get()
+    assert engagement.occurred_on == dt.date(2025, 10, 15)
+    assert engagement.occurred_on_precision == DatePrecision.EXACT
+    assert engagement.display_date == "15.10.2025"
+
+
+@pytest.mark.parametrize(("precision", "anchor", "reads"), PERIODS, ids=PERIOD_IDS)
+def test_the_service_still_stores_every_period(specialist, precision, anchor, reads):
+    """§1, §4 of docs/adr/0082, unchanged below the form.
+
+    `bounds_for` is still the shared normaliser and the importer still writes
+    through it, so a quarter on a consultation is still the same stored value as
+    a quarter on an `Oluline tähtaeg`. Removing a control did not narrow a
+    column.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    engagement = _stored(matter, precision, anchor)
+
     assert engagement.occurred_on == anchor
     assert engagement.occurred_on_precision == precision
     assert engagement.display_date == reads
 
 
-@pytest.mark.parametrize(("precision", "answers", "anchor", "reads"), PERIODS, ids=PERIOD_IDS)
+@pytest.mark.parametrize(("precision", "anchor", "reads"), PERIODS, ids=PERIOD_IDS)
 def test_the_chronology_prints_the_period_and_never_its_anchor(
-    signed_in, specialist, precision, answers, anchor, reads
+    signed_in, specialist, precision, anchor, reads
 ):
-    """§3. The row a reader actually sees, on the page they actually open."""
+    """The row a reader actually sees, on the page they actually open."""
     matter = factories.MatterFactory(owner=specialist)
-    _add(signed_in, matter, precision, answers)
-    engagement = MatterEngagement.objects.get()
+    engagement = _stored(matter, precision, anchor)
 
     row = _chronology_line(signed_in, matter, engagement)
 
@@ -270,14 +283,14 @@ def test_the_chronology_prints_the_period_and_never_its_anchor(
     assert ENGAGEMENT_DATE_UNKNOWN not in row
 
 
-@pytest.mark.parametrize(("precision", "answers", "anchor", "reads"), PERIODS, ids=PERIOD_IDS)
+@pytest.mark.parametrize(("precision", "anchor", "reads"), PERIODS, ids=PERIOD_IDS)
 def test_the_timeline_read_model_says_the_same_thing_as_the_page(
-    signed_in, specialist, precision, answers, anchor, reads
+    specialist, precision, anchor, reads
 ):
     """The projection behind the row, so a template change cannot hide a
     regression in the thing the template reads."""
     matter = factories.MatterFactory(owner=specialist)
-    _add(signed_in, matter, precision, answers)
+    _stored(matter, precision, anchor)
 
     rows, _more = matter_timeline(matter=matter, user=specialist)
     milestone = next(row.milestone for row in rows if row.is_engagement)
@@ -285,100 +298,117 @@ def test_the_timeline_read_model_says_the_same_thing_as_the_page(
     assert milestone.display_date == reads
 
 
-@pytest.mark.parametrize(
-    ("precision", "answers", "anchor", "reads"), APPROXIMATE, ids=APPROXIMATE_IDS
-)
-def test_the_edit_form_reopens_on_the_period_with_the_day_box_empty(
-    signed_in, specialist, precision, answers, anchor, reads
+@pytest.mark.parametrize(("precision", "anchor", "reads"), APPROXIMATE, ids=APPROXIMATE_IDS)
+def test_the_edit_form_opens_a_period_with_an_empty_box_and_says_so(
+    signed_in, specialist, precision, anchor, reads
 ):
-    """§3, and docs/adr/0079 §2 stated where it is easiest to break.
+    """docs/adr/0079 §2 and docs/adr/0085 §1, stated where it is easiest to break.
 
-    An editor that opened `01.10.2026` in the date box for a record meaning
-    *oktoober 2026* would invite the person to save the invented day back — the
-    create-path defect arriving through the edit path.
+    An editor that opened `01.10.2025` in the date box for a record meaning
+    *oktoober 2025* would invite the person to save the invented day back. The
+    box is therefore empty — and because an empty box on every other row means
+    «clear the date», this row has to *say* what its empty box means, and offer
+    the deliberate way to clear it.
     """
     matter = factories.MatterFactory(owner=specialist)
-    _add(signed_in, matter, precision, answers)
-    engagement = MatterEngagement.objects.get()
+    engagement = _stored(matter, precision, anchor)
 
     form = signed_in.get(_edit_url(engagement)).content.decode()
 
-    chosen = re.search(rf'<input[^>]*value="{precision}"[^>]*>', form)
-    assert chosen is not None and "checked" in chosen.group(0), form[:2000]
     day_box = form[form.index('name="occurred_on"') :]
     day_box = day_box[: day_box.index(">")]
     assert 'value=""' in day_box or "value=" not in day_box, (
         f"the anchor is sitting in the day box: {day_box}"
     )
     assert format_estonian_date(anchor) not in form
+    assert reads in form, "the stored period is not named anywhere on the form"
+    assert 'name="clear_occurred_on"' in form
 
 
-@pytest.mark.parametrize(("precision", "answers", "anchor", "reads"), PERIODS, ids=PERIOD_IDS)
-def test_a_period_round_trips_through_the_correction_form(
-    signed_in, specialist, precision, answers, anchor, reads
-):
-    """Open it, save it back unchanged, and nothing moves.
+def test_an_exact_record_opens_with_its_day_and_no_clear_control(signed_in, specialist):
+    """The other side of the rule, and why the checkbox is conditional.
 
-    The round trip is the test that catches a composer whose initial values and
-    whose POST names disagree: such a form renders correctly, reads correctly,
-    and quietly rewrites the record the first time somebody presses `Salvesta`.
+    On a row the day box can show, the box already clears the column — a second
+    control saying the same thing would be a second way to mean one act.
     """
     matter = factories.MatterFactory(owner=specialist)
-    _add(signed_in, matter, precision, answers)
-    engagement = MatterEngagement.objects.get()
+    engagement = _stored(matter, DatePrecision.EXACT, dt.date(2025, 10, 15))
 
-    response = _edit(signed_in, engagement, precision, answers)
+    form = signed_in.get(_edit_url(engagement)).content.decode()
+
+    day_box = form[form.index('name="occurred_on"') :]
+    day_box = day_box[: day_box.index(">")]
+    assert 'value="15.10.2025"' in day_box, day_box
+    assert 'name="clear_occurred_on"' not in form
+
+
+@pytest.mark.parametrize(("precision", "anchor", "reads"), APPROXIMATE, ids=APPROXIMATE_IDS)
+def test_saving_a_period_back_with_an_empty_day_box_keeps_it(
+    signed_in, specialist, precision, anchor, reads
+):
+    """**The regression this whole round has to not cause.**
+
+    A lawyer opens `Muuda` on «kaasamine oktoobris 2025» to fix a typo in the
+    audience and presses `Salvesta`. The day box was empty when the form opened,
+    because an anchor is not a day — so a form that read «empty» as «clear the
+    date» would delete what somebody recorded, silently, on a save about
+    something else entirely (docs/adr/0085 §1).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _stored(matter, precision, anchor)
+
+    response = _edit(signed_in, engagement, title="kaubandusvaldkonna töögrupp")
     assert response.status_code == 200, response.content.decode()[:2000]
 
     engagement.refresh_from_db()
+    assert engagement.title == "kaubandusvaldkonna töögrupp"
     assert engagement.occurred_on == anchor
     assert engagement.occurred_on_precision == precision
     assert engagement.display_date == reads
 
 
-def test_an_exact_engagement_can_be_corrected_to_the_month_it_really_was(signed_in, specialist):
-    """The correction this ADR exists for: today's stamp told the truth.
+def test_a_period_can_be_corrected_to_the_exact_day_somebody_found(signed_in, specialist):
+    """A period is a statement, not a lock: typing a day replaces it.
 
-    A row the old panel filed as «today» is exactly the row somebody now wants
-    to say «see oli oktoobris» about.
+    This is the one direction the simplified form can move an approximate date
+    in, and it is the useful one — somebody finds the mailing and now knows the
+    day.
     """
     matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter, kind=EngagementKind.SURVEY, title="liikmed", occurred_on=dt.date(2026, 9, 14)
-    )
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
 
-    response = _edit(
-        signed_in,
-        engagement,
-        DatePrecision.MONTH,
-        {"engagement_month": "10", "engagement_year": "2026"},
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    engagement.refresh_from_db()
-    assert engagement.occurred_on == dt.date(2026, 10, 1)
-    assert engagement.occurred_on_precision == DatePrecision.MONTH
-    assert engagement.display_date == "oktoober 2026"
-
-
-def test_a_month_can_be_corrected_to_the_exact_day_somebody_found(signed_in, specialist):
-    """And back again, because a period is a statement and not a lock."""
-    matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="liikmed",
-        occurred_on=dt.date(2026, 10, 1),
-        occurred_on_precision=DatePrecision.MONTH,
-    )
-
-    response = _edit(signed_in, engagement, DatePrecision.EXACT, {"occurred_on": "17.10.2026"})
+    response = _edit(signed_in, engagement, occurred_on="17.10.2026")
     assert response.status_code == 200, response.content.decode()[:2000]
 
     engagement.refresh_from_db()
     assert engagement.occurred_on == dt.date(2026, 10, 17)
     assert engagement.occurred_on_precision == DatePrecision.EXACT
     assert engagement.display_date == "17.10.2026"
+
+
+def test_no_write_surface_can_create_a_new_period(signed_in, specialist):
+    """The accepted cost of docs/adr/0085 §1, asserted rather than assumed.
+
+    A crafted POST carrying the retired control's field names writes an exact
+    day — the fields do not exist, Django drops them, and the form resolves the
+    day box. Nothing half-reads them into a period.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _add(
+        signed_in,
+        matter,
+        occurred_on="15.10.2025",
+        engagement_precision=DatePrecision.MONTH,
+        engagement_month="10",
+        engagement_year="2025",
+    )
+    assert response.status_code == 200, response.content.decode()[:2000]
+
+    engagement = MatterEngagement.objects.get()
+    assert engagement.occurred_on == dt.date(2025, 10, 15)
+    assert engagement.occurred_on_precision == DatePrecision.EXACT
+    assert engagement.has_approximate_date is False
 
 
 # ===========================================================================
@@ -394,7 +424,7 @@ def test_an_empty_date_stays_unknown_and_takes_no_precision(signed_in, specialis
     """
     matter = factories.MatterFactory(owner=specialist)
 
-    response = _add(signed_in, matter, DatePrecision.EXACT, {"occurred_on": ""})
+    response = _add(signed_in, matter, occurred_on="")
     assert response.status_code == 200
 
     engagement = MatterEngagement.objects.get()
@@ -404,22 +434,19 @@ def test_an_empty_date_stays_unknown_and_takes_no_precision(signed_in, specialis
     assert engagement.has_approximate_date is False
 
 
-def test_clearing_a_period_clears_the_precision_with_it(signed_in, specialist):
-    """§5. `NULL` + `MONTH` is a period with nothing to qualify.
+def test_the_clear_checkbox_removes_a_period_and_its_precision(signed_in, specialist):
+    """docs/adr/0082 §5 and docs/adr/0085 §1. Deliberate, and only deliberate.
 
-    A record left in that state renders as neither a date nor «kuupäev
-    teadmata» but as whichever of the two the reading surface guessed.
+    `NULL` + `MONTH` is a period with nothing to qualify — a record in that
+    state renders as neither a date nor «kuupäev teadmata» but as whichever the
+    reading surface guessed — so removing the date normalises the precision back
+    to `EXACT` with it. The removal itself takes a checkbox, because on this one
+    kind of record an empty day box means «leave it alone».
     """
     matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="liikmed",
-        occurred_on=dt.date(2026, 10, 1),
-        occurred_on_precision=DatePrecision.MONTH,
-    )
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
 
-    response = _edit(signed_in, engagement, DatePrecision.EXACT, {"occurred_on": ""})
+    response = _edit(signed_in, engagement, clear_occurred_on="on")
     assert response.status_code == 200, response.content.decode()[:2000]
 
     engagement.refresh_from_db()
@@ -434,8 +461,8 @@ def test_the_editor_opens_an_undated_record_with_an_empty_box_and_not_today(sign
     A correction form that inherited it would open a record with no date at all
     showing today, one `Salvesta` away from stamping the file with a day nobody
     chose — the defect docs/adr/0078 §2 removed, coming back through the edit
-    path. `engagement_period_initial` puts an explicit `None` under the field's
-    own initial, and this is what says so.
+    path. `_engagement_edit_form` fills this box from the record, and an undated
+    record fills it with nothing.
     """
     matter = factories.MatterFactory(owner=specialist)
     engagement = add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Vana voor")
@@ -446,8 +473,9 @@ def test_the_editor_opens_an_undated_record_with_an_empty_box_and_not_today(sign
     day_box = day_box[: day_box.index(">")]
     assert format_estonian_date(timezone.localdate()) not in day_box, day_box
     assert 'value=""' in day_box or "value=" not in day_box, day_box
-    chosen = re.search(r'<input[^>]*name="engagement_precision"[^>]*checked[^>]*>', form)
-    assert chosen is not None and 'value="EXACT"' in chosen.group(0)
+    # No clear control either: there is nothing stored for it to remove, and the
+    # box in front of them already says so.
+    assert 'name="clear_occurred_on"' not in form
 
 
 def test_saving_an_undated_record_back_unchanged_stamps_nothing(signed_in, specialist):
@@ -459,7 +487,7 @@ def test_saving_an_undated_record_back_unchanged_stamps_nothing(signed_in, speci
     matter = factories.MatterFactory(owner=specialist)
     engagement = add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Vana voor")
 
-    response = _edit(signed_in, engagement, DatePrecision.EXACT, {}, title="Vana voor 2019")
+    response = _edit(signed_in, engagement, title="Vana voor 2019")
     assert response.status_code == 200, response.content.decode()[:2000]
 
     engagement.refresh_from_db()
@@ -512,15 +540,9 @@ def test_no_live_write_path_invents_a_period_for_an_unknown_date(signed_in, spec
     panel_matter = factories.MatterFactory(owner=specialist)
     composer_matter = factories.MatterFactory(owner=specialist)
     edit_matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=edit_matter,
-        kind=EngagementKind.SURVEY,
-        title="liikmed",
-        occurred_on=dt.date(2026, 10, 1),
-        occurred_on_precision=DatePrecision.MONTH,
-    )
+    engagement = _stored(edit_matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
 
-    _add(signed_in, panel_matter, DatePrecision.EXACT, {"occurred_on": ""})
+    _add(signed_in, panel_matter, occurred_on="")
     signed_in.post(
         reverse("matters:compose", kwargs={"pk": composer_matter.pk}),
         {
@@ -529,7 +551,7 @@ def test_no_live_write_path_invents_a_period_for_an_unknown_date(signed_in, spec
             "engagement_audience": "liikmed",
         },
     )
-    _edit(signed_in, engagement, DatePrecision.EXACT, {"occurred_on": ""})
+    _edit(signed_in, engagement, clear_occurred_on="on")
 
     for created in MatterEngagement.objects.all():
         assert created.occurred_on is None, created.matter_id
@@ -541,11 +563,9 @@ def test_no_live_write_path_invents_a_period_for_an_unknown_date(signed_in, spec
 # ===========================================================================
 
 
-@pytest.mark.parametrize(
-    ("precision", "answers", "anchor", "reads"), APPROXIMATE, ids=APPROXIMATE_IDS
-)
+@pytest.mark.parametrize(("precision", "anchor", "reads"), APPROXIMATE, ids=APPROXIMATE_IDS)
 def test_viimane_tegevus_reads_the_period_rather_than_the_anchor(
-    specialist, precision, answers, anchor, reads
+    specialist, precision, anchor, reads
 ):
     """§3. `MatterActivityFact` carries the precision of the row it read.
 
@@ -554,13 +574,7 @@ def test_viimane_tegevus_reads_the_period_rather_than_the_anchor(
     consultation nobody dated to 1 October.
     """
     matter = factories.MatterFactory(owner=specialist)
-    add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="liikmed",
-        occurred_on=anchor,
-        occurred_on_precision=precision,
-    )
+    _stored(matter, precision, anchor)
 
     fact = _fact(matter, specialist)
 
@@ -681,87 +695,81 @@ def test_the_register_row_renders_the_activity_through_display_date(signed_in, s
 def test_the_reply_by_date_round_trips_beside_a_period_and_stays_a_day(signed_in, specialist):
     """§2. The two dates are different kinds of fact and are stored as such."""
     matter = factories.MatterFactory(owner=specialist)
-
-    response = _add(
-        signed_in,
+    engagement = _stored(
         matter,
         DatePrecision.MONTH,
-        {"engagement_month": "10", "engagement_year": "2025"},
-        feedback_deadline="22.10.2025",
+        dt.date(2025, 10, 1),
+        feedback_deadline=dt.date(2025, 10, 22),
     )
+
+    response = _edit(signed_in, engagement, feedback_deadline="22.10.2025")
     assert response.status_code == 200, response.content.decode()[:2000]
 
-    engagement = MatterEngagement.objects.get()
+    engagement.refresh_from_db()
     assert engagement.occurred_on_precision == DatePrecision.MONTH
     assert engagement.feedback_deadline == dt.date(2025, 10, 22)
     # Printed as the exact day it is, on the row it belongs to.
     row = _chronology_line(signed_in, matter, engagement)
-    assert "Tagasisidet ootame kuni 22.10.2025" in row
+    assert "22.10.2025" in row
 
 
 def test_a_reply_by_date_inside_the_engagement_period_is_accepted(signed_in, specialist):
     """§2. The rule compares against the period's *first* day, deliberately.
 
-    «Kaasamine oktoobris, vastuseid ootan 15. oktoobriks» is the commonest
-    thing a round run over a month says. Comparing against the period's end
-    would refuse it.
+    «Kaasamine oktoobris, vastuseid ootan 15. oktoobriks» is the commonest thing
+    a round run over a month says. Comparing against the period's end would
+    refuse it — and the anchor is still what the rule reads, even though no form
+    can state one any more.
     """
     matter = factories.MatterFactory(owner=specialist)
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
-    response = _add(
-        signed_in,
-        matter,
-        DatePrecision.MONTH,
-        {"engagement_month": "10", "engagement_year": "2025"},
-        feedback_deadline="15.10.2025",
-    )
+    response = _edit(signed_in, engagement, feedback_deadline="15.10.2025")
 
     assert response.status_code == 200, response.content.decode()[:2000]
-    assert MatterEngagement.objects.get().feedback_deadline == dt.date(2025, 10, 15)
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline == dt.date(2025, 10, 15)
 
 
 def test_a_reply_by_date_before_the_whole_period_is_still_refused(signed_in, specialist):
     """The rule keeps working when the anchor is not in the day box.
 
-    A rule that read `occurred_on` directly would simply stop firing for three
-    of the four precisions, which is a validation that silently switches off.
+    A rule that read the *box* rather than the resolved date would simply stop
+    firing for a record dated to a period — which is a validation that silently
+    switches off on exactly the rows the form cannot show.
     """
     matter = factories.MatterFactory(owner=specialist)
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
-    response = _add(
-        signed_in,
-        matter,
-        DatePrecision.MONTH,
-        {"engagement_month": "10", "engagement_year": "2025"},
-        feedback_deadline="20.9.2025",
-    )
+    response = _edit(signed_in, engagement, feedback_deadline="20.9.2025")
 
     assert response.status_code == 400
-    assert not MatterEngagement.objects.exists()
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
     assert "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva." in response.content.decode()
 
 
-def test_an_approximate_engagement_creates_no_work_and_no_deadline(signed_in, specialist):
-    """§2, §5. An approximate date is not a new deadline or overdue source.
+def test_an_approximate_engagement_creates_no_deadline_record_of_its_own(specialist):
+    """§2, §5. A period never grows an end, and never becomes a stored deadline.
 
-    The whole risk of widening a date is that somewhere downstream a period
-    grows an end, and an end grows a badge. Nothing here does.
+    An open feedback wait is read as work since docs/adr/0085 §3, and that is a
+    *reading* — no `NextAction`, no `MatterImportantDate` and no
+    `Matter.response_deadline` is written, which is what this has always
+    guarded.
     """
     matter = factories.MatterFactory(owner=specialist)
 
-    _add(
-        signed_in,
+    engagement = _stored(
         matter,
         DatePrecision.YEAR,
-        {"engagement_year": "2019"},
-        feedback_deadline="22.10.2019",
+        dt.date(2019, 1, 1),
+        feedback_deadline=dt.date(2019, 10, 22),
     )
 
     matter.refresh_from_db()
     assert not NextAction.objects.filter(matter=matter).exists()
     assert not matter.important_dates.exists()
     assert matter.response_deadline is None
-    engagement = MatterEngagement.objects.get()
     assert not hasattr(engagement, "period_end")
 
 
@@ -770,107 +778,82 @@ def test_an_approximate_engagement_creates_no_work_and_no_deadline(signed_in, sp
 # ===========================================================================
 
 
-def test_a_stale_correction_carrying_a_period_writes_nothing(signed_in, specialist):
+def test_a_stale_correction_on_a_period_writes_nothing(signed_in, specialist):
     """Optimistic concurrency is compared before anything is decided."""
     matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter, kind=EngagementKind.SURVEY, title="liikmed", occurred_on=dt.date(2026, 9, 14)
-    )
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
     stale = engagement.updated_at.isoformat()
     correct_engagement(engagement=engagement, title="teine nimi")
 
     response = signed_in.post(
         _edit_url(engagement),
-        {
-            "kind": engagement.kind,
-            "title": "liikmed",
-            "engagement_precision": DatePrecision.QUARTER,
-            "engagement_quarter": "4",
-            "engagement_year": "2026",
-            "revision": stale,
-        },
+        {"title": "liikmed", "occurred_on": "17.10.2025", "revision": stale},
         headers={"HX-Request": "true"},
     )
 
     assert response.status_code == 409
     engagement.refresh_from_db()
     assert engagement.title == "teine nimi"
-    assert engagement.occurred_on == dt.date(2026, 9, 14)
-    assert engagement.occurred_on_precision == DatePrecision.EXACT
+    assert engagement.occurred_on == dt.date(2025, 10, 1)
+    assert engagement.occurred_on_precision == DatePrecision.MONTH
 
 
-def test_an_impossible_period_is_refused_and_nothing_is_written(signed_in, specialist):
-    """Quarter V does not exist, and a partial period is not a date."""
+def test_an_unreadable_day_is_refused_and_nothing_is_written(signed_in, specialist):
+    """A date box is a text box, and what arrives in it is not always a date."""
     matter = factories.MatterFactory(owner=specialist)
 
-    response = _add(signed_in, matter, DatePrecision.QUARTER, {"engagement_quarter": "5"})
+    response = _add(signed_in, matter, occurred_on="32.13.2025")
 
     assert response.status_code == 400
     assert not MatterEngagement.objects.exists()
 
 
-def test_a_period_named_without_its_year_is_refused(signed_in, specialist):
-    """«Kuu» with nothing in either select is a question half-answered.
+def test_a_crafted_precision_cannot_reach_the_column_through_a_form(signed_in, specialist):
+    """Neither form names `occurred_on_precision`, so neither view passes one.
 
-    Deliberately *not* read as «kuupäev teadmata»: somebody who chose a chip
-    meant to say something, and answering them with a silent NULL is the
-    product deciding what they meant.
+    A POST carrying the retired control's field names, or the column's own,
+    leaves the record exactly as the day box resolves it — an exact day. The
+    vocabulary check in the service is the backstop below that
+    (`test_the_service_refuses_a_precision_outside_the_vocabulary`).
     """
     matter = factories.MatterFactory(owner=specialist)
-
-    response = _add(signed_in, matter, DatePrecision.MONTH, {"engagement_month": "10"})
-
-    assert response.status_code == 400
-    assert not MatterEngagement.objects.exists()
-
-
-def test_a_crafted_half_year_is_refused_on_a_record_that_never_had_one(signed_in, specialist):
-    """docs/adr/0079 §7, §9. The chips are built per record, and so is the
-    validation: a precision this control does not offer cannot arrive through
-    a hand-written POST either."""
-    matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter, kind=EngagementKind.SURVEY, title="liikmed", occurred_on=dt.date(2026, 9, 14)
-    )
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
     response = _edit(
         signed_in,
         engagement,
-        DatePrecision.HALF_YEAR,
-        {"engagement_half": "2", "engagement_year": "2026"},
+        occurred_on_precision=DatePrecision.HALF_YEAR,
+        engagement_precision=DatePrecision.HALF_YEAR,
+        engagement_half="2",
+        engagement_year="2025",
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 200, response.content.decode()[:2000]
     engagement.refresh_from_db()
-    assert engagement.occurred_on_precision == DatePrecision.EXACT
-    assert engagement.occurred_on == dt.date(2026, 9, 14)
+    # Untouched: the day box was empty and the record carries a period, so the
+    # save left it alone (docs/adr/0085 §1).
+    assert engagement.occurred_on_precision == DatePrecision.MONTH
+    assert engagement.occurred_on == dt.date(2025, 10, 1)
 
 
-def test_a_closed_matter_refuses_a_period_correction_too(signed_in, specialist):
-    """The PR's closed-Matter rule, unchanged by the widened date.
+def test_a_closed_matter_refuses_a_correction_on_a_period_too(signed_in, specialist):
+    """The closed-Matter rule, unchanged by the narrowed date control.
 
     Enforced under the Matter's row lock rather than by whether a button was
     rendered, so a crafted POST meets the same refusal.
     """
     matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter, kind=EngagementKind.SURVEY, title="liikmed", occurred_on=dt.date(2026, 9, 14)
-    )
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
     close_matter(
         matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
     )
 
-    response = _edit(
-        signed_in,
-        engagement,
-        DatePrecision.MONTH,
-        {"engagement_month": "10", "engagement_year": "2026"},
-    )
+    response = _edit(signed_in, engagement, occurred_on="17.10.2025")
 
     assert response.status_code == 400
     engagement.refresh_from_db()
-    assert engagement.occurred_on == dt.date(2026, 9, 14)
-    assert engagement.occurred_on_precision == DatePrecision.EXACT
+    assert engagement.occurred_on == dt.date(2025, 10, 1)
+    assert engagement.occurred_on_precision == DatePrecision.MONTH
 
 
 def test_the_service_refuses_a_precision_outside_the_vocabulary():
@@ -898,14 +881,7 @@ def test_the_audit_row_records_the_precision_beside_the_anchor(specialist):
     """An audit row carrying `2026-10-01` alone says «1 October» to whoever
     reads it back — the invention docs/adr/0079 §2 exists to refuse."""
     matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="liikmed",
-        occurred_on=dt.date(2026, 10, 1),
-        occurred_on_precision=DatePrecision.MONTH,
-        actor=specialist,
-    )
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1), actor=specialist)
 
     from app.audit.models import ChangeEvent
 
@@ -934,13 +910,7 @@ def test_an_unrelated_correction_leaves_the_precision_alone(specialist):
     not quietly make *oktoober 2026* mean 1 October.
     """
     matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="liikmed",
-        occurred_on=dt.date(2026, 10, 1),
-        occurred_on_precision=DatePrecision.MONTH,
-    )
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
 
     correct_engagement(engagement=engagement, title="kaubandusvaldkonna töögrupp")
 

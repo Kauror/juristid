@@ -23,7 +23,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from app.core.dates import format_estonian_date
+from app.core.dates import add_months, format_estonian_date
 from app.matters.enums import EngagementKind
 from app.matters.forms import CompactEngagementForm
 from app.matters.models import MatterEngagement
@@ -76,13 +76,22 @@ def test_the_panel_asks_for_the_engagement_date_and_shows_todays_default(signed_
     assert f'value="{format_estonian_date(timezone.localdate())}"' in panel
 
 
-def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_nothing(signed_in, specialist):
-    """`Tagasisidet ootame kuni`, blank.
+def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_a_week(signed_in, specialist):
+    """`Tagasisidet ootame kuni`, pre-filled with today + 7.
 
-    Today is a plausible engagement date and never a plausible reply-by date, so
-    a pre-filled one would be answered by pressing `Salvesta`.
+    **This reverses docs/adr/0078 §3's «optional and undefaulted».** The argument
+    there was that «today is a plausible engagement date and never a plausible
+    reply-by date, so a pre-filled one would be answered by pressing
+    `Salvesta`» — which is an argument against defaulting to *today*, not
+    against defaulting. A week out is what a round asks for when nobody says
+    otherwise, and since docs/adr/0085 §3 an empty box is the difference between
+    a consultation that shows up as work and one that disappears.
+
+    Still clearable, and clearing it is a real answer: `tests/…::
+    test_an_emptied_reply_by_date_opens_no_wait` is the other half.
     """
     matter = factories.MatterFactory(owner=specialist)
+    expected = timezone.localdate() + dt.timedelta(days=7)
 
     panel = _panel(_workspace(signed_in, matter))
 
@@ -90,7 +99,33 @@ def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_nothing(sig
     assert 'name="feedback_deadline"' in panel
     field = panel[panel.index('name="feedback_deadline"') :]
     field = field[: field.index(">")]
-    assert 'value=""' in field, "a reply-by date nobody chose is a reply-by date nobody meant"
+    assert f'value="{format_estonian_date(expected)}"' in field, field
+
+
+def test_the_panel_offers_the_three_reply_by_spans_with_the_days_they_land_on(
+    signed_in, specialist
+):
+    """`1 nädal` · `2 nädalat` · `1 kuu`, each carrying its resolved date.
+
+    Resolved on the server in Europe/Tallinn and delivered on the control, the
+    contract `Järgmine tegevus`'s quick dates already keep: working it out in the
+    browser would answer in the reader's own timezone. `1 kuu` is a calendar
+    month rather than thirty days, because that is what somebody picking it
+    means (docs/adr/0085 §2).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    today = timezone.localdate()
+
+    panel = _panel(_workspace(signed_in, matter))
+    group = panel[panel.index("data-quickdate-group") :]
+    group = group[: group.index('name="feedback_deadline"')]
+
+    assert ">1 nädal<" in group
+    assert ">2 nädalat<" in group
+    assert ">1 kuu<" in group
+    assert f'data-quickdate="{format_estonian_date(today + dt.timedelta(days=7))}"' in group
+    assert f'data-quickdate="{format_estonian_date(today + dt.timedelta(days=14))}"' in group
+    assert f'data-quickdate="{format_estonian_date(add_months(today, 1))}"' in group
 
 
 # ---------------------------------------------------------------------------
@@ -290,9 +325,15 @@ def test_the_feedback_deadline_is_stored_and_read_back_exactly(signed_in, specia
     assert engagement.feedback_deadline == deadline
     assert MatterEngagement.objects.get(pk=engagement.pk).feedback_deadline == deadline
 
-    items, _ = matter_timeline(matter=matter, user=specialist)
-    subs = [item.milestone.sub for item in items if item.is_milestone and item.milestone.sub]
-    assert any(f"Tagasisidet ootame kuni {format_estonian_date(deadline)}" in sub for sub in subs)
+    # Shown on the round's own chronology row, as the state it is: its own line
+    # with three wordings and a colour, rather than a third fragment of the
+    # metadata sentence (docs/adr/0085 §3, §4).
+    body = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    ).content.decode()
+    start = body.index(f'id="kaasamine-{engagement.pk}-sisu"')
+    row = body[start : body.index("</article>", start)]
+    assert f"Ootame tagasisidet kuni {format_estonian_date(deadline)}" in row
 
 
 def test_the_chronology_says_nothing_about_a_deadline_that_was_never_set(specialist):

@@ -476,6 +476,47 @@
   flex-wrap: wrap;
 }
 
+/* The waiting state of a `Kaasamine`, on its own line under the milestone.
+
+   Quiet, because it is a state and not an alarm: a round collecting answers
+   until the 22nd is ordinary work in progress. It takes the danger colour only
+   once its own day has gone, and what that says is that there is post to read —
+   never that the people who were asked are late (docs/adr/0085 §4). */
+.uxtl__wait {
+  margin: 2px 0 0;
+  font: 400 11.5px/1.4 var(--typography-font-sans);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.uxtl__wait--due {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* What came back, in the words somebody wrote down. Indented behind a rule
+   rather than boxed: it is a quotation inside the round's own row, and a panel
+   around it would read as a second record — the reasoning `.uxtl__conflict`
+   below already carries. */
+.uxtl__feedback {
+  margin: 4px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-subtle);
+  font: 400 12px/1.5 var(--typography-font-sans);
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+
+/* `Lõpeta kaasamine` — a disclosure on the row rather than a button, because
+   the act asks a question («what came back?») and a button that opened a form
+   would promise the act and deliver one. It is alone on its line, has no
+   siblings to displace and nothing to be chosen instead of, so a native
+   `<details>` is the honest markup — the same reasoning `Muuda` behind
+   PRAEGUNE TEGEVUS keeps (docs/adr/0078 §1). */
+.uxtl__finish {
+  margin-top: 4px;
+}
+
 /* What the record says now, beside what this person tried to save. Set apart by
    an edge rather than a panel: it is the same entry, one version further on,
    and boxing it would read as a second record (§8). */

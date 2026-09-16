@@ -65,36 +65,41 @@ before the closure.
         <p class="field__error">{{ engagement_edit_form.title.errors|first }}</p>
       {% endif %}
 
-      <label class="cx-f" for="{{ engagement_edit_form.kind.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.kind.label }}</span>
-        {{ engagement_edit_form.kind }}
-      </label>
-      {% if engagement_edit_form.kind.errors %}
-        <p class="field__error">{{ engagement_edit_form.kind.errors|first }}</p>
-      {% endif %}
-
       {% comment %}
-        The two dates, in the same order, with the same labels and — for the
-        first of them — through the same `Täpsus` control the `+ Kaasamine`
-        panel asks them in. A person who learns the panel must not have to
-        learn a second vocabulary to fix what they typed into it, and a record
-        must not be correctable into a shape it could never have been created
-        in. One partial serves both, so the two cannot drift
-        (matters/partials/period_composer.html, docs/adr/0082 §3).
+        The two dates, in the same order and with the same labels the
+        `+ Kaasamine` panel asks them in. A person who learns the panel must not
+        have to learn a second vocabulary to fix what they typed into it, and a
+        record must not be correctable into a shape it could never have been
+        created in — which is why the `Täpsus` control went from here when it
+        went from the panel (docs/adr/0085 §1).
 
-        Both are optional. `Kaasamise kuupäev` may be a day, a month, a quarter
-        or a year, and emptying it altogether is a real answer — «kuupäev
-        teadmata» — and is how a row the old panel stamped with today gets told
-        the truth. An approximate record opens on its own chip with the day box
-        left empty: the stored anchor is a place in a sort, not a day to hand
-        back to somebody to re-save (docs/adr/0079 §2).
+        Both are optional. Emptying `Kaasamise kuupäev` is a real answer —
+        «kuupäev teadmata» — and is how a row the old panel stamped with today
+        gets told the truth.
 
-        `Tagasisidet ootame kuni` stays an exact day and stays inert:
-        correcting it makes no next action, no deadline row, no badge and no
-        count (docs/adr/0078 §2, §3, docs/adr/0079 §11).
+        **A record dated to a period is the one exception, and it says so out
+        loud.** *Oktoober 2025* is stored as `2025-10-01`, which is not a day
+        anybody named and may never be handed back in a date box, so the box
+        opens empty — and an empty box on such a row therefore means «leave the
+        period alone» rather than «clear the date». The sentence under the label
+        states the stored period, and `Kustuta salvestatud kuupäev` is how it is
+        removed on purpose (docs/adr/0079 §2, docs/adr/0085 §1).
+
+        `Tagasisidet ootame kuni` is what the round asked of other people, and
+        it is what makes this row current work: set, the consultation waits on
+        `PRAEGUNE TEGEVUS` and on the responsible lawyer's Minu asjad until
+        somebody finishes it. Emptying it here says the round is not waiting for
+        anything — including on a round whose wait was already finished, where
+        the closure then has nothing left to be a closure of
+        (docs/adr/0085 §3, §6).
       {% endcomment %}
-      {% include "matters/partials/period_composer.html" with chips=engagement_edit_form.precision_chips date_field=engagement_edit_form.occurred_on month_field=engagement_edit_form.engagement_month quarter_field=engagement_edit_form.engagement_quarter year_field=engagement_edit_form.engagement_year only %}
       <div class="cx-grid cx-grid--links">
+        <label class="cx-f cx-f--date"
+               for="{{ engagement_edit_form.occurred_on.id_for_label }}">
+          <span class="cx-f__lab">{{ engagement_edit_form.occurred_on.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {{ engagement_edit_form.occurred_on }}
+        </label>
         <label class="cx-f cx-f--date"
                for="{{ engagement_edit_form.feedback_deadline.id_for_label }}">
           <span class="cx-f__lab">{{ engagement_edit_form.feedback_deadline.label }}
@@ -102,8 +107,37 @@ before the closure.
           {{ engagement_edit_form.feedback_deadline }}
         </label>
       </div>
+      {% if engagement_edit_form.shows_clear_occurred_on %}
+        <p class="cx-note">
+          Salvestatud kuupäev on <strong>{{ engagement_edit_form.stored_period_display }}</strong>.
+          Jäta kuupäevakast tühjaks, et see alles jääks, või kirjuta täpne päev.
+        </p>
+        <label class="cx-check" for="{{ engagement_edit_form.clear_occurred_on.id_for_label }}">
+          {{ engagement_edit_form.clear_occurred_on }}
+          <span>{{ engagement_edit_form.clear_occurred_on.label }}</span>
+        </label>
+      {% endif %}
+      {% if engagement_edit_form.occurred_on.errors %}
+        <p class="field__error">{{ engagement_edit_form.occurred_on.errors|first }}</p>
+      {% endif %}
       {% if engagement_edit_form.feedback_deadline.errors %}
         <p class="field__error">{{ engagement_edit_form.feedback_deadline.errors|first }}</p>
+      {% endif %}
+
+      {% comment %}
+        `Saadud tagasiside / arvamused` — what came back, correctable after the
+        round was closed as well as before. A lawyer who typed the answers in a
+        hurry has to be able to fix them, and the correction takes the Matter's
+        lock, the revision token and its own audit row like every other field
+        here (docs/adr/0085 §6).
+      {% endcomment %}
+      <label class="cx-f" for="{{ engagement_edit_form.feedback_received.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.feedback_received.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ engagement_edit_form.feedback_received }}
+      </label>
+      {% if engagement_edit_form.feedback_received.errors %}
+        <p class="field__error">{{ engagement_edit_form.feedback_received.errors|first }}</p>
       {% endif %}
 
       <div class="cx-grid cx-grid--links">
@@ -210,6 +244,75 @@ before the closure.
              class="visually-hidden"> — avaneb uues aknas</span></a>
         {% endfor %}
       </span>
+    {% endif %}
+    {% comment %}
+      The waiting state, and the one control that ends it.
+
+      A round carrying `Tagasisidet ootame kuni` is unfinished work until
+      somebody says otherwise: the day going by is not a result, so nothing
+      closes it on its own and the disclosure is offered before the deadline and
+      after it. What changes at the deadline is the wording — «Ootame
+      tagasisidet kuni» becomes «Tagasiside tähtaeg möödus», which is a
+      statement about this office's unread post and not about whether the people
+      who were asked were late (docs/adr/0085 §4).
+
+      A completed round says who finished it and when, because that is the fact
+      a reader of a chronology is checking. The feedback itself is rendered
+      under it, whether the round is open or closed: an answer somebody typed
+      while creating the record is readable immediately rather than only after
+      the wait ends.
+    {% endcomment %}
+    {% if engagement.has_feedback_wait %}
+      <p class="uxtl__wait{% if engagement.feedback_wait_is_due %} uxtl__wait--due{% endif %}">
+        {% if engagement.feedback_wait_is_closed %}
+          Tagasiside ootamine lõpetatud {{ engagement.feedback_closed_at|date:"j.n.Y" }}
+        {% elif engagement.feedback_wait_is_due %}
+          Tagasiside tähtaeg möödus {{ engagement.feedback_deadline|date:"j.n.Y" }}
+        {% else %}
+          Ootame tagasisidet kuni {{ engagement.feedback_deadline|date:"j.n.Y" }}
+        {% endif %}
+      </p>
+    {% endif %}
+    {% if engagement.feedback_received %}
+      <p class="uxtl__feedback">{{ engagement.feedback_received|linebreaksbr }}</p>
+    {% endif %}
+    {% if engagement.feedback_form and can_write_business_content and matter.is_open %}
+      <details class="cx-panel uxtl__finish" data-addpanel
+               {% if engagement.feedback_form_open %}open{% endif %}>
+        <summary class="disclosure-chip disclosure-chip--quiet">Lõpeta kaasamine</summary>
+        <div class="cx-panel__body">
+          <form class="addform" data-addform aria-label="Kaasamise lõpetamine"
+                hx-post="{% url 'matters:complete_engagement_feedback' pk=matter.pk engagement_id=engagement.pk %}"
+                hx-target="#kaasamine-{{ engagement.pk }}-sisu"
+                hx-swap="outerHTML"
+                hx-encoding="multipart/form-data">
+            {% csrf_token %}
+            {% if engagement_edit_error %}
+              <p class="formerror" role="alert">{{ engagement_edit_error }}</p>
+            {% endif %}
+            {% comment %}
+              Nothing here is required. Pressing `Lõpeta` with an empty box
+              records that the round is over and nothing came back, which is a
+              real and common outcome — a completion that demanded prose would
+              make «keegi ei vastanud» the one result a lawyer could not file
+              (docs/adr/0085 §6).
+            {% endcomment %}
+            <label class="cx-f" for="{{ engagement.feedback_form.feedback_received.id_for_label }}">
+              <span class="cx-f__lab">{{ engagement.feedback_form.feedback_received.label }}
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ engagement.feedback_form.feedback_received }}
+            </label>
+            {% if engagement.feedback_form.feedback_received.errors %}
+              <p class="field__error">{{ engagement.feedback_form.feedback_received.errors|first }}</p>
+            {% endif %}
+            {% include "matters/partials/add_files.html" with field=engagement.feedback_form.attachments %}
+            {{ engagement.feedback_form.revision }}
+            <div class="addform__actions">
+              <button class="button button--primary button--tiny" type="submit">Lõpeta kaasamine</button>
+            </div>
+          </form>
+        </div>
+      </details>
     {% endif %}
     {% if can_write_business_content and matter.is_open %}
       <p class="uxtl__editactions">

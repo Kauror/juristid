@@ -25,7 +25,7 @@ from django.urls import reverse
 
 from app.documents.enums import DocumentRole
 from app.matters.enums import COMPOSER_ENGAGEMENT_KINDS, EngagementKind
-from app.matters.forms import ENGAGEMENT_CHOICES, MatterEditForm, edit_initial
+from app.matters.forms import MatterEditForm, edit_initial
 from app.matters.models import Matter
 from app.matters.services import (
     add_engagement,
@@ -115,7 +115,6 @@ def test_the_enum_is_the_one_dictionary_for_email_campaign():
 
     offered = dict(COMPOSER_ENGAGEMENT_KINDS)
     assert offered[EngagementKind.EMAIL_CAMPAIGN.value] == "Kirjade voor"
-    assert dict(ENGAGEMENT_CHOICES)[EngagementKind.EMAIL_CAMPAIGN.value] == "Kirjade voor"
 
 
 def test_the_stored_value_did_not_move_with_the_label():

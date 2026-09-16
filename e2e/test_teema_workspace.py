@@ -191,7 +191,6 @@ def test_an_engagement_carries_its_replies_on_its_own_row(page, base_url, tmp_pa
     create_matter(page, base_url, "Töölaua brauserikatse: kaasamine")
 
     open_add_panel(page, "lisa-kaasamine")
-    page.locator("#lisa-kaasamine .uxchip", has_text="Kirjade voor").click()
     page.locator("#lisa-kaasamine [name=audience]").fill("liikmed")
     page.locator("#lisa-kaasamine [name=response_count]").fill("2")
     page.locator("#lisa-kaasamine input[type=file]").set_input_files(

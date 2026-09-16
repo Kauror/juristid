@@ -63,20 +63,21 @@ HELD_ON_READ = "4.3.2026"
 REPLY_BY_READ = "18.3.2026"
 DATE_UNKNOWN = "Kuupäev teadmata"
 
-#: A period in the past, because the chronology projects what has happened and
-#: drops a milestone dated after today — a future one is stored correctly and
-#: read back from nowhere.
-PAST_MONTH = ("2", "2026")
-PAST_MONTH_READS = "veebruar 2026"
-PAST_QUARTER = ("1", "2026")
-PAST_QUARTER_READS = "I kvartal 2026"
 
+def _file_an_engagement(page, *, occurred_on: str = HELD_ON, reply_by: str = "") -> None:
+    """Record one consultation through the real `+ Kaasamine` panel.
 
-def _file_an_engagement(page, *, occurred_on: str = HELD_ON) -> None:
-    """Record one consultation through the real `+ Kaasamine` panel."""
+    ``reply_by`` defaults to **empty**, and that is deliberate: the panel
+    pre-fills `Tagasisidet ootame kuni` with a week out (docs/adr/0085 §2), so a
+    helper that left the box alone would file every fixture as a waiting round
+    and the correction tests below would be measuring a state they never set.
+    Clearing it here is also the shortest proof that the default is an initial
+    value and nothing more — the saved row has no deadline at all.
+    """
     open_add_panel(page, "lisa-kaasamine")
     page.locator("#lisa-kaasamine input[name=audience]").fill(AUDIENCE)
     page.locator("#lisa-kaasamine input[name=occurred_on]").fill(occurred_on)
+    page.locator("#lisa-kaasamine input[name=feedback_deadline]").fill(reply_by)
     with page.expect_response(
         lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
     ) as caught:
@@ -139,7 +140,7 @@ def test_a_filed_kaasamine_can_be_corrected_in_place(page, base_url):
     # Same row, corrected, and no second line underneath it.
     row = _row(page)
     expect(row).to_contain_text(f"Kaasamine: {CORRECTED_AUDIENCE}")
-    expect(row).to_contain_text("Tagasisidet ootame kuni")
+    expect(row).to_contain_text("Ootame tagasisidet kuni")
     expect(page.locator(".uxtl__ms-body")).to_have_count(1)
     expect(page.locator(".uxtl__editform")).to_have_count(0)
 
@@ -211,7 +212,7 @@ def test_a_refused_correction_keeps_what_was_typed(page, base_url):
 
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(_row(page)).not_to_contain_text("Tagasisidet ootame kuni")
+    expect(_row(page)).not_to_contain_text("Ootame tagasisidet kuni")
 
 
 def test_a_closed_teema_offers_no_correction(page, base_url):
@@ -255,86 +256,91 @@ def test_a_reader_is_offered_no_correction(page, base_url):
 
 
 # ---------------------------------------------------------------------------
-# `Täpsus` — the half of docs/adr/0082 that only a rendering engine can answer
+# `Lõpeta kaasamine` — the half of docs/adr/0085 only a browser can answer
 # ---------------------------------------------------------------------------
+#
+# The two `Täpsus` scenarios that stood here went with the control they drove.
+# `+ Kaasamine` and `Muuda` no longer offer the four precision chips
+# (docs/adr/0085 §1), so a browser test that clicked one would be driving markup
+# the product does not render; what a stored period does instead is asserted in
+# `tests/test_engagement_date_precision.py`, which needs no rendering engine
+# because the claim is about a form's initial values and a service's writes.
+#
+# What only a rendering engine can answer is this: the completion form lives
+# inside a `<details>` on a chronology row that is itself an HTMX swap target,
+# so opening it, posting it and having the answer land back in the same element
+# is a claim about three layers agreeing.
 
 
-def _choose_precision(scope, label: str) -> None:
-    """Click one `Täpsus` chip, the way a person does.
-
-    The chip is a `<label>` over a clipped radio; clicking the label is what
-    checks it, and the CSS then reveals that precision's own group. Clicking
-    the input directly would check it without proving the control is reachable,
-    which is exactly what this file exists to prove.
-    """
-    scope.locator(".precision__chip", has_text=label).first.click()
+def _finish_panel(page):
+    """The `Lõpeta kaasamine` disclosure on the one filed row."""
+    return _row(page).locator(".uxtl__finish")
 
 
-def test_the_panel_can_state_a_month_and_the_row_reads_it_back(page, base_url):
-    """docs/adr/0082 §1, §3. A consultation somebody remembers as «veebruaris».
+def test_a_waiting_round_is_finished_on_its_own_row(page, base_url):
+    """docs/adr/0085 §6, end to end: the wait, the answers, the completed row.
 
-    The month select has to be *reachable* — it is hidden until its chip is
-    chosen — and the row afterwards has to say *veebruar 2026* rather than the
-    stored anchor, which is 1 February and a day nobody named.
+    The disclosure is closed at rest, opens in place, and its save swaps the
+    same element the row already is — so the completed record lands where the
+    reader is looking, with no reload and no second line in the chronology.
     """
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, unique_title("Kaasamise täpsuse katse: kuu"))
+    create_matter(page, base_url, unique_title("Kaasamise lõpetamise brauserikatse"))
+    _file_an_engagement(page, reply_by=REPLY_BY)
 
-    open_add_panel(page, "lisa-kaasamine")
-    panel = page.locator("#lisa-kaasamine")
-    panel.locator("input[name=audience]").fill(AUDIENCE)
-    _choose_precision(panel, "Kuu")
-    month, year = PAST_MONTH
-    expect(panel.locator("select[name=engagement_month]")).to_be_visible()
-    panel.locator("select[name=engagement_month]").select_option(month)
-    panel.locator("input[name=engagement_year]").fill(year)
+    row = _row(page)
+    expect(row).to_contain_text("Ootame tagasisidet kuni")
+    panel = _finish_panel(page)
+    expect(panel).to_have_count(1)
+    expect(panel.locator("textarea[name=feedback_received]")).not_to_be_visible()
+
+    panel.get_by_role("button", name="Lõpeta kaasamine", exact=True).click()
+    panel.locator("textarea[name=feedback_received]").fill("Kaks vastust, mõlemad toetavad.")
     with page.expect_response(
-        lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
+        lambda response: "/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:
         panel.locator("button[type=submit]").click()
-    assert caught.value.status == 200, f"a month was refused: {caught.value.status}"
+    assert caught.value.status == 200, f"the completion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
     row = _row(page)
-    expect(row).to_contain_text(PAST_MONTH_READS)
-    expect(row).not_to_contain_text("1.2.2026")
+    expect(page.locator(".uxtl__ms-body")).to_have_count(1)
+    expect(row).to_contain_text("Tagasiside ootamine lõpetatud")
+    expect(row).to_contain_text("Kaks vastust, mõlemad toetavad.")
+    expect(row).not_to_contain_text("Ootame tagasisidet kuni")
+    expect(row.locator(".uxtl__finish")).to_have_count(0)
 
+    # What was shown is what was stored.
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(_row(page)).to_contain_text(PAST_MONTH_READS)
+    expect(_row(page)).to_contain_text("Tagasiside ootamine lõpetatud")
 
 
-def test_correcting_an_exact_day_to_a_quarter_leaves_no_day_behind(page, base_url):
-    """docs/adr/0079 §2 stated where it is easiest to break.
-
-    A record corrected to *I kvartal 2026* must reopen on its own chip with the
-    day box **empty**. An editor that put `1.1.2026` back into that box would
-    invite the person to save an invented day — the create-path defect arriving
-    through the edit path.
-    """
+def test_a_round_nobody_is_waiting_on_offers_no_finish_control(page, base_url):
+    """§3. What draws the control is the dated point, never the act."""
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, unique_title("Kaasamise täpsuse katse: kvartal"))
+    create_matter(page, base_url, unique_title("Kaasamine ilma tähtajata"))
     _file_an_engagement(page)
 
-    form = _open_the_editor(page)
-    _choose_precision(form, "Kvartal")
-    quarter, year = PAST_QUARTER
-    expect(form.locator("select[name=engagement_quarter]")).to_be_visible()
-    form.locator("select[name=engagement_quarter]").select_option(quarter)
-    form.locator("input[name=engagement_year]").fill(year)
-    saved = _save(page)
-    assert saved.status == 200, f"a quarter was refused: {saved.status}"
+    expect(_row(page)).not_to_contain_text("Ootame tagasisidet")
+    expect(_finish_panel(page)).to_have_count(0)
+
+
+def test_finishing_with_an_empty_box_records_that_nothing_came_back(page, base_url):
+    """§6. «Keegi ei vastanud» is a result, and the button has to accept it."""
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Kaasamine ilma vastusteta"))
+    _file_an_engagement(page, reply_by=REPLY_BY)
+
+    panel = _finish_panel(page)
+    panel.get_by_role("button", name="Lõpeta kaasamine", exact=True).click()
+    with page.expect_response(
+        lambda response: "/lopeta/" in response.url and response.request.method == "POST"
+    ) as caught:
+        panel.locator("button[type=submit]").click()
+    assert caught.value.status == 200, f"an empty completion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
     row = _row(page)
-    expect(row).to_contain_text(PAST_QUARTER_READS)
-    expect(row).not_to_contain_text(HELD_ON_READ)
-    expect(row).not_to_contain_text("1.1.2026")
-
-    # And reopening it hands back the period, not the anchor.
-    form = _open_the_editor(page)
-    assert form.locator("input[name=occurred_on]").input_value() == "", (
-        "the anchor is sitting in the day box"
-    )
-    expect(form.locator("input[name=engagement_precision][value=QUARTER]")).to_be_checked()
-    assert form.locator("input[name=engagement_year]").input_value() == year
+    expect(row).to_contain_text("Tagasiside ootamine lõpetatud")
+    expect(row.locator(".uxtl__finish")).to_have_count(0)
