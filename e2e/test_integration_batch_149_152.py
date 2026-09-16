@@ -12,6 +12,14 @@ each branch and binds twice, or to the wrong form, once the branches are
 composed. That cannot be seen in a unit test and it cannot be seen on any one
 of the four branches.
 
+**The route changed with docs/adr/0088 and the risk did not.** #152's reading
+is withdrawn from `Uus teema`, so a Teema is no longer filed by waiting for
+suggestions to land — but the half of #152 that carries the composed risk is
+the *staging fragment*, which still uploads the file ahead of the save and
+still swaps two regions into the open create form. That swap is what binds
+twice or to the wrong form if anything is wrong, so it is still what these
+tests file through.
+
 Deliberately few. The composed rules themselves — precedence, exact bytes, one
 file one Document, removal, cross-user refusal — are proved against the
 database in `tests/test_intake_staging.py`, which is already combined code:
@@ -20,9 +28,7 @@ database in `tests/test_intake_staging.py`, which is already combined code:
 
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -64,46 +70,31 @@ def letter_pdf(tmp_path: Path) -> Path:
     return path
 
 
-def read_staged_files() -> None:
-    """Drain the staged queue in its own process, as the deployment does.
-
-    The same subprocess call `e2e/test_uus_teema_reading.py` makes, and for the
-    same reason: pytest's settings mint a fresh temporary storage root, so a
-    child inheriting them would look in an empty directory.
-    """
-    environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
-    result = subprocess.run(
-        [sys.executable, "manage.py", "run_intake_reader", "--once", "--limit", "20"],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=300,
-        check=False,
-    )
-    report = "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
-    assert result.returncode == 0, report
-
-
-def create_through_assisted_intake(page, base_url: str, title: str, pdf: Path) -> str:
+def create_with_a_staged_file(page, base_url: str, title: str, pdf: Path) -> str:
     """File a Teema the way the composed product asks for one, and return it.
 
-    The whole #151 + #152 journey: choose a file, let it be staged and read,
-    see the suggestions land on the form that is still open, then `Loo teema`.
-    Everything after this point is a Matter that arrived through the new path,
-    which is what makes the assertions below about #150's forms a composition
-    test rather than a repeat of #150's own.
+    The #151 + #152 journey as it ships: choose a file, let the staging island
+    upload it and swap its two regions into the form that is still open, then
+    `Loo teema`. Everything after this point is a Matter that arrived through
+    that path, which is what makes the assertions below about #150's forms a
+    composition test rather than a repeat of #150's own.
+
+    It used to wait for `data-intake-state="reading"` and then drain the reader
+    in its own process, because the next thing it looked at was a suggestion.
+    Neither is here any more: docs/adr/0088 withdrew the reading from this page,
+    the panel never reports `reading`, and there is nothing to wait for. What is
+    waited for instead is the staged row — which is the thing these tests
+    actually depend on, since it is what proves the file reached the server
+    before `Loo teema` and what makes the evidence assertion below meaningful.
     """
     page.goto(f"{base_url}/teemad/uus/")
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
 
     page.locator("#id_files").set_input_files(str(pdf))
-    expect(page.locator("#intake-panel")).to_have_attribute("data-intake-state", "reading")
-
-    read_staged_files()
-    expect(page.locator("#intake-panel")).to_have_attribute(
-        "data-intake-state", "ready", timeout=30_000
-    )
+    # The server's own list, written by the staging answer rather than by the
+    # browser's preview — so this waits for the upload rather than for the
+    # `change` event that started it.
+    expect(page.locator("#intake-failid .dropzone__file")).to_have_count(1, timeout=30_000)
 
     page.fill("#id_title", title)
     page.fill("#id_next-text", "Lugeda eelnõu ja koostada arvamus")
@@ -113,7 +104,7 @@ def create_through_assisted_intake(page, base_url: str, title: str, pdf: Path) -
     return page.url
 
 
-def test_the_inline_add_forms_still_work_on_a_teema_filed_through_assisted_intake(
+def test_the_inline_add_forms_still_work_on_a_teema_filed_with_a_staged_file(
     page, base_url, letter_pdf
 ):
     """#150's accordion, on a Matter created by #151 + #152's `Uus teema`.
@@ -127,7 +118,7 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_through_assisted_intak
     the accordion still holds exactly one form.
     """
     sign_in(page, base_url, SANDRA)
-    where = create_through_assisted_intake(
+    where = create_with_a_staged_file(
         page, base_url, "Lugemise kaudu loodud teema, millele lisatakse töövõit", letter_pdf
     )
 
@@ -194,7 +185,7 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
     it. That is a cross-form defect, so it needs both forms on one real page.
     """
     sign_in(page, base_url, SANDRA)
-    create_through_assisted_intake(
+    create_with_a_staged_file(
         page, base_url, "Lugemise kaudu loodud teema kahe perioodikontrolliga", letter_pdf
     )
 

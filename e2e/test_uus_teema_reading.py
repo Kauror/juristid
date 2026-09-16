@@ -34,35 +34,19 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import SANDRA, needs_intake_reading, sign_in
 
-#: The server this suite drives, unlike a Django test, cannot be reconfigured
-#: from here — and the suggestion area is withdrawn from `Uus teema` by default
-#: (docs/adr/0088). So this whole file describes a capability the deployment it
-#: is pointed at has to have switched on, and it says so rather than failing
-#: thirty times over a setting.
+#: Every scenario in this file is about the reading, which `Uus teema` no
+#: longer offers by default. The marker, and the switch that runs them, are
+#: `e2e/conftest.py` `needs_intake_reading` — one definition, because
+#: `e2e/test_integration_169_172.py` asks for the same deployment.
 #:
-#: To run it: start the application with
-#: `MATTER_INTAKE_SUGGESTIONS_ENABLED=1` and set `E2E_INTAKE_SUGGESTIONS=1`
-#: beside `E2E_BASE_URL`. What the reading *finds* is proved without a browser
-#: in `tests/test_assisted_intake.py`, `tests/test_intake_staging.py` and
+#: What the reading *finds* is proved without a browser in
+#: `tests/test_assisted_intake.py`, `tests/test_intake_staging.py` and
 #: `tests/test_oigusakt_intake.py`, each of which runs its own assertions with
 #: the switch on; what the ordinary form shows instead is
 #: `e2e/test_uus_teema_manual_first.py`.
-#:
-#: A skip is visible in pytest's own summary, which is the difference between
-#: this and a file that quietly passes because its selectors stopped matching.
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.skipif(
-        not os.environ.get("E2E_INTAKE_SUGGESTIONS"),
-        reason=(
-            "the document reading is withdrawn from Uus teema (docs/adr/0088); "
-            "set E2E_INTAKE_SUGGESTIONS=1 against a server started with "
-            "MATTER_INTAKE_SUGGESTIONS_ENABLED=1 to run this file"
-        ),
-    ),
-]
+pytestmark = [pytest.mark.e2e, needs_intake_reading]
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 

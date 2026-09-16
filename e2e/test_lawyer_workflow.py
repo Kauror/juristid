@@ -126,14 +126,25 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     page.locator("#id_title").fill(MATTER_TITLE)
 
-    # Owner and sender are visible choices, not selects — and nothing on this
-    # page is behind a disclosure any more, which is the Uus teema redesign:
-    # the whole form is on screen at load and this walk never clicks to reveal
-    # a field (Uus teema redesign §3).
+    # Owner is a visible choice, not a select.
     page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
-    # A checkbox, not a radio: a matter may have arrived from several bodies
-    # (Wave-2 multiple senders, ADR 0025).
-    page.get_by_role("checkbox", name="Näidisministeerium").check()
+
+    # Saatja is typed for rather than ticked. The Uus teema redesign put the
+    # whole form on screen at load and this walk clicked nothing to reveal a
+    # field; docs/adr/0088 took one step back from that on the two fields the
+    # lawyers said were costing them attention — Saatja opens as an empty box
+    # and Valdkonnad folds away — so the walk now does here exactly what a
+    # person does: type three letters and choose what comes back.
+    #
+    # Still a checkbox underneath, because a matter may have arrived from
+    # several bodies (ADR 0025); what changed is when it is drawn.
+    sender_box = page.locator("#saatja-otsi")
+    sender_box.click()
+    sender_box.fill("näidismin")
+    page.locator("#saatja-tulemused").get_by_role(
+        "option", name="Näidisministeerium", exact=True
+    ).click()
+    expect(page.get_by_role("checkbox", name="Näidisministeerium")).to_be_checked()
 
     # Hetkeseis and Menetlusliik are visible radio chips, not dropdowns: each
     # holds one value, and the control says so (Agent-UI brief 5.1).

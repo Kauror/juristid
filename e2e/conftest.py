@@ -320,6 +320,29 @@ def open_next_action_form(page) -> None:
     page.locator("#id_target_date").wait_for(state="visible")
 
 
+#: For a test that needs `Uus teema` to offer what the reader found.
+#:
+#: The suggestion area is withdrawn from that page by default
+#: (docs/adr/0088), and the server this suite drives cannot be reconfigured
+#: from a test the way a Django test reconfigures its own. So a scenario about
+#: the reading says which deployment it needs, rather than failing over a
+#: setting — and says it once, here, because two files ask for it.
+#:
+#: To run those: start the application with
+#: `MATTER_INTAKE_SUGGESTIONS_ENABLED=1` and set `E2E_INTAKE_SUGGESTIONS=1`
+#: beside `E2E_BASE_URL`. A skip is visible in pytest's own summary, which is
+#: the difference between this and a scenario that quietly stops covering
+#: anything.
+needs_intake_reading = pytest.mark.skipif(
+    not os.environ.get("E2E_INTAKE_SUGGESTIONS"),
+    reason=(
+        "the document reading is withdrawn from Uus teema (docs/adr/0088); "
+        "set E2E_INTAKE_SUGGESTIONS=1 against a server started with "
+        "MATTER_INTAKE_SUGGESTIONS_ENABLED=1 to run this"
+    ),
+)
+
+
 def open_valdkond(page) -> None:
     """Unfold Valdkonnad on `Uus teema`, which arrives shut.
 

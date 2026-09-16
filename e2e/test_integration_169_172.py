@@ -47,7 +47,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, needs_intake_reading, sign_in
 from e2e.test_counterparty_selection import (
     ADDRESSEE_DISCLOSURE,
     ADDRESSEE_QUICK,
@@ -241,6 +241,7 @@ def chooser_option_names(page, field: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+@needs_intake_reading
 def test_a_sender_the_reader_found_becomes_the_default_addressee(
     page, base_url, screenshots, letter_pdf
 ) -> None:
@@ -312,6 +313,7 @@ def test_a_sender_the_reader_found_becomes_the_default_addressee(
     )
 
 
+@needs_intake_reading
 def test_an_addressee_chosen_by_hand_survives_a_later_suggestion(
     page, base_url, letter_pdf, second_letter_pdf
 ) -> None:
@@ -361,6 +363,7 @@ def test_an_addressee_chosen_by_hand_survives_a_later_suggestion(
 # ---------------------------------------------------------------------------
 
 
+@needs_intake_reading
 def test_the_reader_leaves_a_chosen_oigusakt_alone(page, base_url, letter_pdf) -> None:
     """`#172` was developed without `#170`, and must stay that way here.
 
