@@ -44,7 +44,8 @@ PLACEHOLDER = "Otsi või lisa asutus…"
 #: control twice, so every helper below takes one of these and nothing else
 #: distinguishes the two pages.
 CREATE_SENDER = "saatja"
-CREATE_ADDRESSEE = "adressaat"
+#: `Uus teema` has no Adressaat picker any more (docs/adr/0089 §5), so the
+#: two-picker claims below are made on `Muuda teemat`, which draws both.
 EDIT_SENDER = "muuda-saatja"
 EDIT_ADDRESSEE = "muuda-adressaat"
 
@@ -185,16 +186,19 @@ def test_the_results_panel_closes_when_focus_leaves_the_picker(page, base_url):
 
 
 def test_focus_moving_between_the_two_pickers_closes_only_the_one_left(page, base_url):
-    """Two of these on one form, and neither may hold the other's list open."""
-    create_form(page, base_url)
-    search(page, CREATE_SENDER, "Näidis")
-    expect(results(page, CREATE_SENDER)).to_be_visible()
+    """Two of these on one form, and neither may hold the other's list open.
 
-    page.locator("[data-addressee-disclosure] > summary").click()
-    search(page, CREATE_ADDRESSEE, "Näidis")
+    On `Muuda teemat`, which is the form that draws two of them
+    (docs/adr/0089 §5).
+    """
+    edit_form(page, base_url)
+    search(page, EDIT_SENDER, "Näidis")
+    expect(results(page, EDIT_SENDER)).to_be_visible()
 
-    expect(results(page, CREATE_SENDER)).to_be_hidden()
-    expect(results(page, CREATE_ADDRESSEE)).to_be_visible()
+    search(page, EDIT_ADDRESSEE, "Näidis")
+
+    expect(results(page, EDIT_SENDER)).to_be_hidden()
+    expect(results(page, EDIT_ADDRESSEE)).to_be_visible()
 
 
 def test_clicking_a_result_still_selects_it(page, base_url):
@@ -428,12 +432,15 @@ def test_enter_in_the_edit_search_box_never_submits_the_form(page, base_url):
 
 
 def test_choosing_a_sender_on_the_edit_page_does_not_answer_the_addressee(page, base_url):
-    """§11. On `Uus teema` a sender may default the addressee; here it may not —
-    both are established facts by the time this page opens.
+    """§11. Ticking a sender here may not touch the addressee.
 
-    Compared against what Adressaat held on arrival rather than against an
-    empty list: what must not happen is that *ticking a sender changes it*, and
-    that is the claim whether or not the Matter already names somebody.
+    It never may anywhere now — `Uus teema`'s sender→addressee default went with
+    the question (docs/adr/0089 §5) — and this page is where the rule always
+    held, because both answers are established facts by the time it opens.
+
+    Compared against what Adressaat held on arrival rather than against an empty
+    list: what must not happen is that *ticking a sender changes it*, and that is
+    the claim whether or not the Matter already names somebody.
     """
     edit_form(page, base_url)
     before = chosen_names(page, EDIT_ADDRESSEE)

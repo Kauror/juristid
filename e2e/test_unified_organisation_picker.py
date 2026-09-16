@@ -30,7 +30,15 @@ be expensive to get wrong:
 * **an answer is visible.** Whatever put it there — a click, the search, `+`,
   the intake reader, or a refused save — it is a chip somebody can see and
   undo.
-* **the sender still answers Adressaat**, and a person still outranks that.
+* **both questions get the same control.** `Uus teema` asks who sent the file;
+  `Muuda teemat` asks that and who Koda answers, and a person who learns one
+  must not meet a different one on the other page.
+
+**Adressaat is asserted on `Muuda teemat`.** `Uus teema` stopped asking who Koda
+answers (docs/adr/0089 §5), so the fold ADR 0069 gave that field — and the
+sender→addressee default the fold existed for — are both gone, together with the
+tests that pinned them. The picker itself is unchanged and is exercised on the
+page that still draws two of them.
 
 **This suite shares one database with every other browser file and does not
 grow the catalogue.** The seeded world holds two institutions, which is enough
@@ -70,9 +78,18 @@ MINISTRY_ALIAS = "NÄIDISMIN"
 PLACEHOLDER = "Otsi või lisa asutus…"
 
 SENDER = "saatja"
-ADDRESSEE = "adressaat"
+#: Adressaat's picker id on `Muuda teemat`, which is the one form that asks the
+#: question (docs/adr/0089 §5). `Uus teema` numbered its own `adressaat` and has
+#: no such control any more.
+ADDRESSEE = "muuda-adressaat"
 
-ADDRESSEE_DISCLOSURE = "[data-addressee-disclosure]"
+#: The seeded open Teema, mirroring `seed_e2e_data`. Opened rather than filed,
+#: because the tests below need an edit *page* and every Teema the browser suite
+#: leaves behind is one more row in somebody else's paginated list.
+OPEN_TITLE = (
+    "Tavaline avatud teema kõigile nähtav — pakendiseaduse ja sellega seonduvalt "
+    "teiste seaduste muutmise seaduse eelnõu väljatöötamiskavatsus"
+)
 
 
 def a_new_name() -> str:
@@ -98,17 +115,23 @@ def create_form(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def open_addressee(page) -> None:
-    """Open the Adressaat disclosure, which is closed on every fresh visit.
+def edit_form(page, base_url) -> None:
+    """`Muuda teemat` for the seeded open Teema — the form that asks both.
 
-    A closed `<details>` keeps its contents in the document, so every read in
-    this file works through it untouched — but Playwright will not *click* what
-    nobody can see, so anything answering Adressaat by hand opens it first. That
-    is also what the person does (docs/adr/0069).
+    Nothing here is folded: it is a page somebody opens in order to correct a
+    record that already has its answers, which is why ADR 0069's fold never
+    applied to it and why nothing has to be opened before a control is clickable.
     """
-    disclosure = page.locator(ADDRESSEE_DISCLOSURE)
-    if not disclosure.evaluate("node => node.open"):
-        disclosure.locator("> summary").click()
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(f"{base_url}/teemad/?olek=koik&q={OPEN_TITLE.split()[0]}")
+    page.wait_for_load_state("networkidle")
+    link = page.get_by_role("link", name=OPEN_TITLE, exact=False).first
+    assert link.count(), "the register does not hold the seeded open Teema"
+    page.goto(f"{base_url}{link.get_attribute('href')}")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("link", name="Muuda", exact=False).first.click()
+    page.wait_for_load_state("networkidle")
 
 
 def box(page, field: str):
@@ -185,14 +208,6 @@ def choose_result(page, field: str, name: str) -> None:
 def add_typed(page, field: str, name: str) -> None:
     search(page, field, name)
     add_button(page, field).click()
-
-
-def summary(page) -> str:
-    return " ".join((page.locator(f"{ADDRESSEE_DISCLOSURE} > summary").inner_text() or "").split())
-
-
-def manual_flag(page) -> str:
-    return page.locator("[data-addressee-manual]").input_value()
 
 
 def catalogue_holds(page, base_url, name: str) -> bool:
@@ -304,10 +319,14 @@ def test_the_retired_controls_are_nowhere_on_the_page(page, base_url):
     never parses it.
     """
     create_form(page, base_url)
-    open_addressee(page)
 
     body = page.locator("form.createform").inner_text()
+    assert "Vali nimekirjast" not in body
+    assert "Uus saatja" not in body
+    assert page.locator(f"#{SENDER}-valik details").count() == 0
 
+    edit_form(page, base_url)
+    body = page.locator("form.createform").inner_text()
     assert "Vali nimekirjast" not in body
     assert "Uus saatja" not in body
     assert "Uus adressaat" not in body
@@ -488,158 +507,12 @@ def test_a_typed_sender_does_not_replace_a_chosen_one(page, base_url):
 
 def test_the_addressee_keeps_exactly_one_answer(page, base_url):
     """One value, so choosing a second replaces the first (task §7)."""
-    create_form(page, base_url)
-    open_addressee(page)
+    edit_form(page, base_url)
 
     choose_result(page, ADDRESSEE, MINISTRY)
     choose_result(page, ADDRESSEE, PARTNER)
 
     assert chosen_names(page, ADDRESSEE) == [PARTNER]
-
-
-# ---------------------------------------------------------------------------
-# E — Adressaat keeps its fold and loses its nesting
-# ---------------------------------------------------------------------------
-
-
-def test_adressaat_arrives_folded_and_opens_onto_the_search_box(page, base_url):
-    """The #169 decision stands; what is inside it is one control now (task §3)."""
-    create_form(page, base_url)
-
-    assert not page.locator(ADDRESSEE_DISCLOSURE).evaluate("node => node.open")
-    assert summary(page) == "Adressaat"
-
-    open_addressee(page)
-
-    expect(box(page, ADDRESSEE)).to_be_visible()
-    expect(box(page, ADDRESSEE)).to_have_attribute("placeholder", PLACEHOLDER)
-    field = box(page, ADDRESSEE).bounding_box()
-    chips = page.locator(f"#{ADDRESSEE}-valik label.chip").first.bounding_box()
-    assert field and chips
-    assert field["y"] + field["height"] <= chips["y"] + 1
-
-
-def test_choosing_an_addressee_by_hand_is_a_manual_answer(page, base_url):
-    """The override flag is what makes «Määramata beside a sender» reachable.
-
-    It is set by the picker announcing a person-driven answer, not by
-    `event.isTrusted` — which is the right test for a click on a radio and the
-    wrong one for a control a person reaches through a search result
-    (task §15, static/js/app.js `bindOrganisationPickers`).
-    """
-    create_form(page, base_url)
-    open_addressee(page)
-
-    choose_result(page, ADDRESSEE, PARTNER)
-
-    assert chosen_names(page, ADDRESSEE) == [PARTNER]
-    assert manual_flag(page) == "1"
-
-
-def test_adding_a_typed_addressee_is_a_manual_answer(page, base_url):
-    create_form(page, base_url)
-    open_addressee(page)
-    name = a_new_name()
-
-    add_typed(page, ADDRESSEE, name)
-
-    assert chosen_names(page, ADDRESSEE) == [name]
-    assert manual_flag(page) == "1"
-
-
-def test_searching_the_addressee_and_giving_up_is_not_an_answer(page, base_url):
-    """Task §15: opening, focusing, typing and clearing are not decisions.
-
-    This is the half of the override rule that is easy to lose. If merely
-    looking counted, somebody who typed three letters into Adressaat and thought
-    better of it would have silently switched off the sender default for the
-    rest of the form.
-    """
-    create_form(page, base_url)
-    open_addressee(page)
-
-    search(page, ADDRESSEE, "näidis")
-    box(page, ADDRESSEE).fill("")
-
-    assert manual_flag(page) == ""
-    assert chosen_names(page, ADDRESSEE) == []
-
-
-# ---------------------------------------------------------------------------
-# F — the Saatja is the Adressaat
-# ---------------------------------------------------------------------------
-
-
-def test_choosing_a_sender_answers_adressaat(page, base_url):
-    """The load-bearing rule, through the way an existing body is chosen.
-
-    `e2e/test_counterparty_selection.py` owns this property; what is asserted
-    here is that the *new control* reaches it — a picker that rebuilt the chip
-    instead of ticking the one in the document, or swallowed the `change` event,
-    would break the default silently (task §14).
-
-    This was parametrised over two ways of choosing, «chip» and «search», and
-    the first of them no longer exists: an unchosen body is not drawn until the
-    search finds it, and while there is a query in the box every unchosen chip
-    is hidden — so there is one path to a first answer now
-    (docs/adr/0088 §2). Clicking a chip that is *already* an answer — to untick
-    it, or to tick it again — is still a path, and
-    `e2e/test_counterparty_selection.py` exercises exactly that.
-    """
-    create_form(page, base_url)
-
-    choose_result(page, SENDER, MINISTRY)
-
-    assert chosen_names(page, ADDRESSEE) == [MINISTRY]
-    assert summary(page) == f"Adressaat · {MINISTRY}"
-    assert not page.locator(ADDRESSEE_DISCLOSURE).evaluate("node => node.open"), (
-        "answering Adressaat unfolded it"
-    )
-    assert manual_flag(page) == "", "a derived answer was recorded as somebody's own"
-
-
-def test_a_typed_sender_becomes_the_typed_addressee(page, base_url):
-    """A body with no primary key yet still answers the question beside it.
-
-    There is no row until `Loo teema` runs, so the same *spelling* becomes the
-    addressee through the control that exists for exactly that — and both
-    resolve to one `Organisation` inside one transaction (task §14).
-    """
-    create_form(page, base_url)
-    name = a_new_name()
-
-    add_typed(page, SENDER, name)
-
-    assert summary(page) == f"Adressaat · {name}"
-    open_addressee(page)
-    assert chosen_names(page, ADDRESSEE) == [name]
-
-
-def test_taking_back_a_typed_sender_takes_the_answer_with_it(page, base_url):
-    """A default never stands on nothing (task §8)."""
-    create_form(page, base_url)
-    name = a_new_name()
-    add_typed(page, SENDER, name)
-    assert summary(page) == f"Adressaat · {name}"
-
-    page.locator(f"#{SENDER}-valik [data-orgfind-provisional]").click()
-
-    assert summary(page) == "Adressaat"
-    assert chosen_names(page, SENDER) == []
-
-
-def test_an_addressee_chosen_by_hand_survives_a_change_of_sender(page, base_url):
-    """Task §15, in the order that breaks it: answer, then change Saatja."""
-    create_form(page, base_url)
-    choose_result(page, SENDER, MINISTRY)
-    open_addressee(page)
-    choose_result(page, ADDRESSEE, PARTNER)
-
-    choose_result(page, SENDER, PARTNER)
-    page.locator(f"#{SENDER}-valik label.chip", has_text=MINISTRY).first.click()
-
-    assert chosen_names(page, ADDRESSEE) == [PARTNER]
-    assert summary(page) == f"Adressaat · {PARTNER}"
 
 
 # ---------------------------------------------------------------------------
@@ -680,10 +553,10 @@ def test_a_body_the_reader_ticks_while_it_is_out_of_sight_becomes_visible(page, 
 
     assert PARTNER in chip_names(page, SENDER), "a sender the reader ticked stayed out of sight"
     assert chosen_names(page, SENDER) == [PARTNER]
-    # And #169 still answers Adressaat from it, which is the seam a synthetic
-    # event is entitled to cross (docs/adr/0069).
-    assert summary(page) == f"Adressaat · {PARTNER}"
-    assert manual_flag(page) == "", "a machine was recorded as having made somebody's choice"
+    # And nothing else on the form moved. The sender used to answer Adressaat
+    # through this very synthetic event; that question is not on this page any
+    # more (docs/adr/0089 §5).
+    assert page.locator('[name="addressee_organisation"]').count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -785,8 +658,10 @@ def test_the_box_announces_itself_as_a_combobox_only_once_it_is_one(page, base_u
 def test_both_add_buttons_say_which_field_they_belong_to(page, base_url):
     """«+» alone is not a name. Task §20."""
     create_form(page, base_url)
-    open_addressee(page)
+    expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_have_count(1)
+    expect(page.get_by_role("button", name="Lisa uus adressaat", exact=True)).to_have_count(0)
 
+    edit_form(page, base_url)
     expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_have_count(1)
     expect(page.get_by_role("button", name="Lisa uus adressaat", exact=True)).to_have_count(1)
 
@@ -798,10 +673,13 @@ def test_both_add_buttons_say_which_field_they_belong_to(page, base_url):
 
 @pytest.mark.parametrize("width", [1440, 1024, 768, 420])
 def test_the_picker_never_takes_the_page_sideways(page, base_url, width):
-    """Chips wrap; the box and its button stay on one row and inside it."""
-    create_form(page, base_url)
+    """Chips wrap; the box and its button stay on one row and inside it.
+
+    On `Muuda teemat`, because it draws both pickers — which is the harder case
+    and the only one where two of them can collide (docs/adr/0089 §5).
+    """
+    edit_form(page, base_url)
     page.set_viewport_size({"width": width, "height": 900})
-    open_addressee(page)
     search(page, SENDER, "näidis")
 
     overflow = page.evaluate(

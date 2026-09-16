@@ -8,6 +8,11 @@ exist for is actually available on the page: whether somebody who cannot find
 the institution in the list can name it and save, without leaving the half-filled
 Teema to go and add it under Asutused first.
 
+**The form is `Muuda teemat`.** `Uus teema` stopped asking who Koda answers —
+a file arriving has a sender, and the recipient is decided when Koda decides to
+answer (docs/adr/0089 §5). Not one rule moved with the question; the page did,
+and so did every test below.
+
 And one thing a screenshot cannot answer either. The narrow-window regression is
 a *measurement*: when the paired row stops being a pair, the Adressaat field has
 to take the width of the stacked row rather than the 18rem cap that belonged to
@@ -40,6 +45,24 @@ OPEN_TITLE = (
 TYPED = "Riigikogu näidiskomisjon"
 REPLACEMENT = "Näidisameti õigusosakond"
 
+#: The Adressaat picker's own id on `Muuda teemat`, which is the one form that
+#: asks the question now (docs/adr/0089 §5). `Uus teema` numbered its own
+#: `adressaat`; that page has no such control any more.
+ADDRESSEE_PICKER = "muuda-adressaat"
+
+#: The Adressaat fieldset, addressed through the picker only it contains.
+#: Robust against the chips, the legend and the picker's internals all moving,
+#: and it cannot accidentally match the field beside it — which is the whole
+#: subject of the measurements below. It used to be found by
+#: `#id_addressee_name`; that box now exists only inside the `<noscript>`
+#: fallback, which a scripted browser never parses (docs/adr/0073).
+ADDRESSEE_FIELD = f"fieldset.field:has(#{ADDRESSEE_PICKER}-valik)"
+
+#: The search row inside the Adressaat picker — the box and the `+` attached to
+#: it. What used to be measured here was the nested «Vali nimekirjast» panel,
+#: and there is no nested disclosure any more.
+ADDRESSEE_SEARCH = f"#{ADDRESSEE_PICKER}-valik .orgfind__search"
+
 
 def create_form(page, base_url) -> None:
     page.goto(f"{base_url}{CREATE_PATH}")
@@ -47,17 +70,14 @@ def create_form(page, base_url) -> None:
 
 
 def open_addressee(page) -> None:
-    """Unfold Adressaat on `Uus teema`, where it arrives folded.
+    """Unfold Adressaat if the surface folds it.
 
-    Since docs/adr/0069 the field is answered by the Saatja on the ordinary
-    visit, so the whole of it sits behind one summary. A closed `<details>`
-    keeps its contents in the document but gives them no box, and Playwright
-    will neither fill nor click what nobody can see — so anything here that
-    *answers* Adressaat opens it first, which is what the person does too.
-
-    A no-op where there is no such disclosure. `Muuda teemat` is somebody
-    correcting a record that already has an addressee, so nothing there is
-    folded and this file drives both forms.
+    A no-op on `Muuda teemat`, which is somebody correcting a record that
+    already has an addressee and folds nothing — and therefore a no-op
+    everywhere since `Uus teema` stopped asking the question
+    (docs/adr/0089 §5). Kept because a closed `<details>` gives its contents no
+    box, Playwright will neither fill nor click what nobody can see, and the
+    next surface to ask may fold it again.
     """
     disclosure = page.locator("[data-addressee-disclosure]")
     if disclosure.count() and not disclosure.evaluate("node => node.open"):
@@ -65,7 +85,11 @@ def open_addressee(page) -> None:
 
 
 def file_teema(page, base_url, *, title: str, addressee: str) -> None:
-    """Fill in `Uus teema` with a typed addressee and save it.
+    """File a Teema, then name its addressee on `Muuda teemat`.
+
+    Two saves where there used to be one, because the question moved
+    (docs/adr/0089 §5). The browser ends on the Teema page either way, which is
+    what every caller reads next.
 
     The next step is filled in too, and that is not incidental. A Teema filed
     with no next action joins the department's «järgmise tegevuseta» population
@@ -77,8 +101,6 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     """
     create_form(page, base_url)
     page.fill("#id_title", title)
-    open_addressee(page)
-    name_a_new_addressee(page, addressee)
     page.fill("#id_next-text", "Kontrollida, kas adressaat vastas")
     # `Millal?` is required with the sentence now, and the quick span is how a
     # date is nearly always chosen (ADR 0052 addendum). The chip carries the day
@@ -87,19 +109,24 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
+    open_edit(page, base_url)
+    open_addressee(page)
+    name_a_new_addressee(page, addressee)
+    page.get_by_role("button", name="Salvesta").first.click()
+    page.wait_for_load_state("networkidle")
+
 
 def name_a_new_addressee(page, typed: str) -> None:
     """Name a body the catalogue does not hold, on whichever form is open.
 
     One control for both halves of the question — the search box finds what
-    exists, the `+` beside it proposes what was typed — on `Uus teema` since
-    docs/adr/0073 and on `Muuda teemat` since post-QA R2-12.
+    exists, the `+` beside it proposes what was typed — on `Muuda teemat` since
+    post-QA R2-12.
 
-    Found by the picker holding this field's carrier rather than by a fixed id:
-    the two pages number their pickers differently (`adressaat` and
-    `muuda-adressaat`), and a helper that knew both ids would have to be edited
-    again the next time a third surface asks the question. The labelled box is
-    still the fallback for a surface that has not moved — `Saabunud` has not.
+    Found by the picker holding this field's carrier rather than by a fixed id,
+    so a third surface asking the question needs no edit here. The labelled box
+    is still the fallback for a surface that has not moved — `Saabunud` has
+    not.
     """
     picker = addressee_picker(page)
     if picker.count():
@@ -130,6 +157,21 @@ def open_edit(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def open_seeded_teema(page, base_url) -> None:
+    """Open a Matter the seeded world already holds, rather than filing one.
+
+    Several tests here need an edit *page* and not a record, and every Teema the
+    browser suite leaves behind is one more row in somebody else's paginated
+    list.
+    """
+    page.goto(f"{base_url}/teemad/?olek=koik&q={OPEN_TITLE.split()[0]}")
+    page.wait_for_load_state("networkidle")
+    link = page.get_by_role("link", name=OPEN_TITLE, exact=False).first
+    assert link.count(), "the register does not hold the seeded open Teema"
+    page.goto(f"{base_url}{link.get_attribute('href')}")
+    page.wait_for_load_state("networkidle")
+
+
 def checked_addressee(page) -> str:
     """The label of the currently selected Adressaat chip."""
     return page.locator('input[name="addressee_organisation"]:checked').evaluate(
@@ -143,7 +185,7 @@ def checked_addressee(page) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_an_addressee_can_be_named_on_uus_teema_and_replaced_on_muuda_teemat(page, base_url):
+def test_an_addressee_can_be_named_and_replaced_on_muuda_teemat(page, base_url):
     """The whole workflow on one Teema: type it, save, correct it, save.
 
     Not "leave Teema, create Organisation, return, find it again, save" — the
@@ -214,14 +256,15 @@ def test_typing_a_name_that_already_exists_reuses_it(page, base_url):
 def test_selecting_a_chip_clears_a_name_typed_beside_it(page, base_url):
     """Enhancement, and an honest page.
 
-    The server resolves a typed name ahead of the selected chip, because on
-    `Muuda teemat` the chip group always carries the addressee the Matter
-    already has. Somebody who types a name and then picks an existing chip has
-    plainly chosen the chip, so the box empties in front of them rather than
-    quietly outranking what they just clicked.
+    The server resolves a typed name ahead of the selected chip, because
+    `Muuda teemat`'s chip group always carries the addressee the Matter already
+    has. Somebody who types a name and then picks an existing chip has plainly
+    chosen the chip, so the box empties in front of them rather than quietly
+    outranking what they just clicked.
     """
     sign_in(page, base_url, MARTIN)
-    create_form(page, base_url)
+    open_seeded_teema(page, base_url)
+    open_edit(page, base_url)
     open_addressee(page)
 
     name_a_new_addressee(page, "Midagi pooleli kirjutatud")
@@ -229,10 +272,10 @@ def test_selecting_a_chip_clears_a_name_typed_beside_it(page, base_url):
 
     # A real body, chosen from the same control. The typed answer has to let go
     # in front of the person rather than quietly outranking what they clicked.
-    page.locator("#adressaat-valik label.chip", has_text=MINISTRY).first.click()
+    page.locator(f"#{ADDRESSEE_PICKER}-valik label.chip", has_text=MINISTRY).first.click()
 
     assert typed_addressee_value(page) == ""
-    assert page.locator("#adressaat-valik [data-orgfind-provisional]").count() == 0
+    assert page.locator(f"#{ADDRESSEE_PICKER}-valik [data-orgfind-provisional]").count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -257,17 +300,7 @@ def test_the_obsolete_addressee_sentence_is_gone_from_both_forms(page, base_url)
     obsolete_sender = "tuleb asutus enne lisada asutuste alla"
 
     sign_in(page, base_url, MARTIN)
-
-    # A Matter the seeded world already holds, rather than one more filed here.
-    # This test needs an edit page, not a record, and every Teema the browser
-    # suite leaves behind is one more row in somebody else's paginated list.
-    page.goto(f"{base_url}/teemad/?olek=koik&q={OPEN_TITLE.split()[0]}")
-    page.wait_for_load_state("networkidle")
-    link = page.get_by_role("link", name=OPEN_TITLE, exact=False).first
-    assert link.count(), "the register does not hold the seeded open Teema"
-    page.goto(f"{base_url}{link.get_attribute('href')}")
-    page.wait_for_load_state("networkidle")
-
+    open_seeded_teema(page, base_url)
     open_edit(page, base_url)
     markup = page.content()
     assert obsolete not in markup
@@ -288,21 +321,6 @@ def _box(page, selector: str) -> dict:
     box = page.locator(selector).first.bounding_box()
     assert box is not None, f"{selector} has no box"
     return box
-
-
-#: The Adressaat fieldset, addressed through the disclosure only it contains.
-#: Robust against the chips, the legend and the picker all moving, and it cannot
-#: accidentally match the field beside it — which is the whole subject of the
-#: measurements below. It used to be found by `#id_addressee_name`; that box now
-#: exists only inside the `<noscript>` fallback, which a scripted browser never
-#: parses (docs/adr/0073).
-ADDRESSEE_FIELD = "fieldset.field:has([data-addressee-disclosure])"
-
-#: The search row inside the Adressaat picker — the box and the `+` attached to
-#: it. What used to be measured here was the nested «Vali nimekirjast» panel,
-#: and there is no nested disclosure any more: opening Adressaat opens straight
-#: onto this.
-ADDRESSEE_SEARCH = "#adressaat-valik .orgfind__search"
 
 
 @pytest.mark.parametrize("width", [1024, 768, 420])
@@ -326,7 +344,8 @@ def test_the_addressee_field_takes_the_stacked_row_width(page, base_url, width):
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    create_form(page, base_url)
+    open_seeded_teema(page, base_url)
+    open_edit(page, base_url)
     open_addressee(page)
 
     field = _box(page, ADDRESSEE_FIELD)
@@ -353,17 +372,19 @@ def test_the_results_panel_stays_under_the_box_and_inside_the_field(page, base_u
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    create_form(page, base_url)
+    open_seeded_teema(page, base_url)
+    open_edit(page, base_url)
     open_addressee(page)
 
-    box = page.locator("#adressaat-otsi")
+    box = page.locator(f"#{ADDRESSEE_PICKER}-otsi")
     box.click()
     box.fill("näidis")
-    expect(page.locator("#adressaat-tulemused")).to_be_visible()
+    results = page.locator(f"#{ADDRESSEE_PICKER}-tulemused")
+    expect(results).to_be_visible()
 
     field = _box(page, ADDRESSEE_FIELD)
     search = _box(page, ADDRESSEE_SEARCH)
-    panel = _box(page, "#adressaat-tulemused")
+    panel = _box(page, f"#{ADDRESSEE_PICKER}-tulemused")
 
     assert abs(panel["x"] - search["x"]) <= 2, (
         f"the results are not under the box at {width}px: {panel['x']} vs {search['x']}"
@@ -378,7 +399,8 @@ def test_the_results_panel_stays_under_the_box_and_inside_the_field(page, base_u
 def test_naming_an_institution_never_takes_the_page_sideways(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    create_form(page, base_url)
+    open_seeded_teema(page, base_url)
+    open_edit(page, base_url)
     open_addressee(page)
     name_a_new_addressee(page, "Väga pika nimega näidisasutuse õigusosakond")
 

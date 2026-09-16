@@ -110,7 +110,7 @@ FORM_FIELDS: tuple[str, ...] = (
 
 FIELD_LABELS: dict[str, str] = {
     SuggestedField.TITLE: "Pealkiri",
-    SuggestedField.SOURCE_ORGANISATIONS: "Kellelt",
+    SuggestedField.SOURCE_ORGANISATIONS: "Saatja",
     SuggestedField.RESPONSE_DEADLINE: "Arvamuse tähtaeg",
     SuggestedField.TRACK: "Menetlusliik",
     SuggestedField.LEGAL_INSTRUMENTS: "Õigusakt",

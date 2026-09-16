@@ -1,8 +1,8 @@
 """Õigusakt on Uus teema, measured in a browser.
 
 The record a POST produces is `tests/test_oigusakt_field.py`'s. What only a
-browser can settle is here: that the new row is *between* Menetlusliik and
-Adressaat and full width at four widths, that ticking `Muu` opens the box and
+browser can settle is here: that the row is the last of the classification rows
+and full width at four widths, that ticking `Muu` opens the box and
 untick­ing it closes it again, that the keyboard reaches and toggles a chip, and
 that the page still does not scroll sideways with one more wrapping row on it.
 
@@ -11,6 +11,11 @@ The acceptance criteria this file works from are §15 of
 than geometry — "the row contains exactly one fieldset", "no `details`" — it is
 asserted here anyway, because a criterion split across two suites is a criterion
 that gets half-checked.
+
+**Its two neighbours left the page.** §15 placed the row between Menetlusliik
+and Adressaat; neither is a control on `Uus teema` any more (docs/adr/0089 §4,
+§5), so the placement it asserts is the one that survived — Saatja, Valdkond,
+Hetkeseis, Õigusakt, in that order, with Õigusakt last.
 """
 
 from __future__ import annotations
@@ -27,14 +32,15 @@ CREATE_PATH = "/teemad/uus/"
 #: Each field addressed through a control only it contains, so a chip or a
 #: legend moving inside one of them does not rename it here.
 INSTRUMENTS = 'fieldset.field:has(input[name="legal_instruments"])'
-TRACK = 'fieldset.field:has(input[name="track"])'
-ADDRESSEE_DISCLOSURE = "[data-addressee-disclosure]"
+STAGE = 'fieldset.field:has(input[name="stage"])'
 
 INSTRUMENTS_ROW = f".createform__row:has({INSTRUMENTS})"
-TRACK_ROW = f".createform__row:has({TRACK})"
-ADDRESSEE_ROW = f".createform__row:has({ADDRESSEE_DISCLOSURE})"
+STAGE_ROW = f".createform__row:has({STAGE})"
 
-MUU_CHIP = "#oigusakt-muu"
+#: The `Muu` chips. There are two of them now — `Muu siseriiklik` and `Muu ELi
+#: dokument` — and an id is unique, so the hook is the attribute they share
+#: (docs/adr/0089 §3).
+MUU_CHIP = f'{INSTRUMENTS} label[data-reveals="oigusakt-muu-tekst"]'
 MUU_BOX = "#oigusakt-muu-tekst"
 
 
@@ -56,44 +62,43 @@ def _box(page, selector: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_the_row_is_between_menetlusliik_and_adressaat(page, base_url):
+def test_the_row_is_below_hetkeseis_and_nothing_follows_it(page, base_url):
     """The approved placement, as vertical position rather than as source order.
 
-    §15 criterion 2. Measured rather than read off the DOM because a row can be
-    a later sibling and still paint above — a CSS `order` or a grid placement
-    would do it — and where somebody reads it is the decision.
+    §15 criterion 2, as it stands after the two neighbours it named left the
+    page. Measured rather than read off the DOM because a row can be a later
+    sibling and still paint above — a CSS `order` or a grid placement would do
+    it — and where somebody reads it is the decision.
     """
     _open(page, base_url)
 
-    track = _box(page, TRACK_ROW)
+    stage = _box(page, STAGE_ROW)
     instruments = _box(page, INSTRUMENTS_ROW)
-    addressee = _box(page, ADDRESSEE_ROW)
 
-    assert track["y"] + track["height"] <= instruments["y"] + 2, (
-        "Õigusakt does not begin below Menetlusliik"
+    assert stage["y"] + stage["height"] <= instruments["y"] + 2, (
+        "Õigusakt does not begin below Hetkeseis"
     )
-    assert instruments["y"] + instruments["height"] <= addressee["y"] + 2, (
-        "Õigusakt does not end above Adressaat"
-    )
+    # And the two questions that used to sit either side of it are gone.
+    assert page.locator('[name="track"]').count() == 0
+    assert page.locator('[name="addressee_organisation"]').count() == 0
 
 
 def test_no_existing_row_was_rearranged_to_make_room(page, base_url):
     """§15 criterion 17, as far as a browser can state it.
 
-    The four classification rows still read in the intended order, and Adressaat
-    is still the row after them. What this cannot see — that no row was
-    re-paired or re-tracked — `e2e/test_uus_teema_row_composition.py` owns.
+    The classification rows still read in the intended order: Saatja, Valdkond,
+    Hetkeseis, Õigusakt (docs/adr/0089 §7). What this cannot see — that no row
+    was re-paired or re-tracked — `e2e/test_uus_teema_row_composition.py` owns.
     """
     _open(page, base_url)
 
     tops = [
         _box(page, f".createform__row:has({selector})")["y"]
         for selector in (
+            'input[name="sender_name"]',
             'input[name="policy_areas"]',
             'input[name="stage"]',
-            'input[name="track"]',
             'input[name="legal_instruments"]',
-            "[data-addressee-disclosure]",
         )
     ]
     assert tops == sorted(tops), f"the classification rows read out of order: {tops}"
@@ -134,11 +139,12 @@ def test_the_row_is_full_width_and_holds_one_field(page, base_url, width):
 
 
 def test_the_control_is_checkbox_chips_with_the_multi_select_affordances(page, base_url):
-    """§15 criteria 5 and 7 — and the asymmetry with Menetlusliik above it.
+    """§15 criteria 5 and 7 — and the asymmetry with Hetkeseis above it.
 
-    The count and the clear marks are what say *this one holds several*, and
-    Menetlusliik having neither is what stops the two rows reading as one
-    question split in two (design §4, §6).
+    The count and the clear marks are what say *this one holds several*, and the
+    single-value row above having neither is what stops two neighbouring chip
+    rows reading as one question split in two (design §4, §6). It was
+    Menetlusliik that made that point until this round; Hetkeseis makes it now.
     """
     _open(page, base_url)
 
@@ -150,17 +156,23 @@ def test_the_control_is_checkbox_chips_with_the_multi_select_affordances(page, b
     expect(field.locator("details")).to_have_count(0)
 
     boxes = field.locator('input[type="checkbox"]')
-    assert boxes.count() >= 12, "the reviewed vocabulary is not on the page"
+    assert boxes.count() == 10, "the reviewed vocabulary is not on the page"
     expect(field.locator("span.field__count[data-chipcount-for]")).to_have_count(1)
     expect(field.locator("span.chip__clear")).to_have_count(boxes.count())
 
-    track = page.locator(TRACK)
-    expect(track.locator("span.field__count")).to_have_count(0)
-    expect(track.locator("span.chip__clear")).to_have_count(0)
+    stage = page.locator(STAGE)
+    expect(stage.locator("span.field__count")).to_have_count(0)
+    expect(stage.locator("span.chip__clear")).to_have_count(0)
 
 
-def test_every_option_is_visible_at_rest_and_muu_is_last(page, base_url):
-    """§15 criteria 6 and 8. No disclosure, nothing hidden, `Muu` at the end."""
+def test_every_option_is_visible_at_rest_and_each_muu_is_last_in_its_group(page, base_url):
+    """§15 criteria 6 and 8. No disclosure, nothing hidden, `Muu` at the end.
+
+    Two `Muu` rows now, one per group, each last in its own: `Muu siseriiklik`
+    closes the domestic six and `Muu ELi dokument` closes the European four
+    (docs/adr/0089 §2, §3). «None of these» has to read after the kinds it is
+    none of, which is what «last» was always about.
+    """
     _open(page, base_url)
 
     chips = page.locator(f"{INSTRUMENTS} label.chip")
@@ -168,10 +180,15 @@ def test_every_option_is_visible_at_rest_and_muu_is_last(page, base_url):
     for index in range(total):
         expect(chips.nth(index)).to_be_visible()
 
-    last = chips.nth(total - 1)
-    assert "chip--other" in (last.get_attribute("class") or "")
-    expect(last).to_have_text("Muu×")
-    expect(page.locator(f"{INSTRUMENTS} label.chip--other")).to_have_count(1)
+    names = [chips.nth(index).inner_text().replace("×", "").strip() for index in range(total)]
+    assert names[-1] == "Muu ELi dokument"
+    assert names[5] == "Muu siseriiklik"
+
+    others = page.locator(f"{INSTRUMENTS} label.chip--other")
+    expect(others).to_have_count(2)
+    # Both reveal the one free-text box, which is why the hook is an attribute
+    # rather than an id.
+    expect(page.locator(MUU_CHIP)).to_have_count(2)
 
 
 def test_the_count_reads_the_number_chosen(page, base_url):
@@ -204,7 +221,7 @@ def test_the_count_reads_the_number_chosen(page, base_url):
     count = page.locator(f'{INSTRUMENTS} [data-chipcount-for="legal_instruments"]')
     expect(count).to_have_text("")
 
-    for index in (0, 1, 4):
+    for index in (0, 1, 3):
         chips.nth(index).click()
 
     expect(count).to_have_text("3 valitud")
@@ -228,18 +245,26 @@ def test_muu_reveals_and_hides_its_box(page, base_url):
     box = page.locator(MUU_BOX)
     expect(box).to_be_hidden()
 
-    page.locator(MUU_CHIP).click()
+    page.locator(MUU_CHIP).first.click()
     expect(box).to_be_visible()
     expect(box.locator("span.field__label")).to_have_text("Õigusakti liik")
     assert _box(page, MUU_BOX)["width"] <= 30 * 16 + 2, "the reveal is wider than 30rem"
 
-    page.locator(MUU_CHIP).click()
+    # The other `Muu` opens the same box, and the box stays open while either of
+    # them is ticked — which is the rule the server renders with too
+    # (docs/adr/0089 §3).
+    page.locator(MUU_CHIP).last.click()
+    expect(box).to_be_visible()
+    page.locator(MUU_CHIP).first.click()
+    expect(box).to_be_visible()
+
+    page.locator(MUU_CHIP).last.click()
     expect(box).to_be_hidden()
 
 
 def test_the_reveal_sits_directly_under_the_chip_row(page, base_url):
     _open(page, base_url)
-    page.locator(MUU_CHIP).click()
+    page.locator(MUU_CHIP).first.click()
 
     chiprow = _box(page, f"{INSTRUMENTS} div.chiprow")
     reveal = _box(page, MUU_BOX)
@@ -257,13 +282,13 @@ def test_a_refused_muu_save_comes_back_open_with_the_error_showing(page, base_ur
     _open(page, base_url)
 
     page.fill('input[name="title"]', "Refused Õigusakt")
-    page.locator(MUU_CHIP).click()
+    page.locator(MUU_CHIP).first.click()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator(MUU_BOX)).to_be_visible()
     expect(page.locator(f"{MUU_BOX} span.field__error")).to_be_visible()
-    expect(page.locator(f'{MUU_CHIP} input[type="checkbox"]')).to_be_checked()
+    expect(page.locator(f'{MUU_CHIP} input[type="checkbox"]').first).to_be_checked()
 
 
 # ---------------------------------------------------------------------------
