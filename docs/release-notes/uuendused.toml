@@ -10,12 +10,18 @@
 [[day]]
 date = 2026-09-16
 basis = "deployment"
-# Üks väljalase, kolm ühendust: välise organisatsiooni seisukoht teema juures,
-# tagasiside tähtaja nähtavus ajajoonel ja kodulehe ülevaate lisamise teine tee.
+# **Kaks väljalaset, üks kirje.** README ütleb, et ühe päeva mitu väljalaset
+# kuuluvad kokku: lugeja jaoks on oluline see, mis oli teisiti, kui ta
+# rakenduse järgmine kord avas, mitte see, mitu tõmmist selle kohale tõi.
 #
-# Kolm punkti, mitte neli. Kolmas ühendus puudutab ainult üht visuaaltesti ja
-# selle kinnisel kuupäeval seismist — ühtegi tööpinda, arvu ega kuupäeva, mida
-# lugeja näeb, see ei muuda. README ütleb, et selline päevatöö punkti ei saa.
+# Esimene väljalase, kolm ühendust: välise organisatsiooni seisukoht teema
+# juures, tagasiside tähtaja nähtavus ajajoonel ja kodulehe ülevaate lisamise
+# teine tee.
+#
+# Sellest väljalaskest kolm punkti, mitte neli. Kolmas ühendus puudutab ainult
+# üht visuaaltesti ja selle kinnisel kuupäeval seismist — ühtegi tööpinda, arvu
+# ega kuupäeva, mida lugeja näeb, see ei muuda. README ütleb, et selline
+# päevatöö punkti ei saa.
 #
 # Esimene punkt. Teema juurde saab nüüd kirja panna, mida mõni teine
 # organisatsioon samast asjast arvab — kes, kust see pärineb ja soovi korral
@@ -36,14 +42,51 @@ basis = "deployment"
 # tulnud teine tee: juba ilmunud ülevaate saab lisada kohe, koos lingi ja
 # avaldamise kuupäevaga, ilma seda enne plaaniks märkimata.
 #
-# `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalase veel
-# toimunud, ja toodangu revisjon on teada alles väljalaske raportist. Vale või
-# oletatud revisjoni siia panna oleks halvem kui selle puudumine.
-prs = [220, 221]
+# Teine väljalase, neli ühendust: kaasamise tagasiside ootamine ja lõpetamine,
+# välise organisatsiooni seisukoht ainult tekstina koos ühise organisatsioonide
+# loendiga, ülevaate ja uudise lisamine mis tahes avaliku lingiga ning sarnaste
+# varasemate teemade pakkumine uue teema loomisel.
+#
+# Neli punkti, üks ühenduse kohta.
+#
+# Neljas punkt (kaasamine) räägib tähtajast, mis jõuab vastutaja tööde hulka, ja
+# kaasamise lõpetamisest. Sellega ei ole vastuolus 15. septembri kaasamise punkt
+# ega selle päeva teine punkt: seal oli kuupäeva täpsus ja tähtaja *nähtavus*,
+# siin on see, et tähtaeg on nüüd töö, mida oodatakse, ja et kaasamise saab
+# kinni panna.
+#
+# Viies punkt (väline seisukoht) **ei korda** selle päeva esimest punkti. Seal
+# oli seisukoha koht üldse; siin on juurde tulnud see, et linki ega dokumenti ei
+# pea olema — piisab tekstist — ja et organisatsioon valitakse samast loendist,
+# mida saatja ja adressaadi juures juba kasutatakse. Lugeja jaoks on teine
+# pool sama tähtis kui esimene: nimi kirjutatakse ühtemoodi kõikjal.
+#
+# Kuues punkt (ülevaade ja uudis) **ei korda** selle päeva kolmandat ega
+# 15. septembri oma. Seal oli koda.ee ülevaade; siin on ülevaate kõrvale tulnud
+# uudis ja link võib viia ükskõik millisele avalikule lehele. Kuupäeva
+# ettepanek mainitakse, sest see on vormil nähtav abi, mitte sisemine reegel.
+#
+# Seitsmes punkt (sarnased teemad) on ainus, mis puudutab uue teema vormi.
+# Punkt ütleb, mida soovitus arvesse võtab ja mida ta varasema teema kohta
+# näitab, sest just see teeb soovitusest otsustatava asja. Mootorist, mis
+# soovitused arvutab, ei ole lugejal midagi teada vaja.
+#
+# `revisions` kannab esimese, juba toimunud väljalaske revisjoni. Teise
+# väljalaske oma siia ei kirjutata: seda kirjet kirjutades ei ole see veel
+# toimunud ja revisjon on teada alles väljalaske raportist. Vale või oletatud
+# revisjoni siia panna oleks halvem kui selle puudumine.
+revisions = [
+  "a4393b737f973ccf9e6c20d9efa94f09c7c9bad0",
+]
+prs = [220, 221, 225, 226, 227, 228]
 changes = [
   "Teemale saab nüüd lisada välise organisatsiooni seisukoha: märkida organisatsiooni, lisada lingi või dokumendi ning soovi korral kuupäeva ja lühiselgituse.",
   "Teema ajajoone ülaosas kuvatakse nüüd ka kaasamise juurde märgitud tagasiside tähtaeg.",
   "Kodulehe ülevaate saab nüüd lisada kas plaanituna või kohe koos koda.ee lingi ja avaldamise kuupäevaga.",
+  "Kaasamisele saab nüüd määrata tagasiside tähtaja, mis ilmub vastutaja tööde hulka; saabunud arvamused saab lisada ning kaasamise lõpetatuks märkida.",
+  "Välise organisatsiooni seisukoha saab nüüd salvestada ka ainult tekstina ning organisatsiooni valida samast loendist, mida kasutatakse saatjate ja adressaatide juures.",
+  "Teemale saab nüüd lisada nii ülevaate kui ka uudise mis tahes avaliku veebilingiga; lingi sisestamisel pakub vorm avaldamise kuupäevaks tänast kuupäeva.",
+  "Uue teema loomisel pakub rakendus nüüd sarnaseid varasemaid teemasid; soovitused arvestavad ka õigusakti liiki ning näitavad, kas varasemas teemas esitati arvamus, saadeti seisukoht või märgiti töövõit.",
 ]
 
 [[day]]
