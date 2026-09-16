@@ -104,8 +104,9 @@ def test_version_two_retires_nothing() -> None:
     §Amendment — and this round simply has no use for it. A vocabulary change
     that quietly dropped a stage would strand every Matter standing in it.
     """
-    assert set(key for key, _label, _order in REVIEWED_V1) <= set(REFERENCE_STAGE_KEYS)
-    assert set(REFERENCE_STAGE_KEYS) - set(key for key, _l, _o in REVIEWED_V1) == {NEW_STAGE_KEY_V2}
+    version_one = {key for key, _label, _order in REVIEWED_V1}
+    assert version_one <= set(REFERENCE_STAGE_KEYS)
+    assert set(REFERENCE_STAGE_KEYS) - version_one == {NEW_STAGE_KEY_V2}
 
 
 def test_exactly_three_labels_were_reworded_and_no_key_moved() -> None:

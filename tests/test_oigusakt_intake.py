@@ -52,6 +52,7 @@ from app.matters.intake_suggestions.resolvers import (
 from app.matters.models import Matter
 from app.matters.services import set_legal_instruments
 from app.taxonomy.legal_instruments import (
+    OFFERED_LEGAL_INSTRUMENT_KEYS,
     OTHER_LEGAL_INSTRUMENT_KEY,
     REFERENCE_LEGAL_INSTRUMENT_KEYS,
 )
@@ -488,8 +489,16 @@ def suggested_keys(analysis) -> list[tuple[str, str]]:
 
 @pytest.mark.django_db
 def test_the_vocabulary_the_reader_resolves_against_is_the_one_the_form_offers() -> None:
+    """The offered ten, not every row the table holds.
+
+    Retiring a type takes it out of both at once, which is the whole point:
+    `_instrument_candidates` skips a key that is not offered, so a rule keyed on
+    a withdrawn concept goes inert rather than proposing something the form
+    would then refuse (`rule_diagnostics`, docs/adr/0089 §2).
+    """
     loaded = load_legal_instrument_types()
-    assert set(loaded) == set(REFERENCE_LEGAL_INSTRUMENT_KEYS)
+    assert set(loaded) == set(OFFERED_LEGAL_INSTRUMENT_KEYS)
+    assert set(loaded) < set(REFERENCE_LEGAL_INSTRUMENT_KEYS)
 
 
 @pytest.mark.django_db
@@ -557,15 +566,21 @@ def test_a_readable_outlook_message_gives_medium_and_its_attachment_none(
     """docs/adr/0072, still true: a staged `.msg` is read, never unpacked.
 
     The synthetic message carries one PDF attachment whose text names a
-    different thing entirely. The reader sees the subject and the body and
-    never the attachment, so what it offers is what the subject said — at
-    MEDIUM, because a subject names something nobody has opened.
+    different thing entirely. The reader sees the subject and the body and never
+    the attachment, so what it *can* offer is what the subject said.
+
+    What the subject says is «eelnõu», and the reviewed vocabulary withdrew
+    `Eelnõu` from new selection (docs/adr/0089 §2) — so the reader offers
+    nothing here rather than proposing a type the form would refuse. That is
+    `_instrument_candidates`' own `key not in offered` guard doing its job, and
+    it is the honest outcome: a rule keyed on a retired concept is a maintenance
+    fact `rule_diagnostics` reports, not a runtime error.
     """
     session = stage(signed_in, upload("kiri.msg", corpus.outlook_msg(), MSG))
     intake_extraction.drain(limit=20)
 
     analysis = analyse_intake(session)
-    assert suggested_keys(analysis) == [(Confidence.MEDIUM, "eelnou")]
+    assert suggested_keys(analysis) == []
     assert SuggestedField.LEGAL_INSTRUMENTS not in dict(
         prefill_controls(
             prefill_initial(analysis, base={}, current=CurrentValues(), allow_title=True)[1]

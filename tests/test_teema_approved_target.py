@@ -2414,7 +2414,7 @@ def test_teema_andmed_holds_the_four_target_rows(signed_in, normal_matter):
     card = body[body.index('id="teema-andmed"') :]
     card = card[: card.index('id="koja-arvamus"')]
 
-    for row in ("Teemaviide", "Menetlusliik", "Kellelt", "Kellele"):
+    for row in ("Teemaviide", "Menetlusliik", "Saatja", "Kellele"):
         assert row in card
     for gone in ("Saabus", "Muu valdkond", "Andmeklass", "Märgi testandmeteks"):
         assert gone not in card

@@ -291,9 +291,7 @@ def test_menetlusliik_still_offers_the_words_the_area_gave_up(signed_in, special
     """
     matter = factories.MatterFactory(owner=specialist)
     create = signed_in.get(CREATE).content.decode()
-    edit = signed_in.get(
-        reverse("matters:matter_edit", kwargs={"pk": matter.pk})
-    ).content.decode()
+    edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
 
     assert "ELi õiguse ülevõtmine" in edit
     assert "ELi õiguse ülevõtmine" not in valdkond_block(create)

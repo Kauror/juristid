@@ -36,7 +36,6 @@ from app.taxonomy.legal_instruments import (
     OTHER_LEGAL_INSTRUMENT_KEY,
     OTHER_LEGAL_INSTRUMENT_KEYS,
     REFERENCE_LEGAL_INSTRUMENT_KEYS,
-    REFERENCE_LEGAL_INSTRUMENT_TYPES,
     REFERENCE_LEGAL_INSTRUMENT_TYPES_V1,
     REFERENCE_LEGAL_INSTRUMENT_VERSION,
     RETIRED_LEGAL_INSTRUMENT_KEYS_V2,
@@ -242,12 +241,15 @@ def test_the_migration_baselines_are_the_manifest() -> None:
     assert new_rows == [by_key[key] for key, _label, _order, _sort in REVIEW_MIGRATION.NEW]
 
     # Both directions of every reword, and both sort orders of every move.
+    v2 = {key: label for key, label, _order in REVIEWED_V2}
+    order_v1 = {key: order for key, _label, order in REVIEWED_V1}
+    order_v2 = {key: order for key, _label, order in REVIEWED_V2}
     for key, (old_label, _old_text, new_label, _new_text) in REVIEW_MIGRATION.RELABELLED.items():
         assert old_label == v1[key]
-        assert new_label == dict((k, label) for k, label, _o in REVIEWED_V2)[key]
+        assert new_label == v2[key]
     for key, (old_order, new_order) in REVIEW_MIGRATION.RENUMBERED.items():
-        assert old_order == dict((k, o) for k, _label, o in REVIEWED_V1)[key]
-        assert new_order == dict((k, o) for k, _label, o in REVIEWED_V2)[key]
+        assert old_order == order_v1[key]
+        assert new_order == order_v2[key]
 
 
 @pytest.mark.django_db
