@@ -1,0 +1,56 @@
+{% comment %}
+`Koostan arvamuse` on `Uus teema` — one date box, and the first step it creates.
+
+**Why this is a partial and not markup in `matter_create.html`.** The whole of
+this round's change to the creation page is one include, because that template
+and `MatterCreateForm` are being rewritten in parallel by the classification
+work: markup added inside the page would be a merge conflict in the two files
+most likely to move, over a question neither of them is about
+(docs/adr/0088 §1.4).
+
+**One box, because the sentence is not a question.** A normal incoming
+consultation begins the same way every time — the lawyer will write Koda's
+opinion by a day they already know — so the only thing asked is the day. The
+step's wording comes from the service's own constant and is *shown* here, so that
+what a person reads before saving and what lands on their Minu asjad are one
+string (`app.workflow.services.OPINION_PREPARATION_TEXT`).
+
+Before this, the ordinary journey was: file the Teema, then open `Lisa teemale`,
+then choose `+ Järgmine tegevus`, then type «Koostan arvamuse» and the same date
+again. That is the Excel-plus-OneNote double entry this product exists to remove,
+inside the product (lawyer feedback 9).
+
+**Empty by default, and a blank box creates nothing.** Not today, not seven days
+out, not the consultation deadline, not the end of the month, not the creation
+date — and not an undated commitment either. «Automatically creates the next
+action» is not «invent the date», and `Arvamuse tähtaeg` a few rows up carries no
+default for precisely this reason (docs/adr/0078 §2, docs/adr/0088 §1.2).
+
+**It is the same open step as any other.** `DO` / `DEADLINE` / `EXACT`, created
+through `set_next_action_for_new_work`, appearing on `Minu asjad`, on
+`PRAEGUNE TEGEVUS` and in `Tähtajad` with no special case anywhere. Which is also
+why it cannot be answered alongside `Järgmiseks`: a Matter has one open step, and
+the save refuses rather than quietly dropping one of two things somebody wrote
+(docs/adr/0088 §1.3).
+{% endcomment %}
+<div class="createform__row createform__row--panel">
+  <div class="nextpanel" id="koostan-arvamuse">
+    <label class="field__label" for="{{ opinion_action_form.prepare_by.id_for_label }}">
+      {{ opinion_action_form.prepare_by.label }}
+    </label>
+    {% comment %}
+      The sentence the step will carry, stated before the box rather than after
+      it: the reader has to know what the date is a date *for* before they choose
+      one. Quiet, because it is a fact about the control and not an instruction.
+    {% endcomment %}
+    <p class="nextpanel__hint">
+      Teema salvestamisel tekib teemale järgmine tegevus
+      «{{ opinion_action_form.action_text }}» selle kuupäevaga.
+    </p>
+    {{ opinion_action_form.prepare_by }}
+    {% if opinion_action_form.prepare_by.errors %}
+      <span class="field__error" id="{{ opinion_action_form.prepare_by.auto_id }}_error">{{ opinion_action_form.prepare_by.errors|first }}</span>
+    {% endif %}
+    <p class="nextpanel__hint">{{ opinion_action_form.prepare_by.help_text }}</p>
+  </div>
+</div>

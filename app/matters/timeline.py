@@ -249,6 +249,30 @@ class ChronologyMilestone:
     file_url: str = ""
     file_label: str = ""
     links: tuple[ChronologyLink, ...] = ()
+    #: **This office's own words, and never the source's.**
+    #:
+    #: Set only by a `Väline seisukoht` carrying a `Juristi märkus`. It is a
+    #: field of its own rather than another clause appended to :attr:`sub`
+    #: because the whole reason the column exists is that «MKM toetab varianti B»
+    #: and «nende põhjendus ei arvesta liikmete kulumõjuga» must not become one
+    #: sentence attributed to the ministry — and a `sub` that concatenated them
+    #: would be exactly that, with a separator (docs/adr/0088 §4).
+    #:
+    #: The surface renders it under :attr:`own_note_label` on its own line.
+    #: Nothing here decides how it looks; what is decided here is that it is not
+    #: part of the position.
+    own_note: str = ""
+    #: What that line is labelled — carried on the milestone rather than looked
+    #: up by the template.
+    #:
+    #: Two surfaces render this row: the chronology, through
+    #: `timeline_items.html`, and the correction partial, which the view renders
+    #: on its own with a context of its own. A label in the page context would
+    #: have to be added to both, and the day somebody added a third the line
+    #: would render with an empty label — which is the unattributed paragraph
+    #: this field exists to prevent. Travelling with the value is the only shape
+    #: in which it cannot go missing (docs/adr/0088 §4).
+    own_note_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -733,6 +757,16 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
 EXTERNAL_POSITION_DATE_UNKNOWN = "Kuupäev teadmata"
 
 
+#: What the chronology calls the line holding the lawyer's own comment.
+#:
+#: Named here because the template, the correction partial and a test all have to
+#: agree about it, and because the label is what does the work: a paragraph of
+#: this office's reading of a ministry's position, printed with no label under a
+#: headline naming that ministry, is the attribution defect with better line
+#: spacing (docs/adr/0088 §4).
+LAWYER_NOTE_LABEL = "Juristi märkus"
+
+
 def external_position_chronology_day(position: MatterExternalPosition) -> date:
     """Where an external position's row sits in the chronology.
 
@@ -764,11 +798,25 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     the linked consultation to lose its label (`app/matters/views.py`,
     `_external_position_row`).
 
-    **The headline names the organisation and nothing else.** «Väline
-    seisukoht: Rahandusministeerium» is what a reader scanning six months is
-    looking for; what the ministry actually said is the `Seisukoht` under it and
-    the link or file beside it, and folding any of them into the headline would
-    make one line say three things (docs/adr/0084 §6).
+    **The headline names how this reached the file and whose it is, and nothing
+    else.** «Meile saadetud tagasiside: Metallitööstuse Liit», «Teiste arvamus:
+    Rahandusministeerium» — which is what a reader scanning six months is looking
+    for, and the distinction the first lawyer test asked for by name. A row
+    recorded before `provenance` existed keeps the heading it has always had,
+    because nothing about it changed (docs/adr/0084 §6, docs/adr/0088 §3).
+
+    Where the author is a `source_label` rather than an organisation — an
+    aggregate answer with no single author — the label stands in the author's
+    place, because that is exactly what it is for. Where a record somehow has
+    neither, the separator goes with it rather than leaving a headline ending in a
+    colon.
+
+    **What the source said, and what this office thinks of it, are two lines.**
+    `Seisukoht` is the `sub`; `Juristi märkus` is :attr:`own_note` and is
+    rendered under its own label. They are never concatenated — a `sub` carrying
+    both would state this office's criticism as part of the position it is
+    criticising, which is the defect the column was added to fix
+    (docs/adr/0088 §4).
 
     **A row with no link is an ordinary row.** Since docs/adr/0084's 2026-09-16
     amendment the written `Seisukoht` is a source in its own right, so a
@@ -792,14 +840,28 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
         related = f"Vastus kaasamisele: {position.engagement.title}"
         sub = f"{sub} · {related}" if sub else related
     links = (ChronologyLink(label=position.link_label, url=position.url),) if position.url else ()
+    # `Meile saadetud tagasiside: Metallitööstuse Liit`, `Teiste arvamus: MKM`,
+    # or the unchanged `Väline seisukoht: …` for a row recorded before the
+    # question existed. The author is the organisation, or the `Allikas` naming a
+    # collection of answers that has none — and where a record has neither the
+    # separator goes with it, so a headline never ends in a colon
+    # (docs/adr/0088 §3.3, §3.4).
+    author = position.author_label
+    headline = f"{position.kind_label}: {author}" if author else position.kind_label
     return ChronologyMilestone(
-        what=f"Väline seisukoht: {position.organisation.name}",
+        what=headline,
         # The date as it was actually known, or the words «kuupäev teadmata» —
         # never the day the row happens to sit on, and never the anchor of a
         # period (docs/adr/0079 §3).
         display_date=position.display_date or EXTERNAL_POSITION_DATE_UNKNOWN,
         sub=sub,
         links=links,
+        # Its own line under its own label, never a clause in `sub`. The
+        # position, what it answered and where to read it are one thing; what
+        # this office thinks of it is another, and the row says so
+        # (docs/adr/0088 §4).
+        own_note=position.lawyer_note,
+        own_note_label=LAWYER_NOTE_LABEL,
     )
 
 

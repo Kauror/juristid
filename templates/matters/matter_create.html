@@ -573,6 +573,22 @@
 
     </div>
 
+    {# 7a — Koostan arvamuse: the first step, from a date the lawyer already has. #}
+    {% comment %}
+      One include, deliberately. The partial holds the whole of this round's
+      addition to the creation page so that the classification work rewriting this
+      template and `MatterCreateForm` in parallel meets one line rather than a
+      field, a label, a hint and an error block interleaved with its own
+      (templates/matters/partials/initial_opinion_action.html, docs/adr/0088 §1.4).
+
+      **Before `Järgmine tegevus`, not after it.** The ordinary journey ends here:
+      a lawyer filing an incoming consultation knows when they will write the
+      opinion, and a free-text first step is the rarer answer. Only one of the two
+      may be given — a Matter has one open step — and the refusal names the
+      choice rather than dropping half of what somebody wrote (§1.3).
+    {% endcomment %}
+    {% include "matters/partials/initial_opinion_action.html" %}
+
     {# 7 — Järgmine tegevus: the one panel on the page. #}
     {% comment %}
       Optional, and open. It was behind a disclosure, which is what made a

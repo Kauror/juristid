@@ -27,8 +27,10 @@ from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import read_upload
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
+    SELECTABLE_EXTERNAL_POSITION_PROVENANCE,
     DataQualityTier,
     EngagementKind,
+    ExternalPositionProvenance,
     MatterDataClass,
     MatterOrigin,
     RecordMode,
@@ -41,6 +43,8 @@ from app.matters.locks import (
 )
 from app.matters.models import (
     ENGAGEMENT_URL_MAX_LENGTH,
+    EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH,
+    EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH,
     EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
     EXTERNAL_POSITION_URL_MAX_LENGTH,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
@@ -2719,6 +2723,35 @@ EXTERNAL_POSITION_NEEDS_SOURCE = (
     "Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik."
 )
 EXTERNAL_POSITION_NEEDS_ORGANISATION = "Vali organisatsioon, kelle seisukoht see on."
+#: What received feedback with no author at all is told.
+#:
+#: Different words from the sentence above, because the answer it asks for is
+#: different: an aggregate answer *may* have no organisation, and what it must
+#: have instead is a name for the collection of answers. Offering «vali
+#: organisatsioon» on a survey of 234 companies is the refusal that made somebody
+#: invent one (docs/adr/0088 §3.3).
+EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL = (
+    "Vali organisatsioon või kirjuta, millisest allikast tagasiside tuli."
+)
+#: What a discovered position with no organisation is told, and why it may not
+#: borrow the label.
+#:
+#: `Allikas` is a received-feedback column. «MKM arvamus» found on a ministry's
+#: website has an author by definition, and a record naming one through a free
+#: text box instead of the shared catalogue would be the ninth way of naming an
+#: institution docs/adr/0073 exists to prevent.
+EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY = (
+    "Allikas käib ainult meile saadetud tagasiside juurde. "
+    "Teiste arvamuse puhul vali organisatsioon."
+)
+#: What a caller naming a provenance nobody may choose is told.
+#:
+#: `LEGACY` is what history says, not an answer a person gives, so it is refused
+#: here as well as being absent from both forms' vocabularies: a panel that does
+#: not draw a chip is not an endpoint that refuses one (docs/adr/0088 §3.4).
+EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE = (
+    "Vali, kas tagasiside saadeti meile või on see kellegi teise arvamus."
+)
 #: A `Seotud kaasamine` naming a round on somebody else's file. The same
 #: refusal, for the same reason, as `link_document_to_record`'s cross-Matter
 #: one: a relation written across two files is a disclosure, and quietly
@@ -2828,14 +2861,65 @@ def _external_position_source(
     raise DomainError(EXTERNAL_POSITION_NEEDS_SOURCE)
 
 
+def _external_position_authorship(
+    *, provenance: Any, organisation: Any, source_label: str
+) -> tuple[str, str]:
+    """Which provenance this save states, and who it names as the author.
+
+    Three rules, all of them about the same thing — **a position says whose it
+    is** — and all of them decided here rather than at the two call sites, so
+    that creating a record and correcting one cannot disagree about what a
+    complete answer looks like (docs/adr/0088 §3.3).
+
+    1. **The provenance is one a person may choose.** `RECEIVED` or `DISCOVERED`,
+       never `LEGACY`: that value is what rows written before the question
+       existed say, and a save that could state it would let somebody file a new
+       record as unspecified rather than answering. Refused here as well as being
+       absent from both forms, because a panel that draws no chip is not an
+       endpoint that refuses one.
+    2. **Received feedback names an organisation or a source.** A survey of 234
+       industrial companies has no single author, and the two answers this rule
+       used to force were an invented organisation and one arbitrary respondent
+       standing for the rest. Either column satisfies it and both together are
+       ordinary.
+    3. **A discovered position names an organisation**, and may not name a
+       source label instead. `Allikas` is a free text box, and letting it answer
+       *whose position is this* would make it a ninth way of naming an
+       institution beside the one shared catalogue (docs/adr/0073).
+
+    Returns the normalised provenance and the trimmed label, because the caller
+    stores both and trimming at each site is how two doors come to disagree about
+    whether three spaces are a source name. The database states rules 2 and 3 as
+    `CHECK`s too — all three columns are on one row, so it can — and this is
+    what turns them into an Estonian sentence under the right control rather than
+    an `IntegrityError` from inside a transaction that has already read a file.
+    """
+    value = getattr(provenance, "value", provenance) or ""
+    if value not in SELECTABLE_EXTERNAL_POSITION_PROVENANCE:
+        raise DomainError(EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE)
+    label = (source_label or "").strip()[:EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH]
+    if value == ExternalPositionProvenance.DISCOVERED.value:
+        if organisation is None:
+            raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+        if label:
+            raise DomainError(EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY)
+        return value, ""
+    if organisation is None and not label:
+        raise DomainError(EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL)
+    return value, label
+
+
 def record_external_position(
     *,
     matter: Matter,
     organisation: Any,
+    provenance: Any = ExternalPositionProvenance.DISCOVERED.value,
+    source_label: str = "",
     url: str = "",
     stated_on: Any = None,
     stated_on_precision: str = DatePrecision.EXACT.value,
     summary: str = "",
+    lawyer_note: str = "",
     engagement: Any = None,
     attachment_count: int = 0,
     actor: Any = None,
@@ -2851,6 +2935,23 @@ def record_external_position(
     work item, and moves no `Matter.response_deadline`. What somebody else
     published is a fact about the world; what is owed by this office is work,
     and only the second is modelled as work (docs/adr/0084 §5).
+
+    ``provenance`` is the distinction the lawyers asked for — whether somebody
+    gave this to Koda or Koda found it somewhere — and it is **required in
+    substance**: the parameter defaults to `DISCOVERED` for the historical callers
+    that have no better answer, and `LEGACY` is refused, so no person's save can
+    file a record as unspecified. With `RECEIVED`, ``source_label`` may answer
+    *whose feedback this is* in place of an organisation, which is the one thing
+    an aggregate survey result needs and the only place the authorship rule bends
+    (`_external_position_authorship`, docs/adr/0088 §3).
+
+    ``lawyer_note`` is this office's own reading of the position, and it is **not
+    a source**. Nothing in :func:`_external_position_source` counts it: a record
+    whose only content is Koda's comment on something nobody can read is a record
+    of nothing. It is stored, rendered and audited separately from ``summary`` at
+    every step, because a file that attributes this office's criticism to the
+    body being criticised is a file that lies about a professional record
+    (docs/adr/0088 §4).
 
     ``attachment_count`` is how many files the caller is about to capture
     against this record. It is a count rather than the documents themselves
@@ -2876,12 +2977,18 @@ def record_external_position(
     and `add_matter_engagement` already have, and the reason is the same one
     R2-02 states: a page is not a boundary.
     """
-    if organisation is None:
-        raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+    kind, clean_label = _external_position_authorship(
+        provenance=provenance, organisation=organisation, source_label=source_label
+    )
     clean_url = normalize_external_position_url(url)
     # Trimmed *before* the source rule reads it, so a `Seisukoht` of three
     # spaces cannot be the thing that makes an otherwise empty record savable.
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    # **Not passed to the source rule, and that is the point.** A `Juristi
+    # märkus` is this office's reading of a position, so a record whose only
+    # content is Koda's opinion of something nobody can read is a record of
+    # nothing. The three sources stay the three sources (docs/adr/0088 §4).
+    clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
@@ -2889,10 +2996,13 @@ def record_external_position(
     position = MatterExternalPosition.objects.create(
         matter=matter,
         organisation=organisation,
+        provenance=kind,
+        source_label=clean_label,
         url=clean_url,
         stated_on=stated_on,
         stated_on_precision=precision,
         summary=clean_summary,
+        lawyer_note=clean_note,
         engagement=related,
         created_by=actor,
     )
@@ -2901,9 +3011,15 @@ def record_external_position(
         matter=matter,
         actor=actor,
         obj=position,
-        summary=organisation.name[:200],
+        summary=position.author_label[:200],
         payload={
-            "organisation": str(organisation.pk),
+            "provenance": position.provenance,
+            "organisation": str(organisation.pk) if organisation is not None else None,
+            # Whether the answers were named by a label, not what the label says:
+            # the label is on the record where a reader can correct it, and an
+            # audit row holding a second copy is a worse copy nobody maintains
+            # (the rule `ENGAGEMENT_FEEDBACK_CLOSED` keeps for its prose).
+            "has_source_label": bool(position.source_label),
             # The date and its precision together, never the anchor on its own:
             # a payload carrying `2026-10-01` and nothing else says «1 October»
             # to whoever reads it back, which is the invention docs/adr/0079 §2
@@ -2915,6 +3031,11 @@ def record_external_position(
             # below are what say where it points and when that moved.
             "has_url": bool(position.url),
             "has_summary": bool(position.summary),
+            # **That the lawyer wrote a note, never the note.** An audit payload
+            # carrying this office's comment beside the organisation's identifier
+            # is the one place the two could be read back as one statement, which
+            # is exactly what the column exists to prevent (docs/adr/0088 §4).
+            "has_lawyer_note": bool(position.lawyer_note),
             "engagement": str(related.pk) if related is not None else None,
         },
     )
@@ -2955,7 +3076,10 @@ def record_external_position_document(
         summary=document.title[:200],
         payload={
             "document": str(document.pk),
-            "organisation": str(position.organisation_id),
+            "organisation": (
+                str(position.organisation_id) if position.organisation_id is not None else None
+            ),
+            "provenance": position.provenance,
         },
     )
 
@@ -2970,6 +3094,9 @@ def correct_external_position(
     stated_on_precision: Any,
     summary: Any,
     engagement: Any,
+    provenance: Any = None,
+    source_label: str = "",
+    lawyer_note: Any = "",
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterExternalPosition:
@@ -3002,6 +3129,14 @@ def correct_external_position(
     sentinel: this function has exactly one caller, a correction form that
     renders every box, so «not mentioned» is not a state it can be in — and an
     emptied box has to be able to clear a column.
+
+    ``provenance`` is the one exception, and it is a sentinel rather than a value:
+    `None` means «this form did not ask». It exists for the historical corpus —
+    a `LEGACY` row whose link needs fixing must not be forced to claim a
+    provenance nobody established, and `_external_position_authorship` refuses
+    `LEGACY` as an answer precisely so that no *new* record can be filed as
+    unspecified. A correction form that renders the control posts a real value and
+    moves the column like any other field (docs/adr/0088 §3.4).
     """
     locked_matter = lock_open_matter_for_business_write(position.matter_id)
     try:
@@ -3014,10 +3149,32 @@ def correct_external_position(
     if expected_revision is not None and external_position_revision(current) != expected_revision:
         raise ExternalPositionConflict(current)
 
-    if organisation is None:
-        raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+    # **The provenance a correction does not mention is the one the record has.**
+    # `None` means «not asked», which is what the historical corpus needs: a
+    # `LEGACY` row corrected for a typo in its link must not be forced to claim a
+    # provenance nobody established, and `_external_position_authorship` refuses
+    # `LEGACY` as an *answer*. A form that renders the control posts a real value
+    # and moves the column like any other field (docs/adr/0088 §3.4).
+    if provenance is None and current.provenance == ExternalPositionProvenance.LEGACY:
+        # A historical row keeps its unspecified provenance, and the two rules
+        # `LEGACY` can still break are asked anyway: it must name an organisation
+        # — every one of them does, because the column was `NOT NULL` when they
+        # were written — and it may not acquire a received-feedback `Allikas`.
+        kind = ExternalPositionProvenance.LEGACY.value
+        clean_label = ""
+        if organisation is None:
+            raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+        if (source_label or "").strip():
+            raise DomainError(EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY)
+    else:
+        kind, clean_label = _external_position_authorship(
+            provenance=provenance if provenance is not None else current.provenance,
+            organisation=organisation,
+            source_label=source_label,
+        )
     clean_url = normalize_external_position_url(url)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     # The source rule, asked again and against what this save would *result*
     # in — not against what the record holds now. A correction that empties the
     # address of a position whose `Seisukoht` says what the ministry wrote is
@@ -3036,11 +3193,14 @@ def correct_external_position(
     precision = _external_position_precision(stated_on, stated_on_precision)
 
     proposed: dict[str, Any] = {
-        "organisation_id": organisation.pk,
+        "organisation_id": organisation.pk if organisation is not None else None,
+        "provenance": kind,
+        "source_label": clean_label,
         "url": clean_url,
         "stated_on": stated_on,
         "stated_on_precision": precision,
         "summary": clean_summary,
+        "lawyer_note": clean_note,
         "engagement_id": related.pk if related is not None else None,
     }
     changed = [field for field, value in proposed.items() if getattr(current, field) != value]
@@ -3052,8 +3212,16 @@ def correct_external_position(
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "organisation_id" in changed:
-        payload["organisation_from"] = str(current.organisation_id)
-        payload["organisation_to"] = str(organisation.pk)
+        payload["organisation_from"] = (
+            str(current.organisation_id) if current.organisation_id is not None else None
+        )
+        payload["organisation_to"] = str(organisation.pk) if organisation is not None else None
+    if "provenance" in changed:
+        # Both values in full. A row that moved from «meile saadetud» to «teiste
+        # arvamus» changed what the file claims about how it learned something,
+        # which is a change a reader auditing provenance has to be able to see.
+        payload["provenance_from"] = current.provenance
+        payload["provenance_to"] = kind
     if "stated_on" in changed:
         payload["stated_on_from"] = current.stated_on.isoformat() if current.stated_on else None
         payload["stated_on_to"] = stated_on.isoformat() if stated_on else None
@@ -3071,6 +3239,12 @@ def correct_external_position(
         payload["engagement_to"] = str(related.pk) if related is not None else None
 
     url_from = current.url
+    # `Allikas` and `Juristi märkus` are in `fields` by name and nowhere else in
+    # this payload, deliberately. The first is short enough to copy and is still
+    # the record's to correct; the second is this office's own words, and an
+    # audit table holding them beside the organisation's identifier is the one
+    # place a reader could take them for the organisation's
+    # (docs/adr/0088 §4, §3.3).
     for field, value in proposed.items():
         setattr(current, field, value)
         setattr(position, field, value)
@@ -3081,7 +3255,7 @@ def correct_external_position(
         matter=locked_matter,
         actor=actor,
         obj=current,
-        summary=current.organisation.name[:200],
+        summary=current.author_label[:200],
         payload=payload,
     )
     if "url" in changed:

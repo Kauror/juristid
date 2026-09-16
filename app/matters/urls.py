@@ -207,6 +207,30 @@ urlpatterns = [
         views.update_external_position_view,
         name="update_external_position",
     ),
+    # `+ Meile saadetud tagasiside` — the other half of the same record, under
+    # its own address because it is its own panel with its own questions. One
+    # correction route serves both, because a recorded position is corrected the
+    # same way whichever chip filed it (docs/adr/0088 §3.5).
+    path(
+        "teemad/<uuid:pk>/lisa/tagasiside/",
+        views.add_received_feedback,
+        name="add_received_feedback",
+    ),
+    # `+ Koja arvamus` — the Chamber's own opinion, recorded where the work is.
+    # It writes a `Submission` through the service `Dokumendid` already posts to;
+    # this is a second door, not a second record (docs/adr/0088 §6).
+    path(
+        "teemad/<uuid:pk>/lisa/koja-arvamus/",
+        views.add_koda_opinion,
+        name="add_koda_opinion",
+    ),
+    # `+ Menetluse areng` — one dated step the external procedure took, with the
+    # `Hetkeseis` and the next action it may carry (docs/adr/0088 §5).
+    path(
+        "teemad/<uuid:pk>/lisa/menetluse-areng/",
+        views.add_development,
+        name="add_development",
+    ),
     path("teemad/<uuid:pk>/lisa/lopeta/", views.close_from_workspace, name="close_from_workspace"),
     # `+ Järgmine tegevus` and `Muuda` both post here — one endpoint, because
     # setting a step and replacing one are the same canonical act and

@@ -168,3 +168,63 @@ class WebsiteOverviewStatus(models.TextChoices):
     PLANNED = "PLANNED", "Plaanis"
     PUBLISHED = "PUBLISHED", "Avaldatud"
     CANCELLED = "CANCELLED", "Tühistatud"
+
+
+class ExternalPositionProvenance(models.TextChoices):
+    """How a `Väline seisukoht` reached this file — the two the lawyer means.
+
+    The first lawyer test asked for one distinction this record could not make:
+    somebody gave feedback **to Koda**, or Koda **found** somebody else's
+    position somewhere. Both are another organisation's stated view on the
+    Matter, both carry the same source rule, the same date semantics and the
+    same visibility — and a colleague reading the chronology needs to know which
+    of the two a row is, because «a member company answered our consultation»
+    and «the ministry published its position» are different professional facts
+    (lawyer feedback 12, docs/adr/0088 §3).
+
+    **Structured, never inferred.** The distinction is this column and nothing
+    else: not whether a `Kaasamine` is linked, not whether an `Organisation` was
+    named, not whether a URL was supplied and not whether a file was uploaded. A
+    ministry may answer a consultation Koda ran, and a member company's position
+    may be found on its own website; every combination of the other columns
+    occurs under both values, so every inference from them is wrong for some
+    real record.
+
+    ``LEGACY`` is what the rows written before the question existed say, and it
+    is the honest answer for them. The 2026-09-16 corpus was recorded through
+    one panel that asked nothing about provenance, so the two things a
+    backfill could have read — a linked `Kaasamine`, or the organisation being
+    a member rather than a ministry — are exactly the inferences above. An
+    unknown provenance is better than a manufactured one (docs/adr/0088 §3.4).
+    """
+
+    #: `Meile saadetud tagasiside` — somebody gave this to Koda.
+    #:
+    #: A member company's e-mail, an association's written answer, a
+    #: consultation response, the summary of a survey of 234 industrial
+    #: companies. The one value for which :attr:`MatterExternalPosition.source_label`
+    #: exists and for which the organisation may be absent: an aggregate answer
+    #: has no single author, and forcing one would mean inventing an
+    #: organisation called «234 ettevõtet» (docs/adr/0088 §3.3).
+    RECEIVED = "RECEIVED", "Meile saadetud tagasiside"
+    #: `Teiste arvamus` — Koda recorded somebody else's position from elsewhere.
+    #:
+    #: A ministry's opinion, another business organisation's position paper, a
+    #: submission found in EIS, a public statement. The organisation is required
+    #: here, because a discovered position with no author is hearsay on a
+    #: professional file.
+    DISCOVERED = "DISCOVERED", "Teiste arvamus"
+    #: Recorded before the distinction existed, and never guessed at afterwards.
+    LEGACY = "LEGACY", "Täpsustamata"
+
+
+#: The two values a person may choose, in the order `Lisa teemale` offers them.
+#:
+#: `LEGACY` is deliberately absent: it is what history says, not an answer
+#: anybody may give. A crafted POST naming it is refused by the field's own
+#: vocabulary rather than by the panel not having drawn the chip
+#: (docs/adr/0088 §3.4).
+SELECTABLE_EXTERNAL_POSITION_PROVENANCE: tuple[str, ...] = (
+    ExternalPositionProvenance.RECEIVED.value,
+    ExternalPositionProvenance.DISCOVERED.value,
+)

@@ -183,6 +183,47 @@ task above it is a form asking about work nobody has named. The route to work is
       <p class="curact__empty">Järgmine samm on määramata</p>
     {% endif %}
     {% comment %}
+      **The continuation, on the one file that most needs it.**
+
+      A Matter whose opinion has gone out and whose step is finished used to end
+      here, at «Järgmine samm on määramata», with nothing on the page that looked
+      like a way on. The procedure does not stop when Koda answers: the ministry
+      sends a revised draft, the government approves it, the file reaches the
+      Riigikogu, the Chamber writes again. Lawyers were opening *new Matters* for
+      the same proceeding, because this page read as finished (lawyer
+      feedback 14, docs/adr/0088 §5.5).
+
+      **Two links to controls that are already on the page**, and no third thing.
+      This is a sentence and two anchors into `LISA TEEMALE`, not a wizard, not a
+      dashboard and not a suggested next step: the file is told that the work may
+      continue, and *what* continues it is the lawyer's to say. Nothing here
+      creates, proposes or pre-fills anything (docs/adr/0088 §5.5).
+
+      **It does not invent work.** A Matter with a sent opinion and no open step
+      is a perfectly ordinary state — the opinion went out and the file is
+      waiting on somebody else — so this says «võib jätkuda» rather than naming
+      anything as outstanding, appears in no work queue, and adds nothing to any
+      count, badge or deadline surface.
+
+      Only where there is no open step, and only for somebody who may write. A
+      file that already has a `Järgmiseks` is not at a dead end and needs no
+      sentence about it, and a reader who cannot write must not be shown two
+      controls they cannot use.
+
+      `opinion_sent` is read off the process strip the page has already built,
+      scoped by `visible_to` there — so a submission restricted below this Matter
+      draws no column and puts no sentence here either (app/matters/views.py,
+      AUTH-003).
+    {% endcomment %}
+    {% if opinion_sent and can_write %}
+      <p class="curact__continue">
+        Koja arvamus on saadetud. Menetlus võib jätkuda —
+        <a class="curact__continuelink" href="#lisa-menetluse-areng">lisa menetluse areng</a>
+        või
+        <a class="curact__continuelink" href="#lisa-jargmine">järgmine tegevus</a>.
+      </p>
+    {% endif %}
+    {% comment %}
       The waits again, and this is the branch they were added for: a Matter whose
       only live work is «ootame vastuseid» used to end here, at «Järgmine samm on
       määramata», with the round drawn on the strip below the fold and on no work

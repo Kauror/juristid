@@ -1,0 +1,722 @@
+# 0088 — One lawyer workflow, from `Teema` to the next `Koja arvamus`
+
+**Status:** accepted
+**Date:** 2026-09-17
+
+*Narrows ADR 0086 §2* on one point: `Tagasisidet ootame kuni` opens empty rather
+than on today + 7. Everything else that record decided — that a set deadline
+opens a wait, that the wait is one `WorkItem` on an open `FULL` Matter, that
+`Lõpeta kaasamine` ends it, that it enters no `real_deadlines`, no statistic and
+no search row, and that a Matter closing ends its waits — stands unchanged, and
+every round already waiting goes on waiting.
+
+*Extends ADR 0084* with a provenance column, an optional author for aggregate
+feedback, and the lawyer's own note beside the source. It reverses nothing in
+that record: the source rule, the date semantics, the `Kaasamine` relation, the
+visibility boundary, the audit families and the no-delete rule are all exactly as
+0084 wrote them.
+
+*Extends ADR 0061* with a second door onto `Submission` on the Teema page. That
+record's decision — that a Matter's opinions are documents and `Dokumendid` is
+where they are managed — is unchanged, and no `KodaOpinion` model exists.
+
+*Extends ADR 0052 and ADR 0078 §2* rather than narrowing them: nothing here
+invents a date, and the one new default (`Koostan arvamuse`) is **no default at
+all**.
+
+## Context
+
+Lawyers used the product on real files for the first time. Five of the things
+they reported are one thing: **the product held every fact the work produces and
+did not hold the work.**
+
+The five, in their own terms:
+
+**9 — «creating a Matter should naturally establish `Koostan arvamuse`».** Every
+incoming consultation begins identically: the lawyer files the Teema and will
+write Koda's opinion by a day they already know. `Uus teema` had a
+`Järgmine tegevus` panel, so this was *possible* — by typing the sentence
+«Koostan arvamuse» into a free-text box. What they were describing is that they
+were entering the same fact twice, in the product built to stop them entering
+facts twice.
+
+**11 — «simplify `Kaasamine`».** ADR 0086, three weeks old, had just made a
+consultation round into a managed waiting workflow with a reply-by date defaulted
+to a week out. The reasoning was sound and the *consequence* was not: recording
+«19.09 — kaasati 234 tööstusettevõtet» is a completed act, and every such act now
+opened a wait, drew a work item, appeared on somebody's Minu asjad and needed a
+second deliberate act to get off the page. That is work the application was
+assigning rather than work a lawyer had taken on.
+
+**12 — «distinguish feedback sent to Koda from opinions found elsewhere».**
+`Väline seisukoht` held both under one heading. «Metallitööstuse Liit answered our
+consultation» and «the ministry published its position» are different
+professional facts, and a colleague scanning six months could not tell them
+apart.
+
+**13 — «make Koda's own opinion an obvious first-class step».** It *is* first-class
+in the schema — `Submission` has been canonical since the foundational round — and
+it was invisible where the work happens. Recording one meant leaving the Teema for
+the `Dokumendid` tab, opening a collapsed block, uploading a file, then finding it
+again in a select and registering the send.
+
+**14 — «after Koda sends an opinion, the Matter must continue naturally».** This
+is the serious one. A file whose opinion had gone out and whose step was finished
+read «Järgmine samm on määramata» and offered nothing that looked like a way on.
+The procedure does not stop when Koda answers: the ministry revises the draft, the
+government approves it, the file reaches the Riigikogu, the Chamber writes again.
+Lawyers were opening **new Matters** for the same proceeding.
+
+## 0 — The architectural decision, stated first
+
+**One new model would have been one too many, and none was needed.**
+
+The temptation this round presents is a workflow subsystem: a `WorkflowStep`
+table, a state machine, a `ProceduralEvent` model, an `EngagementFeedback` beside
+an `ExternalPosition` beside an `AnotherOpinion` beside a `SurveyFeedback`. Every
+one of those would have been a second opinion about facts the domain already
+holds, and the day two of them disagreed there would be no way to tell which was
+meant.
+
+**No new model is added by this round.** What is added is:
+
+| the lawyer's concept | what it is |
+| --- | --- |
+| `Koostan arvamuse` | a `NextAction`, from a date the person typed |
+| `Kaasan` | `MatterEngagement`, with one default removed |
+| `Meile saadetud tagasiside` | `MatterExternalPosition` + `provenance=RECEIVED` |
+| `Teiste arvamus` | `MatterExternalPosition` + `provenance=DISCOVERED` |
+| `Koja arvamus` | `Submission`, through the service `Dokumendid` posts to |
+| `Menetluse areng` | an `Entry` with a new `EntryKind`, plus stage and step |
+
+Five schema changes, all additive, all on tables that already existed: three
+columns and an index on `matters_matterexternalposition`, one `choices` edit on
+`Entry.kind`, and one widened `NOT NULL`. One migration. No `RunPython`, no
+backfill, no reindex.
+
+No BPM engine, no state-machine framework, no Celery, no background job, no AI, no
+automated communication, no CRM. Nothing in this round fetches, sends, generates,
+summarises or monitors anything.
+
+## 1 — `Koostan arvamuse` is created from a date, and from nothing else
+
+### 1.1 What the page asks
+
+One box on `Uus teema`, labelled `Koostan arvamuse`, holding a date. Saving the
+Matter creates the `NextAction` whose text is
+`app.workflow.services.OPINION_PREPARATION_TEXT` — «Koostan arvamuse», the
+department's own words — with that date, `DO` / `DEADLINE` / `EXACT`, owned by the
+`Vastutaja` chosen on the same form.
+
+It is not a new kind of task and gets no special case anywhere. It appears on
+`Minu asjad`, on `PRAEGUNE TEGEVUS`, in `Tähtajad`, in the register's
+`JÄRGMISEKS` column and in the work queues exactly as any other open step, and it
+is completed, replaced, deferred and superseded through the ordinary services.
+`NextAction` already represents this business fact; a second «opinion task» model
+would have represented it twice.
+
+### 1.2 The date is the lawyer's, and the application invents none
+
+**«Automatically creates the next action» is not «guess when it is due».** The box
+carries no `initial` and the service refuses `None`. Not today, not seven days
+out, not the official consultation deadline, not the end of the month, not the
+Matter's creation date, and not `Matter.response_deadline` — which is a
+*different* commitment, owed to whoever asked, and using it here would make a
+lawyer's own working plan a copy of somebody else's timetable.
+
+`Arvamuse tähtaeg` three rows up on the same form carries no default for exactly
+this reason, and the reason has teeth since that field became work: a Matter
+created and left alone would be due on its creation day and overdue the next
+morning, on every deadline surface in the product (ADR 0052 §5, ADR 0078 §2).
+
+**A blank box creates nothing at all** — not an undated step either. `ActionKind`
+permits a dateless `WAIT` or `MONITOR`, and this is neither: the sentence is «I
+will write the opinion», which is `DO`, and `workflow_deadline_requires_a_date`
+refuses a dated-kind step with no date. Turning an unanswered field into an
+open-ended commitment would be the application making a promise nobody made.
+
+### 1.3 Atomicity, idempotency, and the one refusal
+
+**One transaction.** The Matter, its files, its private note and this step are one
+write. A Teema that saved while its first step did not would be a file the lawyer
+believes has a plan and every work surface says has none; a step that saved while
+the Teema did not would be an instruction attached to nothing. Either way nobody
+is told, so neither is possible: a refusal anywhere rolls the whole thing back and
+the entered date comes back in the box on the re-rendered form.
+
+**Idempotent, twice over.** A double-pressed button, a resubmitted POST or a proxy
+replaying a request must not leave two identical instructions on one file.
+`workflow_one_open_action_per_matter` makes a second open step impossible in the
+database whatever any caller does; and `establish_opinion_preparation_action`
+checks for an **equivalent** open step under the Matter's lock before writing, so
+a retry does not even supersede-and-replace the first one. Equivalent means the
+same text, the same day and the same precision — a lawyer who deliberately moves
+the date is changing the plan and gets a real replacement with its own audit row,
+which is a different act.
+
+**Both first-step boxes cannot be answered at once.** `Järgmiseks` and
+`Koostan arvamuse` both want the Matter's single open step. Silently dropping
+either would leave somebody who answered both with one of their two facts missing
+and nothing said about it, so the save is refused, in Estonian, naming the choice,
+with everything typed still on the page. It is a rare collision — a person who has
+a preparation date does not usually also write a free-text first step — which is
+why it is a refusal rather than a redesign of the page.
+
+### 1.4 Why it is a separate form and a separate partial
+
+`MatterCreateForm` and `matter_create.html` are being rewritten in parallel by the
+classification work. A field declared on that class, and a label, a hint, an error
+block and a date control interleaved into that template, would be a merge conflict
+in the two files most likely to move, over a question neither of them is about.
+
+So: `InitialOpinionActionForm` with its own `arvamus` prefix, its own partial, and
+**one `{% include %}`** in the creation page. The integration hunk is one line.
+`_create_context` takes the form as an optional third positional argument and
+defaults it, so nothing else that calls that helper had to change.
+
+## 2 — A new `Kaasamine` asks for a wait; it is not given one
+
+**`CompactEngagementForm.feedback_deadline` loses `initial=default_feedback_deadline`.
+That is the entire change.**
+
+ADR 0086 §2's argument was about *defaults*: today is never a plausible reply-by
+date, a week out is what a round asks for when nobody says otherwise, and today + 7
+is not a value anybody presses `Salvesta` past without reading. Every clause of
+that is still true. What it did not weigh is that pressing past it is not
+symmetrical with pressing past an engagement date: an accepted `Kaasamise kuupäev`
+is a fact that is probably right, and an accepted `Tagasisidet ootame kuni` is a
+managed activity with a work item, a responsible person, an overdue state and a
+second required act to end it.
+
+The lawyers called the result too complicated. They were describing work the
+application had assigned them.
+
+**Nothing else moves.** The column stays. The three quick spans stay beside the
+box, and they are where the week now lives — `1 nädal` is one click, so asking for
+a wait costs exactly as little as it did. A set deadline still opens a wait, still
+draws exactly one `WorkItem` on an open `FULL` Matter, still reads on
+`PRAEGUNE TEGEVUS`, still goes due on its own day, and is still ended by
+`Lõpeta kaasamine` with its own audit event. `feedback_received`,
+`feedback_closed_at`, `feedback_closed_by` and
+`matters_engagement_feedback_closure_needs_deadline` are untouched. `close_matter`
+still ends open waits.
+
+**Historical #227 rounds are untouched and this is not negotiable.** There is no
+migration, no `RunPython` and no backfill: a round recorded with a deadline keeps
+it, a wait that is open stays open and stays completable, an overdue one stays
+overdue, and the visibility scoping is unchanged. An unrelated correction to such a
+round — fixing a typo in `Keda kaasati` — does not touch the deadline, because
+`update_engagement`'s `_UNSET` sentinel already means «not mentioned» and the
+correction form still renders the box holding what is stored. The two behaviours
+coexist because only a *form default* changed.
+
+### 2.1 Is the engagement lifecycle still needed?
+
+For a **new** simple round, no, and that is the point: recording that Koda asked
+somebody something is complete once saved, the answers are added afterwards as
+separate substantive records (§3), and there is no artificial «close the
+Kaasamine» step in the ordinary flow because there is nothing open to close.
+
+For a round somebody **deliberately** opens a wait on — and for every historical
+one — yes, unchanged. The closure functionality is preserved in full. Retiring it
+because new entries stop depending on it would destroy the #227 compatibility this
+round is required to keep, and it would take away a capability lawyers do use when
+they genuinely are waiting on members.
+
+## 3 — Two feedback sources, one record, explicit provenance
+
+### 3.1 Why one model and not four
+
+`MatterExternalPosition` already holds: an author from the shared catalogue, a
+source minimum of three kinds, an optional date at four precisions with an
+anchor-and-precision pair, an optional `Kaasamine` relation, evidence through
+`DocumentLink` with a real `DocumentRole`, visibility inheritance, four audit
+event types, optimistic concurrency, no-delete, and a chronology projection.
+
+`Meile saadetud tagasiside` needs every one of those and nothing else. Four
+competing models — `EngagementFeedback`, `ExternalPosition`, `AnotherOpinion`,
+`SurveyFeedback` — would have been four implementations of one set of rules, and
+the validation that matters is precisely the part that would have been copied.
+
+So the distinction is a column and the panels are two doors onto one operation.
+Where it *would* have made validation ambiguous — the authorship rule, which
+genuinely differs — the difference is stated once, in
+`_external_position_authorship`, and enforced as two `CHECK` constraints because
+all three columns it reads are on one row.
+
+### 3.2 The vocabulary
+
+`ExternalPositionProvenance`: `RECEIVED` («Meile saadetud tagasiside»),
+`DISCOVERED` («Teiste arvamus»), `LEGACY` («Täpsustamata»). Stable machine keys,
+Estonian labels, the repository's ordinary `TextChoices` shape.
+
+**It is structured data and never an inference.** Not the presence of a `Kaasamine`
+link, not whether an organisation was named, not whether a URL was supplied, not
+whether a file was uploaded. Every one of those combinations occurs under both
+values: a ministry *does* answer consultations Koda ran, and a member company's
+position paper *does* get found on its own website. Each inference is therefore
+wrong for some real record.
+
+### 3.3 Aggregate feedback, and the one place the authorship rule bends
+
+A survey of 234 industrial companies producing 58 answers has **no single
+author**. The two things the old `NOT NULL` forced were an invented organisation
+called «234 ettevõtet» and one arbitrary respondent standing for the rest, and both
+put a fact on a professional file that nobody stated.
+
+So:
+
+* `organisation` becomes nullable;
+* `source_label` («Allikas») is a short name for a collection of answers —
+  «Tööstusettevõtete küsitlus»;
+* `matters_external_position_author_or_label` refuses a row with neither;
+* `matters_external_position_label_is_received` keeps the label to `RECEIVED` rows.
+
+**Organisation provenance is not weakened for ordinary named positions.** A
+`DISCOVERED` row still requires the catalogue's own organisation and may not name
+one through a free text box, because that would be a ninth way of naming an
+institution beside the one ADR 0073 built. The `Allikas` box is not rendered on
+that panel and the field is not even present on that form, so a POST carrying it
+is a value that did not come off a page — and the service refuses it again.
+
+### 3.4 `LEGACY`, and the backfill that was not written
+
+Every row written before this round reads `LEGACY`, which is true of all of them:
+they were recorded through one panel that never asked. **Nothing is backfilled.**
+The two readings a migration could have made — a linked `Kaasamine` means
+received, or a member organisation means received — are exactly the inferences
+§3.2 refuses.
+
+A `LEGACY` row **reads as it always did**: the chronology prints
+«Väline seisukoht: …», not «Täpsustamata: …», because nothing about those records
+changed and a file that started announcing a gap in itself would be asking somebody
+to close one that cannot honestly be closed.
+
+`LEGACY` is refused as an *answer*. Neither panel offers it and
+`_external_position_authorship` raises on it, so no new record can be filed as
+unspecified. A correction to a `LEGACY` row passes `provenance=None`, which means
+«this form did not ask», and the row keeps what it has.
+
+### 3.5 Two chips, one panel, one operation
+
+`+ Meile saadetud tagasiside` and `+ Teiste arvamus` are two `ReceivedFeedbackForm`
+/ `OtherOpinionForm` subclasses of one form, rendered through one parameterised
+partial, posting to two routes that both call `_record_external_position`, which
+calls one `workspace.add_matter_external_position`.
+
+**The provenance is a class attribute, not a field.** Neither form declares one,
+so there is nothing for a browser to post and nothing a crafted POST can move: `+
+Teiste arvamus` cannot be made to file received feedback by adding a parameter. It
+is ADR 0052 §1's reasoning about `NextAction.kind`, applied to a distinction the
+page genuinely does decide.
+
+**The correction form does not move `provenance`.** How the file learned something
+is what the panel it was recorded through said, and a correction that could change
+it would let one press turn feedback a member sent us into an opinion we found
+somewhere. A mis-filing is corrected by recording it again under the right chip;
+there is no delete, so both rows stay, which is the honest history of one. This is
+`EngagementForm`'s rule read the other way round: an editor must not write a shape
+its creating surface cannot.
+
+`add_external_position` keeps its route name. The browser lane and the visual
+baselines reach it by that name, and renaming a working endpoint because a chip's
+label changed would be churn with a migration attached.
+
+### 3.6 The `Kaasamine` relation stays optional and is never inferred
+
+Unchanged from ADR 0084 §4, and restated because this round makes it more
+tempting: received feedback frequently *does* follow a round Koda ran, and
+`engagement` says so where a person says so. It is never derived from dates or
+organisations happening to match, an aggregate summary may cover several outreach
+actions, `Teiste arvamus` usually has no round behind it, and older e-mail feedback
+has none recorded. Both ends must belong to one Matter, refused in the service and
+narrowed in the field's queryset by the reader's own visibility.
+
+## 4 — The lawyer's note is not the source's words
+
+`lawyer_note` («Juristi märkus»), a separate optional bounded column.
+
+The failure it fixes: «MKM toetab varianti B» and «nende põhjendus ei arvesta
+liikmete kulumõjuga» had two homes before it — appended to `summary`, where the
+file recorded the *ministry* as having said the second sentence, or a separate
+`Märge` that then said nothing about which position it was about. The first is
+serious: a professional record that attributes this office's criticism to the body
+being criticised is a record that lies.
+
+The separation holds at every layer:
+
+* **stored** as its own column, never concatenated;
+* **rendered** on its own line, under its own label, with its own left rule and
+  indent, from `ChronologyMilestone.own_note` — a field of its own rather than
+  another clause appended to `sub`. The label travels *on the milestone* rather
+  than being looked up by each template, because two surfaces render this row and a
+  third would otherwise render the paragraph unlabelled, which is the attribution
+  defect with better line spacing;
+* **audited** as `has_lawyer_note: true` and never as text. A payload carrying this
+  office's comment beside the organisation's identifier is the one place a reader
+  could take them for one statement;
+* **not indexed** (§9), so no search result can show Koda's words as the source's;
+* **not a source.** `_external_position_source` does not count it and may not: a
+  record whose only content is this office's opinion of something nobody can read
+  is a record of nothing.
+
+## 5 — `Menetluse areng` is an `Entry`, and a composite operation
+
+### 5.1 Why not a new model
+
+A procedural development needs, at most: a date, a concise description, an optional
+note, optional documents, an optional stage update, an optional next action.
+
+`Entry` is the authored professional chronology. `occurred_at` already means «when
+the work happened, not when it was typed up» — Friday's event written up on Monday
+belongs on Friday. `body` already holds the account and is sanitised in one place.
+`DocumentLink` already carries the files. `EntryKind` already distinguishes kinds of
+chronology from one another. `EntryRevision` already preserves superseded wording.
+Visibility, audit and the chronology projection are already there.
+
+What was missing was not a table. It was a **panel** that asked for the date, and
+that could set the stage and the next step in the same breath.
+
+So: `EntryKind.PROCEDURAL_DEVELOPMENT` («Menetluse areng») — an `AlterField` over a
+`choices` list, which is Python metadata and not a database object — and one
+composite workspace operation.
+
+Rejected: a `ProceduralEvent` model (a second dated narrative beside `Entry`, which
+would then disagree with it); `MatterImportantDate` (a milestone somebody else
+*announced*, for a date still ahead, which is the opposite tense); a bare `+ Märge`
+(which is what people were already misusing, and which cannot date itself or carry
+the stage).
+
+### 5.2 The date is required here, and that is a stated cost
+
+`Entry.occurred_at` is `NOT NULL` and has been since the foundational schema. Every
+chronology reader, the `-occurred_at` ordering, the timeline pagination, the
+activity maximum and the register sort depend on it. Making it nullable to allow an
+undated development would be a large change to the most-read table in the product
+for a case that barely arises: a lawyer learning that the ministry sent a new draft
+knows what day it was, or what day they learned it.
+
+So the box is pre-filled with today, visibly and changeably — the one shape
+ADR 0078 §2 allows — and an empty box is refused. **A development nobody can date
+is a `+ Märge`**, which stamps the moment it was recorded and claims nothing about
+when anything happened. That is the existing behaviour and it is preserved.
+
+This is narrower than the brief's «date, optional if genuinely unknown», and it is
+recorded here as a narrowing rather than left as a silence.
+
+### 5.3 The stage and the step are offered, never derived
+
+**Nothing reads the sentence.** No stage is inferred from «Eelnõu jõudis
+Riigikokku», no next action is generated, no vocabulary is matched. A person
+chooses, or nobody does, and a save naming neither changes neither.
+
+The stage goes through `change_stage`, the canonical service, over
+`active_stages()` — so a revision of the stage vocabulary arrives here without this
+form knowing about it, and **no stage key is hard-coded in this round**. The step
+goes through `set_next_action_for_new_work`, the native boundary, so the
+departed-owner rule applies exactly as on `+ Järgmine tegevus`, and it supersedes
+whatever was open, which is `NextAction`'s own invariant.
+
+`Järgmiseks` and `Millal?` are both-or-neither, refused on the empty half, in
+ADR 0052 §5's own words.
+
+### 5.4 Atomicity
+
+Up to four canonical writes in one transaction: the `Entry`, its evidence, the
+stage, the step. A validation failure anywhere leaves the Matter exactly as it was
+— no stage changed with the development absent (a file claiming to be in the
+Riigikogu with nothing saying how it got there), no duplicated next action, no
+orphan evidence. Ordered as the composer orders its own: record, evidence, stage,
+step.
+
+### 5.5 The continuation after a `Submission`
+
+On a Matter that has a sent opinion this reader may see, and no open step,
+`PRAEGUNE TEGEVUS` prints one sentence:
+
+> Koja arvamus on saadetud. Menetlus võib jätkuda — *lisa menetluse areng* või
+> *järgmine tegevus*.
+
+Two anchors to controls that are already on the page. **Not** a wizard, not a
+dashboard, not a suggested step, and not a created one: the file says the work may
+continue and *what* continues it is the lawyer's to say.
+
+It invents no work. A sent opinion with no open step is a perfectly ordinary state
+— Koda answered and the file is waiting on somebody else — so the sentence says
+«võib jätkuda» rather than naming anything outstanding, enters no work queue, and
+adds nothing to any count, badge or deadline surface.
+
+`opinion_sent` is read off the process strip the page has already built, which is
+`visible_to`-scoped there, so a `Submission` restricted below the Matter draws no
+column and puts no sentence on the page either.
+
+## 6 — `Koja arvamus` reuses `Submission`
+
+### 6.1 A second door, not a second record
+
+`+ Koja arvamus` posts to `workspace.add_matter_koda_opinion`, which composes
+`register_sent_opinion_on_open_matter` — the service the `Dokumendid` panel already
+posts to. `create_submission` still validates the kind and writes the creation
+event, `select_final_evidence` still takes both locks and runs
+`check_evidence_is_usable`, `mark_submission_sent` still re-runs the evidence check
+and writes the send event.
+
+There is no `KodaOpinion` model, no second statistic, no second withdrawal path and
+no second definition of «sent». `Dokumendid` keeps everything it has — drafts,
+`+ Uus arvamus`, `Võta tagasi`, channel, reference, the archive links — and remains
+where an opinion is *managed*. ADR 0061 is extended, not reversed.
+
+**Four questions:** the file, the day, the addressees, and optionally a title. The
+title falls back to the filename, because «Koja arvamus pakendiseaduse eelnõule» is
+worth typing and «arvamus_final_v3.docx» is not worth retyping. Nothing is read out
+of the file's contents.
+
+**No `Liik` and no `Kanal` on this panel.** `SubmissionKind` keeps every value and
+`Dokumendid` keeps offering them; what this writes is `FORMAL_OPINION`, which is
+what «Koja arvamus» means. Two optional bookkeeping boxes in front of four required
+answers is the friction this panel exists to remove.
+
+**Keywords are not asked.** `taxonomy.Tag` and `TagAssignment` classify a *Matter*,
+not a submission; there is no per-opinion tag mechanism, and inventing one here
+would be a taxonomy decision disguised as a form field. The short summary the brief
+mentions is `title`, which the record has.
+
+### 6.2 A file is not a send
+
+`DocumentRole.KODA_SUBMISSION_FINAL` says Koda holds these bytes as an opinion. The
+`Submission` says it was sent, to whom, and when. They remain two records. This
+operation writes both because a person pressed one button meaning both, which is
+what an atomic operation is for and is not the same as inferring one from the other:
+uploading a file through `Dokumendid` still asserts nothing.
+
+The date is **required and never invented**. `register_sent_opinion` refuses `None`
+and refuses any precision but `DATE`, which is the rule R2-01 put there after a
+blank box became `timezone.now()` and the outbound register reported
+`Arvamus välja <today>` about letters nobody had dated. `Märgi saadetuks` keeps its
+«now», because pressing send *is* a moment.
+
+Every existing evidence and visibility invariant is preserved untouched: final
+evidence may not be less restricted than its `Submission`, evidence is immutable, a
+correction is a new version, and the concurrency guard of ADR 0040 still runs.
+
+### 6.3 The recipient is not the sender
+
+`Adressaadid` is required, at least one, and **never defaulted from the Matter's
+`Saatja` or `Adressaat`**. An opinion on the first draft goes to the ministry; one at
+second reading goes to a Riigikogu committee; one on a revised text may go to a
+third body; one may go to an EU institution. Assuming the original sender would put
+a false recipient on the canonical outbound record of a professional letter.
+
+This is why the classification work removes `Adressaat` from *initial Matter
+creation* and not from the domain model: the column answers a question about the
+incoming file, and `SubmissionRecipient` answers a different question about each
+outgoing letter. Sender and recipient are not collapsed here.
+
+The control is the plain chip row, **not** the `organisation_picker`. That control's
+`+` creates an institution inside the save's transaction, which is right where the
+record is about who an unfamiliar body is — and wrong here: registering a letter Koda
+sent is not the moment to invent the institution it was sent to, and a picker that
+offered to would put a typo into the catalogue under a professional outbound record.
+
+### 6.4 Several per Matter
+
+Nothing is unique on `(matter, …)`, nothing supersedes an earlier opinion, and no
+earlier `Submission`, `Document` or `DocumentVersion` is touched. An opinion on the
+VTK, one on the draft, one during Riigikogu proceedings and one on the revised text
+are four sends, four Submissions and four immutable files. There is no
+`Matter.final_opinion` and this round does not invent one (ADR 0061).
+
+## 7 — Versioning: a revised draft is new bytes
+
+A revised ministry draft arriving at `+ Menetluse areng` is captured as a **new
+`Document` with its own immutable `DocumentVersion`**, through
+`capture_supporting_evidence` and linked to the development that brought it. It is
+not a new version of the earlier draft's document.
+
+That is the honest reading: the two files arrived on different days, through
+different procedural acts, and what the file has to preserve is *what Koda reviewed
+at each stage*. A new version of one logical document would make the earlier draft
+reachable only through version history, on a record whose own date is the first
+arrival — and the chronology would show one act where two happened.
+
+`DocumentVersion` remains append-only and immutable. Nothing in this round mutates
+an evidence file in place, and nothing overwrites a prior draft. `Koja arvamus`
+follows the same rule: a supplementary or revised opinion is a new letter and new
+bytes.
+
+## 8 — Interaction with the parallel packages
+
+**Classification work (`Hetkeseis`, `Õigusakt`, `Menetlusliik`, `Uus teema`).** No
+dependency on its new vocabulary. `+ Menetluse areng` reads `active_stages()`
+through the canonical selector and hard-codes no stage key, so a revised vocabulary
+arrives without this branch being edited. The `Uus teema` change is one
+`{% include %}` and one optional argument, precisely to keep the overlap to a line.
+
+**Procedural-link work (links, undated publications).** Not duplicated. This round
+adds no publication model and no link model. `+ Koja arvamus` does **not** ask for a
+Koda publication reference: `MatterWebsiteOverview` (ADR 0085) is the existing
+publication activity, associating one with a specific `Submission` needs a relation
+that does not exist, and creating one here would collide with the package that owns
+publication. The integration hook is documented and nothing else: a lawyer records
+the publication through `+ Ülevaade / uudis` today, as they do now.
+
+**The current release.** No release notes, no deployment, no `main` merge.
+
+## 9 — Search, reporting and the work surfaces
+
+**Search is not redesigned and `INDEX_VERSION` does not move.**
+
+The three new columns are nullable metadata that no projection reads.
+`MatterExternalPosition` was never indexed (ADR 0084 §5) and is not indexed now; a
+linked `Document` keeps its own unchanged document-search behaviour, which is the
+search people actually perform. A `Submission` written through `+ Koja arvamus` is
+indexed exactly as one written through `Dokumendid`, because it is the same record
+through the same service — no recipe changed, so no reindex follows this release.
+An `Entry` of the new kind is indexed exactly as any other `Entry`.
+
+Bumping the index version because a nullable metadata column exists would rebuild
+the whole corpus to change nothing.
+
+**`lawyer_note` is deliberately not projected.** It is this office's professional
+assessment of a third party, and widening the corpus is a decision about disclosure
+rather than convenience (ADR 0038, ADR 0056). It can be added later; it cannot be
+un-indexed later. And if it ever is, provenance must be preserved in the rendered
+result — a hit that showed Koda's words under a ministry's name would be the
+attribution defect arriving through search.
+
+**Reporting.** No new metric. Existing external-position counts are unchanged and
+remain understandable: `provenance` partitions a population that was previously
+reported as one, so any future report that wants the split can have it, and nothing
+silently redefines what an existing count means. Submission reporting is untouched,
+because `+ Koja arvamus` writes the same `Submission` the outbound register already
+counts.
+
+**Work surfaces.** One business commitment appears once. `Koostan arvamuse` is a
+`NextAction` and appears where open steps appear. A new `Kaasamine` creates no wait
+unless somebody asks for one, and a wait is one `WorkItem` and not also a
+`NextAction`. `+ Menetluse areng` creates at most the one step somebody typed. A
+`Väline seisukoht` of either provenance creates no work at all, exactly as ADR 0084
+§5 decided — so a Matter carrying ten of them never reads as late.
+
+## 10 — Permissions
+
+Every new and extended record follows the existing central rules and adds no new
+authorization path.
+
+`MatterExternalPosition` is a `VisibilityInheritingModel` read only through
+`visible_to`; the new columns are on that row and inherit its scoping, so a
+restricted position's `Allikas` and `Juristi märkus` are as unreachable as its
+organisation. `DocumentLink.visible_to` still requires **both** ends to be readable.
+Final evidence still may not be less restricted than its `Submission`. The
+engagement queryset on both panels is narrowed by the reader's own visibility, so a
+crafted POST naming a round on another file — or one restricted below the Matter —
+is refused by the field as well as by the service. `opinion_sent` is derived from a
+`visible_to`-scoped read, so a restricted `Submission` puts no sentence on the page.
+Every write route is behind `business_write_required` and takes
+`lock_open_matter_for_business_write`, because a page is not a boundary.
+
+## 11 — Migrations
+
+One: `matters/0027_external_position_provenance`. Additive, no `RunPython`, no
+`RunSQL`, no backfill, no reindex, no archive rebuild.
+
+* `provenance` (`CharField`, default `LEGACY`, indexed) — true of every existing row;
+* `source_label`, `lawyer_note` — blank on every existing row, also true of all of them;
+* `organisation` widened to nullable — every stored row keeps its organisation;
+* three `CHECK`s, all satisfied by every existing row as they are added;
+* one composite index;
+* `Entry.kind` `AlterField` over `choices` — Python metadata, no database object.
+
+Migration-from-zero compatible and upgrade compatible. Reversible: the adds and the
+constraints reverse, and re-narrowing `organisation` succeeds on any database whose
+rows this migration did not change. A reverse would lose what people wrote into the
+three new columns, which is the ordinary cost of any additive column.
+
+No merged migration is edited.
+
+## Alternatives considered
+
+**A `WorkflowStep` model and a state machine.** Rejected in §0. The architecture
+constraint forbids a generic workflow engine, and the constraint is right here: the
+lawyer flow is seven named acts on six existing records, and a generic engine would
+make every consumer branch on a `kind` while the validation that matters had nowhere
+to live but in those branches.
+
+**Four feedback models.** Rejected in §3.1. One set of rules implemented four times,
+with the authorship difference — the only real difference — copied into each.
+
+**Infer provenance for historical rows.** Rejected in §3.4. Every candidate rule is
+wrong for some real record, and a wrong provenance is worse than an unspecified one.
+
+**Let `Allikas` answer «whose position is this» on `Teiste arvamus` too.** Rejected
+in §3.3: a free text box beside the one shared catalogue is a ninth way of naming an
+institution.
+
+**Put `Juristi märkus` in `Seisukoht` with a separator.** Rejected in §4. A separator
+is not attribution, and the whole defect is a file recording this office's criticism
+as the ministry's words.
+
+**Make `Entry.occurred_at` nullable so a development can be undated.** Rejected in
+§5.2 as a large change to the most-read table for a case that barely arises. The
+cost is stated rather than hidden, and `+ Märge` covers it.
+
+**Create a `NextAction` automatically after a `Submission`.** Rejected in §5.5. The
+application does not know what happens next, and an invented step is
+indistinguishable from a deliberate one a week later — ADR 0086's own reasoning about
+deriving a step from a deadline.
+
+**Default `Koostan arvamuse` to the consultation deadline.** Rejected in §1.2. That
+is `Matter.response_deadline`, which is somebody else's timetable; copying it would
+make a lawyer's own plan a restatement of an obligation.
+
+**Let both first-step boxes save, with `Koostan arvamuse` winning.** Rejected in
+§1.3. Silently dropping a sentence somebody wrote is worse than a refusal they can
+read and fix.
+
+**Ask for a Koda publication reference on `+ Koja arvamus`.** Deferred in §8. The
+relation does not exist, and creating a publication model here would duplicate the
+package that owns publication.
+
+**Keep the `Tagasisidet ootame kuni` default and make the wait quieter.** Rejected.
+The wait's loudness is the point of ADR 0086 §3 and is right for a round somebody
+opened deliberately. What was wrong was opening one on every round by default.
+
+## Consequences
+
+The ordinary journey is one page and then one launcher. A lawyer files the Teema with
+a preparation date and the file has a plan; runs a consultation without acquiring a
+managed wait; records what came back and what others said, told apart and attributed;
+registers Koda's opinion where the work is; and records what the procedure did next,
+with the stage and the next step, in one save.
+
+`LISA TEEMALE` grows from nine chips to twelve. That is a real cost to a bar whose
+stability is tested to the pixel, and it is paid rather than avoided: the chips are
+the product's inventory of what can be recorded, and four of them were missing.
+`Väline seisukoht` splits into two chips, so the bar's canonical order and the
+launcher stability test both change.
+
+A `Väline seisukoht` chronology row can now be three lines rather than two.
+
+`Uus teema` gains one control. Its visual baselines change, as do the Teema page's.
+
+Package D still owns the unified OneNote-like substantive history. This round
+deliberately creates clean semantic data and uses current UI patterns; it builds no
+second timeline. What remains for Package D: how a `Menetluse areng`, a
+`Meile saadetud tagasiside`, a `Teiste arvamus` and a `Koja arvamus` read together as
+one narrative, whether the chronology should group by provenance, and whether the
+process strip should draw procedural developments. None of those needs a schema change
+after this round.
+
+## Reversibility
+
+High for the product. Removing `provenance` leaves every row readable under
+`Väline seisukoht`'s original heading; re-narrowing `organisation` succeeds unless an
+aggregate record was written; deleting the two panels leaves the one that existed;
+retiring `EntryKind.PROCEDURAL_DEVELOPMENT` leaves its entries readable as
+chronology; removing `+ Koja arvamus` leaves every `Submission` it wrote canonical and
+managed on `Dokumendid`; and restoring `Tagasisidet ootame kuni`'s default is one
+keyword argument.
+
+What a reverse would lose is what people wrote into the three new columns, which is
+the usual cost of additive columns and the reason these are the smallest set that
+answers the question.

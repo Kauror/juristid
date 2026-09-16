@@ -26,6 +26,7 @@ from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     DataQualityTier,
     EngagementKind,
+    ExternalPositionProvenance,
     MatterDataClass,
     MatterOrigin,
     RecordMode,
@@ -778,6 +779,25 @@ EXTERNAL_POSITION_URL_MAX_LENGTH = 1000
 #: The document is still the document and the link is still the link
 #: (docs/adr/0084 §2, amended 2026-09-16).
 EXTERNAL_POSITION_SUMMARY_MAX_LENGTH = 1000
+
+#: How long the lawyer's own `Juristi märkus` on a `Väline seisukoht` may be.
+#:
+#: The same bound as the position it sits beside, and stated separately because
+#: it is a different product decision that happens to agree on a number: this is
+#: **this office's** reading of somebody else's words, not the words. The two are
+#: never concatenated, never indexed as one string and never rendered as one
+#: sentence — the whole reason the column exists is that «MKM toetab varianti B»
+#: and «nende põhjendus ei arvesta liikmete kulumõjuga» must not become one
+#: statement attributed to the ministry (docs/adr/0088 §4).
+EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH = 1000
+
+#: How long the `Allikas` label on aggregate received feedback may be.
+#:
+#: «Tööstusettevõtete küsitlus», «Liikmete kirjavastused» — the name of a
+#: collection of answers that has no single author. Short on purpose: it names a
+#: source, it is not a summary of what the source said, and a record that needs
+#: more than this needs an organisation or a file (docs/adr/0088 §3.3).
+EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH = 200
 
 
 class MatterEngagementQuerySet(models.QuerySet):
@@ -1557,17 +1577,77 @@ class MatterExternalPosition(VisibilityInheritingModel):
         verbose_name="teema",
     )
     #: **Whose position this is**, from the one shared catalogue that already
-    #: answers `Saatja` and `Adressaat`. Required: a position with no author is
-    #: not a position, it is an anonymous claim on a professional file
-    #: (docs/adr/0063, docs/adr/0073).
+    #: answers `Saatja` and `Adressaat` (docs/adr/0063, docs/adr/0073).
     #:
-    #: `PROTECT`, like every other pointer into the catalogue: an institution
-    #: that a Matter cites is an institution the register may not quietly lose.
+    #: **Required for a discovered position and optional for received
+    #: feedback**, which is the one asymmetry :attr:`provenance` introduces and
+    #: the whole of docs/adr/0088 §3.3. A ministry's published opinion with no
+    #: author is an anonymous claim on a professional file and stays refused. A
+    #: survey of 234 industrial companies that produced 58 answers has no single
+    #: author, and the two things this column could have been given for it were
+    #: an invented organisation called «234 ettevõtet» or one arbitrary
+    #: respondent standing for the rest — both of which put a fact on the file
+    #: that nobody stated. So the column is nullable and
+    #: `matters_external_position_author_or_label` is what keeps the rule: a
+    #: position must name an organisation, and received feedback may name a
+    #: :attr:`source_label` instead.
+    #:
+    #: Nothing about a *named* position is weakened. The ordinary record still
+    #: carries the catalogue's own row, `PROTECT` still refuses to lose an
+    #: institution a Matter cites, and the two correction doors ask the same
+    #: question again against what the save would result in.
     organisation = models.ForeignKey(
         "organisations.Organisation",
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="matter_external_positions",
         verbose_name="organisatsioon",
+    )
+    #: How this position reached the file — `Meile saadetud tagasiside`,
+    #: `Teiste arvamus`, or `Täpsustamata` for the rows that predate the
+    #: question.
+    #:
+    #: The distinction the first lawyer test asked for, as **structured data and
+    #: never an inference**: not the presence of a `Kaasamine` link, not whether
+    #: an organisation was named, not whether a URL was given and not whether a
+    #: file was attached. Every one of those combinations occurs under both
+    #: values — a ministry does answer consultations, and a member company's
+    #: position paper does get found on its website — so every inference from
+    #: them is wrong for some real record (lawyer feedback 12, docs/adr/0088 §3).
+    #:
+    #: `LEGACY` by default, which is what a caller that does not say means and
+    #: what every row written before this column existed says. **Nothing is
+    #: backfilled**: the two readings a migration could have made are exactly the
+    #: inferences above, and an unknown provenance is better than a manufactured
+    #: one (docs/adr/0088 §3.4).
+    #:
+    #: Indexed, because the chronology and the two panels read one Matter's
+    #: positions by provenance and the department will ask «what came back to us
+    #: on this file» as a list.
+    provenance = models.CharField(
+        max_length=16,
+        choices=ExternalPositionProvenance.choices,
+        default=ExternalPositionProvenance.LEGACY,
+        db_index=True,
+        verbose_name="päritolu",
+    )
+    #: `Allikas` — what to call a collection of answers that has no one author.
+    #:
+    #: «Tööstusettevõtete küsitlus», «Liikmete kirjavastused». Optional, and
+    #: **only meaningful on received feedback**: a discovered position has an
+    #: author by definition, and a label beside a named ministry would be a
+    #: second name for a body the catalogue already names
+    #: (`matters_external_position_label_is_received`).
+    #:
+    #: It is not a title and not a summary. It names where the answers came
+    #: from, so that a reader scanning the chronology sees «Meile saadetud
+    #: tagasiside: Tööstusettevõtete küsitlus» rather than a row whose author
+    #: cell is empty (docs/adr/0088 §3.3).
+    source_label = models.CharField(
+        max_length=EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH,
+        blank=True,
+        verbose_name="allikas",
     )
     #: Where the position was published, when it was published anywhere.
     #:
@@ -1622,6 +1702,29 @@ class MatterExternalPosition(VisibilityInheritingModel):
     #: indexes it, nothing summarises the linked document into it, and no
     #: stance vocabulary is derived from it (docs/adr/0084 §2, §6).
     summary = models.TextField(blank=True, verbose_name="seisukoht")
+    #: `Juristi märkus` — this office's own reading of what the other
+    #: organisation said.
+    #:
+    #: «Nende põhjendus ei arvesta liikmete kulumõjuga» is a lawyer's
+    #: professional comment, and before this column it had two homes: appended to
+    #: :attr:`summary`, where it became part of what the ministry was recorded as
+    #: having said, or a separate `Märge` that then said nothing about which
+    #: position it was about. The first is the serious one — a file that
+    #: attributes this office's criticism to the body it is criticising is a file
+    #: that lies about a professional record (lawyer feedback 12,
+    #: docs/adr/0088 §4).
+    #:
+    #: **Never a source.** `_external_position_source` does not count it, and it
+    #: may not: a record whose only content is Koda's opinion of a position
+    #: nobody can read is a record of nothing. A position needs the `Seisukoht`,
+    #: an address or a file; this is what somebody adds *beside* one of the three.
+    #:
+    #: **Never merged into the source on any surface.** The chronology prints it
+    #: on its own line under its own label, the audit payload records only that it
+    #: exists, and the search projection does not read it — so no rendered
+    #: result can show this office's words as the other organisation's
+    #: (docs/adr/0088 §4, §9).
+    lawyer_note = models.TextField(blank=True, verbose_name="juristi märkus")
     #: `Seotud kaasamine` — the round this position answered, where it answered
     #: one.
     #:
@@ -1687,20 +1790,100 @@ class MatterExternalPosition(VisibilityInheritingModel):
                 ),
                 name="matters_external_position_visibility_vocabulary",
             ),
+            models.CheckConstraint(
+                condition=models.Q(provenance__in=ExternalPositionProvenance.values),
+                name="matters_external_position_provenance_vocabulary",
+            ),
+            # **A position says whose it is.** An organisation, or — for
+            # received feedback only — a `source_label` naming the collection
+            # of answers it came from. Both is ordinary; neither is not.
+            #
+            # This *can* be a `CHECK`, unlike the source rule two constraints
+            # above it, and the difference is worth stating: all three columns
+            # this reads are on this row, while the source rule has to count
+            # `documents_documentlink`. So the authorship rule is stated in the
+            # database and the source rule is stated in the service, and neither
+            # is stated in both (docs/adr/0088 §3.3).
+            models.CheckConstraint(
+                condition=(
+                    models.Q(organisation__isnull=False)
+                    | (
+                        models.Q(provenance=ExternalPositionProvenance.RECEIVED)
+                        & ~models.Q(source_label="")
+                    )
+                ),
+                name="matters_external_position_author_or_label",
+            ),
+            # `Allikas` is a received-feedback column. A label beside a named
+            # ministry would be a second name for a body the catalogue already
+            # names, and a label on a `LEGACY` row would be a fact invented by a
+            # writer that never had the field.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(source_label="")
+                    | models.Q(provenance=ExternalPositionProvenance.RECEIVED)
+                ),
+                name="matters_external_position_label_is_received",
+            ),
         ]
         indexes = [
             # The chronology's own read: one Matter's positions, newest first.
             models.Index(fields=["matter", "-stated_on"], name="matters_extpos_matter_date"),
+            # And «what came back to us on this file» — one Matter's positions
+            # split by where they came from, which is what the two panels and the
+            # grouped chronology read (docs/adr/0088 §3).
+            models.Index(fields=["matter", "provenance"], name="matters_extpos_matter_prov"),
             # And «what has this body said on this file», which is the question
             # a reader asks when a Matter carries several.
             models.Index(fields=["matter", "organisation"], name="matters_extpos_matter_org"),
         ]
 
     def __str__(self) -> str:
-        return f"Väline seisukoht: {self.organisation_id}"[:120]
+        return f"{self.kind_label}: {self.organisation_id or self.source_label}"[:120]
 
     def parent_visibility(self) -> str:
         return self.matter.visibility
+
+    @property
+    def is_received(self) -> bool:
+        """Whether somebody gave this to Koda, rather than Koda finding it.
+
+        Read from :attr:`provenance` and from nothing else. `LEGACY` is `False`
+        here — a row recorded before the question was asked is not evidence that
+        the answer was «discovered», and the two surfaces that care print
+        :attr:`kind_label` rather than branching on this (docs/adr/0088 §3.4).
+        """
+        return self.provenance == ExternalPositionProvenance.RECEIVED
+
+    @property
+    def kind_label(self) -> str:
+        """What the chronology calls this row — the provenance, in Estonian.
+
+        `Meile saadetud tagasiside`, `Teiste arvamus`, or `Väline seisukoht` for
+        a `LEGACY` row. The last one is deliberately the *old* headline rather
+        than the enum's own «Täpsustamata»: those rows read exactly as they did
+        before this column existed, because nothing about them changed and a file
+        that started calling them «täpsustamata» would be announcing a gap
+        somebody has to go and fill (docs/adr/0088 §3.4).
+        """
+        if self.provenance == ExternalPositionProvenance.LEGACY:
+            return EXTERNAL_POSITION_LEGACY_HEADLINE
+        return str(ExternalPositionProvenance(self.provenance).label)
+
+    @property
+    def author_label(self) -> str:
+        """Whose position this is, as a name to read.
+
+        The organisation where there is one, the `Allikas` where the answers
+        have no single author, and — for neither, which the database refuses on
+        a new row and which a `LEGACY` row cannot be in — the empty string. The
+        chronology never prints an empty author: `external_position_milestone`
+        composes the headline from :attr:`kind_label` and this, and drops the
+        separator when this is blank (docs/adr/0088 §3.3).
+        """
+        if self.organisation_id is not None:
+            return self.organisation.name
+        return self.source_label
 
     @property
     def revision_token(self) -> str:
@@ -1760,6 +1943,14 @@ class MatterExternalPosition(VisibilityInheritingModel):
             return ""
         return MatterEngagement._hostname(self.url) or EXTERNAL_POSITION_LINK_FALLBACK
 
+
+#: What the chronology calls a position recorded before `provenance` existed.
+#:
+#: The heading those rows have always had. Named here because the model, the
+#: chronology and a test all have to agree about it, and because the alternative
+#: — printing the enum's own «Täpsustamata» — would be the file announcing a
+#: gap in itself that nobody can honestly close (docs/adr/0088 §3.4).
+EXTERNAL_POSITION_LEGACY_HEADLINE = "Väline seisukoht"
 
 #: What a `Väline seisukoht`'s link control says when the address has no host to
 #: name. Named here because the model, the chronology and a test all have to

@@ -253,6 +253,112 @@ def set_next_action(
     return action
 
 
+#: The sentence a `Koostan arvamuse` step carries, in one place.
+#:
+#: A constant rather than a string in a view, because three things have to agree
+#: about it: the service that writes the step, the idempotency check that
+#: recognises one already written, and the page that shows the lawyer what they
+#: are about to create. A sentence spelled twice is a sentence that drifts, and
+#: here a drift would turn the idempotency check off without anything looking
+#: wrong (docs/adr/0088 §1).
+#:
+#: It is the department's own words for the work — writing Koda's opinion — and
+#: the first person, because it is the lawyer's own instruction to themselves,
+#: which is what `Järgmiseks` has always held.
+OPINION_PREPARATION_TEXT = "Koostan arvamuse"
+
+
+@transaction.atomic
+def establish_opinion_preparation_action(
+    *,
+    matter: Any,
+    prepare_by: date,
+    actor: Any = None,
+    responsible: Any = None,
+) -> NextAction:
+    """`Koostan arvamuse` — the first step, from the date somebody typed on `Uus teema`.
+
+    A normal incoming consultation begins the same way every time: the lawyer
+    files the Teema and writes Koda's opinion by a day they already know. Before
+    this they had to file the Teema, open `Lisa teemale`, choose
+    `+ Järgmine tegevus`, and type the sentence «Koostan arvamuse» themselves —
+    the same information entered twice, in two places, in a product whose whole
+    claim is that routine work is faster than Excel plus OneNote (lawyer
+    feedback 9, docs/adr/0088 §1).
+
+    **It creates the step from a date the person supplied, and invents nothing.**
+    ``prepare_by`` is required here, which is the point rather than an
+    inconvenience: «automatically creates the next action» is not «guess when it
+    is due». Not today, not seven days out, not the consultation deadline, not the
+    end of the month and not the Matter's creation date. A blank field creates no
+    step at all, because a commitment nobody stated is a commitment nobody can be
+    held to and is indistinguishable a week later from one somebody made
+    (docs/adr/0078 §2, docs/adr/0088 §1.2).
+
+    **Idempotent, and that is what makes it safe to call from a creation flow.**
+    A browser that retries a save — a double-pressed button, a resubmitted POST, a
+    proxy replaying a request — must not leave two identical instructions on one
+    file. Two things guarantee it cannot:
+
+    * `NextAction`'s own `workflow_one_open_action_per_matter` unique constraint
+      means a second open step is impossible in the database, whatever any caller
+      does;
+    * and this function checks for an **equivalent** step under the Matter's lock
+      before writing, so a retry does not even supersede-and-replace the first
+      one. Equivalent means the same sentence, the same day and the same
+      precision — a lawyer who deliberately changes the date is changing the plan
+      and gets a real replacement through the ordinary composer, which is a
+      different act with a different audit row.
+
+    Returning the existing step rather than raising is deliberate: the caller's
+    question is «is this file's first step established», and it is.
+
+    **Ordinary `NextAction` semantics throughout.** `DO` / `DEADLINE` / `EXACT`,
+    because the date means *the day this gets done* — which is exactly what that
+    combination says and is why `NextActionForm` stopped asking (ADR 0052 §3). The
+    step goes through `set_next_action_for_new_work`, so the departed-owner rule
+    applies: somebody is assigning work today, not recording what was assigned in
+    2019 (ADR 0036 §5). It appears wherever open steps appear — `Minu asjad`,
+    `PRAEGUNE TEGEVUS`, `Tähtajad`, the register's `JÄRGMISEKS` — with no special
+    case anywhere, because it is not a special kind of step.
+
+    ``responsible`` is handed in by the creation flow, which knows the owner the
+    person chose on the same form before the Matter existed. It is a default and
+    an explicit choice still wins, exactly as it does for `set_next_action`.
+    """
+    if prepare_by is None:
+        raise DomainError("Koostan arvamuse vajab kuupäeva.")
+
+    matter_model = apps.get_model("matters", "Matter")
+    locked_matter = matter_model.objects.select_for_update().get(pk=matter.pk)
+    existing = (
+        NextAction.objects.select_for_update()
+        .filter(
+            matter=locked_matter,
+            status=ActionStatus.OPEN,
+            text=OPINION_PREPARATION_TEXT,
+            target_date=prepare_by,
+            date_precision=DatePrecision.EXACT,
+        )
+        .first()
+    )
+    if existing is not None:
+        # The retry case. Nothing is written and nothing is superseded, so a
+        # replayed request leaves one step, one audit row and one history.
+        return existing
+
+    return set_next_action_for_new_work(
+        matter=locked_matter,
+        text=OPINION_PREPARATION_TEXT,
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=prepare_by,
+        date_precision=DatePrecision.EXACT,
+        responsible=responsible,
+        actor=actor,
+    )
+
+
 @transaction.atomic
 def complete_next_action(*, action: NextAction, actor: Any = None) -> NextAction:
     """Mark the current action done. It stays in the history."""
