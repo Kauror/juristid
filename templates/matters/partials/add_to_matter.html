@@ -110,11 +110,29 @@ row of controls that refuse (brief §30, §31).
     {% endif %}
 
     {% comment %}
-      `+ Kaasamine`. The current business model, unchanged this round:
-      `Vastuseid` is optional and blank means *nobody counted* rather than
-      *nobody answered*, and no response rate is computed anywhere. The larger
-      «Alustasin arvamuste küsimist» / «Arvamused saabusid» redesign is a
-      separate product round (brief §16).
+      `+ Kaasamine` — the four questions a consultation round actually has.
+
+      **Who was engaged, when it happened, by when answers were asked for, and
+      what came back.** The panel used to open on a row of `Liik` chips and a
+      four-way `Täpsus` control, so the first two decisions a lawyer made were
+      a classification nothing ever read back and a precision an as-it-happens
+      round never needs. Both are gone: every row written here is `Muu` and an
+      exact day, historical rows keep whatever they were given, and correcting
+      one is `Muuda` on its chronology row (docs/adr/0086 §1).
+
+      **The two dates both start filled and both clear.** `Kaasamise kuupäev`
+      is today because recording something that just happened is the usual
+      case; `Tagasisidet ootame kuni` is a week out because that is what a
+      round asks for when nobody says otherwise. Each can be read before
+      saving, changed, and emptied — and emptying the second one is the way to
+      say there is no wait, not an oversight the server corrects
+      (docs/adr/0078 §2, docs/adr/0086 §2).
+
+      **The reply-by date is what makes this work rather than a filed fact.**
+      Left set, the round shows on `PRAEGUNE TEGEVUS` and on the responsible
+      lawyer's Minu asjad until somebody finishes it with `Lõpeta kaasamine`.
+      It still creates no `Järgmiseks`, still is not `Arvamuse tähtaeg`, and
+      still counts towards no deadline statistic (docs/adr/0086 §3).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-kaasamine-valik"
            data-addpick aria-controls="lisa-kaasamine"
@@ -130,62 +148,61 @@ row of controls that refuse (brief §30, §31).
               hx-target="#teema-vaade" hx-swap="outerHTML"
               hx-encoding="multipart/form-data">
           {% csrf_token %}
-          <div class="cx-when" data-chipgroup="{{ add_engagement_form.kind.html_name }}">
-            <span class="cx-f__lab">Liik</span>
-            {% for chip in add_engagement_form.kind_chips %}
-              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
-                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
-            {% endfor %}
-            {{ add_engagement_form.kind }}
-          </div>
           <div class="cx-grid">
             <label class="cx-f">
               <span class="cx-f__lab">Keda kaasati</span>
               {{ add_engagement_form.audience }}
             </label>
             <label class="cx-f cx-f--num">
-              <span class="cx-f__lab">Vastuseid</span>
+              <span class="cx-f__lab">Vastuseid
+                <span class="cx-f__opt">valikuline</span></span>
               {{ add_engagement_form.response_count }}
             </label>
           </div>
-          {% comment %}
-            The two dates, and the difference between them is the whole point.
-
-            `Kaasamise kuupäev` is when the round happened. It used to be
-            invisible: the panel never asked, and the view stamped today on
-            every row it wrote — so a consultation from March, typed up in
-            September, was filed as a September consultation and there was no
-            box on the screen saying so. The box shows today because today is
-            the usual answer, and it can be changed or emptied; an empty one is
-            stored as «kuupäev teadmata», which is what the model has always
-            meant by a blank date.
-
-            **And it is asked at four precisions**, through the same `Täpsus`
-            control as `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit` and
-            `Järgmine tegevus`. A consultation round is routinely remembered as
-            «oktoobris» or «2019», and a person who knew only that had to
-            choose between naming a day nobody named and recording nothing
-            (docs/adr/0082). One partial, not a second widget: a quarter stated
-            here is the same stored period as a quarter stated anywhere else.
-
-            `Tagasisidet ootame kuni` is what was asked of the people who were
-            contacted — «ootan vastuseid kuni 22.09». **An exact day and only
-            that**, deliberately: it is a date somebody named to other people,
-            so it stays where docs/adr/0079 §11 put it while the box above it
-            moved. Optional, blank by default, and deliberately *not* work: it
-            makes no next action, no deadline row, no badge and no count.
-            Labelled `valikuline` because a second date box beside a pre-filled
-            one otherwise reads as required (docs/adr/0027; design feedback
-            2026-09-14).
-          {% endcomment %}
-          {% include "matters/partials/period_composer.html" with chips=add_engagement_form.precision_chips date_field=add_engagement_form.occurred_on month_field=add_engagement_form.engagement_month quarter_field=add_engagement_form.engagement_quarter year_field=add_engagement_form.engagement_year only %}
           <div class="cx-grid cx-grid--links">
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Kaasamise kuupäev
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ add_engagement_form.occurred_on }}
+            </label>
+          </div>
+          {% comment %}
+            `Tagasisidet ootame kuni`, and the three spans that fill it.
+
+            The chips write into the box beside them and store nothing of their
+            own, so the server sees one value however it was chosen and the
+            control works with scripting off — the box arrives pre-filled and
+            typing over it is the whole interaction. Each chip's label grows to
+            carry the day it landed on once it is pressed, because nobody should
+            set a collection date for a day they did not read
+            (`static/js/ux.js`, `bindQuickDates`; docs/adr/0086 §2).
+
+            `1 kuu` is a calendar month — the same day next month, or that
+            month's last day where there is no such day — and it is resolved on
+            the server in Europe/Tallinn like the other two
+            (`app.core.dates.add_months`).
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links"
+               data-quickdate-group="{{ add_engagement_form.feedback_deadline.id_for_label }}">
+            <div class="cx-when">
+              {% for choice in feedback_deadline_choices %}
+                <button type="button" class="uxchip" aria-pressed="false"
+                        data-quickdate="{{ choice.value }}"
+                        data-label-default="{{ choice.label }}"
+                        data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+              {% endfor %}
+            </div>
             <label class="cx-f cx-f--date">
               <span class="cx-f__lab">Tagasisidet ootame kuni
                 <span class="cx-f__opt">valikuline</span></span>
               {{ add_engagement_form.feedback_deadline }}
             </label>
           </div>
+          <label class="cx-f" for="{{ add_engagement_form.feedback_received.id_for_label }}">
+            <span class="cx-f__lab">Saadud tagasiside / arvamused
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ add_engagement_form.feedback_received }}
+          </label>
           {% comment %}
             Where this round's material lives. Both optional, both inert: the
             form validates the scheme and nothing else, no request is made to
@@ -214,6 +231,10 @@ row of controls that refuse (brief §30, §31).
           {% if add_engagement_form.response_count.errors %}
             <p class="field__error" id="{{ add_engagement_form.response_count.auto_id }}_error">
               {{ add_engagement_form.response_count.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.occurred_on.errors %}
+            <p class="field__error" id="{{ add_engagement_form.occurred_on.auto_id }}_error">
+              {{ add_engagement_form.occurred_on.errors|first }}</p>
           {% endif %}
           {% if add_engagement_form.smaily_url.errors %}
             <p class="field__error" id="{{ add_engagement_form.smaily_url.auto_id }}_error">

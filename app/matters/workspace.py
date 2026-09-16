@@ -62,6 +62,7 @@ from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
 from app.matters.entry_enums import EntryKind
+from app.matters.enums import EngagementKind
 from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Entry, Matter
 from app.matters.services import (
@@ -69,6 +70,7 @@ from app.matters.services import (
     add_entry,
     cancel_website_overview,
     close_matter,
+    complete_engagement_feedback,
     correct_website_overview_link,
     plan_website_overview,
     publish_website_overview,
@@ -224,14 +226,15 @@ def add_matter_engagement(
     *,
     matter: Matter,
     author: Any,
-    kind: str,
     audience: str,
+    kind: str = EngagementKind.OTHER.value,
     response_count: Any = None,
     smaily_url: str = "",
     alchemer_url: str = "",
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
+    feedback_received: str = "",
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
@@ -256,11 +259,22 @@ def add_matter_engagement(
     optional, undefaulted and inert — it is a record of what was asked of other
     people, not a task for this office.
 
-    ``occurred_on_precision`` is the panel's `Täpsus` answer, and ``occurred_on``
-    is then the anchor of the period it names — the same normalisation
-    `+ Oluline tähtaeg` and `+ Jõustumine` go through. `Tagasisidet ootame kuni`
-    takes no precision: docs/adr/0082 widened the first date and left the second
-    on docs/adr/0079 §11's exact-day list.
+    ``kind`` defaults to `Muu` because the panel stopped asking. It stays a
+    parameter for the importer and for the shell, which do know which channel a
+    round used; what went is the question the panel put to a lawyer, whose
+    answer nothing ever read back (docs/adr/0086 §1).
+
+    ``feedback_received`` is `Saadud tagasiside / arvamused`, optional, and it
+    completes nothing: a round created carrying both a deadline and some text is
+    a wait that is open and already has something written in it. Ending the wait
+    is `add_engagement_feedback`, and it is a decision with a name on it
+    (docs/adr/0086 §6).
+
+    ``occurred_on_precision`` is `EXACT` for everything this panel writes — it
+    asks for a day and offers no other precision. The parameter stays because
+    the importer and the register enrichment do carry periods, and because an
+    existing approximate row must be able to travel back through the same
+    service unchanged (docs/adr/0082, narrowed by docs/adr/0086 §1).
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
@@ -275,6 +289,7 @@ def add_matter_engagement(
             smaily_url=smaily_url,
             alchemer_url=alchemer_url,
             feedback_deadline=feedback_deadline,
+            feedback_received=feedback_received,
             actor=author,
         )
         result.documents = capture_supporting_evidence(
@@ -284,6 +299,50 @@ def add_matter_engagement(
             actor=author,
         )
         return result
+
+
+@transaction.atomic
+def add_engagement_feedback(
+    *,
+    engagement: Any,
+    author: Any,
+    feedback_received: str = "",
+    uploads: Sequence[Any] = (),
+    expected_revision: str | None = None,
+) -> Any:
+    """`Lõpeta kaasamine` — the round is finished, with its answers attached.
+
+    The workspace door onto `complete_engagement_feedback`, and it exists for
+    the reason every other function in this module does: the panel writes a
+    record **and** whatever files arrived with it, and those two have to be one
+    transaction. A completion that committed while its attachment was refused
+    would leave a round recorded as answered and the answer itself nowhere
+    (docs/adr/0075 §8).
+
+    The closed-Matter rule, the two state refusals and the revision check are
+    all the service's, taken under the Matter's row lock; nothing is re-asked
+    here. The evidence is captured **after** the completion, so a refused upload
+    unwinds a completion that has already been written rather than the other way
+    round — the order `add_matter_engagement` and `add_matter_note` already use.
+
+    Returns the completed engagement rather than a `WorkspaceResult`, because
+    the caller swaps that one row back into the chronology and has no use for an
+    operation id it cannot render.
+    """
+    completed = complete_engagement_feedback(
+        engagement=engagement,
+        feedback_received=feedback_received,
+        actor=author,
+        expected_revision=expected_revision,
+    )
+    with composer_operation():
+        capture_supporting_evidence(
+            matter=completed.matter,
+            record=completed,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+    return completed
 
 
 @transaction.atomic

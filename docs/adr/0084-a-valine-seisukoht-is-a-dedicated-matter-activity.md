@@ -564,6 +564,6 @@ never today.
   anything is decided, answering 409 with the form still holding what was typed
   and the hidden token not advanced.
 * **§9's migration posture.** This amendment adds exactly one migration,
-  `matters/0024_external_position_seisukoht`, and it is an `AlterField` over a
+  `matters/0025_external_position_seisukoht`, and it is an `AlterField` over a
   `verbose_name`. No `RunPython`, no `RunSQL`, no backfill, no reindex, no
   archive rebuild, and `INDEX_VERSION` does not move.

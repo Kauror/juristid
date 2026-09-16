@@ -128,7 +128,11 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
             direct,
         ),
         (
-            (ChangeEventType.ENGAGEMENT_ADDED, ChangeEventType.ENGAGEMENT_CHANGED),
+            (
+                ChangeEventType.ENGAGEMENT_ADDED,
+                ChangeEventType.ENGAGEMENT_CHANGED,
+                ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
+            ),
             MatterEngagement,
             direct,
         ),

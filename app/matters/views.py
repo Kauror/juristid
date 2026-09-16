@@ -47,6 +47,7 @@ from app.core.authorization import (
     may_write_business_content,
 )
 from app.core.dates import (
+    add_months,
     format_estonian_date,
     parse_flexible_date,
     short_day_month,
@@ -84,7 +85,7 @@ from app.matters import (
 )
 from app.matters import person_work as person_workspace
 from app.matters.department_dashboard import SeisFigure
-from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
     BriefSummaryForm,
     CloseMatterForm,
@@ -97,6 +98,7 @@ from app.matters.forms import (
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
     ComposerForm,
+    EngagementFeedbackForm,
     EngagementForm,
     EntryEditForm,
     ExternalPositionEditForm,
@@ -111,7 +113,6 @@ from app.matters.forms import (
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
     edit_initial,
-    engagement_period_initial,
     external_position_period_initial,
     period_initial,
 )
@@ -2316,6 +2317,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         only=timeline_only,
         intelligence=intelligence,
     )
+    # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
+    # form, with its own ids and its own revision token. Here rather than in the
+    # template because a template must not build a form, and on the record
+    # rather than in this dict because there are many rows (`attach_feedback_form`).
+    for item in items:
+        if item.is_engagement:
+            attach_feedback_form(item.record)
     # `selectors.current_action_of`, not `workflow.services.current_next_action`.
     # The service answers "which action is open on this Matter" for the domain,
     # which is a question about the file; a *page* asks "which action may this
@@ -2441,6 +2449,23 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # anchors on 1 October, and a Matter whose `Arvamuse tähtaeg` is that
         # day would otherwise lose its official line to a number nobody put on
         # the screen (docs/adr/0079 §12).
+        # `Tagasisidet ootame kuni`'s quick spans, resolved to real days here so
+        # the chips can print the date each one lands on.
+        "feedback_deadline_choices": feedback_deadline_choices(timezone.localdate()),
+        # The consultation rounds this file is still waiting on, newest deadline
+        # last. Read here rather than in the template, like everything else on
+        # this dict, and read through the child's own `visible_to`: a restricted
+        # round must not put a line on `PRAEGUNE TEGEVUS` for a reader who may
+        # not open it (AUTH-003, docs/adr/0086 §4).
+        #
+        # Beside the open step rather than instead of it. Both are true, both
+        # are the reader's, and a page that showed one of them would be choosing
+        # which of two facts about their day to withhold.
+        "feedback_waits": list(
+            work_items.open_feedback_waits(request.user)
+            .filter(matter=matter)
+            .order_by("feedback_deadline", "pk")
+        ),
         "response_obligation": work_items.secondary_response_obligation(
             matter,
             request.user,
@@ -3068,21 +3093,24 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
     try:
         record_engagement(
             matter=matter,
-            kind=form.cleaned_data["kind"],
+            # The vocabulary's own default, because this form no longer asks.
+            # `Liik` was a classification nothing read back, and a door that
+            # kept writing `Küsitlus` on rounds nobody described that way would
+            # be the one surface still manufacturing the fact the panel stopped
+            # asking for (docs/adr/0086 §1).
+            kind=EngagementKind.OTHER.value,
             title=form.cleaned_data["title"],
             url=form.cleaned_data.get("url") or "",
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             note=form.cleaned_data.get("note") or "",
-            # The **resolved** date, not the day box: a month, a quarter or a
-            # year leaves that box empty and arrives as an anchor plus its
-            # precision (`app/matters/forms.py`, `engagement_period`).
+            # The **resolved** date. On this route it is always the day box or
+            # nothing, because a create has no stored period to preserve
+            # (`app/matters/forms.py`, `EngagementForm.clean`).
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            # The column this door used to drop on the floor. `record_engagement`
-            # could not carry it and the form had no box for it, so a reply-by
-            # date posted here was discarded in silence (docs/adr/0078 §3).
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+            feedback_received=form.cleaned_data.get("feedback_received") or "",
             actor=request.user,
         )
     except DomainError:
@@ -3116,26 +3144,29 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
     what was typed.
     """
     auto_id = f"id_kaasamine_{engagement.pk}_%s"
-    # `record=` on both branches. It decides which precision chips exist, so a
-    # bound form built without it would refuse a `HALF_YEAR` the record
-    # legitimately holds — and would accept one it does not (docs/adr/0079 §9,
-    # `attach_engagement_precision`).
+    # `record=` on both branches, and on the bound one it is load-bearing: it is
+    # what tells `EngagementForm.clean` that this row is dated to a period, and
+    # therefore that an empty day box means «leave it alone» rather than «clear
+    # it». A bound form built without it would quietly destroy the period on
+    # every refused-and-resubmitted save (docs/adr/0086 §1).
     if data is not None:
         return EngagementForm(data, auto_id=auto_id, record=engagement)
     return EngagementForm(
         initial={
-            "kind": engagement.kind,
             "title": engagement.title,
             "url": engagement.url,
             "smaily_url": engagement.smaily_url,
             "alchemer_url": engagement.alchemer_url,
             "note": engagement.note,
-            # `Kaasamise kuupäev`, in whichever boxes its own precision uses —
-            # and in **none** of them when it is a period, because the stored
-            # anchor is not a day and must not appear in a date box
-            # (`engagement_period_initial`, docs/adr/0079 §2).
-            **engagement_period_initial(engagement),
+            # `Kaasamise kuupäev`, and **only** when it is a day. A record dated
+            # to a month, a quarter or a year opens with this box empty and its
+            # period stated in words beside it: the stored anchor is a place in
+            # a sort and not a day anybody named, so handing back `01.10.2025`
+            # would invite somebody to re-save an invented day
+            # (docs/adr/0079 §2, docs/adr/0086 §1).
+            "occurred_on": (None if engagement.has_approximate_date else engagement.occurred_on),
             "feedback_deadline": engagement.feedback_deadline,
+            "feedback_received": engagement.feedback_received,
             "revision": engagement_revision_token(engagement),
         },
         auto_id=auto_id,
@@ -3160,12 +3191,84 @@ def _engagement_for_correction(
     )
 
 
+def _engagement_feedback_form(
+    engagement: MatterEngagement, data: Any = None
+) -> EngagementFeedbackForm:
+    """One round's `Lõpeta kaasamine` form, with ids nothing else can share.
+
+    Per record, exactly as `_engagement_edit_form` is: a chronology may show
+    several waiting rounds at once, and two controls sharing an id is enough to
+    make a label reach the wrong textarea.
+
+    Filled from the record, because a round may already carry feedback somebody
+    typed when they created it — an empty box would invite them to overwrite
+    their own words with nothing. A bound form ignores `initial`, so a refused
+    completion comes back carrying what was typed.
+    """
+    auto_id = f"id_kaasamine_{engagement.pk}_tagasiside_%s"
+    form = (
+        EngagementFeedbackForm(data, auto_id=auto_id)
+        if data is not None
+        else EngagementFeedbackForm(
+            initial={
+                "feedback_received": engagement.feedback_received,
+                "revision": engagement_revision_token(engagement),
+            },
+            auto_id=auto_id,
+        )
+    )
+    # The file control's id, per record, **overriding the widget's own**.
+    # `workspace_attachments` puts a fixed `id` in the widget's attrs precisely
+    # because six of these render on one page, and an explicit attrs id beats
+    # `auto_id` in `BoundField.id_for_label` — so a Matter waiting on three
+    # rounds would otherwise render three inputs called
+    # `id_kaasamine_tagasiside_failid` and the second `<label for>` would open
+    # the first round's picker. Mutating `fields` is safe: Django deep-copies
+    # `base_fields` per instance (docs/adr/0075 §2).
+    form.fields["attachments"].widget.attrs["id"] = f"id_kaasamine_{engagement.pk}_tagasiside"
+    return form
+
+
+def attach_feedback_form(
+    engagement: MatterEngagement,
+    *,
+    form: EngagementFeedbackForm | None = None,
+    open_panel: bool = False,
+) -> MatterEngagement:
+    """Hang this round's `Lõpeta kaasamine` form on the record, or nothing.
+
+    **On the record rather than in the context, because the chronology renders
+    many of them.** A Matter may be running three consultations at once, and
+    `matters/partials/engagement_row.html` is included once per row from inside
+    a loop — so a single context variable would give every row the same form,
+    with the same ids and the same revision token, and pressing `Lõpeta` on the
+    second round would post the first one's version (docs/adr/0086 §6).
+
+    One name, set by both callers: the page render walks its timeline items
+    through here, and the fragment view does the same for the one row it is
+    answering, so a row cannot mean different things on the two paths.
+
+    ``None`` for a round that is not waiting — a wait nobody opened and one
+    somebody finished both get no control, and the template asks this rather
+    than re-deriving the state.
+    """
+    engagement.feedback_form = (  # type: ignore[attr-defined]
+        form
+        if form is not None
+        else (_engagement_feedback_form(engagement) if engagement.has_open_feedback_wait else None)
+    )
+    engagement.feedback_form_open = open_panel  # type: ignore[attr-defined]
+    return engagement
+
+
 def _engagement_row(
     request: HttpRequest,
     matter: Matter,
     engagement: MatterEngagement,
     *,
     form: EngagementForm | None = None,
+    feedback_form: EngagementFeedbackForm | None = None,
+    feedback_open: bool = False,
     error: str = "",
     conflict: MatterEngagement | None = None,
     status: int = 200,
@@ -3188,7 +3291,12 @@ def _engagement_row(
         "matters/partials/engagement_row.html",
         {
             "matter": matter,
-            "engagement": engagement,
+            # `Lõpeta kaasamine` rides on the record, exactly as it does on the
+            # page render. A refused completion comes back bound and asks for
+            # its own panel to reopen (`attach_feedback_form`).
+            "engagement": attach_feedback_form(
+                engagement, form=feedback_form, open_panel=feedback_open
+            ),
             "milestone": engagement_milestone(engagement),
             "engagement_edit_form": form,
             "engagement_edit_error": error,
@@ -3251,7 +3359,9 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
     try:
         corrected = correct_engagement(
             engagement=engagement,
-            kind=form.cleaned_data["kind"],
+            # No `kind`. The editor stopped offering it, so `_UNSET` leaves
+            # whatever is stored exactly as it is — a historical `Kaasamiskutse
+            # veebis` keeps saying so (docs/adr/0086 §1).
             title=form.cleaned_data["title"],
             url=form.cleaned_data.get("url") or "",
             smaily_url=form.cleaned_data.get("smaily_url") or "",
@@ -3263,13 +3373,14 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             # register refresh rely on it — and naming a field is how this form
             # says «I am the editor of this value» (docs/adr/0078 §3).
             #
-            # `occurred_on` is the resolved anchor and travels with its
-            # precision, because the two are one fact: correcting *oktoober
-            # 2026* to *IV kvartal 2026* changes only the second of them
-            # (docs/adr/0082 §3).
+            # `occurred_on` is the date the save *results in*, which for a
+            # record dated to a period and left alone is the period it already
+            # had — the form resolves that, because only it knows what the
+            # empty day box was showing (`EngagementForm.clean`).
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+            feedback_received=form.cleaned_data.get("feedback_received") or "",
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
         )
@@ -3296,6 +3407,85 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
         return _engagement_row(request, matter, engagement, form=form, error=str(error), status=400)
 
     return _engagement_row(request, matter, corrected)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def complete_engagement_feedback_view(
+    request: HttpRequest, pk: Any, engagement_id: Any
+) -> HttpResponse:
+    """`Lõpeta kaasamine` — the round stopped waiting, and here is what came back.
+
+    POST only. The form it posts is rendered inside the chronology row by
+    `_engagement_row`, which is also every answer's swap target — saved, refused
+    or conflicted, the reader is looking at one element and the answer lands in
+    it (docs/adr/0086 §6).
+
+    **Every rule is the service's.** A closed Matter, a round nobody is waiting
+    on, a wait somebody already finished and a stale revision are all refused
+    under the Matter's row lock inside `complete_engagement_feedback`, never by
+    whether this page drew a button: the browser that posts may be holding a
+    page from before the closure, or from before a colleague finished the same
+    round.
+
+    Behind `business_write_required` and nothing narrower, like every other
+    correction on this record: an unanswered consultation is the department's
+    problem and not one lawyer's (docs/adr/0042). A reader gets the decorator's
+    404.
+
+    The files ride with the decision, through the ordinary evidence path, so an
+    answer that arrived as a PDF is attached to the round it answers rather than
+    to the Matter in general — and a refused upload unwinds the completion with
+    it, because `add_engagement_feedback` writes both in one transaction.
+    """
+    matter = get_visible_matter(request, pk)
+    engagement = _engagement_for_correction(request, matter, engagement_id)
+    form = _engagement_feedback_form(engagement, request.POST)
+    if not form.is_valid():
+        return _engagement_row(
+            request, matter, engagement, feedback_form=form, feedback_open=True, status=400
+        )
+
+    try:
+        completed = workspace.add_engagement_feedback(
+            engagement=engagement,
+            author=request.user,
+            feedback_received=form.cleaned_data.get("feedback_received") or "",
+            uploads=form.cleaned_data["attachments"],
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except EngagementEditConflict as conflict:
+        # 409, and nothing was written — not the words, not the timestamp. The
+        # form stays open holding this person's text, the version that beat them
+        # arrives beside it to read, and the hidden token is **not** advanced:
+        # adopting it here would be this view deciding that the next submit may
+        # overwrite what the other writer saved (`update_engagement_view`).
+        return _engagement_row(
+            request,
+            matter,
+            engagement,
+            feedback_form=form,
+            feedback_open=True,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except (DomainError, UploadRejected) as error:
+        # A closed Matter lands here, and so does a wait that is already
+        # finished or was never opened. The sentence goes into the panel that is
+        # still open rather than into a page-level banner this row does not have.
+        return _engagement_row(
+            request,
+            matter,
+            engagement,
+            feedback_form=form,
+            feedback_open=True,
+            error=str(error),
+            status=400,
+        )
+
+    return _engagement_row(request, matter, completed)
 
 
 @login_required
@@ -3450,6 +3640,49 @@ def quick_date_choices(today: date) -> list[dict[str, Any]]:
             f"{short_day_month(today + timedelta(days=days))}",
         }
         for days, label in QUICK_DATES
+    ]
+
+
+#: What `Tagasisidet ootame kuni` offers beside its box.
+#:
+#: Three spans and a calendar, which is what a consultation round actually asks
+#: for. They are spelled as the periods themselves — `1 nädal`, not `+1 nädal` —
+#: because the question above them is «until when», not «how much later»
+#: (docs/adr/0086 §2).
+#:
+#: `1 kuu` is a **calendar** month and is therefore not in this tuple: a span in
+#: days cannot say «the 31st of January plus one month», and the whole point of
+#: offering a month is that somebody who picks it means the same day next month
+#: (`app.core.dates.add_months`).
+FEEDBACK_DEADLINE_SPANS: tuple[tuple[int, str], ...] = (
+    (7, "1 nädal"),
+    (14, "2 nädalat"),
+)
+
+
+def feedback_deadline_choices(today: date) -> list[dict[str, Any]]:
+    """The reply-by spans, each carrying the day it resolves to.
+
+    Resolved on the server, in Europe/Tallinn, and delivered on the control —
+    the contract :func:`quick_date_choices` keeps and for the same reason:
+    working it out in the browser would answer in the reader's own timezone,
+    which is the class of defect `app/core/dates.py` exists to prevent.
+
+    They write into the date box beside them and store nothing of their own, so
+    the server sees one value however it was chosen and the panel works with the
+    chips ignored entirely — including with scripting off, where the box is
+    pre-filled and typing over it is the whole interaction
+    (`static/js/ux.js`, `bindQuickDates`).
+    """
+    spans = [(today + timedelta(days=days), label) for days, label in FEEDBACK_DEADLINE_SPANS]
+    spans.append((add_months(today, 1), "1 kuu"))
+    return [
+        {
+            "value": format_estonian_date(when),
+            "label": label,
+            "when": f"{weekday_letter(when)} {short_day_month(when)}",
+        }
+        for when, label in spans
     ]
 
 
@@ -4986,14 +5219,16 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Kaasamine` — one consultation and the replies that came back with it.
+    """`+ Kaasamine` — one consultation, what it asked for, and what came back.
 
-    **Both dates come off the form.** This view used to pass
-    `timezone.localdate()` for `occurred_on` no matter what, because the panel
-    had no date box — so a consultation from March, written down in September,
-    was stored as a September consultation. The panel asks `Kaasamise kuupäev`
-    now, pre-filled with today, and what the person left in the box is what is
-    stored; a box they emptied stores nothing.
+    **Both dates come off the form, and neither is invented here.** This view
+    used to pass `timezone.localdate()` for `occurred_on` no matter what,
+    because the panel had no date box — so a consultation from March, written
+    down in September, was stored as a September consultation. The panel asks
+    both dates now, each pre-filled with a plausible answer and each clearable,
+    and what the person left in a box is what is stored. An emptied
+    `Kaasamise kuupäev` stores nothing; an emptied `Tagasisidet ootame kuni`
+    opens no wait (docs/adr/0086 §2).
     """
     matter = get_visible_matter(request, pk)
     form = CompactEngagementForm(request.POST, request.FILES)
@@ -5003,16 +5238,14 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
         workspace.add_matter_engagement(
             matter=matter,
             author=request.user,
-            kind=form.cleaned_data["kind"],
             audience=form.cleaned_data["audience"],
             response_count=form.cleaned_data.get("response_count"),
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            # The resolved anchor and its precision, not the day box: `Kuu`,
-            # `Kvartal` and `Aasta` leave that box empty on purpose.
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+            feedback_received=form.cleaned_data.get("feedback_received") or "",
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:

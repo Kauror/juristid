@@ -309,6 +309,23 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: w["matter"].engagements.count(),
     ),
     WriteRoute(
+        name="matters:complete_engagement_feedback",
+        label="Kaasamise lõpetamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "engagement_id": w["waiting_engagement"].pk},
+            {"feedback_received": "Loata tagasiside", "revision": ""},
+        ),
+        # The wait's own state, not a row count: completing one creates nothing,
+        # so a probe that counted engagements would be satisfied by a refusal
+        # *and* by a successful completion (docs/adr/0086 §6).
+        probe=lambda w: (
+            w["waiting_engagement"]
+            .__class__.objects.values_list("feedback_closed_at", "feedback_received")
+            .get(pk=w["waiting_engagement"].pk)
+        ),
+        events=(ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,),
+    ),
+    WriteRoute(
         name="matters:add_important_date",
         label="Olulise tähtaja lisamine",
         request=lambda w: (
@@ -679,7 +696,9 @@ def _pdf(filename: str):
 @pytest.fixture
 def world(db):
     from app.documents.services import add_evidence_version
+    from app.matters.enums import EngagementKind
     from app.matters.services import (
+        add_engagement,
         close_matter,
         create_matter,
         plan_website_overview,
@@ -739,6 +758,19 @@ def world(db):
         actor=author,
     )
 
+    # A consultation round still waiting for answers, for the completion route:
+    # `Lõpeta kaasamine` ends a wait that exists rather than creating one, so a
+    # world without one would have nothing for a forbidden actor to be refused
+    # *on* — and the refusal would be indistinguishable from the service's own
+    # «this round is not waiting» (docs/adr/0086 §6).
+    waiting_engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Ootel kaasamine",
+        feedback_deadline=timezone.localdate() + timedelta(days=7),
+        actor=author,
+    )
+
     planned_overview = plan_website_overview(matter=matter, actor=author)
     published_overview = publish_website_overview(
         overview=plan_website_overview(matter=matter, actor=author),
@@ -772,6 +804,7 @@ def world(db):
     return {
         "matter": matter,
         "entry": entry,
+        "waiting_engagement": waiting_engagement,
         "external_position": external_position,
         "planned_overview": planned_overview,
         "published_overview": published_overview,
