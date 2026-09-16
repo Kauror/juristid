@@ -300,11 +300,49 @@ def test_the_panel_can_record_a_page_that_is_already_up(page, base_url):
 
 
 def test_half_a_publication_is_refused_and_keeps_what_was_typed(page, base_url):
-    """An address without a date is a mistake, not a plan with a note attached.
+    """A date without an address is a mistake, not a plan with a note attached.
 
-    The refusal comes back through HTMX with the panel reopened and the address
+    The refusal comes back through HTMX with the panel reopened and the date
     still in the box — losing it would cost the one fact they opened the panel
     to record.
+
+    **This is the date-only half, and after docs/adr/0085 §3 it is the only half
+    a browser reaches by leaving a box alone.** Typing an address now fills the
+    date beside it, so «address, no date» is something a person has to *do* —
+    clear the box — rather than something they can arrive at by not typing. That
+    path has its own test (`test_a_refusal_keeps_an_emptied_date_empty`), and
+    the server refuses both halves identically whatever the browser did
+    (`tests/test_overview_news_publication.py`).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = page.locator("#lisa-koduleht")
+    panel.locator("[name=published_on]").fill("14.03.2026")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    page.wait_for_timeout(200)
+
+    reopened = page.locator("#lisa-koduleht")
+    expect(reopened).to_be_visible()
+    expect(reopened.locator(".field__error").first).to_be_visible()
+    assert reopened.locator("[name=published_on]").input_value() == "14.03.2026"
+    assert reopened.locator("[name=url]").input_value() == ""
+    # Nothing was filed.
+    expect(strip(page)).to_have_count(0)
+
+
+def test_typing_only_an_address_now_records_a_publication(page, base_url):
+    """The behaviour change docs/adr/0085 §3 makes, stated where it is visible.
+
+    Before the default, somebody who pasted an address and pressed the button
+    met a refusal asking for a date they would then type by hand — on the
+    overwhelmingly common day, today. Now the date is already there, visibly, so
+    the commonest publication is one paste and one click.
+
+    A person who did *not* mean today still sees the value before saving and can
+    change or clear it, which is the whole difference between a default and a
+    stamp.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -313,13 +351,10 @@ def test_half_a_publication_is_refused_and_keeps_what_was_typed(page, base_url):
     panel = page.locator("#lisa-koduleht")
     panel.locator("[name=url]").fill(KODA_URL)
     panel.get_by_role("button", name=PLAN_BUTTON).click()
-    page.wait_for_timeout(200)
+    chronology(page).wait_for(state="visible")
 
-    reopened = page.locator("#lisa-koduleht")
-    expect(reopened).to_be_visible()
-    expect(reopened.locator(".field__error").first).to_be_visible()
-    assert reopened.locator("[name=url]").input_value() == KODA_URL
-    # Nothing was filed.
+    expect(chronology(page)).to_contain_text("Avaldatud")
+    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
     expect(strip(page)).to_have_count(0)
 
 

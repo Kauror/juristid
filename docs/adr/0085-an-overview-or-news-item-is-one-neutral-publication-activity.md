@@ -167,6 +167,24 @@ their clipboard has already decided this row is a publication.
 * With scripting off the panel is what it was: two plain text boxes, typed by
   hand. Nothing here is required to reach either outcome.
 
+### What it changes for somebody who pastes an address
+
+With scripting on, **typing only an address now files a publication** where it
+used to meet a refusal asking for a date. That is the point: the date it asks
+for is today on the overwhelming majority of those saves, and the refusal was
+making people type it by hand.
+
+So «an address and no date» stops being a state somebody reaches by *not*
+typing, and becomes one they reach by clearing the box — which is exactly the
+gesture that means «not today». The other half, a date with no address, is
+unchanged and still reached by leaving the link box alone.
+
+Both halves are refused identically by the service, which sees a POST and not a
+browser, so nothing about the rule moved — only how easy each half is to arrive
+at by accident. `e2e/test_website_overview.py` keeps a test on each, and
+`test_typing_only_an_address_now_records_a_publication` states the change
+outright rather than leaving it to be discovered.
+
 **It is a default, not a fallback.** No service, no form `initial` and no model
 default supplies a publication date. `publish_website_overview` stores the
 submitted value and derives nothing, so an empty date box is still a refusal
@@ -336,6 +354,9 @@ chosen, silently, on the one column that is the person's own statement.
   `once`/`bindAll` machinery as the eight already there and degrading to nothing
   without scripting (AGENTS.md's «minimal isolated JavaScript islands only where
   UX requires client-side state»).
+* A paste-and-click publication is one gesture shorter, and «address without a
+  date» has to be chosen rather than fallen into. The refusal still exists, is
+  still reachable and is still what the server does with half a publication.
 * Historical rows read under the new name. A `koda.ee` overview recorded in
   September is an `Ülevaade / uudis` from today, which is true of it — the record
   did not change, only what it is called.
