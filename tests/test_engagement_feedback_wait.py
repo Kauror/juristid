@@ -393,6 +393,67 @@ def test_a_wait_is_outside_the_search_projection(specialist):
     assert "kaubandus" not in row.title.lower()
 
 
+def test_a_matter_page_costs_no_query_per_waiting_round(signed_in, specialist):
+    """The waits are one scoped read, and so are the forms built from them.
+
+    `visible_to` resolves the reader's scope by asking the database whether they
+    hold a break-glass grant, so a page that read the waits per row would pay for
+    that lookup per row — the cost `annotate_last_activity` was caught making
+    twelve times on one page (docs/adr/0027 round). The completion forms are
+    built per record in Python and buy no queries at all.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    matter = factories.MatterFactory(owner=specialist)
+    url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+
+    def cost() -> int:
+        with CaptureQueriesContext(connection) as captured:
+            signed_in.get(url)
+        return len(captured)
+
+    _waiting(matter, days=3, actor=specialist)
+    one = cost()
+    for day in range(4, 12):
+        _waiting(matter, days=day, actor=specialist)
+
+    assert cost() <= one, "the page pays per waiting round"
+
+
+def test_closing_a_matter_reads_the_matter_row_once_however_many_rounds_wait(specialist):
+    """The closure audits against the row it already holds.
+
+    Ending five waits costs five `UPDATE`s and five `ChangeEvent` inserts, which
+    is the work itself and is not what this measures. What must not grow is the
+    number of times the **Matter** is read: `engagement.matter` is a lazy
+    descriptor on a row fetched without `select_related`, so a leaf that reached
+    through it would re-fetch the locked Matter once per round
+    (`_close_one_feedback_wait`).
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    def matter_reads(rounds: int) -> int:
+        matter = factories.MatterFactory(owner=specialist)
+        for day in range(rounds):
+            _waiting(matter, days=day + 1, actor=specialist)
+        with CaptureQueriesContext(connection) as captured:
+            close_matter(
+                matter=matter,
+                disposition=Disposition.COMPLETED,
+                actor=specialist,
+                reason="valmis",
+            )
+        return sum(
+            1
+            for query in captured.captured_queries
+            if 'FROM "matters_matter"' in query["sql"] and str(matter.pk) in query["sql"]
+        )
+
+    assert matter_reads(5) == matter_reads(1)
+
+
 # ===========================================================================
 # C — `Lõpeta kaasamine`
 # ===========================================================================

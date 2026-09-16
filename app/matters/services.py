@@ -2025,6 +2025,7 @@ FEEDBACK_CLOSED_BY_MATTER_CLOSURE = "matter_closed"
 def _close_one_feedback_wait(
     engagement: MatterEngagement,
     *,
+    matter: Matter,
     actor: Any,
     reason: str,
     feedback_received: Any = _UNSET,
@@ -2035,6 +2036,11 @@ def _close_one_feedback_wait(
     does not decide whether the wait may be closed — its callers have done all
     three, under the Matter's own row lock, and a second opinion here would be a
     second place for those rules to be written out.
+
+    ``matter`` is the row the caller is already holding, passed rather than read
+    off ``engagement.matter``: both callers have it under lock, and the lazy
+    descriptor would fetch it again — once per round on a closure that ends
+    three of them.
 
     ``feedback_received`` is `_UNSET` for the Matter-closure path, which writes
     no words of anybody's: a file being shut is not a statement about what came
@@ -2049,7 +2055,7 @@ def _close_one_feedback_wait(
     engagement.save(update_fields=fields)
     record_change_event(
         event_type=ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
-        matter=engagement.matter,
+        matter=matter,
         actor=actor,
         obj=engagement,
         summary=engagement.title[:200],
@@ -2144,6 +2150,7 @@ def complete_engagement_feedback(
 
     closed = _close_one_feedback_wait(
         current,
+        matter=locked_matter,
         actor=actor,
         reason=FEEDBACK_CLOSED_BY_PERSON,
         feedback_received=feedback_received,
@@ -2191,7 +2198,9 @@ def close_open_feedback_waits_for_closure(
         .order_by("created_at", "id")
     )
     return [
-        _close_one_feedback_wait(engagement, actor=actor, reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE)
+        _close_one_feedback_wait(
+            engagement, matter=matter, actor=actor, reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE
+        )
         for engagement in waiting
     ]
 
