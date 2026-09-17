@@ -1199,12 +1199,20 @@ def projected_milestones(
             # what it says, because a 2019 win reviewed in 2026 belongs in 2019
             # (docs/adr/0092 §4, `work_victory_chronology_day`).
             continue
-        when = work_victory_chronology_day(victory)
-        if when > day:
-            # A win dated in the future is not history yet — the rule every
-            # projected record below follows.
-            continue
-        add(victory, _end_of_day(when), work_victory_milestone(victory))
+        # **No future filter, unlike every other record below, and that is the
+        # rule stated rather than an omission.** `confirmed_at` is the whole
+        # existence test: a person has judged this a Chamber win, and the record
+        # exists because they did. The period is a *reporting* period — the
+        # department records wins by year — so a row labelled 2030 is a label,
+        # not a claim that something has not happened yet, and dropping it would
+        # take a confirmed judgement off the file altogether. A fact nobody can
+        # see anywhere is not a quieter chronology, it is a lost record
+        # (docs/adr/0074 §15, docs/adr/0092 §4).
+        add(
+            victory,
+            _end_of_day(work_victory_chronology_day(victory)),
+            work_victory_milestone(victory),
+        )
 
     for record in [*facts.past_dates, *facts.upcoming_dates]:
         # **A cancelled expectation is history, and it reads as history.**

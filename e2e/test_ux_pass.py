@@ -263,7 +263,7 @@ def test_the_closed_timeline_carries_more_than_a_counter(page, base_url):
     # quote *and* the step currently owed *and* the count — three facts in a
     # summary line for a section that is open on arrival, one of them a verbatim
     # repeat of the Järgmiseks row three inches above it (docs/adr/0074 §16).
-    expect(summary).to_contain_text("Ajajoon")
+    expect(summary).to_contain_text("Teema käik")
     expect(summary).to_contain_text("kirjet")
     expect(summary.locator(".uxtl__preview")).to_have_count(0)
     expect(summary.locator(".uxtl__previewnext")).to_have_count(0)

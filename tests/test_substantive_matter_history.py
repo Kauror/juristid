@@ -384,6 +384,35 @@ def test_a_work_victory_with_no_period_says_so_and_never_borrows_a_timestamp(
     assert f"{today.day:02d}.{today.month:02d}.{today.year}" not in rows[0].milestone.display_date
 
 
+def test_a_confirmed_victory_whose_period_is_ahead_is_still_on_the_file(normal_matter, specialist):
+    """`confirmed_at` is the whole existence test, and the period is a label.
+
+    The department records wins by *reporting* year, so a row labelled 2030 is
+    not a claim that nothing has happened yet — and the future filter every
+    other projected record follows would take a judgement somebody has already
+    made off the file altogether (docs/adr/0092 §4).
+    """
+    factories.WorkVictoryFactory(
+        matter=normal_matter,
+        status=WorkVictoryStatus.CONFIRMED,
+        confirmed_at=timezone.now(),
+        confirmed_by=specialist,
+        title="Erisus jäi eelnõusse sisse",
+        period_date=dt.date(2030, 1, 1),
+        period_end=dt.date(2030, 12, 31),
+        date_precision=DatePrecision.YEAR,
+    )
+
+    rows = [
+        item
+        for item in _history(normal_matter, specialist)
+        if item.milestone is not None and item.milestone.what == WORK_VICTORY_MILESTONE
+    ]
+    assert len(rows) == 1
+    assert rows[0].milestone.sub == "Erisus jäi eelnõusse sisse"
+    assert rows[0].milestone.display_date == "2030"
+
+
 def test_an_unconfirmed_candidate_is_not_a_history_row(normal_matter, specialist):
     factories.WorkVictoryFactory(
         matter=normal_matter,
