@@ -52,8 +52,6 @@ from __future__ import annotations
 import uuid as uuid_module
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime as _datetime
-from datetime import time as _time
 from typing import Any
 
 from django.db import transaction
@@ -689,8 +687,10 @@ def add_procedural_development(
     *,
     matter: Matter,
     author: Any,
-    body: str,
-    occurred_on: Any,
+    title: str,
+    occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
+    note: str = "",
     stage: Any = None,
     next_text: str = "",
     next_date: Any = None,
@@ -706,28 +706,34 @@ def add_procedural_development(
     a `Märge` with no date box, a `Hetkeseis` change in the header, and
     `+ Järgmine tegevus` under the launcher (lawyer feedback 14, docs/adr/0090 §5).
 
-    **One `Entry`, and no new model.** A procedural development is a dated,
-    attributable sentence about something that happened, which is what the
-    authored chronology already is. `EntryKind.PROCEDURAL_DEVELOPMENT` is what
-    lets a reader tell it from a `Märkus`; `occurred_at` is the day the person
-    named, not the day they typed; the files ride on the existing `DocumentLink`.
+    **One canonical `MatterProceduralDevelopment`**, beside `MatterEngagement`
+    and `MatterExternalPosition`. It was an `Entry` of a new `EntryKind` for one
+    round, and the Package D discovery is what retired that: an incoming
+    development cannot be projected truthfully from an `Entry`, because the date
+    cannot be unknown, the lawyer's note has nowhere to go that is not the
+    ministry's own sentence, and a projection would have to parse a title out of
+    prose. The model's docstring carries the whole argument.
 
-    **Atomicity is the substance of it.** Three canonical writes happen here and
-    any one of them failing must leave the Matter exactly as it was — a stage
-    moved with no development recorded would be a file claiming to be in the
-    Riigikogu with nothing on it saying how it got there, and a `NextAction`
-    written twice by a retried request would be work nobody assigned. Ordered as
-    the composer orders its own: the record first, then its evidence, then the
-    stage, then the step.
+    **Up to four canonical writes, and one transaction.** The record, its
+    evidence, the `Hetkeseis` and the next step. Any one of them failing must
+    leave the Matter exactly as it was — a stage that moved with no development
+    recorded would be a file claiming to be in the Riigikogu with nothing on it
+    saying how it got there, and a `NextAction` written twice by a retried request
+    would be work nobody assigned. Ordered as the composer orders its own: the
+    record first, then its evidence, then the stage, then the step.
 
-    **Nothing is derived from the sentence.** No stage is inferred from the words,
-    no next step is generated, and a save that names neither changes neither. What
-    a person did not answer is not a thing this function decides for them
-    (docs/adr/0090 §5.3).
+    **Nothing is derived from the title.** No stage is inferred from the words, no
+    next step is generated, and a save that names neither changes neither. What a
+    person did not answer is not a thing this function decides for them. Nor is
+    anything read from or written to a `Menetluse link`: Package B's links are
+    references, and a reference is not an event (docs/adr/0090 §5.3, §5.6).
 
     ``stage`` goes through `change_stage`, which is the canonical service and
     writes its own `MATTER_STAGE_CHANGED` event; a stage equal to the one the file
-    already has is that service's own no-op rather than a second audit row.
+    already has is that service's own no-op rather than a second audit row. The
+    two writes share this operation's identifier, which is what lets a reader —
+    and Package D — tie «the file moved to Kooskõlastusringil» to the development
+    that moved it without either record holding a copy of the other.
 
     ``next_text`` and ``next_date`` go through `set_next_action_for_new_work`,
     which is the native boundary: somebody is assigning work today, so the
@@ -735,28 +741,34 @@ def add_procedural_development(
     written here supersedes whatever was open, which is `NextAction`'s one-open
     invariant and not a decision this function makes.
     """
-    from app.matters.services import add_entry, change_stage
+    from app.matters.services import (
+        change_stage,
+        record_procedural_development,
+        record_procedural_development_document,
+    )
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
-        result.entry = add_entry(
+        development = record_procedural_development(
             matter=locked_matter,
-            body=body,
-            author=author,
-            kind=EntryKind.PROCEDURAL_DEVELOPMENT,
-            # Midnight in Europe/Tallinn on the day the person named. The
-            # chronology reads entries by day, and a development recorded a week
-            # later belongs on the day it happened — which is what `occurred_at`
-            # has meant since the foundational schema.
-            occurred_at=timezone.make_aware(_datetime.combine(occurred_on, _time.min)),
+            title=title,
+            occurred_on=occurred_on,
+            occurred_on_precision=occurred_on_precision,
+            note=note,
+            actor=author,
         )
+        result.record = development
         result.documents = capture_supporting_evidence(
             matter=locked_matter,
-            record=result.entry,
+            record=development,
             uploads=_uploads(uploads),
             actor=author,
         )
+        for document in result.documents:
+            record_procedural_development_document(
+                development=development, document=document, actor=author
+            )
         if stage is not None:
             change_stage(matter=locked_matter, stage=stage, actor=author)
         text = (next_text or "").strip()

@@ -101,7 +101,7 @@ def test_the_preparation_date_becomes_the_files_first_step(page, base_url):
 
     prepare_by = _future(8)
     page.fill("#id_title", unique_title("Koostan arvamuse"))
-    page.fill("#id_arvamus_prepare_by", prepare_by)
+    page.fill("#id_arvamus-prepare_by", prepare_by)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
@@ -121,7 +121,7 @@ def test_the_preparation_box_opens_empty_and_says_what_it_will_create(page, base
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
 
-    box = page.locator("#id_arvamus_prepare_by")
+    box = page.locator("#id_arvamus-prepare_by")
     expect(box).to_have_value("")
     expect(page.locator("#koostan-arvamuse")).to_contain_text("Koostan arvamuse")
     # The box directly above it legitimately holds today, which is what makes the
@@ -331,13 +331,13 @@ def test_a_development_records_the_step_the_stage_and_the_next_action(page, base
     open_add_panel(page, "lisa-menetluse-areng")
 
     form = panel(page, "lisa-menetluse-areng")
-    form.locator("[name=body]").fill("Ministeerium saatis uue eelnõu versiooni.")
+    form.locator("[name=title]").fill("Ministeerium saatis uue eelnõu versiooni")
     form.locator("[name=occurred_on]").fill(_past(2))
     form.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
     form.locator("[name=next_date]").fill(_future(4))
     form.get_by_role("button", name="Salvesta areng").click()
 
-    chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni.").first.wait_for()
+    chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni").first.wait_for()
     current = page.locator("#praegune-tegevus")
     expect(current).to_contain_text("Vaatan uue versiooni läbi")
     expect(current).to_contain_text(_future(4))
@@ -349,13 +349,13 @@ def test_a_half_filled_next_step_is_refused_on_the_empty_control(page, base_url)
     open_add_panel(page, "lisa-menetluse-areng")
 
     form = panel(page, "lisa-menetluse-areng")
-    form.locator("[name=body]").fill("Eelnõu jõudis Riigikokku.")
+    form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
     form.locator("[name=next_text]").fill("Vaatan uue teksti läbi")
     form.get_by_role("button", name="Salvesta areng").click()
 
     expect(page.locator("#lisa-menetluse-areng")).to_contain_text("Vali järgmise tegevuse kuupäev.")
     # Nothing was written: the whole save is one transaction.
-    expect(chronology(page)).not_to_contain_text("Eelnõu jõudis Riigikokku.")
+    expect(chronology(page)).not_to_contain_text("Eelnõu jõudis Riigikokku")
 
 
 def test_after_a_sent_opinion_the_page_offers_the_continuation(page, base_url):
@@ -376,7 +376,7 @@ def test_after_a_sent_opinion_the_page_offers_the_continuation(page, base_url):
     # And the anchor reaches a control that is really there and really opens.
     link.click()
     open_add_panel(page, "lisa-menetluse-areng")
-    expect(panel(page, "lisa-menetluse-areng").locator("[name=body]")).to_be_visible()
+    expect(panel(page, "lisa-menetluse-areng").locator("[name=title]")).to_be_visible()
 
 
 def test_the_continuation_is_absent_while_a_step_is_open(page, base_url):
@@ -388,7 +388,7 @@ def test_the_continuation_is_absent_while_a_step_is_open(page, base_url):
 
     open_add_panel(page, "lisa-menetluse-areng")
     form = panel(page, "lisa-menetluse-areng")
-    form.locator("[name=body]").fill("Eelnõu läks Justiitsministeeriumisse.")
+    form.locator("[name=title]").fill("Eelnõu läks Justiitsministeeriumisse")
     form.locator("[name=occurred_on]").fill(_past(1))
     form.locator("[name=next_text]").fill("Vaatan läbi")
     form.locator("[name=next_date]").fill(_future(3))
@@ -416,7 +416,7 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Terve töövoog"))
-    page.fill("#id_arvamus_prepare_by", _future(8))
+    page.fill("#id_arvamus-prepare_by", _future(8))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     expect(page.locator("#praegune-tegevus")).to_contain_text("Koostan arvamuse")
@@ -453,13 +453,13 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     # And the procedure continues on the same file.
     open_add_panel(page, "lisa-menetluse-areng")
     areng = panel(page, "lisa-menetluse-areng")
-    areng.locator("[name=body]").fill("Ministeerium saatis uue eelnõu versiooni.")
+    areng.locator("[name=title]").fill("Ministeerium saatis uue eelnõu versiooni")
     areng.locator("[name=occurred_on]").fill(_past(1))
     areng.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
     areng.locator("[name=next_date]").fill(_future(4))
     areng.get_by_role("button", name="Salvesta areng").click()
 
-    chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni.").first.wait_for()
+    chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni").first.wait_for()
     expect(page.locator("#praegune-tegevus")).to_contain_text("Vaatan uue versiooni läbi")
     # The first opinion is still on the file: a second round is not a rewrite.
     expect(page.locator(".tl-strip")).to_contain_text("Koja arvamus")

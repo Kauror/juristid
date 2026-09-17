@@ -39,27 +39,38 @@ from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
+from app.documents.links import DocumentLink
 from app.documents.models import Document
 from app.matters import work_items
-from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.models import (
     EXTERNAL_POSITION_LEGACY_HEADLINE,
     Entry,
     MatterExternalPosition,
+    MatterProceduralDevelopment,
 )
 from app.matters.services import (
+    DEVELOPMENT_NEEDS_TITLE,
     EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY,
     EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL,
     EXTERNAL_POSITION_NEEDS_ORGANISATION,
     EXTERNAL_POSITION_NEEDS_SOURCE,
     EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE,
+    ProceduralDevelopmentConflict,
     add_engagement,
     close_matter,
     correct_external_position,
+    correct_procedural_development,
+    development_revision,
     external_position_revision,
 )
-from app.matters.timeline import LAWYER_NOTE_LABEL, external_position_milestone, matter_timeline
+from app.matters.timeline import (
+    DEVELOPMENT_DATE_UNKNOWN,
+    LAWYER_NOTE_LABEL,
+    development_milestone,
+    external_position_milestone,
+    matter_timeline,
+)
 from app.matters.views import TWO_FIRST_STEPS_REFUSAL
 from app.matters.workspace import (
     add_matter_external_position,
@@ -899,32 +910,123 @@ def test_the_note_is_not_projected_into_search(normal_matter, specialist, minist
 # ---------------------------------------------------------------------------
 
 
-def test_a_development_is_an_entry_of_its_own_kind(normal_matter, specialist):
+def test_a_development_is_a_canonical_record(normal_matter, specialist):
     result = add_procedural_development(
         matter=normal_matter,
         author=specialist,
-        body="Ministeerium saatis uue eelnõu versiooni.",
+        title="Ministeerium saatis uue eelnõu versiooni",
         occurred_on=dt.date(2026, 10, 12),
     )
 
-    entry = result.entry
-    assert entry.kind == EntryKind.PROCEDURAL_DEVELOPMENT
-    assert timezone.localtime(entry.occurred_at).date() == dt.date(2026, 10, 12)
+    development = result.record
+    assert isinstance(development, MatterProceduralDevelopment)
+    assert development.title == "Ministeerium saatis uue eelnõu versiooni"
+    assert development.occurred_on == dt.date(2026, 10, 12)
+    assert development.occurred_on_precision == DatePrecision.EXACT
+    assert development.created_by_id == specialist.pk
     assert result.action is None
+    # It is not an `Entry`, and writes none: one act must not become two records
+    # that can disagree (docs/adr/0090 §5).
+    assert not Entry.objects.filter(matter=normal_matter).exists()
+
+
+def test_a_development_may_carry_no_date_at_all(normal_matter, specialist):
+    """The requirement that retired the `Entry`: the date may honestly be unknown.
+
+    A step learned about from a third party months later has no day anybody could
+    defend, and `Entry.occurred_at` is `NOT NULL`.
+    """
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Valitsus kiitis eelnõu heaks",
+    ).record
+
+    assert development.occurred_on is None
+    assert development.occurred_on_precision == DatePrecision.EXACT
+    assert development.display_date == ""
+    assert development_milestone(development).display_date == DEVELOPMENT_DATE_UNKNOWN
+
+
+def test_a_development_may_be_dated_to_a_period(normal_matter, specialist):
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Eelnõu jõudis Riigikokku",
+        occurred_on=dt.date(2026, 10, 1),
+        occurred_on_precision=DatePrecision.MONTH.value,
+    ).record
+
+    assert development.has_approximate_date is True
+    # Never the anchor: `01.10.2026` is a day nobody named (docs/adr/0079 §2).
+    assert "01.10" not in development.display_date
+    assert development_milestone(development).display_date == development.display_date
+
+
+def test_the_database_refuses_a_precision_on_an_undated_development(normal_matter):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        MatterProceduralDevelopment.objects.create(
+            matter=normal_matter,
+            title="Midagi juhtus",
+            occurred_on=None,
+            occurred_on_precision=DatePrecision.MONTH,
+        )
+    connection.close()
+
+
+def test_a_development_keeps_the_lawyer_note_out_of_the_event(normal_matter, specialist):
+    """The second requirement the `Entry` could not hold: two fields, two authors."""
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Ministeerium saatis uue eelnõu versiooni",
+        occurred_on=dt.date(2026, 10, 12),
+        note="Uus versioon ei arvesta meie ettepanekut.",
+    ).record
+
+    assert development.title == "Ministeerium saatis uue eelnõu versiooni"
+    assert development.note == "Uus versioon ei arvesta meie ettepanekut."
+    milestone = development_milestone(development)
+    assert milestone.what == "Menetluse areng: Ministeerium saatis uue eelnõu versiooni"
+    assert milestone.own_note == "Uus versioon ei arvesta meie ettepanekut."
+    assert milestone.own_note_label == LAWYER_NOTE_LABEL
+    assert "ettepanekut" not in milestone.what
+
+    # And the audit payload says a note exists without holding it.
+    event = _events(normal_matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED).get()
+    assert event.payload["has_note"] is True
+    assert "ettepanekut" not in str(event.payload)
+    assert event.summary == "Ministeerium saatis uue eelnõu versiooni"
+
+
+def test_a_development_without_a_title_is_refused(normal_matter, specialist):
+    with pytest.raises(DomainError) as refusal:
+        add_procedural_development(
+            matter=normal_matter, author=specialist, title="   ", occurred_on=dt.date(2026, 10, 12)
+        )
+
+    assert str(refusal.value) == DEVELOPMENT_NEEDS_TITLE
+    assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
 
 
 def test_a_development_may_carry_its_files(normal_matter, specialist, evidence_root):
     result = add_procedural_development(
         matter=normal_matter,
         author=specialist,
-        body="Ministeerium saatis uue eelnõu versiooni.",
+        title="Ministeerium saatis uue eelnõu versiooni",
         occurred_on=dt.date(2026, 10, 12),
         uploads=[_pdf("eelnou_v2.pdf")],
     )
 
     assert len(result.documents) == 1
-    assert result.documents[0].links.filter(entry=result.entry).exists()
-    assert result.documents[0].role == DocumentRole.OTHER
+    # Through the seventh typed `DocumentLink` column, which is what says these
+    # bytes are the evidence for *this* step (docs/adr/0090 §5).
+    link = DocumentLink.objects.get(procedural_development=result.record)
+    assert link.document.matter_id == normal_matter.pk
+    assert link.document.current_version is not None
+    assert (
+        _events(normal_matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED).count() == 1
+    )
 
 
 def test_a_development_may_move_the_stage_and_set_the_next_step(normal_matter, specialist):
@@ -932,7 +1034,7 @@ def test_a_development_may_move_the_stage_and_set_the_next_step(normal_matter, s
     result = add_procedural_development(
         matter=normal_matter,
         author=specialist,
-        body="Ministeerium saatis uue eelnõu versiooni.",
+        title="Ministeerium saatis uue eelnõu versiooni",
         occurred_on=dt.date(2026, 10, 12),
         stage=stage,
         next_text="Vaatan uue versiooni läbi",
@@ -945,6 +1047,10 @@ def test_a_development_may_move_the_stage_and_set_the_next_step(normal_matter, s
     assert result.action.text == "Vaatan uue versiooni läbi"
     assert result.action.target_date == dt.date(2026, 10, 16)
     assert _events(normal_matter, ChangeEventType.MATTER_STAGE_CHANGED).count() == 1
+    # The stage is **not** copied onto the development: `Matter.stage` is where
+    # the file stands, and a second copy is a second thing that can disagree. What
+    # ties them together is the operation identifier both writes share.
+    assert not hasattr(result.record, "stage_id")
 
 
 def test_a_development_changes_neither_when_neither_is_named(normal_matter, specialist):
@@ -955,7 +1061,7 @@ def test_a_development_changes_neither_when_neither_is_named(normal_matter, spec
     result = add_procedural_development(
         matter=normal_matter,
         author=specialist,
-        body="Ministeerium teatas, et eelnõu viibib.",
+        title="Ministeerium teatas, et eelnõu viibib",
         occurred_on=dt.date(2026, 10, 12),
     )
 
@@ -978,7 +1084,7 @@ def test_a_refused_upload_rolls_back_the_whole_development(
         add_procedural_development(
             matter=normal_matter,
             author=specialist,
-            body="Ministeerium saatis uue eelnõu versiooni.",
+            title="Ministeerium saatis uue eelnõu versiooni",
             occurred_on=dt.date(2026, 10, 12),
             stage=stage,
             next_text="Vaatan uue versiooni läbi",
@@ -988,7 +1094,7 @@ def test_a_refused_upload_rolls_back_the_whole_development(
 
     normal_matter.refresh_from_db()
     assert normal_matter.stage_id != stage.pk
-    assert not Entry.objects.filter(matter=normal_matter).exists()
+    assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
     assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 
@@ -1001,9 +1107,108 @@ def test_a_development_is_refused_on_a_closed_matter(normal_matter, specialist):
         add_procedural_development(
             matter=normal_matter,
             author=specialist,
-            body="Midagi juhtus.",
+            title="Midagi juhtus",
             occurred_on=dt.date(2026, 10, 12),
         )
+
+
+def test_a_development_is_corrected_not_deleted(normal_matter, specialist):
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Ministeerium saatis uue eelnõu",
+        occurred_on=dt.date(2026, 10, 12),
+    ).record
+
+    corrected = correct_procedural_development(
+        development=development,
+        title="Ministeerium saatis uue eelnõu versiooni",
+        occurred_on=dt.date(2026, 10, 13),
+        occurred_on_precision=DatePrecision.EXACT.value,
+        note="Vaatan üle.",
+        actor=specialist,
+        expected_revision=development_revision(development),
+    )
+
+    assert corrected.title == "Ministeerium saatis uue eelnõu versiooni"
+    assert corrected.occurred_on == dt.date(2026, 10, 13)
+    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).count() == 1
+    event = _events(normal_matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_CORRECTED).get()
+    assert "title" in event.payload["fields"]
+    assert event.payload["occurred_on_to"] == "2026-10-13"
+
+
+def test_a_stale_correction_writes_nothing(normal_matter, specialist):
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Ministeerium saatis uue eelnõu",
+        occurred_on=dt.date(2026, 10, 12),
+    ).record
+    stale = development_revision(development)
+    correct_procedural_development(
+        development=development,
+        title="Esimene parandus",
+        occurred_on=dt.date(2026, 10, 12),
+        occurred_on_precision=DatePrecision.EXACT.value,
+        note="",
+        actor=specialist,
+        expected_revision=stale,
+    )
+
+    with pytest.raises(ProceduralDevelopmentConflict):
+        correct_procedural_development(
+            development=development,
+            title="Teine parandus",
+            occurred_on=dt.date(2026, 10, 12),
+            occurred_on_precision=DatePrecision.EXACT.value,
+            note="",
+            actor=specialist,
+            expected_revision=stale,
+        )
+
+    development.refresh_from_db()
+    assert development.title == "Esimene parandus"
+
+
+def test_a_development_reaches_the_chronology(normal_matter, specialist):
+    """Dated in the **past**, because the chronology reads newest-first and means
+    *past* — `test_a_future_dated_development_is_not_history_yet` is the other
+    half, and the two together are why the fixed dates elsewhere in this file are
+    safe to leave alone."""
+    add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Eelnõu jõudis Riigikokku",
+        occurred_on=timezone.localdate() - dt.timedelta(days=3),
+    )
+
+    items, _ = matter_timeline(matter=normal_matter, user=specialist, limit=50)
+    headlines = [item.milestone.what for item in items if item.milestone is not None]
+    assert "Menetluse areng: Eelnõu jõudis Riigikokku" in headlines
+    # Projected from the record, so the audit events draw no row of their own.
+    assert headlines.count("Menetluse areng: Eelnõu jõudis Riigikokku") == 1
+
+
+def test_a_future_dated_development_is_not_history_yet(normal_matter, specialist):
+    """A step somebody expects is not a step that happened.
+
+    The rule `MatterEngagement` and `MatterExternalPosition` both follow, asserted
+    here because this record is the one a lawyer is most likely to date forward —
+    «the committee sits on the 12th» is a thing they know in advance.
+    """
+    add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Riigikogu komisjon arutab eelnõu",
+        occurred_on=timezone.localdate() + dt.timedelta(days=21),
+    )
+
+    items, _ = matter_timeline(matter=normal_matter, user=specialist, limit=50)
+    headlines = [item.milestone.what for item in items if item.milestone is not None]
+    assert not any("Riigikogu komisjon" in headline for headline in headlines)
+    # The record is on the file and readable; it is the *chronology* that waits.
+    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).count() == 1
 
 
 def test_the_development_route_records_everything_in_one_post(client, specialist, normal_matter):
@@ -1012,8 +1217,9 @@ def test_the_development_route_records_everything_in_one_post(client, specialist
     response = client.post(
         reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
         {
-            "body": "Eelnõu jõudis Riigikokku.",
+            "title": "Eelnõu jõudis Riigikokku",
             "occurred_on": "12.10.2026",
+            "areng_precision": "EXACT",
             "stage": str(stage.pk),
             "next_text": "Vaatan uue teksti läbi",
             "next_date": "16.10.2026",
@@ -1023,7 +1229,8 @@ def test_the_development_route_records_everything_in_one_post(client, specialist
     assert response.status_code == 200
     normal_matter.refresh_from_db()
     assert normal_matter.stage_id == stage.pk
-    assert Entry.objects.get(matter=normal_matter).kind == EntryKind.PROCEDURAL_DEVELOPMENT
+    development = MatterProceduralDevelopment.objects.get(matter=normal_matter)
+    assert development.title == "Eelnõu jõudis Riigikokku"
     assert NextAction.objects.get(matter=normal_matter).text == "Vaatan uue teksti läbi"
 
 
@@ -1032,27 +1239,50 @@ def test_a_half_filled_next_step_is_refused_on_the_empty_control(client, special
     response = client.post(
         reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
         {
-            "body": "Eelnõu jõudis Riigikokku.",
+            "title": "Eelnõu jõudis Riigikokku",
             "occurred_on": "12.10.2026",
+            "areng_precision": "EXACT",
             "next_text": "Vaatan uue teksti läbi",
         },
     )
 
     assert response.status_code == 400
     assert "Vali järgmise tegevuse kuupäev." in response.content.decode()
-    assert not Entry.objects.filter(matter=normal_matter).exists()
+    assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
 
 
-def test_a_development_without_a_date_is_refused(client, specialist, normal_matter):
-    """§5.2's stated cost: a development nobody can date is a `+ Märge`."""
+def test_the_development_route_accepts_an_empty_date(client, specialist, normal_matter):
+    """The `Entry` design refused this; the canonical record is what allows it."""
     client.force_login(specialist)
     response = client.post(
         reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
-        {"body": "Midagi juhtus.", "occurred_on": ""},
+        {"title": "Valitsus kiitis eelnõu heaks", "occurred_on": "", "areng_precision": "EXACT"},
     )
 
-    assert response.status_code == 400
-    assert not Entry.objects.filter(matter=normal_matter).exists()
+    assert response.status_code == 200
+    assert MatterProceduralDevelopment.objects.get(matter=normal_matter).occurred_on is None
+
+
+def test_a_restricted_development_does_not_leak(normal_matter, specialist, reader):
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Eelnõu jõudis Riigikokku",
+        occurred_on=timezone.localdate() - dt.timedelta(days=3),
+        note="Meie ettepanekut ei arvestatud.",
+    ).record
+    development.visibility_override = Visibility.RESTRICTED
+    development.save(update_fields=["visibility_override"])
+
+    assert not MatterProceduralDevelopment.objects.visible_to(reader).exists()
+    items, _ = matter_timeline(matter=normal_matter, user=reader, limit=50)
+    rendered = " ".join(
+        f"{item.milestone.what} {item.milestone.own_note}"
+        for item in items
+        if item.milestone is not None
+    )
+    assert "Riigikokku" not in rendered
+    assert "ettepanekut" not in rendered
 
 
 # ---------------------------------------------------------------------------

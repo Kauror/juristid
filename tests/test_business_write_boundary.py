@@ -43,6 +43,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.matters.models import Matter
@@ -400,10 +401,86 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["planned_overview"].pk)
         ),
     ),
+    # `Meile saadetud tagasiside` — the other half of the one record
+    # docs/adr/0090 §3 split in two. Its own route because its own panel asks its
+    # own questions, and **its own entry here** because the completeness guard
+    # matches on route names: a second door onto one service is still a second
+    # door a forbidden actor can knock on.
+    #
+    # Deliberately posting with **no organisation at all**, which is the shape
+    # only this half accepts — an aggregate answer named by its `Allikas`. A
+    # payload a forbidden actor could not have sent even with permission would
+    # make this row prove nothing (docs/adr/0090 §3.3).
+    WriteRoute(
+        name="matters:add_received_feedback",
+        label="Meile saadetud tagasiside lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "source_label": "Loata küsitlus",
+                "summary": "Loata salvestatud tagasiside.",
+                "position_precision": "EXACT",
+            },
+        ),
+        probe=lambda w: w["matter"].external_positions.count(),
+    ),
+    # `Koja arvamus` — the Chamber's own opinion, recorded from the Teema page
+    # through the service `Dokumendid` already posts to. It writes a canonical
+    # SENT `Submission`, its recipients, its `Document` and its immutable
+    # version, so a forbidden actor reaching it would be filing a letter this
+    # office never sent (docs/adr/0090 §6).
+    #
+    # The probe counts submissions rather than documents: the document is the
+    # evidence and the submission is the claim, and it is the claim that must not
+    # appear.
+    WriteRoute(
+        name="matters:add_koda_opinion",
+        label="Koja arvamuse registreerimine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "recipients": [str(w["organisation"].pk)],
+                "sent_on": format_estonian_date(timezone.localdate()),
+                "title": "Loata registreeritud arvamus",
+            },
+        ),
+        files=lambda: {"upload": _pdf("loata-arvamus.pdf")},
+        probe=lambda w: w["matter"].submissions.count(),
+    ),
+    # `Menetluse areng` — one dated `Entry` of its own kind, and up to three
+    # other canonical writes riding with it: the files, the `Hetkeseis` and the
+    # next step. The payload names all of them on purpose, because what must not
+    # happen is not «an entry appears» but «a forbidden actor moves the file's
+    # stage and assigns somebody work» (docs/adr/0090 §5).
+    #
+    # The probe is the triple, so a refusal that let *any* of the three through
+    # fails rather than passing on the one it happened to check.
+    WriteRoute(
+        name="matters:add_development",
+        label="Menetluse arengu lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "body": "Loata salvestatud menetluse areng.",
+                "occurred_on": format_estonian_date(timezone.localdate()),
+                "stage": str(w["stage"].pk),
+                "next_text": "Loata määratud järgmine tegevus",
+                "next_date": format_estonian_date(timezone.localdate() + timedelta(days=4)),
+            },
+        ),
+        probe=lambda w: (
+            w["matter"].entries.count(),
+            Matter.objects.values_list("stage_id", flat=True).get(pk=w["matter"].pk),
+            w["matter"].next_actions.count(),
+        ),
+    ),
     # `Väline seisukoht`, in both of its write routes: the record, and the
     # correction to one. Both are ordinary new business content on an open
     # Matter — unlike the overview's link correction above, a position
     # correction is refused on a closed file (docs/adr/0084 §8).
+    #
+    # The chip is `+ Teiste arvamus` since docs/adr/0090 §3; the route keeps its
+    # name, and so does this row.
     WriteRoute(
         name="matters:add_external_position",
         label="Välise seisukoha lisamine",

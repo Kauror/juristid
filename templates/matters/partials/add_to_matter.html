@@ -666,11 +666,12 @@ row of controls that refuse (brief §30, §31).
       header, and `+ Järgmine tegevus` under this bar (lawyer feedback 14,
       docs/adr/0090 §5).
 
-      **It writes an `Entry`, not a new model.** A procedural development is a
-      dated, attributable sentence about something that happened, which is what
-      the authored chronology already is; `EntryKind.PROCEDURAL_DEVELOPMENT` is
-      what lets a reader tell it from a `Märkus`, and `occurred_at` has always
-      meant «when the work happened, not when it was typed up».
+      **It writes a canonical `MatterProceduralDevelopment`**, beside `Kaasamine`
+      and `Teiste arvamus`. It was an `Entry` of a new kind for one round, and the
+      Package D discovery retired that: an incoming development cannot be
+      projected truthfully from an `Entry`, because the date cannot be unknown,
+      the lawyer's note has nowhere to go that is not the ministry's own sentence,
+      and a projection would have to parse a title out of prose.
 
       **Three optional halves, each of them somebody's decision.** The
       `Hetkeseis` is offered and never derived — nothing reads the sentence and
@@ -697,40 +698,55 @@ row of controls that refuse (brief §30, §31).
               hx-target="#teema-vaade" hx-swap="outerHTML"
               hx-encoding="multipart/form-data">
           {% csrf_token %}
-          <label class="cx-f" for="{{ development_form.body.id_for_label }}">
-            <span class="cx-f__lab">{{ development_form.body.label }}</span>
-            {{ development_form.body }}
+          <label class="cx-f" for="{{ development_form.title.id_for_label }}">
+            <span class="cx-f__lab">{{ development_form.title.label }}</span>
+            {{ development_form.title }}
           </label>
-          {% if development_form.body.errors %}
-            <p class="field__error" id="{{ development_form.body.auto_id }}_error">
-              {{ development_form.body.errors|first }}</p>
+          {% if development_form.title.errors %}
+            <p class="field__error" id="{{ development_form.title.auto_id }}_error">
+              {{ development_form.title.errors|first }}</p>
           {% endif %}
 
           {% comment %}
-            The day it happened, pre-filled with today and clearable to nothing —
-            except that nothing is refused here, unlike on `+ Väline seisukoht`.
-            `Entry.occurred_at` has been `NOT NULL` since the foundational schema
-            and every chronology reader, ordering and page of the timeline depends
-            on it; a development somebody genuinely cannot date is a `+ Märge`,
-            which stamps the moment it was recorded and claims nothing about when
-            anything happened (docs/adr/0090 §5.2).
+            The day it happened, **at the precision it is known to** — and
+            optional, which is what the canonical record buys over the `Entry`
+            this panel wrote for one round.
+
+            A step learned about from a third party months later frequently has no
+            day anybody could defend, and a government sitting is routinely
+            remembered as «oktoobris». The box opens on today because the common
+            case is writing up something just learned; emptying it stores `NULL`
+            and the row reads «Kuupäev teadmata», which is a fact the file has to
+            be able to hold (docs/adr/0079 §1, docs/adr/0090 §5.2).
+
+            The same shared composer `+ Kaasamine`, `+ Oluline tähtaeg` and
+            `+ Teiste arvamus` all carry, so a quarter stated here is the same
+            stored anchor as a quarter stated anywhere else.
           {% endcomment %}
-          <div class="cx-grid cx-grid--links">
-            <label class="cx-f cx-f--date"
-                   for="{{ development_form.occurred_on.id_for_label }}">
-              <span class="cx-f__lab">{{ development_form.occurred_on.label }}</span>
-              {{ development_form.occurred_on }}
-            </label>
-            <label class="cx-f" for="{{ development_form.stage.id_for_label }}">
-              <span class="cx-f__lab">{{ development_form.stage.label }}
-                <span class="cx-f__opt">valikuline</span></span>
-              {{ development_form.stage }}
-            </label>
-          </div>
-          {% if development_form.occurred_on.errors %}
-            <p class="field__error" id="{{ development_form.occurred_on.auto_id }}_error">
-              {{ development_form.occurred_on.errors|first }}</p>
+          {% include "matters/partials/period_composer.html" with chips=development_form.precision_chips date_field=development_form.occurred_on month_field=development_form.areng_month quarter_field=development_form.areng_quarter year_field=development_form.areng_year only %}
+
+          {% comment %}
+            `Juristi märkus` — what this office makes of the step, under it and
+            visibly apart from it. «Ministeerium saatis uue versiooni» is a fact
+            about the world; «see ei arvesta meie ettepanekut» is a professional
+            judgement, and a history that read the second as part of the first
+            would misattribute it (docs/adr/0090 §4, §5).
+          {% endcomment %}
+          <label class="cx-f" for="{{ development_form.note.id_for_label }}">
+            <span class="cx-f__lab">{{ development_form.note.label }}
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ development_form.note }}
+          </label>
+          {% if development_form.note.errors %}
+            <p class="field__error" id="{{ development_form.note.auto_id }}_error">
+              {{ development_form.note.errors|first }}</p>
           {% endif %}
+
+          <label class="cx-f" for="{{ development_form.stage.id_for_label }}">
+            <span class="cx-f__lab">{{ development_form.stage.label }}
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ development_form.stage }}
+          </label>
           {% if development_form.stage.errors %}
             <p class="field__error" id="{{ development_form.stage.auto_id }}_error">
               {{ development_form.stage.errors|first }}</p>

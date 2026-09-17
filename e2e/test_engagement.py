@@ -108,14 +108,19 @@ def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_question
     expect(panel(page).locator(".precision__chips")).to_have_count(0)
     expect(panel(page).locator("[name=url]")).to_have_count(0)
     expect(panel(page).locator("[name=note]")).to_have_count(0)
-    # Both dates arrive pre-filled and visible: today, and a week out. A reader
-    # can see what is about to be saved before saving it, which is the whole
+    # `Kaasamise kuupäev` arrives pre-filled and visible with today: a reader can
+    # see what is about to be saved before saving it, which is the whole
     # difference from the version that stamped a date behind their back.
     assert panel(page).locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied out of sight"
     )
-    assert panel(page).locator("[name=feedback_deadline]").input_value(), (
-        "the reply-by date opens empty, so a round would file as waiting on nothing"
+    # **`Tagasisidet ootame kuni` opens empty**, which narrows docs/adr/0086 §2.
+    # Recording that Koda asked somebody something is a completed act, and a
+    # pre-filled reply-by date turned every one of them into a managed wait with
+    # a work item and a second act to end it — work the application was
+    # assigning rather than work a lawyer had taken on (docs/adr/0090 §2).
+    assert not panel(page).locator("[name=feedback_deadline]").input_value(), (
+        "the reply-by date opens pre-filled, so every round acquires a wait nobody asked for"
     )
     # And its own save, which commits this operation and nothing else
     # (docs/adr/0075 §2).
@@ -177,9 +182,13 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # writes is `Muu`, and printing «Muu» would be the chronology stating a
     # classification nobody chose (docs/adr/0086 §1).
     expect(chronology(page)).not_to_contain_text("Muu ·")
-    # The round is waiting, because the panel's reply-by date defaults to a week
-    # out and nothing here cleared it (docs/adr/0086 §2, §3).
-    expect(chronology(page)).to_contain_text("Ootame tagasisidet kuni")
+    # And **not** waiting: the panel's reply-by box opens empty and nothing here
+    # filled it, so this round is a completed act on the file rather than an open
+    # activity on somebody's desk. Setting the date is still exactly what opens a
+    # wait, which is what `e2e/test_engagement_correction.py::
+    # test_a_waiting_round_is_finished_on_its_own_row` files a round to prove
+    # (docs/adr/0086 §2, §3, narrowed by docs/adr/0090 §2).
+    expect(chronology(page)).not_to_contain_text("Ootame tagasisidet kuni")
     # The note, as a work row of its own.
     expect(chronology(page).locator(".richtext").first).to_contain_text(
         "Küsisin liikmetelt tagasisidet"

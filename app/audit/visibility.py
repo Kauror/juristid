@@ -70,7 +70,12 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
         MatterImportantDate,
         MatterWorkVictory,
     )
-    from app.matters.models import Entry, MatterEngagement, MatterExternalPosition
+    from app.matters.models import (
+        Entry,
+        MatterEngagement,
+        MatterExternalPosition,
+        MatterProceduralDevelopment,
+    )
     from app.submissions.models import Submission
     from app.workflow.models import NextAction
 
@@ -144,6 +149,15 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.EXTERNAL_POSITION_DOCUMENT_LINKED,
             ),
             MatterExternalPosition,
+            direct,
+        ),
+        (
+            (
+                ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,
+                ChangeEventType.PROCEDURAL_DEVELOPMENT_CORRECTED,
+                ChangeEventType.PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED,
+            ),
+            MatterProceduralDevelopment,
             direct,
         ),
         (

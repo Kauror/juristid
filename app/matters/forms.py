@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Any, cast
 
@@ -38,6 +39,7 @@ from app.matters.enums import (
     MatterDataClass,
 )
 from app.matters.models import (
+    DEVELOPMENT_TITLE_MAX_LENGTH,
     EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH,
     EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH,
     EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
@@ -2651,6 +2653,86 @@ def external_position_period(form: forms.Form) -> tuple[date | None, str]:
     return anchor, precision
 
 
+#: The prefix both `Menetluse areng` surfaces carry their precision group under.
+#:
+#: One name, because the panel that records a development and the form that
+#: corrects one must read the same POST keys — a person who states *oktoober
+#: 2026* in `+ Menetluse areng` and then opens `Muuda` has to find the same
+#: control holding the same answer. Deliberately its own string: several of these
+#: forms can be on one page at once, and a shared prefix would be one POST key
+#: for two dates (`EXTERNAL_POSITION_PREFIX`, `ENGAGEMENT_PREFIX`).
+DEVELOPMENT_PREFIX = "areng"
+
+
+def attach_development_precision(form: forms.Form, *, record: Any = None) -> None:
+    """Give a `Menetluse areng` form the shared `Täpsus` control, and its day box.
+
+    `Kuupäev` here is a statement about **somebody else's** timetable — when a
+    ministry sent a draft, when a government sat — which is precisely the
+    category docs/adr/0079 §11's exact-only list excludes. A step learned about
+    from a third party and remembered as «oktoobris» had an invented day or an
+    empty field before this, and both are worse than the one the person has.
+
+    **The existing composer, not a second one.** `_precision_fields` builds the
+    group `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit`, `Järgmine tegevus`,
+    `+ Kaasamine` and `+ Teiste arvamus` all carry, normalised through the same
+    `app.workflow.dates.bounds_for` and rendered by the same
+    `matters/partials/period_composer.html`.
+
+    **The day box keeps the name `occurred_on`**, exactly as the engagement's
+    does: the view, the service and the tests read that name, and renaming a
+    control for tidiness is how several things stop being wired up while still
+    looking right.
+
+    ``record`` is the development being corrected, when there is one. It earns the
+    «Muutmata» chip of docs/adr/0079 §9 for a row carrying a precision the control
+    does not otherwise offer — and, because the choices are built per instance, it
+    is also what refuses a crafted `HALF_YEAR` on a record that never had one.
+    """
+    kept = kept_precision_choice(
+        getattr(record, "occurred_on", None),
+        getattr(record, "occurred_on_precision", "") or "",
+    )
+    form.precision_choices = precision_choices(kept)  # type: ignore[attr-defined]
+    group = _precision_fields(DEVELOPMENT_PREFIX, date_label="Kuupäev", kept=kept)
+    del group[f"{DEVELOPMENT_PREFIX}_date"]
+    form.fields.update(group)
+
+
+def development_period(form: forms.Form) -> tuple[date | None, str]:
+    """What a `Menetluse areng` form's date control says: an anchor and a precision.
+
+    The three answers `engagement_period` documents, for the same reasons: a
+    period the person stated, **nothing at all** — which is «kuupäev teadmata»
+    and is the fact that made this record a record rather than an `Entry` — or a
+    period somebody began stating and did not finish, which `_period_anchor` has
+    already refused on the control it belongs to.
+
+    The precision returned beside a `None` anchor is always `EXACT`, which is what
+    the column stores for a row with no date, and what the database enforces
+    (`matters_development_undated_is_exact`).
+    """
+    anchor, _end, precision = _period_anchor(form, DEVELOPMENT_PREFIX, date_field="occurred_on")
+    if anchor is None:
+        return None, DatePrecision.EXACT.value
+    return anchor, precision
+
+
+def development_period_initial(record: Any) -> dict[str, Any]:
+    """One stored `Kuupäev`, as the boxes its composer reopens on.
+
+    `period_initial` under this form's prefix. For an approximate record it fills
+    the year and the month or quarter and deliberately leaves the day box empty,
+    so the anchor never reaches a screen as `01.10.2026` (docs/adr/0079 §2, §3).
+    """
+    return period_initial(
+        DEVELOPMENT_PREFIX,
+        getattr(record, "occurred_on", None),
+        getattr(record, "occurred_on_precision", "") or "",
+        date_field="occurred_on",
+    )
+
+
 def external_position_period_initial(record: Any) -> dict[str, Any]:
     """One stored `Seisukoha kuupäev`, as the boxes its composer reopens on.
 
@@ -2680,7 +2762,111 @@ def external_position_period_initial(record: Any) -> dict[str, Any]:
     }
 
 
-def attach_organisation_picker(form: forms.Form, *, viewer: Any) -> None:
+@dataclass(frozen=True)
+class OrganisationChoices:
+    """One reading of the institution catalogue, for every control on one page.
+
+    **Three controls on the Teema page ask the same question**, and until this
+    existed each of them answered it with its own queries: the catalogue, two
+    usage passes and the recorded spellings, four reads apiece. That was the
+    right trade while `+ Väline seisukoht` was the only such panel — it is a
+    closed panel most visits never open, so one extra read was cheap. It stopped
+    being cheap the moment there were three of them: the Teema page went from 38
+    queries to 49 and blew the budget `tests/test_teema_redesign.py` holds
+    (docs/adr/0090 §3.5).
+
+    So the reading is hoisted to the page. `workspace_forms` builds one of these
+    and hands it to every control; each control still slices its own shortlist
+    and tail out of it in Python, which is where that work always happened.
+
+    **It is a reading, not a cache.** It is built per request and never stored,
+    memoised or shared between them: the catalogue changes when somebody adds an
+    institution, and a stale shortlist is a control offering a body that is not
+    there. Nothing here is scoped by viewer except ``ranked``, which is — inside
+    `_usage_order`, by `visible_to`, so no restricted Matter can move a chip.
+    """
+
+    #: Every institution, in name order. The validating queryset is separate and
+    #: stays the whole catalogue, because every institution is a valid answer.
+    catalogue: list[Any]
+    #: The primary keys this reader's own Matters involve most, best first.
+    #:
+    #: Empty both for a caller with no viewer **and** for a reader whose visible
+    #: Matters involve nobody yet — which is why :attr:`ranked_for_a_reader`
+    #: exists rather than this being tested for truth. Those two states look the
+    #: same here and are completely different on the page: the first has no
+    #: shortlist at all and renders every institution as a chip, the second has a
+    #: shortlist topped up alphabetically so two readers with no history see the
+    #: same eight. Collapsing them put every catalogue behind the search on a
+    #: fresh database (`test_every_institution_is_offered_even_when_it_is_not_a_chip`).
+    ranked: list[Any]
+    #: Whether this reading was made for somebody, as opposed to for a form with
+    #: no viewer at all.
+    ranked_for_a_reader: bool
+    #: Recorded spellings by primary key, so «MKM» finds the ministry through an
+    #: alias rather than through a similarity score.
+    alias_terms: dict[str, str]
+
+    def shortlist_and_tail(self) -> tuple[list[Any], list[Any]]:
+        """The chips and the searchable rest, sliced out of one reading.
+
+        The ranking `organisations_by_usage` produces, topped up alphabetically
+        so two readers with no history see the same eight and neither sees none.
+        Pure Python over :attr:`catalogue`; no query.
+
+        **A reading with no reader has no shortlist**, and returns the whole
+        catalogue as chips with an empty tail — which is what a form built without
+        a viewer has always rendered. That is decided from
+        :attr:`ranked_for_a_reader` and never from `ranked` being empty: a reader
+        whose visible Matters involve nobody yet still gets the alphabetical eight.
+        """
+        if not self.ranked_for_a_reader:
+            return list(self.catalogue), []
+        by_pk = {organisation.pk: organisation for organisation in self.catalogue}
+        shortlist = [by_pk[pk] for pk in self.ranked[:SENDER_SHORTLIST_SIZE] if pk in by_pk]
+        if len(shortlist) < SENDER_SHORTLIST_SIZE:
+            chosen = {organisation.pk for organisation in shortlist}
+            shortlist.extend(
+                organisation for organisation in self.catalogue if organisation.pk not in chosen
+            )
+            shortlist = shortlist[:SENDER_SHORTLIST_SIZE]
+        chosen = {organisation.pk for organisation in shortlist}
+        tail = [organisation for organisation in self.catalogue if organisation.pk not in chosen]
+        return shortlist, tail
+
+
+def read_organisation_choices(viewer: Any) -> OrganisationChoices:
+    """Read the catalogue, the usage ranking and the spellings, once.
+
+    Four queries at most, and the same four every control used to make for
+    itself. The two usage passes are `organisations_by_usage`'s own, in its
+    order and scoped by `visible_to` inside `_usage_order`; the second runs only
+    when the sender history did not fill the row.
+    """
+    from app.organisations.models import Organisation
+
+    catalogue = list(Organisation.objects.order_by("name"))
+    ranked: list[Any] = []
+    if viewer is not None:
+        seen: set[Any] = set()
+        for field_name in ("source_organisations", "addressee_organisation"):
+            if len(ranked) >= SENDER_SHORTLIST_SIZE:
+                break
+            for pk in _usage_order(viewer, field_name, SENDER_SHORTLIST_SIZE):
+                if pk not in seen:
+                    seen.add(pk)
+                    ranked.append(pk)
+    return OrganisationChoices(
+        catalogue=catalogue,
+        ranked=ranked,
+        ranked_for_a_reader=viewer is not None,
+        alias_terms=organisation_alias_terms(),
+    )
+
+
+def attach_organisation_picker(
+    form: forms.Form, *, viewer: Any, choices: OrganisationChoices | None = None
+) -> None:
     """Point one single-answer organisation control at the shared catalogue.
 
     The compact `Väline seisukoht` panel asks the same question `Saatja` and
@@ -2715,46 +2901,30 @@ def attach_organisation_picker(form: forms.Form, *, viewer: Any) -> None:
     from app.organisations.models import Organisation
 
     # **The catalogue is read once**, and both halves are sliced out of that one
-    # list in Python. `organisations_by_usage` is the shared shortlist helper and
-    # is deliberately *not* called here: it re-reads the rows it ranked and tops
-    # the row up with a second catalogue query, which is the right trade on a
-    # page built around one Organisation question and the wrong one on the Teema
-    # page, where this control is a closed panel that most visits never open.
-    # Three reads became one, and the ranking below is the same ranking
-    # (`tests/test_teema_redesign.py` holds the page's query budget).
+    # reading in Python. `organisations_by_usage` is the shared shortlist helper
+    # and is deliberately *not* called here: it re-reads the rows it ranked and
+    # tops the row up with a second catalogue query, which is the right trade on
+    # a page built around one Organisation question and the wrong one here.
+    #
+    # ``choices`` hoists the reading one level further, to the *page*. A caller
+    # rendering three of these controls — which the Teema page now does — reads
+    # the catalogue, the ranking and the spellings once and hands the result to
+    # each of them; a caller rendering one passes nothing and reads it here, as
+    # every caller used to (`read_organisation_choices`, docs/adr/0090 §3.5,
+    # `tests/test_teema_redesign.py` holds the page's query budget).
+    reading = choices if choices is not None else read_organisation_choices(viewer)
     set_choices(form, "organisation", Organisation.objects.order_by("name"))
     field = cast(Any, form.fields["organisation"])
-    catalogue = list(Organisation.objects.order_by("name"))
 
-    if viewer is None:
-        form.organisation_offered = catalogue  # type: ignore[attr-defined]
+    shortlist, tail = reading.shortlist_and_tail()
+    if not reading.ranked_for_a_reader:
+        # No *viewer* means no usage to rank by, so there is no shortlist and no
+        # long tail, and the template renders everything inline — the same
+        # fallback `MatterCreateForm` takes. A split of zero would hide the whole
+        # catalogue behind a disclosure that is not rendered either.
+        form.organisation_offered = shortlist  # type: ignore[attr-defined]
         form.organisation_split = None  # type: ignore[attr-defined]
     else:
-        # The same two usage passes `organisations_by_usage` makes, in the same
-        # order and scoped by `visible_to` inside `_usage_order`, so a
-        # restricted Matter still cannot move a chip. The second runs only when
-        # the sender history did not fill the row.
-        ranked: list[Any] = []
-        seen: set[Any] = set()
-        for field_name in ("source_organisations", "addressee_organisation"):
-            if len(ranked) >= SENDER_SHORTLIST_SIZE:
-                break
-            for pk in _usage_order(viewer, field_name, SENDER_SHORTLIST_SIZE):
-                if pk not in seen:
-                    seen.add(pk)
-                    ranked.append(pk)
-        by_pk = {organisation.pk: organisation for organisation in catalogue}
-        shortlist = [by_pk[pk] for pk in ranked[:SENDER_SHORTLIST_SIZE] if pk in by_pk]
-        if len(shortlist) < SENDER_SHORTLIST_SIZE:
-            # Topped up alphabetically, so two readers with no history see the
-            # same eight and neither sees none.
-            chosen = {organisation.pk for organisation in shortlist}
-            shortlist.extend(
-                organisation for organisation in catalogue if organisation.pk not in chosen
-            )
-            shortlist = shortlist[:SENDER_SHORTLIST_SIZE]
-        chosen = {organisation.pk for organisation in shortlist}
-        tail = [organisation for organisation in catalogue if organisation.pk not in chosen]
         form.organisation_offered = [*shortlist, *tail]  # type: ignore[attr-defined]
         form.organisation_split = len(shortlist)  # type: ignore[attr-defined]
 
@@ -2762,7 +2932,7 @@ def attach_organisation_picker(form: forms.Form, *, viewer: Any) -> None:
         (organisation.pk, organisation.name)
         for organisation in cast(Any, form).organisation_offered
     ]
-    cast(Any, field.widget).alias_terms = organisation_alias_terms()
+    cast(Any, field.widget).alias_terms = reading.alias_terms
 
 
 class InitialOpinionActionForm(forms.Form):
@@ -5334,21 +5504,25 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     #: for the same reason (`workspace_attachments`).
     panel_slug: str = "valine_seisukoht"
 
-    def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
-        # **Its own `auto_id`, and the field names are untouched.** Nine forms
-        # render on one Teema page and `+ Ülevaade / uudis` also calls a field
-        # `url`, so Django's default `id_%s` put `id_url` in the document twice
-        # — invalid HTML, a `<label for>` reaching the wrong box and
+    def __init__(
+        self,
+        *args: Any,
+        matter: Any = None,
+        viewer: Any = None,
+        choices: OrganisationChoices | None = None,
+        engagements: list[Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        # **Its own `auto_id` per panel, and the field names are untouched.**
+        # Eleven forms render on one Teema page; `+ Ülevaade / uudis` also calls
+        # a field `url`, and since docs/adr/0090 §3.5 split this panel in two
+        # both of its instances carry every field name twice. Django's default
+        # `id_%s` would put `id_url` and `id_summary` in the document more than
+        # once — invalid HTML, a `<label for>` reaching the wrong box, and
         # `getElementById` answering whichever came first. Prefixing the *ids*
         # fixes exactly that while leaving the POST keys alone, which is the
         # reasoning docs/adr/0065 gives for preferring `auto_id` over a form
         # `prefix` (`tests/test_teema_workspace.py`).
-        # **Its own `auto_id` per provenance.** Both panels render on one Teema
-        # page, so `id_valine_seisukoht_summary` would be in the document twice —
-        # invalid HTML, a `<label for>` reaching the wrong box, and
-        # `getElementById` answering whichever came first. The POST keys are
-        # untouched, which is the reason `auto_id` is preferred over a form
-        # `prefix` here (docs/adr/0065, docs/adr/0090 §3.5).
         kwargs.setdefault("auto_id", f"id_{self.panel_slug}_%s")
         super().__init__(*args, **kwargs)
         # `workspace_attachments` puts its id on the *widget*, which `auto_id`
@@ -5367,8 +5541,13 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
         # No `record`: this panel only ever creates. The «Muutmata» chip is a
         # correction affordance and there is nothing here to keep unchanged.
         attach_external_position_precision(self)
-        attach_organisation_picker(self, viewer=viewer)
-        set_external_position_engagements(self, matter=matter, viewer=viewer)
+        # The page's one reading where a caller has it — two of these panels
+        # render together, and reading the catalogue twice for them is half of
+        # what blew the Teema page's query budget (docs/adr/0090 §3.5).
+        attach_organisation_picker(self, viewer=viewer, choices=choices)
+        set_external_position_engagements(
+            self, matter=matter, viewer=viewer, engagements=engagements
+        )
 
     def clean(self) -> dict[str, Any]:
         super().clean()
@@ -5456,7 +5635,14 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
     )
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
 
-    def __init__(self, *args: Any, record: Any = None, viewer: Any = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        record: Any = None,
+        viewer: Any = None,
+        choices: OrganisationChoices | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.record = record
         # **What this record may be corrected into is what it already is.**
@@ -5476,7 +5662,7 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         if not self.allows_source_label:
             del self.fields["source_label"]
         attach_external_position_precision(self, record=record)
-        attach_organisation_picker(self, viewer=viewer)
+        attach_organisation_picker(self, viewer=viewer, choices=choices)
         set_external_position_engagements(
             self, matter=getattr(record, "matter", None), viewer=viewer
         )
@@ -5503,7 +5689,30 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         return self._clean_external_position(has_file=has_file)
 
 
-def set_external_position_engagements(form: forms.Form, *, matter: Any, viewer: Any) -> None:
+def visible_engagements_of(matter: Any, viewer: Any) -> list[Any]:
+    """This Matter's consultations, as this reader may see them, read once.
+
+    Evaluated deliberately. Two `Seotud kaasamine` controls render on the Teema
+    page since docs/adr/0090 §3 split the panel in two, and a lazy queryset handed
+    to both is two identical reads at render time — which is half of what the
+    query budget caught (`tests/test_matter_workflow.py`).
+
+    Scoped by `visible_to`, which is the authorization half and is not weakened by
+    being read early: what a crafted POST is validated against is the field's own
+    queryset, set from this same filter (`set_external_position_engagements`).
+    """
+    from app.matters.models import MatterEngagement
+
+    if matter is None:
+        return []
+    return list(
+        MatterEngagement.objects.filter(matter=matter).visible_to(viewer).order_by("-created_at")
+    )
+
+
+def set_external_position_engagements(
+    form: forms.Form, *, matter: Any, viewer: Any, engagements: list[Any] | None = None
+) -> None:
     """Point `Seotud kaasamine` at this Matter's consultations, as this reader sees them.
 
     The field's **queryset**, not only its rendered choices: that is what
@@ -5511,6 +5720,12 @@ def set_external_position_engagements(form: forms.Form, *, matter: Any, viewer: 
     Matter — or one restricted below the Matter this reader may open — is
     refused by the field itself. The service's own cross-Matter check stays
     where it is, because a form is not a boundary (AUTH-003, docs/adr/0038).
+
+    ``engagements`` is the page's one reading of that same set, where a caller has
+    it. It fills the *rendered choices* only; the queryset above is untouched and
+    is still what validates, so sharing the list costs nothing in authorization
+    and saves one identical read per extra control. A caller passing nothing gets
+    the lazy queryset it always got (`visible_engagements_of`, docs/adr/0090 §3.5).
 
     A form built without a Matter keeps the empty queryset the field declares,
     which is «no round to relate this to» and is the correct answer for a form
@@ -5524,6 +5739,16 @@ def set_external_position_engagements(form: forms.Form, *, matter: Any, viewer: 
     field.queryset = (
         MatterEngagement.objects.filter(matter=matter).visible_to(viewer).order_by("-created_at")
     )
+    if engagements is not None:
+        # The named blank option, restated. Assigning `choices` replaces Django's
+        # iterator, and the iterator is what would otherwise have put
+        # `empty_label` in front — so «Ei ole seotud» has to be written here or an
+        # unrelated record would read as a question somebody forgot to answer
+        # (`MatterCreateForm.__init__` states the same rule for `Adressaat`).
+        field.choices = [
+            ("", field.empty_label),
+            *((engagement.pk, str(engagement)) for engagement in engagements),
+        ]
 
 
 class KodaOpinionForm(forms.Form):
@@ -5639,28 +5864,34 @@ class KodaOpinionForm(forms.Form):
         initial=timezone.localdate,
     )
 
-    def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        matter: Any = None,
+        viewer: Any = None,
+        choices: OrganisationChoices | None = None,
+        **kwargs: Any,
+    ) -> None:
         kwargs.setdefault("auto_id", "id_koja_arvamus_%s")
         super().__init__(*args, **kwargs)
         self.matter = matter
-        # Validation against the whole catalogue; the rendered order is the same
-        # usage ranking the `Saatja` and `Adressaat` controls already use, so a
-        # ministry this reader writes to weekly is a chip rather than a search
-        # (`organisations_by_usage`, docs/adr/0063).
-        everything = list(Organisation.objects.order_by("name"))
+        # Validation against the whole catalogue; the rendered order is the
+        # **page's own** reading, which is the same usage ranking the `Saatja`
+        # and `Adressaat` controls already use — so a ministry this reader writes
+        # to weekly is a chip rather than a search.
+        #
+        # It shares `read_organisation_choices` with the two feedback panels
+        # rather than calling `addressees_by_usage` for itself. That helper ranks
+        # the *addressee* direction alone, which is marginally apter for a
+        # recipient shortlist and costs two more queries on a page that is
+        # already reading the same catalogue; the shared ranking is «bodies this
+        # reader's own Matters involve», which is as good an answer to «who does
+        # this office write to» and is already in hand (docs/adr/0090 §3.5).
+        reading = choices if choices is not None else read_organisation_choices(viewer)
         set_choices(self, "recipients", Organisation.objects.order_by("name"))
         field = cast(Any, self.fields["recipients"])
-        if viewer is None:
-            # No usage to rank by means no shortlist — the same fallback
-            # `MatterCreateForm` takes, and everything is a chip in name order.
-            self.recipients_offered = everything
-        else:
-            shortlist = list(addressees_by_usage(viewer))
-            chosen = {organisation.pk for organisation in shortlist}
-            self.recipients_offered = [
-                *shortlist,
-                *(o for o in everything if o.pk not in chosen),
-            ]
+        shortlist, tail = reading.shortlist_and_tail()
+        self.recipients_offered = [*shortlist, *tail]
         field.choices = [
             (organisation.pk, organisation.name) for organisation in self.recipients_offered
         ]
@@ -5668,7 +5899,7 @@ class KodaOpinionForm(forms.Form):
         # rather than through a similarity score. The panel has no search box of
         # its own, and the browser's in-page find reads these
         # (docs/adr/0073, `OrganisationSpellings`).
-        cast(Any, field.widget).alias_terms = organisation_alias_terms()
+        cast(Any, field.widget).alias_terms = reading.alias_terms
 
     def clean_sent_on(self) -> Any:
         """A send is never in the future. The record says what happened.
@@ -5746,17 +5977,43 @@ class ProceduralDevelopmentForm(forms.Form):
 
     use_required_attribute = False
 
-    body = forms.CharField(
+    title = forms.CharField(
         label="Mis menetluses juhtus",
+        required=False,
+        max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt Ministeerium saatis uue eelnõu versiooni",
+            }
+        ),
+    )
+    #: `Juristi märkus` — what this office makes of the step, beside it and never
+    #: inside it.
+    #:
+    #: «Uus versioon ei arvesta meie ettepanekut» is a professional judgement and
+    #: «Ministeerium saatis uue versiooni» is a fact about the world. One box
+    #: carrying both is a box whose meaning depends on who wrote the sentence —
+    #: the same separation `+ Teiste arvamus` keeps (docs/adr/0090 §4, §5).
+    note = forms.CharField(
+        label="Juristi märkus",
         required=False,
         widget=forms.Textarea(
             attrs={
                 "class": "field__input field__input--compact",
-                "rows": "3",
-                "placeholder": "nt Ministeerium saatis uue eelnõu versiooni kooskõlastusringile.",
+                "rows": "2",
+                "placeholder": "nt uus versioon ei arvesta meie ettepanekut",
             }
         ),
     )
+    #: The day it happened, **optional**, at the precision it is known to.
+    #:
+    #: This is the field that retired the `Entry`-based design: `occurred_at` is
+    #: `NOT NULL` and a development learned about from a third party months later
+    #: frequently has no day anybody could defend. The box opens on today because
+    #: the common case is writing up something just learned, visibly and
+    #: clearably — the one shape docs/adr/0078 §2 allows — and an emptied box
+    #: stores `NULL`, which reads «Kuupäev teadmata» (docs/adr/0090 §5.2).
     occurred_on = EstonianDateField(
         label="Kuupäev",
         required=False,
@@ -5796,31 +6053,51 @@ class ProceduralDevelopmentForm(forms.Form):
     )
     attachments = workspace_attachments("id_menetluse_areng_failid")
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
         kwargs.setdefault("auto_id", "id_menetluse_areng_%s")
+        #: The record being corrected, when this form is an editor.
+        #:
+        #: Read for one thing: whether it carries a precision the day box cannot
+        #: show, so that correcting the sentence of a development recorded as
+        #: *oktoober 2026* does not rewrite it into a day (docs/adr/0079 §9).
+        self.record = record
         super().__init__(*args, **kwargs)
+        attach_development_precision(self, record=record)
         # The active vocabulary, in the department's reviewed order, read through
         # the canonical selector rather than from a list in this module. Package A
         # may revise what is active; this form inherits that without being edited
         # (`app/workflow/selectors.py`, docs/adr/0090 §8).
         set_choices(self, "stage", active_stages())
 
-    def clean_body(self) -> str:
-        body = (self.cleaned_data.get("body") or "").strip()
-        if not body:
-            raise forms.ValidationError("Kirjuta, mis menetluses juhtus.")
-        return body
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        """The `Täpsus` radios, as the template renders every other chip row."""
+        return _precision_chips(self, f"{DEVELOPMENT_PREFIX}_precision")
+
+    def clean_title(self) -> str:
+        from app.matters.services import DEVELOPMENT_NEEDS_TITLE
+
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise forms.ValidationError(DEVELOPMENT_NEEDS_TITLE)
+        return title
 
     def clean(self) -> dict[str, Any]:
-        """The date, and then the next step's two halves together or not at all.
+        """The period, and then the next step's two halves together or not at all.
+
+        **The date is not required**, unlike the round this panel shipped in: an
+        emptied box stores `NULL` and reads «Kuupäev teadmata», which is a fact
+        the file has to be able to hold about a step somebody learned of late
+        (docs/adr/0090 §5.2).
 
         The refusal for a half-filled next step lands on the **empty** control,
         which is ADR 0052 §5's rule and its wording: «vali kuupäev» pinned to the
         sentence box points at the wrong field.
         """
         cleaned = super().clean() or {}
-        if cleaned.get("occurred_on") is None and not self.errors.get("occurred_on"):
-            self.add_error("occurred_on", "Märgi, mis kuupäeval see juhtus.")
+        anchor, precision = development_period(cast(Any, self))
+        cleaned["occurred_on_value"] = anchor
+        cleaned["occurred_on_precision"] = precision
 
         text = (cleaned.get("next_text") or "").strip()
         cleaned["next_text"] = text

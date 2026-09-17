@@ -8,6 +8,14 @@ class EntryKind(models.TextChoices):
 
     Formal outbound written advocacy is deliberately absent: that is a
     `Submission`, not a note about one (master specification 11.2, 8.3).
+
+    **A procedural development is absent too, and for a stronger reason.**
+    «Ministeerium saatis eelnõu uue versiooni» is a canonical fact with an
+    optional date, a title a projection can read without parsing prose, and a
+    lawyer's note that must not become the ministry's own sentence. It carried an
+    `EntryKind` for one round and now has a record of its own,
+    `MatterProceduralDevelopment`, whose docstring argues the three points an
+    `Entry` could not hold (docs/adr/0090 §5).
     """
 
     NOTE = "NOTE", "Märkus"
@@ -17,20 +25,4 @@ class EntryKind(models.TextChoices):
     WORKING_GROUP = "WORKING_GROUP", "Töörühm"
     JOINT_COORDINATION = "JOINT_COORDINATION", "Ühistegevuse koordineerimine"
     PUBLIC_STATEMENT = "PUBLIC_STATEMENT", "Avalik esinemine või kommentaar"
-    #: `Menetluse areng` — the external procedure moved, and this is the step it
-    #: took.
-    #:
-    #: «Ministeerium saatis uue eelnõu versiooni», «Eelnõu jõudis Riigikokku»,
-    #: «Seadus võeti vastu». It is authored chronology like every other value
-    #: here — a dated, attributable sentence about something that happened — and
-    #: it is a value rather than a model because that is exactly what the fact
-    #: is. What earns it its own name is that the panel writing it also offers
-    #: `Hetkeseis` and `Järgmiseks` in the same save, so a reader can tell a
-    #: procedural step apart from a `Märkus` about one (docs/adr/0090 §5).
-    #:
-    #: **Not a milestone and not a deadline.** It creates no
-    #: `MatterImportantDate`, enters no `real_deadlines`, draws no column on the
-    #: process strip and reads in no work queue of its own. What it may create is
-    #: a `NextAction`, and only because somebody wrote one.
-    PROCEDURAL_DEVELOPMENT = "PROCEDURAL_DEVELOPMENT", "Menetluse areng"
     OTHER = "OTHER", "Muu"

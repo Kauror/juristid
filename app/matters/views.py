@@ -119,6 +119,8 @@ from app.matters.forms import (
     edit_initial,
     external_position_period_initial,
     period_initial,
+    read_organisation_choices,
+    visible_engagements_of,
 )
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
@@ -5137,7 +5139,22 @@ def workspace_forms(
     open step the same form is `+ Järgmine tegevus` and has nothing to prefill
     from. A bound form ignores `initial` either way, so a refused save still
     comes back carrying what was typed (brief §9, §15).
+
+    **The institution catalogue is read once for the whole bar.** Three of these
+    forms ask the same question over the same catalogue, and each of them used to
+    answer it with four queries of its own — which was the right trade while
+    `+ Väline seisukoht` was the only such panel and is not one when there are
+    three: the page went from 38 queries to 49 and blew the budget
+    `tests/test_teema_redesign.py` holds. One `read_organisation_choices` here,
+    handed to each control, and every shortlist is still sliced per control in
+    Python exactly as before (docs/adr/0090 §3.5).
     """
+    organisations = read_organisation_choices(viewer)
+    # And this Matter's consultations, for the two `Seotud kaasamine` controls.
+    # Same reasoning as the catalogue above: one read for two identical selects.
+    # The *queryset* each field validates against is still set per form, so
+    # nothing about the authorization boundary is shared or weakened (AUTH-003).
+    engagements = visible_engagements_of(matter, viewer)
     return {
         "current_action_form": CompleteCurrentActionForm(),
         "matter_note_form": MatterNoteForm(),
@@ -5192,13 +5209,17 @@ def workspace_forms(
         # consultations as this reader may see them. Both are queryset-level, so a
         # crafted POST naming a round on another file is refused by the field
         # rather than by the template not having drawn it (docs/adr/0084 §4).
-        "received_feedback_form": ReceivedFeedbackForm(matter=matter, viewer=viewer),
-        "external_position_form": OtherOpinionForm(matter=matter, viewer=viewer),
+        "received_feedback_form": ReceivedFeedbackForm(
+            matter=matter, viewer=viewer, choices=organisations, engagements=engagements
+        ),
+        "external_position_form": OtherOpinionForm(
+            matter=matter, viewer=viewer, choices=organisations, engagements=engagements
+        ),
         # `+ Koja arvamus`. The one panel here that writes a `Submission` rather
         # than a Matter child: Koda's own opinion is what the product has always
         # called a submission, and this is a second door onto it rather than a
         # second record of it (docs/adr/0090 §6).
-        "koda_opinion_form": KodaOpinionForm(matter=matter, viewer=viewer),
+        "koda_opinion_form": KodaOpinionForm(matter=matter, viewer=viewer, choices=organisations),
         # `+ Menetluse areng`. The continuation the file had no way to record: a
         # dated step the external procedure took, optionally with the Hetkeseis it
         # puts the file in and the next thing the lawyer will do about it
@@ -5840,17 +5861,23 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def add_development(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Menetluse areng` — one dated step the procedure took, and what follows.
+    """`+ Menetluse areng` — one step the procedure took, and what follows.
 
-    Up to four canonical writes in one transaction: the `Entry`, its files, the
-    `Hetkeseis` and the next step. A refusal anywhere leaves the Matter exactly as
-    it was — a stage that moved without the development that moved it would be a
-    file claiming to be in the Riigikogu with nothing saying how it got there
+    Up to four canonical writes in one transaction: the
+    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and the next step. A
+    refusal anywhere leaves the Matter exactly as it was — a stage that moved
+    without the development that moved it would be a file claiming to be in the
+    Riigikogu with nothing saying how it got there
     (`workspace.add_procedural_development`, docs/adr/0090 §5).
 
+    **The date is optional**, which is what the canonical record buys over the
+    `Entry` this panel wrote for one round: a step learned about months later
+    frequently has no day anybody could defend (§5.2).
+
     **The `Hetkeseis` and the next step are optional and never inferred.** Nothing
-    reads the sentence and concludes anything from it; a save naming neither
-    changes neither.
+    reads the title and concludes anything from it; a save naming neither changes
+    neither, and nothing is read from or written to a `Menetluse link` — Package
+    B's links are references, and a reference is not an event (§5.6).
     """
     matter = get_visible_matter(request, pk)
     form = ProceduralDevelopmentForm(request.POST, request.FILES)
@@ -5860,8 +5887,13 @@ def add_development(request: HttpRequest, pk: Any) -> HttpResponse:
         workspace.add_procedural_development(
             matter=matter,
             author=request.user,
-            body=form.cleaned_data["body"],
-            occurred_on=form.cleaned_data["occurred_on"],
+            title=form.cleaned_data["title"],
+            # The resolved anchor and its precision, not the day box: `Kuu`,
+            # `Kvartal` and `Aasta` leave that box empty on purpose, and an
+            # emptied one is «kuupäev teadmata» rather than a refusal.
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+            note=form.cleaned_data.get("note") or "",
             stage=form.cleaned_data.get("stage"),
             next_text=form.cleaned_data.get("next_text") or "",
             next_date=form.cleaned_data.get("next_date"),

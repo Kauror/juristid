@@ -266,7 +266,39 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
         response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
     assert response.status_code == 200
-    assert len(captured) < 40
+    # **42, raised from 40 by docs/adr/0090, and the two are accounted for.**
+    #
+    # A budget is only worth having if raising it costs an explanation, so here it
+    # is. Measured on this world: 39 before that round, 41 after. The two are
+    # neither N+1s nor duplicates — both of those *were* introduced and both were
+    # removed before this number moved:
+    #
+    # * the Teema page renders three organisation controls where it rendered one,
+    #   and each was reading the catalogue, the usage ranking and the recorded
+    #   spellings for itself — four reads apiece. One
+    #   `read_organisation_choices` per page now, shared
+    #   (`app/matters/forms.py`);
+    # * two `Seotud kaasamine` selects were each reading this Matter's
+    #   consultations. One `visible_engagements_of` per page now, shared — and the
+    #   *queryset* each field validates against is still set per form, so nothing
+    #   about the authorization boundary is shared (AUTH-003).
+    #
+    # What is left is one query per genuinely new thing on the page:
+    #
+    # * `matters_matterproceduraldevelopment` — the chronology reads the new
+    #   canonical record. A record that is rendered must be read; there is no
+    #   version of this that costs nothing.
+    # * a second `workflow_stagevocabulary` — `+ Menetluse areng`'s `Hetkeseis`
+    #   select offers `active_stages()`, and the header's inline control offers
+    #   `stages_including(matter.stage)`. Those are **different sets on purpose**:
+    #   the header must keep displaying a retired stage the file already stands
+    #   in, and the panel must not offer one for a new choice. Sharing the read
+    #   would mean sharing the vocabulary, which would let somebody re-select a
+    #   stage the department retired (app/workflow/selectors.py, docs/adr/0032).
+    #
+    # The headroom is deliberately one, as it was before: this number is meant to
+    # fail the next time somebody adds a read, not to absorb it.
+    assert len(captured) < 42
 
 
 def test_selectors_reuse_the_prefetched_open_action(specialist):

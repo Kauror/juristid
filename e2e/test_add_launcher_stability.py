@@ -347,8 +347,10 @@ def test_the_engagement_panel_shows_both_dates_and_only_one_default(page, base_u
     assert panel.locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied where nobody can see it"
     )
-    # And the reply-by date the same way, since docs/adr/0086 §2 gave it a
-    # default of its own: a week out, on the screen, before the save.
-    assert panel.locator("[name=feedback_deadline]").input_value(), (
-        "the reply-by date opens empty, so a round would file as waiting on nothing"
+    # And the reply-by date **the other way**, since docs/adr/0090 §2 narrowed
+    # docs/adr/0086 §2: the box opens empty, so a completed act does not acquire a
+    # managed wait nobody asked for. The three spans beside it still fill it in
+    # one click, which is what makes the narrowing affordable.
+    assert not panel.locator("[name=feedback_deadline]").input_value(), (
+        "the reply-by date opens pre-filled, so every round acquires a wait nobody asked for"
     )

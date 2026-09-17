@@ -44,6 +44,7 @@ from app.matters.models import (
     Matter,
     MatterEngagement,
     MatterExternalPosition,
+    MatterProceduralDevelopment,
     MatterWebsiteOverview,
 )
 from app.workflow.dates import format_at_precision
@@ -353,6 +354,17 @@ class TimelineItem:
         it on none of them — the reasoning `website_overview` above states.
         """
         return self.record if isinstance(self.record, MatterExternalPosition) else None
+
+    @property
+    def procedural_development(self) -> Any:
+        """The `Menetluse areng` this row stands for, when it stands for one.
+
+        A named property rather than the template comparing `item_type` to a
+        class name, for the reason `external_position` above states: the
+        chronology offers `Muuda` on exactly these rows, and a string comparison
+        in a template is a rename away from silently offering it on none of them.
+        """
+        return self.record if isinstance(self.record, MatterProceduralDevelopment) else None
 
     @property
     def is_engagement(self) -> bool:
@@ -756,6 +768,14 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
 #: them is reworded.
 EXTERNAL_POSITION_DATE_UNKNOWN = "Kuupäev teadmata"
 
+#: What the chronology calls a `Menetluse areng` row.
+#:
+#: Named here because the projection, the correction partial and a test all have
+#: to agree about it — and because the headline is the *step*, with the record's
+#: own title after the colon, so a reader scanning a proceeding sees what happened
+#: rather than a label (docs/adr/0090 §5).
+DEVELOPMENT_HEADLINE = "Menetluse areng"
+
 
 #: What the chronology calls the line holding the lawyer's own comment.
 #:
@@ -861,6 +881,65 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
         # this office thinks of it is another, and the row says so
         # (docs/adr/0090 §4).
         own_note=position.lawyer_note,
+        own_note_label=LAWYER_NOTE_LABEL,
+    )
+
+
+#: What the chronology prints for a development nobody could date.
+#:
+#: The same sentence an undated `Väline seisukoht` reads, and deliberately the
+#: same one: both are records whose date may honestly be unknown, and two
+#: spellings of «we do not know when» would be two things to learn.
+DEVELOPMENT_DATE_UNKNOWN = EXTERNAL_POSITION_DATE_UNKNOWN
+
+
+def development_chronology_day(development: MatterProceduralDevelopment) -> date:
+    """Where a `Menetluse areng`'s row sits in the chronology.
+
+    Its own date when it has one; the day it was written down when it has not —
+    the rule `external_position_chronology_day` states, for the same reason. A row
+    that cannot be placed cannot be read, and the day it was recorded is the only
+    day this system knows anything about.
+
+    **The fallback places the row and never describes it.**
+    :func:`development_milestone` prints :data:`DEVELOPMENT_DATE_UNKNOWN` for
+    exactly these rows, because printing `created_at` beside «Ministeerium saatis
+    uue eelnõu versiooni» would state that the ministry did it on the day somebody
+    typed it in — a fact about another organisation, invented by this application.
+
+    An approximate date places the row on its anchor, which is the first day of
+    the period and is exactly what an anchor is for (docs/adr/0079 §2).
+    """
+    return development.occurred_on or _local_day(development.created_at)
+
+
+def development_milestone(development: MatterProceduralDevelopment) -> ChronologyMilestone:
+    """One `Menetluse areng` as the chronology row a reader sees.
+
+    Built here rather than inline in :func:`projected_milestones` because the
+    correction form swaps this one row back in place after a save, and the two
+    renderings have to be the same rendering — a second copy is a second place for
+    the note to gain a separator or lose its label (`app/matters/views.py`,
+    `_development_row`).
+
+    **The headline is the step itself**, which is what the record's `title` holds
+    and what Package D will project: «Menetluse areng: Ministeerium saatis uue
+    eelnõu versiooni». A reader scanning a year of a proceeding is looking for the
+    steps, and folding the lawyer's assessment into that line would make one line
+    say two things with two authors.
+
+    **What happened and what this office makes of it are two lines.** The `note`
+    is :attr:`own_note` and renders under its own label, exactly as a
+    `Väline seisukoht`'s does — the same separation, for the same reason
+    (docs/adr/0090 §4, §5).
+    """
+    return ChronologyMilestone(
+        what=f"{DEVELOPMENT_HEADLINE}: {development.title}",
+        # The date as it was actually known, or the words «kuupäev teadmata» —
+        # never the day the row happens to sit on, and never the anchor of a
+        # period (docs/adr/0079 §3).
+        display_date=development.display_date or DEVELOPMENT_DATE_UNKNOWN,
+        own_note=development.note,
         own_note_label=LAWYER_NOTE_LABEL,
     )
 
@@ -1015,6 +1094,24 @@ def projected_milestones(
             # engagement above it follows.
             continue
         add(position, _end_of_day(when), external_position_milestone(position))
+
+    # `Menetluse areng`: one step the external procedure took.
+    #
+    # Projected from the canonical record like every other structured fact, so the
+    # three audit events this record writes contribute no row of their own and one
+    # act takes one line (docs/adr/0074 §14, docs/adr/0090 §5).
+    #
+    # No `select_related`: the row renders the record's own two columns and
+    # nothing across a foreign key — the stage it may have moved is on the Matter
+    # and is deliberately not copied here (`MatterProceduralDevelopment`).
+    for development in MatterProceduralDevelopment.objects.filter(matter=matter).visible_to(user):
+        when = development_chronology_day(development)
+        if when > day:
+            # A development dated in the future is not history yet, and the
+            # chronology reads newest-first and means *past*. The same rule the
+            # two records above it follow.
+            continue
+        add(development, _end_of_day(when), development_milestone(development))
 
     # `Ülevaade / uudis`, and **only the two states that are milestones**.
     #

@@ -77,16 +77,23 @@ Lawyers were opening **new Matters** for the same proceeding.
 
 ## 0 — The architectural decision, stated first
 
-**One new model would have been one too many, and none was needed.**
+**A new model is justified where the business fact genuinely does not exist in the
+current architecture, and nowhere else.** This round has exactly one such fact.
 
-The temptation this round presents is a workflow subsystem: a `WorkflowStep`
-table, a state machine, a `ProceduralEvent` model, an `EngagementFeedback` beside
-an `ExternalPosition` beside an `AnotherOpinion` beside a `SurveyFeedback`. Every
-one of those would have been a second opinion about facts the domain already
-holds, and the day two of them disagreed there would be no way to tell which was
-meant.
+The temptation it presents is a workflow subsystem: a `WorkflowStep` table, a
+state machine, an `EngagementFeedback` beside an `ExternalPosition` beside an
+`AnotherOpinion` beside a `SurveyFeedback`. Every one of those would have been a
+second opinion about facts the domain already holds, and the day two of them
+disagreed there would be no way to tell which was meant. None of them is built.
 
-**No new model is added by this round.** What is added is:
+What *is* built is one record — `MatterProceduralDevelopment` — and it is built
+because the Package D discovery established that the fact it holds cannot be
+projected truthfully from anything that existed. §5.1 is that argument in full,
+including the round in which this record was an `Entry` and the three things that
+reading could not hold.
+
+**One new model is added by this round, and exactly one.** Everything else is
+the domain objects that already existed:
 
 | the lawyer's concept | what it is |
 | --- | --- |
@@ -95,12 +102,20 @@ meant.
 | `Meile saadetud tagasiside` | `MatterExternalPosition` + `provenance=RECEIVED` |
 | `Teiste arvamus` | `MatterExternalPosition` + `provenance=DISCOVERED` |
 | `Koja arvamus` | `Submission`, through the service `Dokumendid` posts to |
-| `Menetluse areng` | an `Entry` with a new `EntryKind`, plus stage and step |
+| `Menetluse areng` | **a new `MatterProceduralDevelopment`**, plus stage and step |
 
-Five schema changes, all additive, all on tables that already existed: three
-columns and an index on `matters_matterexternalposition`, one `choices` edit on
-`Entry.kind`, and one widened `NOT NULL`. One migration. No `RunPython`, no
-backfill, no reindex.
+The additions are: three columns and an index on
+`matters_matterexternalposition`, one widened `NOT NULL` there, one new table
+(`matters_matterproceduraldevelopment`), a seventh typed column on
+`documents_documentlink`, and two `choices` edits. Four migrations, all additive.
+No `RunPython`, no backfill, no reindex.
+
+**`Menetluse areng` is the one place a new record was warranted**, and §5.1 is the
+argument: the Package D discovery established that an incoming procedural
+development cannot be projected truthfully from any existing record, because its
+date may honestly be unknown, its title must be readable without parsing prose,
+and the lawyer's note must not become the ministry's own sentence. Every other
+concept in the table below is a domain object this product already had.
 
 No BPM engine, no state-machine framework, no Celery, no background job, no AI, no
 automated communication, no CRM. Nothing in this round fetches, sends, generates,
@@ -368,60 +383,102 @@ The separation holds at every layer:
   record whose only content is this office's opinion of something nobody can read
   is a record of nothing.
 
-## 5 — `Menetluse areng` is an `Entry`, and a composite operation
+## 5 — `Menetluse areng` is a canonical fact of its own
 
-### 5.1 Why not a new model
+### 5.1 The model this round first refused, and why it was wrong to
 
-A procedural development needs, at most: a date, a concise description, an optional
-note, optional documents, an optional stage update, an optional next action.
+**This record was an `Entry` of a new `EntryKind` for one round.** The reasoning
+was that a procedural development is a dated, attributable sentence about
+something that happened, which is exactly what the authored chronology is:
+`occurred_at` already means «when the work happened, not when it was typed up»,
+`body` already holds the account, `DocumentLink` already carries the files, and
+`EntryKind` already distinguishes kinds of chronology. What was missing, on that
+reading, was not a table — it was a *panel* that asked for the date and could set
+the stage and the step in the same breath.
 
-`Entry` is the authored professional chronology. `occurred_at` already means «when
-the work happened, not when it was typed up» — Friday's event written up on Monday
-belongs on Friday. `body` already holds the account and is sanitised in one place.
-`DocumentLink` already carries the files. `EntryKind` already distinguishes kinds of
-chronology from one another. `EntryRevision` already preserves superseded wording.
-Visibility, audit and the chronology projection are already there.
+That reasoning is right about the **shape** and wrong about the **fact**, and the
+Package D discovery is what proved it: an incoming development such as
+«Ministeerium saatis eelnõu uue versiooni» **cannot be projected truthfully** from
+the existing records. Three things the fact needs, an `Entry` cannot hold:
 
-What was missing was not a table. It was a **panel** that asked for the date, and
-that could set the stage and the next step in the same breath.
+* **The date has to be allowed to be unknown.** `Entry.occurred_at` is `NOT NULL`
+  and has been since the foundational schema; every chronology reader, the
+  `-occurred_at` ordering and the timeline's pagination depend on it. A
+  development learned about from a third party months later frequently has no day
+  anybody could defend, and the two answers an `Entry` left were an invented day
+  or no record at all. §5.2 of the previous draft of this record called that a
+  stated cost. It is not a cost that may be paid: inventing a date for somebody
+  else's proceeding is precisely what docs/adr/0078 §2 and docs/adr/0079 exist to
+  refuse.
+* **The lawyer's own note is a second field.** An `Entry` has one `body`, so
+  «Ministeerium saatis uue versiooni» and «see ei arvesta meie ettepanekut» had to
+  become one sentence — the same conflation §4 refuses for a `Väline seisukoht`,
+  arriving on the other record and misattributing this office's judgement to the
+  ministry.
+* **A projection needs a title it did not have to parse.** Package D reads these
+  into one substantive history, and an `Entry` offers prose. Deriving «what
+  happened» from the first sentence of a `body` is the guessing this repository
+  refuses everywhere else.
 
-So: `EntryKind.PROCEDURAL_DEVELOPMENT` («Menetluse areng») — an `AlterField` over a
-`choices` list, which is Python metadata and not a database object — and one
-composite workspace operation.
+So `MatterProceduralDevelopment`, beside `MatterEngagement`,
+`MatterWebsiteOverview` and `MatterExternalPosition` in `app.matters`, with its
+own service functions and its own audit events. **No new framework.** It is a
+Matter child record written through named use cases exactly like every other
+structured fact on this page; the launcher, the lock discipline, the visibility
+inheritance, the evidence pipeline, the audit model and the chronology projection
+are all the existing ones.
 
-Rejected: a `ProceduralEvent` model (a second dated narrative beside `Entry`, which
-would then disagree with it); `MatterImportantDate` (a milestone somebody else
-*announced*, for a date still ahead, which is the opposite tense); a bare `+ Märge`
-(which is what people were already misusing, and which cannot date itself or carry
-the stage).
+### 5.2 What it holds, and what it deliberately does not
 
-### 5.2 The date is required here, and that is a stated cost
+Four columns and no more:
 
-`Entry.occurred_at` is `NOT NULL` and has been since the foundational schema. Every
-chronology reader, the `-occurred_at` ordering, the timeline pagination, the
-activity maximum and the register sort depend on it. Making it nullable to allow an
-undated development would be a large change to the most-read table in the product
-for a case that barely arises: a lawyer learning that the ministry sent a new draft
-knows what day it was, or what day they learned it.
+| column | |
+| --- | --- |
+| `title` | **required** — the step, in one line a projection can read |
+| `occurred_on` + `occurred_on_precision` | **optional**, at the precision it is known to |
+| `note` | **optional** — `Juristi märkus`, never the event itself |
 
-So the box is pre-filled with today, visibly and changeably — the one shape
-ADR 0078 §2 allows — and an empty box is refused. **A development nobody can date
-is a `+ Märge`**, which stamps the moment it was recorded and claims nothing about
-when anything happened. That is the existing behaviour and it is preserved.
+`title` is bounded at 500, like `MatterEngagement.title`, because it is the line
+a reader scans a year of a proceeding by. Detail goes in the note and the paper
+goes in the attachments; a box that invited paragraphs would make this record a
+worse copy of the document beside it.
 
-This is narrower than the brief's «date, optional if genuinely unknown», and it is
-recorded here as a narrowing rather than left as a silence.
+`occurred_on` carries the four precisions of docs/adr/0079 through the same
+composer every other period on this product goes through, an emptied box stores
+`NULL` and reads «Kuupäev teadmata», and the database refuses a precision on a row
+with no date. Nothing derives it: not `created_at`, not the day somebody typed it
+in, not the stage change saved beside it.
+
+**Not a `MatterImportantDate`**, which is a milestone somebody *announced* for a
+date still ahead — the opposite tense. **Not a `Submission`**, which is what Koda
+sent. **Not a `NextAction`**: a development is something that has already
+happened, and a record that generated work would make every Matter carrying one
+read as owing something (docs/adr/0078 §3, docs/adr/0084 §1).
+
+**The stage it moved the file to is not copied onto it.** `Matter.stage` is where
+the file stands and `MATTER_STAGE_CHANGED` is the history of it moving; a copy
+here would be a second place for the same fact and therefore a second thing that
+can disagree. What ties the two together is the operation identifier both writes
+share (`app.audit.operations`) — which is also what lets Package D render «the
+ministry sent a new draft, and the file moved to Kooskõlastusringil» as one act
+without either record holding the other.
+
+`DocumentLink` gains a **seventh** typed target column. That is the documented
+cost of typed columns over a generic target, paid once more and for the same
+reason docs/adr/0084 §3 paid it the sixth time: a development routinely arrives
+*with* the paper, and the file has to be able to say which bytes are the evidence
+for which step.
 
 ### 5.3 The stage and the step are offered, never derived
 
-**Nothing reads the sentence.** No stage is inferred from «Eelnõu jõudis
+**Nothing reads the title.** No stage is inferred from «Eelnõu jõudis
 Riigikokku», no next action is generated, no vocabulary is matched. A person
 chooses, or nobody does, and a save naming neither changes neither.
 
 The stage goes through `change_stage`, the canonical service, over
-`active_stages()` — so a revision of the stage vocabulary arrives here without this
-form knowing about it, and **no stage key is hard-coded in this round**. The step
-goes through `set_next_action_for_new_work`, the native boundary, so the
+`active_stages()` — so a revision of the stage vocabulary arrives here without
+this form knowing about it, and **no stage key is hard-coded in this round**. The
+step goes through `set_next_action_for_new_work`, the native boundary, so the
 departed-owner rule applies exactly as on `+ Järgmine tegevus`, and it supersedes
 whatever was open, which is `NextAction`'s own invariant.
 
@@ -430,7 +487,7 @@ ADR 0052 §5's own words.
 
 ### 5.4 Atomicity
 
-Up to four canonical writes in one transaction: the `Entry`, its evidence, the
+Up to four canonical writes in one transaction: the record, its evidence, the
 stage, the step. A validation failure anywhere leaves the Matter exactly as it was
 — no stage changed with the development absent (a file claiming to be in the
 Riigikogu with nothing saying how it got there), no duplicated next action, no
@@ -457,6 +514,38 @@ adds nothing to any count, badge or deadline surface.
 `opinion_sent` is read off the process strip the page has already built, which is
 `visible_to`-scoped there, so a `Submission` restricted below the Matter draws no
 column and puts no sentence on the page either.
+
+### 5.6 The Package B seam, and the inference it forbids
+
+Package B introduces `MatterProceduralLink` — **where a proceeding lives**: the
+EIS page, the Riigikogu file, the ministry's own register entry.
+
+**A link is a reference and a development is an event, and neither is derived from
+the other.** Nothing in this round reads, writes or infers a link, and nothing may
+later infer a development from one: that a proceeding has a Riigikogu page says
+nothing about *when* it reached the Riigikogu, who noticed, or what this office
+made of it. A file that manufactured the second fact from the first would be
+inventing a dated event nobody recorded — the same class of invention §3.4 refuses
+for provenance and §1.2 refuses for a date.
+
+**The association is a pointer somebody sets.** It is deliberately not built here,
+because `MatterProceduralLink` does not exist on `main` and this round may not
+create a model another package owns. The seam is one nullable foreign key, added
+by whichever of the two packages lands second — most naturally on
+`MatterProceduralDevelopment`, where it reads «this step happened in that
+proceeding». Nothing in this record's schema has to change to accept it.
+
+### 5.7 Correction, and no deletion
+
+Create and correct, like `MatterEngagement` and `MatterExternalPosition`. There is
+no delete route, no service and no soft-delete state: a mistaken row is corrected,
+because what the file recorded and who recorded it is part of the file.
+
+Corrections are refused on a closed Matter, take the Matter's row lock, observe
+the project's optimistic concurrency, and write nothing at all on a stale token —
+not half the record and not the audit row. The files a development carries are not
+re-posted by a correction and cannot be detached by one: adding evidence is a
+different act with a different audit trail (docs/adr/0084 §8).
 
 ## 6 — `Koja arvamus` reuses `Submission`
 
@@ -664,9 +753,13 @@ institution.
 is not attribution, and the whole defect is a file recording this office's criticism
 as the ministry's words.
 
-**Make `Entry.occurred_at` nullable so a development can be undated.** Rejected in
-§5.2 as a large change to the most-read table for a case that barely arises. The
-cost is stated rather than hidden, and `+ Märge` covers it.
+**Make `Entry.occurred_at` nullable so a development could stay an `Entry`.**
+Rejected in §5.1, and it is the alternative most worth stating: it is a large change
+to the most-read table in the product — every chronology reader, the `-occurred_at`
+ordering and the timeline's pagination depend on that column being present — made to
+avoid a table that costs one `CreateModel`. And it would still have left the other
+two problems: one `body` for two authors, and a title a projection has to parse out
+of prose.
 
 **Create a `NextAction` automatically after a `Submission`.** Rejected in §5.5. The
 application does not know what happens next, and an invented step is
@@ -684,6 +777,12 @@ read and fix.
 **Ask for a Koda publication reference on `+ Koja arvamus`.** Deferred in §8. The
 relation does not exist, and creating a publication model here would duplicate the
 package that owns publication.
+
+**Derive a `Menetluse areng` from a `MatterProceduralLink`.** Rejected in §5.6, and
+forbidden rather than merely declined: a link says *where a proceeding lives* and an
+event says *what happened and when*. Manufacturing the second from the first would
+put a dated event on the file that nobody recorded — the same invention §1.2 refuses
+for a date and §3.4 refuses for a provenance.
 
 **Keep the `Tagasisidet ootame kuni` default and make the wait quieter.** Rejected.
 The wait's loudness is the point of ADR 0086 §3 and is right for a round somebody
@@ -709,22 +808,40 @@ A `Väline seisukoht` chronology row can now be three lines rather than two.
 
 Package D still owns the unified OneNote-like substantive history. This round
 deliberately creates clean semantic data and uses current UI patterns; it builds no
-second timeline. What remains for Package D: how a `Menetluse areng`, a
-`Meile saadetud tagasiside`, a `Teiste arvamus` and a `Koja arvamus` read together as
-one narrative, whether the chronology should group by provenance, and whether the
-process strip should draw procedural developments. None of those needs a schema change
-after this round.
+second timeline.
+
+**What Package D asked for and has.** Its discovery established that an incoming
+procedural development could not be projected truthfully from any existing record,
+and `MatterProceduralDevelopment` is the answer: a required title it can read
+without parsing prose, an optional date at the precision it is known to, an optional
+lawyer note that is never the event, optional evidence through the seventh typed
+`DocumentLink` column, and an optional stage change and next action tied to it by a
+shared operation identifier rather than by a copied column.
+
+**What remains for Package D:** how a `Menetluse areng`, a
+`Meile saadetud tagasiside`, a `Teiste arvamus` and a `Koja arvamus` read together
+as one narrative, whether the chronology should group by provenance, and whether the
+process strip should draw procedural developments. None of those needs a schema
+change after this round.
 
 ## Reversibility
 
-High for the product. Removing `provenance` leaves every row readable under
-`Väline seisukoht`'s original heading; re-narrowing `organisation` succeeds unless an
-aggregate record was written; deleting the two panels leaves the one that existed;
-retiring `EntryKind.PROCEDURAL_DEVELOPMENT` leaves its entries readable as
-chronology; removing `+ Koja arvamus` leaves every `Submission` it wrote canonical and
-managed on `Dokumendid`; and restoring `Tagasisidet ootame kuni`'s default is one
-keyword argument.
+High for the product, and different for the two halves.
 
-What a reverse would lose is what people wrote into the three new columns, which is
-the usual cost of additive columns and the reason these are the smallest set that
-answers the question.
+Additive and cleanly reversible: removing `provenance` leaves every row readable
+under `Väline seisukoht`'s original heading; re-narrowing `organisation` succeeds
+unless an aggregate record was written; deleting the two feedback panels leaves the
+one that existed; removing `+ Koja arvamus` leaves every `Submission` it wrote
+canonical and managed on `Dokumendid`; and restoring `Tagasisidet ootame kuni`'s
+default is one keyword argument.
+
+`MatterProceduralDevelopment` is the one that is not free. Dropping the table would
+lose what people wrote into it, and there is nowhere else the fact could go — which
+is the whole reason the record exists. What *is* reversible is the surface: the
+panel, the chronology row and the seventh `DocumentLink` column can each be withdrawn
+leaving the rows stored and readable through the admin and the shell. Nothing depends
+on the record that could not be rebuilt from it.
+
+What a reverse of the additive half would lose is what people wrote into the three
+new columns on `MatterExternalPosition`, which is the usual cost of additive columns
+and the reason these are the smallest set that answers the question.

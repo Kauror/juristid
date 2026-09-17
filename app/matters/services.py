@@ -42,6 +42,7 @@ from app.matters.locks import (
     lock_open_matter_for_business_write,
 )
 from app.matters.models import (
+    DEVELOPMENT_TITLE_MAX_LENGTH,
     ENGAGEMENT_URL_MAX_LENGTH,
     EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH,
     EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH,
@@ -55,6 +56,7 @@ from app.matters.models import (
     MatterEngagement,
     MatterExternalPosition,
     MatterPersonalNote,
+    MatterProceduralDevelopment,
     MatterReferenceSequence,
     MatterWebsiteOverview,
     TagAssignment,
@@ -3272,6 +3274,239 @@ def correct_external_position(
             summary=current.link_label[:200],
             payload={"url_from": url_from or None, "url_to": current.url or None},
         )
+    return current
+
+
+#: What a development with nothing said about it is told.
+DEVELOPMENT_NEEDS_TITLE = "Kirjuta, mis menetluses juhtus."
+#: What a stale correction is told. The sibling of `EXTERNAL_POSITION_EDIT_CONFLICT`
+#: and deliberately the same shape of sentence.
+DEVELOPMENT_EDIT_CONFLICT = "Menetluse arengut on vahepeal mujal muudetud."
+
+
+class ProceduralDevelopmentConflict(DomainError):
+    """The development changed elsewhere between rendering a form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see the
+    other side of is a conflict they cannot resolve — the same reasoning, and
+    deliberately the same shape, as :class:`ExternalPositionConflict`.
+    """
+
+    def __init__(self, current: MatterProceduralDevelopment) -> None:
+        super().__init__(DEVELOPMENT_EDIT_CONFLICT)
+        self.current = current
+
+
+def development_revision(development: MatterProceduralDevelopment) -> str:
+    """Which version of a development a rendered correction form was filled from."""
+    return development.updated_at.isoformat()
+
+
+def _development_precision(occurred_on: Any, value: Any) -> str:
+    """How exactly `Kuupäev` is known, normalised and vouched for.
+
+    The two rules `_external_position_precision` keeps, for the same two reasons.
+    A date nobody knows has no precision, so a missing date forces `EXACT` — and
+    the database says so as well. The vocabulary is checked here so that a bad
+    value is a `DomainError` naming what was wrong rather than an `IntegrityError`
+    from inside a transaction that has already captured three files.
+    """
+    if occurred_on is None:
+        return DatePrecision.EXACT.value
+    precision = value or DatePrecision.EXACT.value
+    if precision not in DatePrecision.values:
+        raise DomainError(f"Tundmatu kuupäeva täpsus {precision!r}.")
+    return precision
+
+
+def record_procedural_development(
+    *,
+    matter: Matter,
+    title: str,
+    occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
+    note: str = "",
+    actor: Any = None,
+) -> MatterProceduralDevelopment:
+    """Record one step the external procedure took.
+
+    «Ministeerium saatis eelnõu uue versiooni», «Eelnõu jõudis Riigikokku». The
+    canonical fact, written once, on the Matter it belongs to.
+
+    **Writes nothing else.** No `Entry` — one act must not become two records
+    that can disagree, which is the rule `add_engagement` and
+    `record_external_position` both state. No `Submission`, no
+    `MatterImportantDate`, no `NextAction` and no work item: a development is
+    something that has already happened, and a record that generated work would
+    make every Matter carrying one read as owing something (docs/adr/0078 §3,
+    docs/adr/0084 §5). A stage change and a next step may be saved *beside* it,
+    and that is one atomic operation over three canonical services rather than
+    three columns on this row (`app.matters.workspace.add_procedural_development`).
+
+    **Nothing is derived from the title.** No stage is inferred from «Eelnõu
+    jõudis Riigikokku», no vocabulary is matched, and no procedural link is
+    created or read. Package B's links are references — where a proceeding lives
+    — and a reference is not an event (docs/adr/0090 §5.6).
+
+    ``occurred_on`` is **optional**, and that is the whole reason this record
+    exists rather than an `Entry`: a development learned about months later
+    frequently has no day anybody could defend. ``occurred_on_precision`` says
+    how exactly it is known and ``occurred_on`` is then the **anchor** of that
+    period, normalised through the same composer as every other period on this
+    product. An unknown date is normalised back to `EXACT`: absence has no
+    precision (docs/adr/0079 §2).
+
+    **Takes no closed-Matter lock of its own.** The person's door is
+    `app.matters.workspace.add_procedural_development`, which locks the Matter and
+    refuses a closed one before it calls this — the shape `record_external_position`
+    already has, and the reason is the same one R2-02 states: a page is not a
+    boundary.
+    """
+    clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
+    if not clean_title:
+        raise DomainError(DEVELOPMENT_NEEDS_TITLE)
+    clean_note = (note or "").strip()
+    precision = _development_precision(occurred_on, occurred_on_precision)
+
+    development = MatterProceduralDevelopment.objects.create(
+        matter=matter,
+        title=clean_title,
+        occurred_on=occurred_on,
+        occurred_on_precision=precision,
+        note=clean_note,
+        created_by=actor,
+    )
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,
+        matter=matter,
+        actor=actor,
+        obj=development,
+        summary=clean_title[:200],
+        payload={
+            # The date and its precision together, never the anchor on its own: a
+            # payload carrying `2026-10-01` and nothing else says «1 October» to
+            # whoever reads it back, which is the invention docs/adr/0079 §2
+            # exists to refuse.
+            "occurred_on": development.occurred_on.isoformat() if development.occurred_on else None,
+            "occurred_on_precision": development.occurred_on_precision,
+            # **That the lawyer wrote a note, never the note.** It is this
+            # office's judgement of what happened, and an audit payload holding it
+            # beside the event's own title is the one place the two could be read
+            # back as one statement (docs/adr/0090 §4, §5).
+            "has_note": bool(development.note),
+        },
+    )
+    return development
+
+
+def record_procedural_development_document(
+    *, development: MatterProceduralDevelopment, document: Any, actor: Any = None
+) -> None:
+    """Record that one captured file is the evidence for this development.
+
+    `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED` already say that bytes arrived
+    on the Matter; neither of them says that they are the ministry's revised draft
+    rather than something else that turned up the same afternoon, which is the
+    fact the `DocumentLink` row carries and the reason this event exists.
+    """
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED,
+        matter=development.matter,
+        actor=actor,
+        obj=development,
+        summary=document.title[:200],
+        payload={"document": str(document.pk)},
+    )
+
+
+@transaction.atomic
+def correct_procedural_development(
+    *,
+    development: MatterProceduralDevelopment,
+    title: Any,
+    occurred_on: Any,
+    occurred_on_precision: Any,
+    note: Any,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterProceduralDevelopment:
+    """`Muuda` on a recorded `Menetluse areng`, by a person, on an open Matter.
+
+    **There is no delete**, on an open Matter or a closed one. A mistaken row is
+    corrected, because what the file recorded and who recorded it is part of the
+    file — the rule `MatterEngagement` has kept since it was written and
+    `MatterExternalPosition` keeps beside it.
+
+    **Refused on a closed Matter**, like a `Kaasamine` correction and unlike an
+    entry's: every field on this record is substantive — what happened, when, and
+    what this office made of it — and correcting any of them is normal interactive
+    business work, which a finished file refuses. Reopening is the way out, and it
+    leaves somebody's name on both decisions (docs/adr/0076 §2, docs/adr/0084 §8).
+
+    **Optimistic concurrency, and a stale save writes nothing at all.** The row is
+    locked, the token is compared against the *locked* row — so the version
+    compared against is the committed one — and the comparison happens before any
+    value is decided, so a refusal cannot have half-applied the record.
+
+    The files a development already carries are not re-posted here and cannot be
+    detached by a correction: adding evidence is a different act with a different
+    audit trail (`ExternalPositionEditForm`, docs/adr/0084 §8).
+    """
+    locked_matter = lock_open_matter_for_business_write(development.matter_id)
+    try:
+        current = MatterProceduralDevelopment.objects.select_for_update(no_key=True).get(
+            pk=development.pk, matter=locked_matter
+        )
+    except MatterProceduralDevelopment.DoesNotExist:
+        raise DomainError("Seda menetluse arengut ei ole sellel teemal.") from None
+
+    if expected_revision is not None and development_revision(current) != expected_revision:
+        raise ProceduralDevelopmentConflict(current)
+
+    clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
+    if not clean_title:
+        raise DomainError(DEVELOPMENT_NEEDS_TITLE)
+    precision = _development_precision(occurred_on, occurred_on_precision)
+
+    proposed: dict[str, Any] = {
+        "title": clean_title,
+        "occurred_on": occurred_on,
+        "occurred_on_precision": precision,
+        "note": (note or "").strip(),
+    }
+    changed = [field for field, value in proposed.items() if getattr(current, field) != value]
+    if not changed:
+        # Nothing moved, so nothing is recorded. An audit row for a save that
+        # changed no value would be a history of somebody pressing a button.
+        return current
+
+    payload: dict[str, Any] = {"fields": sorted(changed)}
+    if "occurred_on" in changed:
+        payload["occurred_on_from"] = (
+            current.occurred_on.isoformat() if current.occurred_on else None
+        )
+        payload["occurred_on_to"] = occurred_on.isoformat() if occurred_on else None
+    if "occurred_on_precision" in changed:
+        # Recorded whenever it moves, including when the anchor did not:
+        # *oktoober 2026* corrected to *IV kvartal 2026* keeps `2026-10-01` and
+        # changes what that number means, so a payload carrying only the date
+        # would say nothing had happened.
+        payload["occurred_on_precision_from"] = current.occurred_on_precision
+        payload["occurred_on_precision_to"] = precision
+
+    for field, value in proposed.items():
+        setattr(current, field, value)
+        setattr(development, field, value)
+    current.save(update_fields=[*changed, "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_CORRECTED,
+        matter=locked_matter,
+        actor=actor,
+        obj=current,
+        summary=current.title[:200],
+        payload=payload,
+    )
     return current
 
 
