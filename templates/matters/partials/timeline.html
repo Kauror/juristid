@@ -1,6 +1,14 @@
 {% load counts %}
 {% comment %}
-`Ajajoon` — the process strip, then the chronology. Open by default.
+`Teema käik` — where the procedure stands, then what actually happened. Open by
+default.
+
+**The heading is `Teema käik` since docs/adr/0092, and `Ajajoon` is gone.** The
+lawyers asked one question of this section — *mis selle teemaga päriselt
+juhtus?* — and «ajajoon» is the name of a widget rather than an answer to it.
+The anchor is untouched: `#ajajoon` is what a shared link and `?ajajoon=` both
+address, and renaming an id because a heading changed would break every link
+somebody has already sent (docs/adr/0092 §9).
 
 **The head is the label and the count, and nothing else.** It carried a preview
 sentence quoting the last entry, the step that is currently owed, and the count:
@@ -24,7 +32,7 @@ when somebody asks for it.
 <details class="accordion accordion--timeline" id="ajajoon" open>
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
-    <h2 class="accordion__title">Ajajoon</h2>
+    <h2 class="accordion__title">Teema käik</h2>
     {% comment %}
       The count is reader-visible chronology content and nothing else. A
       restricted child contributes no row and is not counted here either, so the
@@ -37,6 +45,17 @@ when somebody asks for it.
   </summary>
 
   <div class="accordion__body">
+    {% comment %}
+      `Menetluse kulg` first, then the dated points, then what happened.
+
+      The rail says which step of the procedure this file is on; the strip under
+      it names the dated points the file has and is heading for — `Alustatud`,
+      `Arvamuse tähtaeg`, `Koja arvamus`, `Jõustumine`. Two readings of the same
+      question, and both are drawn before the history rather than beside it,
+      because «where is this» is what a reader asks before «how did it get
+      there» (docs/adr/0092 §2, docs/adr/0074 §12).
+    {% endcomment %}
+    {% include "matters/partials/legal_process.html" %}
     {% include "matters/partials/process_strip.html" %}
 
     {% comment %}
@@ -47,5 +66,25 @@ when somebody asks for it.
     <div id="ajalugu-loend" class="uxtl">
       {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
     </div>
+
+    {% comment %}
+      The technical log, under the history it was taken out of.
+
+      `Teema käik` reads as a professional case history because it projects
+      canonical acts and leaves field-level writes out — a corrected deadline, a
+      renamed title, a date moved by one day. Those writes are still recorded and
+      still readable, one link away, which is what makes leaving them off the
+      primary list a presentation decision rather than a loss of auditability.
+
+      A quiet link at the foot of the section rather than a third tab: two tabs
+      is the whole of this record's navigation, and an audit log is looked up
+      rather than navigated between (docs/adr/0092 §11,
+      matters/partials/tabs.html).
+    {% endcomment %}
+    <p class="uxtl__audit">
+      <a class="quietlink" href="{% url 'matters:matter_changes' pk=matter.pk %}">
+        Kõik muudatused →
+      </a>
+    </p>
   </div>
 </details>

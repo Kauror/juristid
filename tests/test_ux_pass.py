@@ -363,8 +363,13 @@ def test_the_folded_run_holding_the_creation_says_when_the_file_started(speciali
 
     assert len(runs) == 1
     run = runs[0]
-    assert run.count == 3
-    assert run.summary == f"Teema loodud {short_day_month(timezone.localdate())}, tegevusi 3"
+    # **Two, not three, since docs/adr/0092 §8.** The step this save set is the
+    # one that is still open, and an open `Järgmiseks` reads at the top of the
+    # page under `PRAEGUNE TEGEVUS` rather than a second time as history. What
+    # this test is about — that the summary names the creation day and a count,
+    # and recites no event vocabulary — is unchanged.
+    assert run.count == 2
+    assert run.summary == f"Teema loodud {short_day_month(timezone.localdate())}, tegevusi 2"
     for word in ("süsteemimuudatus", "Järgmiseks määratud", "Hetkeseis muudetud"):
         assert word not in run.summary
 
@@ -418,11 +423,16 @@ def test_the_events_a_folded_run_used_to_hide_are_all_on_the_page(client, specia
     assert "uxtl__sysrow" not in body, "the folded run is not part of the approved target"
     assert "näita ▸" not in body
 
-    # Every one of the three is readable on the page, as its own row.
+    # Both things that happened *to the file* are readable on the page, each as
+    # its own row.
     chronology = body.split('id="ajalugu-loend"')[1]
     assert "Teema loodud" in chronology
     assert "Hetkeseis:" in chronology
-    assert "määras järgmise sammu" in chronology
+    # And the third — the step that save set — reads where an open instruction
+    # is read and acted on, which is the row above the chronology rather than a
+    # «määras järgmise sammu» line inside it (docs/adr/0092 §8).
+    assert "määras järgmise sammu" not in chronology
+    assert "Jälgi menetluse käiku" in body.split('id="ajalugu-loend"')[0]
 
     # And the evidence underneath is untouched.
     kept = set(ChangeEvent.objects.filter(matter=matter).values_list("event_type", flat=True))
@@ -461,8 +471,12 @@ def test_the_ajajoon_head_is_the_label_and_the_count(client, specialist) -> None
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     summary = " ".join(body.split("accordion--timeline")[1].split("</summary>")[0].split())
 
-    assert "Ajajoon" in summary
-    assert "kirjet" in summary
+    assert "Teema käik" in summary, "the section's own heading since docs/adr/0092"
+    # The count, whichever grammatical number this Matter's own row total takes.
+    # It is one row here since docs/adr/0092 §8 — the note — because the step
+    # this test also sets is open and reads above the section rather than in it.
+    assert "uxtl__count" in summary
+    assert "1 kirje" in summary
     assert "üleminekuaeg on läbiräägitav" not in summary, "no preview quote"
     assert "Saada koja arvamus EIS-i" not in summary, "the owed step is the row above"
     assert "TEEN" not in summary

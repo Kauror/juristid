@@ -344,6 +344,11 @@ urlpatterns = [
     ),
     path("teemad/<uuid:pk>/andmeklass/", views.set_data_class, name="set_data_class"),
     path("teemad/<uuid:pk>/ajalugu/", views.timeline_page, name="timeline_page"),
+    # `Kõik muudatused` — the technical change log behind `Teema käik`. Its own
+    # page rather than a third tab: the Matter has two tabs deliberately, and an
+    # audit log is looked up rather than navigated between (docs/adr/0092 §11,
+    # matters/partials/tabs.html).
+    path("teemad/<uuid:pk>/muudatused/", views.matter_changes, name="matter_changes"),
     # Full-page posts
     path("teemad/<uuid:pk>/seisukoht/salvesta/", views.update_position, name="update_position"),
     path("teemad/<uuid:pk>/sulge/", views.close, name="close"),

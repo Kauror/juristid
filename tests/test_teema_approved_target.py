@@ -2132,7 +2132,12 @@ def test_the_ajajoon_head_carries_only_the_label_and_the_count(signed_in, normal
     head = body[body.index('id="ajajoon"') :]
     head = head[: head.index("</summary>")]
 
-    assert "Ajajoon" in head
+    # `Teema käik` since docs/adr/0092. The *shape* this test protects is the
+    # one §16 decided — a label and a count, and none of the three facts the
+    # head used to carry — and that is unchanged; only the label is the lawyers'
+    # own word for the section now. The id is deliberately still `ajajoon`,
+    # because it is what a shared link addresses.
+    assert "Teema käik" in head
     assert "kirjet" in head
     assert "uxtl__preview" not in head
     assert "timelinefilter" not in body

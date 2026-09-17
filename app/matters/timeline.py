@@ -26,6 +26,7 @@ which is what they have always been (Teema redesign §11.1).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any
@@ -37,6 +38,7 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.dates import format_estonian_date
+from app.matters import selectors
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind
 from app.matters.models import (
@@ -47,6 +49,8 @@ from app.matters.models import (
     MatterProceduralDevelopment,
     MatterWebsiteOverview,
 )
+from app.submissions.enums import RecipientRole
+from app.submissions.models import Submission, SubmissionRecipient
 from app.workflow.dates import format_at_precision
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
@@ -59,11 +63,59 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
     ChangeEventType.MATTER_STAGE_CHANGED,
     ChangeEventType.NEXT_ACTION_SET,
     ChangeEventType.NEXT_ACTION_COMPLETED,
-    ChangeEventType.SUBMISSION_SENT,
     ChangeEventType.SUBMISSION_WITHDRAWN,
     ChangeEventType.EVIDENCE_VERSION_ADDED,
     ChangeEventType.MATTER_CLOSED,
     ChangeEventType.MATTER_REOPENED,
+)
+
+#: **`SUBMISSION_SENT` is deliberately not on that list since docs/adr/0092.**
+#:
+#: A sent `Koja arvamus` is a canonical record — `Submission` — and it is read
+#: as one by :func:`projected_milestones`, like every other structured fact on
+#: this page. The event said the same thing from one step further away: its
+#: `occurred_at` is the moment somebody pressed the button, which for an opinion
+#: reconstructed from the historical register is a fact about the import and not
+#: about the letter, and its addressees were a copy in a payload rather than the
+#: `SubmissionRecipient` rows the record holds. Reading the record fixes both and
+#: removes the last place a business date on this page came out of an audit row
+#: (docs/adr/0092 §3).
+
+#: Events that say **which operation wrote a projected record**, and are never
+#: rendered themselves.
+#:
+#: One lawyer act can write several canonical records: `+ Menetluse areng` files
+#: the development, moves `Hetkeseis` and sets `Järgmiseks` in one transaction
+#: and one `composer_operation`. Three canonical writes, three audit rows, and
+#: — until docs/adr/0092 — three chronology lines for one thing a person did.
+#:
+#: The record itself carries no operation column, deliberately: an operation is
+#: an audit fact about how something was written, not a property of the fact
+#: (`ChangeEvent.operation_id`). So the row that ties the development to the
+#: stage change is its own `PROCEDURAL_DEVELOPMENT_RECORDED` event, read here and
+#: rendered nowhere — exactly the role `ENTRY_ADDED` already plays for a note.
+#:
+#: **Only an explicit operation identifier groups anything.** Not a shared
+#: minute, not a shared author, not a similar title, not the same organisation
+#: and not a matching filename. There is no time window and no prose matching
+#: here, and adding one would be manufacturing a relationship nobody recorded
+#: (docs/adr/0092 §6).
+RECORD_OPERATION_EVENT_TYPES: tuple[str, ...] = (ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,)
+
+#: What a save decided **as a consequence of the record it was saved with**.
+#:
+#: A stage change and a next step written inside a `+ Menetluse areng` save are
+#: not two further acts; they are what that one act did to the file, and they
+#: read as two short lines under its row rather than as two rows of their own.
+#:
+#: Folded **only** onto a record this reader can actually see. A development
+#: restricted below its Matter contributes no row, so its stage change stands
+#: alone exactly as a stage change recorded from the header does — which is what
+#: it is, and which says nothing about a record nobody may read
+#: (AUTH-003, docs/adr/0092 §7).
+OPERATION_EFFECT_EVENT_TYPES: tuple[str, ...] = (
+    ChangeEventType.MATTER_STAGE_CHANGED,
+    ChangeEventType.NEXT_ACTION_SET,
 )
 
 #: **Nothing, since the approved target** — and kept as a name so the reasoning
@@ -118,7 +170,6 @@ MILESTONE_EVENT_TYPES: frozenset[str] = frozenset(
     {
         ChangeEventType.MATTER_CREATED,
         ChangeEventType.MATTER_STAGE_CHANGED,
-        ChangeEventType.SUBMISSION_SENT,
         ChangeEventType.SUBMISSION_WITHDRAWN,
         ChangeEventType.MATTER_CLOSED,
         ChangeEventType.MATTER_REOPENED,
@@ -131,8 +182,16 @@ MILESTONE_EVENT_TYPES: frozenset[str] = frozenset(
 #: type is how two surfaces start describing one act differently.
 _MILESTONE_LABELS: dict[str, str] = {
     ChangeEventType.MATTER_CREATED.value: "Teema loodud",
-    ChangeEventType.SUBMISSION_SENT.value: "Arvamus välja",
 }
+
+#: What a sent `Koja arvamus` is called on the chronology.
+#:
+#: `Arvamus välja` and not `Koja arvamus`: the strip above names the *thing*, and
+#: the chronology names what happened to it — «välja» is what happened to the
+#: letter. The two words were settled when the strip was built and are not
+#: reopened here; what changed in docs/adr/0092 is where the row is read from,
+#: not what it is called (app/matters/process_timeline.py `SENT_LABEL`).
+SUBMISSION_MILESTONE = "Arvamus välja"
 
 #: What a published or cancelled `Ülevaade / uudis` is called on the chronology,
 #: and what its link says.
@@ -339,6 +398,15 @@ class TimelineItem:
     #: associated files can be read off it in one query for the whole page; a
     #: row projected from a `ChangeEvent` has none (docs/adr/0075 §10).
     record: Any = None
+    #: `Hetkeseis → Kooskõlastusringil`, for a save that moved the file while it
+    #: recorded something else.
+    #:
+    #: The stage label off the `MATTER_STAGE_CHANGED` event that shares this
+    #: row's operation, and nothing else: no stage is read off the record, off
+    #: the title or off the Matter, because the file's *current* stage is not
+    #: what this row happened to do to it. Empty on every row whose operation
+    #: moved no stage, which is nearly all of them (docs/adr/0092 §6).
+    stage_effect: str = ""
 
     @property
     def is_milestone(self) -> bool:
@@ -369,6 +437,20 @@ class TimelineItem:
         it on none of them — the reasoning `website_overview` above states.
         """
         return self.record if isinstance(self.record, MatterExternalPosition) else None
+
+    @property
+    def submission(self) -> Any:
+        """The sent `Koja arvamus` this row stands for, when it stands for one.
+
+        A named property rather than a string comparison on `item_type`, for the
+        reason `external_position` below states. Since docs/adr/0092 a sent
+        opinion is projected from its own `Submission` rather than from the
+        `SUBMISSION_SENT` audit event, so the row carries the record and the
+        evidence it holds can be read off it.
+        """
+        from app.submissions.models import Submission
+
+        return self.record if isinstance(self.record, Submission) else None
 
     @property
     def procedural_development(self) -> Any:
@@ -402,7 +484,7 @@ class TimelineItem:
         """
         if self.entry is not None:
             return MARKER_MEETING if self.entry.kind in _MEETING_KINDS else MARKER_ENTRY
-        if self.event is not None and self.event.event_type == ChangeEventType.SUBMISSION_SENT:
+        if self.submission is not None:
             return MARKER_SENT
         return MARKER_ENTRY if self.is_grouped else MARKER_SYSTEM
 
@@ -417,7 +499,7 @@ class TimelineItem:
         """The badge beside the author. Empty where the sentence says it."""
         if self.entry is not None:
             return str(self.entry.get_kind_display())
-        if self.event is not None and self.event.event_type == ChangeEventType.SUBMISSION_SENT:
+        if self.submission is not None:
             return "Väljasaadetud · arvamus"
         return ""
 
@@ -645,15 +727,6 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
     if event.event_type == ChangeEventType.MATTER_STAGE_CHANGED:
         what = f"Hetkeseis: {event.summary}" if event.summary else "Hetkeseis muudetud"
         sub = ""
-    elif event.event_type == ChangeEventType.SUBMISSION_SENT:
-        # **Who it went to**, from the payload the send recorded. The event's
-        # summary is the submission's title, and a submission is titled after
-        # its Matter — so printing it here repeats the <h1> a few hundred pixels
-        # up the page, which is what the target's own row does not do
-        # (`Arvamus välja · Kliimaministeeriumile`).
-        what = _MILESTONE_LABELS[ChangeEventType.SUBMISSION_SENT.value]
-        addressees = (event.payload or {}).get("addressees") or []
-        sub = ", ".join(str(name) for name in addressees)
     else:
         what = _MILESTONE_LABELS.get(event.event_type, str(event.get_event_type_display()))
         # The summary of a created Matter is its own title, which is the <h1>
@@ -959,6 +1032,114 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
     )
 
 
+#: What the chronology prints for a `Töövõit` whose business period nobody
+#: recorded.
+#:
+#: Its own constant beside the three above, for the reason each of those gives:
+#: they happen to be the same four words and they answer different questions —
+#: «when did Koda ask», «when did they say it», «when did the procedure move»
+#: and «when was this won».
+WORK_VICTORY_DATE_UNKNOWN = "Kuupäev teadmata"
+
+#: What the chronology calls a confirmed advocacy win.
+WORK_VICTORY_MILESTONE = "Töövõit"
+
+
+def work_victory_chronology_day(victory: Any) -> date:
+    """Where a `Töövõit`'s row sits in the chronology.
+
+    Its own business period's anchor when it has one; the day it was written
+    down when it has not — the rule `development_chronology_day` states, for the
+    same reason.
+
+    **Never `confirmed_at`, which is what this function exists to stop.** Until
+    docs/adr/0092 the chronology placed *and described* a work victory by the
+    moment somebody pressed `Kinnita`: a 2019 win reviewed in 2026 sat at the top
+    of the file under `12.03.2026`, above the proceeding it belongs to and dated
+    to a day on which nothing happened. `confirmed_at` is evidence that the
+    record was confirmed; `period_date` + `date_precision` is when the victory
+    belongs in the business history, and the model says so in as many words —
+    «never `created_at`, never the Matter's reporting year and never a
+    commencement date» (`MatterWorkVictory.period_date`, Stage-2G brief 22).
+
+    An approximate period places the row on its **anchor**, which is the first
+    day of the period and is exactly what an anchor is for. Here too the
+    placement is not the description: :func:`work_victory_milestone` prints
+    *2019* or *II kvartal 2026* through `display_period`, never the anchor
+    (docs/adr/0079 §2, §3).
+    """
+    return victory.period_date or _local_day(victory.created_at)
+
+
+def work_victory_milestone(victory: Any) -> ChronologyMilestone:
+    """One confirmed `Töövõit` as the chronology row a reader sees.
+
+    **The date is the business period, at the precision it was recorded to**, or
+    the words «kuupäev teadmata» — and never the confirmation timestamp, which
+    is a fact about this office's review rather than about the win
+    (docs/adr/0092 §4).
+    """
+    return ChronologyMilestone(
+        what=WORK_VICTORY_MILESTONE,
+        display_date=victory.display_period or WORK_VICTORY_DATE_UNKNOWN,
+        sub=victory.title,
+    )
+
+
+def submission_chronology_day(submission: Any) -> date:
+    """Where a sent `Koja arvamus` sits in the chronology.
+
+    `sent_at` is `NOT NULL` on a SENT `Submission` — the database refuses one
+    without it, because a send with no date is an unverifiable claim about when
+    Koda argued something (`submissions_sent_requires_timestamp_and_evidence`).
+    So there is no fallback here and no «kuupäev teadmata» constant beside this
+    function: the one record on this page whose business date cannot be missing
+    is this one.
+    """
+    return _local_day(submission.sent_at)
+
+
+def submission_milestone(submission: Any, addressees: Sequence[str] = ()) -> ChronologyMilestone:
+    """One sent `Koja arvamus` as the chronology row a reader sees.
+
+    **Read off the record, never off the send event.** `SUBMISSION_SENT` said the
+    same thing one step further away: its `occurred_at` is the moment somebody
+    pressed the button, which for an opinion reconstructed from the historical
+    register is a fact about the import, and its addressees were a copy in a
+    payload rather than the `SubmissionRecipient` rows that are canonical
+    (docs/adr/0092 §3).
+
+    **Several per Matter, each its own row.** A supplementary opinion months
+    after the first is a second act, and a file that collapsed them into one
+    «final opinion» would lose the act a reader came for. Nothing here elects a
+    primary, and each row keeps its own date, its own recipients and its own
+    evidence (docs/adr/0061, master specification 6.4).
+
+    **The title is not the headline.** A `Submission` is titled after its Matter,
+    so printing it here repeats the `<h1>` a few hundred pixels up the page. What
+    tells two opinions on one file apart is the `Liik` — `Täiendav arvamus`,
+    `Pöördumine Riigikogule` — and who it went to, which is what the sub-line
+    carries. The default `Ametlik arvamus` says nothing the row does not, and is
+    left off for the reason `engagement_milestone` leaves `Muu` off.
+
+    Only `ADDRESSEE` recipients. «Teadmiseks» is a copy, and a row that listed
+    both would make «who did Koda actually write to» unanswerable — the
+    distinction `RecipientRole` exists for.
+    """
+    from app.submissions.enums import SubmissionKind
+
+    parts: list[str] = []
+    if submission.kind != SubmissionKind.FORMAL_OPINION:
+        parts.append(str(submission.get_kind_display()))
+    if addressees:
+        parts.append(", ".join(addressees))
+    return ChronologyMilestone(
+        what=SUBMISSION_MILESTONE,
+        display_date=format_estonian_date(submission_chronology_day(submission)),
+        sub=" · ".join(parts),
+    )
+
+
 def projected_milestones(
     *,
     matter: Matter,
@@ -1010,20 +1191,20 @@ def projected_milestones(
         if victory.confirmed_at is None:
             # A machine's candidate is a proposal, not a professional fact. It
             # reads where candidates are reviewed, and it earns a chronology row
-            # on the day somebody confirms it (Stage-2G).
+            # once somebody confirms it (Stage-2G).
+            #
+            # **Whether it is confirmed and when it happened are two questions**,
+            # and this reads only the first. `confirmed_at` decides that the row
+            # exists; `period_date` decides where it sits and `display_period`
+            # what it says, because a 2019 win reviewed in 2026 belongs in 2019
+            # (docs/adr/0092 §4, `work_victory_chronology_day`).
             continue
-        confirmed = _local_day(victory.confirmed_at)
-        if confirmed > day:
+        when = work_victory_chronology_day(victory)
+        if when > day:
+            # A win dated in the future is not history yet — the rule every
+            # projected record below follows.
             continue
-        add(
-            victory,
-            _end_of_day(confirmed),
-            ChronologyMilestone(
-                what="Töövõit",
-                display_date=format_estonian_date(confirmed),
-                sub=victory.title,
-            ),
-        )
+        add(victory, _end_of_day(when), work_victory_milestone(victory))
 
     for record in [*facts.past_dates, *facts.upcoming_dates]:
         # **A cancelled expectation is history, and it reads as history.**
@@ -1128,6 +1309,45 @@ def projected_milestones(
             continue
         add(development, _end_of_day(when), development_milestone(development))
 
+    # `Koja arvamus`: what this office actually sent, read off the record.
+    #
+    # Projected like every other structured fact since docs/adr/0092, so the send
+    # event contributes no row of its own and one act takes one line. Several per
+    # Matter is ordinary and each draws its own row: nothing here elects a final
+    # opinion (docs/adr/0061, master specification 6.4).
+    #
+    # `prefetch_related` on the addressee rows, so a Matter carrying four
+    # opinions costs two queries to name their recipients rather than eight. The
+    # prefetch is filtered to `ADDRESSEE` in SQL rather than in Python, because
+    # «teadmiseks» is a copy and not somebody Koda wrote to.
+    for submission in (
+        Submission.objects.filter(matter=matter)
+        .visible_to(user)
+        .sent()
+        .prefetch_related(
+            models.Prefetch(
+                "recipient_rows",
+                queryset=SubmissionRecipient.objects.filter(
+                    role=RecipientRole.ADDRESSEE
+                ).select_related("organisation"),
+                to_attr="chronology_addressees",
+            )
+        )
+    ):
+        if submission.sent_at is None:  # pragma: no cover - refused by a CHECK constraint
+            continue
+        when = submission_chronology_day(submission)
+        if when > day:
+            continue
+        add(
+            submission,
+            _end_of_day(when),
+            submission_milestone(
+                submission,
+                [row.organisation.name for row in submission.chronology_addressees],
+            ),
+        )
+
     # `Ülevaade / uudis`, and **only the two states that are milestones**.
     #
     # A published record and a cancelled plan are things that happened to the
@@ -1202,6 +1422,11 @@ def projected_milestones(
     return rows
 
 
+#: Sentinel for "this caller has not answered the question", so that `None` can
+#: keep meaning «this Matter has no open step» rather than «nobody said».
+_UNREAD = object()
+
+
 def matter_timeline(
     *,
     matter: Matter,
@@ -1211,6 +1436,7 @@ def matter_timeline(
     only: str = TIMELINE_FILTER_ALL,
     intelligence: Any = None,
     today: date | None = None,
+    current_action: Any = _UNREAD,
 ) -> tuple[list[TimelineItem], bool]:
     """Return one page of the timeline, newest first.
 
@@ -1222,6 +1448,16 @@ def matter_timeline(
     ``only`` filters what is *shown*, never what is grouped: a save that wrote
     a note and set the next step is one action, and the entry filter shows it
     with its facts rather than tearing it in half.
+
+    ``current_action`` is the step this reader may see as open, passed in by the
+    Matter page so that the history and `PRAEGUNE TEGEVUS` cannot ask two
+    differently scoped questions about one file — the seam ``intelligence``
+    already is. It is read here because **the open step is a current-work
+    concept and not a history row**: a `Järgmiseks` printed prominently at the
+    top of the page and again as «määras järgmise sammu» halfway down reads as
+    two instructions, and a reader scrolling for what is owed finds the older
+    copy first. The row comes back the moment the step is finished or
+    superseded, because then it is history (docs/adr/0092 §8).
 
     Returns the page and whether more items exist.
     """
@@ -1251,6 +1487,7 @@ def matter_timeline(
         .filter(
             models.Q(event_type__in=TIMELINE_EVENT_TYPES)
             | models.Q(event_type__in=SUPPRESSED_WHEN_ENTRY_SHOWN)
+            | models.Q(event_type__in=RECORD_OPERATION_EVENT_TYPES)
         )
         .select_related("actor")
         .order_by("-occurred_at", "-created_at", "-id")[: window * 3]
@@ -1261,7 +1498,17 @@ def matter_timeline(
         for event in events
         if event.event_type == ChangeEventType.ENTRY_ADDED and event.operation_id is not None
     }
-    renderable = [event for event in events if event.event_type not in SUPPRESSED_WHEN_ENTRY_SHOWN]
+    # The same trick an entry uses, for a record that is projected rather than
+    # authored: the row saying which operation wrote it is fetched and never
+    # rendered. `RECORD_OPERATION_EVENT_TYPES` explains why the record cannot
+    # carry the identifier itself.
+    record_operations: dict[Any, uuid.UUID] = {
+        event.object_id: event.operation_id
+        for event in events
+        if event.event_type in RECORD_OPERATION_EVENT_TYPES and event.operation_id is not None
+    }
+    suppressed = frozenset(SUPPRESSED_WHEN_ENTRY_SHOWN) | frozenset(RECORD_OPERATION_EVENT_TYPES)
+    renderable = [event for event in events if event.event_type not in suppressed]
 
     # A file that supports a structured fact reads on that fact's own row and
     # nowhere else. Its evidence event would otherwise become a row of its own —
@@ -1275,6 +1522,66 @@ def matter_timeline(
             if not (
                 event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
                 and event.object_id in shown_on_their_record
+            )
+        ]
+
+    # The structured facts, as their own rows, **before** the events are
+    # assembled. Which effects fold onto which row depends on which records this
+    # reader may actually see, so the projection — which is where `visible_to`
+    # is applied — has to run first (AUTH-003, docs/adr/0092 §7).
+    projected: list[TimelineItem] = []
+    if only != TIMELINE_FILTER_ENTRIES:
+        projected = projected_milestones(
+            matter=matter, user=user, intelligence=intelligence, today=today
+        )
+
+    # One operation, one act, one row. `record_operations` says which operation
+    # wrote each canonical record; this says which operations wrote a record
+    # **that is on this page**, which is the only thing an effect may fold onto.
+    folded_operations: dict[uuid.UUID, int] = {}
+    for index, item in enumerate(projected):
+        if item.record is None:
+            continue
+        operation = record_operations.get(item.record.pk)
+        if operation is not None:
+            folded_operations[operation] = index
+
+    effects: dict[uuid.UUID, list[ChangeEvent]] = {}
+    if folded_operations:
+        kept: list[ChangeEvent] = []
+        for event in renderable:
+            if (
+                event.event_type in OPERATION_EFFECT_EVENT_TYPES
+                and event.operation_id is not None
+                and event.operation_id in folded_operations
+            ):
+                effects.setdefault(event.operation_id, []).append(event)
+                continue
+            kept.append(event)
+        renderable = kept
+
+    # **The open step reads once, at the top.** A `NEXT_ACTION_SET` that would
+    # otherwise stand alone as its own row, pointing at the action this reader
+    # can see is still open, is dropped: `PRAEGUNE TEGEVUS` is where an open
+    # instruction is read and acted on. An action set *inside* a save that has a
+    # row of its own — a note, a `Menetluse areng` — keeps its `→ …` strip
+    # there, because that is the act's own consequence rather than a second copy
+    # of the instruction (docs/adr/0092 §8).
+    open_action = (
+        current_action
+        if current_action is not _UNREAD
+        else selectors.current_action_of(matter, user)
+    )
+    open_action_pk = getattr(open_action, "pk", None)
+    if open_action_pk is not None:
+        acts_with_a_row = set(entry_operations.values())
+        renderable = [
+            event
+            for event in renderable
+            if not (
+                event.event_type == ChangeEventType.NEXT_ACTION_SET
+                and event.object_id == open_action_pk
+                and event.operation_id not in acts_with_a_row
             )
         ]
 
@@ -1362,17 +1669,31 @@ def matter_timeline(
             )
         )
 
+    # What the folded operations decided, attached to the row of the record they
+    # were saved with. `stage_effect` is the stage label off the event's own
+    # summary — never a stage read off the Matter, which is where the file
+    # stands *now* rather than what this act did to it — and the next step is
+    # attached by `_with_next_steps` from the same `events` tuple, so it prints
+    # at the precision the action was recorded to (docs/adr/0092 §6).
+    for operation, index in folded_operations.items():
+        folded = effects.get(operation)
+        if not folded:
+            continue
+        stage = next(
+            (event for event in folded if event.event_type == ChangeEventType.MATTER_STAGE_CHANGED),
+            None,
+        )
+        projected[index] = replace(
+            projected[index],
+            events=tuple(sorted(folded, key=lambda event: (event.occurred_at, event.created_at))),
+            stage_effect=(stage.summary or "") if stage is not None else "",
+        )
+    items.extend(projected)
+
     # Deterministic ordering: the visible time first, then when it was recorded,
     # then the time-sortable id. Without the last two, two things written in the
     # same minute could swap places between page loads and pagination could
     # repeat or skip a line.
-    # The structured facts, as their own rows. Read from the canonical records
-    # rather than from audit events, so one act is one row (docs/adr/0074 §15).
-    if only != TIMELINE_FILTER_ENTRIES:
-        items.extend(
-            projected_milestones(matter=matter, user=user, intelligence=intelligence, today=today)
-        )
-
     if only == TIMELINE_FILTER_ENTRIES:
         items = [item for item in items if item.is_entry]
 
@@ -1401,6 +1722,18 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     from app.documents.models import Document, DocumentVersion
 
     def versions_of(item: TimelineItem) -> list[Any]:
+        # **The exact bytes a sent opinion went out as**, for a row projected
+        # from its `Submission`. `final_version` is a column on the record rather
+        # than a `DocumentLink`, so `_with_linked_files` below cannot see it —
+        # and an opinion row with no way to open the letter it stands for is the
+        # commonest reason somebody leaves this page (docs/adr/0092 §5).
+        #
+        # It goes through the same `Document.visible_to` filter as every other
+        # version here, so a final text restricted below its Matter contributes
+        # no link and no filename.
+        submission = item.submission
+        if submission is not None:
+            return [submission.final_version_id] if submission.final_version_id else []
         return [
             event.object_id
             for event in item.events

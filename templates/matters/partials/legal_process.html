@@ -1,0 +1,73 @@
+{% comment %}
+`Menetluse kulg` — where the external legal procedure stands, above the history
+that explains how it got there.
+
+**Two sections, two questions, and they are not the same question.**
+`Teema käik` below answers *what happened on this file*; this answers *where the
+procedure is*. Collapsing them was the defect the second lawyer round reported:
+a strip mixing «Alustatud», «Koja arvamus» and «Arvamuse tähtaeg» reads as a
+history of dated points and was labelled as the file's course, so neither
+question had an answer a reader could trust (docs/adr/0092 §2).
+
+**Four states, in words.** `Praegu`, `Kirjas`, `Teadmata`, `Võimalik`. Each node
+prints its own state as text; the stylesheet decorates what the text already
+says. A rail whose four states were four hues would say nothing with the
+stylesheet off, nothing to a screen reader and nothing on a printout — and
+«this may have happened and nobody wrote it down» is exactly the state that
+cannot survive being a shade of grey.
+
+**`Teadmata` is never `Tehtud`.** A Matter first filed when the bill was already
+in the Riigikogu proves the Riigikogu and proves nothing to its left. Marking
+those nodes complete because a later one is current would manufacture three
+milestones out of one, which is the late-entry rule
+(app/matters/legal_process.py, docs/adr/0092 §13).
+
+Rendered only when a rail can be chosen *and* the file records something that
+places it on one. A heading over five «Teadmata» nodes is a section spent
+announcing that the application knows nothing.
+{% endcomment %}
+{% if legal_process %}
+  <section class="lprail" aria-labelledby="menetluse-kulg-heading">
+    <h3 class="lprail__head" id="menetluse-kulg-heading">
+      Menetluse kulg
+      {% comment %}
+        Which of the two generic V1 rails this is. A reader has to be able to
+        see that a domestic file is being read against the domestic procedure —
+        otherwise «Riigikogu» on a European file would look like a claim rather
+        than a mismatch (docs/adr/0092 §14).
+      {% endcomment %}
+      <span class="lprail__template">{{ legal_process.label }}</span>
+    </h3>
+    <ol class="lprail__nodes">
+      {% for node in legal_process.nodes %}
+        <li class="lprail__node lprail__node--{{ node.state }}"
+            {% if node.state == "current" %}aria-current="step"{% endif %}>
+          <span class="lprail__dot" aria-hidden="true"></span>
+          <span class="lprail__what">{{ node.label }}</span>
+          <span class="lprail__state">{{ node.state_label }}</span>
+        </li>
+      {% endfor %}
+    </ol>
+    {% if legal_process.unplaced_stage %}
+      {% comment %}
+        A `Hetkeseis` this rail cannot honestly hold — `Muu`, or a European stage
+        on a domestic file — in its own words beside the rail rather than pushed
+        onto the nearest node. A node is a claim about which step of a known
+        procedure the file is on, and these values decline to make it.
+      {% endcomment %}
+      <p class="lprail__aside">
+        <span class="lprail__asidelabel">Hetkeseis</span>
+        {{ legal_process.unplaced_stage }}
+      </p>
+    {% endif %}
+    {% if legal_process.koda_stopped %}
+      {% comment %}
+        `Disposition.MONITORING_STOPPED`, which says what **Koda** is doing and
+        nothing about the procedure. The ministry does not stop drafting because
+        this office stopped reading, so this is a sentence beside the rail and
+        never a terminal node on it (docs/adr/0032, docs/adr/0092 §15).
+      {% endcomment %}
+      <p class="lprail__aside lprail__aside--koda">{{ legal_process_stopped_label }}</p>
+    {% endif %}
+  </section>
+{% endif %}

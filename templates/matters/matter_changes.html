@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load counts %}
+{% block title %}Kõik muudatused · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+`Kõik muudatused` — the technical change history, on its own page.
+
+**Why this exists.** `Teema käik` is a professional case history: canonical acts,
+business dates, evidence under the fact it evidences. Making it read that way
+means it does not show every write the application made — a corrected deadline,
+a renamed title, a field moved by one day. Those are real and they are auditable,
+and a primary history that lost them would have traded auditability for
+legibility. This page is the other half of that trade: the primary history stays
+clean *because* this page exists (docs/adr/0092 §11).
+
+**Read-only, and permission-safe by construction.** Every row comes through
+`app.audit.visibility.scope_change_events`, which is the one place that closes
+the gap between «this event hangs off a Matter you may read» and «this event is
+*about* a child you may read». A `Väline seisukoht` restricted below its Matter
+contributes no row here, exactly as it contributes none to the chronology —
+its existence, its type, its filename, its count and its date are all absent
+rather than redacted (AUTH-003, app/audit/visibility.py).
+
+**No payloads.** A `ChangeEvent.payload` carries identifiers and before/after
+scalars, and this page shows none of it: the row is when, who, what kind of
+change, and the summary the write itself recorded. A raw JSON blob on a
+lawyer-facing page is neither readable nor safely reviewable, and the payload is
+where a value the surrounding rules have not classified would first appear
+(docs/adr/0092 §11).
+
+**`SecurityAuditEvent` is not here and never will be.** Who opened and who
+downloaded what is a compliance record with its own retention and its own
+readers, not professional chronology (master specification 16.5).
+{% endcomment %}
+{% block content %}
+<div id="teema-vaade-wrap">
+  {% include "matters/partials/tabs.html" with tab="teema" %}
+
+  <header class="changelog__head">
+    <h1 class="changelog__title">Kõik muudatused</h1>
+    <p class="changelog__matter">
+      <a class="quietlink" href="{% url 'matters:matter_detail' pk=matter.pk %}">
+        ← {{ matter.title|truncatechars:80 }}
+      </a>
+    </p>
+    {% comment %}
+      What this page is, in one sentence, because a reader arriving from
+      `Teema käik` has to know why the two lists differ.
+    {% endcomment %}
+    <p class="changelog__note">
+      Tehniline muudatuste logi. Sisuline ajalugu on teema enda lehel
+      <em>Teema käik</em> all.
+    </p>
+  </header>
+
+  <ol class="changelog">
+    {% for row in changes %}
+      <li class="changelog__row">
+        <time class="changelog__when" datetime="{{ row.occurred_at|date:'c' }}">
+          {{ row.occurred_at|date:"j.n.Y H:i" }}
+        </time>
+        <span class="changelog__what">{{ row.get_event_type_display }}</span>
+        {% if row.actor %}
+          <span class="changelog__who">{{ row.actor.display_name }}</span>
+        {% endif %}
+        {% if row.summary %}
+          <span class="changelog__summary">{{ row.summary }}</span>
+        {% endif %}
+      </li>
+    {% empty %}
+      <li class="changelog__none">Muudatusi ei ole kirjas.</li>
+    {% endfor %}
+  </ol>
+
+  {% comment %}
+    Ordinary pagination, at the bottom where the list runs out. The whole
+    history of a long-running file is thousands of rows and nobody reads it in
+    one screen.
+  {% endcomment %}
+  {% if has_more %}
+    <a class="button button--quiet changelog__older"
+       href="?nihe={{ next_offset }}">Näita varasemaid</a>
+  {% endif %}
+  {% if offset %}
+    <a class="button button--quiet changelog__newer"
+       href="{% if previous_offset %}?nihe={{ previous_offset }}{% else %}?{% endif %}">Näita uuemaid</a>
+  {% endif %}
+</div>
+{% endblock %}
