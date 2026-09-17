@@ -146,10 +146,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     ).click()
     expect(page.get_by_role("checkbox", name="Näidisministeerium")).to_be_checked()
 
-    # Hetkeseis and Menetlusliik are visible radio chips, not dropdowns: each
-    # holds one value, and the control says so (Agent-UI brief 5.1).
+    # Hetkeseis is visible radio chips, not a dropdown: it holds one value and
+    # the control says so (Agent-UI brief 5.1). `Menetlusliik` was the second
+    # such row and is read off `Õigusakt` now, so this walkthrough answers the
+    # question the page asks (docs/adr/0090 §4).
     page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
-    page.get_by_role("radio", name="Riigisisene", exact=True).check()
+    page.get_by_role("checkbox", name="Seadus", exact=True).check()
     page.locator("#id_response_deadline").fill(_future(21))
 
     page.locator("#id_next-text").fill("Koosta ja saada koja arvamus")

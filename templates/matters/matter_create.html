@@ -21,21 +21,28 @@
   Two things the shape still has to say, and one it must not:
 
   - the shape of a control is a promise about the data. Radios where the model
-    holds one value — Vastutaja, Hetkeseis, Menetlusliik, Adressaat — checkboxes
-    where it holds several. Chips are how they look; what they are has not moved
+    holds one value — Vastutaja, Hetkeseis — checkboxes where it holds several.
+    Chips are how they look; what they are has not moved
     (Stage-2E.1 brief 16, ADR 0025);
-  - the two counterparty fields ask *different questions about one catalogue*,
-    and they answer them the same way. Both may be chosen from the catalogue or
+  - **one counterparty question, not two.** This page asks who sent the file and
+    stops there. `Adressaat` is a different fact — Koda answers a ministry, the
+    Riigikogu or an EU institution, and which of them is not derivable from who
+    wrote in — so it is recorded where that decision is made, not guessed from
+    Saatja while the file is being filed (docs/adr/0090 §5, superseding
+    docs/adr/0069 on this surface). `Saatja` may be chosen from the catalogue or
     typed; a typed name reuses an exact or alias match, otherwise creates the
     institution, and refuses a spelling that already names two — inside the same
     transaction that creates the Teema. `Saatja` was existing-organisations-only
     until docs/adr/0063 and is not any more: do not "restore" the rule that no
     institution is created here, because leaving a half-filled Teema to go and
-    add a body under Asutused is not a workflow anybody used. What stays
-    separate is what the two fields *mean* — `Matter.source_organisations` is
-    who it came from and `Matter.addressee_organisation` is who it is answered
-    to, one catalogue behind both (master specification 14.7,
-    app/matters/services.py `resolve_source_organisations`);
+    add a body under Asutused is not a workflow anybody used
+    (master specification 14.7, app/matters/services.py
+    `resolve_source_organisations`);
+  - **and one classification question per dimension.** `Menetlusliik` is not on
+    this page and is not written from anything on it: the reviewed `Õigusakt`
+    vocabulary names *siseriiklik* or *ELi* in the label, so the distinction is
+    readable from the type — and the procedure itself is answered by a person,
+    where it is known (docs/adr/0090 §4);
   - only the title is required, and a page that shows a field is not a page that
     demands it (master specification 3.8).
 {% endcomment %}
@@ -302,10 +309,10 @@
         argument for prepopulating this picker rather than for keeping a second
         one (task §26, docs/adr/0073, post-QA R2-12).
 
-        `data-sender-chips` marks the row the Adressaat default reads: ticking a
-        sender here *is* answering Adressaat, because it is the same
-        `Organisation` — one catalogue, two questions about it (static/js/app.js
-        `bindAddresseeDefault`, docs/adr/0069).
+        `data-sender-chips` marked the row the Adressaat default read. The
+        default is gone with the question (docs/adr/0090 §5); the attribute
+        stays because it is also what names the chip row for the picker's own
+        scripting, and nothing writes into Adressaat from here any more.
 
         **`quiet`, and it is the whole of what the lawyers asked for here.** The
         field used to open with a row of eight institutions under an empty box,
@@ -424,7 +431,7 @@
       </fieldset>
     </div>
 
-    {# 6 — Where the procedure stands, what kind it is, who Koda answers. #}
+    {# 6 — Where the procedure stands, and what kind of act it is about. #}
     <div class="createform__row">
       <fieldset class="field">
         <legend class="field__label">{{ form.stage.label }}</legend>
@@ -479,40 +486,43 @@
       </fieldset>
     </div>
 
-    <div class="createform__row">
-      <fieldset class="field">
-        <legend class="field__label">{{ form.track.label }}</legend>
-        <div class="chiprow">
-          {% for choice in form.track %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        {% if form.track.errors %}<span class="field__error" id="{{ form.track.auto_id }}_error">{{ form.track.errors|first }}</span>{% endif %}
-      </fieldset>
-    </div>
+    {% comment %}
+      **`Menetlusliik` is not on this page**, and the row it occupied is gone
+      rather than hidden.
+
+      It asked a lawyer to classify one file twice. The reviewed `Õigusakt`
+      vocabulary below names the group in the label — six types say
+      *siseriiklik*, four say *ELi* — so the distinction stays readable from the
+      type the Matter carries.
+
+      Readable, not derived. `Matter.track` says what kind of *procedure* a file
+      is on, it has seven values rather than two, and no instrument type entails
+      one: a `Seadus` transposing a directive is a domestic instrument on a
+      `NATIONAL_TRANSPOSITION` track. So this page writes nothing to it, and it
+      is answered where it is known — on `Muuda teemat` and in the Teema rail,
+      both of which offer the whole vocabulary (docs/adr/0090 §4).
+
+      The field is gone from `MatterCreateForm` too, so a forged POST carrying
+      `track=NATIONAL_TRANSPOSITION` is not part of this request as far as this
+      form is concerned.
+    {% endcomment %}
 
     {% comment %}
-      7b — Õigusakt: what kind of instrument, beside what kind of procedure.
+      7b — Õigusakt: what kind of instrument this file is about.
 
-      A fourth full-width classification row, inserted after Menetlusliik and
-      before Adressaat. Not paired with Menetlusliik and not put in front of
-      it: the three rows above are each one field of wrapping chips, and a
-      fourth one of the same shape is invisible as a change — which is the
-      approved design's stated goal (OIGUSAKT_UUS_TEEMA_DESIGN §3).
+      The last of the classification rows, and now the last question the page
+      asks about what kind of file this is: Saatja, Valdkond, Hetkeseis,
+      Õigusakt, in that order and with nothing between them
+      (docs/adr/0090 §7).
 
-      Checkboxes, a `field__count` and a `chip__clear` on every chip. Menetlusliik
-      directly above has none of the three, because it holds one value. That
-      asymmetry is the whole answer to «do not let Õigusakt and Menetlusliik
-      read as one question split in two» — two visibly different controls,
-      answered independently, with no explanatory sentence added anywhere
-      (§4, §6, ADR 0025).
+      Checkboxes, a `field__count` and a `chip__clear` on every chip — a Matter
+      really can concern a directive and the act transposing it, and the control
+      says so (ADR 0025). Hetkeseis directly above has none of the three,
+      because it holds one value.
 
       `Muu` is a real vocabulary row here, unlike Valdkonnad's, so the template
       cannot tell it apart by field name and compares against the form instead
-      (app/matters/forms.py `other_instrument_value`, docs/adr/0070).
+      (app/matters/forms.py `other_instrument_values`, docs/adr/0070).
     {% endcomment %}
     <div class="createform__row">
       <fieldset class="field">
@@ -522,8 +532,16 @@
         </legend>
         <div class="chiprow">
           {% for choice in form.legal_instruments %}
-            {% if choice.data.value|stringformat:"s" == form.other_instrument_value %}
-              <label class="chip chip--other" id="oigusakt-muu">
+            {% comment %}
+              `in`, not `==`. The reviewed vocabulary offers two rows that mean
+              «some other kind» — `Muu siseriiklik` and `Muu ELi dokument` — and
+              a Matter filed before it may hold version 1.0's `Muu`. All of them
+              reveal the one free-text box, so the hook is a data attribute
+              rather than an id: ids are unique and there are several of these
+              (app/matters/forms.py `other_instrument_values`, docs/adr/0090).
+            {% endcomment %}
+            {% if choice.data.value|stringformat:"s" in form.other_instrument_values %}
+              <label class="chip chip--other" data-reveals="oigusakt-muu-tekst">
                 {{ choice.tag }}
                 <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
               </label>
@@ -558,76 +576,6 @@
           <span class="field__error" id="{{ form.legal_instruments.auto_id }}_error">{{ form.legal_instruments.errors|first }}</span>
         {% endif %}
       </fieldset>
-    </div>
-
-    {% comment %}
-      6 — Adressaat, on a row of its own, and folded away on it.
-
-      The field is *answered* by the time somebody reaches it: a file that
-      arrived from X is normally answered to X, so choosing a Saatja fills this
-      in and the ordinary visit has nothing left to do here. A control with
-      nothing left to do does not need a row of chips — so the whole of it sits
-      behind the disclosure the long tail already used, and the summary says
-      what the answer is (docs/adr/0069, task §3, §12).
-
-      `<details>` rather than anything scripted: it opens with scripting off,
-      and it opens by itself when the refusal to be read is inside it
-      (`addressee_disclosure_open`, §11 C).
-
-      `data-stay-closed` is read by `bindOpenChosenDetails`, which opens any
-      disclosure holding a ticked choice — right for the long tail, and wrong
-      here, where a ticked choice is the *default* and unfolding a section
-      because the page filled it in is the page reacting to itself (§4, §16).
-    {% endcomment %}
-    <div class="createform__row">
-      <fieldset class="field">
-        <legend class="field__label visually-hidden">{{ form.addressee_organisation.label }}</legend>
-        <details class="chipdetails chipdetails--field" data-stay-closed
-                 data-addressee-disclosure {% if form.addressee_disclosure_open %}open{% endif %}>
-          <summary class="chipdetails__summary">
-            {{ form.addressee_organisation.label }}<span
-              data-addressee-summary>{% if form.addressee_summary %} · {{ form.addressee_summary }}{% endif %}</span>
-          </summary>
-          <div class="createform__addressee">
-            {% comment %}
-              The same picker Saatja uses, one value instead of many.
-
-              What used to be here was a chip row, a nested «Vali nimekirjast»
-              disclosure holding a search box, and a separate «Uus adressaat»
-              field — a second disclosure inside a disclosure, and three ways to
-              answer one question. Opening Adressaat now shows the search box
-              first and nothing is folded away inside it (task §3, §12).
-
-              **The outer fold stays.** The field is normally *answered* by the
-              time somebody reaches it — a file that arrived from X is answered
-              to X — so the ordinary visit has nothing to do here and the summary
-              says what the answer is. That decision is docs/adr/0069's and this
-              round does not revisit it (task §3).
-
-              **And the cardinality stays.** `Matter` holds one addressee, so
-              this is one radio group; Saatja is checkboxes because a Matter
-              really can arrive from several bodies at once. Whether a file may
-              be answered to two bodies at once is still a decision to be taken
-              rather than a side effect of a form redesign (ADR 0025, task §7).
-            {% endcomment %}
-            {% include "matters/partials/organisation_picker.html" with picker_id="adressaat" legend=form.addressee_organisation.label chips=form.addressee_chip_choices tail=form.addressee_tail_choices typed_field=form.addressee_name add_label="Lisa uus adressaat" single=True clears_group="addressee_organisation" typed_hook="addressee" %}
-            {% if form.addressee_organisation.errors %}
-              <span class="field__error" id="{{ form.addressee_organisation.auto_id }}_error">{{ form.addressee_organisation.errors|first }}</span>
-            {% endif %}
-          </div>
-        </details>
-        {% comment %}
-          «This person answered Adressaat themselves», written by the browser.
-
-          Outside the disclosure on purpose: it is not a control, it answers no
-          question, and it has to post whether or not anybody opened anything.
-          What it buys is the one state the default would otherwise make
-          unreachable — a sender chosen and Adressaat deliberately left
-          «Määramata» (app/matters/forms.py, task §6).
-        {% endcomment %}
-        {{ form.addressee_is_manual }}
-      </fieldset>
-
     </div>
 
     {# 7 — Järgmine tegevus: the one panel on the page. #}
@@ -781,8 +729,7 @@
                      input changed delay:600ms from:#id_brief_summary,
                      change from:#id_policy_areas,
                      change from:#id_legal_instruments,
-                     change from:#id_source_organisations,
-                     change from:#id_addressee_organisation"
+                     change from:#id_source_organisations"
          hx-include="closest form"
          hx-target="this"
          hx-swap="innerHTML"></div>

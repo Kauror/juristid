@@ -57,27 +57,47 @@
    * Two fields now use the pattern, so it is written once. Valdkond's "Muu" is
    * a checkbox that is not a PolicyArea; Õigusakt's is a real vocabulary row.
    * That difference matters to the server and not at all to this: both are a
-   * checkbox inside a known id that shows a known block.
+   * checkbox that shows a known block.
+   *
+   * **Several chips may open one block.** Õigusakt's reviewed vocabulary has
+   * two rows meaning "some other kind" — Muu siseriiklik and Muu ELi dokument
+   * — and an older Matter may hold version 1.0's Muu besides, so the hook is
+   * `data-reveals` rather than an id: an id is unique and there are several of
+   * these. The block is open while *any* of them is ticked, which is the same
+   * rule the server renders with (`other_instrument_open`, docs/adr/0090).
    */
   [
-    ["valdkond-muu", "valdkond-muu-tekst"],
-    ["oigusakt-muu", "oigusakt-muu-tekst"]
+    ["#valdkond-muu input[type=checkbox]", "valdkond-muu-tekst"],
+    ['[data-reveals="oigusakt-muu-tekst"] input[type=checkbox]', "oigusakt-muu-tekst"]
   ].forEach(function (pair) {
-    var chip = document.querySelector("#" + pair[0] + " input[type=checkbox]");
+    var chips = document.querySelectorAll(pair[0]);
     var revealed = document.getElementById(pair[1]);
-    if (!chip || !revealed) {
+    if (!chips.length || !revealed) {
       return;
     }
-    var syncOther = function () {
-      revealed.hidden = !chip.checked;
-      if (chip.checked) {
+    var anyChecked = function () {
+      return Array.prototype.some.call(chips, function (chip) {
+        return chip.checked;
+      });
+    };
+    var syncOther = function (event) {
+      var open = anyChecked();
+      revealed.hidden = !open;
+      /* On the initial sync, and on the tick that opened it — never on the
+         untick of a second chip while a first stays ticked, which would pull
+         the caret out of whatever somebody is typing in. The first of those two
+         is the behaviour this had before there was more than one chip: a
+         refused save comes back with the box open and the caret in it. */
+      if (open && (!event || (event.target && event.target.checked))) {
         var input = revealed.querySelector("input");
         if (input) {
           input.focus();
         }
       }
     };
-    chip.addEventListener("change", syncOther);
+    Array.prototype.forEach.call(chips, function (chip) {
+      chip.addEventListener("change", syncOther);
+    });
     syncOther();
   });
 
@@ -2165,9 +2185,9 @@
        *
        * The membership cannot change — the whole catalogue is rendered, the
        * shortlist visibly and the rest `hidden` — so this is computed at bind
-       * time. Order can and does change (`bindAddresseeDefault` moves a chosen
-       * sender to the front of the Adressaat row), which is why results are
-       * ranked from the query rather than read off the row. */
+       * time. Order can and does change — the server ranks the shortlist per
+       * reader, and a chosen body becomes a chip wherever it was — which is why
+       * results are ranked from the query rather than read off the row. */
       var entries = [];
       var allChips = [];
       chips.querySelectorAll("label.chip").forEach(function (chip) {
@@ -2368,11 +2388,17 @@
 
       /* «A person answered this», said out loud.
        *
-       * `bindAddresseeDefault` distinguishes a value it wrote from one somebody
-       * gave, and it does so with `event.isTrusted` — which is exactly right for
-       * a click on a radio and useless here, where a person's choice reaches the
-       * control through this function. So the picker says so itself, from the
-       * chip row, and only ever on a path a person started. */
+       * It exists because a listener cannot tell a value the page wrote from
+       * one somebody gave: `event.isTrusted` is exactly right for a click on a
+       * radio and useless here, where a person's choice reaches the control
+       * through this function. So the picker says so itself, from the chip row,
+       * and only ever on a path a person started.
+       *
+       * Nothing listens today — the one consumer was the Adressaat default,
+       * withdrawn from `Uus teema` with the question (docs/adr/0090 §5). It is
+       * kept because it is the picker's own statement about its own control,
+       * and the alternative is for the next consumer to re-derive the
+       * distinction from `isTrusted` and get it wrong the same way. */
       function declareAnswer() {
         chips.dispatchEvent(new CustomEvent("orgfind:answer", { bubbles: true }));
       }
@@ -2437,9 +2463,9 @@
       function setTyped(value) {
         typed.value = value;
         syncProvisional();
-        /* Untrusted on purpose: `bindAddresseeDefault` listens here and must not
-           read this as somebody typing into Adressaat — this *is* the picker,
-           and what it means is said by `orgfind:answer` instead. */
+        /* Untrusted on purpose: this *is* the picker writing, not somebody
+           typing into the box, and what it means is said by `orgfind:answer`
+           instead. */
         typed.dispatchEvent(new Event("input", { bubbles: true }));
         typed.dispatchEvent(new Event("change", { bubbles: true }));
       }
@@ -2550,7 +2576,7 @@
 
       /* Anything that changes what is ticked repaints, wherever it came from —
          a click on a chip, the intake reader's autofill, «Kasuta» on a
-         suggestion, or `bindAddresseeDefault` answering Adressaat from Saatja.
+         suggestion.
          A body the reader chose is an answer like any other, and §8 says an
          answer is visible: the shortlist it is not in is not a reason to hide
          it (task §16). */
@@ -2568,8 +2594,8 @@
         paint();
       });
 
-      /* The typed carrier is written from outside as well as from here — the
-         server's own sender→addressee default reaches Adressaat through it. */
+      /* The typed carrier can be written from outside as well as from here, so
+         it is listened to rather than only set. */
       typed.addEventListener("input", function () {
         syncProvisional();
         paint();
@@ -2580,378 +2606,6 @@
     });
   }
 
-  /* ---- Saatja is also the Adressaat, until somebody says otherwise -------
-   *
-   * A file arrives from X and is normally answered to X, so `Uus teema` fills
-   * Adressaat from Saatja instead of asking the same question twice. Saatja and
-   * Adressaat are two questions about *one* catalogue of institutions — the
-   * same `Organisation` rows reached through two relations (docs/adr/0063) —
-   * which is what makes the answer to one usable as the answer to the other.
-   *
-   * This replaces a rule rather than extending one. Until docs/adr/0069 the
-   * sender was promoted to the front of the addressee choices and deliberately
-   * *never* selected, on the argument that guessing a counterparty puts a fact
-   * on the register nobody stated. That argument was not wrong about the risk;
-   * it was wrong about the trade. Making the ordinary case free costs somebody
-   * who is answering a different body one click of correction, and it is a
-   * click they can see themselves making — the field says who it is answering,
-   * and they change it.
-   *
-   * Four rules, and the second is the one that makes this safe to do at all:
-   *
-   * 1. **One unambiguous sender seeds it.** Whichever sender is chosen while
-   *    nothing is seeded becomes the seed. A second sender added afterwards
-   *    does not replace it, and when nothing is seeded and *several* senders
-   *    are named there is no unambiguous body to answer, so Adressaat stays
-   *    unanswered rather than guessed at.
-   * 2. **A manual answer wins for ever.** The moment somebody touches Adressaat
-   *    themselves, nothing here writes to it again — not a sender being added,
-   *    removed, re-sorted, searched for or typed. That fact is posted in
-   *    `addressee_is_manual`, so it survives a refused save and the server
-   *    honours it too; it is never inferred from which chip happens to be
-   *    first, because reordering is something this file legitimately does.
-   * 3. **What was derived is taken back honestly.** Remove the sender the
-   *    default came from and the default goes with it, rather than leaving a
-   *    counterparty on the form that nothing on the page still supports.
-   * 4. **One radio, moved — never a second one drawn.** The chosen sender's
-   *    option is the same DOM node relocated to the front of the quick row, so
-   *    the group still holds one control per organisation. A copy would post
-   *    the same name twice and put the browser in charge of which one won.
-   *
-   * The server does all of this for the bound case, which is what a refused
-   * save re-renders and what a browser with scripting off gets
-   * (`app.matters.forms._default_addressee`). This is the half that has to work
-   * before any round trip.
-   */
-  function bindAddresseeDefault(scope) {
-    (scope || document).querySelectorAll("[data-counterparty-form]").forEach(function (form) {
-      if (!once(form, "Counterparty")) {
-        return;
-      }
-      var senderRow = form.querySelector("[data-sender-chips]");
-      var quick = form.querySelector('[data-clears="addressee_organisation"]');
-      var typed = form.querySelector("[data-sender-name]");
-      var addresseeName = form.querySelector("[data-addressee-name]");
-      var manualField = form.querySelector("[data-addressee-manual]");
-      var summary = form.querySelector("[data-addressee-summary]");
-      if (!senderRow || !quick) {
-        return;
-      }
-
-      var senderInputs = function () {
-        return form.querySelectorAll(
-          'input[name="source_organisations"], input[name="source_organisations_other"]'
-        );
-      };
-      var addresseeInputs = function () {
-        return form.querySelectorAll('input[name="addressee_organisation"]');
-      };
-
-      var chipName = function (chip) {
-        var name = chip ? chip.querySelector(".chip__name") : null;
-        return name ? name.textContent.trim().replace(/\s*×$/, "") : "";
-      };
-
-      /* The label wrapping one addressee radio, wherever it currently lives —
-         the visible chips or the part of the catalogue only the search reaches.
-         Compared as a property rather than built into an attribute selector, so
-         nothing here has to reason about escaping a value that came from the
-         page. */
-      var optionFor = function (value) {
-        var found = null;
-        addresseeInputs().forEach(function (radio) {
-          if (!found && radio.value === value) {
-            found = radio.closest(".chip");
-          }
-        });
-        return found;
-      };
-
-      /* ---- the two states this has to tell apart -------------------------
-       *
-       * `manual` is somebody having answered Adressaat themselves, and it is
-       * the only thing that stops everything below. It is restored from the
-       * hidden field on load so that a refused save comes back knowing which of
-       * the two it is looking at — a value on a re-rendered form is otherwise
-       * indistinguishable from a value this script wrote a moment before the
-       * person pressed the button.
-       *
-       * `seed` is the sender the current default came from, held as a token
-       * rather than as a position: `{kind: "pk"|"typed", value}`. Position
-       * cannot carry it, because answering Adressaat moves chips around.
-       */
-      var manual = !!(manualField && manualField.value);
-      var seed = null;
-
-      var sameToken = function (left, right) {
-        return !!left && !!right && left.kind === right.kind && left.value === right.value;
-      };
-
-      /* The addressee radio offering one body *by name*, if the catalogue holds
-         it. The typed field is for a body that does not exist yet, but people
-         put names into it that do — and a spelling the catalogue already holds
-         should answer with the row rather than with the word. */
-      var optionValueNamed = function (name) {
-        var found = null;
-        addresseeInputs().forEach(function (radio) {
-          if (found === null && radio.value && chipName(radio.closest(".chip")) === name) {
-            found = radio.value;
-          }
-        });
-        return found;
-      };
-
-      /* Every sender this form currently names: the ticked bodies, plus the one
-         the picker's `+` has proposed as new. A typed name the catalogue does
-         not hold has no primary key and is carried by its spelling — which is
-         exactly what `addressee_name` posts, and what the server resolves
-         against the same catalogue inside the save's own transaction. */
-      var senderTokens = function () {
-        var tokens = [];
-        senderInputs().forEach(function (input) {
-          if (input.checked) {
-            tokens.push({ kind: "pk", value: input.value, name: chipName(input.closest(".chip")) });
-          }
-        });
-        var name = typed ? typed.value.trim() : "";
-        if (name) {
-          var known = optionValueNamed(name);
-          tokens.push(
-            known
-              ? { kind: "pk", value: known, name: name }
-              : { kind: "typed", value: name, name: name }
-          );
-        }
-        return tokens;
-      };
-
-      /* Adressaat's own typed field, written and taken back.
-       *
-       * A body being named for the first time has no primary key — there is no
-       * row until `Loo teema` creates one — so the same name becomes the
-       * addressee through the control that already exists for exactly that.
-       * The event is what makes the Adressaat picker draw or drop its
-       * provisional chip; the picker owns that chip, and this owns the value
-       * (`bindOrganisationPickers`, task §14).
-       *
-       * Untrusted by construction, which is how the picker and the listener
-       * below both know the person did not type it. */
-      var setTypedAddressee = function (value) {
-        if (!addresseeName || addresseeName.value === value) {
-          return;
-        }
-        addresseeName.value = value;
-        addresseeName.dispatchEvent(new Event("input", { bubbles: true }));
-      };
-
-      /* The chosen senders, at the front of the Adressaat chips.
-       *
-       * Ordering, and since docs/adr/0069 it is ordering with a job rather than
-       * a suggestion: the body that has just become the addressee has to be one
-       * of the chips, because the chips are what somebody sees when they open
-       * Adressaat to check. A default left among the bodies only the search
-       * reaches would be an answer hidden behind a query nobody would think to
-       * type. `hidden = false` is the other half of that: those entries arrive
-       * out of sight, and an answer is never out of sight (task §8). */
-      var promote = function () {
-        var chosen = [];
-        senderInputs().forEach(function (input) {
-          if (input.checked) {
-            chosen.push(input);
-          }
-        });
-        /* By the label the person reads, so several senders move in the order
-           the server would also put them in rather than in whichever order the
-           two checkbox groups happen to appear in the document. */
-        chosen.sort(function (a, b) {
-          return chipName(a.closest(".chip")).localeCompare(chipName(b.closest(".chip")), "et");
-        });
-        /* Inserted in reverse so that repeated `insertBefore(first)` leaves
-           them in `chosen` order, and after the provisional chip if there is
-           one — a body the catalogue does not hold yet is the one the person is
-           in the middle of naming. */
-        var provisional = quick.querySelector("[data-orgfind-provisional]");
-        for (var index = chosen.length - 1; index >= 0; index -= 1) {
-          var option = optionFor(chosen[index].value);
-          if (!option) {
-            continue;
-          }
-          var anchor =
-            provisional && provisional.parentNode === quick
-              ? provisional.nextSibling
-              : quick.firstChild;
-          if (option !== anchor) {
-            quick.insertBefore(option, anchor);
-          }
-          option.hidden = false;
-        }
-      };
-
-      /* What the collapsed disclosure says: «Adressaat», or «Adressaat · X».
-         The server renders the same sentence for a bound form; this keeps it
-         true while somebody is still filling the form in. */
-      var updateSummary = function () {
-        if (!summary) {
-          return;
-        }
-        var name = "";
-        addresseeInputs().forEach(function (radio) {
-          if (radio.checked && radio.value) {
-            name = chipName(radio.closest(".chip"));
-          }
-        });
-        if (!name && addresseeName) {
-          name = addresseeName.value.trim();
-        }
-        summary.textContent = name ? " · " + name : "";
-      };
-
-      /* Write the derived answer, or take it back.
-       *
-       * Only ever reached while `manual` is false, which is what makes it safe
-       * to overwrite whatever is in the controls: everything there was put
-       * there by this function, or by the server's identical rule. */
-      var applyDefault = function () {
-        if (seed && seed.kind === "typed") {
-          addresseeInputs().forEach(function (radio) {
-            radio.checked = false;
-          });
-          setTypedAddressee(seed.value);
-          return;
-        }
-        setTypedAddressee("");
-        /* `Määramata` is a real radio with an empty value, and it is what "no
-           answer" looks like — so clearing the default means selecting it,
-           never leaving the group with nothing checked. */
-        addresseeInputs().forEach(function (radio) {
-          radio.checked = seed ? radio.value === seed.value : radio.value === "";
-        });
-      };
-
-      var refresh = function () {
-        promote();
-        if (!manual) {
-          var tokens = senderTokens();
-          if (
-            seed &&
-            !tokens.some(function (token) {
-              return sameToken(token, seed);
-            })
-          ) {
-            /* The sender the answer came from is gone, so the answer goes with
-               it rather than standing on nothing (§8). */
-            seed = null;
-          }
-          if (!seed && tokens.length === 1) {
-            seed = tokens[0];
-          }
-          applyDefault();
-        }
-        updateSummary();
-      };
-
-      /* What the form arrived holding, before anybody touches it.
-       *
-       * A bound form the server defaulted comes back with the answer in place
-       * and `addressee_is_manual` unset, and this is where that becomes a seed
-       * again — found by matching the answer against the senders, which is
-       * exact, rather than by reading which chip is first, which is not. An
-       * answer no sender explains was given by a person, on this form or on the
-       * one before the refusal, and it is theirs. */
-      var adopt = function () {
-        if (manual) {
-          return;
-        }
-        var answer = "";
-        addresseeInputs().forEach(function (radio) {
-          if (radio.checked && radio.value) {
-            answer = radio.value;
-          }
-        });
-        var name = addresseeName ? addresseeName.value.trim() : "";
-        senderTokens().forEach(function (token) {
-          if (seed) {
-            return;
-          }
-          if (token.kind === "pk" && answer && token.value === answer) {
-            seed = token;
-          }
-          if (token.kind === "typed" && !answer && name && token.value === name) {
-            seed = token;
-          }
-        });
-        if (!seed && (answer || name)) {
-          takeOver();
-        }
-      };
-
-      function takeOver() {
-        if (manual) {
-          return;
-        }
-        manual = true;
-        seed = null;
-        if (manualField) {
-          manualField.value = "1";
-        }
-      }
-
-      form.addEventListener("change", function (event) {
-        var target = event.target;
-        if (!target || !target.name) {
-          return;
-        }
-        if (
-          target.name === "source_organisations" ||
-          target.name === "source_organisations_other"
-        ) {
-          refresh();
-          return;
-        }
-        if (target.name === "addressee_organisation" && event.isTrusted) {
-          takeOver();
-          updateSummary();
-        }
-      });
-
-      /* «A person answered Adressaat», said by the picker.
-       *
-       * `event.isTrusted` is the right test for a click on a radio and the
-       * wrong one for the unified picker, where choosing a search result,
-       * pressing `+` and letting go of a provisional chip all reach the control
-       * through script. So the picker announces a person-driven answer from its
-       * own chip row, and only that row's announcement counts here — the Saatja
-       * picker fires the same event and it must feed this default rather than
-       * override it (task §15, `bindOrganisationPickers`). */
-      form.addEventListener("orgfind:answer", function (event) {
-        if (event.target !== quick) {
-          return;
-        }
-        takeOver();
-        updateSummary();
-      });
-
-      if (typed) {
-        typed.addEventListener("input", refresh);
-      }
-      if (addresseeName) {
-        addresseeName.addEventListener("input", function (event) {
-          /* A person typing into the `<noscript>` box — or, with scripting on,
-             nothing at all, because everything that writes here does so
-             untrusted and says what it meant through the event above. */
-          if (event.isTrusted) {
-            takeOver();
-          }
-          updateSummary();
-        });
-      }
-
-      promote();
-      adopt();
-      updateSummary();
-    });
-  }
-
   /* ---- A disclosure holding a ticked choice opens itself ------------------
    * `Vali nimekirjast` is closed by default, which is right on arrival and
    * wrong after a refused save: the catalogue behind it may hold the body the
@@ -2959,13 +2613,15 @@
    * hidden looks like a form that discarded it. The value was always posted;
    * this is only about being able to see it.
    *
-   * `data-stay-closed` is the exception, and it exists because the rule above
-   * assumes a ticked choice is somebody's answer. Adressaat's own disclosure
-   * holds one on the *ordinary* visit now — the sender fills it in — so
-   * applying this there would unfold a section every time the page answered a
-   * question on the person's behalf, which is the opposite of what defaulting
-   * it was for. That disclosure opens for an error and for a click, and for
-   * nothing else (docs/adr/0069, templates/matters/matter_create.html).
+   * `data-stay-closed` is the exception. It was written for Adressaat's own
+   * disclosure, which the sender filled in — unfolding a section every time the
+   * page answered a question on somebody's behalf is the opposite of what
+   * defaulting it was for. Adressaat is no longer on `Uus teema`
+   * (docs/adr/0090 §5) and Valdkond carries the attribute now, for the
+   * neighbouring reason: a refused save comes back with areas ticked and says
+   * so in the summary, and unfolding twenty-two checkboxes to prove it undoes
+   * the change on the one path where somebody is already fixing something else
+   * (docs/adr/0088 §3, templates/matters/matter_create.html).
    */
   function bindOpenChosenDetails(scope) {
     (scope || document).querySelectorAll("details.chipdetails").forEach(function (holder) {
@@ -3807,7 +3463,6 @@
     bindChoiceFilters(document);
     bindExclusiveName(document);
     bindOrganisationPickers(document);
-    bindAddresseeDefault(document);
     bindOpenChosenDetails(document);
     bindChipCounts(document);
     bindChipSummaries(document);
@@ -3842,7 +3497,6 @@
     bindChoiceFilters(event.target.querySelector ? event.target : document);
     bindExclusiveName(event.target.querySelector ? event.target : document);
     bindOrganisationPickers(event.target.querySelector ? event.target : document);
-    bindAddresseeDefault(event.target.querySelector ? event.target : document);
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindChipSummaries(event.target.querySelector ? event.target : document);

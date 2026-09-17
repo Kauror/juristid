@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.workflow.enums import Track
 
 RULES_VERSION = "1.1"
@@ -590,7 +591,14 @@ INSTRUMENT_DRAFT_KEY = "eelnou"
 #: machine has nothing to write there. A suggestion that puts a form into a
 #: state it cannot be saved from is worse than no suggestion, so `Muu` is not
 #: inferred and there is no rule keyed on it (docs/adr/0080 §3).
-INSTRUMENT_NEVER_INFERRED: frozenset[str] = frozenset({"muu"})
+#:
+#: All three of them, because the reviewed vocabulary splits the answer into
+#: `Muu siseriiklik` and `Muu ELi dokument` and both reveal the same required
+#: box. Belt and braces — neither has a rule and `_instrument_candidates`
+#: already skips a key that is not offered — but the rule this states is about
+#: what a machine may *conclude*, and it should not depend on there happening
+#: to be no rule (`OTHER_LEGAL_INSTRUMENT_KEYS`, docs/adr/0090 §3).
+INSTRUMENT_NEVER_INFERRED: frozenset[str] = OTHER_LEGAL_INSTRUMENT_KEYS
 
 #: One key silences another inside the same document's head.
 #:

@@ -255,7 +255,7 @@ def test_the_rail_has_no_sildid_card(page, base_url):
 
 
 def test_the_rail_carries_the_four_target_rows_and_no_maintenance_ones(page, base_url):
-    """`Teemaviide`, `Menetlusliik`, `Kellelt`, `Kellele` — every one of them a
+    """`Teemaviide`, `Menetlusliik`, `Saatja`, `Kellele` — every one of them a
     question a lawyer asks mid-sentence (TEEMA_TARGET_SPEC §G.1).
 
     `Muu valdkond`, `Andmeklass` and `Märgi testandmeteks` are retired from this
@@ -268,7 +268,7 @@ def test_the_rail_carries_the_four_target_rows_and_no_maintenance_ones(page, bas
     create_matter(page, base_url, "Raili brauserikatse")
 
     rail = page.locator("#teema-andmed")
-    for row in ("Teemaviide", "Menetlusliik", "Kellelt", "Kellele"):
+    for row in ("Teemaviide", "Menetlusliik", "Saatja", "Kellele"):
         expect(rail).to_contain_text(row)
     for gone in ("Muu valdkond", "Andmeklass", "Märgi testandmeteks", "Saabus"):
         assert gone not in rail.inner_text()

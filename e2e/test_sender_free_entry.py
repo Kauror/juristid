@@ -153,15 +153,18 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
     """One catalogue, which is what the department asked for.
 
     The body named through Saatja above has to be selectable as an Adressaat on
-    the next form somebody opens — not because anything copies it across, but
-    because there was only ever one `Organisation` table.
+    the next form that asks — not because anything copies it across, but because
+    there was only ever one `Organisation` table.
+
+    That form is `Muuda teemat`: `Uus teema` stopped asking who Koda answers
+    (docs/adr/0090 §5), and the claim is about the catalogue rather than about
+    which page renders it.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    # The Teema filed by the test above put this body in the catalogue. Filing
-    # it again here would be a second Matter for nothing, so this reads the
-    # control rather than the record.
+    # The Teema filed by the test above put this body in the catalogue. This one
+    # files its own, because it needs a record to open `Muuda teemat` on.
     name_a_new_sender(page, TYPED_SENDER)
     page.fill("#id_title", "Sama asutus adressaadina")
     page.fill("#id_next-text", "Kontrollida vastust")
@@ -169,23 +172,23 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    create_form(page, base_url)
+    page.get_by_role("link", name="Muuda", exact=False).first.click()
+    page.wait_for_load_state("networkidle")
     addressees = page.locator('input[name="addressee_organisation"]')
     # `textContent`, not `innerText`. Adressaat offers the *whole* catalogue —
-    # the ranked shortlist inline and every other body inside «Vali nimekirjast»
-    # (`MatterCreateForm.addressee_offered`) — and that disclosure is closed
-    # when the form opens. `innerText` is layout-aware, so it reads an empty
-    # string for a label that is present, correct and simply not painted, which
-    # turns «is this body offered?» into «is this body on screen?».
+    # the ranked shortlist visible and every other body rendered out of sight —
+    # so `innerText`, which is layout-aware, reads an empty string for a label
+    # that is present, correct and simply not painted, turning «is this body
+    # offered?» into «is this body on screen?».
     #
     # The two questions came apart the moment more than one browser file existed
     # in this shard: `addressees_by_usage` falls back to the alphabetical head
     # of the catalogue only while *nothing* has ever been filed as an addressee,
-    # so whether this body lands above or below the fold depends on what other
-    # tests put in the shared database first. Sharding is a pure function of the
-    # collected file set, so adding a file anywhere moves that. The claim here
-    # is the one in the docstring — selectable, one `Organisation` table — and
-    # that claim is about the form's choices, not about scroll position.
+    # so whether this body lands in the shortlist or the tail depends on what
+    # other tests put in the shared database first. Sharding is a pure function
+    # of the collected file set, so adding a file anywhere moves that. The claim
+    # here is the one in the docstring — selectable, one `Organisation` table —
+    # and that claim is about the form's choices, not about scroll position.
     labels = addressees.evaluate_all(
         "nodes => nodes.map(node => {"
         "  const label = node.closest('label');"

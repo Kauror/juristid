@@ -2,39 +2,34 @@
 
 `#169`, `#170`, `#171` and `#172` were each developed and reviewed against
 `main`, so no suite in the repository has ever had more than one of them
-loaded at a time. Each is proved on its own — the sender default in
-`e2e/test_counterparty_selection.py`, the Õigusakt row in
+loaded at a time. Each is proved on its own — the Õigusakt row in
 `e2e/test_oigusakt_row.py`, the discovery filters in
 `e2e/test_matter_intelligence.py`, the reader in
 `e2e/test_uus_teema_reading.py`. This file asserts only the seams *between*
-them, and nothing that any of those four already covers.
+them, and nothing that any of those already covers.
 
-Three seams, and the first is the one worth breaking a build over:
+**Two seams, where there were three.** The first two were both about `#169`'s
+sender→addressee default: the reader answering Adressaat through Saatja, and a
+person's own answer outranking a suggestion that arrived afterwards. That
+default is withdrawn with the question it served — `Uus teema` no longer asks
+who Koda answers (docs/adr/0090 §5) — and the two seam tests went with it,
+together with `e2e/test_counterparty_selection.py`, which owned the property in
+full.
 
-* **the reader answers Adressaat.** `#172` ticks Saatja from what it read in a
-  file; `#169` turns a single unambiguous Saatja into the Adressaat. Neither
-  branch knew the other existed, and the join between them is one synthetic
-  `change` event — `fill` in `static/js/app.js` dispatches it, and
-  `bindAddresseeDefault`'s handler deliberately does **not** require
-  `isTrusted` on `source_organisations`. That asymmetry is load-bearing and
-  invisible: the same handler *does* require `isTrusted` on
-  `addressee_organisation`, which is what keeps a machine from ever being
-  recorded as having made somebody's choice for them.
+What remains:
 
-* **a person still outranks the reader.** `#169`'s manual-override rule is the
-  one property a later suggestion could quietly defeat, because a suggestion
-  arrives seconds after somebody has answered and re-ticks the very control the
-  default is derived from.
+* **the reader leaves a chosen `Õigusakt` alone.** `#172` fills four controls
+  and must not touch a fifth somebody has already answered.
 
 * **a body typed on `Uus teema` is findable in Teemad.** `#169` resolves one
-  typed spelling into one `Organisation` used for both counterparties; `#171`
-  made all three institution filters read one catalogue through one searchable
+  typed spelling into one `Organisation` row inside one transaction; `#171` made
+  all three institution filters read that same catalogue through one searchable
   control. Composed, they are a lifecycle: a body that did not exist when the
-  form was opened is filterable, in both directions, minutes later.
+  form was opened is filterable minutes later — as a Saatja, and through the
+  combined `Asutus` filter, which is what «one catalogue» means.
 
-The harnesses are imported rather than rebuilt — the reader's worker drain and
-the addressee's chip readers are those files' own, and a second copy of either
-would be a second thing to keep true.
+The reader's harness is imported rather than rebuilt: the worker drain is that
+file's own, and a second copy would be a second thing to keep true.
 """
 
 from __future__ import annotations
@@ -48,15 +43,6 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, needs_intake_reading, sign_in
-from e2e.test_counterparty_selection import (
-    ADDRESSEE_DISCLOSURE,
-    ADDRESSEE_QUICK,
-    MINISTRY,
-    _addressee_labels,
-    _chosen_addressees,
-    _summary,
-    open_addressee,
-)
 from e2e.test_uus_teema_reading import (
     LETTER,
     REPOSITORY_ROOT,
@@ -77,10 +63,7 @@ def letter_pdf(tmp_path: Path) -> Path:
     A fixture is not importable across modules the way a helper is, so this one
     is redefined — but over the imported `LETTER`, so the *text* the reader has
     to recognise stays in one place. What matters for this file is only that the
-    letter names «Näidisministeerium» as its sender, which is the body
-    `e2e/test_counterparty_selection.py` promotes as `MINISTRY`: the two suites
-    happen to be about the same institution, and that is what makes the seam
-    testable at all.
+    letter names «Näidisministeerium» as its sender.
     """
     sys.path.insert(0, str(REPOSITORY_ROOT))
     from tests.synthetic_corpus import text_pdf
@@ -90,114 +73,15 @@ def letter_pdf(tmp_path: Path) -> Path:
     return path
 
 
-@pytest.fixture
-def second_letter_pdf(tmp_path: Path) -> Path:
-    """A second file, so a *second* suggestion round can be provoked.
-
-    The override property is not «a suggestion does not overwrite an answer
-    given before it arrived» — the reader suite proves that. It is «a suggestion
-    arriving *after* somebody has answered does not overwrite it either», and
-    provoking one needs a genuinely new file rather than a re-poll of a queue
-    that has already been drained.
-    """
-    sys.path.insert(0, str(REPOSITORY_ROOT))
-    from tests.synthetic_corpus import text_pdf
-
-    path = tmp_path / "teine-kaaskiri.pdf"
-    path.write_bytes(text_pdf([LETTER.replace("kooskõlastamiseks", "arvamuse avaldamiseks")]))
-    return path
-
-
 def a_new_name() -> str:
     """A body the catalogue provably does not hold yet.
 
-    Unique per call for the reason `e2e/test_counterparty_selection.py` gives:
-    these tests *create* institutions and the browser suite shares one database,
-    so a fixed name is in the catalogue from the moment this file has run once —
-    and «a body that did not exist when the form was opened» would then be a
-    claim about the previous run.
+    Unique per call, because this test *creates* an institution and the browser
+    suite shares one database — so a fixed name is in the catalogue from the
+    moment this file has run once, and «a body that did not exist when the form
+    was opened» would then be a claim about the previous run.
     """
     return f"Näidisamet {uuid.uuid4().hex[:8]}"
-
-
-def sender_checked_names(page) -> list[str]:
-    """Every institution currently ticked as a Saatja, by name."""
-    return page.locator("#saatja-valik label.chip").evaluate_all(
-        "nodes => nodes"
-        ".filter(node => { const i = node.querySelector('input'); return i && i.checked; })"
-        ".map(node => { const n = node.querySelector('.chip__name');"
-        " return (n ? n.textContent : '').replace(/\\s*×$/, '').trim(); })"
-    )
-
-
-def disagree_with_the_default(page) -> str:
-    """Answer Adressaat by hand with some body that is not the ministry.
-
-    Not `e2e/test_counterparty_selection.py::_pick_some_addressee`, and the
-    difference is the reason this helper exists rather than an import. That one
-    reads the chips that are *on screen*, which is correct for its own file: it
-    never has a file being read beside it. Here the ministry has already been
-    promoted into that row by the reader, and on a database where the catalogue
-    is small the visible chips can then hold nothing else at all — everything
-    else is an entry the search reaches. A picker that only read the visible row
-    would pass on a used database and fail on a fresh one, which is the worst
-    possible scheduling for a test of an override rule.
-
-    So it looks where a person looks: the chips first, and the search for
-    whatever the chips do not show. Returns the name, which is what the summary
-    is asserted against.
-
-    Rewritten for docs/adr/0073's one control. The nested «Vali nimekirjast»
-    this used to open no longer exists, and the entries behind it are now found
-    by typing — which is both simpler and closer to what somebody does.
-    """
-    open_addressee(page)
-
-    # The whole control in one evaluation: what is on screen and what is not are
-    # the same radio group, and which side of the split a body lands on is a
-    # property of the seeded catalogue rather than of anything under test.
-    candidates = page.locator(f"{ADDRESSEE_QUICK} label.chip").evaluate_all(
-        "nodes => nodes"
-        ".filter(node => !node.hasAttribute('data-orgfind-provisional'))"
-        ".map(node => { const input = node.querySelector('input');"
-        " const named = node.querySelector('.chip__name');"
-        " return {value: input ? input.value : '',"
-        " hidden: node.hidden,"
-        " name: ((named ? named.textContent : node.textContent) || '')"
-        ".replace(/\\s*×$/, '').trim()}; })"
-    )
-    chosen = next(
-        (
-            item
-            for item in candidates
-            # «Määramata» is a real radio in this group with an empty value, and
-            # choosing it is choosing *no answer* — asserting that no answer
-            # survived would assert nothing. The ministry is the body the reader
-            # promoted, and choosing it would make «the default was written» and
-            # «the answer survived» the same assertion.
-            if item["value"].strip() and item["name"] != MINISTRY
-        ),
-        None,
-    )
-    assert chosen, f"the Adressaat control offered no second body to disagree with: {candidates!r}"
-
-    if chosen["hidden"]:
-        # Out of sight is what the search is for, and typing is how a person
-        # reaches it. Choosing the result ticks the control already in the
-        # document — it never builds a second one (docs/adr/0073).
-        box = page.locator("#adressaat-otsi")
-        box.click()
-        box.fill(chosen["name"][:6])
-        page.locator("#adressaat-tulemused").get_by_role(
-            "option", name=chosen["name"], exact=True
-        ).click()
-    else:
-        # Bound to the *value*, never to the position it was found at. Promotion
-        # relocates the chosen body's option to the front of this row, so an
-        # `nth(i)` locator starts pointing at a different control the moment the
-        # thing under test does its job.
-        page.locator(f'input[name="addressee_organisation"][value="{chosen["value"]}"]').click()
-    return chosen["name"]
 
 
 def open_advanced(page):
@@ -234,128 +118,6 @@ def chooser_option_names(page, field: str) -> list[str]:
             f"#orgchooser-{field} select[name='{field}'] option"
         ).all_text_contents()
     ]
-
-
-# ---------------------------------------------------------------------------
-# Seam 1 — the reader answers Saatja, and #169 answers Adressaat
-# ---------------------------------------------------------------------------
-
-
-@needs_intake_reading
-def test_a_sender_the_reader_found_becomes_the_default_addressee(
-    page, base_url, screenshots, letter_pdf
-) -> None:
-    """The composed workflow, end to end, exactly as a lawyer meets it.
-
-    The letter names a ministry. `#172` reads it and ticks that ministry in the
-    real Saatja control; `#169` must then answer Adressaat with the *same*
-    body — and must do so without unfolding the disclosure, because a page that
-    opened a section because it had answered a question itself would be
-    reacting to its own writing, and it makes no difference to that argument
-    whether the answer came from a person or from a file.
-
-    Asserted on the summary as well as on the radio, because the summary is
-    what somebody actually sees while the section stays shut: a value set and
-    not announced would be the page answering a question silently.
-    """
-    sign_in(page, base_url, MARTIN)
-    open_create(page, base_url)
-
-    # Nothing is answered before the file is read — otherwise the assertion
-    # below would be about the seeded world rather than about the reader.
-    assert _chosen_addressees(page) == 0, "something was already answered on arrival"
-    assert _summary(page) == "Adressaat"
-
-    choose(page, [letter_pdf])
-    wait_for_reading(page)
-    read_staged_files()
-    wait_for_suggestions(page)
-
-    # -- 1. the reader ticked the sender, in the real control --------------
-    assert sender_checked_names(page) == [MINISTRY], (
-        f"the reader did not leave exactly {MINISTRY!r} ticked as Saatja: "
-        f"{sender_checked_names(page)!r}"
-    )
-
-    # -- 2. and #169 answered Adressaat with the same body -----------------
-    # The join is a synthetic `change` event. If `bindAddresseeDefault` ever
-    # grows an `isTrusted` guard on `source_organisations` — as it correctly
-    # has on `addressee_organisation` — this is the assertion that fails.
-    assert _chosen_addressees(page) == 1, (
-        "the sender the reader ticked did not become the addressee"
-    )
-    assert _addressee_labels(page)[0] == MINISTRY
-    assert _summary(page) == f"Adressaat · {MINISTRY}"
-
-    # -- 3. still folded away ----------------------------------------------
-    assert not page.locator(ADDRESSEE_DISCLOSURE).evaluate("node => node.open"), (
-        "a reader-derived default unfolded the Adressaat disclosure"
-    )
-    screenshots(page, "42-uus-teema-loetud-saatja-vastab-adressaadile")
-
-    # -- 4. and it saves as one body used twice ----------------------------
-    title = f"Pakendiseadus, loetud ja adresseeritud {uuid.uuid4().hex[:8]}"
-    page.locator("#id_title").fill(title)
-    page.fill("#id_next-text", "Lugeda eelnõu ja koostada arvamus")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
-    page.get_by_role("button", name="Loo teema").click()
-    page.wait_for_load_state("domcontentloaded")
-
-    complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
-    assert not complaints, f"the form refused: {complaints}"
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-
-    # Read back off the saved Matter, not off the form that posted it. The
-    # ministry has to appear as both counterparties, which is the whole claim.
-    body = page.locator("main").inner_text()
-    assert body.count(MINISTRY) >= 2, (
-        f"the saved Teema does not carry {MINISTRY!r} as both Saatja and Adressaat:\n{body}"
-    )
-
-
-@needs_intake_reading
-def test_an_addressee_chosen_by_hand_survives_a_later_suggestion(
-    page, base_url, letter_pdf, second_letter_pdf
-) -> None:
-    """The reader may never defeat `#169`'s manual-override rule.
-
-    The dangerous ordering is the one that cannot happen in either branch's own
-    suite: a default arrives from a file, a person disagrees with it, and *then*
-    a further suggestion lands re-ticking the sender the default came from. In
-    `static/js/app.js` the person's click sets `manual` — through the
-    `isTrusted` branch — and `refresh()` returns early for ever afterwards. If
-    that guard is lost, the second reading round silently restores the
-    ministry and somebody's correction disappears between two page loads.
-    """
-    sign_in(page, base_url, MARTIN)
-    open_create(page, base_url)
-
-    choose(page, [letter_pdf])
-    wait_for_reading(page)
-    read_staged_files()
-    wait_for_suggestions(page)
-    assert _summary(page) == f"Adressaat · {MINISTRY}"
-
-    # -- the person disagrees ----------------------------------------------
-    chosen_name = disagree_with_the_default(page)
-    assert _summary(page) == f"Adressaat · {chosen_name}"
-
-    # -- and a second file is read, re-proposing the ministry --------------
-    choose(page, [letter_pdf, second_letter_pdf])
-    wait_for_reading(page)
-    read_staged_files()
-    wait_for_suggestions(page)
-
-    # The sender is still the ministry — the reader is entitled to that, since
-    # nobody has touched Saatja. The addressee is not, and that is the point.
-    assert MINISTRY in sender_checked_names(page), (
-        "the second reading round did not re-propose the sender, so this test "
-        "no longer provokes the ordering it exists for"
-    )
-    assert _summary(page) == f"Adressaat · {chosen_name}", (
-        "a later suggestion overwrote an addressee somebody had chosen by hand"
-    )
-    assert _chosen_addressees(page) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -410,17 +172,21 @@ def test_the_reader_leaves_a_chosen_oigusakt_alone(page, base_url, letter_pdf) -
 def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_url) -> None:
     """One catalogue, proved as a lifecycle rather than as a population.
 
-    `#169` resolves a typed Saatja and the Adressaat it derives from it against
-    one catalogue inside one transaction, so the spelling becomes **one**
-    `Organisation` row used twice. `#171` made all three institution filters
-    read that same catalogue through one searchable control — which is what
-    makes a body created a minute ago findable at all: it is not in the first
-    twenty alphabetically, and before `#171` neither `Saatja` nor `Adressaat`
-    had a search box to reach it with.
+    `#169` resolves a typed Saatja against one catalogue inside the save's own
+    transaction, so the spelling becomes **one** `Organisation` row. `#171` made
+    all three institution filters read that same catalogue through one
+    searchable control — which is what makes a body created a minute ago
+    findable at all: it is not in the first twenty alphabetically, and before
+    `#171` `Saatja` had no search box to reach it with.
 
     Composed, the claim is that no second catalogue exists anywhere between the
-    two features. Filtering by the new body as Saatja and as Adressaat must both
-    return the Teema, because both relations point at the same row.
+    two features. Filtering by the new body as `Saatja` and through the combined
+    `Asutus` filter must both return the Teema.
+
+    `Adressaat` is not asserted here any more: the Teema is created with a
+    sender and no recipient, because `Uus teema` stopped asking
+    (docs/adr/0090 §5). The `Adressaat` *filter* is unchanged and is
+    `tests/test_organisation_pool.py`'s.
     """
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
@@ -429,16 +195,13 @@ def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_u
     title = f"Teema uue asutuse nimel {uuid.uuid4().hex[:8]}"
 
     # A body that does not exist yet, named through the one Saatja control:
-    # type it, then press the `+` that says «this is a body you do not have».
-    # #169 then offers it as the addressee too, through the provisional chip
+    # type it, then press the `+` that says «this is a body you do not have»
     # (docs/adr/0073).
     box = page.locator("#saatja-otsi")
     box.click()
     box.fill(name)
     page.locator("#saatja-valik [data-orgfind-add]").click()
-    assert _summary(page) == f"Adressaat · {name}", (
-        f"a typed sender did not become the default addressee: {_summary(page)!r}"
-    )
+    expect(page.locator("#saatja-valik [data-orgfind-provisional]")).to_be_visible()
 
     page.locator("#id_title").fill(title)
     page.fill("#id_next-text", "Lugeda eelnõu ja koostada arvamus")
@@ -461,11 +224,13 @@ def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_u
             f"the {field} control does not offer {name!r}; it offered "
             f"{chooser_option_names(page, field)!r}"
         )
+    # Every one of the three offers it, because there is one catalogue behind
+    # all three. Only the two that are true of this Teema are then *applied*.
 
     # -- and each direction returns the Teema ------------------------------
     # By value rather than by label, and re-read per dimension: each submit is a
     # fresh page and the panel comes back closed.
-    for field in ("saatja", "adressaat", "asutus"):
+    for field in ("saatja", "asutus"):
         page.goto(f"{base_url}/teemad/?olek=koik")
         page.wait_for_load_state("networkidle")
         open_advanced(page)

@@ -23,9 +23,10 @@ from django import forms
 from django.urls import reverse
 from django.utils import timezone
 
-from app.matters.forms import MatterCreateForm, NextActionForm
+from app.matters.forms import MatterCreateForm, MatterEditForm, NextActionForm
 from app.matters.models import Matter
-from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Track
+from app.taxonomy.models import LegalInstrumentType
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
 from tests import factories
 
@@ -58,15 +59,24 @@ def _next_action_panel(body: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["stage", "track"])
-def test_the_single_value_fields_stay_single_value(specialist, name):
+def test_the_single_value_fields_stay_single_value(specialist):
     """Visible chips, radio semantics.
 
     `allow_multiple_selected` rather than `not isinstance(..., RadioSelect)`:
     `CheckboxSelectMultiple` subclasses `RadioSelect`, so the isinstance form of
     this assertion is true of both controls and proves nothing.
+
+    `stage` alone here. `track` was the other one and is no longer a control on
+    this page — it is read off `Õigusakt` (docs/adr/0090 §4) — and `Muuda
+    teemat` still renders it as radios, which is asserted below.
     """
-    widget = MatterCreateForm(viewer=specialist).fields[name].widget
+    widget = MatterCreateForm(viewer=specialist).fields["stage"].widget
+    assert isinstance(widget, forms.RadioSelect)
+    assert widget.allow_multiple_selected is False
+
+
+def test_the_edit_form_still_renders_menetlusliik_as_a_single_value_control(specialist):
+    widget = MatterEditForm(matter=factories.MatterFactory(owner=specialist)).fields["track"].widget
     assert isinstance(widget, forms.RadioSelect)
     assert widget.allow_multiple_selected is False
 
@@ -88,15 +98,20 @@ def test_the_stage_control_names_its_blank_option(specialist):
     assert MatterCreateForm(viewer=specialist).fields["stage"].empty_label == "Määramata"
 
 
-def test_both_chip_rows_are_rendered_as_radios(signed_in, specialist):
+def test_the_chip_rows_are_rendered_as_radios(signed_in, specialist):
     factories.StageFactory(label_et="Kooskõlastusringil")
+    matter = factories.MatterFactory(owner=specialist)
     body = signed_in.get(CREATE).content.decode()
 
     assert 'type="radio" name="stage"' in body
-    assert 'type="radio" name="track"' in body
-    # And not as the selects they replaced.
+    # And not as the select it replaced.
     assert '<select name="stage"' not in body
-    assert '<select name="track"' not in body
+    # `Menetlusliik` is not on this page at all (docs/adr/0090 §4).
+    assert 'name="track"' not in body
+
+    edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
+    assert 'type="radio" name="track"' in edit
+    assert '<select name="track"' not in edit
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +225,10 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
             "title": "Kanooniline kirje",
             "owner": specialist.pk,
             "stage": stage.pk,
-            "track": Track.EU_INITIATIVE,
+            # `Menetlusliik` is not on this page and is not derived from
+            # anything: no `Õigusakt` type entails a procedure (docs/adr/0090
+            # §4). What the page does still store is the type itself.
+            "legal_instruments": [LegalInstrumentType.objects.get(key="direktiiv").pk],
             "source_organisations": [ministry.pk],
             "policy_areas": [area.pk],
             "received_date": "7.9.2026",
@@ -221,7 +239,8 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
     matter = Matter.objects.get(title="Kanooniline kirje")
     assert matter.owner == specialist
     assert matter.stage == stage
-    assert matter.track == Track.EU_INITIATIVE
+    assert [item.key for item in matter.legal_instruments.all()] == ["direktiiv"]
+    assert matter.track == ""
     assert list(matter.source_organisations.all()) == [ministry]
     assert list(matter.policy_areas.all()) == [area]
     # Typed Estonian, stored as real dates.

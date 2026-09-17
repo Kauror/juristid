@@ -730,7 +730,7 @@ def test_muu_valdkond_left_the_teema_rail_without_leaving_the_record(signed_in, 
     """UI retirement, not a data change.
 
     The approved target's `Teema andmed` is four rows — `Teemaviide`,
-    `Menetlusliik`, `Kellelt`, `Kellele` — and every one of them answers a
+    `Menetlusliik`, `Saatja`, `Kellele` — and every one of them answers a
     question somebody asks mid-sentence. `Muu valdkond` is a correction to how
     the file was classified, which is `Muuda teemat` work
     (TEEMA_TARGET_SPEC §G.1, docs/adr/0074 §17).
@@ -749,7 +749,7 @@ def test_muu_valdkond_left_the_teema_rail_without_leaving_the_record(signed_in, 
     assert "Andmeklass" not in rail
     assert "Märgi testandmeteks" not in rail
     assert "Saabus" not in rail
-    for kept in ("Teemaviide", "Menetlusliik", "Kellelt", "Kellele"):
+    for kept in ("Teemaviide", "Menetlusliik", "Saatja", "Kellele"):
         assert kept in rail
 
     normal_matter.refresh_from_db()

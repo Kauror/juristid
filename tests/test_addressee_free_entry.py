@@ -5,6 +5,10 @@ half-filled Teema, add the institution under Asutused, come back, find it again,
 save. Nobody used it. What is here instead is one field beside the chips — type
 the name, save the Teema — and the whole risk of that convenience is identity.
 
+**The form that asks is `Muuda teemat`.** `Uus teema` stopped asking who Koda
+answers (docs/adr/0090 §5), so the control lives on the edit page alone and the
+tests below exercise it there. Not one identity rule moved with it.
+
 So these tests are almost entirely about identity, and they pin the rule rather
 than the implementation: **normalised exact, or nothing**. Casefolded, diacritics
 stripped, whitespace collapsed, canonical names and recorded aliases — exactly
@@ -21,7 +25,8 @@ Three outcomes, and the third is the one worth having tests for:
   "nothing" and "two things", and a caller that reads the second as the first
   writes a third row and makes the ambiguity permanent (§7D).
 
-`Saatja` is deliberately untouched and has a test saying so.
+`Saatja` answers the same way through the same resolver and has a test saying
+which form offers which control.
 """
 
 from __future__ import annotations
@@ -138,19 +143,34 @@ def test_nothing_chosen_and_nothing_typed_is_no_addressee():
 
 
 # ---------------------------------------------------------------------------
-# Uus teema
+# Answering Adressaat, on the form that asks it
 # ---------------------------------------------------------------------------
+#
+# **This was `Uus teema` and is now `Muuda teemat`.** The create form stopped
+# asking who Koda answers — a file arriving has a sender, and who it is answered
+# to is decided later and elsewhere (docs/adr/0090 §5). Every identity rule
+# below is unchanged and is asserted on the surface that now carries the
+# control; what moved is the page, not the contract.
 
 
-def test_an_existing_canonical_name_typed_on_uus_teema_reuses_that_row(signed_in):
+def answer_addressee(signed_in, title: str, **fields) -> Matter:
+    """Record a Teema, then answer Adressaat on `Muuda teemat`.
+
+    Two POSTs where there used to be one, and the second is the one under test:
+    it is the only form that offers `addressee_name` now.
+    """
+    signed_in.post(CREATE, {"title": title})
+    matter = Matter.objects.get(title=title)
+    signed_in.post(_edit(matter), _edit_payload(matter, **fields))
+    matter.refresh_from_db()
+    return matter
+
+
+def test_an_existing_canonical_name_typed_on_muuda_teemat_reuses_that_row(signed_in):
     existing = factories.OrganisationFactory(name="Majandus- ja Kommunikatsiooniministeerium")
 
-    signed_in.post(
-        CREATE,
-        {"title": "Olemasolev adressaat", "addressee_name": existing.name},
-    )
+    matter = answer_addressee(signed_in, "Olemasolev adressaat", addressee_name=existing.name)
 
-    matter = Matter.objects.get(title="Olemasolev adressaat")
     assert matter.addressee_organisation == existing
     assert Organisation.objects.count() == 1
 
@@ -173,9 +193,8 @@ def test_a_normalised_equivalent_spelling_reuses_the_existing_row(signed_in, lab
     """
     existing = factories.OrganisationFactory(name="Majandus- ja Kommunikatsiooniministeerium")
 
-    signed_in.post(CREATE, {"title": f"Kirjapilt {label}", "addressee_name": typed})
+    matter = answer_addressee(signed_in, f"Kirjapilt {label}", addressee_name=typed)
 
-    matter = Matter.objects.get(title=f"Kirjapilt {label}")
     assert matter.addressee_organisation == existing
     assert Organisation.objects.count() == 1
 
@@ -183,12 +202,10 @@ def test_a_normalised_equivalent_spelling_reuses_the_existing_row(signed_in, lab
 def test_a_diacritic_variant_reuses_the_existing_row(signed_in):
     existing = factories.OrganisationFactory(name="Sotsiaalministeeriumi õigusosakond")
 
-    signed_in.post(
-        CREATE,
-        {"title": "Täpitähed", "addressee_name": "sotsiaalministeeriumi oigusosakond"},
+    matter = answer_addressee(
+        signed_in, "Täpitähed", addressee_name="sotsiaalministeeriumi oigusosakond"
     )
 
-    matter = Matter.objects.get(title="Täpitähed")
     assert matter.addressee_organisation == existing
     assert Organisation.objects.count() == 1
 
@@ -201,20 +218,17 @@ def test_a_recorded_alias_reuses_the_canonical_institution(signed_in):
     canonical = factories.OrganisationFactory(name="Majandus- ja Kommunikatsiooniministeerium")
     OrganisationAlias.objects.create(organisation=canonical, alias="MKM")
 
-    signed_in.post(CREATE, {"title": "Lühend", "addressee_name": "mkm"})
+    matter = answer_addressee(signed_in, "Lühend", addressee_name="mkm")
 
-    matter = Matter.objects.get(title="Lühend")
     assert matter.addressee_organisation == canonical
     assert Organisation.objects.count() == 1
 
 
 def test_a_brand_new_name_creates_exactly_one_institution(signed_in):
-    signed_in.post(
-        CREATE,
-        {"title": "Uus asutus", "addressee_name": "  Riigikogu keskkonnakomisjon  "},
+    matter = answer_addressee(
+        signed_in, "Uus asutus", addressee_name="  Riigikogu keskkonnakomisjon  "
     )
 
-    matter = Matter.objects.get(title="Uus asutus")
     created = Organisation.objects.get()
     assert created.name == "Riigikogu keskkonnakomisjon"
     assert created.organisation_type == OrganisationType.OTHER
@@ -222,17 +236,17 @@ def test_a_brand_new_name_creates_exactly_one_institution(signed_in):
 
 
 def test_the_same_new_name_on_a_second_teema_does_not_duplicate_it(signed_in):
-    signed_in.post(CREATE, {"title": "Esimene", "addressee_name": "Riigikogu keskkonnakomisjon"})
-    signed_in.post(CREATE, {"title": "Teine", "addressee_name": "riigikogu  keskkonnakomisjon"})
+    first = answer_addressee(signed_in, "Esimene", addressee_name="Riigikogu keskkonnakomisjon")
+    second = answer_addressee(signed_in, "Teine", addressee_name="riigikogu  keskkonnakomisjon")
 
     assert Organisation.objects.count() == 1
     organisation = Organisation.objects.get()
-    assert Matter.objects.get(title="Esimene").addressee_organisation == organisation
-    assert Matter.objects.get(title="Teine").addressee_organisation == organisation
+    assert first.addressee_organisation == organisation
+    assert second.addressee_organisation == organisation
 
 
 def test_an_ambiguous_spelling_refuses_the_whole_save(signed_in):
-    """Neither half of the wrong answer: no third row, and no Teema either.
+    """Neither half of the wrong answer: no third row, and no answer either.
 
     Creating a duplicate would make the ambiguity permanent; picking one would
     file the Teema against a body nobody named. The person has to choose.
@@ -240,22 +254,22 @@ def test_an_ambiguous_spelling_refuses_the_whole_save(signed_in):
     factories.OrganisationFactory(name="Ministeerium")
     factories.OrganisationFactory(name="ministeerium")
 
-    response = signed_in.post(
-        CREATE, {"title": "Mitmetähenduslik", "addressee_name": "Ministeerium"}
-    )
+    signed_in.post(CREATE, {"title": "Mitmetähenduslik"})
+    matter = Matter.objects.get(title="Mitmetähenduslik")
+    response = signed_in.post(_edit(matter), _edit_payload(matter, addressee_name="Ministeerium"))
 
     assert response.status_code == 400
-    assert not Matter.objects.filter(title="Mitmetähenduslik").exists()
+    matter.refresh_from_db()
+    assert matter.addressee_organisation is None
     assert Organisation.objects.count() == 2
     assert "vali nimekirjast" in response.content.decode().lower()
 
 
 def test_leaving_the_addressee_blank_still_means_maaramata(signed_in):
-    signed_in.post(
-        CREATE, {"title": "Ilma adressaadita", "addressee_organisation": "", "addressee_name": ""}
+    matter = answer_addressee(
+        signed_in, "Ilma adressaadita", addressee_organisation="", addressee_name=""
     )
 
-    matter = Matter.objects.get(title="Ilma adressaadita")
     assert matter.addressee_organisation is None
     assert Organisation.objects.count() == 0
 
@@ -263,12 +277,8 @@ def test_leaving_the_addressee_blank_still_means_maaramata(signed_in):
 def test_choosing_an_existing_chip_still_works_exactly_as_before(signed_in):
     existing = factories.OrganisationFactory(name="Kliimaministeerium")
 
-    signed_in.post(
-        CREATE,
-        {"title": "Valitud kiibilt", "addressee_organisation": str(existing.pk)},
-    )
+    matter = answer_addressee(signed_in, "Valitud kiibilt", addressee_organisation=str(existing.pk))
 
-    matter = Matter.objects.get(title="Valitud kiibilt")
     assert matter.addressee_organisation == existing
     assert Organisation.objects.count() == 1
 
@@ -286,18 +296,15 @@ def test_a_partial_search_string_can_never_become_an_institution(signed_in):
     """
     existing = factories.OrganisationFactory(name="Kliimaministeerium")
 
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Otsingust valitud",
-            "addressee_organisation": str(existing.pk),
-            # What a filter box would have posted, had anybody given it a name.
-            # It is here to prove the view reads no such field.
-            "adressaat-otsing": "Kliima",
-        },
+    matter = answer_addressee(
+        signed_in,
+        "Otsingust valitud",
+        addressee_organisation=str(existing.pk),
+        # What a filter box would have posted, had anybody given it a name.
+        # It is here to prove the view reads no such field.
+        **{"adressaat-otsing": "Kliima"},
     )
 
-    matter = Matter.objects.get(title="Otsingust valitud")
     assert matter.addressee_organisation == existing
     assert Organisation.objects.count() == 1
     assert not Organisation.objects.filter(name="Kliima").exists()
@@ -314,21 +321,26 @@ def test_the_search_input_posts_nothing(signed_in):
     which is a different control with a different meaning.
 
     The box is `[data-orgfind-input]` now rather than a label carrying
-    `data-choicefilter`; `Muuda teemat` still renders the old filter and is
-    covered by the same loop, because both are asked the same question.
+    `data-choicefilter`. Asserted on both Teema forms, because both are asked
+    the same question — `Uus teema` offers one picker since Adressaat left it,
+    `Muuda teemat` offers two (docs/adr/0090 §5).
     """
     import re
 
     # More than the ten offered as chips, so there are bodies the search has to
     # reach and the control is doing something.
     factories.OrganisationFactory.create_batch(12)
-    body = signed_in.get(CREATE).content.decode()
+    matter = factories.MatterFactory()
 
-    boxes = [tag for tag in re.findall(r"<input[^>]*>", body) if "data-orgfind-input" in tag]
-    assert len(boxes) == 2, "Saatja and Adressaat should each offer one search box"
-    for box in boxes:
-        assert 'type="search"' in box, box
-        assert "name=" not in box, f"a search box would post its contents: {box}"
+    for page, expected in (
+        (signed_in.get(CREATE).content.decode(), 1),
+        (signed_in.get(_edit(matter)).content.decode(), 2),
+    ):
+        boxes = [tag for tag in re.findall(r"<input[^>]*>", page) if "data-orgfind-input" in tag]
+        assert len(boxes) == expected, boxes
+        for box in boxes:
+            assert 'type="search"' in box, box
+            assert "name=" not in box, f"a search box would post its contents: {box}"
 
 
 # ---------------------------------------------------------------------------
@@ -404,10 +416,15 @@ def test_an_ambiguous_spelling_on_edit_changes_nothing(signed_in, specialist):
 def test_a_late_failure_on_uus_teema_leaves_no_institution_behind(signed_in, monkeypatch):
     """Resolution and the Teema are one write or neither.
 
-    The failure is forced after the addressee would have been created, in the
+    The failure is forced after the institution would have been created, in the
     next-action service the view calls last. What must not survive is an
     institution nobody asked for, sitting in the catalogue with nothing pointing
     at it.
+
+    Through `sender_name` rather than `addressee_name`: `Uus teema` no longer
+    asks Adressaat, and Saatja's typed half resolves through the same catalogue
+    in the same transaction (docs/adr/0063, docs/adr/0090 §5). The guarantee is
+    the transaction's, not the field's.
     """
 
     def refuse(**kwargs):
@@ -419,7 +436,7 @@ def test_a_late_failure_on_uus_teema_leaves_no_institution_behind(signed_in, mon
         CREATE,
         {
             "title": "Katkenud loomine",
-            "addressee_name": "Riigikogu keskkonnakomisjon",
+            "sender_name": "Riigikogu keskkonnakomisjon",
             "next-text": "Jälgida menetlust",
             "next-target_date": "1.9.2026",
         },
@@ -505,9 +522,7 @@ def test_a_reader_gains_no_institution_creation_endpoint_through_uus_teema(clien
     """
     client.force_login(reader)
 
-    response = client.post(
-        CREATE, {"title": "Lugeja teema", "addressee_name": "Lugeja loodud asutus"}
-    )
+    response = client.post(CREATE, {"title": "Lugeja teema", "sender_name": "Lugeja loodud asutus"})
 
     assert response.status_code == 404
     assert not Matter.objects.filter(title="Lugeja teema").exists()
@@ -538,20 +553,25 @@ def test_a_reader_gains_no_institution_creation_endpoint_through_muuda_teemat(
 # ---------------------------------------------------------------------------
 
 
-def test_saatja_is_still_existing_organisations_only(signed_in):
-    """Out of scope, and stated as a test so it stays that way.
+def test_each_form_offers_the_typed_control_for_the_question_it_asks(signed_in):
+    """Which form asks which question, stated as a test so it stays that way.
 
-    The approved decision covers `Adressaat`. Nothing on either Teema form
-    creates a sender, and no field on either form offers to.
+    `Uus teema` asks who sent the file and offers `sender_name`. `Muuda teemat`
+    asks both and offers both. Neither ever grew a `source_organisation*_name`
+    field beside the one it has: one typed control per question
+    (docs/adr/0063, docs/adr/0073, docs/adr/0090 §5).
     """
     from app.matters.forms import MatterCreateForm, MatterEditForm
 
-    for form_class, kwargs in (
-        (MatterCreateForm, {}),
-        (MatterEditForm, {"matter": factories.MatterFactory()}),
-    ):
-        fields = form_class(**kwargs).fields
-        assert "addressee_name" in fields
+    create_fields = MatterCreateForm().fields
+    assert "sender_name" in create_fields
+    assert "addressee_name" not in create_fields
+
+    edit_fields = MatterEditForm(matter=factories.MatterFactory()).fields
+    assert "sender_name" in edit_fields
+    assert "addressee_name" in edit_fields
+
+    for fields in (create_fields, edit_fields):
         assert not [
             name
             for name in fields
@@ -581,16 +601,23 @@ def test_the_obsolete_helper_sentence_is_gone_from_both_forms(signed_in, special
         assert "teema vormilt uut asutust ei teki" not in body
 
 
-def test_both_teema_forms_offer_the_same_addressee_control(signed_in, specialist):
-    """One workflow, not two. A person must not have to learn this twice."""
+def test_the_addressee_control_is_on_the_form_that_asks_for_it(signed_in, specialist):
+    """One workflow, not two — on the one page that still asks the question.
+
+    `Uus teema` draws neither half of Adressaat: not the catalogue, not the
+    typed box, and not the hidden marker that made the old default overridable
+    (docs/adr/0090 §5).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
-    for body in (
-        signed_in.get(CREATE).content.decode(),
-        signed_in.get(_edit(matter)).content.decode(),
-    ):
-        assert 'name="addressee_name"' in body
-        assert 'name="addressee_organisation"' in body
+    create = signed_in.get(CREATE).content.decode()
+    assert 'name="addressee_name"' not in create
+    assert 'name="addressee_organisation"' not in create
+    assert "addressee_is_manual" not in create
+
+    edit = signed_in.get(_edit(matter)).content.decode()
+    assert 'name="addressee_name"' in edit
+    assert 'name="addressee_organisation"' in edit
 
 
 def test_the_matter_still_holds_exactly_one_addressee():
