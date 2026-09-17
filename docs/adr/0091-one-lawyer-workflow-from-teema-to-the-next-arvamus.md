@@ -258,6 +258,16 @@ caller: `refuse_deadline_before_engagement` for the bound forms that still write
 column, and the same one string inside `open_engagement_feedback_wait` for the act,
 which has no form to report on.
 
+**It swaps the round's own row and nothing else**, which is the contract
+`✓ Tehtud` keeps and for the reason ADR 0052 §8 and §9 give: re-rendering
+`#teema-vaade` would throw away every unsaved character in the composer under it,
+and somebody who has just opened a wait is exactly the person about to type
+something about it. So `PRAEGUNE TEGEVUS` and the process strip's
+`Tagasiside tähtaeg` column catch up on the next render of the page rather than
+in this response. The write is persisted either way, and the row the reader is
+looking at — the one that now says «Ootame tagasisidet kuni …» — is the one that
+answers.
+
 **No generic mechanism was introduced.** `open_engagement_feedback_wait` writes one
 nullable column on one record, takes the Matter's row lock through
 `lock_open_matter_for_business_write`, refuses a stale revision and a round that is
@@ -997,6 +1007,17 @@ the product's inventory of what can be recorded, and four of them were missing.
 launcher stability test both change.
 
 A `Väline seisukoht` chronology row can now be three lines rather than two.
+
+**Every `Kaasamine` row nobody is waiting on is one disclosure taller**, because
+`Ootan tagasisidet` sits on it. Measured: three baselines moved by 29–30px and by
+nothing else. That is the price of taking the question off the capture panel — the
+act has to live somewhere a lawyer can reach it, and the round it belongs to is the
+only honest place. It is paid on the surface a reader scrolls rather than on the
+form everybody fills in, which is the trade §2 makes: the panel is used on every
+consultation and the disclosure is opened on the few that are actually waiting.
+
+The row shrinks back the moment a wait exists, since a waiting round is offered
+`Lõpeta kaasamine` instead and never both.
 
 `Uus teema` gains one control. Its visual baselines change, as do the Teema page's.
 

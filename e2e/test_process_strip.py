@@ -790,6 +790,17 @@ def record_a_round(page, matter_url: str, *, audience: str, deadline: str) -> No
     assert caught.value.status == 200, f"the wait was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
+    # **Re-read the page before looking at the strip.** `Ootan tagasisidet`
+    # swaps the chronology row and nothing else — the contract `✓ Tehtud` keeps
+    # and for the same reason: re-rendering `#teema-vaade` would throw away every
+    # unsaved character in the composer under it, which is the moment somebody is
+    # most likely to be typing (docs/adr/0052 §8, §9). The write is persisted
+    # either way and the strip catches up on the next render, so the fixture asks
+    # for that render rather than asserting the swap propagated further than it
+    # is meant to.
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
+
 
 @pytest.mark.parametrize("width", WIDTHS)
 def test_a_reply_by_date_draws_its_own_column(page, base_url, width):
