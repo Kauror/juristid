@@ -76,22 +76,28 @@ def test_the_panel_asks_for_the_engagement_date_and_shows_todays_default(signed_
     assert f'value="{format_estonian_date(timezone.localdate())}"' in panel
 
 
-def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_a_week(signed_in, specialist):
-    """`Tagasisidet ootame kuni`, pre-filled with today + 7.
+def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_nothing(signed_in, specialist):
+    """`Tagasisidet ootame kuni`, and the box opens **empty**.
 
-    **This reverses docs/adr/0078 §3's «optional and undefaulted».** The argument
-    there was that «today is a plausible engagement date and never a plausible
-    reply-by date, so a pre-filled one would be answered by pressing
-    `Salvesta`» — which is an argument against defaulting to *today*, not
-    against defaulting. A week out is what a round asks for when nobody says
-    otherwise, and since docs/adr/0086 §3 an empty box is the difference between
-    a consultation that shows up as work and one that disappears.
+    **docs/adr/0088 §2 narrows docs/adr/0086 §2 on exactly this.** That record
+    pre-filled the box with today + 7, on an argument that was right about its own
+    subject: a week is what a round asks for when nobody says otherwise, and it is
+    not a value anybody presses `Salvesta` past without reading.
 
-    Still clearable, and clearing it is a real answer: `tests/…::
-    test_an_emptied_reply_by_date_opens_no_wait` is the other half.
+    What it did not weigh is that pressing past *this* box is not like pressing
+    past the one above it. An accepted `Kaasamise kuupäev` is a fact that is
+    probably right; an accepted `Tagasisidet ootame kuni` is a managed activity
+    with a work item, a responsible person, an overdue state and a second
+    deliberate act to end it. Recording «19.09 — kaasati 234 tööstusettevõtet» is a
+    completed act, and every one of them was acquiring a wait. The lawyers called
+    that too complicated, and they were describing work the application had
+    assigned them (lawyer feedback 11).
+
+    **The wait itself is not withdrawn.** Fill the box, by hand or with one of the
+    three spans the test below covers, and every rule docs/adr/0086 §3 wrote still
+    applies — which is what `tests/test_engagement_feedback_wait.py` holds.
     """
     matter = factories.MatterFactory(owner=specialist)
-    expected = timezone.localdate() + dt.timedelta(days=7)
 
     panel = _panel(_workspace(signed_in, matter))
 
@@ -99,7 +105,15 @@ def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_a_week(sign
     assert 'name="feedback_deadline"' in panel
     field = panel[panel.index('name="feedback_deadline"') :]
     field = field[: field.index(">")]
-    assert f'value="{format_estonian_date(expected)}"' in field, field
+    # An empty box, and stated as `value=""` rather than as the absence of any
+    # value: `EstonianDateInput` always renders the attribute, so «no `value=`»
+    # would be an assertion that cannot fail.
+    assert 'value=""' in field, field
+    # And nothing on the row proposes a day either, which is the claim that
+    # matters: a default nobody chose one `Salvesta` away from being saved.
+    for offset in (0, 7, 14):
+        proposed = format_estonian_date(timezone.localdate() + dt.timedelta(days=offset))
+        assert f'value="{proposed}"' not in field
 
 
 def test_the_panel_offers_the_three_reply_by_spans_with_the_days_they_land_on(

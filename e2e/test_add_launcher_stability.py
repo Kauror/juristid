@@ -305,7 +305,9 @@ def test_at_phone_width_the_chips_wrap_and_stay_on_their_rows(page, base_url):
 
     resting = chip_geometry(page)
     rows = sorted({round(row[2]) for row in resting})
-    assert len(rows) > 1, "at 375px the twelve chips fit on one line — retune this test, not the CSS"
+    assert len(rows) > 1, (
+        "at 375px the twelve chips fit on one line — retune this test, not the CSS"
+    )
 
     for panel_id in PANEL_IDS:
         panel = open_panel(page, panel_id)

@@ -1881,8 +1881,9 @@ class MatterExternalPosition(VisibilityInheritingModel):
         composes the headline from :attr:`kind_label` and this, and drops the
         separator when this is blank (docs/adr/0088 §3.3).
         """
-        if self.organisation_id is not None:
-            return self.organisation.name
+        organisation = self.organisation
+        if organisation is not None:
+            return organisation.name
         return self.source_label
 
     @property

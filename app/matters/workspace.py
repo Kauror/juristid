@@ -668,8 +668,11 @@ def add_matter_koda_opinion(
         # surface ever reads the anchor back as «00:00». The person answered a day
         # and the record says so (app/submissions/enums.py, docs/adr/0079 §2).
         moment = timezone.make_aware(datetime.combine(sent_on, time.min))
+        # The Matter is not a parameter: the service derives it from the
+        # document's own `matter_id` and re-takes the same row lock, which is
+        # free inside one transaction and is what keeps the boundary in one place
+        # rather than in every caller (`app/matters/locks.py`).
         result.record = register_sent_opinion_on_open_matter(
-            matter=locked_matter,
             document=document,
             version=version,
             title=document.title,
