@@ -28,7 +28,7 @@ from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
 from app.taxonomy.models import LegalInstrumentType, PolicyArea
-from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Track
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
 from tests import factories
 from tests import synthetic_corpus as corpus
@@ -146,9 +146,9 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
             "source_organisations": [ministry.pk],
             "policy_areas": [area.pk],
             "stage": stage.pk,
-            # `Menetlusliik` is no longer a control on this page: it is read off
-            # the chosen `Õigusakt`, and `Seadus` is domestic
-            # (docs/adr/0089 §4). `Adressaat` is not a control here either.
+            # Neither `Menetlusliik` nor `Adressaat` is a control on this page
+            # any more (docs/adr/0089 §4, §5). `Õigusakt` is, and it is the one
+            # that carries whether the file is domestic or European.
             "legal_instruments": [seadus.pk],
             "files": upload("eelnou.pdf", corpus.government_pdf()),
             "next-text": "Loen eelnõu läbi ja koostan liikmete küsitluse",
@@ -165,7 +165,9 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     assert list(matter.policy_areas.all()) == [area]
     assert matter.stage == stage
     assert list(matter.legal_instruments.all()) == [seadus]
-    assert matter.track == Track.DOMESTIC
+    # Nothing was written to `Menetlusliik`, and nothing was guessed from
+    # `Seadus`: no instrument type entails a procedure (docs/adr/0089 §4).
+    assert matter.track == ""
     assert matter.addressee_organisation is None
     assert matter.visibility == Visibility.NORMAL
 
