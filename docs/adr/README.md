@@ -98,6 +98,7 @@ consequences and reversibility.
 | [0086](0086-a-kaasamine-waits-for-answers-and-somebody-finishes-it.md) | A `Kaasamine` waits for answers, and somebody finishes it | Accepted |
 | [0087](0087-the-similar-matter-finder-extends-one-engine.md) | The similar-Matter finder extends one engine, and reaches `Uus teema` | Accepted |
 | [0088](0088-uus-teema-is-manual-first.md) | `Uus teema` is manual-first: the reading is withdrawn, Saatja starts empty, Valdkond folds away | Accepted |
+| [0089](0089-one-question-per-classification-on-uus-teema.md) | One question per classification: the reviewed Hetkeseis and Õigusakt vocabularies, and the three questions `Uus teema` asks | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 

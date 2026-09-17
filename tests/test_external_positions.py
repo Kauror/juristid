@@ -1423,18 +1423,25 @@ def catalogue(db, ministry):
 def test_the_panel_validates_against_the_whole_shared_catalogue(catalogue, specialist):
     """The same pool `Adressaat` validates against, not the chips on screen.
 
-    Both forms point their field at `Organisation.objects.order_by("name")`;
-    narrowing either to what is rendered would refuse a correct answer given
-    through the search, which is the defect docs/adr/0073 names by hand.
+    Every form pointing at this catalogue points its field at
+    `Organisation.objects.order_by("name")`; narrowing one to what is rendered
+    would refuse a correct answer given through the search, which is the defect
+    docs/adr/0073 names by hand.
+
+    Compared against `Uus teema`'s *Saatja*, because that page stopped asking
+    Adressaat (docs/adr/0089 §5) and `Muuda teemat` is where the two questions
+    meet now. The claim is about the pool, not about which field reads it.
     """
-    from app.matters.forms import CompactExternalPositionForm, MatterCreateForm
+    from app.matters.forms import CompactExternalPositionForm, MatterCreateForm, MatterEditForm
 
     panel = CompactExternalPositionForm(viewer=specialist)
     uus_teema = MatterCreateForm(viewer=specialist)
+    muuda = MatterEditForm(matter=factories.MatterFactory(owner=specialist), viewer=specialist)
 
     pool = {organisation.pk for organisation in Organisation.objects.all()}
     assert {row.pk for row in panel.fields["organisation"].queryset} == pool
-    assert {row.pk for row in uus_teema.fields["addressee_organisation"].queryset} == pool
+    assert {row.pk for row in uus_teema.fields["source_organisations"].queryset} == pool
+    assert {row.pk for row in muuda.fields["addressee_organisation"].queryset} == pool
     assert len(pool) == len(catalogue)
 
 
