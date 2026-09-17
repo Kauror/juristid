@@ -3,6 +3,14 @@
 **Status:** accepted
 **Date:** 2026-09-17
 
+*Numbered 0090 rather than 0088.* `0088` was free on `main` when this work began
+and three branches off that base each reached for the next number. PR #230 —
+`Uus teema` is manual-first — merged its 0088 first, and the lawyer-package-B work
+had already claimed 0089 on its own branch, so this record moved twice. The
+repository's rule is that the merged record keeps the number and the other
+renumbers; ADR 0086 moved for the same reason a round earlier. Nothing in this
+record changed with the digits.
+
 *Narrows ADR 0086 §2* on one point: `Tagasisidet ootame kuni` opens empty rather
 than on today + 7. Everything else that record decided — that a set deadline
 opens a wait, that the wait is one `WorkItem` on an open `FULL` Matter, that
