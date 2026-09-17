@@ -8,6 +8,61 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-17
+basis = "deployment"
+# Üks väljalase, viis ühendust: kaasamise tagasiside ootamine ja lõpetamine,
+# välise organisatsiooni seisukoht ainult tekstina koos ühise organisatsioonide
+# loendiga, ülevaate ja uudise lisamine mis tahes avaliku lingiga, sarnaste
+# varasemate teemade pakkumine uue teema loomisel ning kasutusest võetud
+# hetkeseisu säilimine.
+#
+# **Miks 17., mitte 16. september.** Need ühendused said valmis 16. septembril ja
+# kirje oli algul sinna kirjutatud. Väljalase ise toimus alles järgmisel päeval,
+# ja README ütleb, et kuupäev on päev, mil muudatus jõudis kasutajateni — mitte
+# see, millal ta valmis sai. 16. septembri kirje on puutumata: selle kolm punkti
+# jõudsid lugejani sel päeval ja jäävad sinna.
+#
+# Esimene punkt (kaasamine) räägib tähtajast, mis jõuab vastutaja tööde hulka,
+# ja kaasamise lõpetamisest. Sellega ei ole vastuolus 15. septembri kaasamise
+# punkt ega 16. septembri teine punkt: seal oli kuupäeva täpsus ja tähtaja
+# *nähtavus*, siin on see, et tähtaeg on nüüd töö, mida oodatakse, ja et
+# kaasamise saab kinni panna.
+#
+# Teine punkt (väline seisukoht) **ei korda** 16. septembri esimest punkti. Seal
+# oli seisukoha koht üldse; siin on juurde tulnud see, et linki ega dokumenti ei
+# pea olema — piisab tekstist — ja et organisatsioon valitakse samast loendist,
+# mida saatja ja adressaadi juures juba kasutatakse. Lugeja jaoks on teine pool
+# sama tähtis kui esimene: nimi kirjutatakse ühtemoodi kõikjal.
+#
+# Kolmas punkt (ülevaade ja uudis) **ei korda** 16. septembri kolmandat ega
+# 15. septembri oma. Seal oli koda.ee ülevaade; siin on ülevaate kõrvale tulnud
+# uudis ja link võib viia ükskõik millisele avalikule lehele. Kuupäeva ettepanek
+# mainitakse, sest see on vormil nähtav abi, mitte sisemine reegel.
+#
+# Neljas punkt (sarnased teemad) puudutab uue teema vormi. Punkt ütleb, mida
+# soovitus arvesse võtab ja mida ta varasema teema kohta näitab, sest just see
+# teeb soovitusest otsustatava asja. Mootorist, mis soovitused arvutab, ei ole
+# lugejal midagi teada vaja.
+#
+# Viies punkt (hetkeseis) on piiripealne ja siin teadlikult sees. Ükski
+# hetkeseis ei ole praegu kasutusest väljas, nii et täna ei näe lugeja midagi
+# teisiti; varem oleks aga kasutusest võetud seisu kandval teemal see seis
+# vaikselt kaotsi läinud, kui teemat muudeti. Punkt kirjeldab lubadust, mitte
+# uut nuppu — ja lubadus on see, mille peale lugeja hiljem loodab.
+#
+# `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalase veel
+# toimunud, ja toodangu revisjon on teada alles väljalaske raportist. Vale või
+# oletatud revisjoni siia panna oleks halvem kui selle puudumine.
+prs = [225, 226, 227, 228, 231]
+changes = [
+  "Kaasamisele saab nüüd määrata tagasiside tähtaja, mis ilmub vastutaja tööde hulka; saabunud arvamused saab lisada ning kaasamise lõpetatuks märkida.",
+  "Välise organisatsiooni seisukoha saab nüüd salvestada ka ainult tekstina ning organisatsiooni valida samast loendist, mida kasutatakse saatjate ja adressaatide juures.",
+  "Teemale saab nüüd lisada nii ülevaate kui ka uudise mis tahes avaliku veebilingiga; lingi sisestamisel pakub vorm avaldamise kuupäevaks tänast kuupäeva.",
+  "Uue teema loomisel pakub rakendus nüüd sarnaseid varasemaid teemasid; soovitused arvestavad ka õigusakti liiki ning näitavad, kas varasemas teemas esitati arvamus, saadeti seisukoht või märgiti töövõit.",
+  "Kui mõni hetkeseis võetakse kasutusest, jääb see alles neil teemadel, mis selles seisus on, ja on nende juures eraldi märgitud.",
+]
+
+[[day]]
 date = 2026-09-16
 basis = "deployment"
 # Üks väljalase, kolm ühendust: välise organisatsiooni seisukoht teema juures,
@@ -36,9 +91,11 @@ basis = "deployment"
 # tulnud teine tee: juba ilmunud ülevaate saab lisada kohe, koos lingi ja
 # avaldamise kuupäevaga, ilma seda enne plaaniks märkimata.
 #
-# `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalase veel
-# toimunud, ja toodangu revisjon on teada alles väljalaske raportist. Vale või
-# oletatud revisjoni siia panna oleks halvem kui selle puudumine.
+# `revisions` oli seda kirjet kirjutades tühi, sest väljalase ei olnud veel
+# toimunud. Nüüd on ja revisjon on teada, nii et see on siia kirja pandud.
+revisions = [
+  "a4393b737f973ccf9e6c20d9efa94f09c7c9bad0",
+]
 prs = [220, 221]
 changes = [
   "Teemale saab nüüd lisada välise organisatsiooni seisukoha: märkida organisatsiooni, lisada lingi või dokumendi ning soovi korral kuupäeva ja lühiselgituse.",

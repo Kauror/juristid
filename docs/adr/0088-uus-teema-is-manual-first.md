@@ -210,6 +210,22 @@ not make them harder, and then left alone:
   Hetkeseis work. The proposed Package 2 vocabulary is in any case
   label-only on the ten existing rows, so it retires nothing and does not
   itself depend on the fix.
+
+  **Fixed on 2026-09-16, after the paragraph above was written.** #231 added
+  `app.workflow.selectors.stages_including(stage)` — the offered vocabulary
+  plus the one stage a Matter already holds, and only that one — and put all
+  three surfaces named above on it. A Matter standing in a since-retired stage
+  is now offered it back, keeps it through an edit that meant to change
+  something else, and is marked as holding a former value: `· kasutusest
+  väljas` on `Muuda teemat`, `— varasem hetkeseis` in the header's select.
+  `Uus teema` still offers only the active vocabulary, because a Matter being
+  created has nothing to preserve (docs/adr/0032 §Amendment).
+
+  The finding is left above exactly as it was found. It was true of this
+  repository when it was written, it is why the fix exists, and rewriting it
+  into the past tense would leave a record in which the defect had never
+  happened. What is no longer true is only its last clause: the prerequisite is
+  met, so the Package 2 Hetkeseis work is not blocked on it.
 - **Õigusakt.** `LegalInstrumentType` also has `is_active` and `sort_order`, and
   `MatterEditForm` already unions in a Matter's own retired types. Multiple
   selection is real and must survive (ADR 0070); `legal_instrument_raw` on
