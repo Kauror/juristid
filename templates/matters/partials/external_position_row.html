@@ -108,7 +108,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         everything above this is what the other organisation said, and this is
         what somebody here thinks about it. It satisfies nothing — a record
         holding only this office's comment about a position nobody can read is
-        refused exactly as an empty one is (docs/adr/0090 §4).
+        refused exactly as an empty one is (docs/adr/0091 §4).
       {% endcomment %}
       <label class="cx-f" for="{{ external_position_edit_form.lawyer_note.id_for_label }}">
         <span class="cx-f__lab">{{ external_position_edit_form.lawyer_note.label }}
@@ -123,7 +123,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         `Allikas` — rendered only on a received-feedback record, because that is
         the only kind that may have one. A discovered position has an author by
         definition and a `LEGACY` row never had the field; showing the box there
-        would offer a value the service refuses (docs/adr/0090 §3.3).
+        would offer a value the service refuses (docs/adr/0091 §3.3).
 
         **The provenance itself is not editable here.** How the file learned
         something is what the panel it was recorded through said, and a
@@ -217,7 +217,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       scanning the chronology reads it as part of what the ministry said. So the
       label is rendered even though it costs a line, and the sentence it
       introduces is the lawyer's (app/matters/timeline.py `LAWYER_NOTE_LABEL`,
-      docs/adr/0090 §4).
+      docs/adr/0091 §4).
     {% endcomment %}
     {% if milestone.own_note %}
       <span class="uxtl__msnote">

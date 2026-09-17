@@ -79,7 +79,7 @@ def test_the_panel_asks_for_the_engagement_date_and_shows_todays_default(signed_
 def test_the_panel_asks_how_long_feedback_is_awaited_and_defaults_to_nothing(signed_in, specialist):
     """`Tagasisidet ootame kuni`, and the box opens **empty**.
 
-    **docs/adr/0090 §2 narrows docs/adr/0086 §2 on exactly this.** That record
+    **docs/adr/0091 §2 narrows docs/adr/0086 §2 on exactly this.** That record
     pre-filled the box with today + 7, on an argument that was right about its own
     subject: a week is what a round asks for when nobody says otherwise, and it is
     not a value anybody presses `Salvesta` past without reading.

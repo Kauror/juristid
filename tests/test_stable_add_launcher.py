@@ -48,7 +48,7 @@ CANONICAL = [
     # last thing done *about* a file, and finishing the file is not routine
     # capture at all (docs/adr/0081 §2).
     "+ Ülevaade / uudis",
-    # `+ Väline seisukoht` became two chips in docs/adr/0090 §3: one record
+    # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
     # and one panel partial, named by how what it holds reached the file.
     "+ Meile saadetud tagasiside",
     "+ Teiste arvamus",
@@ -71,8 +71,6 @@ PANEL_IDS = [
     "lisa-joustumine",
     "lisa-toovoit",
     "lisa-koduleht",
-    "lisa-tagasiside",
-    "lisa-valine-seisukoht",
     "lisa-tagasiside",
     "lisa-valine-seisukoht",
     "lisa-koja-arvamus",

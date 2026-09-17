@@ -5,7 +5,7 @@ atomicity, the refusals, the visibility boundary — and runs everywhere cheaply
 This file holds the ones only a running page can settle:
 
 * that `Koostan arvamuse` is a box on `Uus teema` whose date becomes the file's
-  open step, without anybody typing the sentence (docs/adr/0090 §1);
+  open step, without anybody typing the sentence (docs/adr/0091 §1);
 * that `+ Meile saadetud tagasiside` records a survey summary with **no
   organisation at all** — the case a form can only be proved to accept by filling
   it in and pressing the button (§3.3);
@@ -115,7 +115,7 @@ def test_the_preparation_box_opens_empty_and_says_what_it_will_create(page, base
 
     A commitment nobody stated is a commitment nobody can be held to, and since
     `Arvamuse tähtaeg` became work an invented one is not even inert
-    (docs/adr/0090 §1.2).
+    (docs/adr/0091 §1.2).
     """
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
@@ -144,7 +144,7 @@ def test_a_teema_filed_with_no_preparation_date_has_no_step(page, base_url):
 def test_the_reply_by_box_opens_empty_and_the_spans_still_fill_it(page, base_url):
     """The wait is asked for, not given — and asking costs one click.
 
-    docs/adr/0090 §2 narrows docs/adr/0086 §2 on the default alone. What the
+    docs/adr/0091 §2 narrows docs/adr/0086 §2 on the default alone. What the
     spans do is unchanged, which is the half that makes the narrowing affordable.
     """
     sign_in(page, base_url, SANDRA)
@@ -181,7 +181,7 @@ def test_aggregate_feedback_saves_with_no_organisation_at_all(page, base_url):
 
     A survey of 234 industrial companies has no single author. Before this the
     panel refused the save, and what that bought was an invented organisation
-    called «234 ettevõtet» (docs/adr/0090 §3.3).
+    called «234 ettevõtet» (docs/adr/0091 §3.3).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -241,7 +241,7 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
     The label is what does the work: a paragraph of Koda's assessment printed
     unlabelled under a headline naming the ministry reads as part of what the
     ministry said, which is the attribution defect with better line spacing
-    (docs/adr/0090 §4).
+    (docs/adr/0091 §4).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -284,7 +284,7 @@ def test_the_koda_opinion_panel_records_a_sent_opinion_on_the_teema(page, base_u
 
     It writes the same `Submission` the `Dokumendid` panel writes, through the
     same service — what is new is that a lawyer never leaves the Teema
-    (docs/adr/0090 §6).
+    (docs/adr/0091 §6).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -362,7 +362,7 @@ def test_after_a_sent_opinion_the_page_offers_the_continuation(page, base_url):
     """The dead end, closed: a file whose opinion went out says so and says on.
 
     Two anchors to controls that are already on the page — not a wizard, not a
-    suggested step, and nothing created (docs/adr/0090 §5.5).
+    suggested step, and nothing created (docs/adr/0091 §5.5).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -410,7 +410,7 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     Create with a preparation date; engage without acquiring a wait; record an
     aggregate answer and a ministry's opinion; send Koda's own; then record what
     the procedure did next — all on the same file, with the first opinion intact
-    (docs/adr/0090).
+    (docs/adr/0091).
     """
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")

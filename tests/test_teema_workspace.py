@@ -414,7 +414,7 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "+ Jõustumine",
         "+ Töövõit",
         "+ Ülevaade / uudis",
-        # `+ Väline seisukoht` became two chips in docs/adr/0090 §3: one record
+        # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
         # and one panel partial, named by how what it holds reached the file.
         "+ Meile saadetud tagasiside",
         "+ Teiste arvamus",

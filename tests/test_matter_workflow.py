@@ -275,7 +275,7 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # directly, per row count, by `tests/test_procedural_links.py`'s
     # `test_the_rail_card_costs_one_query_however_many_links_there_are`.
     #
-    # docs/adr/0090 costs two more, and the measurement is worth recording
+    # docs/adr/0091 costs two more, and the measurement is worth recording
     # because two *duplicates* were introduced with them and removed before this
     # number was touched:
     #

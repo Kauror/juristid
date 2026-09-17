@@ -17,7 +17,7 @@ and a seventh one has to appear in it. That is the documented cost of typed
 columns over a generic target, and it is paid here for the second time: the
 constraint is validated against a table whose new column is `NULL` everywhere, so
 every existing row satisfies it for exactly the reason it did before
-(docs/adr/0084 §9, docs/adr/0090 §5).
+(docs/adr/0084 §9, docs/adr/0091 §5).
 """
 
 import django.db.models.deletion

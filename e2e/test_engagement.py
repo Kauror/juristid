@@ -118,7 +118,7 @@ def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_question
     # Recording that Koda asked somebody something is a completed act, and a
     # pre-filled reply-by date turned every one of them into a managed wait with
     # a work item and a second act to end it — work the application was
-    # assigning rather than work a lawyer had taken on (docs/adr/0090 §2).
+    # assigning rather than work a lawyer had taken on (docs/adr/0091 §2).
     assert not panel(page).locator("[name=feedback_deadline]").input_value(), (
         "the reply-by date opens pre-filled, so every round acquires a wait nobody asked for"
     )
@@ -187,7 +187,7 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # activity on somebody's desk. Setting the date is still exactly what opens a
     # wait, which is what `e2e/test_engagement_correction.py::
     # test_a_waiting_round_is_finished_on_its_own_row` files a round to prove
-    # (docs/adr/0086 §2, §3, narrowed by docs/adr/0090 §2).
+    # (docs/adr/0086 §2, §3, narrowed by docs/adr/0091 §2).
     expect(chronology(page)).not_to_contain_text("Ootame tagasisidet kuni")
     # The note, as a work row of its own.
     expect(chronology(page).locator(".richtext").first).to_contain_text(

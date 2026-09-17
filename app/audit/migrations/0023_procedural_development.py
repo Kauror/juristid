@@ -9,7 +9,7 @@ The three are `PROCEDURAL_DEVELOPMENT_RECORDED`, `_CORRECTED` and
 `_DOCUMENT_LINKED` — because three different things happen to this record and no
 more. None of them is in `TIMELINE_EVENT_TYPES`: the chronology renders the
 development from the canonical record, and reading the event as well would state
-one act twice (docs/adr/0090 §5).
+one act twice (docs/adr/0091 §5).
 """
 
 from django.db import migrations, models

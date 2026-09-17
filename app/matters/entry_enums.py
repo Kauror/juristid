@@ -15,7 +15,7 @@ class EntryKind(models.TextChoices):
     lawyer's note that must not become the ministry's own sentence. It carried an
     `EntryKind` for one round and now has a record of its own,
     `MatterProceduralDevelopment`, whose docstring argues the three points an
-    `Entry` could not hold (docs/adr/0090 §5).
+    `Entry` could not hold (docs/adr/0091 §5).
     """
 
     NOTE = "NOTE", "Märkus"

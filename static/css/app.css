@@ -5127,7 +5127,7 @@ a.barchart__row:hover {
 /* And the same for Valdkonnad, which became a disclosure for the same reason
    Adressaat is one: a field whose answer is short and whose vocabulary is long
    should cost one line when it is not being answered. No panel, for the reason
-   above — the chip row inside already draws itself (docs/adr/0090 §3). */
+   above — the chip row inside already draws itself (docs/adr/0091 §3). */
 .createform__valdkond {
   margin-top: var(--spacing-2);
 }
@@ -5491,7 +5491,7 @@ a.barchart__row:hover {
  * instructions — a lawyer who already knows what this box does should be able to
  * skip past them, and one who does not should not have to open anything to find
  * out. `--text-muted` on `--surface-capture` is the pairing every other hint on
- * this form uses (docs/adr/0090 §1.4). */
+ * this form uses (docs/adr/0091 §1.4). */
 .nextpanel__hint {
   margin: 0;
   font-size: var(--typography-size-meta);
@@ -10955,7 +10955,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * word, that this sentence has a different author from the line above it. A
  * paragraph that merely sat under `.uxtl__mssub` in the same colour would read
  * as more of what the ministry said, which is the attribution defect the column
- * was added to fix (docs/adr/0090 §4).
+ * was added to fix (docs/adr/0091 §4).
  *
  * `--border-subtle` rather than the accent: this is a boundary, not an
  * emphasis, and a coloured bar would make Koda's aside the loudest thing in a
@@ -10967,7 +10967,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * anything louder: a Matter whose opinion went out and whose step is finished is
  * in an ordinary state, and a tinted or bordered block here would read as an
  * outstanding obligation — which is exactly what the sentence says it is not
- * (docs/adr/0090 §5.5). */
+ * (docs/adr/0091 §5.5). */
 #teema-vaade-wrap .curact__continue {
   margin: var(--spacing-15) 0 0;
   font-size: 13px;

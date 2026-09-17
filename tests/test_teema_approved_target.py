@@ -338,7 +338,7 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     and the zone is a choice until one is picked.
 
     The twelveh is `+ Ülevaade / uudis`, added by docs/adr/0081. docs/adr/0084
-    added `+ Väline seisukoht`; docs/adr/0090 §3 split that one in two — one
+    added `+ Väline seisukoht`; docs/adr/0091 §3 split that one in two — one
     record and one panel partial, named by how what it holds reached the file —
     and added `+ Koja arvamus` and `+ Menetluse areng` beside them. The claim
     this test makes is about the zone's *shape* — a choice of operations, none of
@@ -354,7 +354,7 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
         "+ Jõustumine",
         "+ Töövõit",
         "+ Ülevaade / uudis",
-        # `+ Väline seisukoht` became two chips in docs/adr/0090 §3: one record
+        # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
         # and one panel partial, named by how what it holds reached the file.
         "+ Meile saadetud tagasiside",
         "+ Teiste arvamus",
@@ -426,7 +426,7 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     # `type="button"`, precisely so that naming a body the catalogue does not
     # hold cannot submit the panel (docs/adr/0073).
     panels = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
-    assert panels.count('type="submit"') == 11
+    assert panels.count('type="submit"') == 12
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 

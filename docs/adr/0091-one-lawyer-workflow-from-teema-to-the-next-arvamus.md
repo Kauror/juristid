@@ -1,15 +1,18 @@
-# 0090 — One lawyer workflow, from `Teema` to the next `Koja arvamus`
+# 0091 — One lawyer workflow, from `Teema` to the next `Koja arvamus`
 
 **Status:** accepted
 **Date:** 2026-09-17
 
-*Numbered 0090 rather than 0088.* `0088` was free on `main` when this work began
-and three branches off that base each reached for the next number. PR #230 —
-`Uus teema` is manual-first — merged its 0088 first, and the lawyer-package-B work
-had already claimed 0089 on its own branch, so this record moved twice. The
-repository's rule is that the merged record keeps the number and the other
-renumbers; ADR 0086 moved for the same reason a round earlier. Nothing in this
-record changed with the digits.
+*Numbered 0091 rather than 0088.* `0088` was free on `main` when this work began
+and four branches off that base each reached for the next number. PR #230 —
+`Uus teema` is manual-first — merged its 0088 first; lawyer-package B took 0089 and
+has since merged; and lawyer-package A (#235) claimed 0090 on the same day this
+record did. Both of those cite their own number from their own migrations, so the
+repository's usual tiebreak — the record cited from a reviewed migration keeps the
+number — separates nothing, and merge order would have decided it by failing
+whichever PR merged second. This record steps aside rather than leaving that to
+be discovered during an integration. ADR 0086 moved for the same reason a round
+earlier. Nothing in this record changed with the digits.
 
 *Narrows ADR 0086 §2* on one point: `Tagasisidet ootame kuni` opens empty rather
 than on today + 7. Everything else that record decided — that a set deadline

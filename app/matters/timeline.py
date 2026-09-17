@@ -272,7 +272,7 @@ class ChronologyMilestone:
     #: because the whole reason the column exists is that «MKM toetab varianti B»
     #: and «nende põhjendus ei arvesta liikmete kulumõjuga» must not become one
     #: sentence attributed to the ministry — and a `sub` that concatenated them
-    #: would be exactly that, with a separator (docs/adr/0090 §4).
+    #: would be exactly that, with a separator (docs/adr/0091 §4).
     #:
     #: The surface renders it under :attr:`own_note_label` on its own line.
     #: Nothing here decides how it looks; what is decided here is that it is not
@@ -287,7 +287,7 @@ class ChronologyMilestone:
     #: have to be added to both, and the day somebody added a third the line
     #: would render with an empty label — which is the unattributed paragraph
     #: this field exists to prevent. Travelling with the value is the only shape
-    #: in which it cannot go missing (docs/adr/0090 §4).
+    #: in which it cannot go missing (docs/adr/0091 §4).
     own_note_label: str = ""
 
 
@@ -788,7 +788,7 @@ EXTERNAL_POSITION_DATE_UNKNOWN = "Kuupäev teadmata"
 #: Named here because the projection, the correction partial and a test all have
 #: to agree about it — and because the headline is the *step*, with the record's
 #: own title after the colon, so a reader scanning a proceeding sees what happened
-#: rather than a label (docs/adr/0090 §5).
+#: rather than a label (docs/adr/0091 §5).
 DEVELOPMENT_HEADLINE = "Menetluse areng"
 
 
@@ -798,7 +798,7 @@ DEVELOPMENT_HEADLINE = "Menetluse areng"
 #: agree about it, and because the label is what does the work: a paragraph of
 #: this office's reading of a ministry's position, printed with no label under a
 #: headline naming that ministry, is the attribution defect with better line
-#: spacing (docs/adr/0090 §4).
+#: spacing (docs/adr/0091 §4).
 LAWYER_NOTE_LABEL = "Juristi märkus"
 
 
@@ -838,7 +838,7 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     Rahandusministeerium» — which is what a reader scanning six months is looking
     for, and the distinction the first lawyer test asked for by name. A row
     recorded before `provenance` existed keeps the heading it has always had,
-    because nothing about it changed (docs/adr/0084 §6, docs/adr/0090 §3).
+    because nothing about it changed (docs/adr/0084 §6, docs/adr/0091 §3).
 
     Where the author is a `source_label` rather than an organisation — an
     aggregate answer with no single author — the label stands in the author's
@@ -851,7 +851,7 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     rendered under its own label. They are never concatenated — a `sub` carrying
     both would state this office's criticism as part of the position it is
     criticising, which is the defect the column was added to fix
-    (docs/adr/0090 §4).
+    (docs/adr/0091 §4).
 
     **A row with no link is an ordinary row.** Since docs/adr/0084's 2026-09-16
     amendment the written `Seisukoht` is a source in its own right, so a
@@ -880,7 +880,7 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     # question existed. The author is the organisation, or the `Allikas` naming a
     # collection of answers that has none — and where a record has neither the
     # separator goes with it, so a headline never ends in a colon
-    # (docs/adr/0090 §3.3, §3.4).
+    # (docs/adr/0091 §3.3, §3.4).
     author = position.author_label
     headline = f"{position.kind_label}: {author}" if author else position.kind_label
     return ChronologyMilestone(
@@ -894,7 +894,7 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
         # Its own line under its own label, never a clause in `sub`. The
         # position, what it answered and where to read it are one thing; what
         # this office thinks of it is another, and the row says so
-        # (docs/adr/0090 §4).
+        # (docs/adr/0091 §4).
         own_note=position.lawyer_note,
         own_note_label=LAWYER_NOTE_LABEL,
     )
@@ -946,7 +946,7 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
     **What happened and what this office makes of it are two lines.** The `note`
     is :attr:`own_note` and renders under its own label, exactly as a
     `Väline seisukoht`'s does — the same separation, for the same reason
-    (docs/adr/0090 §4, §5).
+    (docs/adr/0091 §4, §5).
     """
     return ChronologyMilestone(
         what=f"{DEVELOPMENT_HEADLINE}: {development.title}",
@@ -1114,7 +1114,7 @@ def projected_milestones(
     #
     # Projected from the canonical record like every other structured fact, so the
     # three audit events this record writes contribute no row of their own and one
-    # act takes one line (docs/adr/0074 §14, docs/adr/0090 §5).
+    # act takes one line (docs/adr/0074 §14, docs/adr/0091 §5).
     #
     # No `select_related`: the row renders the record's own two columns and
     # nothing across a foreign key — the stage it may have moved is on the Matter

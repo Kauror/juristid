@@ -33,7 +33,7 @@ pytestmark = pytest.mark.e2e
 #: The canonical order. `+ Järgmine tegevus` is absent while a step is open, and
 #: this Matter is new, so all thirteen are here.
 #:
-#: **Thirteen where there were thirteen**, and the growth is docs/adr/0090's stated
+#: **Thirteen where there were thirteen**, and the growth is docs/adr/0091's stated
 #: cost rather than a slip: the bar is the product's inventory of what can be
 #: recorded, and four of the things lawyers do had no chip. `+ Väline seisukoht`
 #: became two — `+ Meile saadetud tagasiside` and `+ Teiste arvamus` — over one
@@ -48,7 +48,7 @@ CANONICAL = [
     "+ Jõustumine",
     "+ Töövõit",
     "+ Ülevaade / uudis",
-    # `+ Väline seisukoht` became two chips in docs/adr/0090 §3: one record
+    # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
     # and one panel partial, named by how what it holds reached the file.
     "+ Meile saadetud tagasiside",
     "+ Teiste arvamus",
@@ -66,8 +66,6 @@ PANEL_IDS = [
     "lisa-joustumine",
     "lisa-toovoit",
     "lisa-koduleht",
-    "lisa-tagasiside",
-    "lisa-valine-seisukoht",
     "lisa-tagasiside",
     "lisa-valine-seisukoht",
     "lisa-koja-arvamus",
@@ -353,7 +351,7 @@ def test_the_engagement_panel_shows_both_dates_and_only_one_default(page, base_u
     assert panel.locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied where nobody can see it"
     )
-    # And the reply-by date **the other way**, since docs/adr/0090 §2 narrowed
+    # And the reply-by date **the other way**, since docs/adr/0091 §2 narrowed
     # docs/adr/0086 §2: the box opens empty, so a completed act does not acquire a
     # managed wait nobody asked for. The three spans beside it still fill it in
     # one click, which is what makes the narrowing affordable.

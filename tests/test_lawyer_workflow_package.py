@@ -1,4 +1,4 @@
-"""One lawyer workflow, from `Teema` to the next `Koja arvamus` (docs/adr/0090).
+"""One lawyer workflow, from `Teema` to the next `Koja arvamus` (docs/adr/0091).
 
 The five workflow items from the first lawyer test, and the rules a screenshot
 cannot show:
@@ -926,7 +926,7 @@ def test_a_development_is_a_canonical_record(normal_matter, specialist):
     assert development.created_by_id == specialist.pk
     assert result.action is None
     # It is not an `Entry`, and writes none: one act must not become two records
-    # that can disagree (docs/adr/0090 §5).
+    # that can disagree (docs/adr/0091 §5).
     assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
@@ -1020,7 +1020,7 @@ def test_a_development_may_carry_its_files(normal_matter, specialist, evidence_r
 
     assert len(result.documents) == 1
     # Through the seventh typed `DocumentLink` column, which is what says these
-    # bytes are the evidence for *this* step (docs/adr/0090 §5).
+    # bytes are the evidence for *this* step (docs/adr/0091 §5).
     link = DocumentLink.objects.get(procedural_development=result.record)
     assert link.document.matter_id == normal_matter.pk
     assert link.document.current_version is not None

@@ -135,7 +135,7 @@ row of controls that refuse (brief §30, §31).
       somebody's Minu asjad, and then needed a second deliberate act to get off
       the page. That is work the application was assigning, not work a lawyer had
       taken on, and it is what they described as too complicated (lawyer
-      feedback 11, docs/adr/0090 §2).
+      feedback 11, docs/adr/0091 §2).
 
       **The wait is unchanged in every other respect — it is asked for now
       rather than given.** Fill the box, by hand or with a span, and the round
@@ -189,7 +189,7 @@ row of controls that refuse (brief §30, §31).
             `bindQuickDates`; docs/adr/0086 §2).
 
             **The spans matter more now that the box is empty**, and that is the
-            trade docs/adr/0090 §2 makes: a lawyer who wants the file to chase a
+            trade docs/adr/0091 §2 makes: a lawyer who wants the file to chase a
             round presses `1 nädal` and has said so in one click, and a lawyer who
             does not leaves the row alone and the round is simply on the file.
 
@@ -485,7 +485,7 @@ row of controls that refuse (brief §30, §31).
       consultation» apart from «the ministry published its position» — two
       different professional facts that were being filed under one heading,
       because provenance was not asked and could not honestly be guessed from
-      the other columns (lawyer feedback 12, docs/adr/0090 §3).
+      the other columns (lawyer feedback 12, docs/adr/0091 §3).
 
       **The organisation is optional here and only here.** Aggregate answers
       have no single author, and `Allikas` names the collection instead.
@@ -508,7 +508,7 @@ row of controls that refuse (brief §30, §31).
 
       The organisation is **required**: a discovered position with no author is
       an anonymous claim on a professional file, and there is no `Allikas` box
-      here to answer it with (docs/adr/0090 §3.3).
+      here to answer it with (docs/adr/0091 §3.3).
     {% endcomment %}
     {% url 'matters:add_external_position' pk=matter.pk as external_position_post_url %}
     {% include "matters/partials/external_position_panel.html" with panel_id="lisa-valine-seisukoht" chip_label="+ Teiste arvamus" post_url=external_position_post_url form=external_position_form picker_id="valine-seisukoht" submit_label="Salvesta arvamus" open_panel=open_panel workspace_error=workspace_error %}
@@ -522,7 +522,7 @@ row of controls that refuse (brief §30, §31).
       manages submissions is the `Dokumendid` tab, behind a collapsed block, in
       two acts — upload the file, then find it again in a select and register the
       send. A lawyer working the Teema saw no sign of it (lawyer feedback 13,
-      docs/adr/0090 §6).
+      docs/adr/0091 §6).
 
       **One panel, one save, and the same service underneath.** This posts to
       `register_sent_opinion_on_open_matter`, which is exactly what the
@@ -536,18 +536,18 @@ row of controls that refuse (brief §30, §31).
       when, to whom, and — optionally — what to call it. Uploading a file here is
       not what asserts the send: pressing the button is, which is why the bytes
       and the `Submission` land in one transaction rather than as one act
-      (docs/adr/0090 §6.2).
+      (docs/adr/0091 §6.2).
 
       **`Adressaadid` is not defaulted from `Saatja`.** An opinion on the first
       draft goes to the ministry; one at second reading goes to a Riigikogu
       committee; one on a revised text may go to a third body. Assuming the
       original sender would put a false recipient on the canonical outbound
-      record of a professional letter (docs/adr/0090 §6.3).
+      record of a professional letter (docs/adr/0091 §6.3).
 
       **Several per Matter is the ordinary case.** An opinion on the VTK, one on
       the draft, one during Riigikogu proceedings and one on the revised text are
       four sends and four Submissions. Nothing here is unique, nothing supersedes
-      an earlier opinion, and no earlier file is overwritten (docs/adr/0090 §6.4).
+      an earlier opinion, and no earlier file is overwritten (docs/adr/0091 §6.4).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-koja-arvamus-valik"
            data-addpick aria-controls="lisa-koja-arvamus"
@@ -608,7 +608,7 @@ row of controls that refuse (brief §30, §31).
             institution it was sent to, and a picker that offered to would put a
             typo into the catalogue under a professional outbound record. A body
             genuinely missing is added where bodies are added, and then chosen here
-            (docs/adr/0073, docs/adr/0090 §6.3).
+            (docs/adr/0073, docs/adr/0091 §6.3).
 
             The frequent addressees first, then the rest — the same usage ranking
             the shared control applies, scoped by `visible_to` inside
@@ -635,7 +635,7 @@ row of controls that refuse (brief §30, §31).
             blank. «Koja arvamus pakendiseaduse eelnõule» is worth typing and
             «arvamus_final_v3.docx» is not worth retyping, and a person who has
             already named the file has already answered this. Nothing is read out
-            of the file's contents (docs/adr/0090 §6.1).
+            of the file's contents (docs/adr/0091 §6.1).
           {% endcomment %}
           <label class="cx-f" for="{{ koda_opinion_form.title.id_for_label }}">
             <span class="cx-f__lab">{{ koda_opinion_form.title.label }}
@@ -663,7 +663,7 @@ row of controls that refuse (brief §30, §31).
       nothing obvious to press: recording one step meant up to three saves in
       three places — a `Märge` with no date box, a `Hetkeseis` change in the
       header, and `+ Järgmine tegevus` under this bar (lawyer feedback 14,
-      docs/adr/0090 §5).
+      docs/adr/0091 §5).
 
       **It writes a canonical `MatterProceduralDevelopment`**, beside `Kaasamine`
       and `Teiste arvamus`. It was an `Entry` of a new kind for one round, and the
@@ -681,7 +681,7 @@ row of controls that refuse (brief §30, §31).
 
       **The whole save is one transaction.** A stage that moved without the
       development that moved it would be a file claiming to be in the Riigikogu
-      with nothing saying how it got there (docs/adr/0090 §5.4).
+      with nothing saying how it got there (docs/adr/0091 §5.4).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-menetluse-areng-valik"
            data-addpick aria-controls="lisa-menetluse-areng"
@@ -716,7 +716,7 @@ row of controls that refuse (brief §30, §31).
             remembered as «oktoobris». The box opens on today because the common
             case is writing up something just learned; emptying it stores `NULL`
             and the row reads «Kuupäev teadmata», which is a fact the file has to
-            be able to hold (docs/adr/0079 §1, docs/adr/0090 §5.2).
+            be able to hold (docs/adr/0079 §1, docs/adr/0091 §5.2).
 
             The same shared composer `+ Kaasamine`, `+ Oluline tähtaeg` and
             `+ Teiste arvamus` all carry, so a quarter stated here is the same
@@ -729,7 +729,7 @@ row of controls that refuse (brief §30, §31).
             visibly apart from it. «Ministeerium saatis uue versiooni» is a fact
             about the world; «see ei arvesta meie ettepanekut» is a professional
             judgement, and a history that read the second as part of the first
-            would misattribute it (docs/adr/0090 §4, §5).
+            would misattribute it (docs/adr/0091 §4, §5).
           {% endcomment %}
           <label class="cx-f" for="{{ development_form.note.id_for_label }}">
             <span class="cx-f__lab">{{ development_form.note.label }}

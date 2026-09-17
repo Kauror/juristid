@@ -28,7 +28,7 @@ foreign key, the database refuses a row that names two records or none, and one
 
 The cost is that each new kind of linkable record is a migration — the sixth,
 ``external_position``, and the seventh, ``procedural_development``, are exactly
-that (docs/adr/0084 §3, docs/adr/0090 §5). That is the correct cost — what
+that (docs/adr/0084 §3, docs/adr/0091 §5). That is the correct cost — what
 evidence may be attached to is a product decision, not a shape a caller invents
 at run time.
 
@@ -206,7 +206,7 @@ class DocumentLink(BaseModel):
     #: target paid once more: a `Menetluse areng` routinely arrives *with* the
     #: paper — the revised draft, the committee's text — and the file has to be
     #: able to say which bytes are the evidence for which step
-    #: (docs/adr/0090 §5).
+    #: (docs/adr/0091 §5).
     procedural_development = models.ForeignKey(
         "matters.MatterProceduralDevelopment",
         on_delete=models.CASCADE,

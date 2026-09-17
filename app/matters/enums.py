@@ -183,7 +183,7 @@ class ExternalPositionProvenance(models.TextChoices):
     same visibility — and a colleague reading the chronology needs to know which
     of the two a row is, because «a member company answered our consultation»
     and «the ministry published its position» are different professional facts
-    (lawyer feedback 12, docs/adr/0090 §3).
+    (lawyer feedback 12, docs/adr/0091 §3).
 
     **Structured, never inferred.** The distinction is this column and nothing
     else: not whether a `Kaasamine` is linked, not whether an `Organisation` was
@@ -198,7 +198,7 @@ class ExternalPositionProvenance(models.TextChoices):
     one panel that asked nothing about provenance, so the two things a
     backfill could have read — a linked `Kaasamine`, or the organisation being
     a member rather than a ministry — are exactly the inferences above. An
-    unknown provenance is better than a manufactured one (docs/adr/0090 §3.4).
+    unknown provenance is better than a manufactured one (docs/adr/0091 §3.4).
     """
 
     #: `Meile saadetud tagasiside` — somebody gave this to Koda.
@@ -208,7 +208,7 @@ class ExternalPositionProvenance(models.TextChoices):
     #: companies. The one value for which :attr:`MatterExternalPosition.source_label`
     #: exists and for which the organisation may be absent: an aggregate answer
     #: has no single author, and forcing one would mean inventing an
-    #: organisation called «234 ettevõtet» (docs/adr/0090 §3.3).
+    #: organisation called «234 ettevõtet» (docs/adr/0091 §3.3).
     RECEIVED = "RECEIVED", "Meile saadetud tagasiside"
     #: `Teiste arvamus` — Koda recorded somebody else's position from elsewhere.
     #:
@@ -226,7 +226,7 @@ class ExternalPositionProvenance(models.TextChoices):
 #: `LEGACY` is deliberately absent: it is what history says, not an answer
 #: anybody may give. A crafted POST naming it is refused by the field's own
 #: vocabulary rather than by the panel not having drawn the chip
-#: (docs/adr/0090 §3.4).
+#: (docs/adr/0091 §3.4).
 SELECTABLE_EXTERNAL_POSITION_PROVENANCE: tuple[str, ...] = (
     ExternalPositionProvenance.RECEIVED.value,
     ExternalPositionProvenance.DISCOVERED.value,

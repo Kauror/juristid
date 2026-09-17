@@ -402,7 +402,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
     ),
     # `Meile saadetud tagasiside` — the other half of the one record
-    # docs/adr/0090 §3 split in two. Its own route because its own panel asks its
+    # docs/adr/0091 §3 split in two. Its own route because its own panel asks its
     # own questions, and **its own entry here** because the completeness guard
     # matches on route names: a second door onto one service is still a second
     # door a forbidden actor can knock on.
@@ -410,7 +410,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     # Deliberately posting with **no organisation at all**, which is the shape
     # only this half accepts — an aggregate answer named by its `Allikas`. A
     # payload a forbidden actor could not have sent even with permission would
-    # make this row prove nothing (docs/adr/0090 §3.3).
+    # make this row prove nothing (docs/adr/0091 §3.3).
     WriteRoute(
         name="matters:add_received_feedback",
         label="Meile saadetud tagasiside lisamine",
@@ -428,7 +428,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     # through the service `Dokumendid` already posts to. It writes a canonical
     # SENT `Submission`, its recipients, its `Document` and its immutable
     # version, so a forbidden actor reaching it would be filing a letter this
-    # office never sent (docs/adr/0090 §6).
+    # office never sent (docs/adr/0091 §6).
     #
     # The probe counts submissions rather than documents: the document is the
     # evidence and the submission is the claim, and it is the claim that must not
@@ -451,7 +451,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     # other canonical writes riding with it: the files, the `Hetkeseis` and the
     # next step. The payload names all of them on purpose, because what must not
     # happen is not «an entry appears» but «a forbidden actor moves the file's
-    # stage and assigns somebody work» (docs/adr/0090 §5).
+    # stage and assigns somebody work» (docs/adr/0091 §5).
     #
     # The probe is the triple, so a refusal that let *any* of the three through
     # fails rather than passing on the one it happened to check.
@@ -479,7 +479,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     # Matter — unlike the overview's link correction above, a position
     # correction is refused on a closed file (docs/adr/0084 §8).
     #
-    # The chip is `+ Teiste arvamus` since docs/adr/0090 §3; the route keeps its
+    # The chip is `+ Teiste arvamus` since docs/adr/0091 §3; the route keeps its
     # name, and so does this row.
     WriteRoute(
         name="matters:add_external_position",
