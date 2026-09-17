@@ -758,13 +758,18 @@ def test_the_temporal_rail_survives_the_narrow_scroller(page, base_url, width):
 
 
 def record_a_round(page, matter_url: str, *, audience: str, deadline: str) -> None:
-    """One `+ Kaasamine` with a reply-by date, through the panel a lawyer uses."""
+    """One waiting `Kaasamine`, through the two acts a lawyer actually performs.
+
+    `+ Kaasamine` records the consultation and `Ootan tagasisidet` on its own row
+    starts the wait, because since docs/adr/0091 §2 the capture panel does not ask
+    for a reply-by date at all. What the strip reads is unchanged: a round
+    carrying `feedback_deadline` draws the sixth label (docs/adr/0083 §1).
+    """
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
     open_add_panel(page, "lisa-kaasamine")
     panel = page.locator("#lisa-kaasamine")
     panel.locator("[name=audience]").fill(audience)
-    panel.locator("[name=feedback_deadline]").fill(deadline)
     # Wait for the POST itself, not for `networkidle`. The panel saves through
     # HTMX and swaps `#teema-vaade`; `networkidle` can return before the swap
     # lands, and the strip read afterwards is then the one from before the save.
@@ -773,6 +778,16 @@ def record_a_round(page, matter_url: str, *, audience: str, deadline: str) -> No
     ) as caught:
         panel.get_by_role("button", name="Salvesta").click()
     assert caught.value.status == 200, f"the round was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+
+    row = page.locator(".uxtl__ms-body").filter(has_text=audience).first
+    row.get_by_text("Ootan tagasisidet", exact=True).click()
+    row.locator("input[name=feedback_deadline]").fill(deadline)
+    with page.expect_response(
+        lambda response: "/ootus/" in response.url and response.request.method == "POST"
+    ) as caught:
+        row.get_by_role("button", name="Salvesta ootus").click()
+    assert caught.value.status == 200, f"the wait was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
 
@@ -842,12 +857,10 @@ def test_a_round_with_no_reply_by_date_draws_nothing(page, base_url):
     open_add_panel(page, "lisa-kaasamine")
     panel = page.locator("#lisa-kaasamine")
     panel.locator("[name=audience]").fill("liikmed")
-    # **Cleared, not left alone.** The panel pre-fills `Tagasisidet ootame kuni`
-    # with a week out since docs/adr/0086 §2, so a round saved without touching
-    # that box *does* carry a dated point and *would* draw a column. Emptying it
-    # is what «a consultation with no reply-by date» now means, and it is the
-    # state docs/adr/0083 §1 says draws nothing.
-    panel.locator("[name=feedback_deadline]").fill("")
+    # **Nothing to clear.** Since docs/adr/0091 §2 the panel does not ask for a
+    # reply-by date, so an ordinary save *is* «a consultation with no reply-by
+    # date» — which is the state docs/adr/0083 §1 says draws nothing. Opening a
+    # wait is `Ootan tagasisidet` on the row, and this test deliberately does not.
     with page.expect_response(
         lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
     ) as caught:

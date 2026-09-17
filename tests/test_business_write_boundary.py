@@ -327,6 +327,24 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         events=(ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,),
     ),
     WriteRoute(
+        name="matters:open_engagement_wait",
+        label="Tagasiside ootuse avamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "engagement_id": w["quiet_engagement"].pk},
+            {"feedback_deadline": "1.12.2099", "revision": ""},
+        ),
+        # The column, not a row count: opening a wait creates nothing, so a probe
+        # that counted engagements would be satisfied by a refusal *and* by a
+        # successful save — the same reasoning the completion route above gives
+        # (docs/adr/0091 §2).
+        probe=lambda w: (
+            w["quiet_engagement"]
+            .__class__.objects.values_list("feedback_deadline", flat=True)
+            .get(pk=w["quiet_engagement"].pk)
+        ),
+        events=(ChangeEventType.ENGAGEMENT_CHANGED,),
+    ),
+    WriteRoute(
         name="matters:add_important_date",
         label="Olulise tähtaja lisamine",
         request=lambda w: (
@@ -882,6 +900,17 @@ def world(db):
         actor=author,
     )
 
+    # And a round nobody is waiting on, for `Ootan tagasisidet`: opening a wait
+    # refuses a round that already has one, so firing at `waiting_engagement`
+    # would produce a refusal that is the service's state rule rather than the
+    # boundary this file measures (docs/adr/0091 §2).
+    quiet_engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Ootuseta kaasamine",
+        actor=author,
+    )
+
     # One recorded `Menetluse link`, for the correction route: correcting one
     # changes a row that exists, so a world without one would have nothing for a
     # forbidden actor to be refused *on* — and the refusal would be
@@ -927,6 +956,7 @@ def world(db):
         "matter": matter,
         "entry": entry,
         "waiting_engagement": waiting_engagement,
+        "quiet_engagement": quiet_engagement,
         "external_position": external_position,
         "procedural_link": procedural_link,
         "planned_overview": planned_overview,

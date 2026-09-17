@@ -297,7 +297,15 @@ before the closure.
       is a correction and lives on `Muuda`.
     {% endcomment %}
     {% if engagement.wait_form and can_write_business_content and matter.is_open %}
-      <details class="cx-panel uxtl__finish" data-addpanel>
+      {% comment %}
+        `uxtl__wait-open`, deliberately **not** `uxtl__finish`. The two
+        disclosures look alike and sit beside each other, but they are opposite
+        acts on opposite states — one starts a wait and the other ends one, and
+        no row ever offers both. Sharing a class would make «the control for
+        finishing this round» unaddressable, in CSS and in the tests that count
+        it (e2e/test_engagement_correction.py, `_finish_panel`).
+      {% endcomment %}
+      <details class="cx-panel uxtl__wait-open" data-addpanel>
         <summary class="disclosure-chip disclosure-chip--quiet">Ootan tagasisidet</summary>
         <div class="cx-panel__body">
           <form class="addform" data-addform aria-label="Tagasiside ootuse lisamine"

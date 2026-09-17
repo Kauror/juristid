@@ -219,7 +219,16 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # `Ootan tagasisidet`, which `e2e/test_engagement_correction.py::
     # test_a_waiting_round_is_finished_on_its_own_row` files a round to prove
     # (docs/adr/0086 §2, §3, narrowed by docs/adr/0091 §2).
-    expect(chronology(page)).not_to_contain_text("Ootame tagasisidet kuni")
+    #
+    # **Read on this round's own row, not on the whole chronology.** These tests
+    # share one scratch Matter, and the test above deliberately leaves a waiting
+    # round on it — so a page-wide assertion here would be measuring that round
+    # and would depend on the order the two ran in.
+    expect(
+        chronology(page).locator(
+            ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="Kaasamine: liikmed")
+        )
+    ).not_to_contain_text("Ootame tagasisidet kuni")
     # The note, as a work row of its own.
     expect(chronology(page).locator(".richtext").first).to_contain_text(
         "Küsisin liikmetelt tagasisidet"

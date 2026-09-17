@@ -513,7 +513,13 @@
    siblings to displace and nothing to be chosen instead of, so a native
    `<details>` is the honest markup — the same reasoning `Muuda` behind
    PRAEGUNE TEGEVUS keeps (docs/adr/0078 §1). */
-.uxtl__finish {
+/* `Ootan tagasisidet` takes the same shape for the same reasons, and keeps its
+   own class: the two are opposite acts on opposite states — one starts a wait
+   and the other ends one — and no row ever offers both, so a shared class would
+   make «the control that finishes this round» unaddressable
+   (docs/adr/0091 §2). */
+.uxtl__finish,
+.uxtl__wait-open {
   margin-top: 4px;
 }
 

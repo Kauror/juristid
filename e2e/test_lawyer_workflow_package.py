@@ -457,7 +457,10 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     open_add_panel(page, "lisa-kaasamine")
     kaasamine = panel(page, "lisa-kaasamine")
     kaasamine.locator("[name=audience]").fill("234 tööstusettevõtet")
-    expect(kaasamine.locator("[name=feedback_deadline]")).to_have_value("")
+    # No reply-by question here at all, so filing the round is a completed act
+    # and the journey continues without anything landing on a desk
+    # (docs/adr/0091 §2).
+    expect(kaasamine.locator("[name=feedback_deadline]")).to_have_count(0)
     kaasamine.get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("234 tööstusettevõtet").first.wait_for()
 
