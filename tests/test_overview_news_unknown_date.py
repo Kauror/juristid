@@ -462,6 +462,58 @@ def test_an_undated_publication_sorts_behind_the_dated_ones_deterministically(
     assert {row.pk for row in ordered[1:]} == {first_unknown.pk, second_unknown.pk}
 
 
+def test_the_page_prints_the_publication_date_exactly_once(signed_in, normal_matter, specialist):
+    """The out-of-band cell belongs to the correction's answer, not to the page.
+
+    `website_overview_link.html` is included by the chronology on every ordinary
+    render *and* returned on its own by `Paranda link`. The date cell it carries
+    is for the second case only — emitted on the first it would print the day
+    twice inside one row, which is the page saying one fact two ways and is
+    exactly the shape a swap-target refactor produces by accident.
+    """
+    _dated(normal_matter, specialist, url=KODA_URL)
+
+    body = _detail(signed_in, normal_matter)
+
+    assert body.count("14.3.2026") == 1
+    assert "hx-swap-oob" not in body
+
+
+def test_a_conflict_panel_names_an_unknown_date_rather_than_omitting_it(
+    signed_in, normal_matter, specialist
+):
+    """The one place where omitting the date would be ambiguous rather than quiet.
+
+    This panel exists to say what the *other* version holds on the two columns
+    being corrected. A line printing an address and nothing else leaves a reader
+    unable to tell «their version has no date» from «this panel does not show
+    dates» — and this is the panel somebody consults precisely because the two
+    versions disagree (docs/adr/0089 §10).
+    """
+    overview = _dated(normal_matter, specialist, url=KODA_URL)
+    stale = overview.revision_token
+    # Somebody else clears the date while this person's form sits open.
+    correct_website_overview_link(
+        overview=overview, url=KODA_URL, published_on=None, actor=specialist
+    )
+
+    response = signed_in.post(
+        reverse(
+            "matters:correct_website_overview",
+            kwargs={"pk": normal_matter.pk, "overview_id": overview.pk},
+        ),
+        {"url": KODA_URL, "published_on": "01.04.2026", "revision": stale},
+        headers={"HX-Request": "true"},
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 409
+    assert "Praegu on kirjas:" in body
+    assert WEBSITE_OVERVIEW_DATE_UNKNOWN in body
+    # And this person's own typed value is still in the box, unchanged.
+    assert 'value="1.4.2026"' in body or 'value="01.04.2026"' in body
+
+
 def test_search_and_the_archive_survive_an_undated_publication(normal_matter, specialist):
     """§8's default: this record is in neither projection, and a rebuild proves it.
 

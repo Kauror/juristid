@@ -4983,6 +4983,11 @@ def _website_overview_link_row(
             "website_overview_link_error": error,
             "website_overview_link_conflict": conflict,
             "website_overview_read_query": WEBSITE_OVERVIEW_READ_QUERY,
+            # The milestone's date cell rides along, out of band. Set here and
+            # nowhere else: the chronology includes this same element on every
+            # ordinary render, and emitting the cell there would print the day
+            # twice inside the row that already shows it (docs/adr/0089 §10).
+            "website_overview_oob": True,
         },
         status=status,
     )
