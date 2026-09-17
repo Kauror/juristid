@@ -933,20 +933,24 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
         # (app/workflow/selectors.py, Uus teema redesign §8).
         widget=DescribedRadioSelect(attrs={"class": "chip__input"}),
     )
-    #: `Menetlusliik` is deliberately absent from this form.
+    #: `Menetlusliik` is deliberately absent from this form, and deliberately
+    #: not derived either.
     #:
-    #: It asked the lawyer to classify the same file a second time, and the
-    #: reviewed `Õigusakt` vocabulary already contains the answer: six of its
-    #: ten types are named `siseriiklik` and four are named `ELi`. So the high
-    #: level classification is *derived* from the instrument on save, when the
-    #: chosen types agree and are all in one of the two groups, and left empty
-    #: when they are not (`app.matters.services.derived_track`, docs/adr/0089).
+    #: It asked the lawyer to classify the same file a second time. The reviewed
+    #: `Õigusakt` vocabulary names *siseriiklik* or *ELi* in the label, so the
+    #: distinction the lawyers wanted to keep is readable from the type a Matter
+    #: already carries — but that is a reading, not a source. `Matter.track`
+    #: says what kind of *procedure* a file is on; it has seven values rather
+    #: than two, and no instrument type entails one. A `Seadus` transposing a
+    #: directive is a domestic instrument on a `NATIONAL_TRANSPOSITION` track,
+    #: so a rule writing `DOMESTIC` from `seadus` would be wrong about precisely
+    #: the files the distinction exists for (docs/adr/0089 §4).
     #:
     #: `Matter.track` itself is untouched: the column, the seven values, the
     #: register filter, the reporting projection, the audit events and
     #: `StageVocabulary.applicable_tracks` all stand, and `Muuda teemat` and the
-    #: Teema rail still offer the whole vocabulary to somebody correcting a file.
-    #: What is gone is the question on the capture screen.
+    #: Teema rail still offer the whole vocabulary to somebody correcting a
+    #: file. It is answered where it is known, by a person.
     #: `Õigusakt`, directly after `Hetkeseis` and answered independently of
     #: it. Checkboxes rather than the radios above, and the asymmetry is the
     #: whole answer to "do not let these two read as one question split in two":

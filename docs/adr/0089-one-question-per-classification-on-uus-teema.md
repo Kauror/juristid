@@ -4,7 +4,8 @@
 - Date: 2026-09-17
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0070 (`Õigusakt` is a governed vocabulary of its own, and it is
-  not `Menetlusliik` — **narrowed here, reversed nowhere**), ADR 0088 (`Uus
+  not `Menetlusliik` — **upheld here, not narrowed**), ADR 0032 (stage,
+  disposition and next action are separate concepts — **upheld**), ADR 0088 (`Uus
   teema` is manual-first — this builds on it), ADR 0032 and its Amendment
   (vocabulary retirement by `is_active`, and a retired value stays offered on
   the record that holds it), ADR 0069 (Saatja answers Adressaat — **superseded
@@ -63,10 +64,10 @@ development plan and action plan, and no way to tell from the label which of
 | 7 | Eesti seisukoht koostamisel | `estonian_eu_position` | «Eesti seisukoht» |
 | 8 | ELi menetluses | `eu_procedure` | *unchanged* |
 | 9 | ELi õiguse ülevõtmise ootel | `awaiting_transposition` | «Ootan ELi õiguse ülevõtmist» |
-| 10 | Rohkem ei tegele | `no_further_work` | **new** |
-| 11 | Muu | `other` | *unchanged* |
+| 10 | Muu | `other` | *unchanged* |
 
-**Three rewordings, one addition, no retirement and no remap.** Every key, row,
+**Three rewordings, and nothing else.** Nothing added, nothing retired,
+nothing remapped. Every key, row,
 `Matter.stage` relation, help text, sort order, register filter and reporting
 projection is untouched: a stage is addressed by its key everywhere it is
 stored, filtered or counted, so a reword is a display change and nothing else.
@@ -92,28 +93,29 @@ an act entering into force does not end Koda's work on the file, and monitoring
 implementation is ordinary work. Nothing here changes that, no rule fires on it,
 and the department's own description of it is transcribed unaltered.
 
-#### `Rohkem ei tegele` does not close anything either
+#### `Rohkem ei tegele` is not a stage, and is not added
 
-This is the one genuinely new value, and it is the one a reader could reasonably
-take for a closure. It is not.
+The feedback asked for it as a Hetkeseis. It is not one, and the product
+already implements the concept.
 
-Stage, disposition and next action are separate concepts (AGENTS.md, master
-specification 3.4). The stage says where the *external* process stands and what
-this office's attention is on; `Disposition` says why the Matter is **closed**;
-`Lõpeta teema` is what closes it. Choosing this stage records the first and
-writes none of the others: no `Disposition`, no `close_matter`, no archive, no
-audit event beyond the ordinary `MATTER_STAGE_CHANGED`. The Matter stays open,
-stays on every work surface it was on, and is closed when somebody closes it.
+`Hetkeseis` says where the **external** process stands: the Riigikogu has it, it
+is on a consultation round, the act is waiting to come into force. *Koda has
+stopped working on this* is a different question about a different actor, and it
+is `Disposition.MONITORING_STOPPED` — «Koda lõpetas jälgimise», offered on
+`Lõpeta teema` as «Koda ei tegele edasi» and in the composer as «Loobuti». ADR
+0032 separated stage from disposition deliberately (AGENTS.md, master
+specification 3.4), and a stage that meant the second would put both answers in
+one column and leave every surface reading it unable to tell which had been
+given.
 
-The stage carries that sentence in its own `help_text`, which is what the
-tooltip on `Uus teema` renders.
+The workbook has agreed since 2011. Its raw value `rohkem pole tegevusi plaanis`
+is read by `workflow/0004` as that disposition rather than as a stage, for
+exactly this reason — so a stage with neighbouring words would also have made
+the historical reading and the current vocabulary disagree about the same words.
 
-**The historical reading of the workbook is untouched.** `rohkem pole tegevusi
-plaanis` has been read as the `MONITORING_STOPPED` *disposition* since
-`workflow/0004`, and it stays that way. A new stage with neighbouring words is a
-different claim, and re-pointing the historical mapping at it — or moving the
-Matters that carry the disposition onto the stage — would rewrite a decade of
-somebody else's filing on a coincidence of wording.
+**So nothing was added, and nothing needed adding.** The lawyer-facing action
+exists, it is implemented against disposition, and this round leaves the
+boundary where it was.
 
 ### 2 — `Õigusakt` is the reviewed ten, in two named groups
 
@@ -191,64 +193,43 @@ Three consequences, each of which was a way to get this wrong:
   suggestion that puts a form into a state it cannot be saved from is worse than
   no suggestion (ADR 0080 §3).
 
-### 4 — Domestic or EU is *derived*, and `Menetlusliik` leaves `Uus teema`
+### 4 — `Menetlusliik` leaves `Uus teema`, and is derived from nothing
 
 The reviewed list names the group in the label: six types say *siseriiklik*,
-four say *ELi*. So the high-level classification is read off the answer instead
-of asked beside it.
+four say *ELi*. That is what keeps the distinction the lawyers asked to retain
+answerable — a Matter carries its `Õigusakt` types, and
+`DOMESTIC_LEGAL_INSTRUMENT_KEYS` / `EU_LEGAL_INSTRUMENT_KEYS` say which group
+each offered type belongs to.
 
-`app.matters.services.derived_track` maps the chosen types to `Track.DOMESTIC`
-or `Track.EU_INITIATIVE`, and it refuses three ways:
+**It is a reading, not a source.** Nothing writes `Matter.track` from it, and
+that is the decision rather than an omission.
 
-1. **every chosen type must be in one of the two groups.** The twelve withdrawn
-   version-1.0 types are in neither, on purpose — `Konsultatsioon` may be
-   European or domestic and `Eelnõu` says nothing either way;
-2. **they must agree.** `Õigusakt` is a multi-select and a file really can
-   concern a directive and the Estonian act transposing it. That is two answers
-   about two instruments, not one about the procedure, so the deterministic
-   reading of a mixed set is *no answer*;
-3. **nothing chosen is nothing derived.**
+`Menetlusliik` says what kind of **procedure** a file is on. It has seven values,
+not two, and no instrument type entails one. A `Seadus` transposing a directive
+is a domestic *instrument* on a `NATIONAL_TRANSPOSITION` *track*; a rule writing
+`DOMESTIC` from `seadus` would be wrong about precisely the files the
+distinction exists for, and it would quietly reduce a seven-value classification
+to a domestic/EU boolean. `KODA_INITIATIVE`, `STRATEGY`, `IMPLEMENTATION` and
+`OTHER` are not on that axis at all, so there is no version of the rule that is
+both complete and true.
 
-It is a pure function called from the create view, deliberately **not** inside
-`create_matter`: the legacy importer and the seeding commands go through that
-service too, and a rule about what the create form means must not reach a decade
-of historical rows.
+So a Matter created here carries **no `Menetlusliik`**, and the column is
+answered where its meaning is actually known: by a person, on `Muuda teemat` and
+in the Teema rail's inline editor, both of which offer the whole vocabulary
+including `NATIONAL_TRANSPOSITION`.
 
-**`NATIONAL_TRANSPOSITION` is never derived.** A `Seadus` implementing a
-directive is a domestic legal instrument. Whether the *procedure* is a
-transposition is a separate fact that no instrument type entails — which is the
-whole of why ADR 0070 keeps the two apart — and inferring it from a domestic act
-whose policy context happens to be European would write a classification nobody
-reviewed. It stays a value somebody chooses. This is the same refusal ADR 0088
-recorded when it withdrew the `ELi õiguse ülevõtmine` *Valdkond* without
-inferring the track from it.
-
-**`KODA_INITIATIVE`, `STRATEGY`, `IMPLEMENTATION` and `OTHER` are never derived
-either**, and this is the mismatch worth stating rather than hiding. `Track`'s
-seven values are not a clean domestic/EU axis: two of them are that axis and
-five are other distinctions that happen to share the column. `Koja ettepanek või
-pöördumine` is arguably `KODA_INITIATIVE` and `Strateegia, arengukava või
-tegevuskava` is arguably `STRATEGY` — but both are also unambiguously domestic,
-and the distinction the lawyers asked to keep is the domestic/EU one. Deriving
-the more specific value would mean a Koda proposal no longer reads as domestic,
-which is the opposite of the requirement. So the derivation answers exactly the
-question it was asked, the other five values stay reachable on `Muuda teemat`
-and the Teema rail, and no stored value is falsified to make a UI simpler.
-
-**`Matter.track` itself is untouched.** The column, the seven values,
+**`Matter.track` is otherwise untouched.** The column, the seven values,
 `StageVocabulary.applicable_tracks`, the register's `?menetlusliik=` filter, the
 `MATTERS_BY_TRACK` metric, `change_track`, the `MATTER_TRACK_CHANGED` audit
-event, `MatterEditForm`, `MatterFieldForm` and the Teema rail's inline editor
-all stand. What is gone is the question on the capture screen — and the *field*,
-so a forged POST carrying `track=NATIONAL_TRANSPOSITION` is not part of the
-request as far as `MatterCreateForm` is concerned.
+event, `MatterEditForm` and `MatterFieldForm` all stand. What is gone is the
+question on the capture screen — and the *field*, so a forged POST carrying
+`track=NATIONAL_TRANSPOSITION` is not part of the request as far as
+`MatterCreateForm` is concerned.
 
-**Edits derive nothing.** A Matter created before this round, or one whose track
-somebody chose by hand, keeps it — changing `Õigusakt` on `Muuda teemat` does not
-re-derive and does not overwrite. The alternative is a field that silently
-rewrites itself under an edit about something else, which is exactly the defect
-PR #231 fixed for `Hetkeseis`. `Menetlusliik` is still a visible control on the
-edit page, so a lawyer who wants a different value sets it there.
+**Edits write nothing either.** Changing `Õigusakt` on `Muuda teemat` leaves a
+stored `track` exactly as it was. The alternative is a field that silently
+rewrites itself under an edit about something else, which is the defect PR #231
+fixed for `Hetkeseis`.
 
 ### 5 — `Adressaat` leaves `Uus teema`, and stays everywhere else
 
@@ -322,23 +303,22 @@ no milestone is invented for one. Per-instrument timeline templates are a later
 package and nothing here anticipates them.
 
 **Migrations.** Two, both `RunPython`, one leaf per app:
-`workflow/0007_lawyer_reviewed_stage_vocabulary` and
+`workflow/0007_lawyer_reviewed_stage_vocabulary` (three labels and one flag) and
 `taxonomy/0008_lawyer_reviewed_legal_instruments` (on top of Package 1's
-`taxonomy/0007`). No schema change, no backfill, no Matter reclassified. Both
-fail closed on a row somebody has renamed since review, and both hold a frozen
-copy of the manifest that a test holds to the manifest.
+`taxonomy/0007`). No schema change, no backfill, no row created in `workflow`,
+no Matter reclassified. Both fail closed on a row somebody has renamed since
+review, and both hold a frozen copy of the manifest that a test holds to the
+manifest.
 
 Neither reverse deletes a classification, and they reach that differently.
 
-`workflow/0007` **always** deactivates `no_further_work` rather than deleting
-it, and reads no other app. The alternative — ask whether any `Matter` stands in
-the stage, delete it only if none does — is the right instinct in the wrong
-place: a reverse runs against whatever historical state the *other* app happens
-to be rewound to, and `migrate <app> zero` rewinds `matters` past this
-migration's own state before it gets here. CI found that as
+`workflow/0007` has nothing to reverse but three labels and a flag, and it
+reads no other app in either direction. An earlier draft did — it asked whether
+any `Matter` stood in a stage it wanted to delete — and CI proved why a data
+migration may not: a reverse runs against whatever historical state the *other*
+app happens to be rewound to, and `migrate <app> zero` rewinds `matters` past
+this migration's own state before it gets here, producing
 `Cannot query "StageVocabulary object": Must be "StageVocabulary" instance`.
-Deactivating is what the vocabulary's own retirement mechanism produces anyway,
-and re-applying reactivates the same row rather than creating a second one.
 
 `taxonomy/0008` does ask, because it can: it depends on
 `matters/0015_matter_legal_instruments`, which is what puts its reverse *before*
@@ -350,6 +330,6 @@ before it ran — every one of the twelve is active today, seeded that way by
 migrates and would be wrong for a deployment that had deactivated one by hand.
 
 **What this does not do.** It does not delete a vocabulary row, rewrite a
-historical classification, remap a Matter, infer a track from a domestic act,
-merge Saatja with Adressaat, close a Matter from a stage, or change what any
+historical classification, remap a Matter, infer a `Menetlusliik` from anything,
+merge Saatja with Adressaat, model a disposition as a stage, or change what any
 stored value means.

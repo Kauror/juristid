@@ -154,9 +154,14 @@ def test_the_two_reused_rows_keep_their_key_and_change_only_their_label() -> Non
 def test_the_two_groups_partition_the_offered_vocabulary() -> None:
     """Siseriiklik or ELiga seotud, for every offered type and for nothing else.
 
-    What makes `derived_track` safe is that the two sets cover the ten offered
-    types exactly: a retired version-1.0 row is in neither, so a Matter carrying
-    one derives no track rather than a guessed one.
+    This is how the distinction stays answerable from stored data: a Matter
+    carries its types and each offered type belongs to one group. It writes
+    nothing — `Matter.track` says what kind of *procedure* a file is on, has
+    seven values rather than two, and no instrument type entails one
+    (docs/adr/0089 §4).
+
+    A retired version-1.0 row is in neither set, which is the honest answer:
+    `Konsultatsioon` may be European or domestic and `Eelnõu` says nothing.
     """
     assert DOMESTIC_LEGAL_INSTRUMENT_KEYS.isdisjoint(EU_LEGAL_INSTRUMENT_KEYS)
     assert DOMESTIC_LEGAL_INSTRUMENT_KEYS | EU_LEGAL_INSTRUMENT_KEYS == set(

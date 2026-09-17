@@ -18,8 +18,8 @@ the whole of how a historical `ÕIGUSAKT` cell is read.
 what a person is offered today. Twelve version-1.0 rows stop being offered —
 deactivated, never deleted and never remapped — five are new and two are reused
 under a clearer name. The reviewed list names *siseriiklik* or *ELiga seotud* in
-the label, which is what lets the high-level classification be read off the
-chosen type instead of asked again as `Menetlusliik` (docs/adr/0089).
+the label, which is what keeps that distinction answerable from the chosen type
+without `Uus teema` asking it a second time as `Menetlusliik` (docs/adr/0089).
 
 The two live side by side on purpose. The offered list is a decision about what
 to ask people now; the seventeen are a decision about what the register meant,
@@ -53,8 +53,9 @@ Where EU-ness lives, and where it does not
 
 *What follows is version 1.0's reading of the register, and it is unchanged.
 Version 2.0 puts the European group on the label of the four types it offers —
-see `EU_LEGAL_INSTRUMENT_KEYS` — which answers the question for new work
-without revising what any historical cell meant.*
+see `EU_LEGAL_INSTRUMENT_KEYS` — which answers the question for new work from
+the type itself, without revising what any historical cell meant and without
+writing anything to `Menetlusliik`.*
 
 The register writes `EL määrus`, `EL strateegia`, `EL konsultatsioon` and
 `EL direktiiv` — but those four prefixes are not one rule.
@@ -541,24 +542,29 @@ OFFERED_LEGAL_INSTRUMENT_KEYS: tuple[str, ...] = tuple(
 
 
 # ---------------------------------------------------------------------------
-# Siseriiklik or ELiga seotud — read off the type, never asked twice
+# Siseriiklik or ELiga seotud — a reading of the vocabulary, never a writer
 # ---------------------------------------------------------------------------
 #
 # The lawyers kept the distinction and dropped the question. `Menetlusliik` and
-# `Õigusakt` were two controls on `Uus teema` and the second already contained
-# the first's commonest answer, so the reviewed list names the group in the
-# label and the high-level classification is derived from it (docs/adr/0089).
+# `Õigusakt` were two controls on `Uus teema`, so the reviewed list names the
+# group in the label and `Uus teema` stopped asking the second time
+# (docs/adr/0089 §4).
 #
-# **Only for the two groups the reviewed list draws.** These sets cover the ten
+# **Nothing here writes `Matter.track`, and that is the decision.** These two
+# sets say which group each *offered type* belongs to, which is how the
+# siseriiklik/ELiga-seotud distinction stays answerable from stored data — the
+# Matter carries the type, and the type carries the group. What they are
+# deliberately not is a source for `Menetlusliik`: that column says what kind of
+# *procedure* a file is on, it has seven values rather than two, and no
+# instrument type entails one. A `Seadus` transposing a directive is a domestic
+# instrument on a `NATIONAL_TRANSPOSITION` track, so a rule writing `DOMESTIC`
+# from `seadus` would be wrong about precisely the files the distinction exists
+# for. `Matter.track` is answered by a person, where it is known.
+#
+# **Only the two groups the reviewed list draws.** These sets cover the ten
 # offered types and nothing else: a retired version-1.0 row is in neither, which
 # is the honest answer — `Konsultatsioon` may be European or domestic and
-# `Eelnõu` says nothing about it — and a Matter carrying one derives no track at
-# all rather than a guessed one.
-#
-# **Transposition is never inferred.** A `Seadus` implementing a directive is
-# still a domestic legal instrument, and `Track.NATIONAL_TRANSPOSITION` is a
-# statement about the *procedure* that no instrument type entails. It stays a
-# value somebody chooses on `Muuda teemat` and is never written from here.
+# `Eelnõu` says nothing about it.
 
 #: The six domestic types.
 DOMESTIC_LEGAL_INSTRUMENT_KEYS: frozenset[str] = frozenset(

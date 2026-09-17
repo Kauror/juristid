@@ -13,12 +13,13 @@ about the form, the derivation and the record.
 Four classes of defect are what these tests exist for, and every one of them
 would look like a working feature:
 
-* a Matter created under the new form carrying a *derived* classification that
-  is not true of it — most dangerously `ELi õiguse ülevõtmine`, which no
+* a Matter created under the reduced form carrying a classification nobody
+  gave it — most dangerously a `Menetlusliik` guessed from `Õigusakt`, which no
   instrument type entails;
 * an edit about one field silently rewriting another — the defect PR #231 fixed
   for `Hetkeseis`, waiting to happen to `Matter.track`;
-* a stage that reads like a closure quietly becoming one;
+* *Koda has stopped working on this* leaking into `Hetkeseis`, which answers a
+  different question about a different actor;
 * a historical value disappearing because the vocabulary moved on.
 """
 
@@ -29,8 +30,13 @@ from django.urls import reverse
 
 from app.matters.forms import MatterCreateForm, MatterEditForm, edit_initial
 from app.matters.models import Matter
-from app.matters.services import close_matter, derived_track
+from app.matters.services import close_matter
 from app.organisations.models import Organisation, OrganisationType
+from app.taxonomy.legal_instruments import (
+    DOMESTIC_LEGAL_INSTRUMENT_KEYS,
+    EU_LEGAL_INSTRUMENT_KEYS,
+    OTHER_LEGAL_INSTRUMENT_KEYS,
+)
 from app.taxonomy.models import LegalInstrumentType
 from app.workflow.enums import Disposition, Track
 from app.workflow.models import StageVocabulary
@@ -197,73 +203,36 @@ def test_a_single_sender_no_longer_answers_adressaat(signed_in, ministry):
 
 
 # ---------------------------------------------------------------------------
-# 2 — siseriiklik or ELiga seotud, derived and refused
+# 2 — siseriiklik or ELiga seotud, readable from the type and written by nobody
 # ---------------------------------------------------------------------------
 
 
-def test_the_domestic_types_derive_the_domestic_track():
-    for key in ("vtk", "seadus", "maarus", "koja-ettepanek", "muu-siseriiklik"):
-        assert derived_track([instrument(key)]) == Track.DOMESTIC
+def test_the_two_groups_cover_the_offered_vocabulary_and_nothing_else():
+    """The distinction the lawyers kept, as a property of the vocabulary.
 
-
-def test_the_eu_types_derive_the_eu_track():
-    for key in ("eli-konsultatsioon", "direktiiv", "el-maarus", "muu-eli-dokument"):
-        assert derived_track([instrument(key)]) == Track.EU_INITIATIVE
-
-
-def test_two_types_from_one_group_still_derive_that_group():
-    assert derived_track([instrument("seadus"), instrument("maarus")]) == Track.DOMESTIC
-    assert derived_track([instrument("direktiiv"), instrument("el-maarus")]) == Track.EU_INITIATIVE
-
-
-def test_a_mixed_answer_derives_nothing():
-    """A file can concern a directive and the act transposing it.
-
-    That is two answers about two instruments, not one about the procedure, so
-    the deterministic reading of a mixed set is *no answer*.
+    A Matter carries its `Õigusakt` types and each offered type belongs to one
+    of the two groups, so *siseriiklik or ELiga seotud* is answerable from
+    stored data without anybody being asked a second time. A retired
+    version-1.0 row is in neither, which is the honest answer:
+    `Konsultatsioon` may be either and `Eelnõu` says nothing.
     """
-    assert derived_track([instrument("seadus"), instrument("direktiiv")]) == ""
+    offered = {item.key for item in LegalInstrumentType.objects.filter(is_active=True)}
+    assert DOMESTIC_LEGAL_INSTRUMENT_KEYS | EU_LEGAL_INSTRUMENT_KEYS == offered
+    assert DOMESTIC_LEGAL_INSTRUMENT_KEYS.isdisjoint(EU_LEGAL_INSTRUMENT_KEYS)
+
+    retired = {item.key for item in LegalInstrumentType.objects.filter(is_active=False)}
+    assert retired.isdisjoint(DOMESTIC_LEGAL_INSTRUMENT_KEYS | EU_LEGAL_INSTRUMENT_KEYS)
 
 
-def test_a_retired_type_derives_nothing():
-    """`Konsultatsioon` may be European or domestic and `Eelnõu` says nothing."""
-    for key in ("konsultatsioon", "eelnou", "strateegia", "muu"):
-        assert derived_track([instrument(key)]) == ""
-    assert derived_track([instrument("seadus"), instrument("eelnou")]) == ""
+def test_creating_a_matter_writes_no_menetlusliik_at_all(signed_in, ministry):
+    """Scenario A. The page asks Saatja, Valdkond, Hetkeseis and Õigusakt.
 
-
-def test_no_answer_derives_nothing():
-    assert derived_track([]) == ""
-
-
-def test_transposition_is_never_derived():
-    """A `Seadus` implementing a directive is a domestic legal instrument.
-
-    Whether the *procedure* is a transposition is a separate fact that no
-    instrument type entails, which is why ADR 0070 keeps the two apart.
+    `Menetlusliik` is left as nobody answered it. Deriving `DOMESTIC` from
+    `Seadus` would be reducing a seven-value classification to a domestic/EU
+    boolean, and it would be wrong about exactly the files the distinction
+    exists for: a `Seadus` transposing a directive is a domestic instrument on a
+    `NATIONAL_TRANSPOSITION` track (docs/adr/0089 §4).
     """
-    every = list(LegalInstrumentType.objects.all())
-    for item in every:
-        assert derived_track([item]) != Track.NATIONAL_TRANSPOSITION
-    for left in every:
-        for right in every:
-            assert derived_track([left, right]) != Track.NATIONAL_TRANSPOSITION
-
-
-def test_only_two_of_the_seven_tracks_are_ever_derived():
-    """The mismatch ADR 0089 §4 documents rather than resolves.
-
-    `Track`'s seven values are not a clean domestic/EU axis. Deriving the more
-    specific `KODA_INITIATIVE` or `STRATEGY` would stop a Koda proposal reading
-    as domestic, which is the opposite of what the lawyers asked to keep.
-    """
-    every = list(LegalInstrumentType.objects.all())
-    derived = {derived_track([item]) for item in every}
-    assert derived <= {"", Track.DOMESTIC, Track.EU_INITIATIVE}
-
-
-def test_creating_a_domestic_matter_records_the_domestic_track(signed_in, ministry):
-    """Scenario A — an ordinary incoming draft."""
     signed_in.post(
         CREATE,
         {
@@ -274,46 +243,80 @@ def test_creating_a_domestic_matter_records_the_domestic_track(signed_in, minist
         },
     )
     matter = Matter.objects.get(title="Pakendiseaduse muutmise eelnõu")
-    assert matter.track == Track.DOMESTIC
+
+    assert matter.track == ""
     assert matter.stage is not None and matter.stage.key == "consultation"
     assert [item.key for item in matter.legal_instruments.all()] == ["seadus"]
     assert list(matter.source_organisations.all()) == [ministry]
 
 
-def test_creating_an_eu_matter_records_the_eu_track(signed_in):
-    """Scenario B — no duplicate EU question, and no invented transposition."""
+def test_an_eu_matter_is_recognisable_without_a_second_question(signed_in):
+    """Scenario B. The EU-ness is on the record, in the type, and nowhere guessed."""
     signed_in.post(
         CREATE,
         {
-            "title": "Ehitustoodete määruse ettepanek",
+            "title": "Ehitustoodete direktiivi ettepanek",
             "stage": str(stage("eu_procedure").pk),
             "legal_instruments": [str(instrument("direktiiv").pk)],
         },
     )
-    matter = Matter.objects.get(title="Ehitustoodete määruse ettepanek")
-    assert matter.track == Track.EU_INITIATIVE
-    assert matter.track != Track.NATIONAL_TRANSPOSITION
+    matter = Matter.objects.get(title="Ehitustoodete direktiivi ettepanek")
+
+    assert matter.track == ""
+    chosen = {item.key for item in matter.legal_instruments.all()}
+    assert chosen <= EU_LEGAL_INSTRUMENT_KEYS
     assert matter.stage is not None and matter.stage.key == "eu_procedure"
 
 
-def test_creating_with_a_mixed_answer_leaves_the_track_unanswered(signed_in):
+def test_nothing_anywhere_infers_a_track_from_an_instrument(signed_in):
+    """The refusal, over the whole vocabulary rather than over an example.
+
+    Every offered type, one Matter each, and not one of them arrives carrying a
+    `Menetlusliik` — least of all `NATIONAL_TRANSPOSITION`.
+    """
+    for item in LegalInstrumentType.objects.filter(is_active=True):
+        title = f"Ainult õigusakt {item.key}"
+        payload = {"title": title, "legal_instruments": [str(item.pk)]}
+        if item.key in OTHER_LEGAL_INSTRUMENT_KEYS:
+            # The two escape hatches refuse a save without the text beside
+            # them, so the POST has to be one the form accepts — otherwise
+            # this would assert that a *refused* save writes no track.
+            payload["legal_instrument_other"] = "Mõni muu dokument"
+        signed_in.post(CREATE, payload)
+        matter = Matter.objects.filter(title=title).first()
+        assert matter is not None, item.key
+        assert matter.track == "", f"{item.key} wrote {matter.track!r}"
+
+
+def test_a_forged_menetlusliik_is_still_not_part_of_the_request(signed_in):
+    """Two ways to write the column, and the form is neither of them."""
     signed_in.post(
         CREATE,
         {
-            "title": "Direktiiv ja seda üle võttev seadus",
-            "legal_instruments": [
-                str(instrument("seadus").pk),
-                str(instrument("direktiiv").pk),
-            ],
+            "title": "Seadus ja võltsitud menetlusliik",
+            "track": Track.NATIONAL_TRANSPOSITION,
+            "legal_instruments": [str(instrument("seadus").pk)],
         },
     )
-    matter = Matter.objects.get(title="Direktiiv ja seda üle võttev seadus")
-    assert matter.track == ""
+    assert Matter.objects.get(title="Seadus ja võltsitud menetlusliik").track == ""
 
 
-def test_creating_without_an_oigusakt_leaves_the_track_unanswered(signed_in):
-    signed_in.post(CREATE, {"title": "Ainult pealkiri"})
-    assert Matter.objects.get(title="Ainult pealkiri").track == ""
+def test_menetlusliik_is_answered_where_it_is_known(signed_in, specialist):
+    """And it is not lost: the whole vocabulary is still offered on the surfaces
+    a person corrects a record from, including the one value no rule may infer.
+    """
+    matter = factories.MatterFactory(title="Ülevõtmine, seadus", owner=specialist)
+    matter.legal_instruments.set([instrument("seadus")])
+
+    url = reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "track"})
+    signed_in.post(url, {"track": Track.NATIONAL_TRANSPOSITION})
+
+    matter.refresh_from_db()
+    assert matter.track == Track.NATIONAL_TRANSPOSITION
+    assert [item.key for item in matter.legal_instruments.all()] == ["seadus"]
+
+    offered = {value for value, _label in MatterEditForm(matter=matter).fields["track"].choices}
+    assert set(Track.values) <= offered
 
 
 # ---------------------------------------------------------------------------
@@ -413,37 +416,42 @@ def test_the_create_form_offers_neither_retired_value():
 # ---------------------------------------------------------------------------
 
 
-def test_choosing_rohkem_ei_tegele_does_not_close_the_matter(signed_in, ministry):
-    """Scenario D. The stage records where Koda's attention is, and nothing else."""
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Teema, millega enam ei tegele",
-            "source_organisations": [str(ministry.pk)],
-            "stage": str(stage("no_further_work").pk),
-        },
-    )
-    matter = Matter.objects.get(title="Teema, millega enam ei tegele")
+def test_rohkem_ei_tegele_is_offered_as_a_closure_reason_not_as_a_stage(signed_in, specialist):
+    """Scenario D, against the architecture ADR 0032 draws.
 
-    assert matter.stage is not None and matter.stage.key == "no_further_work"
-    assert matter.is_open is True
-    assert matter.closed_at is None
-    assert matter.disposition == ""
-    assert matter.record_mode == "FULL"
-
-
-def test_moving_an_existing_matter_to_rohkem_ei_tegele_does_not_close_it(signed_in, specialist):
+    *Koda no longer intends active work* is `Disposition.MONITORING_STOPPED` and
+    has been since the vocabulary was seeded. It is a statement about this
+    office; `Hetkeseis` is a statement about the external process. Recording one
+    as the other would leave every surface reading the column unable to tell
+    which had been answered.
+    """
     matter = factories.MatterFactory(title="Jälgitav teema", owner=specialist)
-    url = reverse(
-        "matters:update_field",
-        kwargs={"pk": matter.pk, "field": "stage"},
-    )
-    signed_in.post(url, {"stage": str(stage("no_further_work").pk)})
+    close_matter(matter=matter, disposition=Disposition.MONITORING_STOPPED, actor=specialist)
 
     matter.refresh_from_db()
-    assert matter.stage is not None and matter.stage.key == "no_further_work"
-    assert matter.is_open is True
-    assert matter.disposition == ""
+    assert matter.disposition == Disposition.MONITORING_STOPPED
+    assert matter.is_open is False
+    # And the stage is whatever it was: closing says nothing about where the
+    # external process stands.
+    assert matter.stage == factories.MatterFactory._meta.model.objects.get(pk=matter.pk).stage
+
+    assert not StageVocabulary.objects.filter(label_et="Rohkem ei tegele").exists()
+
+
+def test_the_stage_control_offers_no_closure_disguised_as_a_stage(signed_in):
+    """The create form's Hetkeseis row is ten external-process answers.
+
+    Nothing on it says anything about whether Koda continues, which is the
+    boundary this round was asked to preserve rather than cross.
+    """
+    page = signed_in.get(CREATE).content.decode()
+    assert "Rohkem ei tegele" not in page
+
+    offered = [str(label) for _value, label in MatterCreateForm().fields["stage"].choices]
+    assert "Rohkem ei tegele" not in offered
+    assert "Koda ei tegele edasi" not in offered
+    # Django's named blank option, then the ten reviewed stages.
+    assert len(offered) == 11
 
 
 def test_choosing_joustunud_does_not_close_the_matter(signed_in, ministry):
@@ -462,19 +470,6 @@ def test_choosing_joustunud_does_not_close_the_matter(signed_in, ministry):
     assert matter.stage is not None and matter.stage.key == "in_force"
     assert matter.is_open is True
     assert matter.disposition == ""
-
-
-def test_a_closed_matter_and_the_new_stage_stay_distinguishable(specialist):
-    """The two concepts are stored separately and neither implies the other."""
-    matter = factories.MatterFactory(
-        title="Suletud teema", owner=specialist, stage=stage("no_further_work")
-    )
-    close_matter(matter=matter, disposition=Disposition.MONITORING_STOPPED, actor=specialist)
-
-    matter.refresh_from_db()
-    assert matter.stage is not None and matter.stage.key == "no_further_work"
-    assert matter.disposition == Disposition.MONITORING_STOPPED
-    assert matter.is_open is False
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +530,9 @@ def test_the_reviewed_muu_rows_keep_the_free_text(signed_in):
     )
     matter = Matter.objects.get(title="Muu ELi dokument")
     assert matter.legal_instrument_other == "Roheline raamat"
-    assert matter.track == Track.EU_INITIATIVE
+    # Its group is readable from the type; the column stays unanswered.
+    assert {item.key for item in matter.legal_instruments.all()} <= EU_LEGAL_INSTRUMENT_KEYS
+    assert matter.track == ""
 
 
 def test_unticking_the_muu_row_clears_the_text(signed_in):

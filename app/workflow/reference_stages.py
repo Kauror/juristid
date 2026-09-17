@@ -8,8 +8,8 @@ Deliberately *not* ``app.workflow.vocabulary``. That module maps the historical
 workbook's raw ``HETKESEIS`` spellings onto canonical keys and must keep saying
 what the workbook said in 2011; this one says what a lawyer is offered today.
 The two answer different questions about the same column and only one of them
-may change when the department rewords a label — which is precisely what
-version 2.0 below does.
+may change when the department rewords a label — which is exactly what version
+2.0 below does.
 
 Version 1.0 — read out of the workbook
 --------------------------------------
@@ -25,45 +25,43 @@ Version 2.0 — reviewed by the lawyers
 -------------------------------------
 
 The second structured feedback round on the demo, 2026-09-17, reviewed the
-vocabulary itself. Three things came out of it and each is a different kind of
-change:
+vocabulary itself. What came out of it is **three rewordings and nothing else**.
 
-**Three labels are reworded, and nothing else about them moves.** ``Ootan
-jõustumist``, ``Eesti seisukoht`` and ``Ootan ELi õiguse ülevõtmist`` become
-``Jõustumise ootel``, ``Eesti seisukoht koostamisel`` and ``ELi õiguse
-ülevõtmise ootel``. The keys, the rows, the ``Matter.stage`` relations, the
-help texts, the sort order and the register filters are all untouched — a stage
-is addressed by its key everywhere it is stored, filtered or reported, so a
-reword is a display change and nothing else. Two of the three also stop writing
-in the first person: a column that says *I am waiting* is a sentence about
-whoever is reading it rather than about where the file stands.
-
-**One stage is new: ``Rohkem ei tegele``.** The workbook has carried the raw
-value ``rohkem pole tegevusi plaanis`` since 2011, and ``workflow/0004``
-deliberately read it as the ``MONITORING_STOPPED`` *disposition* rather than as
-a stage, because it says Koda stopped working on the file and not where the
-external process stands. That reading of the **historical column** is correct
-and is not touched here. What the lawyers asked for is different: a Hetkeseis
-they can choose while the file stays open, for the ordinary case where the
-external process is still running somewhere and this office has decided not to
-follow it any further.
-
-So stage and disposition stay separate, which is the product's own rule
-(AGENTS.md, master specification 3.4). Choosing this stage records where Koda's
-attention is; it does **not** close the Matter, does not archive it, does not
-call `Lõpeta teema` and writes no `Disposition`. The stage's own help text says
-so, because a lawyer reading the label alone would reasonably assume otherwise.
+``Ootan jõustumist``, ``Eesti seisukoht`` and ``Ootan ELi õiguse ülevõtmist``
+become ``Jõustumise ootel``, ``Eesti seisukoht koostamisel`` and ``ELi õiguse
+ülevõtmise ootel``. The keys, the rows, the ``Matter.stage`` relations, the help
+texts, the sort orders and the register filters are all untouched — a stage is
+addressed by its key everywhere it is stored, filtered or reported, so a reword
+is a display change and nothing else. Two of the three also stop writing in the
+first person: a column that says *I am waiting* is a sentence about whoever is
+reading it rather than about where the file stands.
 
 **Nothing is retired.** Every version-1.0 key is in version 2.0, which is why
 this module carries no ``RETIRED_STAGE_KEYS``. The mechanism exists and works —
 ``app.workflow.selectors.stages_including`` and docs/adr/0032 §Amendment — and
 this round simply has no use for it.
 
-**Nothing is remapped.** In particular no Matter is moved onto the new stage.
-The Matters whose historical ``rohkem pole tegevusi plaanis`` row was read as a
-disposition keep that reading; inferring the new stage for them would be
-rewriting a decade of somebody else's filing on a coincidence of wording, and it
-would also be untrue, because a disposition and a stage are not the same claim.
+Why ``Rohkem ei tegele`` is not a stage
+---------------------------------------
+
+The feedback asked for it as a Hetkeseis, and it is not one.
+
+``Hetkeseis`` says where the **external** process stands: the Riigikogu has it,
+it is on a consultation round, the act is waiting to come into force. *Koda has
+stopped working on this* is a different question about a different actor, and
+the product already answers it — ``Disposition.MONITORING_STOPPED``, «Koda
+lõpetas jälgimise», offered on ``Lõpeta teema`` as «Koda ei tegele edasi» and in
+the composer as «Loobuti». ADR 0032 separated the two deliberately, and adding a
+stage that means the second would put both answers in one column and leave every
+surface reading it unable to tell which had been given.
+
+The workbook agrees, and has since 2011. Its raw value ``rohkem pole tegevusi
+plaanis`` is read by ``workflow/0004`` as that disposition rather than as a
+stage, for exactly this reason. A stage with neighbouring words would have made
+the historical reading and the current vocabulary disagree about the same words.
+
+**Nothing is remapped either.** No Matter is moved and no historical mapping is
+re-pointed; the concept was already implemented and stays where it was.
 """
 
 from __future__ import annotations
@@ -71,8 +69,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 #: Bumped when the *set* or the *wording* of the offered stages changes. Pinned
-#: by `tests/test_reference_stages.py`, so growing or rewording the vocabulary
-#: is a decision somebody made rather than a diff that slipped through.
+#: by `tests/test_reference_stages.py`, so rewording the vocabulary is a
+#: decision somebody made rather than a diff that slipped through.
 REFERENCE_STAGE_VERSION = "2.0"
 
 #: Where version 1.0 came from, and when.
@@ -126,50 +124,23 @@ REWORDED_STAGE_LABELS_V2: dict[str, str] = {
     "awaiting_transposition": "ELi õiguse ülevõtmise ootel",
 }
 
-#: The one stage version 2.0 adds, with the sentence that keeps it from being
-#: read as a closure.
-#:
-#: ``sort_order`` 95 puts it between ``awaiting_transposition`` (90) and ``Muu``
-#: (100), which is where the reviewed list has it and which keeps ``Muu`` last
-#: without renumbering anything.
-NEW_STAGE_KEY_V2 = "no_further_work"
-NEW_STAGE_LABEL_V2 = "Rohkem ei tegele"
-NEW_STAGE_SORT_ORDER_V2 = 95
-NEW_STAGE_HELP_V2 = (
-    "Koda ei kavatse selle teemaga enam aktiivselt tegeleda. See on hetkeseis, "
-    "mitte teema lõpetamine: teema jääb avatuks ja selle sulgemine on eraldi "
-    "otsus («Lõpeta teema»)."
-)
-
-#: Version 2.0 — the eleven stages offered today, in reviewed order.
+#: Version 2.0 — the ten stages offered today, in reviewed order.
 #:
 #: Derived from version 1.0 rather than retyped, for the reason
 #: `app.taxonomy.reference_data` derives each of its versions by exclusion: the
 #: transcription of what the department wrote down is above and is not copied a
 #: second time, so a comma cannot go missing in the copy.
 REFERENCE_STAGES_V2: tuple[ReferenceStage, ...] = tuple(
-    sorted(
-        (
-            *(
-                ReferenceStage(
-                    key=stage.key,
-                    label_et=REWORDED_STAGE_LABELS_V2.get(stage.key, stage.label_et),
-                    sort_order=stage.sort_order,
-                )
-                for stage in REFERENCE_STAGES_V1
-            ),
-            ReferenceStage(
-                key=NEW_STAGE_KEY_V2,
-                label_et=NEW_STAGE_LABEL_V2,
-                sort_order=NEW_STAGE_SORT_ORDER_V2,
-            ),
-        ),
-        key=lambda stage: (stage.sort_order, stage.label_et),
+    ReferenceStage(
+        key=stage.key,
+        label_et=REWORDED_STAGE_LABELS_V2.get(stage.key, stage.label_et),
+        sort_order=stage.sort_order,
     )
+    for stage in REFERENCE_STAGES_V1
 )
 
-#: The name the rest of the codebase imports. No stage was retired, so this is
-#: every row the vocabulary has.
+#: The name the rest of the codebase imports. No stage was retired and none was
+#: added, so this is every row the vocabulary has.
 REFERENCE_STAGES: tuple[ReferenceStage, ...] = REFERENCE_STAGES_V2
 
 #: The stable keys, in reviewed order.

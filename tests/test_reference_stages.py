@@ -3,15 +3,16 @@
 Two things are pinned here and they are pinned for different reasons.
 
 The **manifest** is reference data: the ten stages `workflow/0004` read out of
-the workbook, the three labels the lawyers reworded, the one stage they added,
-and the frozen copy of all of it inside `workflow/0007`. A frozen copy nobody
-checks is a copy that silently stops matching.
+the workbook, the three labels the lawyers reworded, and the frozen copy of both
+inside `workflow/0007`. A frozen copy nobody checks is a copy that silently
+stops matching.
 
 The **preservation rules** are what makes a vocabulary change safe. No key
-moved, no row was deleted, no Matter was reclassified, and the historical
-reading of the workbook's own `rohkem pole tegevusi plaanis` is untouched —
-each of those is asserted rather than described, because every one of them is a
-way this change could have destroyed somebody's record.
+moved, no row was deleted, no row was added, no Matter was reclassified, and
+`rohkem pole tegevusi plaanis` is still read as a *disposition* — each of those
+is asserted rather than described, because every one of them is a way this
+change could have destroyed somebody's record or blurred a boundary the product
+draws on purpose.
 """
 
 from __future__ import annotations
@@ -20,13 +21,9 @@ import importlib
 
 import pytest
 
-from app.matters.models import Matter
 from app.workflow.enums import Disposition
 from app.workflow.models import LegacyStatusMapping, StageVocabulary, resolve_legacy_status
 from app.workflow.reference_stages import (
-    NEW_STAGE_HELP_V2,
-    NEW_STAGE_KEY_V2,
-    NEW_STAGE_LABEL_V2,
     REFERENCE_STAGE_KEYS,
     REFERENCE_STAGE_VERSION,
     REFERENCE_STAGES,
@@ -60,7 +57,7 @@ REVIEWED_V1: tuple[tuple[str, str, int], ...] = (
     ("other", "Muu", 100),
 )
 
-#: Version 2.0 — the eleven the lawyers reviewed on 2026-09-17, in their order.
+#: Version 2.0 — the same ten, three of them reworded, on 2026-09-17.
 REVIEWED_V2: tuple[tuple[str, str, int], ...] = (
     ("idea", "Idee", 10),
     ("consultation", "Kooskõlastusringil", 20),
@@ -71,7 +68,6 @@ REVIEWED_V2: tuple[tuple[str, str, int], ...] = (
     ("estonian_eu_position", "Eesti seisukoht koostamisel", 70),
     ("eu_procedure", "ELi menetluses", 80),
     ("awaiting_transposition", "ELi õiguse ülevõtmise ootel", 90),
-    ("no_further_work", "Rohkem ei tegele", 95),
     ("other", "Muu", 100),
 )
 
@@ -97,16 +93,17 @@ def test_the_provenance_is_stated() -> None:
     assert STAGE_REVIEW_VERIFIED_ON == "2026-09-17"
 
 
-def test_version_two_retires_nothing() -> None:
-    """Every version-1.0 key is still offered. No stage needed retiring.
+def test_version_two_is_the_same_ten_keys() -> None:
+    """Nothing retired and nothing added — three labels moved, and that is all.
 
-    The mechanism exists and works — `stages_including` and docs/adr/0032
-    §Amendment — and this round simply has no use for it. A vocabulary change
-    that quietly dropped a stage would strand every Matter standing in it.
+    The retirement mechanism exists and works (`stages_including`,
+    docs/adr/0032 §Amendment) and this round has no use for it. A vocabulary
+    change that quietly dropped a stage would strand every Matter standing in
+    it; one that quietly added a *disposition* as a stage would put two
+    different questions in one column.
     """
-    version_one = {key for key, _label, _order in REVIEWED_V1}
-    assert version_one <= set(REFERENCE_STAGE_KEYS)
-    assert set(REFERENCE_STAGE_KEYS) - version_one == {NEW_STAGE_KEY_V2}
+    assert set(REFERENCE_STAGE_KEYS) == {key for key, _label, _order in REVIEWED_V1}
+    assert len(REFERENCE_STAGE_KEYS) == 10
 
 
 def test_exactly_three_labels_were_reworded_and_no_key_moved() -> None:
@@ -120,16 +117,10 @@ def test_exactly_three_labels_were_reworded_and_no_key_moved() -> None:
         "awaiting_transposition": ("Ootan ELi õiguse ülevõtmist", "ELi õiguse ülevõtmise ootel"),
     }
     assert REWORDED_STAGE_LABELS_V2 == {key: new for key, (_old, new) in moved.items()}
-    # Nothing but the wording: the sort order of every reused stage is its own.
+    # Nothing but the wording: every sort order is its version-1.0 one.
     assert {key: order for key, _label, order in REVIEWED_V1} == {
-        key: order for key, _label, order in REVIEWED_V2 if key != NEW_STAGE_KEY_V2
+        key: order for key, _label, order in REVIEWED_V2
     }
-
-
-def test_the_new_stage_sits_before_muu_without_renumbering_anything() -> None:
-    assert (NEW_STAGE_KEY_V2, NEW_STAGE_LABEL_V2) == ("no_further_work", "Rohkem ei tegele")
-    order = [key for key, _label, _o in REVIEWED_V2]
-    assert order[-2:] == [NEW_STAGE_KEY_V2, "other"]
 
 
 def test_the_migration_baseline_is_the_manifest() -> None:
@@ -138,9 +129,12 @@ def test_the_migration_baseline_is_the_manifest() -> None:
         key: (v1[key], new) for key, new in REWORDED_STAGE_LABELS_V2.items()
     }
     assert sorted(REVIEW_MIGRATION.SEEDED_KEYS) == sorted(key for key, _l, _o in REVIEWED_V1)
-    assert REVIEW_MIGRATION.NEW_KEY == NEW_STAGE_KEY_V2
-    assert REVIEW_MIGRATION.NEW_LABEL == NEW_STAGE_LABEL_V2
-    assert REVIEW_MIGRATION.NEW_HELP == NEW_STAGE_HELP_V2
+    # The migration touches `workflow` and nothing else, in both directions: a
+    # data migration that queries another app in its *reverse* asks it of
+    # whatever state that app happens to be rewound to, which CI proved.
+    assert REVIEW_MIGRATION.Migration.dependencies == [
+        ("workflow", "0006_stage_help_from_the_department")
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +143,7 @@ def test_the_migration_baseline_is_the_manifest() -> None:
 
 
 @pytest.mark.django_db
-def test_the_offered_vocabulary_is_the_reviewed_eleven_in_order() -> None:
+def test_the_offered_vocabulary_is_the_reviewed_ten_in_order() -> None:
     offered = list(selectable_stages())
     assert [(stage.key, stage.label_et, stage.sort_order) for stage in offered] == list(REVIEWED_V2)
 
@@ -177,44 +171,42 @@ def test_the_reworded_stages_kept_their_key_row_and_explanation() -> None:
 
 
 @pytest.mark.django_db
-def test_the_new_stage_is_not_a_closure_and_says_so() -> None:
-    """`Rohkem ei tegele` is a Hetkeseis. Disposition is a separate concept.
+def test_rohkem_ei_tegele_is_a_disposition_and_never_a_stage() -> None:
+    """The boundary ADR 0032 draws, asserted where it could have been crossed.
 
-    The product keeps stage, disposition and next action apart (AGENTS.md,
-    master specification 3.4), and the one stage whose words a reader could
-    reasonably take for a closure carries the sentence saying it is not.
+    The feedback asked for «Rohkem ei tegele» as a Hetkeseis. `Hetkeseis` says
+    where the *external* process stands; *Koda has stopped working on this* is a
+    statement about this office, and the product models it as
+    `Disposition.MONITORING_STOPPED`. A stage meaning the second would put two
+    questions in one column and leave every surface reading it unable to tell
+    which had been answered.
+
+    The workbook has agreed since 2011: its own `rohkem pole tegevusi plaanis`
+    is read as that disposition by `workflow/0004` and not as a stage.
     """
-    stage = StageVocabulary.objects.get(key=NEW_STAGE_KEY_V2)
-    assert stage.label_et == NEW_STAGE_LABEL_V2
-    assert stage.is_active is True
-    assert stage.is_provisional is False
-    assert "ei ole" in stage.help_text or "mitte teema lõpetamine" in stage.help_text
-    assert "Lõpeta teema" in stage.help_text
-    # Every Menetlusliik: a file of any kind can be one this office stops
-    # following, so the stage is not narrowed to a track.
-    assert stage.applicable_tracks == []
+    assert not StageVocabulary.objects.filter(key="no_further_work").exists()
+    labels = set(StageVocabulary.objects.values_list("label_et", flat=True))
+    assert "Rohkem ei tegele" not in labels
 
-
-@pytest.mark.django_db
-def test_no_matter_was_moved_onto_the_new_stage() -> None:
-    assert not Matter.objects.filter(stage__key=NEW_STAGE_KEY_V2).exists()
-
-
-@pytest.mark.django_db
-def test_the_historical_closure_label_is_still_read_as_a_disposition() -> None:
-    """Adding the stage does not revise what the workbook meant.
-
-    `rohkem pole tegevusi plaanis` has been read as `MONITORING_STOPPED` since
-    `workflow/0004`, because it says Koda stopped working on the file. A new
-    *stage* with neighbouring words is a different claim, and re-pointing the
-    historical mapping at it would rewrite a decade of somebody else's filing.
-    """
     mapping = resolve_legacy_status("rohkem pole tegevusi plaanis")
     assert mapping is not None
     assert mapping.stage is None
     assert mapping.disposition == Disposition.MONITORING_STOPPED
     assert RAW_LABEL_TO_DISPOSITION == {"rohkem pole tegevusi plaanis": "MONITORING_STOPPED"}
-    assert NEW_STAGE_KEY_V2 not in RAW_LABEL_TO_STAGE.values()
+    assert "no_further_work" not in RAW_LABEL_TO_STAGE.values()
+
+
+@pytest.mark.django_db
+def test_the_concept_already_has_a_lawyer_facing_action() -> None:
+    """«Koda ei tegele edasi» on `Lõpeta teema`, «Loobuti» in the composer.
+
+    Implemented against disposition rather than Hetkeseis, which is the point:
+    there was no gap for this round to fill, only a boundary to leave alone.
+    """
+    from app.matters.forms import CLOSURE_CHOICES, COMPOSER_CLOSURE_CHOICES
+
+    assert (Disposition.MONITORING_STOPPED.value, "Koda ei tegele edasi") in CLOSURE_CHOICES
+    assert (Disposition.MONITORING_STOPPED.value, "Loobuti") in COMPOSER_CLOSURE_CHOICES
 
 
 @pytest.mark.django_db

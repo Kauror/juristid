@@ -56,10 +56,6 @@ from app.matters.models import (
     TagAssignment,
 )
 from app.submissions.models import Submission
-from app.taxonomy.legal_instruments import (
-    DOMESTIC_LEGAL_INSTRUMENT_KEYS,
-    EU_LEGAL_INSTRUMENT_KEYS,
-)
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
 from app.workflow.models import NextAction
 from app.workflow.services import (
@@ -643,51 +639,6 @@ def change_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
         },
     )
     return matter
-
-
-def derived_track(instruments: Sequence[Any]) -> str:
-    """`Menetlusliik` read off the chosen `Õigusakt`, or `""` when it cannot be.
-
-    The lawyers kept the distinction between a *siseriiklik* and an *ELiga
-    seotud* procedure and dropped the question, because the reviewed `Õigusakt`
-    vocabulary names the group in the label and answering it twice on `Uus
-    teema` was the duplication they reported. So the create form no longer asks,
-    and this is what fills the column instead (docs/adr/0089 §4).
-
-    **Three refusals, and each one is a refusal to guess.**
-
-    1. **Every chosen type must be in one of the two groups.** The twelve
-       retired version-1.0 types are in neither, on purpose: `Konsultatsioon`
-       may be European or domestic and `Eelnõu` says nothing either way. A
-       Matter carrying one of them derives nothing.
-    2. **They must agree.** `Õigusakt` is a multi-select and a file really can
-       concern a directive and the Estonian act transposing it. That is two
-       answers about two instruments, not one about the procedure, so the
-       deterministic reading of a mixed set is *no answer* — exactly as
-       `_default_addressee` reads a set of two senders.
-    3. **Nothing chosen is nothing derived.** `Õigusakt` is optional and an
-       empty answer stays empty.
-
-    **`NATIONAL_TRANSPOSITION` is never returned.** A `Seadus` implementing a
-    directive is a domestic legal instrument, and whether the *procedure* is a
-    transposition is a separate fact no instrument type entails — the whole
-    point of ADR 0070 keeping the two apart. Inferring it from a domestic act
-    whose policy context happens to be European would write a classification
-    nobody reviewed. It stays a value somebody chooses on `Muuda teemat`.
-
-    Pure, and deliberately not inside `create_matter`: the legacy importer and
-    the seeding commands go through that service too, and a rule about what the
-    *create form* means must not reach a decade of historical rows
-    (`app/legacy_import/`).
-    """
-    keys = {getattr(instrument, "key", "") for instrument in instruments}
-    if not keys:
-        return ""
-    if keys <= DOMESTIC_LEGAL_INSTRUMENT_KEYS:
-        return str(Track.DOMESTIC)
-    if keys <= EU_LEGAL_INSTRUMENT_KEYS:
-        return str(Track.EU_INITIATIVE)
-    return ""
 
 
 @transaction.atomic

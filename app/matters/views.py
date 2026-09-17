@@ -157,7 +157,6 @@ from app.matters.services import (
     correct_engagement,
     correct_external_position,
     create_matter,
-    derived_track,
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
@@ -1803,10 +1802,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     chosen=data.get("source_organisations"),
                     typed_name=data.get("sender_name") or "",
                 )
-                # `Menetlusliik`, read off `Õigusakt` rather than asked a second
-                # time. Empty whenever the chosen types do not unambiguously
-                # name one of the two groups, which is most of the ways this can
-                # be uncertain (`derived_track`, docs/adr/0089 §4).
                 instruments = list(data.get("legal_instruments") or [])
                 matter = create_matter(
                     title=data["title"],
@@ -1818,7 +1813,17 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # (app/matters/models.py, Teema redesign §6).
                     brief_summary=data.get("brief_summary") or "",
                     stage=data.get("stage"),
-                    track=derived_track(instruments),
+                    # **Not asked and not derived.** `Menetlusliik` is a
+                    # statement about the *procedure*, and no `Õigusakt` type
+                    # entails one: a `Seadus` transposing a directive is a
+                    # domestic instrument on a transposition track. Writing
+                    # `DOMESTIC` from the type would reduce a seven-value
+                    # classification to a domestic/EU boolean and be wrong about
+                    # exactly the files that matter. It is answered where it is
+                    # known — by a person, on `Muuda teemat` and in the Teema
+                    # rail, both of which offer the whole vocabulary
+                    # (docs/adr/0089 §4).
+                    track="",
                     source_organisations=senders,
                     received_date=data.get("received_date"),
                     response_deadline=data.get("response_deadline"),

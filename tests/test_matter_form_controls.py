@@ -26,7 +26,7 @@ from django.utils import timezone
 from app.matters.forms import MatterCreateForm, MatterEditForm, NextActionForm
 from app.matters.models import Matter
 from app.taxonomy.models import LegalInstrumentType
-from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Track
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
 from tests import factories
 
@@ -225,8 +225,9 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
             "title": "Kanooniline kirje",
             "owner": specialist.pk,
             "stage": stage.pk,
-            # `Menetlusliik` is derived from `Õigusakt` now, and `ELi direktiiv`
-            # is what a lawyer chooses to say «ELi algatus» (docs/adr/0089 §4).
+            # `Menetlusliik` is not on this page and is not derived from
+            # anything: no `Õigusakt` type entails a procedure (docs/adr/0089
+            # §4). What the page does still store is the type itself.
             "legal_instruments": [LegalInstrumentType.objects.get(key="direktiiv").pk],
             "source_organisations": [ministry.pk],
             "policy_areas": [area.pk],
@@ -238,7 +239,8 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
     matter = Matter.objects.get(title="Kanooniline kirje")
     assert matter.owner == specialist
     assert matter.stage == stage
-    assert matter.track == Track.EU_INITIATIVE
+    assert [item.key for item in matter.legal_instruments.all()] == ["direktiiv"]
+    assert matter.track == ""
     assert list(matter.source_organisations.all()) == [ministry]
     assert list(matter.policy_areas.all()) == [area]
     # Typed Estonian, stored as real dates.

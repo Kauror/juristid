@@ -12,8 +12,7 @@ What does:
 * **the order reads as one block**: Saatja, Valdkond, Hetkeseis, Õigusakt, with
   nothing between them (docs/adr/0089 §7);
 * **the reviewed vocabularies fit** at 1440 and at 420, keyboard-only, with no
-  horizontal overflow — eleven Hetkeseis chips and ten Õigusakt chips is more
-  than either row held before;
+  horizontal overflow — ten Õigusakt chips is more than that row held before;
 * **the whole journey saves**, and the Teema that comes back says what was
   chosen. Scenarios A, B and F of the brief, walked rather than asserted.
 
@@ -52,7 +51,6 @@ STAGES = (
     "Eesti seisukoht koostamisel",
     "ELi menetluses",
     "ELi õiguse ülevõtmise ootel",
-    "Rohkem ei tegele",
     "Muu",
 )
 
@@ -152,22 +150,25 @@ def test_the_reviewed_vocabularies_are_what_the_page_offers(page, base_url):
     assert tuple(chip_names(page, INSTRUMENT_FIELD)) == INSTRUMENTS
 
 
-def test_the_stage_that_reads_like_a_closure_explains_that_it_is_not(page, base_url):
-    """`Rohkem ei tegele` is the one chip whose words a reader could take for a
-    closure, and the department's sentence is on it (docs/adr/0089 §1)."""
+def test_the_stage_row_offers_no_closure_disguised_as_a_stage(page, base_url):
+    """`Hetkeseis` answers where the *external* process stands, and only that.
+
+    The feedback asked for «Rohkem ei tegele» here. It belongs to
+    `Disposition.MONITORING_STOPPED` — a statement about this office rather than
+    about the process — and ADR 0032 keeps the two apart on purpose. A chip
+    meaning the second would put two questions in one column
+    (docs/adr/0089 §1).
+
+    Read off the chip *names*, not the fieldset's text: every chip carries the
+    department's own explanation as a tooltip, and the sentence about `Idee`
+    ends «…me rohkem ei tegele selle teemaga edasi» — so a substring search over
+    the whole row finds those words in a chip that is not about them.
+    """
     create_form(page, base_url)
 
-    # By the chip's own *name*, not by `has_text`: the tooltip is inside the
-    # chip, and the department's sentence about `Idee` ends «…me rohkem ei
-    # tegele selle teemaga edasi», so a substring match over the whole element
-    # finds the wrong chip and reads the wrong sentence out of it.
-    chip = page.locator(
-        f'{STAGE_FIELD} span.chip--explained:has(.chip__name:text-is("Rohkem ei tegele"))'
-    ).first
-    expect(chip).to_be_visible()
-    help_text = chip.locator(".stagehelp").inner_text()
-    assert "Lõpeta teema" in help_text
-    assert "mitte teema lõpetamine" in help_text
+    names = chip_names(page, STAGE_FIELD)
+    assert "Rohkem ei tegele" not in names
+    assert "Koda ei tegele edasi" not in names
 
 
 # ---------------------------------------------------------------------------
@@ -200,14 +201,17 @@ def test_an_ordinary_incoming_draft_files_and_reads_back(page, base_url):
     values = rail.locator(".railcard__value")
     expect(values.filter(has_text=MINISTRY)).to_have_count(1)
     expect(values.filter(has_text="Seadus")).to_have_count(1)
-    # Menetlusliik is a fact of the record and still a row here — derived rather
-    # than asked (docs/adr/0089 §4).
-    expect(values.filter(has_text="Riigisisene")).to_have_count(1)
+    # `Menetlusliik` is a row here and it is *unanswered*: the page asked
+    # nothing about it and nothing was inferred from `Seadus` (docs/adr/0089
+    # §4). The rail renders an unanswered editable fact as «+ Lisa».
+    menetlusliik = rail.locator(".railcard__row").filter(has_text="Menetlusliik")
+    expect(menetlusliik).to_have_count(1)
+    expect(menetlusliik).to_contain_text("+ Lisa")
     expect(page.locator(".metaline")).to_contain_text("Kooskõlastusringil")
 
 
 def test_an_eu_matter_needs_no_second_european_question(page, base_url):
-    """Scenario B. The EU-ness is in the type, and the track follows from it."""
+    """Scenario B. The EU-ness is in the type, and nothing is guessed from it."""
     create_form(page, base_url)
 
     page.locator(f"{STAGE_FIELD} label.chip, {STAGE_FIELD} span.chip").filter(
@@ -220,27 +224,34 @@ def test_an_eu_matter_needs_no_second_european_question(page, base_url):
 
     # The *values* the rail states, not the whole card: the Menetlusliik row is
     # an inline editor whose `<select>` carries every `Track` label, so a text
-    # assertion over the card would find «ELi õiguse ülevõtmine» in an option
-    # nobody chose.
-    values = page.locator("#teema-andmed .railcard__value")
+    # assertion over the card would find «ELi algatus» in an option nobody
+    # chose — and that is precisely the mistake this test is about.
+    rail = page.locator("#teema-andmed")
+    values = rail.locator(".railcard__value")
     expect(values.filter(has_text="ELi direktiiv")).to_have_count(1)
-    expect(values.filter(has_text="ELi algatus")).to_have_count(1)
-    # And never the transposition, which no instrument type entails.
+    # The type says the file is European. `Menetlusliik` stays unanswered,
+    # because no instrument type entails a procedure (docs/adr/0089 §4).
+    expect(values.filter(has_text="ELi algatus")).to_have_count(0)
     expect(values.filter(has_text="ELi õiguse ülevõtmine")).to_have_count(0)
 
 
-def test_rohkem_ei_tegele_files_an_open_teema(page, base_url):
-    """Scenario D, seen: the stage is recorded and the file stays open."""
+def test_joustunud_files_an_open_teema(page, base_url):
+    """Scenario E, seen: an act in force is a stage and not a closure.
+
+    Scenario D — *Koda ei tegele edasi* — is a `Disposition` and reaches the
+    record through `Lõpeta teema`, which `e2e/test_teema_closing_flow.py` drives.
+    Nothing on this page asks it (docs/adr/0089 §1).
+    """
     create_form(page, base_url)
 
     page.locator(f"{STAGE_FIELD} label.chip, {STAGE_FIELD} span.chip").filter(
-        has_text="Rohkem ei tegele"
+        has_text="Jõustunud"
     ).first.click()
 
-    title = f"Teema, millega enam ei tegele {uuid.uuid4().hex[:8]}"
+    title = f"Jõustunud seadus {uuid.uuid4().hex[:8]}"
     file_it(page, title)
 
-    expect(page.locator(".metaline")).to_contain_text("Rohkem ei tegele")
+    expect(page.locator(".metaline")).to_contain_text("Jõustunud")
     header = page.locator("#teema-pais").inner_text()
     assert "Lõpetatud" not in header, "choosing the stage closed the Teema"
     assert "Arhiiv" not in header
@@ -253,7 +264,7 @@ def test_rohkem_ei_tegele_files_an_open_teema(page, base_url):
 
 @pytest.mark.parametrize("width", [1440, 1024, 420])
 def test_the_classification_rows_never_take_the_page_sideways(page, base_url, width):
-    """Eleven stages and ten instruments, wrapped rather than scrolled."""
+    """Ten stages and ten instruments, wrapped rather than scrolled."""
     create_form(page, base_url, width)
 
     overflow = page.evaluate(
