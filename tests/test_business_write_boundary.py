@@ -43,6 +43,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.matters.models import Matter
@@ -326,6 +327,24 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         events=(ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,),
     ),
     WriteRoute(
+        name="matters:open_engagement_wait",
+        label="Tagasiside ootuse avamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "engagement_id": w["quiet_engagement"].pk},
+            {"feedback_deadline": "1.12.2099", "revision": ""},
+        ),
+        # The column, not a row count: opening a wait creates nothing, so a probe
+        # that counted engagements would be satisfied by a refusal *and* by a
+        # successful save — the same reasoning the completion route above gives
+        # (docs/adr/0091 §2).
+        probe=lambda w: (
+            w["quiet_engagement"]
+            .__class__.objects.values_list("feedback_deadline", flat=True)
+            .get(pk=w["quiet_engagement"].pk)
+        ),
+        events=(ChangeEventType.ENGAGEMENT_CHANGED,),
+    ),
+    WriteRoute(
         name="matters:add_important_date",
         label="Olulise tähtaja lisamine",
         request=lambda w: (
@@ -400,10 +419,86 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["planned_overview"].pk)
         ),
     ),
+    # `Meile saadetud tagasiside` — the other half of the one record
+    # docs/adr/0091 §3 split in two. Its own route because its own panel asks its
+    # own questions, and **its own entry here** because the completeness guard
+    # matches on route names: a second door onto one service is still a second
+    # door a forbidden actor can knock on.
+    #
+    # Deliberately posting with **no organisation at all**, which is the shape
+    # only this half accepts — an aggregate answer named by its `Allikas`. A
+    # payload a forbidden actor could not have sent even with permission would
+    # make this row prove nothing (docs/adr/0091 §3.3).
+    WriteRoute(
+        name="matters:add_received_feedback",
+        label="Meile saadetud tagasiside lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "source_label": "Loata küsitlus",
+                "summary": "Loata salvestatud tagasiside.",
+                "position_precision": "EXACT",
+            },
+        ),
+        probe=lambda w: w["matter"].external_positions.count(),
+    ),
+    # `Koja arvamus` — the Chamber's own opinion, recorded from the Teema page
+    # through the service `Dokumendid` already posts to. It writes a canonical
+    # SENT `Submission`, its recipients, its `Document` and its immutable
+    # version, so a forbidden actor reaching it would be filing a letter this
+    # office never sent (docs/adr/0091 §6).
+    #
+    # The probe counts submissions rather than documents: the document is the
+    # evidence and the submission is the claim, and it is the claim that must not
+    # appear.
+    WriteRoute(
+        name="matters:add_koda_opinion",
+        label="Koja arvamuse registreerimine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "recipients": [str(w["organisation"].pk)],
+                "sent_on": format_estonian_date(timezone.localdate()),
+                "title": "Loata registreeritud arvamus",
+            },
+        ),
+        files=lambda: {"upload": _pdf("loata-arvamus.pdf")},
+        probe=lambda w: w["matter"].submissions.count(),
+    ),
+    # `Menetluse areng` — one dated `Entry` of its own kind, and up to three
+    # other canonical writes riding with it: the files, the `Hetkeseis` and the
+    # next step. The payload names all of them on purpose, because what must not
+    # happen is not «an entry appears» but «a forbidden actor moves the file's
+    # stage and assigns somebody work» (docs/adr/0091 §5).
+    #
+    # The probe is the triple, so a refusal that let *any* of the three through
+    # fails rather than passing on the one it happened to check.
+    WriteRoute(
+        name="matters:add_development",
+        label="Menetluse arengu lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "body": "Loata salvestatud menetluse areng.",
+                "occurred_on": format_estonian_date(timezone.localdate()),
+                "stage": str(w["stage"].pk),
+                "next_text": "Loata määratud järgmine tegevus",
+                "next_date": format_estonian_date(timezone.localdate() + timedelta(days=4)),
+            },
+        ),
+        probe=lambda w: (
+            w["matter"].entries.count(),
+            Matter.objects.values_list("stage_id", flat=True).get(pk=w["matter"].pk),
+            w["matter"].next_actions.count(),
+        ),
+    ),
     # `Väline seisukoht`, in both of its write routes: the record, and the
     # correction to one. Both are ordinary new business content on an open
     # Matter — unlike the overview's link correction above, a position
     # correction is refused on a closed file (docs/adr/0084 §8).
+    #
+    # The chip is `+ Teiste arvamus` since docs/adr/0091 §3; the route keeps its
+    # name, and so does this row.
     WriteRoute(
         name="matters:add_external_position",
         label="Välise seisukoha lisamine",
@@ -805,6 +900,17 @@ def world(db):
         actor=author,
     )
 
+    # And a round nobody is waiting on, for `Ootan tagasisidet`: opening a wait
+    # refuses a round that already has one, so firing at `waiting_engagement`
+    # would produce a refusal that is the service's state rule rather than the
+    # boundary this file measures (docs/adr/0091 §2).
+    quiet_engagement = add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Ootuseta kaasamine",
+        actor=author,
+    )
+
     # One recorded `Menetluse link`, for the correction route: correcting one
     # changes a row that exists, so a world without one would have nothing for a
     # forbidden actor to be refused *on* — and the refusal would be
@@ -850,6 +956,7 @@ def world(db):
         "matter": matter,
         "entry": entry,
         "waiting_engagement": waiting_engagement,
+        "quiet_engagement": quiet_engagement,
         "external_position": external_position,
         "procedural_link": procedural_link,
         "planned_overview": planned_overview,

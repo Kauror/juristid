@@ -48,15 +48,12 @@ CANONICAL = [
     # last thing done *about* a file, and finishing the file is not routine
     # capture at all (docs/adr/0081 §2).
     "+ Ülevaade / uudis",
-    # `+ Väline seisukoht` is the last of the capture operations and sits
-    # directly before the closure: what somebody else said about the file is
-    # reference material recorded alongside the work, and finishing the file is
-    # not routine capture at all (docs/adr/0084 §6).
-    "+ Väline seisukoht",
-    # `+ Menetluse link` is the last capture operation before the closure: where
-    # the official proceeding lives is reference material about the procedure
-    # rather than a record of anything Koda did, so it sits beside the other
-    # reference record and after everything that is (docs/adr/0089 §7).
+    # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
+    # and one panel partial, named by how what it holds reached the file.
+    "+ Meile saadetud tagasiside",
+    "+ Teiste arvamus",
+    "+ Koja arvamus",
+    "+ Menetluse areng",
     "+ Menetluse link",
     "+ Lõpeta teema",
 ]
@@ -74,7 +71,10 @@ PANEL_IDS = [
     "lisa-joustumine",
     "lisa-toovoit",
     "lisa-koduleht",
+    "lisa-tagasiside",
     "lisa-valine-seisukoht",
+    "lisa-koja-arvamus",
+    "lisa-menetluse-areng",
     "lisa-menetluse-link",
     "lisa-lopeta",
 ]
@@ -101,14 +101,14 @@ def _chips(zone: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_launcher_offers_ten_choices_in_the_canonical_order(signed_in, specialist):
+def test_the_launcher_offers_thirteen_choices_in_the_canonical_order(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chips(_zone(signed_in, matter)) == CANONICAL
 
 
 def test_an_open_step_removes_only_its_own_chip_and_reorders_nothing(signed_in, specialist):
-    """`+ Järgmine tegevus` goes; the remaining eight keep their relative order."""
+    """`+ Järgmine tegevus` goes; the remaining eleven keep their relative order."""
     matter = factories.MatterFactory(owner=specialist)
     set_next_action(
         matter=matter,
@@ -179,7 +179,7 @@ def test_every_chip_is_a_control_and_its_form_is_a_separate_element(signed_in, s
 
 
 def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in, specialist):
-    """One `name`, ten values: the browser enforces the product rule, and it
+    """One `name`, thirteen values: the browser enforces the product rule, and it
     keeps enforcing it with scripting off."""
     matter = factories.MatterFactory(owner=specialist)
     zone = _zone(signed_in, matter)
@@ -191,7 +191,7 @@ def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in,
 
 
 def test_nothing_is_chosen_until_somebody_chooses(signed_in, specialist):
-    """The zone is a choice of ten, not ten forms."""
+    """The zone is a choice of thirteen, not thirteen forms."""
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chosen(_zone(signed_in, matter)) == []

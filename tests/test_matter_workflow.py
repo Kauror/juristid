@@ -266,12 +266,39 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
         response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
     assert response.status_code == 200
+    # **45, and what the number is made of.**
+    #
     # Generous, and deliberately so: like `my_work` above, this catches a
     # regression into N+1 rather than fixing a precise budget. It was 40 until
     # docs/adr/0089 added `Menetluse lingid`, which costs the page exactly one
     # more scoped read whatever the Matter holds — the property is asserted
     # directly, per row count, by `tests/test_procedural_links.py`'s
     # `test_the_rail_card_costs_one_query_however_many_links_there_are`.
+    #
+    # docs/adr/0091 costs two more, and the measurement is worth recording
+    # because two *duplicates* were introduced with them and removed before this
+    # number was touched:
+    #
+    # * the Teema page renders three organisation controls where it rendered one,
+    #   and each was reading the catalogue, the usage ranking and the recorded
+    #   spellings for itself — four reads apiece. One `read_organisation_choices`
+    #   per page now, shared (`app/matters/forms.py`);
+    # * two `Seotud kaasamine` selects were each reading this Matter's
+    #   consultations. One `visible_engagements_of` per page now, shared — and the
+    #   *queryset* each field validates against is still set per form, so nothing
+    #   about the authorization boundary is shared (AUTH-003).
+    #
+    # What is left is one query per genuinely new thing on the page:
+    #
+    # * `matters_matterproceduraldevelopment` — the chronology reads the new
+    #   canonical record. A record that is rendered must be read.
+    # * a second `workflow_stagevocabulary` — `+ Menetluse areng`'s `Hetkeseis`
+    #   select offers `active_stages()`, and the header's inline control offers
+    #   `stages_including(matter.stage)`. Those are **different sets on purpose**:
+    #   the header must keep displaying a retired stage the file already stands
+    #   in, and the panel must not offer one for a new choice. Sharing the read
+    #   would mean sharing the vocabulary, which would let somebody re-select a
+    #   stage the department retired (app/workflow/selectors.py, docs/adr/0032).
     assert len(captured) < 45
 
 

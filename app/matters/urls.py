@@ -207,6 +207,30 @@ urlpatterns = [
         views.update_external_position_view,
         name="update_external_position",
     ),
+    # `+ Meile saadetud tagasiside` — the other half of the same record, under
+    # its own address because it is its own panel with its own questions. One
+    # correction route serves both, because a recorded position is corrected the
+    # same way whichever chip filed it (docs/adr/0091 §3.5).
+    path(
+        "teemad/<uuid:pk>/lisa/tagasiside/",
+        views.add_received_feedback,
+        name="add_received_feedback",
+    ),
+    # `+ Koja arvamus` — the Chamber's own opinion, recorded where the work is.
+    # It writes a `Submission` through the service `Dokumendid` already posts to;
+    # this is a second door, not a second record (docs/adr/0091 §6).
+    path(
+        "teemad/<uuid:pk>/lisa/koja-arvamus/",
+        views.add_koda_opinion,
+        name="add_koda_opinion",
+    ),
+    # `+ Menetluse areng` — one dated step the external procedure took, with the
+    # `Hetkeseis` and the next action it may carry (docs/adr/0091 §5).
+    path(
+        "teemad/<uuid:pk>/lisa/menetluse-areng/",
+        views.add_development,
+        name="add_development",
+    ),
     # `+ Menetluse link`, and the correction to one. The same pair, spelled the
     # same way and for the same reasons, as the two directly above: the addition
     # is under `lisa/` because it is new business content on the Matter, and the
@@ -275,6 +299,16 @@ urlpatterns = [
     # this one decides it is over. POST only — there is no state to GET, since
     # the form is rendered inside the chronology row the answer swaps
     # (app/matters/views.py, `complete_engagement_feedback_view`).
+    #
+    # `Ootan tagasisidet` — the act that starts a round waiting, which
+    # `+ Kaasamine` deliberately no longer asks about. Under the record rather
+    # than under `lisa/`, because it changes a round that already exists
+    # (docs/adr/0091 §2).
+    path(
+        "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/ootus/",
+        views.open_engagement_wait_view,
+        name="open_engagement_wait",
+    ),
     path(
         "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/lopeta/",
         views.complete_engagement_feedback_view,

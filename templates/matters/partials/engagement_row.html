@@ -276,6 +276,94 @@ before the closure.
     {% if engagement.feedback_received %}
       <p class="uxtl__feedback">{{ engagement.feedback_received|linebreaksbr }}</p>
     {% endif %}
+    {% comment %}
+      `Ootan tagasisidet` — the act that starts this round waiting.
+
+      **Offered here and asked for nowhere else.** `+ Kaasamine` records that
+      Koda asked somebody something, which is a completed act; deciding that the
+      file is *waiting* on an answer is a second decision, and only the second
+      one puts a row on somebody's desk. Putting the question inside the capture
+      panel made the application assign that work rather than a person taking it
+      on — an empty box there is still a box that has to be read, understood and
+      skipped, every time (lawyer feedback 11, docs/adr/0091 §2).
+
+      Nothing about the wait itself moved: the column, the single `WorkItem`,
+      the overdue wording above and `Lõpeta kaasamine` below are all exactly as
+      docs/adr/0086 §3 and §6 built them.
+
+      Closed like every other secondary act on this page, and absent altogether
+      once the round is waiting — `attach_wait_form` decides that, so the
+      template does not re-derive the state. Moving a deadline somebody else set
+      is a correction and lives on `Muuda`.
+    {% endcomment %}
+    {% if engagement.wait_form and can_write_business_content and matter.is_open %}
+      {% comment %}
+        `uxtl__wait-open`, deliberately **not** `uxtl__finish`. The two
+        disclosures look alike and sit beside each other, but they are opposite
+        acts on opposite states — one starts a wait and the other ends one, and
+        no row ever offers both. Sharing a class would make «the control for
+        finishing this round» unaddressable, in CSS and in the tests that count
+        it (e2e/test_engagement_correction.py, `_finish_panel`).
+      {% endcomment %}
+      <details class="cx-panel uxtl__wait-open" data-addpanel>
+        <summary class="disclosure-chip disclosure-chip--quiet">Ootan tagasisidet</summary>
+        <div class="cx-panel__body">
+          <form class="addform" data-addform aria-label="Tagasiside ootuse lisamine"
+                hx-post="{% url 'matters:open_engagement_wait' pk=matter.pk engagement_id=engagement.pk %}"
+                hx-target="#kaasamine-{{ engagement.pk }}-sisu"
+                hx-swap="outerHTML">
+            {% csrf_token %}
+            {% comment %}
+              The date is required here, unlike the box it replaces. This form
+              exists only to open a wait, so an empty day would be a press that
+              does nothing — and somebody who means «no wait» simply leaves the
+              disclosure shut.
+            {% endcomment %}
+            {% comment %}
+              The same three spans the capture panel used to carry, moved here
+              with the question they answer. They write into the box beside them
+              and store nothing of their own, so the server sees one value
+              however it was chosen and the control works with scripting off.
+              Each label grows to carry the day it lands on once pressed, because
+              nobody should set a reply-by date for a day they did not read
+              (`static/js/ux.js`, `bindQuickDates`; docs/adr/0086 §2).
+            {% endcomment %}
+            <div class="cx-grid cx-grid--links"
+                 data-quickdate-group="{{ engagement.wait_form.feedback_deadline.id_for_label }}">
+              <div class="cx-when">
+                {% for choice in feedback_deadline_choices %}
+                  <button type="button" class="uxchip" aria-pressed="false"
+                          data-quickdate="{{ choice.value }}"
+                          data-label-default="{{ choice.label }}"
+                          data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+                {% endfor %}
+              </div>
+              <label class="cx-f cx-f--date"
+                     for="{{ engagement.wait_form.feedback_deadline.id_for_label }}">
+                <span class="cx-f__lab">{{ engagement.wait_form.feedback_deadline.label }}</span>
+                {{ engagement.wait_form.feedback_deadline }}
+              </label>
+            </div>
+            {% if engagement.wait_form.feedback_deadline.errors %}
+              <p class="field__error">{{ engagement.wait_form.feedback_deadline.errors|first }}</p>
+            {% endif %}
+            {{ engagement.wait_form.revision }}
+            {% if engagement_edit_error %}
+              <p class="formerror" role="alert">{{ engagement_edit_error }}</p>
+            {% endif %}
+            {% comment %}
+              **`Salvesta ootus`, not `Ootan tagasisidet`.** The disclosure above
+              already answers to those words, and two controls in one region
+              sharing one accessible name is a control a screen reader cannot
+              tell apart — the same reasoning as `Salvesta ja lõpeta` below.
+            {% endcomment %}
+            <div class="addform__actions">
+              <button class="button button--primary button--tiny" type="submit">Salvesta ootus</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    {% endif %}
     {% if engagement.feedback_form and can_write_business_content and matter.is_open %}
       <details class="cx-panel uxtl__finish" data-addpanel
                {% if engagement.feedback_form_open %}open{% endif %}>

@@ -375,6 +375,7 @@ LINK_FIELD_BY_MODEL: dict[str, str] = {
     "intelligence.MatterEffectiveDate": "effective_date",
     "intelligence.MatterWorkVictory": "work_victory",
     "matters.MatterExternalPosition": "external_position",
+    "matters.MatterProceduralDevelopment": "procedural_development",
 }
 
 

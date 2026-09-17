@@ -44,6 +44,7 @@ from app.matters.models import (
     Matter,
     MatterEngagement,
     MatterExternalPosition,
+    MatterProceduralDevelopment,
     MatterWebsiteOverview,
 )
 from app.workflow.dates import format_at_precision
@@ -264,6 +265,30 @@ class ChronologyMilestone:
     file_url: str = ""
     file_label: str = ""
     links: tuple[ChronologyLink, ...] = ()
+    #: **This office's own words, and never the source's.**
+    #:
+    #: Set only by a `Väline seisukoht` carrying a `Juristi märkus`. It is a
+    #: field of its own rather than another clause appended to :attr:`sub`
+    #: because the whole reason the column exists is that «MKM toetab varianti B»
+    #: and «nende põhjendus ei arvesta liikmete kulumõjuga» must not become one
+    #: sentence attributed to the ministry — and a `sub` that concatenated them
+    #: would be exactly that, with a separator (docs/adr/0091 §4).
+    #:
+    #: The surface renders it under :attr:`own_note_label` on its own line.
+    #: Nothing here decides how it looks; what is decided here is that it is not
+    #: part of the position.
+    own_note: str = ""
+    #: What that line is labelled — carried on the milestone rather than looked
+    #: up by the template.
+    #:
+    #: Two surfaces render this row: the chronology, through
+    #: `timeline_items.html`, and the correction partial, which the view renders
+    #: on its own with a context of its own. A label in the page context would
+    #: have to be added to both, and the day somebody added a third the line
+    #: would render with an empty label — which is the unattributed paragraph
+    #: this field exists to prevent. Travelling with the value is the only shape
+    #: in which it cannot go missing (docs/adr/0091 §4).
+    own_note_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -344,6 +369,17 @@ class TimelineItem:
         it on none of them — the reasoning `website_overview` above states.
         """
         return self.record if isinstance(self.record, MatterExternalPosition) else None
+
+    @property
+    def procedural_development(self) -> Any:
+        """The `Menetluse areng` this row stands for, when it stands for one.
+
+        A named property rather than the template comparing `item_type` to a
+        class name, for the reason `external_position` above states: the
+        chronology offers `Muuda` on exactly these rows, and a string comparison
+        in a template is a rename away from silently offering it on none of them.
+        """
+        return self.record if isinstance(self.record, MatterProceduralDevelopment) else None
 
     @property
     def is_engagement(self) -> bool:
@@ -747,6 +783,24 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
 #: them is reworded.
 EXTERNAL_POSITION_DATE_UNKNOWN = "Kuupäev teadmata"
 
+#: What the chronology calls a `Menetluse areng` row.
+#:
+#: Named here because the projection, the correction partial and a test all have
+#: to agree about it — and because the headline is the *step*, with the record's
+#: own title after the colon, so a reader scanning a proceeding sees what happened
+#: rather than a label (docs/adr/0091 §5).
+DEVELOPMENT_HEADLINE = "Menetluse areng"
+
+
+#: What the chronology calls the line holding the lawyer's own comment.
+#:
+#: Named here because the template, the correction partial and a test all have to
+#: agree about it, and because the label is what does the work: a paragraph of
+#: this office's reading of a ministry's position, printed with no label under a
+#: headline naming that ministry, is the attribution defect with better line
+#: spacing (docs/adr/0091 §4).
+LAWYER_NOTE_LABEL = "Juristi märkus"
+
 
 def external_position_chronology_day(position: MatterExternalPosition) -> date:
     """Where an external position's row sits in the chronology.
@@ -779,11 +833,25 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     the linked consultation to lose its label (`app/matters/views.py`,
     `_external_position_row`).
 
-    **The headline names the organisation and nothing else.** «Väline
-    seisukoht: Rahandusministeerium» is what a reader scanning six months is
-    looking for; what the ministry actually said is the `Seisukoht` under it and
-    the link or file beside it, and folding any of them into the headline would
-    make one line say three things (docs/adr/0084 §6).
+    **The headline names how this reached the file and whose it is, and nothing
+    else.** «Meile saadetud tagasiside: Metallitööstuse Liit», «Teiste arvamus:
+    Rahandusministeerium» — which is what a reader scanning six months is looking
+    for, and the distinction the first lawyer test asked for by name. A row
+    recorded before `provenance` existed keeps the heading it has always had,
+    because nothing about it changed (docs/adr/0084 §6, docs/adr/0091 §3).
+
+    Where the author is a `source_label` rather than an organisation — an
+    aggregate answer with no single author — the label stands in the author's
+    place, because that is exactly what it is for. Where a record somehow has
+    neither, the separator goes with it rather than leaving a headline ending in a
+    colon.
+
+    **What the source said, and what this office thinks of it, are two lines.**
+    `Seisukoht` is the `sub`; `Juristi märkus` is :attr:`own_note` and is
+    rendered under its own label. They are never concatenated — a `sub` carrying
+    both would state this office's criticism as part of the position it is
+    criticising, which is the defect the column was added to fix
+    (docs/adr/0091 §4).
 
     **A row with no link is an ordinary row.** Since docs/adr/0084's 2026-09-16
     amendment the written `Seisukoht` is a source in its own right, so a
@@ -807,14 +875,87 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
         related = f"Vastus kaasamisele: {position.engagement.title}"
         sub = f"{sub} · {related}" if sub else related
     links = (ChronologyLink(label=position.link_label, url=position.url),) if position.url else ()
+    # `Meile saadetud tagasiside: Metallitööstuse Liit`, `Teiste arvamus: MKM`,
+    # or the unchanged `Väline seisukoht: …` for a row recorded before the
+    # question existed. The author is the organisation, or the `Allikas` naming a
+    # collection of answers that has none — and where a record has neither the
+    # separator goes with it, so a headline never ends in a colon
+    # (docs/adr/0091 §3.3, §3.4).
+    author = position.author_label
+    headline = f"{position.kind_label}: {author}" if author else position.kind_label
     return ChronologyMilestone(
-        what=f"Väline seisukoht: {position.organisation.name}",
+        what=headline,
         # The date as it was actually known, or the words «kuupäev teadmata» —
         # never the day the row happens to sit on, and never the anchor of a
         # period (docs/adr/0079 §3).
         display_date=position.display_date or EXTERNAL_POSITION_DATE_UNKNOWN,
         sub=sub,
         links=links,
+        # Its own line under its own label, never a clause in `sub`. The
+        # position, what it answered and where to read it are one thing; what
+        # this office thinks of it is another, and the row says so
+        # (docs/adr/0091 §4).
+        own_note=position.lawyer_note,
+        own_note_label=LAWYER_NOTE_LABEL,
+    )
+
+
+#: What the chronology prints for a development nobody could date.
+#:
+#: The same sentence an undated `Väline seisukoht` reads, and deliberately the
+#: same one: both are records whose date may honestly be unknown, and two
+#: spellings of «we do not know when» would be two things to learn.
+DEVELOPMENT_DATE_UNKNOWN = EXTERNAL_POSITION_DATE_UNKNOWN
+
+
+def development_chronology_day(development: MatterProceduralDevelopment) -> date:
+    """Where a `Menetluse areng`'s row sits in the chronology.
+
+    Its own date when it has one; the day it was written down when it has not —
+    the rule `external_position_chronology_day` states, for the same reason. A row
+    that cannot be placed cannot be read, and the day it was recorded is the only
+    day this system knows anything about.
+
+    **The fallback places the row and never describes it.**
+    :func:`development_milestone` prints :data:`DEVELOPMENT_DATE_UNKNOWN` for
+    exactly these rows, because printing `created_at` beside «Ministeerium saatis
+    uue eelnõu versiooni» would state that the ministry did it on the day somebody
+    typed it in — a fact about another organisation, invented by this application.
+
+    An approximate date places the row on its anchor, which is the first day of
+    the period and is exactly what an anchor is for (docs/adr/0079 §2).
+    """
+    return development.occurred_on or _local_day(development.created_at)
+
+
+def development_milestone(development: MatterProceduralDevelopment) -> ChronologyMilestone:
+    """One `Menetluse areng` as the chronology row a reader sees.
+
+    Built here rather than inline in :func:`projected_milestones` because the
+    correction form swaps this one row back in place after a save, and the two
+    renderings have to be the same rendering — a second copy is a second place for
+    the note to gain a separator or lose its label (`app/matters/views.py`,
+    `_development_row`).
+
+    **The headline is the step itself**, which is what the record's `title` holds
+    and what Package D will project: «Menetluse areng: Ministeerium saatis uue
+    eelnõu versiooni». A reader scanning a year of a proceeding is looking for the
+    steps, and folding the lawyer's assessment into that line would make one line
+    say two things with two authors.
+
+    **What happened and what this office makes of it are two lines.** The `note`
+    is :attr:`own_note` and renders under its own label, exactly as a
+    `Väline seisukoht`'s does — the same separation, for the same reason
+    (docs/adr/0091 §4, §5).
+    """
+    return ChronologyMilestone(
+        what=f"{DEVELOPMENT_HEADLINE}: {development.title}",
+        # The date as it was actually known, or the words «kuupäev teadmata» —
+        # never the day the row happens to sit on, and never the anchor of a
+        # period (docs/adr/0079 §3).
+        display_date=development.display_date or DEVELOPMENT_DATE_UNKNOWN,
+        own_note=development.note,
+        own_note_label=LAWYER_NOTE_LABEL,
     )
 
 
@@ -968,6 +1109,24 @@ def projected_milestones(
             # engagement above it follows.
             continue
         add(position, _end_of_day(when), external_position_milestone(position))
+
+    # `Menetluse areng`: one step the external procedure took.
+    #
+    # Projected from the canonical record like every other structured fact, so the
+    # three audit events this record writes contribute no row of their own and one
+    # act takes one line (docs/adr/0074 §14, docs/adr/0091 §5).
+    #
+    # No `select_related`: the row renders the record's own two columns and
+    # nothing across a foreign key — the stage it may have moved is on the Matter
+    # and is deliberately not copied here (`MatterProceduralDevelopment`).
+    for development in MatterProceduralDevelopment.objects.filter(matter=matter).visible_to(user):
+        when = development_chronology_day(development)
+        if when > day:
+            # A development dated in the future is not history yet, and the
+            # chronology reads newest-first and means *past*. The same rule the
+            # two records above it follow.
+            continue
+        add(development, _end_of_day(when), development_milestone(development))
 
     # `Ülevaade / uudis`, and **only the two states that are milestones**.
     #

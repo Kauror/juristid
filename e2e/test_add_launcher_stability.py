@@ -31,7 +31,15 @@ from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 pytestmark = pytest.mark.e2e
 
 #: The canonical order. `+ Järgmine tegevus` is absent while a step is open, and
-#: this Matter is new, so all ten are here.
+#: this Matter is new, so all thirteen are here.
+#:
+#: **Thirteen where there were thirteen**, and the growth is docs/adr/0091's stated
+#: cost rather than a slip: the bar is the product's inventory of what can be
+#: recorded, and four of the things lawyers do had no chip. `+ Väline seisukoht`
+#: became two — `+ Meile saadetud tagasiside` and `+ Teiste arvamus` — over one
+#: record and one panel partial, and `+ Koja arvamus` and `+ Menetluse areng`
+#: joined them. The geometry contract below is unchanged and is exactly what this
+#: file exists to hold: more chips is allowed, a chip that *moves* is not.
 CANONICAL = [
     "+ Märge",
     "+ Järgmine tegevus",
@@ -40,11 +48,12 @@ CANONICAL = [
     "+ Jõustumine",
     "+ Töövõit",
     "+ Ülevaade / uudis",
-    "+ Väline seisukoht",
-    # `+ Menetluse link` is the last capture operation before the closure: where
-    # the official proceeding lives is reference material about the procedure
-    # rather than a record of anything Koda did, so it sits beside the other
-    # reference record and after everything that is (docs/adr/0089 §7).
+    # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
+    # and one panel partial, named by how what it holds reached the file.
+    "+ Meile saadetud tagasiside",
+    "+ Teiste arvamus",
+    "+ Koja arvamus",
+    "+ Menetluse areng",
     "+ Menetluse link",
     "+ Lõpeta teema",
 ]
@@ -57,7 +66,10 @@ PANEL_IDS = [
     "lisa-joustumine",
     "lisa-toovoit",
     "lisa-koduleht",
+    "lisa-tagasiside",
     "lisa-valine-seisukoht",
+    "lisa-koja-arvamus",
+    "lisa-menetluse-areng",
     "lisa-menetluse-link",
     "lisa-lopeta",
 ]
@@ -147,7 +159,7 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    #: Each chip's own resting colour. `+ Lõpeta teema` is quieter than the seven
+    #: Each chip's own resting colour. `+ Lõpeta teema` is quieter than the eleven
     #: above it on purpose, so one shared "quiet" value would be a colour no
     #: last chip ever has.
     resting = {
@@ -162,7 +174,7 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     active = chosen.evaluate("n => getComputedStyle(n).color")
 
     assert active != resting["lisa-kaasamine"], (
-        "the chosen choice is not distinguished from the seven others"
+        "the chosen choice is not distinguished from the eleven others"
     )
     accent = page.evaluate(
         "() => getComputedStyle(document.documentElement).getPropertyValue('--accent-link').trim()"
@@ -297,7 +309,9 @@ def test_at_phone_width_the_chips_wrap_and_stay_on_their_rows(page, base_url):
 
     resting = chip_geometry(page)
     rows = sorted({round(row[2]) for row in resting})
-    assert len(rows) > 1, "at 375px the ten chips fit on one line — retune this test, not the CSS"
+    assert len(rows) > 1, (
+        "at 375px the thirteen chips fit on one line — retune this test, not the CSS"
+    )
 
     for panel_id in PANEL_IDS:
         panel = open_panel(page, panel_id)
@@ -333,12 +347,13 @@ def test_the_engagement_panel_shows_both_dates_and_only_one_default(page, base_u
     panel = page.locator("#lisa-kaasamine")
 
     expect(panel.get_by_text("Kaasamise kuupäev")).to_be_visible()
-    expect(panel.get_by_text("Tagasisidet ootame kuni")).to_be_visible()
     assert panel.locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied where nobody can see it"
     )
-    # And the reply-by date the same way, since docs/adr/0086 §2 gave it a
-    # default of its own: a week out, on the screen, before the save.
-    assert panel.locator("[name=feedback_deadline]").input_value(), (
-        "the reply-by date opens empty, so a round would file as waiting on nothing"
-    )
+    # And the reply-by date **not at all**, since docs/adr/0091 §2 narrowed
+    # docs/adr/0086 §2: a completed act does not acquire a managed wait nobody
+    # asked for, and an empty box is still a question. It moved to
+    # `Ootan tagasisidet` on the round's own chronology row, with the three spans
+    # travelling with it, which is what makes the narrowing affordable.
+    expect(panel.locator("[name=feedback_deadline]")).to_have_count(0)
+    expect(panel.get_by_text("Tagasisidet ootame kuni")).to_have_count(0)

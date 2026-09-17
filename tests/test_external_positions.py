@@ -91,7 +91,16 @@ def ministry(db):
 
 
 def _recorded(matter, organisation, actor, **kwargs):
-    """A position through the workspace door, which is the one a person uses."""
+    """A position through the workspace door, which is the one a person uses.
+
+    **Provenance is left to the default**, which is `DISCOVERED` — so everything
+    this file records is a `Teiste arvamus`, and that is why the headlines below
+    read under that name rather than under `Väline seisukoht`. docs/adr/0091 §3
+    split the chip in two and named the record by how it reached the file; nothing
+    else in this file's subject moved, and the two rules that genuinely differ —
+    the optional author for aggregate received feedback, and the lawyer's own note
+    — are `tests/test_lawyer_workflow_package.py`, beside the rest of that round.
+    """
     return add_matter_external_position(
         matter=matter,
         author=actor,
@@ -519,7 +528,7 @@ def test_the_chronology_names_the_organisation_and_never_the_address(
 
     row = next(item for item in _timeline(normal_matter, specialist) if item.external_position)
 
-    assert row.milestone.what == "Väline seisukoht: Rahandusministeerium"
+    assert row.milestone.what == "Teiste arvamus: Rahandusministeerium"
     assert row.milestone.display_date == "14.3.2026"
     assert row.milestone.sub == "Toetab eelnõu."
     assert [link.label for link in row.milestone.links] == ["rahandusministeerium.ee"]
@@ -1028,6 +1037,23 @@ def _post(client, name, matter, data=None, **kwargs):
     )
 
 
+def _panel_markup(body: str) -> str:
+    """The `+ Teiste arvamus` panel alone, sliced out of the page.
+
+    **The page now renders this panel twice.** docs/adr/0091 §3 split the chip in
+    two over one record and one partial, so `+ Meile saadetud tagasiside` comes
+    first and carries the same field names — and `_tag_with` finds the *first*
+    match. Every assertion in this file is about the second one, which is the panel
+    these routes post to, so the slice has to happen before the search.
+
+    Sliced by the two panel ids rather than by a form boundary: the ids are the
+    launcher's own contract (`WORKSPACE_PANELS`), and a test that guessed where one
+    `<form>` ends would break on markup that is not this file's subject.
+    """
+    start = body.index('id="lisa-valine-seisukoht"')
+    return body[start:]
+
+
 def _tag_with(body: str, needle: str) -> str:
     """The one element whose markup carries ``needle``, for attribute assertions.
 
@@ -1046,7 +1072,27 @@ def _tag_with(body: str, needle: str) -> str:
 
 
 def _stated_on_box(body: str) -> str:
-    return _tag_with(body, 'name="stated_on"')
+    """The `Seisukoha kuupäev` box this response is about.
+
+    Two elements can carry that name, in two different kinds of response, and the
+    helper answers for both:
+
+    * a **whole Teema page** — a fresh render or a refused save — renders the
+      shared panel twice since docs/adr/0091 §3, so the page is sliced to
+      `+ Teiste arvamus` first and the box found inside it. Searching the page
+      would find `+ Meile saadetud tagasiside`'s box, which no assertion here is
+      about;
+    * a **chronology-row fragment** — what `Muuda` and a correction swap in —
+      holds one box, on `ExternalPositionEditForm`, which keeps Django's default
+      `id_stated_on` because there is one of it per row and the row is the swap
+      target.
+
+    Deciding from the response rather than taking a parameter, because every caller
+    already knows which it has and the distinction is not what any of them is
+    testing.
+    """
+    scoped = _panel_markup(body) if 'id="lisa-valine-seisukoht"' in body else body
+    return _tag_with(scoped, 'name="stated_on"')
 
 
 def _as_typed(day: dt.date) -> str:
@@ -1064,7 +1110,10 @@ def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matte
     body = _detail(signed_in, normal_matter)
 
     assert 'id="lisa-valine-seisukoht"' in body
-    assert "+ Väline seisukoht" in body
+    # The chip is named by how the record reached the file. It was
+    # `+ Väline seisukoht`; docs/adr/0091 §3 split it in two, and this panel is
+    # the half that records what Koda found somewhere.
+    assert "+ Teiste arvamus" in body
     assert "Rahandusministeerium" in body
 
 
@@ -1159,10 +1208,15 @@ def test_a_save_recording_nothing_is_refused_and_keeps_what_was_typed(
     assert response.status_code == 400
     assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
     assert EXTERNAL_POSITION_NEEDS_SOURCE in body
-    # Everything the person had already answered is still in its control.
+    # Everything the person had already answered is still in its control —
+    # in **this** panel's controls. `+ Meile saadetud tagasiside` renders the same
+    # field names above it and is unbound, so a search over the whole page would
+    # find its empty twin and pass or fail for the wrong reason
+    # (docs/adr/0091 §3.5, `_panel_markup`).
+    panel = _panel_markup(body)
     assert 'value="14.03.2026"' in _stated_on_box(body)
-    assert "selected" in _tag_with(body, f'value="{engagement.pk}"')
-    assert "checked" in _tag_with(body, f'value="{ministry.pk}"')
+    assert "selected" in _tag_with(panel, f'value="{engagement.pk}"')
+    assert "checked" in _tag_with(panel, f'value="{ministry.pk}"')
 
 
 def test_a_hostile_address_is_refused_on_the_page_with_the_value_returned(
@@ -1239,7 +1293,7 @@ def test_the_chronology_renders_a_safe_link_and_no_raw_address(
 
     body = _detail(signed_in, normal_matter)
 
-    assert "Väline seisukoht: Rahandusministeerium" in body
+    assert "Teiste arvamus: Rahandusministeerium" in body
     assert 'rel="noopener noreferrer"' in body
     assert 'target="_blank"' in body
     assert ">rahandusministeerium.ee<" in body
@@ -1366,7 +1420,7 @@ def test_a_restricted_position_is_invisible_to_a_reader_on_the_page(
 
     body = _detail(client, normal_matter)
 
-    assert "Väline seisukoht: Rahandusministeerium" not in body
+    assert "Teiste arvamus: Rahandusministeerium" not in body
 
 
 def test_a_reader_may_not_open_the_correction_form(
@@ -1841,7 +1895,7 @@ def test_a_text_only_position_reads_on_the_chronology_with_no_link(
 
     assert len(rows) == 1
     milestone = rows[0].milestone
-    assert milestone.what == "Väline seisukoht: Rahandusministeerium"
+    assert milestone.what == "Teiste arvamus: Rahandusministeerium"
     assert milestone.sub == "Toetab eelnõu, kuid soovib pikemat üleminekuaega."
     assert milestone.links == ()
     assert milestone.display_date == "14.3.2026"

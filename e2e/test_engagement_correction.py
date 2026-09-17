@@ -79,22 +79,41 @@ REPLY_BY_AHEAD = (dt.date.today() + dt.timedelta(days=21)).strftime("%d.%m.%Y")
 def _file_an_engagement(page, *, occurred_on: str = HELD_ON, reply_by: str = "") -> None:
     """Record one consultation through the real `+ Kaasamine` panel.
 
-    ``reply_by`` defaults to **empty**, and that is deliberate: the panel
-    pre-fills `Tagasisidet ootame kuni` with a week out (docs/adr/0086 §2), so a
-    helper that left the box alone would file every fixture as a waiting round
-    and the correction tests below would be measuring a state they never set.
-    Clearing it here is also the shortest proof that the default is an initial
-    value and nothing more — the saved row has no deadline at all.
+    ``reply_by`` defaults to **empty**, which is now simply what the panel does:
+    since docs/adr/0091 §2 it does not ask about a reply-by date at all, so every
+    round filed here is one nobody is waiting on. A fixture that *is* waiting
+    asks for it afterwards through `Ootan tagasisidet`, which is the one surface
+    that opens a wait — see :func:`_open_a_wait` below.
     """
     open_add_panel(page, "lisa-kaasamine")
     page.locator("#lisa-kaasamine input[name=audience]").fill(AUDIENCE)
     page.locator("#lisa-kaasamine input[name=occurred_on]").fill(occurred_on)
-    page.locator("#lisa-kaasamine input[name=feedback_deadline]").fill(reply_by)
     with page.expect_response(
         lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
     ) as caught:
         page.locator("#lisa-kaasamine button[type=submit]").click()
     assert caught.value.status == 200, f"the consultation was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+    if reply_by:
+        _open_a_wait(page, reply_by)
+
+
+def _open_a_wait(page, reply_by: str) -> None:
+    """`Ootan tagasisidet` on the round's own row — the act that starts a wait.
+
+    Its own step rather than a field on the panel above, because that is what it
+    is now: filing a consultation and deciding the file is waiting on an answer
+    are two acts, and only the second puts a row on somebody's desk
+    (docs/adr/0091 §2).
+    """
+    row = _row(page)
+    row.get_by_text("Ootan tagasisidet", exact=True).click()
+    row.locator("input[name=feedback_deadline]").fill(reply_by)
+    with page.expect_response(
+        lambda response: "/ootus/" in response.url and response.request.method == "POST"
+    ) as caught:
+        row.get_by_role("button", name="Salvesta ootus").click()
+    assert caught.value.status == 200, f"the wait was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
 

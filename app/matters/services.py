@@ -27,8 +27,10 @@ from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import read_upload
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
+    SELECTABLE_EXTERNAL_POSITION_PROVENANCE,
     DataQualityTier,
     EngagementKind,
+    ExternalPositionProvenance,
     MatterDataClass,
     MatterOrigin,
     ProceduralLinkKind,
@@ -41,7 +43,10 @@ from app.matters.locks import (
     lock_open_matter_for_business_write,
 )
 from app.matters.models import (
+    DEVELOPMENT_TITLE_MAX_LENGTH,
     ENGAGEMENT_URL_MAX_LENGTH,
+    EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH,
+    EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH,
     EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
     EXTERNAL_POSITION_URL_MAX_LENGTH,
     PROCEDURAL_LINK_LABEL_MAX_LENGTH,
@@ -54,6 +59,7 @@ from app.matters.models import (
     MatterEngagement,
     MatterExternalPosition,
     MatterPersonalNote,
+    MatterProceduralDevelopment,
     MatterProceduralLink,
     MatterReferenceSequence,
     MatterWebsiteOverview,
@@ -2203,6 +2209,113 @@ def complete_engagement_feedback(
     return closed
 
 
+#: Refused when somebody opens a wait on a round that is already waiting.
+ENGAGEMENT_FEEDBACK_ALREADY_AWAITED = "Sellel kaasamisel on tagasiside ootus juba olemas."
+#: Refused when the explicit wait action arrives with no day on it.
+ENGAGEMENT_FEEDBACK_NEEDS_A_DAY = "Vali kuupäev, milleni tagasisidet ootad."
+
+
+@transaction.atomic
+def open_engagement_feedback_wait(
+    *,
+    engagement: MatterEngagement,
+    deadline: Any,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterEngagement:
+    """`Ootan tagasisidet` — the one act that starts a round waiting.
+
+    **Opening a wait is a decision somebody makes, not a field on a form they
+    were already filling in.** docs/adr/0086 §2 asked for the reply-by date on
+    `+ Kaasamine` itself and docs/adr/0091 §2 emptied its default; using it on
+    real files showed that neither went far enough. Recording «19.09 — kaasati
+    234 tööstusettevõtet» is a completed act, and a *question* about a reply-by
+    date sitting in the middle of that form is the complexity the department
+    asked to have removed — an empty box is still a box that has to be read,
+    understood and skipped, every time (lawyer feedback 11, docs/adr/0091 §2 as
+    narrowed).
+
+    So the column, the wait, the work item and `Lõpeta kaasamine` all stay
+    exactly as docs/adr/0086 §3 and §6 built them, and what changes is *where the
+    wait comes from*: a named act on the round's own chronology row, taken by
+    somebody who has decided that this file is waiting on an answer. That
+    statement has a name on it, which is what the whole machinery is for.
+
+    **``deadline`` is required here**, unlike the field it replaces. This
+    function exists only to start a wait; an empty day would be an act that does
+    nothing, and the caller that means «no wait» simply does not call it.
+    Clearing an existing one is still `update_engagement`, which is the
+    correction surface and is where the historical rows are edited.
+
+    **Two refusals, both read from the locked row.** A round already waiting is
+    not started twice — that would silently move a deadline somebody else set —
+    and a closed Matter refuses the act entirely, under
+    `lock_open_matter_for_business_write`, because a page is not a boundary
+    (R2-02).
+
+    **Optimistic concurrency, and no partial write.** ``expected_revision`` is
+    the version the form was rendered from, compared against the row *after* it
+    is locked; a stale save raises :class:`EngagementEditConflict` and writes
+    nothing. The contract `complete_engagement_feedback` keeps, for the same
+    reason and in the same shape.
+
+    Writes `ENGAGEMENT_CHANGED`, not an event of its own. The round is one
+    record and this moves one column on it; a second event type for «the wait
+    opened» would be a second history of the same fact, and the payload already
+    names the column that moved.
+    """
+    if deadline is None:
+        raise DomainError(ENGAGEMENT_FEEDBACK_NEEDS_A_DAY)
+
+    locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
+    try:
+        current = MatterEngagement.objects.select_for_update(no_key=True).get(
+            pk=engagement.pk, matter=locked_matter
+        )
+    except MatterEngagement.DoesNotExist:
+        raise DomainError("Seda kaasamist ei ole sellel teemal.") from None
+
+    if expected_revision is not None and engagement_revision_token(current) != expected_revision:
+        raise EngagementEditConflict(current)
+    if current.feedback_deadline is not None:
+        raise DomainError(ENGAGEMENT_FEEDBACK_ALREADY_AWAITED)
+
+    # The one relationship between the two dates, and the same one the panel and
+    # the correction form keep: a reply-by day *before* the round began is not a
+    # late consultation, it is a slip of the keyboard. The anchor is the period's
+    # first day, so an approximate round refuses only a deadline falling before
+    # the whole period began (docs/adr/0078 §3, `refuse_deadline_before_engagement`).
+    #
+    # Stated here as well as on the form because this is the service boundary and
+    # the form is what one browser was shown. The sentence is imported rather than
+    # rewritten so the two cannot drift.
+    from app.matters.forms import DEADLINE_BEFORE_ENGAGEMENT
+
+    if current.occurred_on and deadline < current.occurred_on:
+        raise DomainError(DEADLINE_BEFORE_ENGAGEMENT)
+
+    current.feedback_deadline = deadline
+    current.save(update_fields=["feedback_deadline", "updated_at"])
+    engagement.feedback_deadline = deadline
+
+    record_change_event(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED,
+        matter=locked_matter,
+        actor=actor,
+        obj=current,
+        summary=current.title[:200],
+        payload={
+            "fields": ["feedback_deadline"],
+            "feedback_deadline_from": None,
+            "feedback_deadline_to": deadline.isoformat(),
+            # Named so a reader of the history can tell this act apart from a
+            # correction that happened to move the same column.
+            "wait_opened": True,
+        },
+    )
+    return current
+
+
 def close_open_feedback_waits_for_closure(
     *, matter: Matter, actor: Any = None
 ) -> list[MatterEngagement]:
@@ -3089,6 +3202,35 @@ EXTERNAL_POSITION_NEEDS_SOURCE = (
     "Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik."
 )
 EXTERNAL_POSITION_NEEDS_ORGANISATION = "Vali organisatsioon, kelle seisukoht see on."
+#: What received feedback with no author at all is told.
+#:
+#: Different words from the sentence above, because the answer it asks for is
+#: different: an aggregate answer *may* have no organisation, and what it must
+#: have instead is a name for the collection of answers. Offering «vali
+#: organisatsioon» on a survey of 234 companies is the refusal that made somebody
+#: invent one (docs/adr/0091 §3.3).
+EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL = (
+    "Vali organisatsioon või kirjuta, millisest allikast tagasiside tuli."
+)
+#: What a discovered position with no organisation is told, and why it may not
+#: borrow the label.
+#:
+#: `Allikas` is a received-feedback column. «MKM arvamus» found on a ministry's
+#: website has an author by definition, and a record naming one through a free
+#: text box instead of the shared catalogue would be the ninth way of naming an
+#: institution docs/adr/0073 exists to prevent.
+EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY = (
+    "Allikas käib ainult meile saadetud tagasiside juurde. "
+    "Teiste arvamuse puhul vali organisatsioon."
+)
+#: What a caller naming a provenance nobody may choose is told.
+#:
+#: `LEGACY` is what history says, not an answer a person gives, so it is refused
+#: here as well as being absent from both forms' vocabularies: a panel that does
+#: not draw a chip is not an endpoint that refuses one (docs/adr/0091 §3.4).
+EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE = (
+    "Vali, kas tagasiside saadeti meile või on see kellegi teise arvamus."
+)
 #: A `Seotud kaasamine` naming a round on somebody else's file. The same
 #: refusal, for the same reason, as `link_document_to_record`'s cross-Matter
 #: one: a relation written across two files is a disclosure, and quietly
@@ -3198,14 +3340,65 @@ def _external_position_source(
     raise DomainError(EXTERNAL_POSITION_NEEDS_SOURCE)
 
 
+def _external_position_authorship(
+    *, provenance: Any, organisation: Any, source_label: str
+) -> tuple[str, str]:
+    """Which provenance this save states, and who it names as the author.
+
+    Three rules, all of them about the same thing — **a position says whose it
+    is** — and all of them decided here rather than at the two call sites, so
+    that creating a record and correcting one cannot disagree about what a
+    complete answer looks like (docs/adr/0091 §3.3).
+
+    1. **The provenance is one a person may choose.** `RECEIVED` or `DISCOVERED`,
+       never `LEGACY`: that value is what rows written before the question
+       existed say, and a save that could state it would let somebody file a new
+       record as unspecified rather than answering. Refused here as well as being
+       absent from both forms, because a panel that draws no chip is not an
+       endpoint that refuses one.
+    2. **Received feedback names an organisation or a source.** A survey of 234
+       industrial companies has no single author, and the two answers this rule
+       used to force were an invented organisation and one arbitrary respondent
+       standing for the rest. Either column satisfies it and both together are
+       ordinary.
+    3. **A discovered position names an organisation**, and may not name a
+       source label instead. `Allikas` is a free text box, and letting it answer
+       *whose position is this* would make it a ninth way of naming an
+       institution beside the one shared catalogue (docs/adr/0073).
+
+    Returns the normalised provenance and the trimmed label, because the caller
+    stores both and trimming at each site is how two doors come to disagree about
+    whether three spaces are a source name. The database states rules 2 and 3 as
+    `CHECK`s too — all three columns are on one row, so it can — and this is
+    what turns them into an Estonian sentence under the right control rather than
+    an `IntegrityError` from inside a transaction that has already read a file.
+    """
+    value = getattr(provenance, "value", provenance) or ""
+    if value not in SELECTABLE_EXTERNAL_POSITION_PROVENANCE:
+        raise DomainError(EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE)
+    label = (source_label or "").strip()[:EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH]
+    if value == ExternalPositionProvenance.DISCOVERED.value:
+        if organisation is None:
+            raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+        if label:
+            raise DomainError(EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY)
+        return value, ""
+    if organisation is None and not label:
+        raise DomainError(EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL)
+    return value, label
+
+
 def record_external_position(
     *,
     matter: Matter,
     organisation: Any,
+    provenance: Any = ExternalPositionProvenance.DISCOVERED.value,
+    source_label: str = "",
     url: str = "",
     stated_on: Any = None,
     stated_on_precision: str = DatePrecision.EXACT.value,
     summary: str = "",
+    lawyer_note: str = "",
     engagement: Any = None,
     attachment_count: int = 0,
     actor: Any = None,
@@ -3221,6 +3414,23 @@ def record_external_position(
     work item, and moves no `Matter.response_deadline`. What somebody else
     published is a fact about the world; what is owed by this office is work,
     and only the second is modelled as work (docs/adr/0084 §5).
+
+    ``provenance`` is the distinction the lawyers asked for — whether somebody
+    gave this to Koda or Koda found it somewhere — and it is **required in
+    substance**: the parameter defaults to `DISCOVERED` for the historical callers
+    that have no better answer, and `LEGACY` is refused, so no person's save can
+    file a record as unspecified. With `RECEIVED`, ``source_label`` may answer
+    *whose feedback this is* in place of an organisation, which is the one thing
+    an aggregate survey result needs and the only place the authorship rule bends
+    (`_external_position_authorship`, docs/adr/0091 §3).
+
+    ``lawyer_note`` is this office's own reading of the position, and it is **not
+    a source**. Nothing in :func:`_external_position_source` counts it: a record
+    whose only content is Koda's comment on something nobody can read is a record
+    of nothing. It is stored, rendered and audited separately from ``summary`` at
+    every step, because a file that attributes this office's criticism to the
+    body being criticised is a file that lies about a professional record
+    (docs/adr/0091 §4).
 
     ``attachment_count`` is how many files the caller is about to capture
     against this record. It is a count rather than the documents themselves
@@ -3246,12 +3456,18 @@ def record_external_position(
     and `add_matter_engagement` already have, and the reason is the same one
     R2-02 states: a page is not a boundary.
     """
-    if organisation is None:
-        raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+    kind, clean_label = _external_position_authorship(
+        provenance=provenance, organisation=organisation, source_label=source_label
+    )
     clean_url = normalize_external_position_url(url)
     # Trimmed *before* the source rule reads it, so a `Seisukoht` of three
     # spaces cannot be the thing that makes an otherwise empty record savable.
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    # **Not passed to the source rule, and that is the point.** A `Juristi
+    # märkus` is this office's reading of a position, so a record whose only
+    # content is Koda's opinion of something nobody can read is a record of
+    # nothing. The three sources stay the three sources (docs/adr/0091 §4).
+    clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
@@ -3259,10 +3475,13 @@ def record_external_position(
     position = MatterExternalPosition.objects.create(
         matter=matter,
         organisation=organisation,
+        provenance=kind,
+        source_label=clean_label,
         url=clean_url,
         stated_on=stated_on,
         stated_on_precision=precision,
         summary=clean_summary,
+        lawyer_note=clean_note,
         engagement=related,
         created_by=actor,
     )
@@ -3271,9 +3490,15 @@ def record_external_position(
         matter=matter,
         actor=actor,
         obj=position,
-        summary=organisation.name[:200],
+        summary=position.author_label[:200],
         payload={
-            "organisation": str(organisation.pk),
+            "provenance": position.provenance,
+            "organisation": str(organisation.pk) if organisation is not None else None,
+            # Whether the answers were named by a label, not what the label says:
+            # the label is on the record where a reader can correct it, and an
+            # audit row holding a second copy is a worse copy nobody maintains
+            # (the rule `ENGAGEMENT_FEEDBACK_CLOSED` keeps for its prose).
+            "has_source_label": bool(position.source_label),
             # The date and its precision together, never the anchor on its own:
             # a payload carrying `2026-10-01` and nothing else says «1 October»
             # to whoever reads it back, which is the invention docs/adr/0079 §2
@@ -3285,6 +3510,11 @@ def record_external_position(
             # below are what say where it points and when that moved.
             "has_url": bool(position.url),
             "has_summary": bool(position.summary),
+            # **That the lawyer wrote a note, never the note.** An audit payload
+            # carrying this office's comment beside the organisation's identifier
+            # is the one place the two could be read back as one statement, which
+            # is exactly what the column exists to prevent (docs/adr/0091 §4).
+            "has_lawyer_note": bool(position.lawyer_note),
             "engagement": str(related.pk) if related is not None else None,
         },
     )
@@ -3325,7 +3555,10 @@ def record_external_position_document(
         summary=document.title[:200],
         payload={
             "document": str(document.pk),
-            "organisation": str(position.organisation_id),
+            "organisation": (
+                str(position.organisation_id) if position.organisation_id is not None else None
+            ),
+            "provenance": position.provenance,
         },
     )
 
@@ -3340,6 +3573,9 @@ def correct_external_position(
     stated_on_precision: Any,
     summary: Any,
     engagement: Any,
+    provenance: Any = None,
+    source_label: str = "",
+    lawyer_note: Any = "",
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterExternalPosition:
@@ -3372,6 +3608,14 @@ def correct_external_position(
     sentinel: this function has exactly one caller, a correction form that
     renders every box, so «not mentioned» is not a state it can be in — and an
     emptied box has to be able to clear a column.
+
+    ``provenance`` is the one exception, and it is a sentinel rather than a value:
+    `None` means «this form did not ask». It exists for the historical corpus —
+    a `LEGACY` row whose link needs fixing must not be forced to claim a
+    provenance nobody established, and `_external_position_authorship` refuses
+    `LEGACY` as an answer precisely so that no *new* record can be filed as
+    unspecified. A correction form that renders the control posts a real value and
+    moves the column like any other field (docs/adr/0091 §3.4).
     """
     locked_matter = lock_open_matter_for_business_write(position.matter_id)
     try:
@@ -3384,10 +3628,32 @@ def correct_external_position(
     if expected_revision is not None and external_position_revision(current) != expected_revision:
         raise ExternalPositionConflict(current)
 
-    if organisation is None:
-        raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+    # **The provenance a correction does not mention is the one the record has.**
+    # `None` means «not asked», which is what the historical corpus needs: a
+    # `LEGACY` row corrected for a typo in its link must not be forced to claim a
+    # provenance nobody established, and `_external_position_authorship` refuses
+    # `LEGACY` as an *answer*. A form that renders the control posts a real value
+    # and moves the column like any other field (docs/adr/0091 §3.4).
+    if provenance is None and current.provenance == ExternalPositionProvenance.LEGACY:
+        # A historical row keeps its unspecified provenance, and the two rules
+        # `LEGACY` can still break are asked anyway: it must name an organisation
+        # — every one of them does, because the column was `NOT NULL` when they
+        # were written — and it may not acquire a received-feedback `Allikas`.
+        kind = ExternalPositionProvenance.LEGACY.value
+        clean_label = ""
+        if organisation is None:
+            raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
+        if (source_label or "").strip():
+            raise DomainError(EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY)
+    else:
+        kind, clean_label = _external_position_authorship(
+            provenance=provenance if provenance is not None else current.provenance,
+            organisation=organisation,
+            source_label=source_label,
+        )
     clean_url = normalize_external_position_url(url)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
+    clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     # The source rule, asked again and against what this save would *result*
     # in — not against what the record holds now. A correction that empties the
     # address of a position whose `Seisukoht` says what the ministry wrote is
@@ -3406,11 +3672,14 @@ def correct_external_position(
     precision = _external_position_precision(stated_on, stated_on_precision)
 
     proposed: dict[str, Any] = {
-        "organisation_id": organisation.pk,
+        "organisation_id": organisation.pk if organisation is not None else None,
+        "provenance": kind,
+        "source_label": clean_label,
         "url": clean_url,
         "stated_on": stated_on,
         "stated_on_precision": precision,
         "summary": clean_summary,
+        "lawyer_note": clean_note,
         "engagement_id": related.pk if related is not None else None,
     }
     changed = [field for field, value in proposed.items() if getattr(current, field) != value]
@@ -3422,8 +3691,16 @@ def correct_external_position(
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "organisation_id" in changed:
-        payload["organisation_from"] = str(current.organisation_id)
-        payload["organisation_to"] = str(organisation.pk)
+        payload["organisation_from"] = (
+            str(current.organisation_id) if current.organisation_id is not None else None
+        )
+        payload["organisation_to"] = str(organisation.pk) if organisation is not None else None
+    if "provenance" in changed:
+        # Both values in full. A row that moved from «meile saadetud» to «teiste
+        # arvamus» changed what the file claims about how it learned something,
+        # which is a change a reader auditing provenance has to be able to see.
+        payload["provenance_from"] = current.provenance
+        payload["provenance_to"] = kind
     if "stated_on" in changed:
         payload["stated_on_from"] = current.stated_on.isoformat() if current.stated_on else None
         payload["stated_on_to"] = stated_on.isoformat() if stated_on else None
@@ -3441,6 +3718,12 @@ def correct_external_position(
         payload["engagement_to"] = str(related.pk) if related is not None else None
 
     url_from = current.url
+    # `Allikas` and `Juristi märkus` are in `fields` by name and nowhere else in
+    # this payload, deliberately. The first is short enough to copy and is still
+    # the record's to correct; the second is this office's own words, and an
+    # audit table holding them beside the organisation's identifier is the one
+    # place a reader could take them for the organisation's
+    # (docs/adr/0091 §4, §3.3).
     for field, value in proposed.items():
         setattr(current, field, value)
         setattr(position, field, value)
@@ -3451,7 +3734,7 @@ def correct_external_position(
         matter=locked_matter,
         actor=actor,
         obj=current,
-        summary=current.organisation.name[:200],
+        summary=current.author_label[:200],
         payload=payload,
     )
     if "url" in changed:
@@ -3468,6 +3751,239 @@ def correct_external_position(
             summary=current.link_label[:200],
             payload={"url_from": url_from or None, "url_to": current.url or None},
         )
+    return current
+
+
+#: What a development with nothing said about it is told.
+DEVELOPMENT_NEEDS_TITLE = "Kirjuta, mis menetluses juhtus."
+#: What a stale correction is told. The sibling of `EXTERNAL_POSITION_EDIT_CONFLICT`
+#: and deliberately the same shape of sentence.
+DEVELOPMENT_EDIT_CONFLICT = "Menetluse arengut on vahepeal mujal muudetud."
+
+
+class ProceduralDevelopmentConflict(DomainError):
+    """The development changed elsewhere between rendering a form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see the
+    other side of is a conflict they cannot resolve — the same reasoning, and
+    deliberately the same shape, as :class:`ExternalPositionConflict`.
+    """
+
+    def __init__(self, current: MatterProceduralDevelopment) -> None:
+        super().__init__(DEVELOPMENT_EDIT_CONFLICT)
+        self.current = current
+
+
+def development_revision(development: MatterProceduralDevelopment) -> str:
+    """Which version of a development a rendered correction form was filled from."""
+    return development.updated_at.isoformat()
+
+
+def _development_precision(occurred_on: Any, value: Any) -> str:
+    """How exactly `Kuupäev` is known, normalised and vouched for.
+
+    The two rules `_external_position_precision` keeps, for the same two reasons.
+    A date nobody knows has no precision, so a missing date forces `EXACT` — and
+    the database says so as well. The vocabulary is checked here so that a bad
+    value is a `DomainError` naming what was wrong rather than an `IntegrityError`
+    from inside a transaction that has already captured three files.
+    """
+    if occurred_on is None:
+        return DatePrecision.EXACT.value
+    precision = value or DatePrecision.EXACT.value
+    if precision not in DatePrecision.values:
+        raise DomainError(f"Tundmatu kuupäeva täpsus {precision!r}.")
+    return precision
+
+
+def record_procedural_development(
+    *,
+    matter: Matter,
+    title: str,
+    occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
+    note: str = "",
+    actor: Any = None,
+) -> MatterProceduralDevelopment:
+    """Record one step the external procedure took.
+
+    «Ministeerium saatis eelnõu uue versiooni», «Eelnõu jõudis Riigikokku». The
+    canonical fact, written once, on the Matter it belongs to.
+
+    **Writes nothing else.** No `Entry` — one act must not become two records
+    that can disagree, which is the rule `add_engagement` and
+    `record_external_position` both state. No `Submission`, no
+    `MatterImportantDate`, no `NextAction` and no work item: a development is
+    something that has already happened, and a record that generated work would
+    make every Matter carrying one read as owing something (docs/adr/0078 §3,
+    docs/adr/0084 §5). A stage change and a next step may be saved *beside* it,
+    and that is one atomic operation over three canonical services rather than
+    three columns on this row (`app.matters.workspace.add_procedural_development`).
+
+    **Nothing is derived from the title.** No stage is inferred from «Eelnõu
+    jõudis Riigikokku», no vocabulary is matched, and no procedural link is
+    created or read. Package B's links are references — where a proceeding lives
+    — and a reference is not an event (docs/adr/0091 §5.6).
+
+    ``occurred_on`` is **optional**, and that is the whole reason this record
+    exists rather than an `Entry`: a development learned about months later
+    frequently has no day anybody could defend. ``occurred_on_precision`` says
+    how exactly it is known and ``occurred_on`` is then the **anchor** of that
+    period, normalised through the same composer as every other period on this
+    product. An unknown date is normalised back to `EXACT`: absence has no
+    precision (docs/adr/0079 §2).
+
+    **Takes no closed-Matter lock of its own.** The person's door is
+    `app.matters.workspace.add_procedural_development`, which locks the Matter and
+    refuses a closed one before it calls this — the shape `record_external_position`
+    already has, and the reason is the same one R2-02 states: a page is not a
+    boundary.
+    """
+    clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
+    if not clean_title:
+        raise DomainError(DEVELOPMENT_NEEDS_TITLE)
+    clean_note = (note or "").strip()
+    precision = _development_precision(occurred_on, occurred_on_precision)
+
+    development = MatterProceduralDevelopment.objects.create(
+        matter=matter,
+        title=clean_title,
+        occurred_on=occurred_on,
+        occurred_on_precision=precision,
+        note=clean_note,
+        created_by=actor,
+    )
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,
+        matter=matter,
+        actor=actor,
+        obj=development,
+        summary=clean_title[:200],
+        payload={
+            # The date and its precision together, never the anchor on its own: a
+            # payload carrying `2026-10-01` and nothing else says «1 October» to
+            # whoever reads it back, which is the invention docs/adr/0079 §2
+            # exists to refuse.
+            "occurred_on": development.occurred_on.isoformat() if development.occurred_on else None,
+            "occurred_on_precision": development.occurred_on_precision,
+            # **That the lawyer wrote a note, never the note.** It is this
+            # office's judgement of what happened, and an audit payload holding it
+            # beside the event's own title is the one place the two could be read
+            # back as one statement (docs/adr/0091 §4, §5).
+            "has_note": bool(development.note),
+        },
+    )
+    return development
+
+
+def record_procedural_development_document(
+    *, development: MatterProceduralDevelopment, document: Any, actor: Any = None
+) -> None:
+    """Record that one captured file is the evidence for this development.
+
+    `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED` already say that bytes arrived
+    on the Matter; neither of them says that they are the ministry's revised draft
+    rather than something else that turned up the same afternoon, which is the
+    fact the `DocumentLink` row carries and the reason this event exists.
+    """
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED,
+        matter=development.matter,
+        actor=actor,
+        obj=development,
+        summary=document.title[:200],
+        payload={"document": str(document.pk)},
+    )
+
+
+@transaction.atomic
+def correct_procedural_development(
+    *,
+    development: MatterProceduralDevelopment,
+    title: Any,
+    occurred_on: Any,
+    occurred_on_precision: Any,
+    note: Any,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterProceduralDevelopment:
+    """`Muuda` on a recorded `Menetluse areng`, by a person, on an open Matter.
+
+    **There is no delete**, on an open Matter or a closed one. A mistaken row is
+    corrected, because what the file recorded and who recorded it is part of the
+    file — the rule `MatterEngagement` has kept since it was written and
+    `MatterExternalPosition` keeps beside it.
+
+    **Refused on a closed Matter**, like a `Kaasamine` correction and unlike an
+    entry's: every field on this record is substantive — what happened, when, and
+    what this office made of it — and correcting any of them is normal interactive
+    business work, which a finished file refuses. Reopening is the way out, and it
+    leaves somebody's name on both decisions (docs/adr/0076 §2, docs/adr/0084 §8).
+
+    **Optimistic concurrency, and a stale save writes nothing at all.** The row is
+    locked, the token is compared against the *locked* row — so the version
+    compared against is the committed one — and the comparison happens before any
+    value is decided, so a refusal cannot have half-applied the record.
+
+    The files a development already carries are not re-posted here and cannot be
+    detached by a correction: adding evidence is a different act with a different
+    audit trail (`ExternalPositionEditForm`, docs/adr/0084 §8).
+    """
+    locked_matter = lock_open_matter_for_business_write(development.matter_id)
+    try:
+        current = MatterProceduralDevelopment.objects.select_for_update(no_key=True).get(
+            pk=development.pk, matter=locked_matter
+        )
+    except MatterProceduralDevelopment.DoesNotExist:
+        raise DomainError("Seda menetluse arengut ei ole sellel teemal.") from None
+
+    if expected_revision is not None and development_revision(current) != expected_revision:
+        raise ProceduralDevelopmentConflict(current)
+
+    clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
+    if not clean_title:
+        raise DomainError(DEVELOPMENT_NEEDS_TITLE)
+    precision = _development_precision(occurred_on, occurred_on_precision)
+
+    proposed: dict[str, Any] = {
+        "title": clean_title,
+        "occurred_on": occurred_on,
+        "occurred_on_precision": precision,
+        "note": (note or "").strip(),
+    }
+    changed = [field for field, value in proposed.items() if getattr(current, field) != value]
+    if not changed:
+        # Nothing moved, so nothing is recorded. An audit row for a save that
+        # changed no value would be a history of somebody pressing a button.
+        return current
+
+    payload: dict[str, Any] = {"fields": sorted(changed)}
+    if "occurred_on" in changed:
+        payload["occurred_on_from"] = (
+            current.occurred_on.isoformat() if current.occurred_on else None
+        )
+        payload["occurred_on_to"] = occurred_on.isoformat() if occurred_on else None
+    if "occurred_on_precision" in changed:
+        # Recorded whenever it moves, including when the anchor did not:
+        # *oktoober 2026* corrected to *IV kvartal 2026* keeps `2026-10-01` and
+        # changes what that number means, so a payload carrying only the date
+        # would say nothing had happened.
+        payload["occurred_on_precision_from"] = current.occurred_on_precision
+        payload["occurred_on_precision_to"] = precision
+
+    for field, value in proposed.items():
+        setattr(current, field, value)
+        setattr(development, field, value)
+    current.save(update_fields=[*changed, "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_CORRECTED,
+        matter=locked_matter,
+        actor=actor,
+        obj=current,
+        summary=current.title[:200],
+        payload=payload,
+    )
     return current
 
 

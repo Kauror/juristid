@@ -103,6 +103,46 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         <p class="field__error">{{ external_position_edit_form.url.errors|first }}</p>
       {% endif %}
 
+      {% comment %}
+        `Juristi märkus`, under the three sources and visibly apart from them:
+        everything above this is what the other organisation said, and this is
+        what somebody here thinks about it. It satisfies nothing — a record
+        holding only this office's comment about a position nobody can read is
+        refused exactly as an empty one is (docs/adr/0091 §4).
+      {% endcomment %}
+      <label class="cx-f" for="{{ external_position_edit_form.lawyer_note.id_for_label }}">
+        <span class="cx-f__lab">{{ external_position_edit_form.lawyer_note.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ external_position_edit_form.lawyer_note }}
+      </label>
+      {% if external_position_edit_form.lawyer_note.errors %}
+        <p class="field__error">{{ external_position_edit_form.lawyer_note.errors|first }}</p>
+      {% endif %}
+
+      {% comment %}
+        `Allikas` — rendered only on a received-feedback record, because that is
+        the only kind that may have one. A discovered position has an author by
+        definition and a `LEGACY` row never had the field; showing the box there
+        would offer a value the service refuses (docs/adr/0091 §3.3).
+
+        **The provenance itself is not editable here.** How the file learned
+        something is what the panel it was recorded through said, and a
+        correction form that could move it would let one press turn feedback a
+        member sent us into an opinion we found somewhere. Correcting that is
+        recording the position again under the right chip — there is no delete,
+        so both rows stay, which is the honest history of a mis-filing.
+      {% endcomment %}
+      {% if external_position_edit_form.shows_source_label %}
+        <label class="cx-f" for="{{ external_position_edit_form.source_label.id_for_label }}">
+          <span class="cx-f__lab">{{ external_position_edit_form.source_label.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {{ external_position_edit_form.source_label }}
+        </label>
+        {% if external_position_edit_form.source_label.errors %}
+          <p class="field__error">{{ external_position_edit_form.source_label.errors|first }}</p>
+        {% endif %}
+      {% endif %}
+
       <label class="cx-f" for="{{ external_position_edit_form.engagement.id_for_label }}">
         <span class="cx-f__lab">{{ external_position_edit_form.engagement.label }}
           <span class="cx-f__opt">valikuline</span></span>
@@ -166,6 +206,24 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
     </p>
     {% if milestone.sub %}
       <span class="uxtl__mssub">{{ milestone.sub }}</span>
+    {% endif %}
+    {% comment %}
+      `Juristi märkus` — this office's own reading of the position, on its own
+      line, under its own label, and never appended to the line above.
+
+      The label is what does the work. A paragraph of Koda's assessment of a
+      ministry's position, printed unlabelled under a headline naming that
+      ministry, is the attribution defect with better line spacing: a colleague
+      scanning the chronology reads it as part of what the ministry said. So the
+      label is rendered even though it costs a line, and the sentence it
+      introduces is the lawyer's (app/matters/timeline.py `LAWYER_NOTE_LABEL`,
+      docs/adr/0091 §4).
+    {% endcomment %}
+    {% if milestone.own_note %}
+      <span class="uxtl__msnote">
+        <span class="uxtl__msnotelabel">{{ milestone.own_note_label }}</span>
+        {{ milestone.own_note }}
+      </span>
     {% endif %}
     {% if milestone.links %}
       <span class="uxtl__links">

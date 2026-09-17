@@ -5127,7 +5127,7 @@ a.barchart__row:hover {
 /* And the same for Valdkonnad, which became a disclosure for the same reason
    Adressaat is one: a field whose answer is short and whose vocabulary is long
    should cost one line when it is not being answered. No panel, for the reason
-   above — the chip row inside already draws itself (docs/adr/0088 §3). */
+   above — the chip row inside already draws itself (docs/adr/0091 §3). */
 .createform__valdkond {
   margin-top: var(--spacing-2);
 }
@@ -5482,6 +5482,21 @@ a.barchart__row:hover {
   border: 1px solid var(--accent-border);
   border-left: 2px solid var(--accent-primary);
   border-radius: var(--radius-md);
+}
+
+/* The two quiet sentences inside `Koostan arvamuse`: what the step will say, and
+ * what leaving the box empty means.
+ *
+ * Muted and small, because they are facts about the control rather than
+ * instructions — a lawyer who already knows what this box does should be able to
+ * skip past them, and one who does not should not have to open anything to find
+ * out. `--text-muted` on `--surface-capture` is the pairing every other hint on
+ * this form uses (docs/adr/0091 §1.4). */
+.nextpanel__hint {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 /* Two stacked questions, and nothing laid out beside them.
@@ -10930,6 +10945,65 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-body);
+}
+
+/* `Juristi märkus` — this office's own reading of somebody else's position,
+ * under the position and visibly not part of it.
+ *
+ * The indent and the rule down the left are doing the same job the label does:
+ * a reader scanning the chronology has to be able to see, without reading a
+ * word, that this sentence has a different author from the line above it. A
+ * paragraph that merely sat under `.uxtl__mssub` in the same colour would read
+ * as more of what the ministry said, which is the attribution defect the column
+ * was added to fix (docs/adr/0091 §4).
+ *
+ * `--border-subtle` rather than the accent: this is a boundary, not an
+ * emphasis, and a coloured bar would make Koda's aside the loudest thing in a
+ * row about what somebody else thinks. */
+/* «Koja arvamus on saadetud. Menetlus võib jätkuda» — the continuation offer on
+ * a file with no open step.
+ *
+ * Deliberately the muted weight of `.curact__empty` beside it rather than
+ * anything louder: a Matter whose opinion went out and whose step is finished is
+ * in an ordinary state, and a tinted or bordered block here would read as an
+ * outstanding obligation — which is exactly what the sentence says it is not
+ * (docs/adr/0091 §5.5). */
+#teema-vaade-wrap .curact__continue {
+  margin: var(--spacing-15) 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The two anchors are ordinary in-page links, and they look like links: the
+ * whole point is that they are pressable, and a reader who cannot see the colour
+ * still has the underline. */
+#teema-vaade-wrap .curact__continuelink {
+  color: var(--accent-link);
+  text-decoration: underline;
+}
+
+#teema-vaade-wrap .uxtl__msnote {
+  display: block;
+  margin-top: var(--spacing-15);
+  padding-left: var(--spacing-25);
+  border-left: 2px solid var(--border-subtle);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+/* The label, quiet and inline, so the sentence after it starts on the same line
+ * and the block stays one paragraph high in the common case. Upper case rather
+ * than a colour, because the row already spends its one accent on nothing and
+ * this has to read the same for somebody who cannot see a tint. */
+#teema-vaade-wrap .uxtl__msnotelabel {
+  margin-right: var(--spacing-15);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 /* The attachment, by its real name and linked to its exact bytes. The glyph is

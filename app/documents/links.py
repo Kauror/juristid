@@ -12,8 +12,8 @@ both of which are guesses (docs/adr/0075 §5).
 So this is one additive link table: *this document supports that record*, stated
 once, at the moment the record is written.
 
-Why six nullable typed columns and not a generic target
--------------------------------------------------------
+Why seven nullable typed columns and not a generic target
+---------------------------------------------------------
 A ``GenericForeignKey`` would be one column pair and no referential integrity at
 all: nothing stops a content-type/id pair naming a row that does not exist, a
 row on another Matter, or a row in a table that has since been dropped, and
@@ -27,9 +27,10 @@ foreign key, the database refuses a row that names two records or none, and one
 ``select_related`` reads every kind at once.
 
 The cost is that each new kind of linkable record is a migration — the sixth,
-``external_position``, is exactly that (docs/adr/0084 §3). That is the
-correct cost — what evidence may be attached to is a product decision, not a
-shape a caller invents at run time.
+``external_position``, and the seventh, ``procedural_development``, are exactly
+that (docs/adr/0084 §3, docs/adr/0091 §5). That is the correct cost — what
+evidence may be attached to is a product decision, not a shape a caller invents
+at run time.
 
 Why the Matter is not stored here
 ---------------------------------
@@ -46,7 +47,7 @@ already uses for what PostgreSQL is structurally unable to see.
 
 The alternative that would put it in the database is a composite foreign key on
 ``(document_id, matter_id)``, which needs a redundant unique constraint on
-``(id, matter)`` across six production tables and raw SQL the ORM cannot see.
+``(id, matter)`` across seven production tables and raw SQL the ORM cannot see.
 Disproportionate to one invariant written in one place (docs/adr/0075 §6).
 
 Visibility
@@ -81,6 +82,7 @@ TARGET_FIELDS: tuple[str, ...] = (
     "effective_date",
     "work_victory",
     "external_position",
+    "procedural_development",
 )
 
 
@@ -199,6 +201,19 @@ class DocumentLink(BaseModel):
         blank=True,
         related_name="document_links",
         verbose_name="väline seisukoht",
+    )
+    #: The seventh kind, and the documented cost of typed columns over a generic
+    #: target paid once more: a `Menetluse areng` routinely arrives *with* the
+    #: paper — the revised draft, the committee's text — and the file has to be
+    #: able to say which bytes are the evidence for which step
+    #: (docs/adr/0091 §5).
+    procedural_development = models.ForeignKey(
+        "matters.MatterProceduralDevelopment",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="document_links",
+        verbose_name="menetluse areng",
     )
 
     created_by = models.ForeignKey(

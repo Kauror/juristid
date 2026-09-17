@@ -1,9 +1,17 @@
-"""`Väline seisukoht` in a real browser: record one, read it, correct it.
+"""`Teiste arvamus` in a real browser: record one, read it, correct it.
+
+**This is the `+ Väline seisukoht` panel under the name docs/adr/0091 §3 gave
+it.** The record, the route, the panel id and every rule below are unchanged; what
+moved is the chip's label and the heading a filed row reads under, because the
+first lawyer test needed «a member company answered our consultation» told apart
+from «the ministry published its position». The other half of the same record —
+`+ Meile saadetud tagasiside`, with its optional author and its `Allikas` — is
+`e2e/test_lawyer_workflow.py`, beside the rest of that round.
 
 The rules this file is here for are the ones only a running page can settle:
 
-* that the ninth launcher choice opens, saves through HTMX, and puts the
-  position on the chronology without a reload;
+* that the launcher choice opens, saves through HTMX, and puts the position on
+  the chronology without a reload;
 * that the shared organisation control works inside the panel — the search
   narrows the catalogue, and choosing a body is choosing a real control that was
   already in the document (docs/adr/0073);
@@ -88,7 +96,7 @@ def record_one(page, base_url: str, *, url: str = POSITION_URL, summary: str = "
     if summary:
         panel(page).locator("[name=summary]").fill(summary)
     panel(page).get_by_role("button", name="Salvesta").click()
-    chronology(page).get_by_text("Väline seisukoht:").first.wait_for()
+    chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
 
 
 def today_in_estonian(page) -> str:
@@ -106,11 +114,11 @@ def today_in_estonian(page) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_ninth_choice_records_a_position_without_a_reload(page, base_url):
+def test_the_choice_records_a_position_without_a_reload(page, base_url):
     sign_in(page, base_url, SANDRA)
     record_one(page, base_url)
 
-    expect(chronology(page)).to_contain_text(f"Väline seisukoht: {MINISTRY}")
+    expect(chronology(page)).to_contain_text(f"Teiste arvamus: {MINISTRY}")
     # The date box's visible default was accepted, so the row carries a day
     # rather than «Kuupäev teadmata» — which is what
     # `test_emptying_the_date_box_is_a_real_answer` covers instead
@@ -118,7 +126,7 @@ def test_the_ninth_choice_records_a_position_without_a_reload(page, base_url):
     expect(chronology(page)).not_to_contain_text("Kuupäev teadmata")
 
 
-def test_the_panel_asks_for_the_six_things_and_nothing_else(page, base_url):
+def test_the_panel_asks_for_the_seven_things_and_nothing_else(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-valine-seisukoht")
@@ -128,6 +136,13 @@ def test_the_panel_asks_for_the_six_things_and_nothing_else(page, base_url):
     expect(panel(page).locator("[name=url]")).to_be_visible()
     expect(panel(page).locator("input[type=file]")).to_have_count(1)
     expect(panel(page).locator("[name=engagement]")).to_be_visible()
+    # `Juristi märkus` — the seventh, and the one docs/adr/0091 §4 added: this
+    # office's reading of the position, beside it and never inside it.
+    expect(panel(page).locator("[name=lawyer_note]")).to_be_visible()
+    # And **no** `Allikas` here. A discovered position has an author by
+    # definition, and a free text box answering «whose position is this» would be
+    # a ninth way of naming an institution (docs/adr/0091 §3.3).
+    expect(panel(page).locator("[name=source_label]")).to_have_count(0)
     # The four precisions, through the one shared control.
     for label in ("Täpne päev", "Kuu", "Kvartal", "Aasta"):
         expect(panel(page).get_by_text(label, exact=True).first).to_be_visible()
@@ -168,7 +183,7 @@ def test_a_written_position_alone_is_a_complete_record(page, base_url):
     sign_in(page, base_url, SANDRA)
     record_one(page, base_url, url="", summary="Toetab eelnõu, kuid soovib pikemat üleminekuaega.")
 
-    expect(chronology(page)).to_contain_text(f"Väline seisukoht: {MINISTRY}")
+    expect(chronology(page)).to_contain_text(f"Teiste arvamus: {MINISTRY}")
     expect(chronology(page)).to_contain_text("Toetab eelnõu, kuid soovib pikemat üleminekuaega.")
     row = chronology(page).locator("article.uxtl__item").first
     expect(row.locator(".uxtl__links")).to_have_count(0)
@@ -182,7 +197,7 @@ def test_the_date_box_opens_on_today_and_the_saved_row_reads_it_back(page, base_
     today = today_in_estonian(page)
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
     panel(page).get_by_role("button", name="Salvesta").click()
-    chronology(page).get_by_text("Väline seisukoht:").first.wait_for()
+    chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
 
     # `j.n.Y` on the row against `dd.mm.yyyy` in the box: the same day, written
     # the way each surface writes it.
@@ -199,7 +214,7 @@ def test_emptying_the_date_box_is_a_real_answer(page, base_url):
     panel(page).locator("[name=stated_on]").fill("")
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
     panel(page).get_by_role("button", name="Salvesta").click()
-    chronology(page).get_by_text("Väline seisukoht:").first.wait_for()
+    chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
 
     expect(chronology(page)).to_contain_text("Kuupäev teadmata")
 
@@ -264,7 +279,7 @@ def test_a_save_recording_nothing_comes_back_with_what_was_typed(page, base_url)
 
     expect(panel(page)).to_contain_text("vähemalt üks neist on vajalik")
     expect(panel(page).locator("[name=stated_on]")).to_have_value("14.03.2026")
-    expect(chronology(page)).not_to_contain_text("Väline seisukoht:")
+    expect(chronology(page)).not_to_contain_text("Teiste arvamus:")
 
 
 def test_an_emptied_date_box_does_not_refill_itself_on_a_refusal(page, base_url):
@@ -324,7 +339,7 @@ def test_cancelling_a_correction_restores_what_the_server_holds(page, base_url):
     page.wait_for_timeout(400)
 
     expect(chronology(page)).not_to_contain_text("Salvestamata tekst.")
-    expect(chronology(page)).to_contain_text(f"Väline seisukoht: {MINISTRY}")
+    expect(chronology(page)).to_contain_text(f"Teiste arvamus: {MINISTRY}")
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +382,7 @@ def test_the_panel_does_not_scroll_the_page_sideways_at_phone_width(page, base_u
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )
 
-    assert not overflows, "the Väline seisukoht panel makes the Teema page scroll sideways"
+    assert not overflows, "the Teiste arvamus panel makes the Teema page scroll sideways"
 
 
 def test_the_recorded_row_reads_at_phone_width(page, base_url):
@@ -375,7 +390,7 @@ def test_the_recorded_row_reads_at_phone_width(page, base_url):
     record_one(page, base_url)
     page.set_viewport_size({"width": 375, "height": 812})
 
-    expect(chronology(page)).to_contain_text(f"Väline seisukoht: {MINISTRY}")
+    expect(chronology(page)).to_contain_text(f"Teiste arvamus: {MINISTRY}")
     overflows = page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )

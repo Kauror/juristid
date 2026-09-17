@@ -284,6 +284,30 @@ class ChangeEventType(models.TextChoices):
     PROCEDURAL_LINK_RECORDED = "PROCEDURAL_LINK_RECORDED", "Menetluse link lisatud"
     PROCEDURAL_LINK_CORRECTED = "PROCEDURAL_LINK_CORRECTED", "Menetluse linki parandatud"
 
+    # `Menetluse areng` — one step the external procedure took. Three events,
+    # because three different things happen to this record and no more: it is
+    # recorded, it is corrected, and bytes are named as the evidence for it.
+    #
+    # None of the three is in `TIMELINE_EVENT_TYPES`: the chronology renders the
+    # development from the canonical record through `projected_milestones`, and
+    # reading the event as well would state one act twice — the rule every
+    # structured fact on this page has kept since docs/adr/0074 §14.
+    PROCEDURAL_DEVELOPMENT_RECORDED = (
+        "PROCEDURAL_DEVELOPMENT_RECORDED",
+        "Menetluse areng lisatud",
+    )
+    PROCEDURAL_DEVELOPMENT_CORRECTED = (
+        "PROCEDURAL_DEVELOPMENT_CORRECTED",
+        "Menetluse arengut parandatud",
+    )
+    # `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED` already record that bytes
+    # arrived on the Matter; neither can say that they are the ministry's revised
+    # draft rather than something else that turned up the same afternoon.
+    PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED = (
+        "PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED",
+        "Menetluse arengu fail lisatud",
+    )
+
 
 class SecurityEventType(models.TextChoices):
     """Access, permission and administrative trace, separate from the timeline."""

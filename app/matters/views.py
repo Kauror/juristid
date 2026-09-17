@@ -92,7 +92,6 @@ from app.matters.forms import (
     CompactClosureForm,
     CompactEffectiveDateForm,
     CompactEngagementForm,
-    CompactExternalPositionForm,
     CompactImportantDateForm,
     CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
@@ -100,24 +99,32 @@ from app.matters.forms import (
     ComposerForm,
     EngagementFeedbackForm,
     EngagementForm,
+    EngagementWaitForm,
     EntryEditForm,
     ExternalPositionEditForm,
     IncomingIntakeForm,
+    InitialOpinionActionForm,
+    KodaOpinionForm,
     MatterCreateForm,
     MatterEditForm,
     MatterFieldForm,
     MatterNoteForm,
     NextActionForm,
+    OtherOpinionForm,
     PersonalNoteForm,
     PositionForm,
+    ProceduralDevelopmentForm,
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
     ProceduralLinkForm,
+    ReceivedFeedbackForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
     edit_initial,
     external_position_period_initial,
     period_initial,
+    read_organisation_choices,
+    visible_engagements_of,
 )
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
@@ -145,7 +152,7 @@ from app.matters.my_work import (
     horizon_from,
     view_from,
 )
-from app.matters.process_timeline import process_steps
+from app.matters.process_timeline import SENT_LABEL, process_steps
 from app.matters.services import (
     EngagementEditConflict,
     EntryEditConflict,
@@ -165,6 +172,7 @@ from app.matters.services import (
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
+    open_engagement_feedback_wait,
     personal_note_record,
     personal_note_revision,
     record_engagement,
@@ -220,7 +228,23 @@ from app.workflow.selectors import stages_including
 from app.workflow.services import (
     acknowledge_review,
     complete_next_action,
+    establish_opinion_preparation_action,
     set_next_action_for_new_work,
+)
+
+#: Refused when `Uus teema` is answered with both a free-text first step and a
+#: `Koostan arvamuse` date.
+#:
+#: A Matter has one open `NextAction` —
+#: `workflow_one_open_action_per_matter` — so only one of the two boxes can
+#: become it. Dropping either silently would leave a person who answered both
+#: with one of their two facts missing and nothing said about it, so the save is
+#: refused and names the choice (docs/adr/0091 §1.3).
+#:
+#: Named here because the view raises it and a test asserts on it.
+TWO_FIRST_STEPS_REFUSAL = (
+    "Teemal saab olla üks pooleli tegevus. "
+    "Täida kas «Järgmiseks» või «Koostan arvamuse», mitte mõlemad."
 )
 
 #: How many register rows a page holds, and the sizes a reader may choose
@@ -1730,6 +1754,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         (request.POST.get(key) or "").strip() for key in ("next-text", "next-target_date")
     )
     action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
+    # `Koostan arvamuse` — bound only when somebody typed a date, for exactly the
+    # reason the block above is bound conditionally: an unconditionally bound
+    # optional form prints refusals under a control nobody touched, and this one is
+    # a single box whose refusal would be the only red thing on a page that failed
+    # for another reason entirely (lawyer feedback 9, docs/adr/0091 §1).
+    wants_opinion_action = bool((request.POST.get("arvamus-prepare_by") or "").strip())
+    opinion_action_form = InitialOpinionActionForm(
+        request.POST if wants_opinion_action else None, prefix="arvamus"
+    )
     # `Menetluse link`, bound only when somebody actually typed an address — the
     # rule `wants_action` above states, for the same reason. The chip row
     # arrives with `EIS` pre-selected, so binding unconditionally would refuse
@@ -1769,11 +1802,29 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         refused = bool(upload_refusals) or not form.is_valid()
         if wants_action and not action_form.is_valid():
             refused = True
+        if wants_opinion_action and not opinion_action_form.is_valid():
+            refused = True
         # Validated *before* anything is written, like every other half of this
         # save: a refused address must not leave a Teema behind carrying the
         # rest. What was typed comes back in the box, because the form travels
         # bound into `_create_context` (docs/adr/0089 §13).
         if wants_procedural_link and not procedural_form.is_valid():
+            refused = True
+        # **One open step per Matter, so one of the two may be answered.**
+        #
+        # `Järgmiseks` and `Koostan arvamuse` both want the Matter's single open
+        # `NextAction`, and `workflow_one_open_action_per_matter` means only one can
+        # have it. Silently dropping either would be the worse answer by a long way
+        # — a lawyer who wrote a sentence *and* a preparation date would find one of
+        # the two facts missing with nothing said about it — so both come back with
+        # what was typed, and the refusal names the choice rather than a field
+        # (docs/adr/0091 §1.3).
+        #
+        # It is a rare collision: a person who has a preparation date does not
+        # usually also write a free-text first step. That is why it is a refusal
+        # rather than a redesign of the page.
+        if wants_action and wants_opinion_action:
+            form.add_error(None, TWO_FIRST_STEPS_REFUSAL)
             refused = True
 
         if refused:
@@ -1795,7 +1846,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     request,
                     form,
                     action_form,
-                    procedural_form,
+                    opinion_action_form=opinion_action_form,
+                    procedural_form=procedural_form,
                     held_keys=held_keys,
                     intake_session=intake_session,
                 ),
@@ -1924,6 +1976,32 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                         **action_form.as_service_kwargs(default_responsible=data.get("owner")),
                     )
 
+                # `Koostan arvamuse` — **inside this transaction**, which is the
+                # whole of docs/adr/0091 §1.3. A Teema that saved while its first
+                # step did not would be a file the lawyer believes has a plan and
+                # every work surface says has none; a step that saved while the
+                # Teema did not would be an instruction attached to nothing. Either
+                # way the person is not told. One transaction, so a refusal leaves
+                # neither and the entered date comes back on the form.
+                #
+                # The service is idempotent against an equivalent open step, so a
+                # retried POST cannot produce a second one (§1.3, Scenario H).
+                prepare_by = (
+                    opinion_action_form.cleaned_data.get("prepare_by")
+                    if wants_opinion_action
+                    else None
+                )
+                if prepare_by is not None:
+                    establish_opinion_preparation_action(
+                        matter=matter,
+                        prepare_by=prepare_by,
+                        actor=request.user,
+                        # The owner chosen a few rows up on this same form. A
+                        # default only — `responsible_for_new_work` still refuses to
+                        # file new work on a departed colleague (ADR 0036 §5).
+                        responsible=data.get("owner"),
+                    )
+
         except DomainError as error:
             # An ambiguous typed sender or addressee, or any other rule the
             # services refuse. The transaction is already rolled back by the
@@ -1943,7 +2021,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     request,
                     form,
                     action_form,
-                    procedural_form,
+                    opinion_action_form=opinion_action_form,
+                    procedural_form=procedural_form,
                     held_keys=[*held_keys, *(item.key for item in newly_held)],
                     intake_session=intake_session,
                 ),
@@ -1980,7 +2059,13 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "matters/matter_create.html",
-        _create_context(request, form, action_form, procedural_form),
+        _create_context(
+            request,
+            form,
+            action_form,
+            procedural_form=procedural_form,
+            opinion_action_form=opinion_action_form,
+        ),
         status=200,
     )
 
@@ -1989,8 +2074,16 @@ def _create_context(
     request: HttpRequest,
     form: Any,
     action_form: Any,
-    procedural_form: Any,
     *,
+    # **Keyword-only, both of them, and that is the point.**
+    #
+    # `Uus teema` grew two optional blocks in one round — `Koostan arvamuse` from
+    # docs/adr/0091 and `Menetluse link` from docs/adr/0089 — and while they were
+    # positional the merge that brought them together handed each block the
+    # other's form. Both are `Any`, so nothing complained; what a person saw was a
+    # refused save with everything they had typed gone from the page.
+    procedural_form: Any = None,
+    opinion_action_form: Any = None,
     held_keys: list[str] | None = None,
     intake_session: Any = None,
 ) -> dict[str, Any]:
@@ -2018,6 +2111,13 @@ def _create_context(
         # (app/documents/pending.py).
         "held_files": pending_uploads.describe(request.session, held_keys or []),
         "action_form": action_form,
+        # `Koostan arvamuse` — one date box, its own form, its own partial.
+        #
+        # Defaulted to a fresh unbound form rather than being required, so the
+        # other callers of this helper keep working unchanged. The page renders the
+        # partial either way; an unbound form is an empty box, which is what a
+        # fresh `Uus teema` should show (docs/adr/0091 §1.4).
+        "opinion_action_form": opinion_action_form or InitialOpinionActionForm(prefix="arvamus"),
         "frequent_senders": getattr(form, "frequent_senders", []),
         # `secondary_fields` is gone with the disclosure it fed. The template
         # named the primary fields and looped this tuple for the rest, which was
@@ -2113,7 +2213,7 @@ def _intake_context(
     # rendered would be exactly the "invisible automatic form mutation behind a
     # hidden UI" the product decision forbids, and a reading state printed with
     # nothing to report at the end of it is a spinner that promises something
-    # that is never coming (docs/adr/0088).
+    # that is never coming (docs/adr/0091).
     offered = create_form_suggestions_offered()
 
     files = intake_staging.live_files(session) if session is not None else []
@@ -2416,7 +2516,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # rather than in this dict because there are many rows (`attach_feedback_form`).
     for item in items:
         if item.is_engagement:
-            attach_feedback_form(item.record)
+            attach_wait_form(attach_feedback_form(item.record))
     # `selectors.current_action_of`, not `workflow.services.current_next_action`.
     # The service answers "which action is open on this Matter" for the domain,
     # which is a question about the file; a *page* asks "which action may this
@@ -2431,6 +2531,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # because on a Matter that has a real next step neither answer is rendered
     # and both are a query for nothing (ADR 0021).
     source_instruction = "" if current_action else source_instruction_for(matter)
+    # Built before the dict because two entries read it: the strip renders them
+    # and `opinion_sent` below asks whether one of them is a sent opinion. Calling
+    # `process_steps` twice would be two reads of the same scoped question.
+    steps = process_steps(matter=matter, user=request.user, intelligence=intelligence)
     return {
         "matter": matter,
         "current_action": current_action,
@@ -2445,7 +2549,24 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # ask differently scoped questions about one Matter. `Oluline tähtaeg`
         # is deliberately not among them and keeps its own section
         # (app/matters/process_timeline.py, docs/adr/0074 §12).
-        "process_steps": process_steps(matter=matter, user=request.user, intelligence=intelligence),
+        "process_steps": steps,
+        # **Whether an opinion has gone out, and therefore whether the file needs
+        # a sentence about what happens next.**
+        #
+        # The dead end the first lawyer test found: a Matter whose opinion was
+        # sent and whose step was finished read «Järgmine samm on määramata» and
+        # offered nothing that looked like a continuation, so the procedure
+        # carrying on elsewhere — a revised draft, a committee, an adoption — had
+        # no obvious home and lawyers opened new Matters for it (lawyer
+        # feedback 14, docs/adr/0091 §5.5).
+        #
+        # Read off the strip that is already built rather than as a query of its
+        # own: `process_steps` has just resolved every SENT `Submission` this
+        # reader may see, and asking the database the same question again would be
+        # a second read for an answer already in hand. It is `visible_to`-scoped
+        # there, so a submission restricted below the Matter draws no column here
+        # and puts no sentence on the page either (AUTH-003).
+        "opinion_sent": any(step.label == SENT_LABEL for step in steps),
         # No `timeline_rows` and no `timeline_preview`. The approved target has
         # two row kinds and no folded system runs, and its `Ajajoon` head is the
         # label and the count — the preview sentence and the duplicated current
@@ -3358,6 +3479,45 @@ def _engagement_feedback_form(
     return form
 
 
+def attach_wait_form(
+    engagement: MatterEngagement, *, form: EngagementWaitForm | None = None
+) -> MatterEngagement:
+    """Hang this round's `Ootan tagasisidet` form on the record, or nothing.
+
+    On the record rather than in the context, for the reason
+    :func:`attach_feedback_form` gives: the chronology renders many rounds from
+    one loop, and a single context variable would give every row the same form
+    with the same ids and the same revision token.
+
+    ``None`` for a round that is **already** waiting and for one somebody has
+    finished — starting a wait is an act you take once, and offering it on a row
+    that has one would be offering to move a deadline somebody else set. That is a
+    correction, and it lives on `Muuda` (docs/adr/0091 §2).
+
+    The `row_id` is the record's own primary key, so two waiting-eligible rounds
+    on one page do not share `id_ootus_feedback_deadline` — the duplicate-id
+    defect docs/adr/0086 §6 names for the completion form.
+    """
+    offered = engagement.feedback_deadline is None and engagement.feedback_closed_at is None
+    engagement.wait_form = (  # type: ignore[attr-defined]
+        (
+            form
+            if form is not None
+            else EngagementWaitForm(
+                # The version this row was rendered from, so a save whose record
+                # has moved on since can be refused rather than silently
+                # overwriting it — the token `_engagement_feedback_form` seeds
+                # for the same reason.
+                initial={"revision": engagement_revision_token(engagement)},
+                row_id=f"-{engagement.pk}",
+            )
+        )
+        if offered
+        else None
+    )
+    return engagement
+
+
 def attach_feedback_form(
     engagement: MatterEngagement,
     *,
@@ -3398,6 +3558,7 @@ def _engagement_row(
     form: EngagementForm | None = None,
     feedback_form: EngagementFeedbackForm | None = None,
     feedback_open: bool = False,
+    wait_form: EngagementWaitForm | None = None,
     error: str = "",
     conflict: MatterEngagement | None = None,
     status: int = 200,
@@ -3423,8 +3584,9 @@ def _engagement_row(
             # `Lõpeta kaasamine` rides on the record, exactly as it does on the
             # page render. A refused completion comes back bound and asks for
             # its own panel to reopen (`attach_feedback_form`).
-            "engagement": attach_feedback_form(
-                engagement, form=feedback_form, open_panel=feedback_open
+            "engagement": attach_wait_form(
+                attach_feedback_form(engagement, form=feedback_form, open_panel=feedback_open),
+                form=wait_form,
             ),
             "milestone": engagement_milestone(engagement),
             "engagement_edit_form": form,
@@ -3434,6 +3596,12 @@ def _engagement_row(
                 engagement_milestone(conflict) if conflict is not None else None
             ),
             "engagement_read_query": ENGAGEMENT_READ_QUERY,
+            # `Ootan tagasisidet`'s quick spans, resolved to real days here so
+            # each chip can print the one it lands on. Also on the workspace
+            # dict, because the row renders on both paths and a span that
+            # existed on only one of them would be a control that appears and
+            # disappears as the page is swapped (docs/adr/0086 §2).
+            "feedback_deadline_choices": feedback_deadline_choices(timezone.localdate()),
         },
         status=status,
     )
@@ -3536,6 +3704,52 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
         return _engagement_row(request, matter, engagement, form=form, error=str(error), status=400)
 
     return _engagement_row(request, matter, corrected)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def open_engagement_wait_view(request: HttpRequest, pk: Any, engagement_id: Any) -> HttpResponse:
+    """`Ootan tagasisidet` — start this round waiting, as its own act.
+
+    The other half of the change that took the reply-by date off `+ Kaasamine`.
+    Filing a consultation and deciding the file is waiting on an answer are two
+    acts, and only the second one puts a row on somebody's desk — so only the
+    second one asks a question (lawyer feedback 11, docs/adr/0091 §2).
+
+    Deliberately the same shape as `complete_engagement_feedback_view` beside it:
+    one row is the swap target, the refusal comes back into that row with what was
+    typed still in it, and the closed-Matter rule, the state refusals and the
+    revision check are all the service's, taken under the Matter's row lock.
+    """
+    matter = get_visible_matter(request, pk)
+    engagement = _engagement_for_correction(request, matter, engagement_id)
+    form = EngagementWaitForm(request.POST, row_id=f"-{engagement.pk}")
+    if not form.is_valid():
+        return _engagement_row(request, matter, engagement, wait_form=form, status=400)
+    try:
+        open_engagement_feedback_wait(
+            engagement=engagement,
+            deadline=form.cleaned_data["feedback_deadline"],
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except EngagementEditConflict as conflict:
+        return _engagement_row(
+            request,
+            matter,
+            engagement,
+            wait_form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except DomainError as error:
+        return _engagement_row(
+            request, matter, engagement, wait_form=form, error=str(error), status=400
+        )
+    engagement.refresh_from_db()
+    return _engagement_row(request, matter, engagement)
 
 
 @login_required
@@ -5110,7 +5324,10 @@ WORKSPACE_PANELS: dict[str, str] = {
     "effective_date_form": "lisa-joustumine",
     "work_victory_form": "lisa-toovoit",
     "website_overview_form": "lisa-koduleht",
+    "received_feedback_form": "lisa-tagasiside",
     "external_position_form": "lisa-valine-seisukoht",
+    "koda_opinion_form": "lisa-koja-arvamus",
+    "development_form": "lisa-menetluse-areng",
     "procedural_link_form": "lisa-menetluse-link",
     "closure_form": "lisa-lopeta",
 }
@@ -5130,7 +5347,22 @@ def workspace_forms(
     open step the same form is `+ Järgmine tegevus` and has nothing to prefill
     from. A bound form ignores `initial` either way, so a refused save still
     comes back carrying what was typed (brief §9, §15).
+
+    **The institution catalogue is read once for the whole bar.** Three of these
+    forms ask the same question over the same catalogue, and each of them used to
+    answer it with four queries of its own — which was the right trade while
+    `+ Väline seisukoht` was the only such panel and is not one when there are
+    three: the page went from 38 queries to 49 and blew the budget
+    `tests/test_teema_redesign.py` holds. One `read_organisation_choices` here,
+    handed to each control, and every shortlist is still sliced per control in
+    Python exactly as before (docs/adr/0091 §3.5).
     """
+    organisations = read_organisation_choices(viewer)
+    # And this Matter's consultations, for the two `Seotud kaasamine` controls.
+    # Same reasoning as the catalogue above: one read for two identical selects.
+    # The *queryset* each field validates against is still set per form, so
+    # nothing about the authorization boundary is shared or weakened (AUTH-003).
+    engagements = visible_engagements_of(matter, viewer)
     return {
         "current_action_form": CompleteCurrentActionForm(),
         "matter_note_form": MatterNoteForm(),
@@ -5179,7 +5411,34 @@ def workspace_forms(
         # may see them. Both are queryset-level, so a crafted POST naming a
         # round on another file is refused by the field rather than by the
         # template not having drawn it (docs/adr/0084 §4).
-        "external_position_form": CompactExternalPositionForm(matter=matter, viewer=viewer),
+        # `+ Meile saadetud tagasiside` and `+ Teiste arvamus`. Two instances of
+        # one form class with the provenance fixed on each, because they are two
+        # professional facts with one shape — an author, a source, an optional
+        # date, an optional note from the lawyer — and four models would have been
+        # four sets of validation for one set of rules (docs/adr/0091 §3).
+        #
+        # Both have to be told which Matter they are on and who is looking:
+        # `Organisatsioon` is ranked by the institutions *this reader's* visible
+        # Matters involve, and `Seotud kaasamine` offers this Matter's
+        # consultations as this reader may see them. Both are queryset-level, so a
+        # crafted POST naming a round on another file is refused by the field
+        # rather than by the template not having drawn it (docs/adr/0084 §4).
+        "received_feedback_form": ReceivedFeedbackForm(
+            matter=matter, viewer=viewer, choices=organisations, engagements=engagements
+        ),
+        "external_position_form": OtherOpinionForm(
+            matter=matter, viewer=viewer, choices=organisations, engagements=engagements
+        ),
+        # `+ Koja arvamus`. The one panel here that writes a `Submission` rather
+        # than a Matter child: Koda's own opinion is what the product has always
+        # called a submission, and this is a second door onto it rather than a
+        # second record of it (docs/adr/0091 §6).
+        "koda_opinion_form": KodaOpinionForm(matter=matter, viewer=viewer, choices=organisations),
+        # `+ Menetluse areng`. The continuation the file had no way to record: a
+        # dated step the external procedure took, optionally with the Hetkeseis it
+        # puts the file in and the next thing the lawyer will do about it
+        # (docs/adr/0091 §5).
+        "development_form": ProceduralDevelopmentForm(),
         "closure_form": CompactClosureForm(),
         "open_panel": "",
         "workspace_error": "",
@@ -5385,7 +5644,10 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+            # **No `feedback_deadline`.** This panel stopped asking, and the
+            # service keeps the parameter for the importer, the shell and the
+            # explicit `Ootan tagasisidet` act — none of which is this form
+            # (docs/adr/0091 §2).
             feedback_received=form.cleaned_data.get("feedback_received") or "",
             uploads=form.cleaned_data["attachments"],
         )
@@ -5574,6 +5836,86 @@ def _external_position_row(
     )
 
 
+def _record_external_position(
+    request: HttpRequest, pk: Any, *, form_class: Any, key: str
+) -> HttpResponse:
+    """`+ Meile saadetud tagasiside` and `+ Teiste arvamus`, through one function.
+
+    Two chips, two forms and one operation, which is docs/adr/0091 §3's claim
+    stated in code: the panels differ in which questions they ask and in which
+    provenance they write, and nothing else about the act differs. A second view
+    would have been a second place for the organisation resolution, the refusal
+    handling and the closed-Matter boundary to drift.
+
+    **The provenance comes off the form class, never off the request.** Neither
+    form declares a `provenance` field, so there is nothing for a browser to post
+    and nothing a crafted POST can move: `+ Teiste arvamus` cannot be made to file
+    received feedback by adding a parameter. It is the same reasoning
+    `NextActionForm` gives for having no `kind` — a classification the page
+    decides is not a value the endpoint accepts (ADR 0052 §1).
+
+    The institution is answered either by the picker's radio group or by the
+    name somebody typed into it, and which of the two wins is
+    `resolve_addressee`'s rule, shared rather than restated: a typed name is a
+    deliberate act and beats a chip that was merely left selected. Resolution
+    happens inside the save's own transaction, so a refusal further down leaves
+    no institution behind (docs/adr/0073, docs/adr/0084 §4).
+
+    The institution is answered either by the picker's radio group or by the name
+    somebody typed into it, and which of the two wins is `resolve_addressee`'s
+    rule, shared rather than restated: a typed name is a deliberate act and beats
+    a chip that was merely left selected. Resolution happens inside the save's own
+    transaction, so a refusal further down leaves no institution behind
+    (docs/adr/0073, docs/adr/0084 §4).
+
+    **Received feedback may name no institution at all**, and that is the one
+    place the two panels diverge here: `resolve_addressee` is asked only when
+    something was chosen or typed, because calling it with two empty answers
+    would refuse an aggregate survey result for having no author when `Allikas`
+    is exactly the author it has (docs/adr/0091 §3.3).
+
+    A refusal comes back through `_workspace_refusal` with the form still bound,
+    so the link somebody pasted and the explanation they wrote are still in
+    their boxes — losing them would cost the person the record they opened the
+    panel to make. The closed-Matter refusal is the service's, answered under
+    the Matter's row lock, because a POST may arrive from a tab that was open
+    before somebody else shut the file (R2-02).
+    """
+    matter = get_visible_matter(request, pk)
+    form = form_class(request.POST, request.FILES, matter=matter, viewer=request.user)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key=key, form=form)
+    chosen = form.cleaned_data.get("organisation")
+    typed = (form.cleaned_data.get("organisation_name") or "").strip()
+    try:
+        workspace.add_matter_external_position(
+            matter=matter,
+            author=request.user,
+            # `None` where neither half of the picker was answered. The form has
+            # already refused that on `+ Teiste arvamus`, so reaching here with
+            # nothing means received feedback carrying an `Allikas` instead.
+            organisation=(
+                resolve_addressee(chosen=chosen, typed_name=typed)
+                if (chosen is not None or typed)
+                else None
+            ),
+            provenance=form_class.provenance,
+            source_label=form.cleaned_data.get("source_label") or "",
+            url=form.cleaned_data.get("url") or "",
+            # The resolved anchor and its precision, not the day box: `Kuu`,
+            # `Kvartal` and `Aasta` leave that box empty on purpose.
+            stated_on=form.cleaned_data.get("stated_on_value"),
+            stated_on_precision=form.cleaned_data["stated_on_precision"],
+            summary=form.cleaned_data.get("summary") or "",
+            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+            engagement=form.cleaned_data.get("engagement"),
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
+    return _render_overview(request, matter)
+
+
 def _procedural_link_for(
     request: HttpRequest, matter: Matter, link_id: Any
 ) -> MatterProceduralLink:
@@ -5733,51 +6075,27 @@ def correct_procedural_link_view(request: HttpRequest, pk: Any, link_id: Any) ->
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
-def add_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Väline seisukoht` — another organisation's position, filed with its source.
-
-    The institution is answered either by the picker's radio group or by the
-    name somebody typed into it, and which of the two wins is
-    `resolve_addressee`'s rule, shared rather than restated: a typed name is a
-    deliberate act and beats a chip that was merely left selected. Resolution
-    happens inside the save's own transaction, so a refusal further down leaves
-    no institution behind (docs/adr/0073, docs/adr/0084 §4).
-
-    A refusal comes back through `_workspace_refusal` with the form still bound,
-    so the link somebody pasted and the explanation they wrote are still in
-    their boxes — losing them would cost the person the record they opened the
-    panel to make. The closed-Matter refusal is the service's, answered under
-    the Matter's row lock, because a POST may arrive from a tab that was open
-    before somebody else shut the file (R2-02).
-    """
-    matter = get_visible_matter(request, pk)
-    form = CompactExternalPositionForm(
-        request.POST, request.FILES, matter=matter, viewer=request.user
+def add_received_feedback(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Meile saadetud tagasiside` — somebody gave this to Koda."""
+    return _record_external_position(
+        request, pk, form_class=ReceivedFeedbackForm, key="received_feedback_form"
     )
-    if not form.is_valid():
-        return _workspace_refusal(request, matter, key="external_position_form", form=form)
-    try:
-        workspace.add_matter_external_position(
-            matter=matter,
-            author=request.user,
-            organisation=resolve_addressee(
-                chosen=form.cleaned_data.get("organisation"),
-                typed_name=form.cleaned_data.get("organisation_name") or "",
-            ),
-            url=form.cleaned_data.get("url") or "",
-            # The resolved anchor and its precision, not the day box: `Kuu`,
-            # `Kvartal` and `Aasta` leave that box empty on purpose.
-            stated_on=form.cleaned_data.get("stated_on_value"),
-            stated_on_precision=form.cleaned_data["stated_on_precision"],
-            summary=form.cleaned_data.get("summary") or "",
-            engagement=form.cleaned_data.get("engagement"),
-            uploads=form.cleaned_data["attachments"],
-        )
-    except (DomainError, UploadRejected) as error:
-        return _workspace_refusal(
-            request, matter, key="external_position_form", form=form, error=str(error)
-        )
-    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Teiste arvamus` — Koda recorded somebody else's position from elsewhere.
+
+    The route keeps its name. It is what docs/adr/0084's panel posted to, the
+    browser lane and the visual baselines reach it by that name, and renaming a
+    working endpoint because a chip's label changed would be churn with a
+    migration attached (docs/adr/0091 §3.5).
+    """
+    return _record_external_position(
+        request, pk, form_class=OtherOpinionForm, key="external_position_form"
+    )
 
 
 @login_required
@@ -5831,6 +6149,17 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
             stated_on=form.cleaned_data.get("stated_on_value"),
             stated_on_precision=form.cleaned_data["stated_on_precision"],
             summary=form.cleaned_data.get("summary") or "",
+            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+            # `Allikas` only where the record may have one — the box is not on
+            # the form otherwise, and passing a value the record's provenance
+            # forbids is what `_external_position_authorship` refuses.
+            source_label=form.cleaned_data.get("source_label") or "",
+            # **Not asked and not moved.** `None` is the sentinel for «this form
+            # did not render the control», which is what keeps a `LEGACY` row's
+            # unspecified provenance through a correction and what stops one press
+            # turning received feedback into a discovered opinion
+            # (docs/adr/0091 §3.4, §3.5).
+            provenance=None,
             engagement=form.cleaned_data.get("engagement"),
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
@@ -5860,6 +6189,94 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
         )
 
     return _external_position_row(request, matter, corrected)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Koja arvamus` — the Chamber's opinion went out, recorded where the work is.
+
+    **A second door onto the one canonical act**, and deliberately not a second
+    implementation of it. `workspace.add_matter_koda_opinion` composes the same
+    `register_sent_opinion_on_open_matter` the `Dokumendid` panel posts to, so the
+    kind validation, the evidence checks, the two row locks, the send event and the
+    outbound statistics are all exactly where they were (docs/adr/0061 §17,
+    docs/adr/0091 §6).
+
+    `UploadRejected` and `DomainError` both come back through
+    `_workspace_refusal` with the form still bound. A file cannot be put back into
+    a file input by a browser, so the person reloads that one control — but the
+    date, the title and the addressees they chose are still on the page, which is
+    the difference between correcting a refusal and starting again (QA-02).
+    """
+    matter = get_visible_matter(request, pk)
+    form = KodaOpinionForm(request.POST, request.FILES, matter=matter, viewer=request.user)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="koda_opinion_form", form=form)
+    try:
+        workspace.add_matter_koda_opinion(
+            matter=matter,
+            author=request.user,
+            upload=form.cleaned_data["upload"],
+            recipients=list(form.cleaned_data["recipients"]),
+            sent_on=form.cleaned_data["sent_on"],
+            title=form.cleaned_data.get("title") or "",
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="koda_opinion_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_development(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Menetluse areng` — one step the procedure took, and what follows.
+
+    Up to four canonical writes in one transaction: the
+    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and the next step. A
+    refusal anywhere leaves the Matter exactly as it was — a stage that moved
+    without the development that moved it would be a file claiming to be in the
+    Riigikogu with nothing saying how it got there
+    (`workspace.add_procedural_development`, docs/adr/0091 §5).
+
+    **The date is optional**, which is what the canonical record buys over the
+    `Entry` this panel wrote for one round: a step learned about months later
+    frequently has no day anybody could defend (§5.2).
+
+    **The `Hetkeseis` and the next step are optional and never inferred.** Nothing
+    reads the title and concludes anything from it; a save naming neither changes
+    neither, and nothing is read from or written to a `Menetluse link` — Package
+    B's links are references, and a reference is not an event (§5.6).
+    """
+    matter = get_visible_matter(request, pk)
+    form = ProceduralDevelopmentForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="development_form", form=form)
+    try:
+        workspace.add_procedural_development(
+            matter=matter,
+            author=request.user,
+            title=form.cleaned_data["title"],
+            # The resolved anchor and its precision, not the day box: `Kuu`,
+            # `Kvartal` and `Aasta` leave that box empty on purpose, and an
+            # emptied one is «kuupäev teadmata» rather than a refusal.
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+            note=form.cleaned_data.get("note") or "",
+            stage=form.cleaned_data.get("stage"),
+            next_text=form.cleaned_data.get("next_text") or "",
+            next_date=form.cleaned_data.get("next_date"),
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="development_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
 
 
 @login_required

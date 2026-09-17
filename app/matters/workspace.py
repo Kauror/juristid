@@ -55,6 +55,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from django.db import transaction
+from django.utils import timezone
 
 from app.audit.operations import composer_operation
 from app.core.errors import DomainError
@@ -62,7 +63,7 @@ from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import EngagementKind
+from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Entry, Matter
 from app.matters.services import (
@@ -77,7 +78,7 @@ from app.matters.services import (
 )
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
-from app.workflow.services import complete_next_action
+from app.workflow.services import complete_next_action, set_next_action_for_new_work
 
 #: Refused when the step the form was rendered against is no longer the one that
 #: is open. Named because two surfaces print it and a test asserts on it.
@@ -482,14 +483,31 @@ def add_matter_external_position(
     matter: Matter,
     author: Any,
     organisation: Any,
+    provenance: Any = ExternalPositionProvenance.DISCOVERED.value,
+    source_label: str = "",
     url: str = "",
     stated_on: Any = None,
     stated_on_precision: str = DatePrecision.EXACT.value,
     summary: str = "",
+    lawyer_note: str = "",
     engagement: Any = None,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
-    """`+ Väline seisukoht` — what another organisation said, and where to read it.
+    """`+ Meile saadetud tagasiside` / `+ Teiste arvamus` — what somebody else said.
+
+    **One operation behind two chips**, which is docs/adr/0091 §3's whole
+    architectural claim. `Meile saadetud tagasiside` and `Teiste arvamus` are two
+    professional facts with one shape: an author, a source a colleague can open,
+    an optional date at the precision it is known to, and an optional note from
+    the lawyer. Four models — `EngagementFeedback`, `ExternalPosition`,
+    `AnotherOpinion`, `SurveyFeedback` — would have been four sets of validation
+    and four chronology renderings for one set of rules, so the distinction is a
+    column and the panels are two doors onto this function.
+
+    ``provenance`` is the distinction, ``source_label`` is what an aggregate
+    answer with no single author is called, and ``lawyer_note`` is this office's
+    own reading of the position — stored beside the source and never inside it
+    (docs/adr/0091 §3, §4).
 
     One operation: the record, its files and the links between them land
     together or not at all. That is the whole reason this module exists, and it
@@ -529,10 +547,13 @@ def add_matter_external_position(
         position = record_external_position(
             matter=locked_matter,
             organisation=organisation,
+            provenance=provenance,
+            source_label=source_label,
             url=url,
             stated_on=stated_on,
             stated_on_precision=stated_on_precision,
             summary=summary,
+            lawyer_note=lawyer_note,
             engagement=engagement,
             attachment_count=len(files),
             actor=author,
@@ -547,6 +568,217 @@ def add_matter_external_position(
         )
         for document in result.documents:
             record_external_position_document(position=position, document=document, actor=author)
+        return result
+
+
+@transaction.atomic
+def add_matter_koda_opinion(
+    *,
+    matter: Matter,
+    author: Any,
+    upload: Any,
+    recipients: Sequence[Any],
+    sent_on: Any,
+    title: str = "",
+) -> WorkspaceResult:
+    """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
+
+    **Composition, and the fourth caller of a service that already exists.** Koda's
+    own opinion is a `Submission` and has been since the foundational schema;
+    `register_sent_opinion` is the one act «this file was sent — say so», and
+    `register_sent_opinion_on_open_matter` is that act behind the business-write
+    boundary. Every rule this touches is still decided where it was:
+    `create_submission` validates the kind and writes the creation event,
+    `select_final_evidence` takes the Matter and submission locks and runs
+    `check_evidence_is_usable` against what those locks protect, and
+    `mark_submission_sent` re-runs the evidence check, stamps the supplied day and
+    writes the send event. A second opinion about when Koda may claim to have sent
+    something would drift from the first (docs/adr/0061 §17, docs/adr/0091 §6).
+
+    What this adds is the half the `Dokumendid` form cannot do: **the bytes and the
+    send in one act.** That page asks a lawyer to upload the file, find it again in
+    a select and then register it — three round trips describing two states nobody
+    was ever in — and on the Teema page there is no file table to upload into at
+    all. Here the `Document`, its immutable `DocumentVersion` and the `Submission`
+    land in one transaction, so a refused upload leaves no half-registered opinion
+    and a refused registration leaves no orphan evidence.
+
+    **Uploading is still not asserting.** `DocumentRole.KODA_SUBMISSION_FINAL` says
+    Koda holds these bytes as an opinion; the `Submission` says it was sent, to
+    whom and when. The two remain separate records and this function writes both
+    because a person pressed one button meaning both — which is what an atomic
+    operation is for, and is not the same thing as inferring one from the other
+    (docs/adr/0061, docs/adr/0091 §6.2).
+
+    ``sent_on`` is a **day the person supplied**, and this function invents none:
+    the service refuses `None` and refuses any precision but `DATE`, which is the
+    rule R2-01 put there after a blank box became `timezone.now()` and the outbound
+    register reported `Arvamus välja <today>` about letters nobody had dated.
+
+    ``recipients`` is who it actually went to, and is **never defaulted from the
+    Matter's sender**. An opinion on the first draft goes to the ministry; one at
+    second reading goes to a Riigikogu committee. Assuming the sender would put a
+    false recipient on the canonical outbound record of a professional letter
+    (docs/adr/0091 §6.3).
+
+    Several per Matter is ordinary. Nothing here is unique on the Matter, nothing
+    supersedes an earlier opinion, and no earlier `Submission`, `Document` or
+    `DocumentVersion` is touched — a revised opinion is a new letter and new bytes,
+    which is what the immutable evidence store is for (docs/adr/0091 §6.4, §7).
+    """
+    from datetime import datetime, time
+
+    from app.documents.enums import DocumentRole as _Role
+    from app.documents.services import add_evidence_version, create_document
+    from app.documents.uploads import read_upload
+    from app.submissions.enums import SentAtPrecision
+    from app.submissions.services import register_sent_opinion_on_open_matter
+
+    if sent_on is None:
+        # Stated here as well as in the service, because this is the boundary the
+        # panel posts to and «the application picked a day» is the one failure
+        # docs/adr/0061's amendment exists to prevent.
+        raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        # Read first, so a rejected file refuses before anything is written. The
+        # ordinary evidence pipeline — same reader, same scan gate, same checksum,
+        # same immutability — and the role is the one the product already has for
+        # Koda's own opinion.
+        accepted = read_upload(upload)
+        document = create_document(
+            matter=locked_matter,
+            title=(title or "").strip() or accepted.filename,
+            role=_Role.KODA_SUBMISSION_FINAL,
+            created_by=author,
+        )
+        version = add_evidence_version(
+            document=document,
+            content=accepted.content,
+            original_filename=accepted.filename,
+            mime_type=accepted.mime_type,
+            uploaded_by=author,
+        )
+        result.documents = [document]
+        # Midnight in Europe/Tallinn, carried as `SentAtPrecision.DATE` so that no
+        # surface ever reads the anchor back as «00:00». The person answered a day
+        # and the record says so (app/submissions/enums.py, docs/adr/0079 §2).
+        moment = timezone.make_aware(datetime.combine(sent_on, time.min))
+        # The Matter is not a parameter: the service derives it from the
+        # document's own `matter_id` and re-takes the same row lock, which is
+        # free inside one transaction and is what keeps the boundary in one place
+        # rather than in every caller (`app/matters/locks.py`).
+        result.record = register_sent_opinion_on_open_matter(
+            document=document,
+            version=version,
+            title=document.title,
+            actor=author,
+            recipients=list(recipients),
+            sent_at=moment,
+            sent_at_precision=SentAtPrecision.DATE,
+        )
+        return result
+
+
+@transaction.atomic
+def add_procedural_development(
+    *,
+    matter: Matter,
+    author: Any,
+    title: str,
+    occurred_on: Any = None,
+    occurred_on_precision: str = DatePrecision.EXACT.value,
+    note: str = "",
+    stage: Any = None,
+    next_text: str = "",
+    next_date: Any = None,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Menetluse areng` — the procedure moved, and what the lawyer does about it.
+
+    The operation the file had no way to record, and the reason a Matter used to
+    end at «Arvamus saadetud» with nothing to press. A ministry sends a revised
+    draft; the Chamber reads it; the draft goes to the Ministry of Justice; the
+    government approves it; the file reaches the Riigikogu. Each of those is one
+    dated step, and recording one used to mean up to three saves in three places —
+    a `Märge` with no date box, a `Hetkeseis` change in the header, and
+    `+ Järgmine tegevus` under the launcher (lawyer feedback 14, docs/adr/0091 §5).
+
+    **One canonical `MatterProceduralDevelopment`**, beside `MatterEngagement`
+    and `MatterExternalPosition`. It was an `Entry` of a new `EntryKind` for one
+    round, and the Package D discovery is what retired that: an incoming
+    development cannot be projected truthfully from an `Entry`, because the date
+    cannot be unknown, the lawyer's note has nowhere to go that is not the
+    ministry's own sentence, and a projection would have to parse a title out of
+    prose. The model's docstring carries the whole argument.
+
+    **Up to four canonical writes, and one transaction.** The record, its
+    evidence, the `Hetkeseis` and the next step. Any one of them failing must
+    leave the Matter exactly as it was — a stage that moved with no development
+    recorded would be a file claiming to be in the Riigikogu with nothing on it
+    saying how it got there, and a `NextAction` written twice by a retried request
+    would be work nobody assigned. Ordered as the composer orders its own: the
+    record first, then its evidence, then the stage, then the step.
+
+    **Nothing is derived from the title.** No stage is inferred from the words, no
+    next step is generated, and a save that names neither changes neither. What a
+    person did not answer is not a thing this function decides for them. Nor is
+    anything read from or written to a `Menetluse link`: Package B's links are
+    references, and a reference is not an event (docs/adr/0091 §5.3, §5.6).
+
+    ``stage`` goes through `change_stage`, which is the canonical service and
+    writes its own `MATTER_STAGE_CHANGED` event; a stage equal to the one the file
+    already has is that service's own no-op rather than a second audit row. The
+    two writes share this operation's identifier, which is what lets a reader —
+    and Package D — tie «the file moved to Kooskõlastusringil» to the development
+    that moved it without either record holding a copy of the other.
+
+    ``next_text`` and ``next_date`` go through `set_next_action_for_new_work`,
+    which is the native boundary: somebody is assigning work today, so the
+    departed-owner rule applies exactly as it does on `+ Järgmine tegevus`. A step
+    written here supersedes whatever was open, which is `NextAction`'s one-open
+    invariant and not a decision this function makes.
+    """
+    from app.matters.services import (
+        change_stage,
+        record_procedural_development,
+        record_procedural_development_document,
+    )
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        development = record_procedural_development(
+            matter=locked_matter,
+            title=title,
+            occurred_on=occurred_on,
+            occurred_on_precision=occurred_on_precision,
+            note=note,
+            actor=author,
+        )
+        result.record = development
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=development,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        for document in result.documents:
+            record_procedural_development_document(
+                development=development, document=document, actor=author
+            )
+        if stage is not None:
+            change_stage(matter=locked_matter, stage=stage, actor=author)
+        text = (next_text or "").strip()
+        if text:
+            result.action = set_next_action_for_new_work(
+                matter=locked_matter,
+                text=text,
+                target_date=next_date,
+                actor=author,
+            )
         return result
 
 

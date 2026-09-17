@@ -74,6 +74,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
         Entry,
         MatterEngagement,
         MatterExternalPosition,
+        MatterProceduralDevelopment,
         MatterProceduralLink,
     )
     from app.submissions.models import Submission
@@ -166,6 +167,15 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.PROCEDURAL_LINK_CORRECTED,
             ),
             MatterProceduralLink,
+            direct,
+        ),
+        (
+            (
+                ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,
+                ChangeEventType.PROCEDURAL_DEVELOPMENT_CORRECTED,
+                ChangeEventType.PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED,
+            ),
+            MatterProceduralDevelopment,
             direct,
         ),
         (

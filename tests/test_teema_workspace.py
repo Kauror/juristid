@@ -398,7 +398,7 @@ def test_muuda_supersedes_rather_than_completes(signed_in, normal_matter, specia
 
 
 # ===========================================================================
-# LISA TEEMALE — nine intentions, nine saves
+# LISA TEEMALE — twelve intentions, twelve saves
 # ===========================================================================
 
 
@@ -414,19 +414,24 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "+ Jõustumine",
         "+ Töövõit",
         "+ Ülevaade / uudis",
-        "+ Väline seisukoht",
+        # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
+        # and one panel partial, named by how what it holds reached the file.
+        "+ Meile saadetud tagasiside",
+        "+ Teiste arvamus",
+        "+ Koja arvamus",
+        "+ Menetluse areng",
         "+ Menetluse link",
         "+ Lõpeta teema",
     ):
         assert chip in zone, chip
     assert 'cx-panel" open' not in zone
-    # Ten operations, ten saves. There is no shared one left.
+    # Thirteen operations, thirteen saves. There is no shared one left.
     #
-    # The organisation picker inside `+ Väline seisukoht` contributes no
+    # The organisation picker inside each feedback panel contributes no
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 10
+    assert zone.count('type="submit"') == 13
     assert "composer__actions" not in zone
 
 
