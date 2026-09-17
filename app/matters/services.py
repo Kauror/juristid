@@ -2209,6 +2209,113 @@ def complete_engagement_feedback(
     return closed
 
 
+#: Refused when somebody opens a wait on a round that is already waiting.
+ENGAGEMENT_FEEDBACK_ALREADY_AWAITED = "Sellel kaasamisel on tagasiside ootus juba olemas."
+#: Refused when the explicit wait action arrives with no day on it.
+ENGAGEMENT_FEEDBACK_NEEDS_A_DAY = "Vali kuupäev, milleni tagasisidet ootad."
+
+
+@transaction.atomic
+def open_engagement_feedback_wait(
+    *,
+    engagement: MatterEngagement,
+    deadline: Any,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> MatterEngagement:
+    """`Ootan tagasisidet` — the one act that starts a round waiting.
+
+    **Opening a wait is a decision somebody makes, not a field on a form they
+    were already filling in.** docs/adr/0086 §2 asked for the reply-by date on
+    `+ Kaasamine` itself and docs/adr/0091 §2 emptied its default; using it on
+    real files showed that neither went far enough. Recording «19.09 — kaasati
+    234 tööstusettevõtet» is a completed act, and a *question* about a reply-by
+    date sitting in the middle of that form is the complexity the department
+    asked to have removed — an empty box is still a box that has to be read,
+    understood and skipped, every time (lawyer feedback 11, docs/adr/0091 §2 as
+    narrowed).
+
+    So the column, the wait, the work item and `Lõpeta kaasamine` all stay
+    exactly as docs/adr/0086 §3 and §6 built them, and what changes is *where the
+    wait comes from*: a named act on the round's own chronology row, taken by
+    somebody who has decided that this file is waiting on an answer. That
+    statement has a name on it, which is what the whole machinery is for.
+
+    **``deadline`` is required here**, unlike the field it replaces. This
+    function exists only to start a wait; an empty day would be an act that does
+    nothing, and the caller that means «no wait» simply does not call it.
+    Clearing an existing one is still `update_engagement`, which is the
+    correction surface and is where the historical rows are edited.
+
+    **Two refusals, both read from the locked row.** A round already waiting is
+    not started twice — that would silently move a deadline somebody else set —
+    and a closed Matter refuses the act entirely, under
+    `lock_open_matter_for_business_write`, because a page is not a boundary
+    (R2-02).
+
+    **Optimistic concurrency, and no partial write.** ``expected_revision`` is
+    the version the form was rendered from, compared against the row *after* it
+    is locked; a stale save raises :class:`EngagementEditConflict` and writes
+    nothing. The contract `complete_engagement_feedback` keeps, for the same
+    reason and in the same shape.
+
+    Writes `ENGAGEMENT_CHANGED`, not an event of its own. The round is one
+    record and this moves one column on it; a second event type for «the wait
+    opened» would be a second history of the same fact, and the payload already
+    names the column that moved.
+    """
+    if deadline is None:
+        raise DomainError(ENGAGEMENT_FEEDBACK_NEEDS_A_DAY)
+
+    locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
+    try:
+        current = MatterEngagement.objects.select_for_update(no_key=True).get(
+            pk=engagement.pk, matter=locked_matter
+        )
+    except MatterEngagement.DoesNotExist:
+        raise DomainError("Seda kaasamist ei ole sellel teemal.") from None
+
+    if expected_revision is not None and engagement_revision_token(current) != expected_revision:
+        raise EngagementEditConflict(current)
+    if current.feedback_deadline is not None:
+        raise DomainError(ENGAGEMENT_FEEDBACK_ALREADY_AWAITED)
+
+    # The one relationship between the two dates, and the same one the panel and
+    # the correction form keep: a reply-by day *before* the round began is not a
+    # late consultation, it is a slip of the keyboard. The anchor is the period's
+    # first day, so an approximate round refuses only a deadline falling before
+    # the whole period began (docs/adr/0078 §3, `refuse_deadline_before_engagement`).
+    #
+    # Stated here as well as on the form because this is the service boundary and
+    # the form is what one browser was shown. The sentence is imported rather than
+    # rewritten so the two cannot drift.
+    from app.matters.forms import DEADLINE_BEFORE_ENGAGEMENT
+
+    if current.occurred_on and deadline < current.occurred_on:
+        raise DomainError(DEADLINE_BEFORE_ENGAGEMENT)
+
+    current.feedback_deadline = deadline
+    current.save(update_fields=["feedback_deadline", "updated_at"])
+    engagement.feedback_deadline = deadline
+
+    record_change_event(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED,
+        matter=locked_matter,
+        actor=actor,
+        obj=current,
+        summary=current.title[:200],
+        payload={
+            "fields": ["feedback_deadline"],
+            "feedback_deadline_from": None,
+            "feedback_deadline_to": deadline.isoformat(),
+            # Named so a reader of the history can tell this act apart from a
+            # correction that happened to move the same column.
+            "wait_opened": True,
+        },
+    )
+    return current
+
+
 def close_open_feedback_waits_for_closure(
     *, matter: Matter, actor: Any = None
 ) -> list[MatterEngagement]:

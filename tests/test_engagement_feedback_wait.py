@@ -107,6 +107,36 @@ def _row(client, matter, engagement) -> str:
     return body[start : body.index("</article>", start)]
 
 
+def _plain(matter, *, actor=None, **extra):
+    """A round nobody is waiting on — the shape `+ Kaasamine` now always writes."""
+    return add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="liikmed",
+        occurred_on=timezone.localdate() - dt.timedelta(days=1),
+        actor=actor,
+        **extra,
+    )
+
+
+def _wait_url(engagement) -> str:
+    return reverse(
+        "matters:open_engagement_wait",
+        kwargs={"pk": engagement.matter_id, "engagement_id": engagement.pk},
+    )
+
+
+def _open_wait(client, engagement, *, days: int = 7, **fields):
+    """Press `Ootan tagasisidet` the way the row does: with the current token."""
+    engagement.refresh_from_db()
+    payload = {
+        "revision": engagement_revision_token(engagement),
+        "feedback_deadline": (timezone.localdate() + dt.timedelta(days=days)).strftime("%d.%m.%Y"),
+    }
+    payload.update(fields)
+    return client.post(_wait_url(engagement), payload, headers={"HX-Request": "true"})
+
+
 def _waits(user, **kwargs):
     """The feedback-wait items this reader has, out of the shared work model."""
     return [
@@ -931,14 +961,12 @@ def test_the_panel_stores_feedback_without_closing_anything(signed_in, specialis
     """§5, §6. Writing down what came back and deciding the round is over are
     two acts, and only the second is a decision somebody's name goes on."""
     matter = factories.MatterFactory(owner=specialist)
-    deadline = timezone.localdate() + dt.timedelta(days=4)
 
     response = signed_in.post(
         reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
         {
             "audience": "liikmed",
             "occurred_on": "",
-            "feedback_deadline": deadline.strftime("%d.%m.%Y"),
             "feedback_received": "Kaks vastust juba käes.",
         },
         headers={"HX-Request": "true"},
@@ -947,17 +975,30 @@ def test_the_panel_stores_feedback_without_closing_anything(signed_in, specialis
     assert response.status_code == 200, response.content.decode()[:2000]
     engagement = MatterEngagement.objects.get()
     assert engagement.feedback_received == "Kaks vastust juba käes."
-    assert engagement.has_open_feedback_wait is True
-    assert len(_waits(specialist)) == 1
+    assert engagement.feedback_closed_at is None
 
 
-def test_an_emptied_reply_by_date_opens_no_wait(signed_in, specialist):
-    """§2, §3. Clearing the defaulted box is a real answer, not an omission."""
+def test_the_ordinary_panel_never_asks_for_a_reply_by_date(signed_in, specialist):
+    """docs/adr/0091 §2. Not an empty box — no box at all. An empty one is still
+    a question a lawyer reads, understands and skips on every round they file."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    body = _detail(signed_in, matter)
+    panel = body[body.index('id="lisa-kaasamine"') :]
+    panel = panel[: panel.index('id="lisa-')]
+
+    assert "Tagasisidet ootame kuni" not in panel
+    assert "feedback_deadline" not in panel
+
+
+def test_an_ordinary_new_engagement_creates_no_work_item(signed_in, specialist):
+    """docs/adr/0091 §2. Recording that Koda asked somebody something is a
+    completed act, and must put no row on anybody's desk by itself."""
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
         reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
-        {"audience": "liikmed", "feedback_deadline": ""},
+        {"audience": "liikmed"},
         headers={"HX-Request": "true"},
     )
 
@@ -966,3 +1007,252 @@ def test_an_emptied_reply_by_date_opens_no_wait(signed_in, specialist):
     assert engagement.feedback_deadline is None
     assert engagement.has_feedback_wait is False
     assert _waits(specialist) == []
+
+
+def test_the_panel_ignores_a_reply_by_date_posted_at_it(signed_in, specialist):
+    """docs/adr/0091 §2. The field left the form as well as the page, so a stale
+    browser cannot re-open the surface that was removed. One door, not two."""
+    matter = factories.MatterFactory(owner=specialist)
+    deadline = timezone.localdate() + dt.timedelta(days=4)
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        {"audience": "liikmed", "feedback_deadline": deadline.strftime("%d.%m.%Y")},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement = MatterEngagement.objects.get()
+    assert engagement.feedback_deadline is None
+    assert _waits(specialist) == []
+
+
+def test_an_unrelated_correction_leaves_a_historical_deadline_alone(signed_in, specialist):
+    """docs/adr/0091 §2. The #227 promise, stated as a test: a round recorded
+    with a deadline keeps it, and fixing a typo elsewhere on that round does not
+    quietly retire the wait the new panel would no longer have opened."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+    deadline = engagement.feedback_deadline
+
+    response = signed_in.post(
+        reverse(
+            "matters:update_engagement",
+            kwargs={"pk": matter.pk, "engagement_id": engagement.pk},
+        ),
+        {
+            "title": "liikmed ja partnerid",
+            "occurred_on": engagement.occurred_on.strftime("%d.%m.%Y"),
+            "feedback_deadline": deadline.strftime("%d.%m.%Y"),
+            "revision": engagement_revision_token(engagement),
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement.refresh_from_db()
+    assert engagement.title == "liikmed ja partnerid"
+    assert engagement.feedback_deadline == deadline
+    assert engagement.has_open_feedback_wait is True
+    assert len(_waits(specialist)) == 1
+
+
+def test_a_historical_round_stays_readable_and_completable(signed_in, specialist):
+    """docs/adr/0091 §2. Nothing migrates, so a wait opened under #227 reads,
+    counts and finishes exactly as it did — which is the whole promise."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+
+    assert "Ootame tagasisidet kuni" in _row(signed_in, matter, engagement)
+    assert len(_waits(specialist)) == 1
+
+    response = _finish(signed_in, engagement, feedback_received="Vastasid kaks.")
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement.refresh_from_db()
+    assert engagement.feedback_closed_at is not None
+    assert engagement.feedback_received == "Vastasid kaks."
+    assert _waits(specialist) == []
+
+
+# ===========================================================================
+# F — `Ootan tagasisidet`: the one act that opens a wait
+# ===========================================================================
+
+
+def test_the_explicit_act_opens_exactly_one_wait(signed_in, specialist):
+    """docs/adr/0091 §2. One named decision, one `WorkItem` — the whole of what
+    the capture panel used to do as a side effect of being saved."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+
+    response = _open_wait(signed_in, engagement)
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline == timezone.localdate() + dt.timedelta(days=7)
+    assert engagement.has_open_feedback_wait is True
+    assert len(_waits(specialist)) == 1
+
+
+def test_the_act_is_audited_as_a_change_to_the_round(signed_in, specialist):
+    """docs/adr/0091 §2. `ENGAGEMENT_CHANGED` naming the column that moved, not
+    an event type of its own: one record, one history."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+
+    _open_wait(signed_in, engagement)
+
+    event = ChangeEvent.objects.filter(
+        matter=matter, event_type=ChangeEventType.ENGAGEMENT_CHANGED
+    ).latest("occurred_at")
+    assert event.payload["fields"] == ["feedback_deadline"]
+    assert event.payload["wait_opened"] is True
+
+
+def test_the_explicit_act_refuses_an_empty_day(signed_in, specialist):
+    """docs/adr/0091 §2. This form exists only to open a wait, so a blank day is
+    a press that would do nothing — refused rather than quietly accepted."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+
+    response = _open_wait(signed_in, engagement, feedback_deadline="")
+
+    assert response.status_code == 400
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
+    assert _waits(specialist) == []
+
+
+def test_the_act_keeps_the_date_order_rule(signed_in, specialist):
+    """docs/adr/0078 §3, unchanged. A reply-by day before the round started is a
+    slip of the keyboard, and the act refuses it with the forms' own wording."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+
+    response = _open_wait(signed_in, engagement, days=-5)
+
+    assert response.status_code == 400
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
+
+
+def test_a_round_already_waiting_is_not_started_twice(signed_in, specialist):
+    """docs/adr/0091 §2. Starting a wait twice would silently move a deadline
+    somebody else set. That is a correction, and it lives on `Muuda`."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+    deadline = engagement.feedback_deadline
+
+    response = _open_wait(signed_in, engagement, days=30)
+
+    assert response.status_code == 400
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline == deadline
+
+
+def test_a_stale_wait_writes_nothing_at_all(signed_in, specialist):
+    """docs/adr/0091 §2. The same optimistic-concurrency contract
+    `complete_engagement_feedback` keeps, and for the same reason."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+    stale = engagement_revision_token(engagement)
+    correct_engagement(engagement=engagement, actor=specialist, title="liikmed ja partnerid")
+
+    response = signed_in.post(
+        _wait_url(engagement),
+        {
+            "revision": stale,
+            "feedback_deadline": (timezone.localdate() + dt.timedelta(days=7)).strftime("%d.%m.%Y"),
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 409
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
+    assert _waits(specialist) == []
+
+
+def test_the_row_offers_the_wait_only_while_there_is_none(signed_in, specialist):
+    """docs/adr/0091 §2. Absent once the round waits and once it is finished —
+    `attach_wait_form` decides it, so the template cannot disagree."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+
+    assert "Ootan tagasisidet" in _row(signed_in, matter, engagement)
+
+    _open_wait(signed_in, engagement)
+    engagement.refresh_from_db()
+
+    assert "Ootan tagasisidet" not in _row(signed_in, matter, engagement)
+
+
+def test_a_closed_matter_refuses_the_wait(signed_in, specialist):
+    """docs/adr/0091 §2. Under `lock_open_matter_for_business_write` like every
+    other business write: the browser that posts may hold a page from before the
+    closure, so a page is not a boundary."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+    token = engagement_revision_token(engagement)
+    close_matter(
+        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+    )
+
+    response = signed_in.post(
+        _wait_url(engagement),
+        {
+            "revision": token,
+            "feedback_deadline": (timezone.localdate() + dt.timedelta(days=7)).strftime("%d.%m.%Y"),
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code in {400, 404}
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
+
+
+def test_a_reader_cannot_open_a_wait(client, specialist, reader):
+    """docs/adr/0042, docs/adr/0091 §10. The write boundary, on this route as on
+    every other, and denial is a 404 rather than a 403."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _plain(matter, actor=specialist)
+    client.force_login(reader)
+
+    response = client.post(
+        _wait_url(engagement),
+        {
+            "revision": engagement_revision_token(engagement),
+            "feedback_deadline": (timezone.localdate() + dt.timedelta(days=7)).strftime("%d.%m.%Y"),
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 404
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
+
+
+def test_a_wait_aimed_at_another_matters_round_is_a_404(signed_in, specialist):
+    """docs/adr/0091 §10. The round is looked up through the Matter in the URL,
+    so naming somebody else's record is not a way in."""
+    mine = factories.MatterFactory(owner=specialist)
+    theirs = factories.MatterFactory(owner=specialist)
+    engagement = _plain(theirs, actor=specialist)
+
+    response = signed_in.post(
+        reverse(
+            "matters:open_engagement_wait",
+            kwargs={"pk": mine.pk, "engagement_id": engagement.pk},
+        ),
+        {
+            "revision": engagement_revision_token(engagement),
+            "feedback_deadline": (timezone.localdate() + dt.timedelta(days=7)).strftime("%d.%m.%Y"),
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 404
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None

@@ -407,34 +407,41 @@ def test_the_date_box_is_empty_on_a_fresh_form(client, specialist):
 
 
 # ---------------------------------------------------------------------------
-# §2 — a new `Kaasamine` asks for its wait
+# §2 — a new `Kaasamine` does not ask about a wait at all
 # ---------------------------------------------------------------------------
 
 
-def test_the_reply_by_box_opens_empty(client, specialist, normal_matter):
-    """The whole of §2: the wait is asked for, not given.
+def test_the_capture_panel_has_no_reply_by_field(client, specialist, normal_matter):
+    """The whole of §2: the panel does not ask, so nothing it saves waits.
 
-    Asserted on the form's own `initial` and on the *rendered* box, because those
+    Asserted on the form's own `fields` and on the rendered page, because those
     are two different claims: the first is the contract and the second is what a
-    lawyer sees. The rendered check reads the box's `value` out of the page with a
-    regex rather than matching a hand-written attribute string, because attribute
-    order is Django's to change and says nothing about the rule.
+    lawyer sees. An empty box would satisfy neither — it is still a question they
+    have to read, understand and skip on every round they file.
     """
     from app.matters.forms import CompactEngagementForm
 
-    assert CompactEngagementForm().fields["feedback_deadline"].initial is None
+    assert "feedback_deadline" not in CompactEngagementForm().fields
 
     client.force_login(specialist)
     body = client.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
+    panel = body[body.index('id="lisa-kaasamine"') :]
+    panel = panel[: panel.index('id="lisa-')]
 
-    assert "Tagasisidet ootame kuni" in body
-    assert _rendered_value(body, "feedback_deadline") == ""
+    assert "Tagasisidet ootame kuni" not in panel
+    assert "feedback_deadline" not in panel
 
 
 def test_the_engagement_date_still_opens_on_today(client, specialist, normal_matter):
-    """Narrowed for the reply-by date only. `Kaasamise kuupäev` is unchanged."""
+    """Narrowed for the reply-by question only. `Kaasamise kuupäev` is unchanged.
+
+    It opens *visibly* holding today — in the box, readable, changeable and
+    clearable, which is the one shape docs/adr/0078 §2 allows a date default to
+    take. Proposing a likely day somebody can overrule is not the act that record
+    forbids; inserting one behind them is.
+    """
     from app.matters.forms import CompactEngagementForm
 
     assert CompactEngagementForm().fields["occurred_on"].initial is timezone.localdate
@@ -461,10 +468,15 @@ def test_a_new_engagement_creates_no_waiting_work_item(client, specialist, norma
     assert not any(item.matter.pk == normal_matter.pk for item in items)
 
 
-def test_a_deliberately_set_deadline_still_opens_the_wait(client, specialist, normal_matter):
-    """ADR 0086 §3 is narrowed on the default and on nothing else."""
+def test_the_panel_ignores_a_reply_by_date_posted_at_it(client, specialist, normal_matter):
+    """The field left the form as well as the page, so the wait has one door.
+
+    A stale tab holding the old panel — or a crafted post — must not re-open the
+    surface §2 removed, because a wait it opened would be a work item nobody
+    decided to take on.
+    """
     client.force_login(specialist)
-    client.post(
+    response = client.post(
         reverse("matters:add_engagement_compact", kwargs={"pk": normal_matter.pk}),
         {
             "audience": "liikmed",
@@ -473,10 +485,104 @@ def test_a_deliberately_set_deadline_still_opens_the_wait(client, specialist, no
         },
     )
 
+    assert response.status_code == 200
     engagement = normal_matter.engagements.get()
-    assert engagement.feedback_deadline == dt.date(2026, 9, 30)
+    assert engagement.feedback_deadline is None
     items = work_items.work_items(specialist, responsible=specialist)
-    assert any(item.matter.pk == normal_matter.pk for item in items)
+    assert not any(item.matter.pk == normal_matter.pk for item in items)
+
+
+def test_the_explicit_act_opens_exactly_one_wait(client, specialist, normal_matter):
+    """ADR 0086 §3 is narrowed on where the deadline comes from and on nothing
+    else: one named decision, one `WorkItem`, ended by `Lõpeta kaasamine`."""
+    from app.matters.services import engagement_revision_token
+
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.OTHER,
+        title="liikmed",
+        occurred_on=dt.date(2026, 9, 19),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse(
+            "matters:open_engagement_wait",
+            kwargs={"pk": normal_matter.pk, "engagement_id": engagement.pk},
+        ),
+        {
+            "feedback_deadline": "30.09.2026",
+            "revision": engagement_revision_token(engagement),
+        },
+    )
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline == dt.date(2026, 9, 30)
+    items = [
+        item
+        for item in work_items.work_items(specialist, responsible=specialist)
+        if item.matter.pk == normal_matter.pk
+    ]
+    assert len(items) == 1
+
+
+def test_the_explicit_act_refuses_an_empty_day(client, specialist, normal_matter):
+    """This form exists only to open a wait, so a blank day is a press that would
+    do nothing — refused on the field rather than quietly accepted."""
+    from app.matters.services import engagement_revision_token
+
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.OTHER,
+        title="liikmed",
+        occurred_on=dt.date(2026, 9, 19),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse(
+            "matters:open_engagement_wait",
+            kwargs={"pk": normal_matter.pk, "engagement_id": engagement.pk},
+        ),
+        {"feedback_deadline": "", "revision": engagement_revision_token(engagement)},
+    )
+
+    assert response.status_code == 400
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
+
+
+def test_a_reader_cannot_open_a_wait(client, reader, normal_matter, specialist):
+    """§10. Behind `business_write_required` like every sibling act, and denial
+    is a 404 rather than a 403 (AUTH-002)."""
+    from app.matters.services import engagement_revision_token
+
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.OTHER,
+        title="liikmed",
+        occurred_on=dt.date(2026, 9, 19),
+        actor=specialist,
+    )
+
+    client.force_login(reader)
+    response = client.post(
+        reverse(
+            "matters:open_engagement_wait",
+            kwargs={"pk": normal_matter.pk, "engagement_id": engagement.pk},
+        ),
+        {
+            "feedback_deadline": "30.09.2026",
+            "revision": engagement_revision_token(engagement),
+        },
+    )
+
+    assert response.status_code == 404
+    engagement.refresh_from_db()
+    assert engagement.feedback_deadline is None
 
 
 def test_a_historical_wait_is_preserved_readable_and_completable(client, specialist, normal_matter):

@@ -299,6 +299,16 @@ urlpatterns = [
     # this one decides it is over. POST only — there is no state to GET, since
     # the form is rendered inside the chronology row the answer swaps
     # (app/matters/views.py, `complete_engagement_feedback_view`).
+    #
+    # `Ootan tagasisidet` — the act that starts a round waiting, which
+    # `+ Kaasamine` deliberately no longer asks about. Under the record rather
+    # than under `lisa/`, because it changes a round that already exists
+    # (docs/adr/0091 §2).
+    path(
+        "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/ootus/",
+        views.open_engagement_wait_view,
+        name="open_engagement_wait",
+    ),
     path(
         "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/lopeta/",
         views.complete_engagement_feedback_view,

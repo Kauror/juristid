@@ -114,43 +114,74 @@ def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_question
     assert panel(page).locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied out of sight"
     )
-    # **`Tagasisidet ootame kuni` opens empty**, which narrows docs/adr/0086 §2.
-    # Recording that Koda asked somebody something is a completed act, and a
-    # pre-filled reply-by date turned every one of them into a managed wait with
-    # a work item and a second act to end it — work the application was
-    # assigning rather than work a lawyer had taken on (docs/adr/0091 §2).
-    assert not panel(page).locator("[name=feedback_deadline]").input_value(), (
-        "the reply-by date opens pre-filled, so every round acquires a wait nobody asked for"
-    )
+    # **`Tagasisidet ootame kuni` is not here at all**, which is where
+    # docs/adr/0086 §2 finally lands. Recording that Koda asked somebody
+    # something is a completed act; a reply-by date turned every one of them into
+    # a managed wait with a work item and a second act to end it. Emptying the
+    # default was the first answer and it was not enough — an empty box is still
+    # a question a lawyer reads and skips on every round they file. Opening a
+    # wait is `Ootan tagasisidet` on the round's own row now (docs/adr/0091 §2).
+    expect(panel(page).locator("[name=feedback_deadline]")).to_have_count(0)
+    expect(panel(page).get_by_text("Tagasisidet ootame kuni")).to_have_count(0)
     # And its own save, which commits this operation and nothing else
     # (docs/adr/0075 §2).
     expect(panel(page).locator("button[type=submit]")).to_have_count(1)
 
 
-def test_the_reply_by_spans_write_into_the_box_beside_them(page, base_url):
-    """`1 nädal` · `2 nädalat` · `1 kuu` — chips over the field that is submitted.
+def test_the_wait_is_a_separate_act_on_the_rounds_own_row(page, base_url):
+    """`Ootan tagasisidet` — the only place a wait is opened, and its spans.
 
-    The chip stores nothing of its own: it writes the day into
-    `feedback_deadline`, which is what the server reads, and the label then grows
-    to carry the date it landed on so nobody sets a collection day they did not
-    read. The same contract `Järgmine tegevus`'s quick dates have, on the panel
-    that replaced the kind chips (docs/adr/0086 §2).
+    Filing a consultation and deciding the file is waiting on an answer are two
+    acts, and only the second one puts a row on somebody's desk. So the capture
+    panel above asks nothing about it and this disclosure asks one question
+    (docs/adr/0091 §2).
+
+    The three chips travelled with the question. Each stores nothing of its own:
+    it writes the day into `feedback_deadline`, which is what the server reads,
+    and the label then grows to carry the date it landed on so nobody sets a
+    reply-by day they did not read — the contract `Järgmine tegevus`'s quick
+    dates have (docs/adr/0086 §2).
     """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
-    open_panel(page)
 
-    field = panel(page).locator("[name=feedback_deadline]")
+    open_panel(page)
+    panel(page).locator("[name=audience]").fill("ootuse proov")
+    panel(page).locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    row = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="ootuse proov")
+    )
+    expect(row).to_have_count(1)
+    # Nothing is waiting yet: the round was filed and that is all it did.
+    expect(row).not_to_contain_text("Ootame tagasisidet kuni")
+
+    row.get_by_text("Ootan tagasisidet", exact=True).click()
+    field = row.locator("[name=feedback_deadline]")
+    expect(field).to_have_count(1)
     default = field.input_value()
     for label in ("1 nädal", "2 nädalat", "1 kuu"):
-        expect(panel(page).locator("[data-quickdate]", has_text=label)).to_have_count(1)
+        expect(row.locator("[data-quickdate]", has_text=label)).to_have_count(1)
 
-    panel(page).locator("[data-quickdate]", has_text="1 kuu").click()
+    row.locator("[data-quickdate]", has_text="1 kuu").click()
 
     assert field.input_value() != default, "the span wrote nothing into the box"
-    chosen = panel(page).locator("[data-quickdate].is-selected")
+    chosen = row.locator("[data-quickdate].is-selected")
     expect(chosen).to_have_count(1)
     expect(chosen).to_contain_text("1 kuu →")
+
+    row.get_by_role("button", name="Salvesta ootus").click()
+    page.wait_for_load_state("networkidle")
+
+    # The round is waiting now, and the act is not offered a second time —
+    # moving a deadline somebody set is a correction and lives on `Muuda`.
+    waiting = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="ootuse proov")
+    )
+    expect(waiting).to_contain_text("Ootame tagasisidet kuni")
+    expect(waiting.get_by_text("Ootan tagasisidet", exact=True)).to_have_count(0)
+    expect(waiting.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(1)
 
 
 def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
@@ -182,10 +213,10 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # writes is `Muu`, and printing «Muu» would be the chronology stating a
     # classification nobody chose (docs/adr/0086 §1).
     expect(chronology(page)).not_to_contain_text("Muu ·")
-    # And **not** waiting: the panel's reply-by box opens empty and nothing here
-    # filled it, so this round is a completed act on the file rather than an open
-    # activity on somebody's desk. Setting the date is still exactly what opens a
-    # wait, which is what `e2e/test_engagement_correction.py::
+    # And **not** waiting: the panel never asked, so this round is a completed act
+    # on the file rather than an open activity on somebody's desk. Setting the
+    # date is still exactly what opens a wait — it is just an act of its own now,
+    # `Ootan tagasisidet`, which `e2e/test_engagement_correction.py::
     # test_a_waiting_round_is_finished_on_its_own_row` files a round to prove
     # (docs/adr/0086 §2, §3, narrowed by docs/adr/0091 §2).
     expect(chronology(page)).not_to_contain_text("Ootame tagasisidet kuni")

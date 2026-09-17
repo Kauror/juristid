@@ -99,6 +99,7 @@ from app.matters.forms import (
     ComposerForm,
     EngagementFeedbackForm,
     EngagementForm,
+    EngagementWaitForm,
     EntryEditForm,
     ExternalPositionEditForm,
     IncomingIntakeForm,
@@ -171,6 +172,7 @@ from app.matters.services import (
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
+    open_engagement_feedback_wait,
     personal_note_record,
     personal_note_revision,
     record_engagement,
@@ -2514,7 +2516,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # rather than in this dict because there are many rows (`attach_feedback_form`).
     for item in items:
         if item.is_engagement:
-            attach_feedback_form(item.record)
+            attach_wait_form(attach_feedback_form(item.record))
     # `selectors.current_action_of`, not `workflow.services.current_next_action`.
     # The service answers "which action is open on this Matter" for the domain,
     # which is a question about the file; a *page* asks "which action may this
@@ -3477,6 +3479,45 @@ def _engagement_feedback_form(
     return form
 
 
+def attach_wait_form(
+    engagement: MatterEngagement, *, form: EngagementWaitForm | None = None
+) -> MatterEngagement:
+    """Hang this round's `Ootan tagasisidet` form on the record, or nothing.
+
+    On the record rather than in the context, for the reason
+    :func:`attach_feedback_form` gives: the chronology renders many rounds from
+    one loop, and a single context variable would give every row the same form
+    with the same ids and the same revision token.
+
+    ``None`` for a round that is **already** waiting and for one somebody has
+    finished — starting a wait is an act you take once, and offering it on a row
+    that has one would be offering to move a deadline somebody else set. That is a
+    correction, and it lives on `Muuda` (docs/adr/0091 §2).
+
+    The `row_id` is the record's own primary key, so two waiting-eligible rounds
+    on one page do not share `id_ootus_feedback_deadline` — the duplicate-id
+    defect docs/adr/0086 §6 names for the completion form.
+    """
+    offered = engagement.feedback_deadline is None and engagement.feedback_closed_at is None
+    engagement.wait_form = (  # type: ignore[attr-defined]
+        (
+            form
+            if form is not None
+            else EngagementWaitForm(
+                # The version this row was rendered from, so a save whose record
+                # has moved on since can be refused rather than silently
+                # overwriting it — the token `_engagement_feedback_form` seeds
+                # for the same reason.
+                initial={"revision": engagement_revision_token(engagement)},
+                row_id=f"-{engagement.pk}",
+            )
+        )
+        if offered
+        else None
+    )
+    return engagement
+
+
 def attach_feedback_form(
     engagement: MatterEngagement,
     *,
@@ -3517,6 +3558,7 @@ def _engagement_row(
     form: EngagementForm | None = None,
     feedback_form: EngagementFeedbackForm | None = None,
     feedback_open: bool = False,
+    wait_form: EngagementWaitForm | None = None,
     error: str = "",
     conflict: MatterEngagement | None = None,
     status: int = 200,
@@ -3542,8 +3584,9 @@ def _engagement_row(
             # `Lõpeta kaasamine` rides on the record, exactly as it does on the
             # page render. A refused completion comes back bound and asks for
             # its own panel to reopen (`attach_feedback_form`).
-            "engagement": attach_feedback_form(
-                engagement, form=feedback_form, open_panel=feedback_open
+            "engagement": attach_wait_form(
+                attach_feedback_form(engagement, form=feedback_form, open_panel=feedback_open),
+                form=wait_form,
             ),
             "milestone": engagement_milestone(engagement),
             "engagement_edit_form": form,
@@ -3553,6 +3596,12 @@ def _engagement_row(
                 engagement_milestone(conflict) if conflict is not None else None
             ),
             "engagement_read_query": ENGAGEMENT_READ_QUERY,
+            # `Ootan tagasisidet`'s quick spans, resolved to real days here so
+            # each chip can print the one it lands on. Also on the workspace
+            # dict, because the row renders on both paths and a span that
+            # existed on only one of them would be a control that appears and
+            # disappears as the page is swapped (docs/adr/0086 §2).
+            "feedback_deadline_choices": feedback_deadline_choices(timezone.localdate()),
         },
         status=status,
     )
@@ -3655,6 +3704,52 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
         return _engagement_row(request, matter, engagement, form=form, error=str(error), status=400)
 
     return _engagement_row(request, matter, corrected)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def open_engagement_wait_view(request: HttpRequest, pk: Any, engagement_id: Any) -> HttpResponse:
+    """`Ootan tagasisidet` — start this round waiting, as its own act.
+
+    The other half of the change that took the reply-by date off `+ Kaasamine`.
+    Filing a consultation and deciding the file is waiting on an answer are two
+    acts, and only the second one puts a row on somebody's desk — so only the
+    second one asks a question (lawyer feedback 11, docs/adr/0091 §2).
+
+    Deliberately the same shape as `complete_engagement_feedback_view` beside it:
+    one row is the swap target, the refusal comes back into that row with what was
+    typed still in it, and the closed-Matter rule, the state refusals and the
+    revision check are all the service's, taken under the Matter's row lock.
+    """
+    matter = get_visible_matter(request, pk)
+    engagement = _engagement_for_correction(request, matter, engagement_id)
+    form = EngagementWaitForm(request.POST, row_id=f"-{engagement.pk}")
+    if not form.is_valid():
+        return _engagement_row(request, matter, engagement, wait_form=form, status=400)
+    try:
+        open_engagement_feedback_wait(
+            engagement=engagement,
+            deadline=form.cleaned_data["feedback_deadline"],
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except EngagementEditConflict as conflict:
+        return _engagement_row(
+            request,
+            matter,
+            engagement,
+            wait_form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except DomainError as error:
+        return _engagement_row(
+            request, matter, engagement, wait_form=form, error=str(error), status=400
+        )
+    engagement.refresh_from_db()
+    return _engagement_row(request, matter, engagement)
 
 
 @login_required
@@ -5549,7 +5644,10 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+            # **No `feedback_deadline`.** This panel stopped asking, and the
+            # service keeps the parameter for the importer, the shell and the
+            # explicit `Ootan tagasisidet` act — none of which is this form
+            # (docs/adr/0091 §2).
             feedback_received=form.cleaned_data.get("feedback_received") or "",
             uploads=form.cleaned_data["attachments"],
         )

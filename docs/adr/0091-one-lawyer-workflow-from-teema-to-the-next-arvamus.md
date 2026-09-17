@@ -14,12 +14,15 @@ whichever PR merged second. This record steps aside rather than leaving that to
 be discovered during an integration. ADR 0086 moved for the same reason a round
 earlier. Nothing in this record changed with the digits.
 
-*Narrows ADR 0086 §2* on one point: `Tagasisidet ootame kuni` opens empty rather
-than on today + 7. Everything else that record decided — that a set deadline
-opens a wait, that the wait is one `WorkItem` on an open `FULL` Matter, that
-`Lõpeta kaasamine` ends it, that it enters no `real_deadlines`, no statistic and
-no search row, and that a Matter closing ends its waits — stands unchanged, and
-every round already waiting goes on waiting.
+*Narrows ADR 0086 §2* on one point: `+ Kaasamine` no longer asks for
+`Tagasisidet ootame kuni` at all, and opening a wait becomes one explicit act on
+the round's own chronology row, `Ootan tagasisidet`. Everything else that record
+decided — that a set deadline opens a wait, that the wait is one `WorkItem` on an
+open `FULL` Matter, that `Lõpeta kaasamine` ends it, that it enters no
+`real_deadlines`, no statistic and no search row, and that a Matter closing ends
+its waits — stands unchanged, and every round already waiting goes on waiting.
+`Muuda` and `EngagementForm` keep the box, because that is where a stored deadline
+is read and repaired.
 
 *Extends ADR 0084* with a provenance column, an optional author for aggregate
 feedback, and the lawyer's own note beside the source. It reverses nothing in
@@ -31,9 +34,13 @@ visibility boundary, the audit families and the no-delete rule are all exactly a
 record's decision — that a Matter's opinions are documents and `Dokumendid` is
 where they are managed — is unchanged, and no `KodaOpinion` model exists.
 
-*Extends ADR 0052 and ADR 0078 §2* rather than narrowing them: nothing here
-invents a date, and the one new default (`Koostan arvamuse`) is **no default at
-all**.
+*Extends ADR 0052 and ADR 0078 §2* rather than narrowing them. No date on any
+new surface is supplied by the server: `Koostan arvamuse` has **no default at
+all**, and `Kaasamise kuupäev`, `Menetluse areng`'s `Kuupäev` and
+`Saatmise kuupäev` each open *visibly* holding today, in the box, readable,
+changeable and clearable — which is the one shape ADR 0078 §2 allows a date
+default to take. Proposing a likely day a person can overrule is not the same act
+as inserting one behind them, and only the second is forbidden.
 
 ## Context
 
@@ -101,7 +108,7 @@ the domain objects that already existed:
 | the lawyer's concept | what it is |
 | --- | --- |
 | `Koostan arvamuse` | a `NextAction`, from a date the person typed |
-| `Kaasan` | `MatterEngagement`, with one default removed |
+| `Kaasan` | `MatterEngagement`, with one question removed from its panel |
 | `Meile saadetud tagasiside` | `MatterExternalPosition` + `provenance=RECEIVED` |
 | `Teiste arvamus` | `MatterExternalPosition` + `provenance=DISCOVERED` |
 | `Koja arvamus` | `Submission`, through the service `Dokumendid` posts to |
@@ -200,10 +207,11 @@ So: `InitialOpinionActionForm` with its own `arvamus` prefix, its own partial, a
 `_create_context` takes the form as an optional third positional argument and
 defaults it, so nothing else that calls that helper had to change.
 
-## 2 — A new `Kaasamine` asks for a wait; it is not given one
+## 2 — A new `Kaasamine` does not ask about a wait at all
 
-**`CompactEngagementForm.feedback_deadline` loses `initial=default_feedback_deadline`.
-That is the entire change.**
+**`+ Kaasamine` loses `Tagasisidet ootame kuni` — the field, its label, its three
+quick spans and its error line. Opening a wait becomes one named act of its own,
+`Ootan tagasisidet`, on the round's own chronology row.**
 
 ADR 0086 §2's argument was about *defaults*: today is never a plausible reply-by
 date, a week out is what a round asks for when nobody says otherwise, and today + 7
@@ -214,18 +222,48 @@ is a fact that is probably right, and an accepted `Tagasisidet ootame kuni` is a
 managed activity with a work item, a responsible person, an overdue state and a
 second required act to end it.
 
-The lawyers called the result too complicated. They were describing work the
-application had assigned them.
+**Emptying the default was this round's first answer, and it was not enough.** It
+stopped the application assigning work nobody had asked for, which was the sharp
+end of the complaint. It did not stop the *question* — an empty box is still a box
+that has to be read, understood and skipped, every time somebody files a
+consultation — and it left the capture panel as the thing that opens a managed
+wait, so the two acts were still one press. The department's complaint was about
+the panel being complicated, and a panel with one fewer default is still the same
+number of questions.
 
-**Nothing else moves.** The column stays. The three quick spans stay beside the
-box, and they are where the week now lives — `1 nädal` is one click, so asking for
-a wait costs exactly as little as it did. A set deadline still opens a wait, still
-draws exactly one `WorkItem` on an open `FULL` Matter, still reads on
-`PRAEGUNE TEGEVUS`, still goes due on its own day, and is still ended by
-`Lõpeta kaasamine` with its own audit event. `feedback_received`,
-`feedback_closed_at`, `feedback_closed_by` and
+So the question moved rather than being softened. Recording «19.09 — kaasati 234
+tööstusettevõtet» is a *completed act*: what happened, on what day, to whom.
+Deciding that this file is now **waiting** on an answer is a second decision, taken
+by a person, and it is the only one that puts a row on somebody's desk. Two
+decisions, two acts, and the second one is where the question belongs.
+
+**`Ootan tagasisidet` is the explicit opt-in.** It is a closed disclosure on the
+round's chronology row, beside `Lõpeta kaasamine`, and it asks exactly one
+question. The date is **required** there, unlike the field it replaces: the form
+exists only to open a wait, so an empty day would be a press that does nothing, and
+somebody who means «no wait» simply leaves the disclosure shut. It is offered only
+on a round that is not already waiting and is not finished — moving a deadline
+somebody else set is a *correction*, and corrections live on `Muuda`.
+
+**Nothing about the wait itself moves.** The column stays. The three quick spans
+travel with the question they answer, so `1 nädal` is still one click and asking for
+a wait still costs almost nothing. A set deadline still opens a wait, still draws
+exactly one `WorkItem` on an open `FULL` Matter, still reads on `PRAEGUNE TEGEVUS`,
+still goes due on its own day, and is still ended by `Lõpeta kaasamine` with its own
+audit event. `feedback_received`, `feedback_closed_at`, `feedback_closed_by` and
 `matters_engagement_feedback_closure_needs_deadline` are untouched. `close_matter`
-still ends open waits.
+still ends open waits. The date-order rule — a reply-by day may not fall before the
+engagement date — is unchanged and is now kept in two places for two kinds of
+caller: `refuse_deadline_before_engagement` for the bound forms that still write the
+column, and the same one string inside `open_engagement_feedback_wait` for the act,
+which has no form to report on.
+
+**No generic mechanism was introduced.** `open_engagement_feedback_wait` writes one
+nullable column on one record, takes the Matter's row lock through
+`lock_open_matter_for_business_write`, refuses a stale revision and a round that is
+already waiting, and records `ENGAGEMENT_CHANGED` naming the column that moved. It
+is one service function for one business fact — not a state machine, not a wait
+registry, and not a step anything else can be plugged into.
 
 **Historical #227 rounds are untouched and this is not negotiable.** There is no
 migration, no `RunPython` and no backfill: a round recorded with a deadline keeps
@@ -233,8 +271,11 @@ it, a wait that is open stays open and stays completable, an overdue one stays
 overdue, and the visibility scoping is unchanged. An unrelated correction to such a
 round — fixing a typo in `Keda kaasati` — does not touch the deadline, because
 `update_engagement`'s `_UNSET` sentinel already means «not mentioned» and the
-correction form still renders the box holding what is stored. The two behaviours
-coexist because only a *form default* changed.
+**correction form still renders the box holding what is stored**. `Muuda` keeps
+`Tagasisidet ootame kuni` deliberately: it is the surface where a historical row is
+read and repaired, and taking the box off it would make the stored value
+uneditable. `EngagementForm` — the older non-panel route — keeps it for the same
+reason. What lost the field is the one surface whose job is capture.
 
 ### 2.1 Is the engagement lifecycle still needed?
 
@@ -531,12 +572,23 @@ made of it. A file that manufactured the second fact from the first would be
 inventing a dated event nobody recorded — the same class of invention §3.4 refuses
 for provenance and §1.2 refuses for a date.
 
-**The association is a pointer somebody sets.** It is deliberately not built here,
-because `MatterProceduralLink` does not exist on `main` and this round may not
-create a model another package owns. The seam is one nullable foreign key, added
-by whichever of the two packages lands second — most naturally on
-`MatterProceduralDevelopment`, where it reads «this step happened in that
-proceeding». Nothing in this record's schema has to change to accept it.
+**The association is a pointer somebody would set, and this round deliberately
+does not add it.** Package B merged as #233 while this branch was in flight, so
+`MatterProceduralLink` is on `main` now and this record *could* point at it. It
+does not, and that is a decision rather than a sequencing accident: **this branch
+is the second of the two, and being second is not a reason to add a column.**
+
+Nothing in this round needs the relation. No form asks for it, no projection reads
+it, no refusal depends on it, and no lawyer has asked to cite the proceeding a
+development happened in. A nullable foreign key that every write leaves `NULL` is
+not a seam — it is a column with a constraint, a migration, a queryset join
+everybody has to reason about, and a name that invites exactly the inference the
+paragraph above forbids. The schema is cheaper to extend later than to explain now.
+
+If the department does later want a development to name the proceeding it happened
+in, the seam is **one nullable foreign key on `MatterProceduralDevelopment`**, set
+by a person and never inferred. Nothing in either schema has to change to accept
+it, and nothing in either package has to be revisited to add it.
 
 ### 5.7 Correction, and no deletion
 
@@ -589,11 +641,28 @@ operation writes both because a person pressed one button meaning both, which is
 what an atomic operation is for and is not the same as inferring one from the other:
 uploading a file through `Dokumendid` still asserts nothing.
 
-The date is **required and never invented**. `register_sent_opinion` refuses `None`
-and refuses any precision but `DATE`, which is the rule R2-01 put there after a
-blank box became `timezone.now()` and the outbound register reported
-`Arvamus välja <today>` about letters nobody had dated. `Märgi saadetuks` keeps its
-«now», because pressing send *is* a moment.
+**The date is required, is proposed rather than assumed, and is never supplied
+by the server.** Said precisely, because the three are easy to run together:
+
+* the box **opens holding today**, visibly, and that initial value is real — it
+  is in the field where it can be read, typed over and deleted, which is the one
+  shape docs/adr/0078 §2 allows a date default to take. An opinion is written up
+  on the day it goes out far more often than not, so proposing today is proposing
+  the likely answer, not asserting it;
+* the lawyer may **change it to any past day, or clear it entirely**;
+* a **cleared box is refused**, on the field, naming the missing day. It is not
+  quietly filled in;
+* a **future day is refused**, in `clean_sent_on`, in
+  `RegisterSentOpinionForm`'s own words — a send is something that happened;
+* the **server substitutes nothing at any layer**. `register_sent_opinion`
+  refuses `None` and refuses any precision but `DATE`, which is the rule R2-01
+  put there after a blank box became `timezone.now()` and the outbound register
+  reported `Arvamus välja <today>` about letters nobody had dated.
+
+The distinction that matters is between a *proposal a person can see and
+overrule* and a *value the application inserts behind them*. This form makes the
+first and the stack refuses the second. `Märgi saadetuks` keeps its «now»,
+because pressing send *is* a moment.
 
 Every existing evidence and visibility invariant is preserved untouched: final
 evidence may not be less restricted than its `Submission`, evidence is immutable, a
@@ -626,6 +695,44 @@ VTK, one on the draft, one during Riigikogu proceedings and one on the revised t
 are four sends, four Submissions and four immutable files. There is no
 `Matter.final_opinion` and this round does not invent one (ADR 0061).
 
+### 6.5 Lawyer feedback 13, item by item
+
+The request named five things. Three are implemented, one is deliberately not
+introduced, and one is deferred with a reason. Stated separately so nobody has to
+infer which is which from the code.
+
+| asked for | state | where |
+| --- | --- | --- |
+| the send date | **implemented** | `Saatmise kuupäev`, §6.2 |
+| the file itself | **implemented** | one upload, `KODA_SUBMISSION_FINAL`, §6.1 |
+| the recipients | **implemented** | `Adressaadid`, `SubmissionRecipient`, §6.3 |
+| a title for the opinion | **implemented**, through `Submission.title` | §6.1 |
+| keywords on the opinion | **deliberately not introduced** | below |
+| the association to the Koda publication | **deferred** | below |
+
+**The title is the `Submission`'s own.** `Pealkiri` on the panel writes
+`Submission.title`; no second title column was added, and none was needed. An
+opinion's title is a property of the send, which is the record that already has
+one.
+
+**Per-opinion keywords are deliberately not introduced.** A Matter already carries
+the classification the department searches by — policy areas, the legal
+instrument, the stage — and an opinion is a send *of* that Matter. Adding a second,
+narrower keyword vocabulary attached to individual Submissions would create two
+places a topic can be classified, two answers to «what is this about», and a
+reporting question with no correct answer; it would also be a new vocabulary,
+which is Package A's subject and not this branch's. If the department later wants
+to search opinions by their own terms, the honest form of it is a decision about
+the existing taxonomy, not a private keyword field on a send.
+
+**Association to the Koda publication is deferred, and §8 says why.**
+`MatterWebsiteOverview` (ADR 0085) is the existing publication activity; relating
+one to a *specific* `Submission` requires a relation that does not exist, and
+creating a publication record here would collide with the package that owns
+publication. **No publication model is added by this branch.** A lawyer records
+the publication through `+ Ülevaade / uudis` exactly as they do today, and the
+association remains a documented hook rather than a half-built column.
+
 ## 7 — Versioning: a revised draft is new bytes
 
 A revised ministry draft arriving at `+ Menetluse areng` is captured as a **new
@@ -644,23 +751,57 @@ an evidence file in place, and nothing overwrites a prior draft. `Koja arvamus`
 follows the same rule: a supplementary or revised opinion is a new letter and new
 bytes.
 
-## 8 — Interaction with the parallel packages
+## 8 — The two sibling packages, now merged
 
-**Classification work (`Hetkeseis`, `Õigusakt`, `Menetlusliik`, `Uus teema`).** No
-dependency on its new vocabulary. `+ Menetluse areng` reads `active_stages()`
-through the canonical selector and hard-codes no stage key, so a revised vocabulary
-arrives without this branch being edited. The `Uus teema` change is one
-`{% include %}` and one optional argument, precisely to keep the overlap to a line.
+**This section was written about work in flight. Both siblings landed first and
+were merged into this branch, so what follows is what happened rather than what was
+expected.** The predictions are kept nowhere; the facts replace them.
 
-**Procedural-link work (links, undated publications).** Not duplicated. This round
-adds no publication model and no link model. `+ Koja arvamus` does **not** ask for a
-Koda publication reference: `MatterWebsiteOverview` (ADR 0085) is the existing
-publication activity, associating one with a specific `Submission` needs a relation
-that does not exist, and creating one here would collide with the package that owns
-publication. The integration hook is documented and nothing else: a lawyer records
-the publication through `+ Ülevaade / uudis` today, as they do now.
+**Package B — procedural links and undated publications — merged as #233** and
+`main` was merged in at `4f263ce`. Twelve files conflicted and all were resolved
+keeping both sides whole. `MatterProceduralLink` is therefore an upstream fact
+this branch builds on top of, and §5.6 states why this branch still adds no
+relation to it.
 
-**The current release.** No release notes, no deployment, no `main` merge.
+Two things about that merge are worth recording, because they are invisible
+afterwards. Resolving `models.py` and `enums.py` by splicing git's interleaved
+hunks would have dropped a constraint from one of the two classes, so both classes
+were taken whole — this branch's in place, Package B's re-inserted verbatim from
+`main`. And trimming a stale fragment from Package B's side of `views.py` silently
+deleted `add_procedural_link` and `correct_procedural_link_view`; the only symptom
+was `ProceduralLinkConflict imported but unused`. Both were restored verbatim.
+
+**Package A — classification and the simpler Matter form — merged as #235** at
+`47e3bdb`, and `main` was merged in at `955bc56`. It rewrote `matter_create.html`,
+reworked `static/js/app.js` and took 467 net lines out of `app/matters/forms.py`.
+Five files conflicted and **`forms.py` and `views.py` were not among them** — they
+auto-merged, which is exactly what the one-line `{% include %}` and the
+keyword-only `_create_context` were for.
+
+**No dependency on either package's vocabulary.** `+ Menetluse areng` reads
+`active_stages()` through the canonical selector and hard-codes no stage key, so
+Package A's revised stage list arrives here without this branch being edited.
+`Adressaat` is untouched in the domain model: `+ Koja arvamus` uses
+`SubmissionRecipient` and never defaults it from the Matter's `Saatja`, which is
+why Package A can remove `Adressaat` from initial creation without reaching this
+record.
+
+**No duplication of Package B's subject.** This round adds no publication model
+and no link model. `+ Koja arvamus` does **not** ask for a Koda publication
+reference: `MatterWebsiteOverview` (ADR 0085) is the existing publication activity,
+associating one with a specific `Submission` needs a relation that does not exist,
+and creating one here would collide with the package that owns publication. The
+integration hook is documented and nothing else — a lawyer records the publication
+through `+ Ülevaade / uudis` today, as they do now.
+
+**ADR numbering.** Both this branch and Package A claimed 0090 on the same day and
+both cited their own number from their own migrations, so the repository's usual
+tiebreak separated nothing. This branch moved to 0091 **before** either merged,
+which is why the Package A merge did not fail
+`test_no_two_decision_records_claim_the_same_number` mid-integration.
+`docs/adr/README.md` carries both rows.
+
+**The current release.** No release notes and no deployment changes in this branch.
 
 ## 9 — Search, reporting and the work surfaces
 
@@ -672,7 +813,11 @@ linked `Document` keeps its own unchanged document-search behaviour, which is th
 search people actually perform. A `Submission` written through `+ Koja arvamus` is
 indexed exactly as one written through `Dokumendid`, because it is the same record
 through the same service — no recipe changed, so no reindex follows this release.
-An `Entry` of the new kind is indexed exactly as any other `Entry`.
+**`MatterProceduralDevelopment` is not indexed**, for the reason ADR 0084 §5
+gives for `MatterExternalPosition`: it is a short structured fact whose readers
+are the chronology and the Matter page, and the searchable thing a person
+actually looks for is the document attached to it, which keeps its own
+unchanged document-search behaviour.
 
 Bumping the index version because a nullable metadata column exists would rebuild
 the whole corpus to change nothing.
@@ -717,20 +862,46 @@ Every write route is behind `business_write_required` and takes
 
 ## 11 — Migrations
 
-One: `matters/0027_external_position_provenance`. Additive, no `RunPython`, no
-`RunSQL`, no backfill, no reindex, no archive rebuild.
+**Four, all additive**, no `RunPython`, no `RunSQL`, no backfill, no reindex, no
+archive rebuild. The numbers below are the final ones, assigned after Package B
+(#233) and Package A (#235) merged and were merged in here, so no app has two
+leaves in any merge order.
+
+**`matters/0029_external_position_provenance`** — the three columns §3 and §4 add
+to `MatterExternalPosition`:
 
 * `provenance` (`CharField`, default `LEGACY`, indexed) — true of every existing row;
 * `source_label`, `lawyer_note` — blank on every existing row, also true of all of them;
 * `organisation` widened to nullable — every stored row keeps its organisation;
-* three `CHECK`s, all satisfied by every existing row as they are added;
-* one composite index;
-* `Entry.kind` `AlterField` over `choices` — Python metadata, no database object.
+* three `CHECK`s (`..._provenance_vocabulary`, `..._author_or_label`,
+  `..._label_is_received`), all satisfied by every existing row as they are added;
+* one composite index, `matters_extpos_matter_prov`.
+
+**`matters/0030_procedural_development`** — `MatterProceduralDevelopment` itself
+(§5). A new table, so nothing existing is touched: `title`, nullable `occurred_on`
+with its `occurred_on_precision`, `note`, `created_by`, the visibility columns of a
+`VisibilityInheritingModel`, four `CHECK`s
+(`matters_development_title_required`, `..._precision_vocabulary`,
+`..._undated_is_exact`, `..._visibility_vocabulary`) and the index
+`matters_devel_matter_date`.
+
+**`documents/0011_procedural_development`** — the seventh typed target column on
+`DocumentLink`, and its exactly-one `CHECK` re-stated over seven columns. Nullable
+and blank on every existing link (ADR 0075 §5).
+
+**`audit/0023_procedural_development`** — an `AlterField` over `ChangeEvent.event_type`'s
+`choices` for the three `PROCEDURAL_DEVELOPMENT_*` events. Python metadata; no
+database object changes.
+
+**Nothing migrates for §2.** The `Kaasamine` correction is a form and a route: the
+`feedback_deadline` column, its data and its constraints are exactly as #227 left
+them, which is what makes the historical-compatibility promise cheap to keep.
 
 Migration-from-zero compatible and upgrade compatible. Reversible: the adds and the
-constraints reverse, and re-narrowing `organisation` succeeds on any database whose
-rows this migration did not change. A reverse would lose what people wrote into the
-three new columns, which is the ordinary cost of any additive column.
+constraints reverse, the new table drops, and re-narrowing `organisation` succeeds
+on any database whose rows these migrations did not change. A reverse would lose
+what people wrote into the new columns and the new table, which is the ordinary
+cost of any additive schema change.
 
 No merged migration is edited.
 
@@ -791,6 +962,26 @@ for a date and §3.4 refuses for a provenance.
 The wait's loudness is the point of ADR 0086 §3 and is right for a round somebody
 opened deliberately. What was wrong was opening one on every round by default.
 
+**Empty the default and leave the box on the panel.** This is what the round did
+first, and it was rejected after the fact rather than before it. It fixes the
+consequence and leaves the cause: an empty box is still a question every lawyer
+reads, understands and skips on every consultation they file, and the capture panel
+is still the thing that opens a managed wait. The department's complaint was that
+the panel was complicated, and a panel with one fewer default has the same number of
+questions in it.
+
+**Put the wait behind a checkbox on the panel — «ootan tagasisidet» plus a date.**
+Rejected. It is the same question, asked in two controls instead of one, and it
+leaves opening a wait as a side effect of pressing `Salvesta` on a form about
+something else. The act has a name, so it gets a control with that name on it.
+
+**Build a general «this record is waiting on somebody» mechanism.** Rejected, and
+forbidden by the architecture constraint. `open_engagement_feedback_wait` writes one
+nullable column on one record and records one audit event. There is no wait
+registry, no state machine and no step anything else can be plugged into: three
+other records in this ADR could conceivably «wait», and none of them does, because
+no lawyer has asked them to.
+
 ## Consequences
 
 The ordinary journey is one page and then one launcher. A lawyer files the Teema with
@@ -835,8 +1026,9 @@ Additive and cleanly reversible: removing `provenance` leaves every row readable
 under `Väline seisukoht`'s original heading; re-narrowing `organisation` succeeds
 unless an aggregate record was written; deleting the two feedback panels leaves the
 one that existed; removing `+ Koja arvamus` leaves every `Submission` it wrote
-canonical and managed on `Dokumendid`; and restoring `Tagasisidet ootame kuni`'s
-default is one keyword argument.
+canonical and managed on `Dokumendid`; and putting `Tagasisidet ootame kuni` back on
+the capture panel is one field, one template block and one keyword argument — the
+column, the service and the wait were never withdrawn.
 
 `MatterProceduralDevelopment` is the one that is not free. Dropping the table would
 lose what people wrote into it, and there is nowhere else the fact could go — which

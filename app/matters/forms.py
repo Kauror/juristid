@@ -4237,8 +4237,6 @@ class CompactEngagementForm(forms.Form):
 
     * `Keda kaasati` — required, and the one thing that identifies the record;
     * `Kaasamise kuupäev` — optional, visibly pre-filled with today, clearable;
-    * `Tagasisidet ootame kuni` — optional, **empty by default**, and what opens
-      the waiting activity when somebody fills it in;
     * `Saadud tagasiside / arvamused` — optional prose, for the round somebody
       is writing up after the answers already came in.
 
@@ -4246,12 +4244,19 @@ class CompactEngagementForm(forms.Form):
     cost a reader nothing when they are empty and they are the only place a
     mailing's address lives (docs/adr/0027, amended 2026-09-12).
 
-    **The reply-by box opens empty, narrowing docs/adr/0086 §2.** Recording that
-    Koda asked somebody something is a complete act, and the managed wait that a
-    pre-filled today + 7 opened on every such act is work the application was
-    assigning rather than work a lawyer had taken on. The wait still exists, is
-    still one `WorkItem`, and is still ended by `Lõpeta kaasamine` — it is now
-    asked for rather than given (lawyer feedback 11, docs/adr/0091 §2).
+    **This panel does not ask for a reply-by date at all**, which is where
+    docs/adr/0086 §2 finally lands. That record put `Tagasisidet ootame kuni` on
+    this form; docs/adr/0091 §2 emptied its default; using it on real files showed
+    that neither went far enough. Recording that Koda asked somebody something is a
+    *completed act*, and a question about a reply-by date in the middle of it is
+    the complexity the department asked to have removed — an empty box is still a
+    box that has to be read, understood and skipped, every time.
+
+    The wait is unchanged and is not withdrawn: the column, the `WorkItem`, the
+    overdue reading and `Lõpeta kaasamine` are all exactly as docs/adr/0086 built
+    them. What moved is where one comes from — `Ootan tagasisidet` on the round's
+    own chronology row, which is a decision with somebody's name on it rather than
+    a field they were already filling in (lawyer feedback 11, docs/adr/0091 §2).
 
     **`Liik` is gone from this panel and no longer a `ChipChoices` question.**
     `Küsitlus` / `Koosolek` / `Kirjade voor` was a classification the department
@@ -4321,43 +4326,6 @@ class CompactEngagementForm(forms.Form):
         widget=EstonianDateInput(),
         initial=timezone.localdate,
     )
-    #: `Tagasisidet ootame kuni` — «ootan vastuseid kuni 22.09», where a lawyer
-    #: wants the file to chase it.
-    #:
-    #: **The box opens empty, and that narrows docs/adr/0086 §2's today + 7.**
-    #:
-    #: ADR 0086 defaulted it, on an argument that was right about its own
-    #: subject: a week out is what a consultation asks for when nobody says
-    #: otherwise, and it is not a value anybody presses past without reading.
-    #: What the first lawyer test showed is that the *consequence* of pressing
-    #: past it is not proportionate to a default. An engagement recorded as
-    #: «19.09 — kaasati 234 tööstusettevõtet» is a completed act: it happened,
-    #: it is on the file, and the answers arrive afterwards and are recorded
-    #: separately. Under a pre-filled deadline, every one of those rounds also
-    #: opened a managed wait, drew a `WorkItem`, appeared on somebody's Minu
-    #: asjad, and then required a second deliberate act — `Lõpeta kaasamine` — to
-    #: get off the page. Lawyers described the result as too complicated, and they
-    #: were describing work the application had assigned them rather than work
-    #: they had taken on (lawyer feedback 11, docs/adr/0091 §2).
-    #:
-    #: **Nothing else about the wait moves.** The column stays, the quick spans
-    #: stay beside the box, a set deadline still opens a wait and still draws
-    #: exactly one work item, `Lõpeta kaasamine` still ends it, the closure
-    #: columns and their `CHECK` are untouched, and every round already waiting
-    #: goes on waiting. What changed is that the wait is now something a lawyer
-    #: **asks for** rather than something a blank form gives them
-    #: (docs/adr/0086 §3, §6, narrowed by docs/adr/0091 §2).
-    #:
-    #: A past date is accepted: a consultation recorded months later had a
-    #: deadline months ago, and refusing it would make the historical record
-    #: unwritable to protect a rule nothing enforces. The only refusal is a
-    #: deadline before the engagement it belongs to, which is not a late round
-    #: but a typo.
-    feedback_deadline = EstonianDateField(
-        label="Tagasisidet ootame kuni",
-        required=False,
-        widget=EstonianDateInput(),
-    )
     #: `Saadud tagasiside / arvamused` — what came back, where no separate file
     #: exists.
     #:
@@ -4406,8 +4374,63 @@ class CompactEngagementForm(forms.Form):
         cleaned = super().clean() or {}
         cleaned["occurred_on_value"] = cleaned.get("occurred_on")
         cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
-        refuse_deadline_before_engagement(self, cleaned)
+        # No `refuse_deadline_before_engagement` here any more: this panel has no
+        # reply-by box to relate to the engagement date. The rule is unchanged and
+        # is kept by the two surfaces that still write one — `EngagementForm` and
+        # `open_engagement_feedback_wait` (docs/adr/0091 §2).
         return cleaned
+
+
+class EngagementWaitForm(forms.Form):
+    """`Ootan tagasisidet` — one date, and the decision that opens a wait.
+
+    The whole of the reply-by question, moved off `+ Kaasamine` and onto the
+    round's own chronology row. Recording that Koda asked somebody something is a
+    completed act; deciding that the file is *waiting* on an answer is a second
+    act, and only the second one puts a row on somebody's desk
+    (lawyer feedback 11, docs/adr/0091 §2).
+
+    **The date is required here**, unlike the field this replaces. This form
+    exists only to start a wait, so an empty box would be a save that does
+    nothing — and the person who means «no wait» simply does not open the
+    disclosure. Nothing about the wait itself changed: it is still one `WorkItem`,
+    still read on `PRAEGUNE TEGEVUS`, still ended by `Lõpeta kaasamine`
+    (docs/adr/0086 §3, §6).
+
+    The three quick spans stay with it, so asking for the commonest wait is still
+    one click. They write into the box beside them and store nothing of their own,
+    which is what makes the control work with scripting off.
+
+    ``revision`` is the version the row was rendered from, carried through the
+    round trip so the service can refuse a save whose record has moved on — the
+    same hidden field `EngagementFeedbackForm` carries, for the same reason.
+    """
+
+    use_required_attribute = False
+
+    feedback_deadline = EstonianDateField(
+        label="Tagasisidet ootame kuni",
+        required=False,
+        widget=EstonianDateInput(),
+    )
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        #: Its own ids, because a chronology may hold several waiting rounds and
+        #: each renders this form. Two of them sharing `id_feedback_deadline`
+        #: would put duplicate ids in the document and make a `<label for>` reach
+        #: the wrong row's box (docs/adr/0086 §6, `attach_feedback_form`).
+        self.row_id = kwargs.pop("row_id", "")
+        kwargs.setdefault("auto_id", f"id_ootus{self.row_id}_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_feedback_deadline(self) -> Any:
+        from app.matters.services import ENGAGEMENT_FEEDBACK_NEEDS_A_DAY
+
+        value = self.cleaned_data.get("feedback_deadline")
+        if value is None:
+            raise forms.ValidationError(ENGAGEMENT_FEEDBACK_NEEDS_A_DAY)
+        return value
 
 
 class EngagementFeedbackForm(forms.Form):
@@ -5688,15 +5711,19 @@ class ProceduralDevelopmentForm(forms.Form):
     step with no date and a date with no step are each refused on the empty half,
     which is `NextActionForm`'s own rule and deliberately its own wording.
 
-    **The date defaults to today and clears.** A development is written up when
-    it is learned about, which is usually the day it happened — and the default is
-    *visible*, in the box, readable and changeable, which is the one shape
-    docs/adr/0078 §2 allows. It is **required**, unlike a `Väline seisukoht`'s
-    optional `Seisukoha kuupäev`, because `Entry.occurred_at` has been `NOT NULL`
-    since the foundational schema and every chronology reader, ordering and page
-    of the timeline depends on it: a development somebody genuinely cannot date is
-    a `+ Märge`, which stamps the moment it was recorded and claims nothing about
-    when anything happened (docs/adr/0091 §5.2).
+    **The date is optional and defaults visibly to today.** A development is
+    written up when it is learned about, which is usually the day it happened, so
+    the box opens holding today — in the box, readable, changeable and clearable,
+    which is the one shape docs/adr/0078 §2 allows a date default to take. An
+    emptied box stores `NULL` and the record reads «Kuupäev teadmata».
+
+    That optionality is the whole reason `MatterProceduralDevelopment` exists
+    rather than an `Entry`: `Entry.occurred_at` has been `NOT NULL` since the
+    foundational schema, and a development learned about from a third party months
+    later frequently has no day anybody could defend. An undated development is a
+    development, recorded as one — not a `+ Märge`, which stamps the moment
+    somebody typed it and claims nothing about when anything happened
+    (docs/adr/0091 §5.1, §5.2).
     """
 
     use_required_attribute = False
@@ -5733,7 +5760,7 @@ class ProceduralDevelopmentForm(forms.Form):
     #: The day it happened, **optional**, at the precision it is known to.
     #:
     #: This is the field that retired the `Entry`-based design: `occurred_at` is
-    #: `NOT NULL` and a development learned about from a third party months later
+    #: `NOT NULL`, and a development learned about from a third party months later
     #: frequently has no day anybody could defend. The box opens on today because
     #: the common case is writing up something just learned, visibly and
     #: clearably — the one shape docs/adr/0078 §2 allows — and an emptied box

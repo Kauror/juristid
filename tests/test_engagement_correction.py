@@ -337,7 +337,12 @@ def test_clearing_a_feedback_deadline_stores_null(signed_in, normal_matter, spec
     assert response.status_code == 200
     engagement.refresh_from_db()
     assert engagement.feedback_deadline is None
-    assert "Tagasisidet ootame kuni" not in response.content.decode()
+    # The row stops saying it is waiting. It *does* offer `Ootan tagasisidet`
+    # again, because the round is now one nobody is waiting on — which is the
+    # state that act exists for (docs/adr/0091 §2).
+    body = response.content.decode()
+    assert "Ootame tagasisidet kuni" not in body
+    assert "Ootan tagasisidet" in body
 
 
 def test_a_partial_correction_does_not_clear_the_feedback_deadline(normal_matter, specialist):

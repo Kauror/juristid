@@ -110,10 +110,10 @@ row of controls that refuse (brief §30, §31).
     {% endif %}
 
     {% comment %}
-      `+ Kaasamine` — the four questions a consultation round actually has.
+      `+ Kaasamine` — the three questions a consultation round actually has.
 
-      **Who was engaged, when it happened, by when answers were asked for, and
-      what came back.** The panel used to open on a row of `Liik` chips and a
+      **Who was engaged, when it happened, and what came back.** The panel used
+      to open on a row of `Liik` chips and a
       four-way `Täpsus` control, so the first two decisions a lawyer made were
       a classification nothing ever read back and a precision an as-it-happens
       round never needs. Both are gone: every row written here is `Muu` and an
@@ -125,25 +125,30 @@ row of controls that refuse (brief §30, §31).
       in the box where it can be read, changed and emptied — which is the one
       shape docs/adr/0078 §2 allows a date default to take.
 
-      **`Tagasisidet ootame kuni` starts empty, and that narrows
-      docs/adr/0086 §2.** It used to open on today + 7, on an argument that was
-      right about its own subject: a week is what a round asks for when nobody
-      says otherwise. What the first lawyer test showed is that the
-      *consequence* is out of proportion to a default. Recording «19.09 —
-      kaasati 234 tööstusettevõtet» is a completed act; under a pre-filled
-      deadline it also opened a managed wait, drew a work item, appeared on
-      somebody's Minu asjad, and then needed a second deliberate act to get off
-      the page. That is work the application was assigning, not work a lawyer had
-      taken on, and it is what they described as too complicated (lawyer
-      feedback 11, docs/adr/0091 §2).
+      **`Tagasisidet ootame kuni` is not asked here at all, which is where
+      docs/adr/0086 §2 finally lands.** That record put the box on this panel
+      opening on today + 7, on an argument that was right about its own subject:
+      a week is what a round asks for when nobody says otherwise. The first
+      lawyer test showed the *consequence* was out of proportion to a default —
+      recording «19.09 — kaasati 234 tööstusettevõtet» is a completed act, and
+      under a pre-filled deadline it also opened a managed wait, drew a work
+      item, appeared on somebody's Minu asjad and then needed a second
+      deliberate act to get off the page.
 
-      **The wait is unchanged in every other respect — it is asked for now
-      rather than given.** Fill the box, by hand or with a span, and the round
-      shows on `PRAEGUNE TEGEVUS` and on the responsible lawyer's Minu asjad
-      until somebody finishes it with `Lõpeta kaasamine`. It still creates no
-      `Järgmiseks`, still is not `Arvamuse tähtaeg`, and still counts towards no
-      deadline statistic. Every round already waiting goes on waiting
-      (docs/adr/0086 §3, §6).
+      Emptying the default was the first answer and it was not enough: an empty
+      box is still a box that has to be read, understood and skipped, every
+      time, and it was still the panel that opened the wait. So the question
+      moved out of the capture panel altogether (lawyer feedback 11,
+      docs/adr/0091 §2).
+
+      **The wait itself is unchanged and is not withdrawn.** It is
+      `Ootan tagasisidet` on the round's own chronology row now — one named act,
+      taken by somebody who has decided this file is waiting on an answer. The
+      column, the single `WorkItem`, `PRAEGUNE TEGEVUS`, the overdue wording and
+      `Lõpeta kaasamine` are all exactly as docs/adr/0086 §3 and §6 built them;
+      it still creates no `Järgmiseks`, still is not `Arvamuse tähtaeg`, and
+      still counts towards no deadline statistic. Every round already waiting
+      goes on waiting (matters/partials/engagement_row.html).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-kaasamine-valik"
            data-addpick aria-controls="lisa-kaasamine"
@@ -175,43 +180,6 @@ row of controls that refuse (brief §30, §31).
               <span class="cx-f__lab">Kaasamise kuupäev
                 <span class="cx-f__opt">valikuline</span></span>
               {{ add_engagement_form.occurred_on }}
-            </label>
-          </div>
-          {% comment %}
-            `Tagasisidet ootame kuni`, and the three spans that fill it.
-
-            The chips write into the box beside them and store nothing of their
-            own, so the server sees one value however it was chosen and the
-            control works with scripting off — the box starts empty and typing
-            into it is the whole interaction. Each chip's label grows to carry
-            the day it landed on once it is pressed, because nobody should set a
-            collection date for a day they did not read (`static/js/ux.js`,
-            `bindQuickDates`; docs/adr/0086 §2).
-
-            **The spans matter more now that the box is empty**, and that is the
-            trade docs/adr/0091 §2 makes: a lawyer who wants the file to chase a
-            round presses `1 nädal` and has said so in one click, and a lawyer who
-            does not leaves the row alone and the round is simply on the file.
-
-            `1 kuu` is a calendar month — the same day next month, or that
-            month's last day where there is no such day — and it is resolved on
-            the server in Europe/Tallinn like the other two
-            (`app.core.dates.add_months`).
-          {% endcomment %}
-          <div class="cx-grid cx-grid--links"
-               data-quickdate-group="{{ add_engagement_form.feedback_deadline.id_for_label }}">
-            <div class="cx-when">
-              {% for choice in feedback_deadline_choices %}
-                <button type="button" class="uxchip" aria-pressed="false"
-                        data-quickdate="{{ choice.value }}"
-                        data-label-default="{{ choice.label }}"
-                        data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
-              {% endfor %}
-            </div>
-            <label class="cx-f cx-f--date">
-              <span class="cx-f__lab">Tagasisidet ootame kuni
-                <span class="cx-f__opt">valikuline</span></span>
-              {{ add_engagement_form.feedback_deadline }}
             </label>
           </div>
           <label class="cx-f" for="{{ add_engagement_form.feedback_received.id_for_label }}">
@@ -259,10 +227,6 @@ row of controls that refuse (brief §30, §31).
           {% if add_engagement_form.alchemer_url.errors %}
             <p class="field__error" id="{{ add_engagement_form.alchemer_url.auto_id }}_error">
               {{ add_engagement_form.alchemer_url.errors|first }}</p>
-          {% endif %}
-          {% if add_engagement_form.feedback_deadline.errors %}
-            <p class="field__error" id="{{ add_engagement_form.feedback_deadline.auto_id }}_error">
-              {{ add_engagement_form.feedback_deadline.errors|first }}</p>
           {% endif %}
           {% include "matters/partials/add_files.html" with field=add_engagement_form.attachments %}
           <div class="addform__actions">

@@ -137,27 +137,59 @@ def test_a_teema_filed_with_no_preparation_date_has_no_step(page, base_url):
 
 
 # ---------------------------------------------------------------------------
-# §2 — the reply-by box opens empty
+# §2 — `+ Kaasamine` does not ask about a wait at all
 # ---------------------------------------------------------------------------
 
 
-def test_the_reply_by_box_opens_empty_and_the_spans_still_fill_it(page, base_url):
-    """The wait is asked for, not given — and asking costs one click.
+def test_the_capture_panel_has_no_reply_by_question(page, base_url):
+    """Not an empty box — no box, no label, no spans.
 
-    docs/adr/0091 §2 narrows docs/adr/0086 §2 on the default alone. What the
-    spans do is unchanged, which is the half that makes the narrowing affordable.
+    docs/adr/0091 §2 narrows docs/adr/0086 §2 past its default: recording that
+    Koda asked somebody something is a completed act, and an empty reply-by box
+    is still a question a lawyer has to read, understand and skip on every round
+    they file. Opening a wait is `Ootan tagasisidet` on the round's own row.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-kaasamine")
 
-    box = panel(page, "lisa-kaasamine").locator("[name=feedback_deadline]")
-    expect(box).to_have_value("")
-    # `Kaasamise kuupäev` above it is unchanged and still opens on today.
-    expect(panel(page, "lisa-kaasamine").locator("[name=occurred_on]")).not_to_have_value("")
+    form = panel(page, "lisa-kaasamine")
+    expect(form.locator("[name=feedback_deadline]")).to_have_count(0)
+    expect(form.get_by_text("Tagasisidet ootame kuni")).to_have_count(0)
+    expect(form.locator("[data-quickdate]")).to_have_count(0)
+    # `Kaasamise kuupäev` above it is unchanged and still opens on today,
+    # visibly — the one shape docs/adr/0078 §2 allows a date default to take.
+    expect(form.locator("[name=occurred_on]")).not_to_have_value("")
 
-    panel(page, "lisa-kaasamine").get_by_role("button", name="1 nädal").click()
+
+def test_the_explicit_wait_is_where_the_spans_went(page, base_url):
+    """`Ootan tagasisidet` — one question, and asking still costs one click.
+
+    The spans travelled with the question they answer, which is the half that
+    makes the narrowing affordable (docs/adr/0091 §2).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-kaasamine")
+    panel(page, "lisa-kaasamine").locator("[name=audience]").fill("liikmed")
+    panel(page, "lisa-kaasamine").locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    row = page.locator("#ajalugu-loend .uxtl__ms-body").filter(has_text="Kaasamine: liikmed")
+    expect(row).to_have_count(1)
+    row.get_by_text("Ootan tagasisidet", exact=True).click()
+
+    box = row.locator("[name=feedback_deadline]")
+    expect(box).to_have_value("")
+    row.get_by_role("button", name="1 nädal").click()
     expect(box).to_have_value(_future(7))
+
+    row.get_by_role("button", name="Salvesta ootus").click()
+    page.wait_for_load_state("networkidle")
+
+    waiting = page.locator("#ajalugu-loend .uxtl__ms-body").filter(has_text="Kaasamine: liikmed")
+    expect(waiting).to_contain_text("Ootame tagasisidet kuni")
+    expect(waiting.get_by_text("Ootan tagasisidet", exact=True)).to_have_count(0)
 
 
 # ---------------------------------------------------------------------------
