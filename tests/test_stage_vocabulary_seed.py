@@ -95,7 +95,7 @@ def test_the_vocabulary_is_no_longer_provisional():
     The condition was *until the department head and the lawyers have reviewed
     the stage vocabulary*, and the second structured feedback round on the demo
     did exactly that on 2026-09-17 — rewording three labels and adding one stage
-    (`workflow/0007`, docs/adr/0089 §1). A flag that outlived its condition
+    (`workflow/0007`, docs/adr/0090 §1). A flag that outlived its condition
     would say the wording is still somebody's open question.
     """
     seeded = StageVocabulary.objects.filter(key__in=CANONICAL_KEYS)

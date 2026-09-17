@@ -55,7 +55,7 @@ def edit_url(specialist) -> str:
     """`Muuda teemat` for a fresh Matter owned by this person.
 
     The one form that asks both counterparty questions. `Uus teema` asks only
-    who sent the file (docs/adr/0089 §5), so a claim about *both* controls has
+    who sent the file (docs/adr/0090 §5), so a claim about *both* controls has
     to be made here.
     """
     return reverse(
@@ -145,7 +145,7 @@ def test_both_fields_offer_the_same_search_and_add_control(signed_in, specialist
 
     Two questions, two pages: `Uus teema` asks who sent the file and `Muuda
     teemat` asks both, so the control is asserted on each page for the questions
-    that page asks (docs/adr/0089 §5).
+    that page asks (docs/adr/0090 §5).
     """
     create = scripted(signed_in.get(CREATE).content.decode())
     assert create.count(PLACEHOLDER) == 1
@@ -330,7 +330,7 @@ def test_a_recorded_alias_reaches_the_control_it_belongs_to(signed_in, specialis
 
     Asserted on the sender control on `Uus teema` and on both controls on
     `Muuda teemat`, because one alias table feeds every picker
-    (docs/adr/0073, docs/adr/0089 §5).
+    (docs/adr/0073, docs/adr/0090 §5).
     """
     ministry.aliases.create(alias="KLIM")
 
@@ -393,7 +393,7 @@ def test_a_refused_save_brings_a_non_shortlist_addressee_back_in_sight(
 
     Adressaat's own shortlist is `addressees_by_usage`, and a body chosen
     through the search is no more likely to be in it. On `Muuda teemat`, which
-    is where the question is asked now (docs/adr/0089 §5).
+    is where the question is asked now (docs/adr/0090 §5).
     """
     outside = Organisation.objects.order_by("name").last()
     assert outside is not None

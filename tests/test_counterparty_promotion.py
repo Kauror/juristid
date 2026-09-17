@@ -18,7 +18,7 @@ where these are asserted.
 **The promotion is gone**, with the question it served. `Uus teema` asked who
 Koda answers, pre-filled it from Saatja and moved the chosen sender to the front
 of the addressee choices so the answer would be visible — and the lawyers
-reported the whole arrangement as one question asked twice (docs/adr/0089 §5).
+reported the whole arrangement as one question asked twice (docs/adr/0090 §5).
 The eight tests that pinned the ordering went with the ordering; what the
 default *was* is recorded in ADR 0069 and in this file's history.
 """
@@ -78,7 +78,7 @@ def test_the_sender_control_is_a_search_box_and_then_chips(signed_in, komisjon):
     assert "Otsi või lisa asutus…" in page
     assert "Lisa uus saatja" in page
     # `Lisa uus adressaat` is on `Muuda teemat`, not here: `Uus teema` asks one
-    # counterparty question now (docs/adr/0089 §5).
+    # counterparty question now (docs/adr/0090 §5).
     assert "Lisa uus adressaat" not in page
 
 
@@ -105,7 +105,7 @@ def test_the_retired_controls_are_gone_from_the_scripted_page(signed_in, komisjo
     # The field is not merely invisible: it still posts, because `+` writes into
     # it and a refused save has to come back holding what was typed.
     assert 'name="sender_name"' in scripted
-    # Adressaat's half is not on this page at all (docs/adr/0089 §5).
+    # Adressaat's half is not on this page at all (docs/adr/0090 §5).
     assert 'name="addressee_name"' not in scripted
 
 
@@ -187,7 +187,7 @@ def test_an_existing_sender_is_in_the_rendered_addressee_catalogue(signed_in, sp
     fail the second.
 
     On `Muuda teemat`, which is the form that asks both questions now
-    (docs/adr/0089 §5).
+    (docs/adr/0090 §5).
     """
     matter = factories.MatterFactory(owner=specialist)
     matter.source_organisations.add(komisjon)
@@ -228,7 +228,7 @@ def test_every_organisation_is_offered_in_both_directions(signed_in, specialist,
 # ---------------------------------------------------------------------------
 #
 # On `Muuda teemat`, which is the one form that asks both questions since
-# Adressaat left the create screen (docs/adr/0089 §5). The rule being pinned is
+# Adressaat left the create screen (docs/adr/0090 §5). The rule being pinned is
 # the transaction's — two independent resolvers naming the same body must not
 # each decide it is new — and that is as true of a correction as it was of a
 # capture.

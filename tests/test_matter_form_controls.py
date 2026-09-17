@@ -67,7 +67,7 @@ def test_the_single_value_fields_stay_single_value(specialist):
     this assertion is true of both controls and proves nothing.
 
     `stage` alone here. `track` was the other one and is no longer a control on
-    this page — it is read off `Õigusakt` (docs/adr/0089 §4) — and `Muuda
+    this page — it is read off `Õigusakt` (docs/adr/0090 §4) — and `Muuda
     teemat` still renders it as radios, which is asserted below.
     """
     widget = MatterCreateForm(viewer=specialist).fields["stage"].widget
@@ -106,7 +106,7 @@ def test_the_chip_rows_are_rendered_as_radios(signed_in, specialist):
     assert 'type="radio" name="stage"' in body
     # And not as the select it replaced.
     assert '<select name="stage"' not in body
-    # `Menetlusliik` is not on this page at all (docs/adr/0089 §4).
+    # `Menetlusliik` is not on this page at all (docs/adr/0090 §4).
     assert 'name="track"' not in body
 
     edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
@@ -226,7 +226,7 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
             "owner": specialist.pk,
             "stage": stage.pk,
             # `Menetlusliik` is not on this page and is not derived from
-            # anything: no `Õigusakt` type entails a procedure (docs/adr/0089
+            # anything: no `Õigusakt` type entails a procedure (docs/adr/0090
             # §4). What the page does still store is the type itself.
             "legal_instruments": [LegalInstrumentType.objects.get(key="direktiiv").pk],
             "source_organisations": [ministry.pk],

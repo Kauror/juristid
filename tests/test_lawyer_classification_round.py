@@ -1,6 +1,6 @@
 """One question per classification — the lawyers' second feedback round.
 
-`docs/adr/0089`. Package 1 took three things off `Uus teema` that asked for
+`docs/adr/0090`. Package 1 took three things off `Uus teema` that asked for
 attention before a question had been answered; this round says the *questions*
 overlapped. What is pinned here is the behaviour of the reduced form and, much
 more importantly, everything the reduction is not allowed to touch.
@@ -231,7 +231,7 @@ def test_creating_a_matter_writes_no_menetlusliik_at_all(signed_in, ministry):
     `Seadus` would be reducing a seven-value classification to a domestic/EU
     boolean, and it would be wrong about exactly the files the distinction
     exists for: a `Seadus` transposing a directive is a domestic instrument on a
-    `NATIONAL_TRANSPOSITION` track (docs/adr/0089 §4).
+    `NATIONAL_TRANSPOSITION` track (docs/adr/0090 §4).
     """
     signed_in.post(
         CREATE,

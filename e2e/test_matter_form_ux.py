@@ -56,7 +56,7 @@ def typed_date(days: int) -> str:
 #
 # `track` and `addressee_organisation` were parametrised here and are not
 # controls on this page any more: `Menetlusliik` is read off `Õigusakt` and
-# `Adressaat` is asked where the decision to answer is made (docs/adr/0089
+# `Adressaat` is asked where the decision to answer is made (docs/adr/0090
 # §4, §5). Both are still visible chips on `Muuda teemat`, which
 # `e2e/test_post_qa_surfaces.py` drives.
 
@@ -129,7 +129,7 @@ def test_choosing_a_second_value_replaces_the_first(page, base_url, screenshots,
     decoration on a radio, not a second checkbox.
 
     `track` was the other parameter and is not a control on this page any more
-    (docs/adr/0089 §4).
+    (docs/adr/0090 §4).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
@@ -653,7 +653,7 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
         expect(page.locator(f'[name="{name}"]')).to_have_count(1)
     for group in ("owner", "source_organisations", "policy_areas", "stage", "legal_instruments"):
         expect(page.locator(f'[name="{group}"]').first).to_be_attached()
-    # And the two questions this page stopped asking (docs/adr/0089 §4, §5).
+    # And the two questions this page stopped asking (docs/adr/0090 §4, §5).
     for gone in ("track", "addressee_organisation", "addressee_name", "addressee_is_manual"):
         expect(page.locator(f'[name="{gone}"]')).to_have_count(0)
 

@@ -13,7 +13,7 @@ asserted here anyway, because a criterion split across two suites is a criterion
 that gets half-checked.
 
 **Its two neighbours left the page.** §15 placed the row between Menetlusliik
-and Adressaat; neither is a control on `Uus teema` any more (docs/adr/0089 §4,
+and Adressaat; neither is a control on `Uus teema` any more (docs/adr/0090 §4,
 §5), so the placement it asserts is the one that survived — Saatja, Valdkond,
 Hetkeseis, Õigusakt, in that order, with Õigusakt last.
 """
@@ -39,7 +39,7 @@ STAGE_ROW = f".createform__row:has({STAGE})"
 
 #: The `Muu` chips. There are two of them now — `Muu siseriiklik` and `Muu ELi
 #: dokument` — and an id is unique, so the hook is the attribute they share
-#: (docs/adr/0089 §3).
+#: (docs/adr/0090 §3).
 MUU_CHIP = f'{INSTRUMENTS} label[data-reveals="oigusakt-muu-tekst"]'
 MUU_BOX = "#oigusakt-muu-tekst"
 
@@ -87,7 +87,7 @@ def test_no_existing_row_was_rearranged_to_make_room(page, base_url):
     """§15 criterion 17, as far as a browser can state it.
 
     The classification rows still read in the intended order: Saatja, Valdkond,
-    Hetkeseis, Õigusakt (docs/adr/0089 §7). What this cannot see — that no row
+    Hetkeseis, Õigusakt (docs/adr/0090 §7). What this cannot see — that no row
     was re-paired or re-tracked — `e2e/test_uus_teema_row_composition.py` owns.
     """
     _open(page, base_url)
@@ -170,7 +170,7 @@ def test_every_option_is_visible_at_rest_and_each_muu_is_last_in_its_group(page,
 
     Two `Muu` rows now, one per group, each last in its own: `Muu siseriiklik`
     closes the domestic six and `Muu ELi dokument` closes the European four
-    (docs/adr/0089 §2, §3). «None of these» has to read after the kinds it is
+    (docs/adr/0090 §2, §3). «None of these» has to read after the kinds it is
     none of, which is what «last» was always about.
     """
     _open(page, base_url)
@@ -252,7 +252,7 @@ def test_muu_reveals_and_hides_its_box(page, base_url):
 
     # The other `Muu` opens the same box, and the box stays open while either of
     # them is ticked — which is the rule the server renders with too
-    # (docs/adr/0089 §3).
+    # (docs/adr/0090 §3).
     page.locator(MUU_CHIP).last.click()
     expect(box).to_be_visible()
     page.locator(MUU_CHIP).first.click()

@@ -64,7 +64,7 @@
    * — and an older Matter may hold version 1.0's Muu besides, so the hook is
    * `data-reveals` rather than an id: an id is unique and there are several of
    * these. The block is open while *any* of them is ticked, which is the same
-   * rule the server renders with (`other_instrument_open`, docs/adr/0089).
+   * rule the server renders with (`other_instrument_open`, docs/adr/0090).
    */
   [
     ["#valdkond-muu input[type=checkbox]", "valdkond-muu-tekst"],
@@ -2395,7 +2395,7 @@
        * and only ever on a path a person started.
        *
        * Nothing listens today — the one consumer was the Adressaat default,
-       * withdrawn from `Uus teema` with the question (docs/adr/0089 §5). It is
+       * withdrawn from `Uus teema` with the question (docs/adr/0090 §5). It is
        * kept because it is the picker's own statement about its own control,
        * and the alternative is for the next consumer to re-derive the
        * distinction from `isTrusted` and get it wrong the same way. */
@@ -2617,7 +2617,7 @@
    * disclosure, which the sender filled in — unfolding a section every time the
    * page answered a question on somebody's behalf is the opposite of what
    * defaulting it was for. Adressaat is no longer on `Uus teema`
-   * (docs/adr/0089 §5) and Valdkond carries the attribute now, for the
+   * (docs/adr/0090 §5) and Valdkond carries the attribute now, for the
    * neighbouring reason: a refused save comes back with areas ticked and says
    * so in the summary, and unfolding twenty-two checkboxes to prove it undoes
    * the change on the one path where somebody is already fixing something else

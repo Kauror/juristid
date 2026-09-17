@@ -157,7 +157,7 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
     there was only ever one `Organisation` table.
 
     That form is `Muuda teemat`: `Uus teema` stopped asking who Koda answers
-    (docs/adr/0089 §5), and the claim is about the catalogue rather than about
+    (docs/adr/0090 §5), and the claim is about the catalogue rather than about
     which page renders it.
     """
     sign_in(page, base_url, MARTIN)

@@ -10,7 +10,7 @@ What does:
   visibly — a field that only a reading of the HTML can tell you has gone is not
   what the feedback was about;
 * **the order reads as one block**: Saatja, Valdkond, Hetkeseis, Õigusakt, with
-  nothing between them (docs/adr/0089 §7);
+  nothing between them (docs/adr/0090 §7);
 * **the reviewed vocabularies fit** at 1440 and at 420, keyboard-only, with no
   horizontal overflow — ten Õigusakt chips is more than that row held before;
 * **the whole journey saves**, and the Teema that comes back says what was
@@ -110,7 +110,7 @@ def file_it(page, title: str) -> None:
 
 
 def test_the_page_asks_neither_menetlusliik_nor_adressaat(page, base_url):
-    """Gone from the page, not merely from the label (docs/adr/0089 §4, §5)."""
+    """Gone from the page, not merely from the label (docs/adr/0090 §4, §5)."""
     create_form(page, base_url)
 
     body = page.locator("form.createform").inner_text()
@@ -157,7 +157,7 @@ def test_the_stage_row_offers_no_closure_disguised_as_a_stage(page, base_url):
     `Disposition.MONITORING_STOPPED` — a statement about this office rather than
     about the process — and ADR 0032 keeps the two apart on purpose. A chip
     meaning the second would put two questions in one column
-    (docs/adr/0089 §1).
+    (docs/adr/0090 §1).
 
     Read off the chip *names*, not the fieldset's text: every chip carries the
     department's own explanation as a tooltip, and the sentence about `Idee`
@@ -194,7 +194,7 @@ def test_an_ordinary_incoming_draft_files_and_reads_back(page, base_url):
     file_it(page, title)
 
     # Scenario F, on the Teema that came back: one obvious answer to «kes selle
-    # meile saatis?», under one word (docs/adr/0089 §6).
+    # meile saatis?», under one word (docs/adr/0090 §6).
     rail = page.locator("#teema-andmed")
     expect(rail.locator(".railcard__key").filter(has_text="Saatja")).to_have_count(1)
     expect(rail.locator(".railcard__key").filter(has_text="Kellelt")).to_have_count(0)
@@ -202,7 +202,7 @@ def test_an_ordinary_incoming_draft_files_and_reads_back(page, base_url):
     expect(values.filter(has_text=MINISTRY)).to_have_count(1)
     expect(values.filter(has_text="Seadus")).to_have_count(1)
     # `Menetlusliik` is a row here and it is *unanswered*: the page asked
-    # nothing about it and nothing was inferred from `Seadus` (docs/adr/0089
+    # nothing about it and nothing was inferred from `Seadus` (docs/adr/0090
     # §4). The rail renders an unanswered editable fact as «+ Lisa».
     menetlusliik = rail.locator(".railcard__row").filter(has_text="Menetlusliik")
     expect(menetlusliik).to_have_count(1)
@@ -230,7 +230,7 @@ def test_an_eu_matter_needs_no_second_european_question(page, base_url):
     values = rail.locator(".railcard__value")
     expect(values.filter(has_text="ELi direktiiv")).to_have_count(1)
     # The type says the file is European. `Menetlusliik` stays unanswered,
-    # because no instrument type entails a procedure (docs/adr/0089 §4).
+    # because no instrument type entails a procedure (docs/adr/0090 §4).
     expect(values.filter(has_text="ELi algatus")).to_have_count(0)
     expect(values.filter(has_text="ELi õiguse ülevõtmine")).to_have_count(0)
 
@@ -240,7 +240,7 @@ def test_joustunud_files_an_open_teema(page, base_url):
 
     Scenario D — *Koda ei tegele edasi* — is a `Disposition` and reaches the
     record through `Lõpeta teema`, which `e2e/test_teema_closing_flow.py` drives.
-    Nothing on this page asks it (docs/adr/0089 §1).
+    Nothing on this page asks it (docs/adr/0090 §1).
     """
     create_form(page, base_url)
 

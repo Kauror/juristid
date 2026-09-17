@@ -12,7 +12,7 @@ them, and nothing that any of those already covers.
 sender→addressee default: the reader answering Adressaat through Saatja, and a
 person's own answer outranking a suggestion that arrived afterwards. That
 default is withdrawn with the question it served — `Uus teema` no longer asks
-who Koda answers (docs/adr/0089 §5) — and the two seam tests went with it,
+who Koda answers (docs/adr/0090 §5) — and the two seam tests went with it,
 together with `e2e/test_counterparty_selection.py`, which owned the property in
 full.
 
@@ -185,7 +185,7 @@ def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_u
 
     `Adressaat` is not asserted here any more: the Teema is created with a
     sender and no recipient, because `Uus teema` stopped asking
-    (docs/adr/0089 §5). The `Adressaat` *filter* is unchanged and is
+    (docs/adr/0090 §5). The `Adressaat` *filter* is unchanged and is
     `tests/test_organisation_pool.py`'s.
     """
     sign_in(page, base_url, MARTIN)

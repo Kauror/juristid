@@ -229,7 +229,7 @@ def test_a_refused_save_leaves_no_stray_sender_organisation(signed_in, specialis
 def _answer_addressee(signed_in, matter, name: str) -> None:
     """Name an addressee on `Muuda teemat`, which is the form that asks.
 
-    `Uus teema` stopped asking who Koda answers (docs/adr/0089 §5). The
+    `Uus teema` stopped asking who Koda answers (docs/adr/0090 §5). The
     catalogue is still one catalogue and these three tests are about exactly
     that, so they reach the addressee control where it lives.
     """

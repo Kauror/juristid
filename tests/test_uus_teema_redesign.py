@@ -147,7 +147,7 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
             "policy_areas": [area.pk],
             "stage": stage.pk,
             # Neither `Menetlusliik` nor `Adressaat` is a control on this page
-            # any more (docs/adr/0089 §4, §5). `Õigusakt` is, and it is the one
+            # any more (docs/adr/0090 §4, §5). `Õigusakt` is, and it is the one
             # that carries whether the file is domestic or European.
             "legal_instruments": [seadus.pk],
             "files": upload("eelnou.pdf", corpus.government_pdf()),
@@ -166,7 +166,7 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     assert matter.stage == stage
     assert list(matter.legal_instruments.all()) == [seadus]
     # Nothing was written to `Menetlusliik`, and nothing was guessed from
-    # `Seadus`: no instrument type entails a procedure (docs/adr/0089 §4).
+    # `Seadus`: no instrument type entails a procedure (docs/adr/0090 §4).
     assert matter.track == ""
     assert matter.addressee_organisation is None
     assert matter.visibility == Visibility.NORMAL
@@ -611,7 +611,7 @@ def test_a_name_where_a_key_belongs_creates_no_organisation(signed_in):
     master specification 14.7, ADR 0025).
 
     On `Saatja`, because `Adressaat` is no longer a control on this page
-    (docs/adr/0089 §5).
+    (docs/adr/0090 §5).
     """
     from app.organisations.models import Organisation
 

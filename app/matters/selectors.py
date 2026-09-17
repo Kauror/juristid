@@ -330,6 +330,23 @@ def planned_website_overviews(matter: Matter, user: Any) -> list[Any]:
     )
 
 
+def procedural_links(matter: Matter, user: Any) -> list[Any]:
+    """`Menetluse lingid` — where this Matter's official proceedings live.
+
+    Every row, scoped to this reader through the child's own ``visible_to``: a
+    procedural link carries its own ``visibility_override`` and may be more
+    restrictive than the Matter it hangs off, never less (AGENTS.md, AUTH-003).
+
+    Evaluated once and left in the model's own order — the vocabulary's order,
+    then oldest first inside a kind. A facts card is read by reaching for a row
+    somebody remembers seeing, so the list must not reshuffle when a label is
+    corrected (docs/adr/0089 §7).
+    """
+    from app.matters.models import MatterProceduralLink
+
+    return list(MatterProceduralLink.objects.filter(matter=matter).visible_to(user))
+
+
 @dataclass(frozen=True)
 class ActiveDeadline:
     """The one deadline the Matter header shows.

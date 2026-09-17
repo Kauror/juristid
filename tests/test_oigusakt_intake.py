@@ -494,7 +494,7 @@ def test_the_vocabulary_the_reader_resolves_against_is_the_one_the_form_offers()
     Retiring a type takes it out of both at once, which is the whole point:
     `_instrument_candidates` skips a key that is not offered, so a rule keyed on
     a withdrawn concept goes inert rather than proposing something the form
-    would then refuse (`rule_diagnostics`, docs/adr/0089 §2).
+    would then refuse (`rule_diagnostics`, docs/adr/0090 §2).
     """
     loaded = load_legal_instrument_types()
     assert set(loaded) == set(OFFERED_LEGAL_INSTRUMENT_KEYS)
@@ -570,7 +570,7 @@ def test_a_readable_outlook_message_gives_medium_and_its_attachment_none(
     the attachment, so what it *can* offer is what the subject said.
 
     What the subject says is «eelnõu», and the reviewed vocabulary withdrew
-    `Eelnõu` from new selection (docs/adr/0089 §2) — so the reader offers
+    `Eelnõu` from new selection (docs/adr/0090 §2) — so the reader offers
     nothing here rather than proposing a type the form would refuse. That is
     `_instrument_candidates`' own `key not in offered` guard doing its job, and
     it is the honest outcome: a rule keyed on a retired concept is a maintenance

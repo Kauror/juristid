@@ -369,7 +369,7 @@ def _instrument_names(matter: Matter) -> dict[Any, str]:
     reviewed vocabulary splits it into `Muu siseriiklik` and `Muu ELi
     dokument`, and the argument above is exactly as true of those two: a shared
     «neither of these fitted the list» is a shared absence whichever half of
-    the list it was said about (docs/adr/0089 §3).
+    the list it was said about (docs/adr/0090 §3).
 
     The free text is deliberately *not* matched either, here or in the pool. It
     is uncontrolled, it is one Matter's own, and comparing two people's prose

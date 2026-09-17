@@ -109,7 +109,7 @@ whose addressee nobody recorded should look short, not incomplete.
         endpoint and the same audit events — and what moved is the *name*: `Uus
         teema` and `Muuda teemat` both call it `Saatja`, this page called the
         same answer something else, and «kes selle meile saatis?» therefore had
-        two labels and one answer. One word, everywhere (docs/adr/0089 §6).
+        two labels and one answer. One word, everywhere (docs/adr/0090 §6).
       {% endcomment %}
       <span class="railcard__key">Saatja</span>
       <span class="railcard__editable">
@@ -305,6 +305,20 @@ whose addressee nobody recorded should look short, not incomplete.
   </div>
 
   {% include "matters/partials/opinion_rail.html" %}
+
+  {% comment %}
+    `Menetluse lingid` — where the official proceedings on this file live.
+
+    Under `Koja arvamus` and above `Seotud materjalid`, which is the order a
+    lawyer reaches for them in: what the file *is*, what Koda produced, where
+    the procedure runs, what else bears on it.
+
+    Renders nothing at all on a Matter carrying none, which is the ordinary
+    case today. The partial decides that itself, so the rail carries no
+    condition of its own to keep in step with it (`procedural_links.html`,
+    docs/adr/0089 §7).
+  {% endcomment %}
+  {% include "matters/partials/procedural_links.html" %}
 
   {% comment %}
     `Seotud materjalid`, moved here from the main column by the 2026-09

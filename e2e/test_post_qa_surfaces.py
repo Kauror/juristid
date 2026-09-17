@@ -44,7 +44,7 @@ PLACEHOLDER = "Otsi või lisa asutus…"
 #: control twice, so every helper below takes one of these and nothing else
 #: distinguishes the two pages.
 CREATE_SENDER = "saatja"
-#: `Uus teema` has no Adressaat picker any more (docs/adr/0089 §5), so the
+#: `Uus teema` has no Adressaat picker any more (docs/adr/0090 §5), so the
 #: two-picker claims below are made on `Muuda teemat`, which draws both.
 EDIT_SENDER = "muuda-saatja"
 EDIT_ADDRESSEE = "muuda-adressaat"
@@ -189,7 +189,7 @@ def test_focus_moving_between_the_two_pickers_closes_only_the_one_left(page, bas
     """Two of these on one form, and neither may hold the other's list open.
 
     On `Muuda teemat`, which is the form that draws two of them
-    (docs/adr/0089 §5).
+    (docs/adr/0090 §5).
     """
     edit_form(page, base_url)
     search(page, EDIT_SENDER, "Näidis")
@@ -435,7 +435,7 @@ def test_choosing_a_sender_on_the_edit_page_does_not_answer_the_addressee(page, 
     """§11. Ticking a sender here may not touch the addressee.
 
     It never may anywhere now — `Uus teema`'s sender→addressee default went with
-    the question (docs/adr/0089 §5) — and this page is where the rule always
+    the question (docs/adr/0090 §5) — and this page is where the rule always
     held, because both answers are established facts by the time it opens.
 
     Compared against what Adressaat held on arrival rather than against an empty
@@ -513,7 +513,7 @@ def test_teema_andmed_with_oigusakt_and_muu_fits_every_width(page, base_url, siz
     # the template puts on exactly those — a lookup by the label «Muu» would be
     # a lookup by a word several rows on this form use. There are *two* of them
     # since the reviewed vocabulary split the escape hatch into `Muu
-    # siseriiklik` and `Muu ELi dokument` (docs/adr/0089 §3), and either one
+    # siseriiklik` and `Muu ELi dokument` (docs/adr/0090 §3), and either one
     # reveals the same free-text box, so this takes the first.
     #
     # The same save at every width, which is idempotent: it writes the values it

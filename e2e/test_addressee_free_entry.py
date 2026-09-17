@@ -10,7 +10,7 @@ Teema to go and add it under Asutused first.
 
 **The form is `Muuda teemat`.** `Uus teema` stopped asking who Koda answers —
 a file arriving has a sender, and the recipient is decided when Koda decides to
-answer (docs/adr/0089 §5). Not one rule moved with the question; the page did,
+answer (docs/adr/0090 §5). Not one rule moved with the question; the page did,
 and so did every test below.
 
 And one thing a screenshot cannot answer either. The narrow-window regression is
@@ -46,7 +46,7 @@ TYPED = "Riigikogu näidiskomisjon"
 REPLACEMENT = "Näidisameti õigusosakond"
 
 #: The Adressaat picker's own id on `Muuda teemat`, which is the one form that
-#: asks the question now (docs/adr/0089 §5). `Uus teema` numbered its own
+#: asks the question now (docs/adr/0090 §5). `Uus teema` numbered its own
 #: `adressaat`; that page has no such control any more.
 ADDRESSEE_PICKER = "muuda-adressaat"
 
@@ -75,7 +75,7 @@ def open_addressee(page) -> None:
     A no-op on `Muuda teemat`, which is somebody correcting a record that
     already has an addressee and folds nothing — and therefore a no-op
     everywhere since `Uus teema` stopped asking the question
-    (docs/adr/0089 §5). Kept because a closed `<details>` gives its contents no
+    (docs/adr/0090 §5). Kept because a closed `<details>` gives its contents no
     box, Playwright will neither fill nor click what nobody can see, and the
     next surface to ask may fold it again.
     """
@@ -88,7 +88,7 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     """File a Teema, then name its addressee on `Muuda teemat`.
 
     Two saves where there used to be one, because the question moved
-    (docs/adr/0089 §5). The browser ends on the Teema page either way, which is
+    (docs/adr/0090 §5). The browser ends on the Teema page either way, which is
     what every caller reads next.
 
     The next step is filled in too, and that is not incidental. A Teema filed

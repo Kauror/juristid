@@ -28,7 +28,7 @@
     stops there. `Adressaat` is a different fact — Koda answers a ministry, the
     Riigikogu or an EU institution, and which of them is not derivable from who
     wrote in — so it is recorded where that decision is made, not guessed from
-    Saatja while the file is being filed (docs/adr/0089 §5, superseding
+    Saatja while the file is being filed (docs/adr/0090 §5, superseding
     docs/adr/0069 on this surface). `Saatja` may be chosen from the catalogue or
     typed; a typed name reuses an exact or alias match, otherwise creates the
     institution, and refuses a spelling that already names two — inside the same
@@ -42,7 +42,7 @@
     this page and is not written from anything on it: the reviewed `Õigusakt`
     vocabulary names *siseriiklik* or *ELi* in the label, so the distinction is
     readable from the type — and the procedure itself is answered by a person,
-    where it is known (docs/adr/0089 §4);
+    where it is known (docs/adr/0090 §4);
   - only the title is required, and a page that shows a field is not a page that
     demands it (master specification 3.8).
 {% endcomment %}
@@ -310,7 +310,7 @@
         one (task §26, docs/adr/0073, post-QA R2-12).
 
         `data-sender-chips` marked the row the Adressaat default read. The
-        default is gone with the question (docs/adr/0089 §5); the attribute
+        default is gone with the question (docs/adr/0090 §5); the attribute
         stays because it is also what names the chip row for the picker's own
         scripting, and nothing writes into Adressaat from here any more.
 
@@ -500,7 +500,7 @@
       one: a `Seadus` transposing a directive is a domestic instrument on a
       `NATIONAL_TRANSPOSITION` track. So this page writes nothing to it, and it
       is answered where it is known — on `Muuda teemat` and in the Teema rail,
-      both of which offer the whole vocabulary (docs/adr/0089 §4).
+      both of which offer the whole vocabulary (docs/adr/0090 §4).
 
       The field is gone from `MatterCreateForm` too, so a forged POST carrying
       `track=NATIONAL_TRANSPOSITION` is not part of this request as far as this
@@ -513,7 +513,7 @@
       The last of the classification rows, and now the last question the page
       asks about what kind of file this is: Saatja, Valdkond, Hetkeseis,
       Õigusakt, in that order and with nothing between them
-      (docs/adr/0089 §7).
+      (docs/adr/0090 §7).
 
       Checkboxes, a `field__count` and a `chip__clear` on every chip — a Matter
       really can concern a directive and the act transposing it, and the control
@@ -538,7 +538,7 @@
               a Matter filed before it may hold version 1.0's `Muu`. All of them
               reveal the one free-text box, so the hook is a data attribute
               rather than an id: ids are unique and there are several of these
-              (app/matters/forms.py `other_instrument_values`, docs/adr/0089).
+              (app/matters/forms.py `other_instrument_values`, docs/adr/0090).
             {% endcomment %}
             {% if choice.data.value|stringformat:"s" in form.other_instrument_values %}
               <label class="chip chip--other" data-reveals="oigusakt-muu-tekst">
@@ -660,6 +660,20 @@
         {% endif %}
       </div>
     </div>
+
+    {# 7b — Menetluse link: where the proceeding this file is about lives. #}
+    {% comment %}
+      Package B's whole footprint on this page: one include, at the end of the
+      form, clear of every other block. `Uus teema` is being worked on
+      concurrently and a broad edit here would be a merge conflict rather than a
+      feature, so the block is a partial of its own and this line is the only
+      hunk (docs/adr/0089 §13).
+
+      Optional, like everything but the title — and silent when untouched, like
+      `Märkmed` and `Järgmine tegevus` above it: three empty boxes write no row
+      at all.
+    {% endcomment %}
+    {% include "matters/partials/procedural_link_create.html" %}
 
     {# 8 — One primary action, and the promise that makes it safe to press. #}
     <div class="createform__actions">

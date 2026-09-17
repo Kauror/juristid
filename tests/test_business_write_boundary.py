@@ -435,6 +435,39 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["external_position"].pk)
         ),
     ),
+    # `Menetluse link`, in both of its write routes. Adding one is ordinary new
+    # business content on an open Matter; correcting one is allowed on a closed
+    # file as well, exactly like the overview's link correction below and for
+    # the same reason — closure has never meant that an address recorded
+    # wrongly must stay wrong (docs/adr/0089 §6).
+    WriteRoute(
+        name="matters:add_procedural_link",
+        label="Menetluse lingi lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"kind": "EIS", "url": "https://eelnoud.valitsus.ee/loata-toimik"},
+        ),
+        probe=lambda w: w["matter"].procedural_links.count(),
+    ),
+    WriteRoute(
+        name="matters:correct_procedural_link",
+        label="Menetluse lingi parandamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "link_id": w["procedural_link"].pk},
+            {
+                "kind": "RIIGIKOGU",
+                "url": "https://riigikogu.ee/loata-parandatud",
+                "label": "",
+                "revision": "",
+            },
+        ),
+        probe=lambda w: (
+            w["procedural_link"]
+            .__class__.objects.values_list("url", flat=True)
+            .get(pk=w["procedural_link"].pk)
+        ),
+        events=(ChangeEventType.PROCEDURAL_LINK_CORRECTED,),
+    ),
     WriteRoute(
         name="matters:correct_website_overview",
         label="Ülevaate / uudise lingi parandamine",
@@ -704,6 +737,7 @@ def world(db):
         plan_website_overview,
         publish_website_overview,
         record_external_position,
+        record_procedural_link,
     )
 
     author = factories.UserFactory()
@@ -771,6 +805,17 @@ def world(db):
         actor=author,
     )
 
+    # One recorded `Menetluse link`, for the correction route: correcting one
+    # changes a row that exists, so a world without one would have nothing for a
+    # forbidden actor to be refused *on* — and the refusal would be
+    # indistinguishable from a 404 on a link that was never there.
+    procedural_link = record_procedural_link(
+        matter=matter,
+        kind="EIS",
+        url="https://eelnoud.valitsus.ee/olemasolev-toimik",
+        actor=author,
+    )
+
     planned_overview = plan_website_overview(matter=matter, actor=author)
     published_overview = publish_website_overview(
         overview=plan_website_overview(matter=matter, actor=author),
@@ -806,6 +851,7 @@ def world(db):
         "entry": entry,
         "waiting_engagement": waiting_engagement,
         "external_position": external_position,
+        "procedural_link": procedural_link,
         "planned_overview": planned_overview,
         "published_overview": published_overview,
         "unowned": unowned,

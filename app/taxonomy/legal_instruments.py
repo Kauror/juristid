@@ -19,7 +19,7 @@ what a person is offered today. Twelve version-1.0 rows stop being offered —
 deactivated, never deleted and never remapped — five are new and two are reused
 under a clearer name. The reviewed list names *siseriiklik* or *ELiga seotud* in
 the label, which is what keeps that distinction answerable from the chosen type
-without `Uus teema` asking it a second time as `Menetlusliik` (docs/adr/0089).
+without `Uus teema` asking it a second time as `Menetlusliik` (docs/adr/0090).
 
 The two live side by side on purpose. The offered list is a decision about what
 to ask people now; the seventeen are a decision about what the register meant,
@@ -338,7 +338,7 @@ REFERENCE_LEGAL_INSTRUMENT_TYPES_V1: tuple[ReferenceLegalInstrumentType, ...] = 
 # one distinction the lawyers asked to keep: *siseriiklik* and *ELiga seotud*.
 # Which of the two a Matter belongs to is therefore answerable from the chosen
 # type alone, and Menetlusliik stops being a second question about it
-# (docs/adr/0089).
+# (docs/adr/0090).
 #
 # **Nothing is remapped and nothing is deleted.** Twelve version-1.0 rows stop
 # being offered by `is_active=False` and by nothing else — they keep their row,
@@ -548,7 +548,7 @@ OFFERED_LEGAL_INSTRUMENT_KEYS: tuple[str, ...] = tuple(
 # The lawyers kept the distinction and dropped the question. `Menetlusliik` and
 # `Õigusakt` were two controls on `Uus teema`, so the reviewed list names the
 # group in the label and `Uus teema` stopped asking the second time
-# (docs/adr/0089 §4).
+# (docs/adr/0090 §4).
 #
 # **Nothing here writes `Matter.track`, and that is the decision.** These two
 # sets say which group each *offered type* belongs to, which is how the

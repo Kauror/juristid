@@ -286,7 +286,7 @@ def test_menetlusliik_still_offers_the_words_the_area_gave_up(signed_in, special
 
     Asserted on `Muuda teemat` rather than here, because the round after this
     one took `Menetlusliik` off the create form as well — derived from `Õigusakt`
-    instead, and never as a transposition (docs/adr/0089 §4). The withdrawn
+    instead, and never as a transposition (docs/adr/0090 §4). The withdrawn
     Valdkond is still absent from both, which is what this test is for.
     """
     matter = factories.MatterFactory(owner=specialist)

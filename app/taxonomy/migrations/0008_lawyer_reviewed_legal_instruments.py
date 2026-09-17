@@ -22,7 +22,7 @@ down would be a fuzzy migration over somebody else's judgement, which
 **No Matter is reclassified and no ``Matter.track`` is written.** This migration
 reads neither. Version 2.0 makes the domestic/EU group readable *from the type*
 for Matters created after it, in the create form; it does not reach backwards
-(docs/adr/0089 §4).
+(docs/adr/0090 §4).
 
 **It fails closed.** A row already carrying one of the new keys under a
 different label, or one of the new labels under a different key, raises: a

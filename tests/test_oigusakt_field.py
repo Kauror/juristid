@@ -44,7 +44,7 @@ CREATE = reverse("matters:matter_create")
 #: it, but the reviewed vocabulary splits the escape hatch in two and offers
 #: `Muu siseriiklik` and `Muu ELi dokument` instead. The rules below are about
 #: what `Muu` *means*, and they are unchanged; which row says it is not what
-#: they are testing (docs/adr/0089 §3).
+#: they are testing (docs/adr/0090 §3).
 OFFERED_MUU = "muu-siseriiklik"
 
 
@@ -269,7 +269,7 @@ def test_a_matter_holds_a_track_and_an_instrument_at_once(signed_in, specialist)
     Still true, and now recorded through `Muuda teemat` rather than `Uus teema`:
     the create form stopped asking `Menetlusliik` and derives only the
     domestic/EU distinction, which `NATIONAL_TRANSPOSITION` deliberately is not
-    (docs/adr/0089 §4). That a *Matter* can carry both answers at once is the
+    (docs/adr/0090 §4). That a *Matter* can carry both answers at once is the
     property this test is about, and it is unchanged.
     """
     matter = factories.MatterFactory(title="Ülevõtmine, seadus", owner=specialist)
@@ -579,7 +579,7 @@ def test_the_control_is_checkboxes_over_the_whole_active_vocabulary(specialist):
         for item in LegalInstrumentType.objects.filter(is_active=True).order_by("sort_order")
     ]
     # Each group's escape hatch is last in its own group, which is what «none of
-    # these» has to read after (docs/adr/0089 §2).
+    # these» has to read after (docs/adr/0090 §2).
     assert offered[-1] == "Muu ELi dokument"
     assert offered[5] == "Muu siseriiklik"
 
@@ -590,7 +590,7 @@ def test_the_rendered_page_puts_oigusakt_last_in_the_classification_block(signed
     `e2e/test_oigusakt_row.py` owns the geometry; this owns the order, which is
     the half a screenshot cannot state. Saatja · Valdkond · Hetkeseis ·
     Õigusakt, with `Menetlusliik` and `Adressaat` no longer between any of them
-    (docs/adr/0089 §7).
+    (docs/adr/0090 §7).
     """
     body = signed_in.get(CREATE).content.decode()
 
@@ -621,7 +621,7 @@ def test_hetkeseis_gains_no_count_and_no_clear_marks(signed_in):
     Hetkeseis holds one value, so it has neither the `field__count` nor the
     `chip__clear` marks that mark a multi-select (design §4, §6, ADR 0025). It
     is `Menetlusliik` that used to carry this assertion; that row is gone from
-    the page and the rule it demonstrated is not (docs/adr/0089 §7).
+    the page and the rule it demonstrated is not (docs/adr/0090 §7).
     """
     body = signed_in.get(CREATE).content.decode()
     start = body.index('name="stage"')

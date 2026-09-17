@@ -35,7 +35,7 @@ be expensive to get wrong:
   must not meet a different one on the other page.
 
 **Adressaat is asserted on `Muuda teemat`.** `Uus teema` stopped asking who Koda
-answers (docs/adr/0089 §5), so the fold ADR 0069 gave that field — and the
+answers (docs/adr/0090 §5), so the fold ADR 0069 gave that field — and the
 sender→addressee default the fold existed for — are both gone, together with the
 tests that pinned them. The picker itself is unchanged and is exercised on the
 page that still draws two of them.
@@ -82,7 +82,7 @@ SENDER = "saatja"
 #: and the two pages number theirs differently.
 EDIT_SENDER = "muuda-saatja"
 #: Adressaat's picker id on `Muuda teemat`, which is the one form that asks the
-#: question (docs/adr/0089 §5). `Uus teema` numbered its own `adressaat` and has
+#: question (docs/adr/0090 §5). `Uus teema` numbered its own `adressaat` and has
 #: no such control any more.
 ADDRESSEE = "muuda-adressaat"
 
@@ -558,7 +558,7 @@ def test_a_body_the_reader_ticks_while_it_is_out_of_sight_becomes_visible(page, 
     assert chosen_names(page, SENDER) == [PARTNER]
     # And nothing else on the form moved. The sender used to answer Adressaat
     # through this very synthetic event; that question is not on this page any
-    # more (docs/adr/0089 §5).
+    # more (docs/adr/0090 §5).
     assert page.locator('[name="addressee_organisation"]').count() == 0
 
 
@@ -679,7 +679,7 @@ def test_the_picker_never_takes_the_page_sideways(page, base_url, width):
     """Chips wrap; the box and its button stay on one row and inside it.
 
     On `Muuda teemat`, because it draws both pickers — which is the harder case
-    and the only one where two of them can collide (docs/adr/0089 §5).
+    and the only one where two of them can collide (docs/adr/0090 §5).
     """
     edit_form(page, base_url)
     page.set_viewport_size({"width": width, "height": 900})

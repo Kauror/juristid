@@ -82,7 +82,7 @@ def select_block(body: str, field: str) -> str:
 def answer_on_muuda_teemat(signed_in, matter, **fields) -> None:
     """Answer a counterparty question on `Muuda teemat`.
 
-    `Uus teema` asks who sent the file and nothing else since docs/adr/0089 §5,
+    `Uus teema` asks who sent the file and nothing else since docs/adr/0090 §5,
     so a test that needs an addressee names one where the question is asked.
     """
     signed_in.post(
@@ -210,7 +210,7 @@ def test_one_body_on_both_relations_is_found_by_both_precise_filters(signed_in):
 
     Built in two steps now. `Uus teema` used to answer Adressaat from Saatja and
     this was the test of what that did to the register; the default is gone with
-    the question (docs/adr/0089 §5), so the composed case is what a lawyer makes
+    the question (docs/adr/0090 §5), so the composed case is what a lawyer makes
     by answering both — which is the case the register still has to handle.
     """
     name_the_body(signed_in, "Mõlemana", "sender_name")

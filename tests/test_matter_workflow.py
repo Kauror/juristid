@@ -266,7 +266,13 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
         response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
     assert response.status_code == 200
-    assert len(captured) < 40
+    # Generous, and deliberately so: like `my_work` above, this catches a
+    # regression into N+1 rather than fixing a precise budget. It was 40 until
+    # docs/adr/0089 added `Menetluse lingid`, which costs the page exactly one
+    # more scoped read whatever the Matter holds — the property is asserted
+    # directly, per row count, by `tests/test_procedural_links.py`'s
+    # `test_the_rail_card_costs_one_query_however_many_links_there_are`.
+    assert len(captured) < 45
 
 
 def test_selectors_reuse_the_prefetched_open_action(specialist):

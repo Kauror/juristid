@@ -18,7 +18,7 @@ where the boxes are, at four widths, and it asserts that with bounding boxes
 rather than with a screenshot — a screenshot cannot say which row a field is on.
 
 **The Adressaat row left this page**, with the question it held
-(docs/adr/0089 §5), and so did the three measurements that were about it. The
+(docs/adr/0090 §5), and so did the three measurements that were about it. The
 field and its fold are still measured where they still are, on `Muuda teemat`,
 by `e2e/test_addressee_free_entry.py`.
 """

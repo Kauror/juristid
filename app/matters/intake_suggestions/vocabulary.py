@@ -597,7 +597,7 @@ INSTRUMENT_DRAFT_KEY = "eelnou"
 #: box. Belt and braces — neither has a rule and `_instrument_candidates`
 #: already skips a key that is not offered — but the rule this states is about
 #: what a machine may *conclude*, and it should not depend on there happening
-#: to be no rule (`OTHER_LEGAL_INSTRUMENT_KEYS`, docs/adr/0089 §3).
+#: to be no rule (`OTHER_LEGAL_INSTRUMENT_KEYS`, docs/adr/0090 §3).
 INSTRUMENT_NEVER_INFERRED: frozenset[str] = OTHER_LEGAL_INSTRUMENT_KEYS
 
 #: One key silences another inside the same document's head.

@@ -393,14 +393,18 @@ def test_creating_it_published_records_both_lifecycle_events(signed_in, normal_m
 @pytest.mark.parametrize(
     ("fields", "missing"),
     [
-        ({"url": KODA_URL}, "published_on"),
         ({"published_on": "14.03.2026"}, "url"),
     ],
 )
 def test_half_a_publication_is_refused_and_keeps_what_was_typed(
     signed_in, normal_matter, fields, missing
 ):
-    """Dropping a pasted address would lose the fact they opened the panel for."""
+    """A date with nothing to open is a claim about nothing, and is still refused.
+
+    The *other* half — an address with no date — was refused here until
+    docs/adr/0089 §8 and is now an ordinary publication; the test directly below
+    holds that, so the pair still covers both answers rather than one.
+    """
     response = _add(signed_in, normal_matter, **fields)
     body = response.content.decode()
 
@@ -410,6 +414,22 @@ def test_half_a_publication_is_refused_and_keeps_what_was_typed(
     assert 'id="lisa-koduleht"' in body
     for value in fields.values():
         assert value in body
+
+
+def test_an_address_with_no_date_is_a_publication_rather_than_half_of_one(signed_in, normal_matter):
+    """docs/adr/0089 §8, through the panel a lawyer actually uses.
+
+    The reported defect exactly: somebody pastes an address out of a mail, has
+    no idea which day the page went up, and used to meet a refusal asking for
+    one. The row is now saved as published with `published_on` left `NULL`.
+    """
+    response = _add(signed_in, normal_matter, url=KODA_URL)
+
+    assert response.status_code == 200
+    overview = MatterWebsiteOverview.objects.get(matter=normal_matter)
+    assert overview.status == WebsiteOverviewStatus.PUBLISHED
+    assert overview.url == KODA_URL
+    assert overview.published_on is None
 
 
 @pytest.mark.parametrize(

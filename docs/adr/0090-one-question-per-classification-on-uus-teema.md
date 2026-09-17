@@ -1,4 +1,4 @@
-# ADR 0089 — One question per classification: the reviewed Hetkeseis and Õigusakt vocabularies, and the three questions `Uus teema` asks
+# ADR 0090 — One question per classification: the reviewed Hetkeseis and Õigusakt vocabularies, and the three questions `Uus teema` asks
 
 - Status: accepted
 - Date: 2026-09-17
@@ -16,7 +16,8 @@
   (the similar-Matter finder — preserved in full), `taxonomy/0003`,
   `taxonomy/0004` and `taxonomy/0007` (retirement, never deletion, never a fuzzy
   remap)
-- Number: 0089. 0088 is held by Package 1, the branch this one builds on.
+- Number: 0090. 0088 is held by Package 1, the branch this one builds on,
+  and 0089 by Package B (`Menetluse link`), which merged first.
 
 ## Context
 
@@ -51,7 +52,7 @@ development plan and action plan, and no way to tell from the label which of
 
 ## Decision
 
-### 1 — `Hetkeseis` is the reviewed eleven
+### 1 — `Hetkeseis` is the reviewed ten
 
 | # | Version 2.0 | key | was |
 | - | ----------- | --- | --- |
@@ -230,6 +231,33 @@ question on the capture screen — and the *field*, so a forged POST carrying
 stored `track` exactly as it was. The alternative is a field that silently
 rewrites itself under an edit about something else, which is the defect PR #231
 fixed for `Hetkeseis`.
+
+#### Canonical, and empty until somebody knows
+
+`Matter.track` stays the **canonical** record of what kind of procedure a file
+is on. Canonical means *nothing else may claim to answer that question*; it does
+not mean *every Matter has an answer*. A Matter created on `Uus teema` carries
+`track = ""` and that is a correct state, not a gap waiting for a backfill: at
+the moment of capture the person filing a document usually does not yet know
+which procedure it will belong to, and the whole argument above is that no other
+stored field can be read to find out.
+
+So three rules hold together, and reading any one of them without the others
+gets this wrong:
+
+* **`track` is canonical** — it is the only place the procedure kind is stored,
+  and only a person writes it, on `Muuda teemat` or in the rail's inline editor.
+* **The `siseriiklik` / `ELi` grouping is a projection** —
+  `DOMESTIC_LEGAL_INSTRUMENT_KEYS` / `EU_LEGAL_INSTRUMENT_KEYS` are a *reading*
+  of the `Õigusakt` vocabulary, computed where it is displayed or filtered. It
+  is never persisted back into `track`, not on create, not on edit, and not by a
+  migration. Nothing in this package writes that column.
+* **An empty `track` means «not known yet»** — never «siseriiklik», never
+  «muu», and never a value to be inferred later from the instrument types. Any
+  later work that reads the column — Package D in particular — must treat the
+  empty string as *unknown* and either ask a person or leave the question
+  unanswered. A backfill that filled it from `Õigusakt` would be the same wrong
+  rule as above, run once over history instead of once per save.
 
 ### 5 — `Adressaat` leaves `Uus teema`, and stays everywhere else
 

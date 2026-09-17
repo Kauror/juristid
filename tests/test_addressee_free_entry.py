@@ -6,7 +6,7 @@ save. Nobody used it. What is here instead is one field beside the chips — typ
 the name, save the Teema — and the whole risk of that convenience is identity.
 
 **The form that asks is `Muuda teemat`.** `Uus teema` stopped asking who Koda
-answers (docs/adr/0089 §5), so the control lives on the edit page alone and the
+answers (docs/adr/0090 §5), so the control lives on the edit page alone and the
 tests below exercise it there. Not one identity rule moved with it.
 
 So these tests are almost entirely about identity, and they pin the rule rather
@@ -148,7 +148,7 @@ def test_nothing_chosen_and_nothing_typed_is_no_addressee():
 #
 # **This was `Uus teema` and is now `Muuda teemat`.** The create form stopped
 # asking who Koda answers — a file arriving has a sender, and who it is answered
-# to is decided later and elsewhere (docs/adr/0089 §5). Every identity rule
+# to is decided later and elsewhere (docs/adr/0090 §5). Every identity rule
 # below is unchanged and is asserted on the surface that now carries the
 # control; what moved is the page, not the contract.
 
@@ -323,7 +323,7 @@ def test_the_search_input_posts_nothing(signed_in):
     The box is `[data-orgfind-input]` now rather than a label carrying
     `data-choicefilter`. Asserted on both Teema forms, because both are asked
     the same question — `Uus teema` offers one picker since Adressaat left it,
-    `Muuda teemat` offers two (docs/adr/0089 §5).
+    `Muuda teemat` offers two (docs/adr/0090 §5).
     """
     import re
 
@@ -423,7 +423,7 @@ def test_a_late_failure_on_uus_teema_leaves_no_institution_behind(signed_in, mon
 
     Through `sender_name` rather than `addressee_name`: `Uus teema` no longer
     asks Adressaat, and Saatja's typed half resolves through the same catalogue
-    in the same transaction (docs/adr/0063, docs/adr/0089 §5). The guarantee is
+    in the same transaction (docs/adr/0063, docs/adr/0090 §5). The guarantee is
     the transaction's, not the field's.
     """
 
@@ -559,7 +559,7 @@ def test_each_form_offers_the_typed_control_for_the_question_it_asks(signed_in):
     `Uus teema` asks who sent the file and offers `sender_name`. `Muuda teemat`
     asks both and offers both. Neither ever grew a `source_organisation*_name`
     field beside the one it has: one typed control per question
-    (docs/adr/0063, docs/adr/0073, docs/adr/0089 §5).
+    (docs/adr/0063, docs/adr/0073, docs/adr/0090 §5).
     """
     from app.matters.forms import MatterCreateForm, MatterEditForm
 
@@ -606,7 +606,7 @@ def test_the_addressee_control_is_on_the_form_that_asks_for_it(signed_in, specia
 
     `Uus teema` draws neither half of Adressaat: not the catalogue, not the
     typed box, and not the hidden marker that made the old default overridable
-    (docs/adr/0089 §5).
+    (docs/adr/0090 §5).
     """
     matter = factories.MatterFactory(owner=specialist)
 

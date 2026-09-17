@@ -1429,7 +1429,7 @@ def test_the_panel_validates_against_the_whole_shared_catalogue(catalogue, speci
     docs/adr/0073 names by hand.
 
     Compared against `Uus teema`'s *Saatja*, because that page stopped asking
-    Adressaat (docs/adr/0089 §5) and `Muuda teemat` is where the two questions
+    Adressaat (docs/adr/0090 §5) and `Muuda teemat` is where the two questions
     meet now. The claim is about the pool, not about which field reads it.
     """
     from app.matters.forms import CompactExternalPositionForm, MatterCreateForm, MatterEditForm

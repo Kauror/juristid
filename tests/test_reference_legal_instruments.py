@@ -158,7 +158,7 @@ def test_the_two_groups_partition_the_offered_vocabulary() -> None:
     carries its types and each offered type belongs to one group. It writes
     nothing — `Matter.track` says what kind of *procedure* a file is on, has
     seven values rather than two, and no instrument type entails one
-    (docs/adr/0089 §4).
+    (docs/adr/0090 §4).
 
     A retired version-1.0 row is in neither set, which is the honest answer:
     `Konsultatsioon` may be European or domestic and `Eelnõu` says nothing.
@@ -177,7 +177,7 @@ def test_every_offered_eu_type_says_so_in_its_own_label() -> None:
     """The whole reason Menetlusliik stopped being a second question.
 
     A lawyer picking `ELi direktiiv` can see that they have answered
-    «ELiga seotud»; one picking `Direktiiv` could not (docs/adr/0089 §4).
+    «ELiga seotud»; one picking `Direktiiv` could not (docs/adr/0090 §4).
     """
     labels = {key: label for key, label, _order in REVIEWED_V2}
     for key in EU_LEGAL_INSTRUMENT_KEYS:
@@ -204,7 +204,7 @@ def test_muu_is_a_real_row_and_version_two_has_three_of_them() -> None:
     Version 2.0 splits the answer along the one axis it cares about, so what
     reveals the free-text box is a *set* of rows — and version 1.0's `Muu` is
     still in it, because Matters filed before the review carry it
-    (docs/adr/0089 §3).
+    (docs/adr/0090 §3).
     """
     assert REFERENCE_LEGAL_INSTRUMENT_TYPES_V1[-1].key == OTHER_LEGAL_INSTRUMENT_KEY
     assert REFERENCE_LEGAL_INSTRUMENT_TYPES_V1[-1].label_et == "Muu"

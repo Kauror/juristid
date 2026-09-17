@@ -1103,7 +1103,7 @@ def test_staging_composes_with_the_sender_the_person_chose(
     """§25. Promoting a staged file must not disturb the fields beside it.
 
     This asserted ADR 0069's sender→addressee default until the lawyers'
-    second feedback round withdrew the question (docs/adr/0089 §5). What it is
+    second feedback round withdrew the question (docs/adr/0090 §5). What it is
     about is the composition — a staged session, a chosen counterparty and one
     save — and that is asserted on the field the form still carries.
     """

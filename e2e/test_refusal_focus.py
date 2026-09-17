@@ -70,7 +70,7 @@ def test_a_refusal_below_the_fold_brings_the_person_to_it(page, base_url):
     sign_in(page, base_url, MARTIN)
     # A window shorter than the form, because the premise is that the refused
     # control is out of sight — and the form got 232px shorter when `Uus teema`
-    # stopped asking Menetlusliik and Adressaat (docs/adr/0089 §4, §5). At the
+    # stopped asking Menetlusliik and Adressaat (docs/adr/0090 §4, §5). At the
     # default 900px the date box now sits at y≈873 and the test would assert
     # nothing at all. 600px is an ordinary laptop window with the browser
     # chrome taken off, which is the case this defect was reported from.

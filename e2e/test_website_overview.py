@@ -8,9 +8,9 @@ The rules this file is here for are the ones only a running page can settle:
   same swap, as a labelled `Ava ülevaade või uudis` that opens in a new tab —
   never as a printed address;
 * that a refused address comes back with what was typed still in the box;
-* that the publication date fills itself when somebody starts typing a link, and
-  that a form nobody touched still records the plan — script behaviour, and
-  therefore only provable here (docs/adr/0085 §3);
+* that **nothing** fills the publication date — the island ADR 0085 §3 added is
+  gone, an address alone files a publication reading «Kuupäev teadmata», and a
+  form nobody touched still records the plan (docs/adr/0089 §8);
 * that the whole thing is reachable from the keyboard and does not make the page
   scroll sideways at phone width.
 
@@ -409,17 +409,6 @@ def panel_of(page):
     return page.locator("#lisa-koduleht")
 
 
-def today_estonian(page) -> str:
-    """The day the *server* believes it is, read off the control that carries it.
-
-    Not `datetime.date.today()` in the test process: the point of
-    `data-publication-default` is that the value is the server's, and a test
-    that recomputed it here would pass on a machine whose clock disagreed —
-    which is the exact failure the attribute exists to prevent.
-    """
-    return panel_of(page).locator("[name=published_on]").get_attribute("data-publication-default")
-
-
 def test_the_panel_offers_one_activity_and_no_kind_selector(page, base_url):
     """docs/adr/0085 §1. An overview and a news item are the same act.
 
@@ -442,49 +431,79 @@ def test_the_panel_offers_one_activity_and_no_kind_selector(page, base_url):
     expect(panel.locator("input[type=file]")).to_have_count(0)
 
 
-def test_typing_a_link_fills_the_publication_date_with_today(page, base_url):
-    """docs/adr/0085 §3. The default arrives when the published path is chosen.
+def test_typing_a_link_fills_no_date_at_all(page, base_url):
+    """docs/adr/0089 §8, superseding docs/adr/0085 §3.
 
-    Read after a single keystroke rather than after the whole address, because
-    the trigger is the *transition* out of an empty box and nothing later.
+    The island that filled this box with today on the first keystroke is gone,
+    and so is the attribute that carried the day to the browser. Typed one
+    character at a time and then in full, because the old trigger fired on the
+    *transition* out of an empty box and a `fill()` alone would not have proved
+    its absence.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-koduleht")
 
     panel = panel_of(page)
-    today = today_estonian(page)
-    assert today, "the date box carries no server-resolved default"
-    expect(panel.locator("[name=published_on]")).to_have_value("")
+    date_box = panel.locator("[name=published_on]")
+    assert date_box.get_attribute("data-publication-default") is None
+    assert panel.locator("[name=url]").get_attribute("data-publication-trigger") is None
+    expect(date_box).to_have_value("")
 
     panel.locator("[name=url]").type("h")
+    expect(date_box).to_have_value("")
 
-    expect(panel.locator("[name=published_on]")).to_have_value(today)
+    panel.locator("[name=url]").fill(KODA_URL)
+    expect(date_box).to_have_value("")
 
 
-def test_the_prefilled_date_can_be_changed_and_is_what_gets_stored(page, base_url):
-    """It is a default, not a stamp: what is in the box at submit is what is filed."""
+def test_an_address_with_no_date_is_filed_as_a_publication(page, base_url):
+    """docs/adr/0089 §8, end to end and in the words a lawyer reads.
+
+    The reported case exactly: an address pasted out of a mail, with no idea
+    which day the page went up. It used to meet a refusal; it now files a
+    publication that says its date is unknown rather than one dated today.
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-koduleht")
 
     panel = panel_of(page)
     panel.locator("[name=url]").fill(KODA_URL)
-    expect(panel.locator("[name=published_on]")).to_have_value(today_estonian(page))
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    chronology(page).wait_for(state="visible")
 
+    expect(chronology(page)).to_contain_text("Avaldatud")
+    expect(chronology(page)).to_contain_text("Kuupäev teadmata")
+    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
+    # And no plan is left behind claiming the write-up is still owed.
+    expect(strip(page)).to_have_count(0)
+
+
+def test_a_date_typed_by_hand_is_what_gets_stored(page, base_url):
+    """Scenario F. Nothing about the dated case changed."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
+
+    panel = panel_of(page)
+    panel.locator("[name=url]").fill(KODA_URL)
     panel.locator("[name=published_on]").fill("14.03.2026")
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 
     expect(chronology(page)).to_contain_text("14.3.2026")
+    expect(chronology(page)).not_to_contain_text("Kuupäev teadmata")
     expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
 
 
-def test_a_date_cleared_on_purpose_stays_cleared(page, base_url):
-    """The one way a default becomes a stamp is by coming back after a refusal.
+def test_a_recorded_date_can_be_cleared_from_the_row_and_stays_cleared(page, base_url):
+    """Scenario G, in a browser: the gesture the lawyer feedback asked for.
 
-    Clearing the box marks it the person's; editing the address afterwards must
-    not quietly refill it, or an empty submit would be impossible to express.
+    `Paranda link` opens on the row's own date, the box is emptied, and the row
+    goes on being a publication — reading «Kuupäev teadmata» rather than today.
+    Reopening the form afterwards shows the box still empty, which is the half
+    that would catch an `initial` creeping back in.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -492,13 +511,27 @@ def test_a_date_cleared_on_purpose_stays_cleared(page, base_url):
 
     panel = panel_of(page)
     panel.locator("[name=url]").fill(KODA_URL)
-    expect(panel.locator("[name=published_on]")).not_to_have_value("")
+    panel.locator("[name=published_on]").fill("14.03.2026")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    chronology(page).get_by_text("14.3.2026").first.wait_for()
 
-    panel.locator("[name=published_on]").fill("")
-    panel.locator("[name=url]").fill("")
-    panel.locator("[name=url]").type("https://uudised.example/x")
+    chronology(page).get_by_role("button", name="Paranda link").first.click()
+    form = chronology(page).locator("form").first
+    form.wait_for(state="visible")
+    # The correction form redisplays the stored value in the repository's own
+    # short Estonian form, `j.n.Y`, not the zero-padded form somebody typed.
+    expect(form.locator("[name=published_on]")).to_have_value("14.3.2026")
+    form.locator("[name=published_on]").fill("")
+    form.get_by_role("button", name="Salvesta").click()
+    chronology(page).get_by_text("Kuupäev teadmata").first.wait_for()
 
-    expect(panel.locator("[name=published_on]")).to_have_value("")
+    expect(chronology(page)).to_contain_text("Avaldatud")
+    expect(chronology(page)).not_to_contain_text("14.3.2026")
+
+    chronology(page).get_by_role("button", name="Paranda link").first.click()
+    reopened = chronology(page).locator("form").first
+    reopened.wait_for(state="visible")
+    expect(reopened.locator("[name=published_on]")).to_have_value("")
 
 
 def test_an_untouched_panel_still_records_a_plan(page, base_url):
@@ -534,21 +567,25 @@ def test_a_news_item_on_somebody_elses_site_is_recorded(page, base_url):
     expect(chronology(page)).not_to_contain_text(news)
 
 
-def test_a_refusal_keeps_an_emptied_date_empty(page, base_url):
-    """A swap preserves what was typed *and* what was deliberately not typed."""
+def test_a_refusal_keeps_a_typed_date_and_an_empty_address(page, base_url):
+    """A swap preserves what was typed *and* what was deliberately not typed.
+
+    The refusal is now the *other* half of the pair — a date with nothing to
+    open, which is still a claim about nothing (docs/adr/0089 §8). What it must
+    not do is put anything back in the boxes.
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-koduleht")
 
     panel = panel_of(page)
-    panel.locator("[name=url]").fill(KODA_URL)
-    panel.locator("[name=published_on]").fill("")
+    panel.locator("[name=published_on]").fill("14.03.2026")
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     page.wait_for_timeout(300)
 
     reopened = panel_of(page)
     expect(reopened).to_be_visible()
-    assert reopened.locator("[name=url]").input_value() == KODA_URL
-    assert reopened.locator("[name=published_on]").input_value() == ""
+    assert reopened.locator("[name=url]").input_value() == ""
+    assert reopened.locator("[name=published_on]").input_value() == "14.03.2026"
     expect(reopened.locator(".field__error").first).to_be_visible()
     expect(strip(page)).to_have_count(0)
