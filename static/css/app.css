@@ -11344,11 +11344,16 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* `Hetkeseis → Kooskõlastusringil`, the second pill a grouped act can carry.
  *
- * The same pill as the step beside it and deliberately so: both are what one
- * save did to the file, and giving the stage a shape of its own would make one
- * act read as two kinds of thing. What tells them apart is the word in front,
- * which is content rather than colour — a rail that distinguished them by hue
- * alone would say nothing with the stylesheet off (docs/adr/0092 §6). */
+ * **The same `.uxtl__next` as the step beside it, with no modifier class**, and
+ * deliberately so: both are what one save did to the file, and giving the stage
+ * a shape of its own would make one act read as two kinds of thing. It carried
+ * a `--stage` modifier for one round and nothing styled it, which
+ * `test_every_class_a_template_uses_has_a_rule` is there to refuse — a class
+ * with no rule is a hook somebody will later style by accident.
+ *
+ * What tells the two pills apart is the word in front, which is content rather
+ * than colour: a row that distinguished them by hue alone would say nothing
+ * with the stylesheet off (docs/adr/0092 §6). */
 #teema-vaade-wrap .uxtl__next .uxtl__nextlabel {
   color: var(--text-muted);
   font-size: 11.5px;
