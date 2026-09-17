@@ -53,6 +53,11 @@ CANONICAL = [
     # reference material recorded alongside the work, and finishing the file is
     # not routine capture at all (docs/adr/0084 §6).
     "+ Väline seisukoht",
+    # `+ Menetluse link` is the last capture operation before the closure: where
+    # the official proceeding lives is reference material about the procedure
+    # rather than a record of anything Koda did, so it sits beside the other
+    # reference record and after everything that is (docs/adr/0089 §7).
+    "+ Menetluse link",
     "+ Lõpeta teema",
 ]
 
@@ -70,6 +75,7 @@ PANEL_IDS = [
     "lisa-toovoit",
     "lisa-koduleht",
     "lisa-valine-seisukoht",
+    "lisa-menetluse-link",
     "lisa-lopeta",
 ]
 
@@ -95,7 +101,7 @@ def _chips(zone: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_launcher_offers_nine_choices_in_the_canonical_order(signed_in, specialist):
+def test_the_launcher_offers_ten_choices_in_the_canonical_order(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chips(_zone(signed_in, matter)) == CANONICAL
@@ -173,7 +179,7 @@ def test_every_chip_is_a_control_and_its_form_is_a_separate_element(signed_in, s
 
 
 def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in, specialist):
-    """One `name`, nine values: the browser enforces the product rule, and it
+    """One `name`, ten values: the browser enforces the product rule, and it
     keeps enforcing it with scripting off."""
     matter = factories.MatterFactory(owner=specialist)
     zone = _zone(signed_in, matter)
@@ -185,7 +191,7 @@ def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in,
 
 
 def test_nothing_is_chosen_until_somebody_chooses(signed_in, specialist):
-    """The zone is a choice of nine, not nine forms."""
+    """The zone is a choice of ten, not ten forms."""
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chosen(_zone(signed_in, matter)) == []

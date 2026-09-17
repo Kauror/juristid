@@ -60,11 +60,19 @@ saying so, which is the same treatment every external link on this page gets.
       {% if website_overview_link_conflict %}
         <div class="uxtl__conflict">
           <p class="uxtl__conflictnote">Praegu on kirjas:</p>
+          {% comment %}
+            **The day is named even when it is unknown**, which is the one place
+            on this page where omitting it would be ambiguous rather than quiet.
+            This block exists to say what the *other* version holds, on the two
+            columns being corrected — and a line printing an address and nothing
+            else leaves a reader unable to tell «their version has no date» from
+            «this panel does not show dates». So it goes through
+            `chronology_date`, which says the day or «Kuupäev teadmata» and is
+            the one place that decides which (docs/adr/0089 §10).
+          {% endcomment %}
           <p class="uxtl__conflictnote">
             {{ website_overview_link_conflict.url }}
-            {% if website_overview_link_conflict.published_on %}
-              · {{ website_overview_link_conflict.published_on|date:"j.n.Y" }}
-            {% endif %}
+            · {{ website_overview_link_conflict.chronology_date }}
           </p>
           <p class="uxtl__conflictnote">
             Laadi leht uuesti, et praeguse versiooniga jätkata. Sinu sisestus on ülal alles.
@@ -99,3 +107,33 @@ saying so, which is the same treatment every external link on this page gets.
     {% endif %}
   {% endif %}
 </div>
+
+{% comment %}
+The milestone's own date cell, swapped out of band beside the link region.
+
+`Paranda link` replaces the link and nothing else, so that a correction cannot
+move the row, change its position or turn into a second line. That was complete
+while the publication date could only be *replaced*; since docs/adr/0089 §8 it
+can also be **cleared**, and a date cell still reading `14.3.2026` beside a
+record that now says the day is unknown would be the page contradicting the
+file on the one fact the correction was about.
+
+So this one cell travels with the answer, out of band, and the `<article>`
+around it is still never in the response. It carries what the record says now:
+the day, or «Kuupäev teadmata» — never `created_at`, which places the row and
+never describes it (app/matters/timeline.py, docs/adr/0089 §10).
+
+**Only on the correction's own answer**, which is what `website_overview_oob`
+decides. This element is *also* included by the chronology on every ordinary
+render (`timeline_items.html`), and emitted there it would print the day a
+second time inside the row that already shows it — one fact said two ways, from
+markup meant for a swap that is not happening. Rendered on every *answer* from
+`_website_overview_link_row` rather than only on a successful save: on a refusal
+and on `Paranda link` itself the record has not changed, so it is a no-op, and a
+condition deciding when to send it would be a second place for the rule to
+drift.
+{% endcomment %}
+{% if website_overview_oob %}
+  <span class="uxtl__msdate" hx-swap-oob="true"
+        id="kodulehe-ulevaade-{{ overview.pk }}-kuupaev">{{ overview.chronology_date }}</span>
+{% endif %}

@@ -713,6 +713,20 @@
       </div>
     </div>
 
+    {# 7b — Menetluse link: where the proceeding this file is about lives. #}
+    {% comment %}
+      Package B's whole footprint on this page: one include, at the end of the
+      form, clear of every other block. `Uus teema` is being worked on
+      concurrently and a broad edit here would be a merge conflict rather than a
+      feature, so the block is a partial of its own and this line is the only
+      hunk (docs/adr/0089 §13).
+
+      Optional, like everything but the title — and silent when untouched, like
+      `Märkmed` and `Järgmine tegevus` above it: three empty boxes write no row
+      at all.
+    {% endcomment %}
+    {% include "matters/partials/procedural_link_create.html" %}
+
     {# 8 — One primary action, and the promise that makes it safe to press. #}
     <div class="createform__actions">
       {% comment %}

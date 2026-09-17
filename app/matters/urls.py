@@ -207,6 +207,30 @@ urlpatterns = [
         views.update_external_position_view,
         name="update_external_position",
     ),
+    # `+ Menetluse link`, and the correction to one. The same pair, spelled the
+    # same way and for the same reasons, as the two directly above: the addition
+    # is under `lisa/` because it is new business content on the Matter, and the
+    # correction is under the record because the thing being corrected is that
+    # record.
+    #
+    # The correction route is deliberately **not** under `lisa/`: it is a
+    # correction to an address already on the file, it takes no closed-Matter
+    # lock, and a route that spelled it as an addition would be the one place
+    # somebody later moved the guard to (docs/adr/0081 §5, docs/adr/0089 §6).
+    #
+    # There is deliberately **no delete route**, on an open Matter or a closed
+    # one: a mistaken link is corrected, because what the file recorded and who
+    # recorded it is part of the file (docs/adr/0084 §8).
+    path(
+        "teemad/<uuid:pk>/lisa/menetluse-link/",
+        views.add_procedural_link,
+        name="add_procedural_link",
+    ),
+    path(
+        "teemad/<uuid:pk>/menetluse-link/<uuid:link_id>/paranda/",
+        views.correct_procedural_link_view,
+        name="correct_procedural_link",
+    ),
     path("teemad/<uuid:pk>/lisa/lopeta/", views.close_from_workspace, name="close_from_workspace"),
     # `+ Järgmine tegevus` and `Muuda` both post here — one endpoint, because
     # setting a step and replacing one are the same canonical act and

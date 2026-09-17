@@ -159,12 +159,45 @@ class WebsiteOverviewStatus(models.TextChoices):
 
     ``PLANNED`` carries no address and no date, because neither exists yet:
     the whole point of the record is to hold the intention before there is
-    anything to link to. ``PUBLISHED`` carries both, and nothing else may.
-    ``CANCELLED`` is what a plan that was dropped becomes, and it is terminal —
-    an overview that was published cannot be un-published, and a cancelled one
-    is not re-planned but recorded again.
+    anything to link to. ``PUBLISHED`` carries an address, and nothing else may;
+    it carries the publication *date* when somebody knows it, and leaves it
+    unknown when nobody does — a page is published because it is up, not because
+    its day was written down (docs/adr/0089 §8). ``CANCELLED`` is what a plan
+    that was dropped becomes, and it is terminal — an overview that was
+    published cannot be un-published, and a cancelled one is not re-planned but
+    recorded again.
     """
 
     PLANNED = "PLANNED", "Plaanis"
     PUBLISHED = "PUBLISHED", "Avaldatud"
     CANCELLED = "CANCELLED", "Tühistatud"
+
+
+class ProceduralLinkKind(models.TextChoices):
+    """`Menetluse link` — which official source this address points at.
+
+    Five values, chosen because they are the five places an Estonian policy
+    lawyer actually looks up a proceeding: the government's draft-legislation
+    system, a ministry's own document register, the EU side of a file, the
+    Riigikogu's proceeding pages, and everything else.
+
+    **This is the lawyer's own statement, not a claim proved from the address.**
+    Nothing infers the kind from the hostname and nothing verifies it: a
+    ministry runs several document registers, an EU file is read on EUR-Lex one
+    month and on a Commission consultation page the next, and a register that
+    moves domain would silently reclassify every row stored under a host rule.
+    The kind says *what the lawyer was pointing at*, which is the fact a
+    colleague opening the file needs, and it is corrected like any other
+    recorded fact (docs/adr/0089 §2).
+
+    ``OTHER`` is a real answer rather than a gap. A proceeding lives wherever it
+    lives, and refusing the sixth kind of source would mean refusing to record
+    where a file actually is — the mistake docs/adr/0084 §3 and docs/adr/0085 §2
+    both name about allow-lists, in the shape a vocabulary takes.
+    """
+
+    EIS = "EIS", "EIS"
+    MINISTRY_REGISTER = "MINISTRY_REGISTER", "Ministeeriumi dokumendiregister"
+    EU_PROCEDURE = "EU_PROCEDURE", "ELi menetlus"
+    RIIGIKOGU = "RIIGIKOGU", "Riigikogu"
+    OTHER = "OTHER", "Muu menetluslink"

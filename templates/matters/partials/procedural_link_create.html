@@ -1,0 +1,117 @@
+{% comment %}
+`MENETLUSE LINK` on `Uus teema` — where the proceeding this file is about lives.
+
+The lawyer feedback that produced docs/adr/0089 asked for this by name. A Matter
+frequently arrives *from* a proceeding: an EIS notification, a ministry's
+covering letter naming its own register, a Commission consultation somebody was
+sent. The address is on screen at the moment the file is being opened, and
+making somebody create the Teema and then go and find it again is how it ends up
+in a browser history instead of on the file.
+
+**Folded, and that is not a detail.** The same round of feedback produced
+docs/adr/0088, whose complaint about this page is that too much on it asks for
+attention before a question has been answered — three blocks at once made the
+capture screen read as a survey again. A fourth, permanently expanded, would be
+that complaint answered and then re-created by the very next package. So this
+block takes the exact shape `Valdkond` took when ADR 0088 folded it: one
+`<details class="chipdetails chipdetails--field">`, a summary naming the thing,
+and the address beside the name once there is one — `Valdkond · Energeetika` and
+`Menetluse link · EIS` are the same affordance.
+
+`<details>` rather than anything scripted, so it opens with scripting off. It is
+server-rendered **open** whenever it holds a typed value or a refusal, which is
+what stops a rejected save hiding the box somebody has to correct.
+`data-stay-closed` is read by `bindOpenChosenDetails` and is what keeps the
+pre-selected `EIS` chip from opening the fold on every visit: a chip nobody
+clicked is not a reason to unfold anything (static/js/app.js).
+
+**One row, and nothing on it is required.** All three boxes empty is the
+ordinary submit: no row is written, no event is recorded and nothing is
+mentioned anywhere. The second and third addresses turn up later, as the file
+moves, and the Teema page's own `+ Menetluse link` is what records those — a
+repeating control here would put an empty table on a form whose whole design is
+that nothing on it is required (docs/adr/0089 §7).
+
+**`EIS` is pre-selected**, unlike the Teema page's panel. Here the commonest
+origin by a wide margin is a draft in EIS, and the chip is inert until somebody
+types an address: `wants_link` reads the *address* box and nothing else, so a
+selected chip on its own records nothing at all.
+
+**A `prefix`, not an `auto_id`.** This is the one procedural-link form that
+shares a `<form>` element with another form — `MatterCreateForm` — and
+`NextActionForm` above it already uses `prefix="next"` for exactly that reason:
+the prefix namespaces the POST keys as well as the ids, so neither form can be
+changed in a way that silently collides with a field name in the other
+(docs/adr/0089 §13).
+
+**This partial is the whole of Package B's footprint on this page.** The rest of
+`matter_create.html` is untouched — one `{% include %}` in the form and nothing
+else — because `Uus teema` is worked on by more than one package at a time and a
+broad rewrite here would be a merge conflict rather than a feature.
+{% endcomment %}
+<div class="createform__row">
+  <details class="chipdetails chipdetails--field" id="menetluse-link" data-stay-closed
+           {% if procedural_link_form.disclosure_open %}open{% endif %}>
+    {% comment %}
+      The name, and the answer beside it once there is one. The same shape
+      `Valdkond` uses: beside the answer itself, a count or a second label would
+      be the same fact said twice on a page this round exists to quieten.
+      Server-rendered, so nothing is lost with scripting off.
+    {% endcomment %}
+    <summary class="chipdetails__summary">
+      Menetluse link{% if procedural_link_form.chosen_summary %} · {{ procedural_link_form.chosen_summary }}{% endif %}
+    </summary>
+    <div class="chipdetails__body">
+      {% comment %}
+        The five sources as chips rather than a `<select>`, for the reason
+        `Menetlusliik` and `Hetkeseis` are chip rows: with a vocabulary of five,
+        a select is a click spent finding out what the options even are.
+
+        A real `<fieldset>` and `<legend>`, because the group is one question
+        and a screen reader announcing five unlabelled radios is a group nobody
+        can answer. The legend is visually hidden: the disclosure's own summary
+        directly above it already names the block, and printing the words twice
+        is what the fold exists to stop.
+      {% endcomment %}
+      <fieldset class="field">
+        <legend class="field__label visually-hidden">{{ procedural_link_form.kind.label }}</legend>
+        <div class="chiprow">
+          {% for choice in procedural_link_form.kind %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if procedural_link_form.kind.errors %}
+          <span class="field__error" id="{{ procedural_link_form.kind.auto_id }}_error">
+            {{ procedural_link_form.kind.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+
+      <div class="cx-grid cx-grid--links">
+        <label class="cx-f" for="{{ procedural_link_form.url.id_for_label }}">
+          <span class="cx-f__lab">{{ procedural_link_form.url.label }}</span>
+          {{ procedural_link_form.url }}
+        </label>
+        <label class="cx-f" for="{{ procedural_link_form.label.id_for_label }}">
+          <span class="cx-f__lab">{{ procedural_link_form.label.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {{ procedural_link_form.label }}
+        </label>
+      </div>
+      {% if procedural_link_form.url.errors %}
+        <span class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
+          {{ procedural_link_form.url.errors|first }}</span>
+      {% endif %}
+      {% if procedural_link_form.label.errors %}
+        <span class="field__error" id="{{ procedural_link_form.label.auto_id }}_error">
+          {{ procedural_link_form.label.errors|first }}</span>
+      {% endif %}
+      <p class="cx-note">
+        Avalik http:// või https:// aadress. Link salvestatakse sellisena, nagu ta
+        on — lehte ei avata ega jälgita. Lisada saab ka hiljem teema lehel.
+      </p>
+    </div>
+  </details>
+</div>

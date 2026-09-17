@@ -70,7 +70,12 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
         MatterImportantDate,
         MatterWorkVictory,
     )
-    from app.matters.models import Entry, MatterEngagement, MatterExternalPosition
+    from app.matters.models import (
+        Entry,
+        MatterEngagement,
+        MatterExternalPosition,
+        MatterProceduralLink,
+    )
     from app.submissions.models import Submission
     from app.workflow.models import NextAction
 
@@ -144,6 +149,23 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.EXTERNAL_POSITION_DOCUMENT_LINKED,
             ),
             MatterExternalPosition,
+            direct,
+        ),
+        (
+            # `Menetluse link`. Both payloads carry the address itself — which
+            # is the whole content of the record and the reason the events are
+            # worth having — so an event about a link restricted below its
+            # Matter would put that address in front of a reader properly
+            # refused the link. Neither event is in `TIMELINE_EVENT_TYPES`, so
+            # no surface renders one today; it is classified here anyway,
+            # because the leak arrives the day one does and the classification
+            # is what this module exists to require (docs/adr/0089 §11,
+            # AUTH-003).
+            (
+                ChangeEventType.PROCEDURAL_LINK_RECORDED,
+                ChangeEventType.PROCEDURAL_LINK_CORRECTED,
+            ),
+            MatterProceduralLink,
             direct,
         ),
         (

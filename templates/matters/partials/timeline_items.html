@@ -70,7 +70,21 @@ record, not professional chronology (master specification 16.5).
         {% else %}
           <p class="uxtl__ms">
             <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
-            <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
+            {% comment %}
+              An `Ülevaade / uudis` row names its date cell, and nothing else
+              does. `Paranda link` swaps only the link region — deliberately, so
+              a correction cannot move the row — but since docs/adr/0089 §8 a
+              correction may *clear* the publication date, and a cell left
+              saying `14.3.2026` beside a record that now says «unknown» is the
+              page contradicting the file. The correction's answer carries this
+              one cell out of band (`website_overview_link.html`).
+            {% endcomment %}
+            {% if item.website_overview %}
+              <span class="uxtl__msdate"
+                    id="kodulehe-ulevaade-{{ item.website_overview.pk }}-kuupaev">{{ item.milestone.display_date }}</span>
+            {% else %}
+              <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
+            {% endif %}
           </p>
           {% if item.milestone.sub %}
             <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
