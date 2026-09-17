@@ -146,6 +146,21 @@ _MILESTONE_LABELS: dict[str, str] = {
 WEBSITE_OVERVIEW_MILESTONE = "Ülevaade / uudis"
 WEBSITE_OVERVIEW_LINK_LABEL = "Ava ülevaade või uudis"
 
+#: What a published row prints where its publication date would go, when nobody
+#: knows what that date is.
+#:
+#: The same three words a `Väline seisukoht` with no `stated_on` prints, and
+#: deliberately the same: they are the same fact about the file — this happened,
+#: and the day it happened is not recorded — and two spellings of it on one
+#: chronology would read as two different situations. Since docs/adr/0089 §8 a
+#: publication may legitimately be in this state.
+#:
+#: **Never `created_at` and never the day the row happens to sort on.** Printing
+#: the day somebody typed the address in, beside «Ülevaade / uudis», would state
+#: that the page went up that day — a fact about somebody else's website,
+#: invented by this application (docs/adr/0089 §10).
+WEBSITE_OVERVIEW_DATE_UNKNOWN = "Kuupäev teadmata"
+
 
 def _join(verbs: Any) -> str:
     """ "lisas märkuse, lisas dokumendi ja määras järgmise sammu"."""
@@ -1124,20 +1139,34 @@ def projected_milestones(
     for overview in MatterWebsiteOverview.objects.filter(matter=matter).visible_to(user):
         if overview.is_published:
             published_on = overview.published_on
-            if published_on is None or published_on > day:
+            if published_on is not None and published_on > day:
                 # A publication date in the future is the same case as a future
                 # engagement: it is not history yet, and the chronology reads
-                # newest-first and means *past*. The `None` cannot happen — the
-                # database refuses a published row without a date — and is
-                # handled rather than asserted because a read path is not the
-                # place to discover it.
+                # newest-first and means *past*.
+                continue
+            # **Where the row sits, and what it says, are two different
+            # answers.** Since docs/adr/0089 §8 a published overview may have no
+            # publication date, and it must still appear — dropping it would
+            # hide a page that exists, which is a worse answer than placing it
+            # approximately. So the row is placed on the day it was *recorded*,
+            # which is the only day this system knows anything about, and it
+            # prints «Kuupäev teadmata» rather than that day. The rule
+            # `external_position_chronology_day` states, for the same reason:
+            # the fallback places the row and never describes it
+            # (docs/adr/0089 §10).
+            sits_on = published_on if published_on is not None else _local_day(overview.created_at)
+            if sits_on > day:
                 continue
             add(
                 overview,
-                _end_of_day(published_on),
+                _end_of_day(sits_on),
                 ChronologyMilestone(
                     what=WEBSITE_OVERVIEW_MILESTONE,
-                    display_date=format_estonian_date(published_on),
+                    display_date=(
+                        format_estonian_date(published_on)
+                        if published_on is not None
+                        else WEBSITE_OVERVIEW_DATE_UNKNOWN
+                    ),
                     sub=str(overview.get_status_display()),
                     # **The label, never the address.** A raw URL as the row's
                     # own text is a line a reader has to parse instead of read,

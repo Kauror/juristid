@@ -29,6 +29,7 @@ from app.matters.enums import (
     ExternalPositionProvenance,
     MatterDataClass,
     MatterOrigin,
+    ProceduralLinkKind,
     RecordMode,
     TagAssignmentSource,
     WebsiteOverviewStatus,
@@ -770,6 +771,27 @@ WEBSITE_OVERVIEW_URL_MAX_LENGTH = 1000
 #: rather than truncating, with the column behind it as the defence.
 EXTERNAL_POSITION_URL_MAX_LENGTH = 1000
 
+#: The same bound once more, on a `Menetluse link`.
+#:
+#: Stated separately for the reason the three above it are: they are four
+#: different product decisions that agree on a number today. This one is an
+#: official proceeding's own address, and those are the longest addresses in
+#: this application — an EIS toimik carries a GUID, a EUR-Lex procedure carries
+#: a CELEX number and a locale, and a document register's deep link carries the
+#: whole query that found the file. `normalize_procedural_link_url` enforces
+#: it, refusing rather than truncating, with the column behind it as the
+#: defence (docs/adr/0089 §3).
+PROCEDURAL_LINK_URL_MAX_LENGTH = 1000
+
+#: How long the optional short label beside a `Menetluse link` may be.
+#:
+#: A few words naming *which* proceeding this is — «Eelnõu 123 SE», «VTK
+#: kooskõlastusring», «COM(2026) 41» — so a Matter carrying three ministry
+#: register links does not read as three identical rows. Short on purpose: it
+#: is a name, not a description, and a paragraph here would be a `Märge`
+#: written in the wrong place.
+PROCEDURAL_LINK_LABEL_MAX_LENGTH = 120
+
 #: How long the `Seisukoht` a `Väline seisukoht` carries may be.
 #:
 #: A concise written position or comment received from the other organisation
@@ -1289,9 +1311,10 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
 
     So it is a record with three states and two columns. `Plaanis` says the
     write-up is owed and carries neither an address nor a date, because neither
-    exists yet. `Avaldatud` says it happened, and carries both. `Tühistatud` says
-    the plan was dropped, which is part of the file rather than something to
-    delete (docs/adr/0081).
+    exists yet. `Avaldatud` says it happened and carries the address; the day it
+    went up is recorded when somebody knows it and left unknown when nobody does
+    (docs/adr/0089 §8). `Tühistatud` says the plan was dropped, which is part of
+    the file rather than something to delete (docs/adr/0081).
 
     One activity, and no kind column
     --------------------------------
@@ -1350,14 +1373,32 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     url = models.URLField(
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH, blank=True, verbose_name="link"
     )
-    #: The day the overview or news item went up, as a person states it.
+    #: The day the overview or news item went up, as a person states it —
+    #: **optional, including on a published row**.
     #:
-    #: **Never stamped by the server.** The panel that records a publication
-    #: offers today because today is the usual answer, and what the person left
-    #: in the box is what is stored. Nothing anywhere derives this from
-    #: ``created_at``, from ``published_at`` or from the clock: a date the
-    #: application invented is a date nobody can correct, because nobody knows
-    #: it is wrong (docs/adr/0078 §2, and docs/adr/0081 §3).
+    #: `NULL` means *unknown*, and unknown is an ordinary answer rather than an
+    #: incomplete record. Lawyer testing in September 2026 found the commonest
+    #: real case to be an address pasted out of a search result, a mail or a
+    #: colleague's message, where the page plainly exists and the day it went up
+    #: is not on the page, not remembered and not worth a hunt. The rule that
+    #: required a date made those saves refuse, so what people actually filed
+    #: was today — a date nobody had checked, on the one column that is the
+    #: person's own statement (docs/adr/0089 §8, replacing docs/adr/0081 §2's
+    #: date requirement and withdrawing docs/adr/0085 §3).
+    #:
+    #: **Never stamped by the server, and never defaulted on screen.** Nothing
+    #: anywhere derives this from ``created_at``, from ``published_at``, from
+    #: ``status_changed_at`` or from the clock, and no form offers today in the
+    #: box either: a date the application proposed is a date somebody accepts
+    #: without checking, which is how an invented day becomes the file's own
+    #: statement. Published *by URL* and *published on a known day* are two
+    #: different facts, and only the first is required to record a publication
+    #: (docs/adr/0078 §2, docs/adr/0089 §8).
+    #:
+    #: Rows stored before 2026-09-17 are left exactly as they are. Some of them
+    #: carry today's date because the old panel proposed it; there is no stored
+    #: provenance that distinguishes those from a date somebody typed, so
+    #: nothing guesses (docs/adr/0089 §9).
     published_on = models.DateField(null=True, blank=True, verbose_name="avaldamise kuupäev")
 
     created_by = models.ForeignKey(
@@ -1390,10 +1431,18 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     class Meta:
         verbose_name = "ülevaade / uudis"
         verbose_name_plural = "ülevaated / uudised"
-        # Newest publication first, and a row that has not been published sorts
+        # Newest publication first, and a row with no publication date sorts
         # *last* rather than first: `NULLS LAST` is what stops a plan reading as
         # though it went up today. The same ordering, for the same reason, as
         # `MatterEngagement` (brief 18).
+        #
+        # Since docs/adr/0089 §8 a *published* row may also have no date, and it
+        # sorts into that same tail — behind every dated publication, ordered
+        # among its neighbours by `created_at` and then `id`. That is a
+        # technical ordering and nothing else: it places the row deterministically
+        # so a list does not reshuffle between reads, and it states nothing about
+        # when the page went up. No surface prints `created_at` as though it
+        # were the publication date (docs/adr/0089 §10).
         ordering = [models.F("published_on").desc(nulls_last=True), "-created_at", "-id"]
         constraints = [
             models.CheckConstraint(
@@ -1401,16 +1450,27 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
                 name="matters_website_overview_status_vocabulary",
             ),
             # **The two halves of «published means published».** An overview in
-            # that state has an address and a day; one in any other state has
-            # neither. Written as a single implication each way so that no row
-            # can exist claiming a publication with nothing to show, and none
-            # can carry a link while saying it was never published.
+            # that state has an address; one in any other state has neither an
+            # address nor a date. Written as a single implication each way so
+            # that no row can exist claiming a publication with nothing to show,
+            # and none can carry a link while saying it was never published.
+            #
+            # **The date is no longer half of the first implication**, and that
+            # is docs/adr/0089 §8 replacing docs/adr/0081 §2. A page is
+            # published because it is up at an address a reader can open, not
+            # because somebody knows which day it went up — and the constraint
+            # that conflated the two was refusing ordinary saves whose only
+            # defect was an honest «I do not know», which people answered by
+            # filing today. `published_on` stays nullable and stays free of any
+            # default; what it means when it is `NULL` is *unknown*, which is a
+            # fact this file may now hold.
+            #
+            # The other direction is untouched: a `PLANNED` or `CANCELLED` row
+            # still carries neither, because a date on a record claiming nothing
+            # was published is a date about nothing.
             models.CheckConstraint(
-                condition=(
-                    ~models.Q(status=WebsiteOverviewStatus.PUBLISHED)
-                    | (~models.Q(url="") & models.Q(published_on__isnull=False))
-                ),
-                name="matters_website_overview_published_has_link_and_date",
+                condition=(~models.Q(status=WebsiteOverviewStatus.PUBLISHED) | ~models.Q(url="")),
+                name="matters_website_overview_published_has_link",
             ),
             models.CheckConstraint(
                 condition=(
@@ -1501,6 +1561,29 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
     @property
     def is_cancelled(self) -> bool:
         return self.status == WebsiteOverviewStatus.CANCELLED
+
+    @property
+    def chronology_date(self) -> str:
+        """What the chronology's date cell says about this row, in one place.
+
+        The day this record states, or the words «Kuupäev teadmata» when it
+        states none. **Never** ``created_at``: that places the row and never
+        describes it, and printing it here would say the page went up on the
+        day somebody typed the address in — a fact about somebody else's
+        website, invented by this application (docs/adr/0089 §10).
+
+        A property on the record because two renderings need the same string:
+        `projected_milestones` builds the chronology row, and
+        `website_overview_link.html` swaps this one cell out of band when a
+        correction changes or clears the date. A second spelling of it would be
+        a second place for the two to disagree — which is the reasoning
+        `revision_token` gives for living here rather than in a template.
+        """
+        from app.matters.timeline import WEBSITE_OVERVIEW_DATE_UNKNOWN
+
+        if self.published_on is None:
+            return WEBSITE_OVERVIEW_DATE_UNKNOWN
+        return format_estonian_date(self.published_on)
 
 
 class MatterExternalPositionQuerySet(models.QuerySet):
@@ -2189,6 +2272,221 @@ class MatterProceduralDevelopment(VisibilityInheritingModel):
         approximate one, and the two say different things to a reader.
         """
         return self.occurred_on is not None and is_approximate(self.occurred_on_precision)
+
+
+class MatterProceduralLinkQuerySet(models.QuerySet):
+    def visible_to(self, user: object | None) -> MatterProceduralLinkQuerySet:
+        """The only supported entry point for reading procedural links."""
+        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+
+
+class MatterProceduralLink(VisibilityInheritingModel):
+    """`Menetluse link` — where the official proceeding on this Matter lives.
+
+    A lawyer opening a file three months later asks one question before any
+    other: *where is this actually happening*. The answer is an address — the
+    EIS toimik, the ministry's own document register, the Commission's
+    consultation page, the Riigikogu proceeding — and until now the file had
+    nowhere to keep it. It lived in a browser history, in an e-mail, or pasted
+    into a `Märge` where nothing could find it, so the colleague picking the
+    file up had to reconstruct it from the title.
+
+    So this is a **pointer and nothing else**: which kind of official source it
+    is, the address, and optionally a few words naming which proceeding when a
+    Matter carries several from one register.
+
+    A reference, not an ingestion
+    -----------------------------
+    **Nothing here is fetched.** This application does not open the address,
+    does not crawl it, does not poll it, does not resolve it, does not preview
+    it and does not watch it for changes. No `Document` and no
+    `DocumentVersion` is created from it, no metadata is read off the other end,
+    no date is inferred from it and nothing classifies what is behind it. It is
+    stored, and it is rendered as one labelled link.
+
+    That is a deliberate boundary rather than a missing feature. The master
+    specification's §20.2 puts EIS automation *after* the core workflow is
+    proven, and §11.2's `ExternalReference` warns in one sentence against the
+    exact failure this record could introduce: «never present a static link as
+    synchronized unless an integration actively maintains it». A row here says
+    what a lawyer wrote down on the day they wrote it down, and it will go on
+    saying that when the page behind it has moved — which is a fact about the
+    web rather than an error in this file. When a feed is built it will write
+    its own observed identifiers and timestamps beside these columns; nothing
+    here has to move for that, and nothing here pretends to it now
+    (docs/adr/0089 §4).
+
+    What it is not
+    --------------
+    Not a `Väline seisukoht`. A ministry's opinion hosted at a URL and the
+    ministry's *document register* are two different facts about the same body,
+    and the same address may legitimately be recorded as both — because a lawyer
+    meant both. Neither is inferred from the other, ever: recording where the
+    proceeding lives is not a claim that anybody stated a position, and
+    recording a position is not a claim about where the procedure runs
+    (docs/adr/0089 §5).
+
+    Not an `Ülevaade / uudis`. That record is a *publication* — this file,
+    written up where the public can read it — and it has a lifecycle, a
+    publication date and a chronology row. This one has none of those: it is
+    not something that happened, it is where something is happening. They share
+    a URL validator and nothing else (docs/adr/0089 §5).
+
+    Not a `Document`: nothing is uploaded here and an official register page is
+    not the evidence store. Not a `Märge`: «eelnõu on EIS-is» written as prose
+    is a sentence nothing can open. Not a `NextAction` and not a deadline: a
+    recorded address creates no work, moves no `Matter.response_deadline` and
+    makes no Matter read as late.
+
+    Zero, one or many
+    -----------------
+    A Matter may carry none, one, or several, including several of one kind — a
+    long proceeding runs through two ministries' registers and a Riigikogu page
+    at once, and a `kind` that could be used only once would make the second one
+    unrecordable. The one uniqueness there *is* guards against the same address
+    being filed twice against one Matter, which is not a second reference but
+    the same one recorded twice.
+
+    No deletion
+    -----------
+    Create and correct, like `MatterEngagement` and `MatterExternalPosition`. A
+    wrong kind, a wrong label and a wrong address are all corrected in place;
+    what the file recorded and who recorded it is part of the file
+    (docs/adr/0084 §8, docs/adr/0089 §6).
+    """
+
+    matter = models.ForeignKey(
+        Matter,
+        on_delete=models.CASCADE,
+        related_name="procedural_links",
+        verbose_name="teema",
+    )
+    #: Which official source this points at, **as the lawyer states it**.
+    #:
+    #: Never derived from the hostname and never verified against it. A ministry
+    #: runs more than one register, an EU file is read on EUR-Lex one month and
+    #: on a consultation page the next, and a host rule would silently
+    #: reclassify every stored row the day a register moved domain. The kind is
+    #: what the person was pointing at, which is what a colleague opening the
+    #: file needs to know (docs/adr/0089 §2).
+    kind = models.CharField(
+        max_length=32,
+        choices=ProceduralLinkKind.choices,
+        db_index=True,
+        verbose_name="menetluse liik",
+    )
+    #: The address itself. Required — a procedural link with no address is not a
+    #: record of anything — and validated by
+    #: `app.matters.services.normalize_procedural_link_url`, which is the one
+    #: door every writer of this column passes through.
+    url = models.URLField(max_length=PROCEDURAL_LINK_URL_MAX_LENGTH, verbose_name="link")
+    #: A few words naming *which* proceeding, where the kind alone is not
+    #: enough. Optional, and genuinely optional: a Matter with one EIS link
+    #: needs nothing here, and demanding a name for every address is how routine
+    #: capture becomes slower than pasting into Excel (AGENTS.md, «do not make
+    #: routine capture slower by requiring optional metadata»).
+    label = models.CharField(
+        max_length=PROCEDURAL_LINK_LABEL_MAX_LENGTH,
+        blank=True,
+        verbose_name="nimetus",
+        help_text="Valikuline — näiteks „Eelnõu 123 SE” või „VTK kooskõlastusring”.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="recorded_procedural_links",
+        verbose_name="lisas",
+    )
+
+    objects = MatterProceduralLinkQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "menetluse link"
+        verbose_name_plural = "menetluse lingid"
+        # The vocabulary's own order, then oldest first inside a kind. A facts
+        # card is read by reaching for a known row, so the list must not
+        # reshuffle when somebody corrects a label — which is what any ordering
+        # by a mutable column would do. `id` breaks the tie so two rows recorded
+        # in one transaction still have one order (docs/adr/0089 §7).
+        ordering = ["kind", "created_at", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(kind__in=ProceduralLinkKind.values),
+                name="matters_procedural_link_kind_vocabulary",
+            ),
+            # A row with no address is not a reference to anything. The service
+            # refuses it first, in a sentence under the box; this is the defence
+            # behind that, for a write that did not come through a form.
+            models.CheckConstraint(
+                condition=~models.Q(url=""),
+                name="matters_procedural_link_has_url",
+            ),
+            # **The same address, twice, on one Matter is the same reference
+            # recorded twice.** Unlike `MatterExternalPosition`, where two
+            # organisations may genuinely have published at one address, this
+            # record carries no second business fact that could make two
+            # identical rows mean different things — so the duplicate a
+            # double-click or a browser retry would produce is refused by the
+            # database rather than merely discouraged by the form. Scoped to the
+            # Matter and not to `(matter, kind)`: one address filed as `EIS` and
+            # again as `Muu menetluslink` is one address, and the kind is
+            # corrected rather than duplicated (docs/adr/0089 §6).
+            models.UniqueConstraint(
+                fields=["matter", "url"],
+                name="matters_procedural_link_one_row_per_address",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
+                ),
+                name="matters_procedural_link_visibility_vocabulary",
+            ),
+        ]
+        indexes = [
+            # The rail card's own read: one Matter's links, in the card's order.
+            models.Index(fields=["matter", "kind"], name="matters_proclink_matter_kind"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()}: {self.matter_id}"[:120]
+
+    def parent_visibility(self) -> str:
+        return self.matter.visibility
+
+    @property
+    def revision_token(self) -> str:
+        """Which version of this record a rendered correction form was filled from.
+
+        ``updated_at``, for the reasons `MatterWebsiteOverview.revision_token`
+        and `MatterExternalPosition.revision_token` both give: `auto_now` sets it
+        on every write, PostgreSQL stores it to the microsecond so two saves
+        cannot share one, and having it costs no migration.
+        """
+        return self.updated_at.isoformat()
+
+    @property
+    def display_label(self) -> str:
+        """What the card calls this row, and never the address itself.
+
+        The lawyer's own `label` when they wrote one, and the parsed host
+        otherwise — `eelnoud.valitsus.ee`, `eur-lex.europa.eu` — because that is
+        what tells a reader where a link goes. A raw URL as a row's own text is
+        a line a reader has to parse instead of read, and it is the one shape in
+        which a look-alike address would be believed; the kind is already
+        printed beside it, so an address this cannot find a host in falls back
+        to the kind's own name rather than to a sentence repeating it
+        (docs/adr/0081 §4, docs/adr/0084 §3).
+
+        `MatterEngagement._hostname` is the implementation, shared rather than
+        copied: it is what drops the userinfo and the port, so a link carrying
+        basic-auth credentials cannot put a password into a rendered label
+        (red-team finding F-2).
+        """
+        if self.label:
+            return self.label
+        return MatterEngagement._hostname(self.url) or str(self.get_kind_display())
 
 
 class MatterPersonalNote(BaseModel):

@@ -799,9 +799,10 @@ def add_matter_website_overview(
     had to file a plan and then publish it from a second control to say a thing
     that was already true (docs/adr/0083).
 
-    So both shapes arrive here. With neither argument this is the plan, byte for
-    byte what it always was. With both, the record is planned and published
-    inside **one** transaction and one `composer_operation`, which is why the
+    So both shapes arrive here. With no address this is the plan, byte for byte
+    what it always was. With one — and with or without a publication date, since
+    docs/adr/0089 §8 — the record is planned and published inside **one**
+    transaction and one `composer_operation`, which is why the
     publication reuses `publish_website_overview` rather than writing a second
     direct-to-`PUBLISHED` path: the address rule, the both-or-neither rule and
     the audit events all stay in the one reviewed place, and the lifecycle is the
@@ -823,7 +824,13 @@ def add_matter_website_overview(
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         overview = plan_website_overview(matter=locked_matter, actor=author)
-        if url and published_on is not None:
+        # **The address decides it, and the date does not.** Since
+        # docs/adr/0089 §8 a publication whose day is unknown is an ordinary
+        # publication, so an address with an empty date box records one rather
+        # than falling back to a plan — which would have been the silent shape
+        # of the old refusal: somebody pastes a link, no date, and the file says
+        # the write-up is still owed.
+        if url:
             overview = publish_website_overview(
                 overview=overview,
                 url=url,
@@ -920,6 +927,81 @@ def correct_matter_website_overview(
             overview=overview,
             url=url,
             published_on=published_on,
+            actor=author,
+            expected_revision=expected_revision,
+        )
+        return result
+
+
+@transaction.atomic
+def add_matter_procedural_link(
+    *,
+    matter: Matter,
+    author: Any,
+    kind: Any,
+    url: Any,
+    label: str = "",
+) -> WorkspaceResult:
+    """`+ Menetluse link` — where the official proceeding on this file lives.
+
+    One row and nothing else: no file is captured, no page is fetched, no
+    `Document` is created and no background work is scheduled. The address is
+    recorded exactly as it was pasted (docs/adr/0089 §4).
+
+    Takes the lock and the closed-Matter question through the same helper as
+    every other operation in this module. A closed Teema renders no launcher,
+    and that decides nothing about a POST arriving from a tab that was open
+    before somebody else shut the file (R2-02).
+
+    A repeated submission is the service's own concern rather than this one's:
+    `record_procedural_link` returns the row that is already there when the
+    answers agree, so a double-click writes one row and one audit event.
+    """
+    from app.matters.services import record_procedural_link
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = record_procedural_link(
+            matter=locked_matter,
+            kind=kind,
+            url=url,
+            label=label,
+            actor=author,
+        )
+        return result
+
+
+@transaction.atomic
+def correct_matter_procedural_link(
+    *,
+    author: Any,
+    link: Any,
+    kind: Any,
+    url: Any,
+    label: str = "",
+    expected_revision: str | None = None,
+) -> WorkspaceResult:
+    """`Paranda` — the kind, the name or the address on an existing row was wrong.
+
+    **Takes no closed-Matter guard, and must not.** Closure means no new
+    business content; it has never meant that an address recorded wrongly must
+    stay wrong. The same exception, for the same reason, as
+    `correct_matter_website_overview` (docs/adr/0075 §12, docs/adr/0081 §5).
+
+    It takes no ``matter`` either, for the reason that one does not: the record
+    names its own Matter, and a parameter that could disagree with it is a
+    parameter that will.
+    """
+    from app.matters.services import correct_procedural_link
+
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = correct_procedural_link(
+            link=link,
+            kind=kind,
+            url=url,
+            label=label,
             actor=author,
             expected_revision=expected_revision,
         )

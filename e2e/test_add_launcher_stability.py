@@ -33,7 +33,7 @@ pytestmark = pytest.mark.e2e
 #: The canonical order. `+ Järgmine tegevus` is absent while a step is open, and
 #: this Matter is new, so all thirteen are here.
 #:
-#: **Twelve where there were nine**, and the growth is docs/adr/0090's stated
+#: **Thirteen where there were thirteen**, and the growth is docs/adr/0090's stated
 #: cost rather than a slip: the bar is the product's inventory of what can be
 #: recorded, and four of the things lawyers do had no chip. `+ Väline seisukoht`
 #: became two — `+ Meile saadetud tagasiside` and `+ Teiste arvamus` — over one
@@ -48,10 +48,13 @@ CANONICAL = [
     "+ Jõustumine",
     "+ Töövõit",
     "+ Ülevaade / uudis",
+    # `+ Väline seisukoht` became two chips in docs/adr/0090 §3: one record
+    # and one panel partial, named by how what it holds reached the file.
     "+ Meile saadetud tagasiside",
     "+ Teiste arvamus",
     "+ Koja arvamus",
     "+ Menetluse areng",
+    "+ Menetluse link",
     "+ Lõpeta teema",
 ]
 
@@ -65,8 +68,11 @@ PANEL_IDS = [
     "lisa-koduleht",
     "lisa-tagasiside",
     "lisa-valine-seisukoht",
+    "lisa-tagasiside",
+    "lisa-valine-seisukoht",
     "lisa-koja-arvamus",
     "lisa-menetluse-areng",
+    "lisa-menetluse-link",
     "lisa-lopeta",
 ]
 
@@ -306,7 +312,7 @@ def test_at_phone_width_the_chips_wrap_and_stay_on_their_rows(page, base_url):
     resting = chip_geometry(page)
     rows = sorted({round(row[2]) for row in resting})
     assert len(rows) > 1, (
-        "at 375px the twelve chips fit on one line — retune this test, not the CSS"
+        "at 375px the thirteen chips fit on one line — retune this test, not the CSS"
     )
 
     for panel_id in PANEL_IDS:

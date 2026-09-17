@@ -1,7 +1,7 @@
 {% comment %}
 `LISA TEEMALE` — what do I want to add to this file?
 
-Nine choices, not nine forms. The launcher is a row of quiet chips and nothing
+Ten choices, not ten forms. The launcher is a row of quiet chips and nothing
 else until somebody picks one; clicking a chip opens that one operation's small
 form, with its own fields, its own `Salvesta`, its own validation and its own
 atomic business operation (brief §10–§12).
@@ -22,7 +22,7 @@ lawyer ends up believing they have two (brief §15).
 
 **The launcher is a stable choice bar, and picking a choice does not move it.**
 Each operation is a radio, its visible chip, and its form — in that order,
-nine times. The chips are ordinary flex items in the canonical order and never
+ten times. The chips are ordinary flex items in the canonical order and never
 change size, line or position; the one chosen form is the single item with
 `order: 1` and a full-width basis, so it lands on its own line *under* the whole
 row rather than pushing its neighbours sideways.
@@ -463,10 +463,9 @@ row of controls that refuse (brief §30, §31).
                 {{ website_overview_form.published_on.errors|first }}</p>
             {% endif %}
             <p class="cx-note">
-              Täida mõlemad ja ülevaade või uudis salvestatakse kohe avaldatuna.
-              Link peab olema avalik http:// või https:// aadress. Kuupäev
-              täidetakse linki sisestades tänasega — muuda või kustuta see, kui
-              avaldati mõnel muul päeval.
+              Lisa link ja ülevaade või uudis salvestatakse kohe avaldatuna.
+              Link peab olema avalik http:// või https:// aadress.
+              Avaldamise kuupäev on valikuline — kui see ei ole teada, jäta tühjaks.
             </p>
           </fieldset>
           <div class="addform__actions">
@@ -788,6 +787,107 @@ row of controls that refuse (brief §30, §31).
           </fieldset>
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta areng</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% comment %}
+      `+ Menetluse link`. Where the official proceeding on this file actually
+      lives — the EIS toimik, a ministry's document register, the EU side, the
+      Riigikogu page — so that the colleague who opens this Teema in three
+      months does not have to reconstruct it from the title.
+
+      **A reference, and nothing is fetched.** No page is opened, crawled,
+      polled, resolved or previewed; no `Document` is created from it and no
+      date or metadata is read off the other end. The lawyer gives an address
+      and the application records that address. A future package may watch
+      official sources; this one deliberately does not, and the model is shaped
+      so that it will not have to be rebuilt when one does (docs/adr/0089 §4).
+
+      **It is not `+ Väline seisukoht` and it is not `+ Ülevaade / uudis`,**
+      which is why it is a third chip rather than a third field on either. A
+      ministry's *position* hosted at a URL and a ministry's *document register*
+      are two different facts about the same body; a write-up of this file
+      published where the public can read it is a third. The same address may
+      legitimately be recorded as more than one of them, because a lawyer meant
+      more than one — nothing infers any of them from another (docs/adr/0089 §5).
+
+      **No date and no state.** This record is not something that happened on a
+      day, it is where something is happening, so a date box would be a question
+      with nothing honest to answer it and a lifecycle would be one nobody
+      maintains. It creates no `NextAction`, no deadline, no work item and no
+      badge, so a Matter carrying four of these never reads as late.
+
+      Second to last, before `+ Lõpeta teema`, and the bar's order is otherwise
+      untouched (docs/adr/0078 §1).
+    {% endcomment %}
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-menetluse-link-valik"
+           data-addpick aria-controls="lisa-menetluse-link"
+           {% if open_panel == "lisa-menetluse-link" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-menetluse-link-valik">+ Menetluse link</label>
+    <div class="cx-panel" id="lisa-menetluse-link" data-addpanel>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-menetluse-link" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_procedural_link' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          {% comment %}
+            The five sources as chips rather than a `<select>`, for the reason
+            `Menetlusliik` and `Hetkeseis` are chip rows on `Uus teema`: with a
+            vocabulary of five, a select is a click spent finding out what the
+            options even are.
+
+            A `<fieldset>` with a real `<legend>`, because the group is one
+            question and a screen reader announcing five unlabelled radios is a
+            group nobody can answer. Nothing is pre-selected here — unlike `Uus
+            teema`, where the file usually arrives from EIS, this panel is
+            opened from a Matter that already exists and the answer is as likely
+            to be any of the five.
+          {% endcomment %}
+          <fieldset class="cx-fieldset">
+            <legend class="cx-f__lab">{{ procedural_link_form.kind.label }}</legend>
+            <div class="chiprow">
+              {% for choice in procedural_link_form.kind %}
+                <label class="chip">
+                  {{ choice.tag }}
+                  <span class="chip__name">{{ choice.choice_label }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            {% if procedural_link_form.kind.errors %}
+              <p class="field__error" id="{{ procedural_link_form.kind.auto_id }}_error">
+                {{ procedural_link_form.kind.errors|first }}</p>
+            {% endif %}
+          </fieldset>
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f" for="{{ procedural_link_form.url.id_for_label }}">
+              <span class="cx-f__lab">{{ procedural_link_form.url.label }}</span>
+              {{ procedural_link_form.url }}
+            </label>
+            <label class="cx-f" for="{{ procedural_link_form.label.id_for_label }}">
+              <span class="cx-f__lab">{{ procedural_link_form.label.label }}
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ procedural_link_form.label }}
+            </label>
+          </div>
+          {% if procedural_link_form.url.errors %}
+            <p class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
+              {{ procedural_link_form.url.errors|first }}</p>
+          {% endif %}
+          {% if procedural_link_form.label.errors %}
+            <p class="field__error" id="{{ procedural_link_form.label.auto_id }}_error">
+              {{ procedural_link_form.label.errors|first }}</p>
+          {% endif %}
+          <p class="cx-note">
+            Avalik http:// või https:// aadress. Link salvestatakse sellisena,
+            nagu ta on — lehte ei avata ega jälgita.
+          </p>
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Lisa menetluse link</button>
           </div>
         </form>
       </div>

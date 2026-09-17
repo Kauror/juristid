@@ -48,20 +48,13 @@ CANONICAL = [
     # last thing done *about* a file, and finishing the file is not routine
     # capture at all (docs/adr/0081 §2).
     "+ Ülevaade / uudis",
-    # **The four workflow chips, then the closure** (docs/adr/0090).
-    #
-    # `+ Väline seisukoht` was one chip here and is now two, because the first
-    # lawyer test needed «a member company answered our consultation» told apart
-    # from «the ministry published its position» — one record, one panel, two
-    # chips and an explicit provenance (§3).
+    # `+ Väline seisukoht` became two chips in docs/adr/0090 §3: one record
+    # and one panel partial, named by how what it holds reached the file.
     "+ Meile saadetud tagasiside",
     "+ Teiste arvamus",
-    # Then the Chamber's own opinion, which is what the two above are argued
-    # against, and then what the procedure did next. Both are `Submission` and
-    # `Entry` underneath; what is new is that a lawyer can reach them from the
-    # page where the work happens (§5, §6).
     "+ Koja arvamus",
     "+ Menetluse areng",
+    "+ Menetluse link",
     "+ Lõpeta teema",
 ]
 
@@ -80,8 +73,11 @@ PANEL_IDS = [
     "lisa-koduleht",
     "lisa-tagasiside",
     "lisa-valine-seisukoht",
+    "lisa-tagasiside",
+    "lisa-valine-seisukoht",
     "lisa-koja-arvamus",
     "lisa-menetluse-areng",
+    "lisa-menetluse-link",
     "lisa-lopeta",
 ]
 
@@ -107,7 +103,7 @@ def _chips(zone: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_launcher_offers_twelve_choices_in_the_canonical_order(signed_in, specialist):
+def test_the_launcher_offers_thirteen_choices_in_the_canonical_order(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chips(_zone(signed_in, matter)) == CANONICAL
@@ -185,7 +181,7 @@ def test_every_chip_is_a_control_and_its_form_is_a_separate_element(signed_in, s
 
 
 def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in, specialist):
-    """One `name`, twelve values: the browser enforces the product rule, and it
+    """One `name`, thirteen values: the browser enforces the product rule, and it
     keeps enforcing it with scripting off."""
     matter = factories.MatterFactory(owner=specialist)
     zone = _zone(signed_in, matter)
@@ -197,7 +193,7 @@ def test_the_choices_are_one_radio_group_so_only_one_form_can_be_open(signed_in,
 
 
 def test_nothing_is_chosen_until_somebody_chooses(signed_in, specialist):
-    """The zone is a choice of twelve, not twelve forms."""
+    """The zone is a choice of thirteen, not thirteen forms."""
     matter = factories.MatterFactory(owner=specialist)
 
     assert _chosen(_zone(signed_in, matter)) == []

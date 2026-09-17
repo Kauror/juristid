@@ -333,11 +333,11 @@ def test_the_file_control_is_immediately_available_and_there_is_no_manus_panel(
         assert gone not in body
 
 
-def test_lisa_teemale_offers_twelve_choices_and_opens_none_of_them(signed_in, normal_matter):
-    """**§18, as ADR 0075 restates it.** Twelve operations, each its own form,
+def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, normal_matter):
+    """**§18, as ADR 0075 restates it.** Thirteen operations, each its own form,
     and the zone is a choice until one is picked.
 
-    The eighth is `+ Ülevaade / uudis`, added by docs/adr/0081. docs/adr/0084
+    The twelveh is `+ Ülevaade / uudis`, added by docs/adr/0081. docs/adr/0084
     added `+ Väline seisukoht`; docs/adr/0090 §3 split that one in two — one
     record and one panel partial, named by how what it holds reached the file —
     and added `+ Koja arvamus` and `+ Menetluse areng` beside them. The claim
@@ -354,14 +354,17 @@ def test_lisa_teemale_offers_twelve_choices_and_opens_none_of_them(signed_in, no
         "+ Jõustumine",
         "+ Töövõit",
         "+ Ülevaade / uudis",
+        # `+ Väline seisukoht` became two chips in docs/adr/0090 §3: one record
+        # and one panel partial, named by how what it holds reached the file.
         "+ Meile saadetud tagasiside",
         "+ Teiste arvamus",
         "+ Koja arvamus",
         "+ Menetluse areng",
+        "+ Menetluse link",
         "+ Lõpeta teema",
     ]
     assert [chip for chip in expected if chip in panels] == expected
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 12
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 13
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -417,7 +420,7 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     assert completion.count('type="submit"') == 1
     assert zone.count('type="submit"') == 2
 
-    # Twelve choices under LISA TEEMALE, minus the one hidden while a step is
+    # Thirteen choices under LISA TEEMALE, minus the one hidden while a step is
     # open, each with exactly one save of its own. The organisation picker inside
     # each feedback panel contributes none: its `+` is an explicit
     # `type="button"`, precisely so that naming a body the catalogue does not

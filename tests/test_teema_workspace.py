@@ -420,17 +420,18 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "+ Teiste arvamus",
         "+ Koja arvamus",
         "+ Menetluse areng",
+        "+ Menetluse link",
         "+ Lõpeta teema",
     ):
         assert chip in zone, chip
     assert 'cx-panel" open' not in zone
-    # Twelve operations, twelve saves. There is no shared one left.
+    # Thirteen operations, thirteen saves. There is no shared one left.
     #
     # The organisation picker inside each feedback panel contributes no
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 12
+    assert zone.count('type="submit"') == 13
     assert "composer__actions" not in zone
 
 

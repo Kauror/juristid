@@ -39,7 +39,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('matters', '0026_overview_news_verbose_name'),
+        ('matters', '0028_overview_news_optional_publication_date'),
         ('organisations', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]

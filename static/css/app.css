@@ -6754,6 +6754,37 @@ button.accordion__action:focus-visible {
   margin: 0;
 }
 
+/* -- `Menetluse lingid`, in the rail ----------------------------------- */
+
+/* One recorded proceeding: the fact row, and the correction disclosure under
+   it. A wrapper rather than putting the disclosure inside `.railcard__row`,
+   because that row is a two-cell flex line — a `<details>` inside it would be a
+   third cell and would sit beside the address rather than under it. */
+.proclink {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The rail is 300px wide, so a long register address has to be allowed to wrap
+   rather than push the column past the edge of the window — the overhang
+   `.railcard__value` already documents for a list of senders. */
+.proclink a {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* `Paranda` is a quiet affordance under the fact, not beside it. Indented to
+   the value column so the card still reads as label | value down its left
+   edge. */
+.proclink__fix {
+  margin: 2px 0 var(--spacing-15) 92px;
+}
+
+.proclink__form {
+  margin-top: var(--spacing-2);
+}
+
 /* -- the rail --------------------------------------------------------- */
 
 .teema .rail {

@@ -30,7 +30,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('documents', '0010_document_link_external_position'),
         ('intelligence', '0001_initial'),
-        ('matters', '0028_procedural_development'),
+        ('matters', '0030_procedural_development'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

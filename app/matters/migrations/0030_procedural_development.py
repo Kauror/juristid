@@ -28,7 +28,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('matters', '0027_external_position_provenance'),
+        ('matters', '0029_external_position_provenance'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

@@ -260,6 +260,29 @@ class ChangeEventType(models.TextChoices):
         "EXTERNAL_POSITION_DOCUMENT_LINKED",
         "Välise seisukoha fail lisatud",
     )
+    # -- Menetluse link -----------------------------------------------------
+    #
+    # Two events, because two things happen to this record: an address is
+    # recorded, and a recorded address or its classification turns out to be
+    # wrong. Nothing else can: there is no deletion and no lifecycle
+    # (docs/adr/0089 §6).
+    #
+    # None of the existing families would have been true of either.
+    # `EXTERNAL_POSITION_RECORDED` would claim another organisation stated a
+    # position; `WEBSITE_OVERVIEW_PUBLISHED` would claim this file was written
+    # up for the public; `ENTRY_ADDED` would claim somebody wrote a note. What
+    # happened is that a lawyer recorded where the official proceeding lives,
+    # which is a fact about the procedure and not about anybody's opinion of it
+    # (docs/adr/0089 §5).
+    #
+    # Deliberately absent from `matters.timeline.TIMELINE_EVENT_TYPES`, like
+    # every other structured fact since docs/adr/0074 §14 — and here for a
+    # second reason as well: a procedural link is not something that *happened*
+    # on the file, it is where the file is happening. A chronology row saying
+    # «EIS link added» on 17 September would be the history of somebody's typing
+    # rather than the history of the proceeding (docs/adr/0089 §11).
+    PROCEDURAL_LINK_RECORDED = "PROCEDURAL_LINK_RECORDED", "Menetluse link lisatud"
+    PROCEDURAL_LINK_CORRECTED = "PROCEDURAL_LINK_CORRECTED", "Menetluse linki parandatud"
 
     # `Menetluse areng` — one step the external procedure took. Three events,
     # because three different things happen to this record and no more: it is
