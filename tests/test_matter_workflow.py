@@ -299,7 +299,23 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     #   in, and the panel must not offer one for a new choice. Sharing the read
     #   would mean sharing the vocabulary, which would let somebody re-select a
     #   stage the department retired (app/workflow/selectors.py, docs/adr/0032).
-    assert len(captured) < 45
+    #
+    # **52 since docs/adr/0092**, and the seven it added are sources rather than
+    # a per-row cost. Four are the substantive history becoming canonical: the
+    # sent `Submission`s, their `ADDRESSEE` rows in one prefetch, the open
+    # `Järgmiseks` the history is handed so it does not print it a second time,
+    # and the final-text link pass that now has something to resolve. Three are
+    # `Menetluse kulg`: the stage, track and disposition as they stand — read
+    # rather than taken off the instance, because the page's own save path
+    # re-renders from a `Matter` fetched before the POST — then the explicit
+    # stage history and the reviewed `Õigusakt` keys, the last two only on a
+    # file the first does not already place.
+    #
+    # Still generous and still the same property: this catches a regression into
+    # N+1, which is why it is thirty entries and a `<` rather than an exact
+    # count. `tests/test_substantive_matter_history.py` measures the
+    # projection's own shape directly, at two populations under one budget.
+    assert len(captured) < 52
 
 
 def test_selectors_reuse_the_prefetched_open_action(specialist):
