@@ -157,7 +157,13 @@ def test_the_stage_that_reads_like_a_closure_explains_that_it_is_not(page, base_
     closure, and the department's sentence is on it (docs/adr/0089 §1)."""
     create_form(page, base_url)
 
-    chip = page.locator(f"{STAGE_FIELD} span.chip--explained", has_text="Rohkem ei tegele").first
+    # By the chip's own *name*, not by `has_text`: the tooltip is inside the
+    # chip, and the department's sentence about `Idee` ends «…me rohkem ei
+    # tegele selle teemaga edasi», so a substring match over the whole element
+    # finds the wrong chip and reads the wrong sentence out of it.
+    chip = page.locator(
+        f'{STAGE_FIELD} span.chip--explained:has(.chip__name:text-is("Rohkem ei tegele"))'
+    ).first
     expect(chip).to_be_visible()
     help_text = chip.locator(".stagehelp").inner_text()
     assert "Lõpeta teema" in help_text
@@ -189,13 +195,14 @@ def test_an_ordinary_incoming_draft_files_and_reads_back(page, base_url):
     # Scenario F, on the Teema that came back: one obvious answer to «kes selle
     # meile saatis?», under one word (docs/adr/0089 §6).
     rail = page.locator("#teema-andmed")
-    expect(rail).to_contain_text("Saatja")
-    expect(rail).not_to_contain_text("Kellelt")
-    expect(rail).to_contain_text(MINISTRY)
-    expect(rail).to_contain_text("Seadus")
+    expect(rail.locator(".railcard__key").filter(has_text="Saatja")).to_have_count(1)
+    expect(rail.locator(".railcard__key").filter(has_text="Kellelt")).to_have_count(0)
+    values = rail.locator(".railcard__value")
+    expect(values.filter(has_text=MINISTRY)).to_have_count(1)
+    expect(values.filter(has_text="Seadus")).to_have_count(1)
     # Menetlusliik is a fact of the record and still a row here — derived rather
     # than asked (docs/adr/0089 §4).
-    expect(rail).to_contain_text("Riigisisene")
+    expect(values.filter(has_text="Riigisisene")).to_have_count(1)
     expect(page.locator(".metaline")).to_contain_text("Kooskõlastusringil")
 
 
@@ -211,11 +218,15 @@ def test_an_eu_matter_needs_no_second_european_question(page, base_url):
     title = f"ELi direktiivi ettepanek {uuid.uuid4().hex[:8]}"
     file_it(page, title)
 
-    rail = page.locator("#teema-andmed")
-    expect(rail).to_contain_text("ELi direktiiv")
-    expect(rail).to_contain_text("ELi algatus")
+    # The *values* the rail states, not the whole card: the Menetlusliik row is
+    # an inline editor whose `<select>` carries every `Track` label, so a text
+    # assertion over the card would find «ELi õiguse ülevõtmine» in an option
+    # nobody chose.
+    values = page.locator("#teema-andmed .railcard__value")
+    expect(values.filter(has_text="ELi direktiiv")).to_have_count(1)
+    expect(values.filter(has_text="ELi algatus")).to_have_count(1)
     # And never the transposition, which no instrument type entails.
-    expect(rail).not_to_contain_text("ELi õiguse ülevõtmine")
+    expect(values.filter(has_text="ELi õiguse ülevõtmine")).to_have_count(0)
 
 
 def test_rohkem_ei_tegele_files_an_open_teema(page, base_url):

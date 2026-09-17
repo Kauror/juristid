@@ -510,13 +510,16 @@ def test_teema_andmed_with_oigusakt_and_muu_fits_every_width(page, base_url, siz
     """
     detail = edit_form(page, base_url)
     # `Muu` is a real vocabulary row in Õigusakt, and `.chip--other` is the class
-    # the template puts on exactly that one — a lookup by the label «Muu» would
-    # be a lookup by a word several rows on this form use.
+    # the template puts on exactly those — a lookup by the label «Muu» would be
+    # a lookup by a word several rows on this form use. There are *two* of them
+    # since the reviewed vocabulary split the escape hatch into `Muu
+    # siseriiklik` and `Muu ELi dokument` (docs/adr/0089 §3), and either one
+    # reveals the same free-text box, so this takes the first.
     #
     # The same save at every width, which is idempotent: it writes the values it
     # then reads, so running it three times leaves the Matter where one run
     # would have.
-    page.locator("label.chip--other input").check()
+    page.locator("label.chip--other input").first.check()
     page.fill("#id_legal_instrument_other", "Rohepöörde tegevuskava ja selle rakendusaktid")
     page.fill("#id_policy_area_other", "Ringmajandus ja kliimaneutraalsus")
     save_edit(page)

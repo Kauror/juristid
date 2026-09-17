@@ -78,6 +78,9 @@ MINISTRY_ALIAS = "NÄIDISMIN"
 PLACEHOLDER = "Otsi või lisa asutus…"
 
 SENDER = "saatja"
+#: Saatja's picker id on `Muuda teemat`. Every picker's ids are derived from it,
+#: and the two pages number theirs differently.
+EDIT_SENDER = "muuda-saatja"
 #: Adressaat's picker id on `Muuda teemat`, which is the one form that asks the
 #: question (docs/adr/0089 §5). `Uus teema` numbered its own `adressaat` and has
 #: no such control any more.
@@ -680,14 +683,14 @@ def test_the_picker_never_takes_the_page_sideways(page, base_url, width):
     """
     edit_form(page, base_url)
     page.set_viewport_size({"width": width, "height": 900})
-    search(page, SENDER, "näidis")
+    search(page, EDIT_SENDER, "näidis")
 
     overflow = page.evaluate(
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
     )
     assert overflow <= 1, f"the page scrolls sideways by {overflow}px at {width}"
 
-    for field in (SENDER, ADDRESSEE):
+    for field in (EDIT_SENDER, ADDRESSEE):
         control = box(page, field).bounding_box()
         button = add_button(page, field).bounding_box()
         assert control and button
