@@ -221,22 +221,55 @@ def test_every_institution_is_a_real_control_in_both_fields(signed_in, crowded, 
     assert addressees == everything
 
 
-def test_the_bodies_outside_the_shortlist_arrive_out_of_sight(signed_in, crowded, ministry):
-    """One or two rows of quick choices, not the whole catalogue (task §5, §24)."""
+def test_saatja_opens_as_an_empty_box_with_the_whole_catalogue_behind_it(
+    signed_in, crowded, ministry
+):
+    """No quick row at rest, and nothing lost to get there (docs/adr/0088 §2).
+
+    This is the assertion the lawyers' first feedback round changed. The field
+    used to draw a shortlist of eight institutions under an empty search box —
+    a list to read before a question most people answer by typing — and it now
+    draws none until the search finds one or somebody has chosen it.
+
+    The *controls* are all still in the document, which is what makes the change
+    presentational rather than a narrowing: every institution the form offered
+    before is still a real input with the same name and the same value, still
+    reachable by the search, still tickable, and still what a refused save
+    re-renders as an answer. Only `hidden` moved.
+    """
     page = scripted(signed_in.get(CREATE).content.decode())
+
+    shortlist = chip_tags(page, "source_organisations")
+    tail = chip_tags(page, "source_organisations_other")
+
     visible = [
         value
-        for value in chip_tags(page, "source_organisations")
-        if "hidden" not in chip_label(page, "source_organisations", value)
-    ]
-    hidden = [
-        value
-        for value in chip_tags(page, "source_organisations_other")
-        if "hidden" in chip_label(page, "source_organisations_other", value)
+        for name in ("source_organisations", "source_organisations_other")
+        for value in chip_tags(page, name)
+        if "hidden" not in chip_label(page, name, value)
     ]
 
-    assert len(visible) == 8, "the quick row should hold the shortlist and nothing else"
-    assert len(hidden) == Organisation.objects.count() - 8
+    assert visible == [], "Saatja should open as an empty field"
+    # Every body is still offered — to the search rather than to the eye.
+    assert len(shortlist) + len(tail) == Organisation.objects.count()
+
+
+def test_a_browser_without_scripting_can_still_reach_every_sender(signed_in, crowded, ministry):
+    """The quiet field must not be a quiet field with nothing in it.
+
+    `hidden` on the chips is only ever undone by the search, so a browser that
+    cannot run the search has to be offered the catalogue some other way. The
+    `<noscript>` fallback is that way, and under `quiet` it carries the
+    shortlist as well as the long tail — which is the one arrangement where it
+    offers more than the scripted control does at rest
+    (`organisation_picker.html`, task §22).
+    """
+    page = signed_in.get(CREATE).content.decode()
+    fallback = page[: page.index("</noscript>")]
+    fallback = fallback[fallback.index("<noscript>") :]
+
+    for organisation in Organisation.objects.all():
+        assert f'value="{organisation.pk}"' in fallback, organisation.name
 
 
 def test_a_recorded_alias_reaches_the_control_it_belongs_to(signed_in, ministry):

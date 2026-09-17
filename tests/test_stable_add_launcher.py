@@ -48,7 +48,7 @@ CANONICAL = [
     # last thing done *about* a file, and finishing the file is not routine
     # capture at all (docs/adr/0081 §2).
     "+ Ülevaade / uudis",
-    # **The four workflow chips, then the closure** (docs/adr/0088).
+    # **The four workflow chips, then the closure** (docs/adr/0090).
     #
     # `+ Väline seisukoht` was one chip here and is now two, because the first
     # lawyer test needed «a member company answered our consultation» told apart

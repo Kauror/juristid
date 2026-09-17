@@ -8,7 +8,7 @@ precision it is known to, and an optional note from the lawyer. The distinction
 is `provenance` on the record and the chip that was opened, and the questions are
 otherwise the same, so the markup that asks them lives here once. Two copies
 would be two places for the source sentence to drift and for one of the labels to
-stop matching the service's refusal (docs/adr/0088 §3).
+stop matching the service's refusal (docs/adr/0090 §3).
 
 What the caller passes is exactly what differs:
 
@@ -29,7 +29,7 @@ What the caller passes is exactly what differs:
 Neither panel offers a `provenance` control, and that is not an omission: the
 chip decides it, the form class carries it, and the view reads it off the class.
 There is nothing for a browser to post and nothing a crafted POST can move
-(docs/adr/0088 §3.5).
+(docs/adr/0090 §3.5).
 
 **Two required answers and three optional ones.** Whose position it is — an
 organisation from the one shared catalogue, or, on received feedback only, the
@@ -45,7 +45,7 @@ published address behind them (docs/adr/0084 §3, amended 2026-09-16).
 **`Juristi märkus` is not one of the three.** A record whose only content is this
 office's opinion of a position nobody can read is a record of nothing, so the
 source rule does not count it — and it renders under its own label on its own
-line, never appended to what the other organisation said (docs/adr/0088 §4).
+line, never appended to what the other organisation said (docs/adr/0090 §4).
 
 The date box opens on **today**, as `+ Kaasamine`'s does: the default is visible
 in the box before anything is saved, so it is a suggestion somebody accepts rather
@@ -82,7 +82,7 @@ as late (docs/adr/0084 §5).
         and is not one to *whose position is this*. On received feedback the
         answer may instead be the `Allikas` below, which is a different thing
         from «not stated» — it names where the answers came from
-        (docs/adr/0088 §3.3).
+        (docs/adr/0090 §3.3).
       {% endcomment %}
       {% include "matters/partials/organisation_picker.html" with picker_id=picker_id legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clears_group="organisation" only %}
       {% if form.organisation.errors %}
@@ -97,7 +97,7 @@ as late (docs/adr/0084 §5).
         invented organisation called «234 ettevõtet» and one arbitrary respondent
         standing for the rest. `+ Teiste arvamus` does not render it and does not
         carry the field, because a discovered position has an author by definition
-        (docs/adr/0088 §3.3).
+        (docs/adr/0090 §3.3).
       {% endcomment %}
       {% if form.allows_source_label %}
         <label class="cx-f" for="{{ form.source_label.id_for_label }}">
@@ -165,7 +165,7 @@ as late (docs/adr/0084 §5).
         into the position on any surface — the chronology prints it under its own
         label, the audit payload records only that it exists, and the search
         projection does not read it, so no rendered line can show Koda's words as
-        the other organisation's (docs/adr/0088 §4).
+        the other organisation's (docs/adr/0090 §4).
       {% endcomment %}
       <label class="cx-f" for="{{ form.lawyer_note.id_for_label }}">
         <span class="cx-f__lab">{{ form.lawyer_note.label }}
@@ -186,7 +186,7 @@ as late (docs/adr/0084 §5).
 
         **It is never inferred.** Nothing relates a record to a round because
         their dates or their organisations happen to match; a person says so, or
-        nobody does (docs/adr/0084 §4, docs/adr/0088 §3.6).
+        nobody does (docs/adr/0084 §4, docs/adr/0090 §3.6).
       {% endcomment %}
       <label class="cx-f" for="{{ form.engagement.id_for_label }}">
         <span class="cx-f__lab">{{ form.engagement.label }}

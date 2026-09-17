@@ -6,7 +6,7 @@ this round's change to the creation page is one include, because that template
 and `MatterCreateForm` are being rewritten in parallel by the classification
 work: markup added inside the page would be a merge conflict in the two files
 most likely to move, over a question neither of them is about
-(docs/adr/0088 §1.4).
+(docs/adr/0090 §1.4).
 
 **One box, because the sentence is not a question.** A normal incoming
 consultation begins the same way every time — the lawyer will write Koda's
@@ -24,14 +24,14 @@ inside the product (lawyer feedback 9).
 out, not the consultation deadline, not the end of the month, not the creation
 date — and not an undated commitment either. «Automatically creates the next
 action» is not «invent the date», and `Arvamuse tähtaeg` a few rows up carries no
-default for precisely this reason (docs/adr/0078 §2, docs/adr/0088 §1.2).
+default for precisely this reason (docs/adr/0078 §2, docs/adr/0090 §1.2).
 
 **It is the same open step as any other.** `DO` / `DEADLINE` / `EXACT`, created
 through `set_next_action_for_new_work`, appearing on `Minu asjad`, on
 `PRAEGUNE TEGEVUS` and in `Tähtajad` with no special case anywhere. Which is also
 why it cannot be answered alongside `Järgmiseks`: a Matter has one open step, and
 the save refuses rather than quietly dropping one of two things somebody wrote
-(docs/adr/0088 §1.3).
+(docs/adr/0090 §1.3).
 {% endcomment %}
 <div class="createform__row createform__row--panel">
   <div class="nextpanel" id="koostan-arvamuse">

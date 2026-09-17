@@ -17,7 +17,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, open_valdkond, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -206,6 +206,7 @@ def test_a_refused_save_does_not_throw_the_chosen_file_away(page, base_url, tmp_
     # A refusal only the server can make: «Muu» ticked with nothing written in
     # the box it reveals. The browser has nothing to complain about, so the
     # request goes, and the answer is a re-rendered form.
+    open_valdkond(page)
     page.locator("#id_policy_area_other_selected").check()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("domcontentloaded")

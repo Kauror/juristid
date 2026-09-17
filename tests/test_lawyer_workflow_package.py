@@ -1,4 +1,4 @@
-"""One lawyer workflow, from `Teema` to the next `Koja arvamus` (docs/adr/0088).
+"""One lawyer workflow, from `Teema` to the next `Koja arvamus` (docs/adr/0090).
 
 The five workflow items from the first lawyer test, and the rules a screenshot
 cannot show:

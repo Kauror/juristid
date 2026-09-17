@@ -26,7 +26,7 @@ class EntryKind(models.TextChoices):
     #: it is a value rather than a model because that is exactly what the fact
     #: is. What earns it its own name is that the panel writing it also offers
     #: `Hetkeseis` and `Järgmiseks` in the same save, so a reader can tell a
-    #: procedural step apart from a `Märkus` about one (docs/adr/0088 §5).
+    #: procedural step apart from a `Märkus` about one (docs/adr/0090 §5).
     #:
     #: **Not a milestone and not a deadline.** It creates no
     #: `MatterImportantDate`, enters no `real_deadlines`, draws no column on the

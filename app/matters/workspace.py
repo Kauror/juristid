@@ -497,7 +497,7 @@ def add_matter_external_position(
 ) -> WorkspaceResult:
     """`+ Meile saadetud tagasiside` / `+ Teiste arvamus` — what somebody else said.
 
-    **One operation behind two chips**, which is docs/adr/0088 §3's whole
+    **One operation behind two chips**, which is docs/adr/0090 §3's whole
     architectural claim. `Meile saadetud tagasiside` and `Teiste arvamus` are two
     professional facts with one shape: an author, a source a colleague can open,
     an optional date at the precision it is known to, and an optional note from
@@ -509,7 +509,7 @@ def add_matter_external_position(
     ``provenance`` is the distinction, ``source_label`` is what an aggregate
     answer with no single author is called, and ``lawyer_note`` is this office's
     own reading of the position — stored beside the source and never inside it
-    (docs/adr/0088 §3, §4).
+    (docs/adr/0090 §3, §4).
 
     One operation: the record, its files and the links between them land
     together or not at all. That is the whole reason this module exists, and it
@@ -595,7 +595,7 @@ def add_matter_koda_opinion(
     `check_evidence_is_usable` against what those locks protect, and
     `mark_submission_sent` re-runs the evidence check, stamps the supplied day and
     writes the send event. A second opinion about when Koda may claim to have sent
-    something would drift from the first (docs/adr/0061 §17, docs/adr/0088 §6).
+    something would drift from the first (docs/adr/0061 §17, docs/adr/0090 §6).
 
     What this adds is the half the `Dokumendid` form cannot do: **the bytes and the
     send in one act.** That page asks a lawyer to upload the file, find it again in
@@ -610,7 +610,7 @@ def add_matter_koda_opinion(
     whom and when. The two remain separate records and this function writes both
     because a person pressed one button meaning both — which is what an atomic
     operation is for, and is not the same thing as inferring one from the other
-    (docs/adr/0061, docs/adr/0088 §6.2).
+    (docs/adr/0061, docs/adr/0090 §6.2).
 
     ``sent_on`` is a **day the person supplied**, and this function invents none:
     the service refuses `None` and refuses any precision but `DATE`, which is the
@@ -621,12 +621,12 @@ def add_matter_koda_opinion(
     Matter's sender**. An opinion on the first draft goes to the ministry; one at
     second reading goes to a Riigikogu committee. Assuming the sender would put a
     false recipient on the canonical outbound record of a professional letter
-    (docs/adr/0088 §6.3).
+    (docs/adr/0090 §6.3).
 
     Several per Matter is ordinary. Nothing here is unique on the Matter, nothing
     supersedes an earlier opinion, and no earlier `Submission`, `Document` or
     `DocumentVersion` is touched — a revised opinion is a new letter and new bytes,
-    which is what the immutable evidence store is for (docs/adr/0088 §6.4, §7).
+    which is what the immutable evidence store is for (docs/adr/0090 §6.4, §7).
     """
     from datetime import datetime, time
 
@@ -704,7 +704,7 @@ def add_procedural_development(
     government approves it; the file reaches the Riigikogu. Each of those is one
     dated step, and recording one used to mean up to three saves in three places —
     a `Märge` with no date box, a `Hetkeseis` change in the header, and
-    `+ Järgmine tegevus` under the launcher (lawyer feedback 14, docs/adr/0088 §5).
+    `+ Järgmine tegevus` under the launcher (lawyer feedback 14, docs/adr/0090 §5).
 
     **One `Entry`, and no new model.** A procedural development is a dated,
     attributable sentence about something that happened, which is what the
@@ -723,7 +723,7 @@ def add_procedural_development(
     **Nothing is derived from the sentence.** No stage is inferred from the words,
     no next step is generated, and a save that names neither changes neither. What
     a person did not answer is not a thing this function decides for them
-    (docs/adr/0088 §5.3).
+    (docs/adr/0090 §5.3).
 
     ``stage`` goes through `change_stage`, which is the canonical service and
     writes its own `MATTER_STAGE_CHANGED` event; a stage equal to the one the file

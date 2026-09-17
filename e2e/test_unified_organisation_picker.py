@@ -235,8 +235,18 @@ def file_the_teema(page, title: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_sender_field_opens_with_a_search_box_and_quick_choices(page, base_url):
-    """The shape, top to bottom, as it arrives (task §3, §5)."""
+def test_the_sender_field_opens_as_an_empty_search_box(page, base_url):
+    """The shape, top to bottom, as it arrives (docs/adr/0088 §2).
+
+    This used to assert the opposite of its second half: a search box *and* a
+    row of quick choices under it. The lawyers' first feedback round withdrew
+    the row — an institution list to read before a question most people answer
+    by typing — and what is left is a box, a `+` and nothing else.
+
+    The catalogue has not shrunk, which is the other half of the assertion: the
+    chips are still in the document as real controls, and the search still finds
+    them.
+    """
     create_form(page, base_url)
 
     expect(box(page, SENDER)).to_be_visible()
@@ -245,24 +255,30 @@ def test_the_sender_field_opens_with_a_search_box_and_quick_choices(page, base_u
     expect(add_button(page, SENDER)).to_be_disabled()
     expect(results(page, SENDER)).to_be_hidden()
 
-    assert MINISTRY in chip_names(page, SENDER)
-    assert PARTNER in chip_names(page, SENDER)
+    assert chip_names(page, SENDER) == [], "Saatja should open with nothing drawn under the box"
+
+    offered = chip_names(page, SENDER, only_visible=False)
+    assert MINISTRY in offered
+    assert PARTNER in offered
 
 
-def test_the_search_box_is_above_the_quick_choices(page, base_url):
+def test_the_search_box_is_above_the_answers_it_produces(page, base_url):
     """«Search first» is the decision, and geometry is where it is true or not.
 
     A field that rendered the chips above the box would satisfy every other
-    assertion in this file while shipping the shape this round replaced.
+    assertion in this file while shipping the shape this round replaced. There
+    is nothing under the box until something has been chosen now, so the claim
+    is made against the chip an answer produces (docs/adr/0088 §2).
     """
     create_form(page, base_url)
+    choose_result(page, SENDER, PARTNER)
 
     field = box(page, SENDER).bounding_box()
-    chips = page.locator(f"#{SENDER}-valik label.chip").first.bounding_box()
+    chips = page.locator(f"#{SENDER}-valik label.chip", has_text=PARTNER).first.bounding_box()
 
     assert field and chips
     assert field["y"] + field["height"] <= chips["y"] + 1, (
-        f"the search box is not above the quick choices: {field} vs {chips}"
+        f"the search box is not above the answer it produced: {field} vs {chips}"
     )
 
 
@@ -348,9 +364,9 @@ def test_choosing_a_result_selects_the_existing_body_and_clears_the_query(page, 
     assert chosen_names(page, SENDER) == [PARTNER]
     expect(box(page, SENDER)).to_have_value("")
     expect(results(page, SENDER)).to_be_hidden()
-    # The quick choices are back, with the answer among them.
-    assert MINISTRY in chip_names(page, SENDER)
-    assert PARTNER in chip_names(page, SENDER)
+    # The answer is on screen and nothing else is: the field went back to being
+    # quiet rather than back to being a list (docs/adr/0088 §2).
+    assert chip_names(page, SENDER) == [PARTNER]
 
 
 def test_a_chosen_body_stays_visible_while_the_next_one_is_searched_for(page, base_url):
@@ -554,21 +570,25 @@ def test_searching_the_addressee_and_giving_up_is_not_an_answer(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("how", ["chip", "search"])
-def test_choosing_a_sender_answers_adressaat(page, base_url, how):
-    """The load-bearing rule, through both ways of choosing an existing body.
+def test_choosing_a_sender_answers_adressaat(page, base_url):
+    """The load-bearing rule, through the way an existing body is chosen.
 
     `e2e/test_counterparty_selection.py` owns this property; what is asserted
     here is that the *new control* reaches it — a picker that rebuilt the chip
     instead of ticking the one in the document, or swallowed the `change` event,
     would break the default silently (task §14).
+
+    This was parametrised over two ways of choosing, «chip» and «search», and
+    the first of them no longer exists: an unchosen body is not drawn until the
+    search finds it, and while there is a query in the box every unchosen chip
+    is hidden — so there is one path to a first answer now
+    (docs/adr/0088 §2). Clicking a chip that is *already* an answer — to untick
+    it, or to tick it again — is still a path, and
+    `e2e/test_counterparty_selection.py` exercises exactly that.
     """
     create_form(page, base_url)
 
-    if how == "chip":
-        page.locator(f"#{SENDER}-valik label.chip", has_text=MINISTRY).first.click()
-    else:
-        choose_result(page, SENDER, MINISTRY)
+    choose_result(page, SENDER, MINISTRY)
 
     assert chosen_names(page, ADDRESSEE) == [MINISTRY]
     assert summary(page) == f"Adressaat · {MINISTRY}"

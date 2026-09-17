@@ -1,4 +1,4 @@
-# 0088 — One lawyer workflow, from `Teema` to the next `Koja arvamus`
+# 0090 — One lawyer workflow, from `Teema` to the next `Koja arvamus`
 
 **Status:** accepted
 **Date:** 2026-09-17

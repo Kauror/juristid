@@ -260,7 +260,7 @@ def set_next_action(
 #: recognises one already written, and the page that shows the lawyer what they
 #: are about to create. A sentence spelled twice is a sentence that drifts, and
 #: here a drift would turn the idempotency check off without anything looking
-#: wrong (docs/adr/0088 §1).
+#: wrong (docs/adr/0090 §1).
 #:
 #: It is the department's own words for the work — writing Koda's opinion — and
 #: the first person, because it is the lawyer's own instruction to themselves,
@@ -284,7 +284,7 @@ def establish_opinion_preparation_action(
     `+ Järgmine tegevus`, and type the sentence «Koostan arvamuse» themselves —
     the same information entered twice, in two places, in a product whose whole
     claim is that routine work is faster than Excel plus OneNote (lawyer
-    feedback 9, docs/adr/0088 §1).
+    feedback 9, docs/adr/0090 §1).
 
     **It creates the step from a date the person supplied, and invents nothing.**
     ``prepare_by`` is required here, which is the point rather than an
@@ -293,7 +293,7 @@ def establish_opinion_preparation_action(
     end of the month and not the Matter's creation date. A blank field creates no
     step at all, because a commitment nobody stated is a commitment nobody can be
     held to and is indistinguishable a week later from one somebody made
-    (docs/adr/0078 §2, docs/adr/0088 §1.2).
+    (docs/adr/0078 §2, docs/adr/0090 §1.2).
 
     **Idempotent, and that is what makes it safe to call from a creation flow.**
     A browser that retries a save — a double-pressed button, a resubmitted POST, a

@@ -1,6 +1,6 @@
 """`Teiste arvamus` in a real browser: record one, read it, correct it.
 
-**This is the `+ Väline seisukoht` panel under the name docs/adr/0088 §3 gave
+**This is the `+ Väline seisukoht` panel under the name docs/adr/0090 §3 gave
 it.** The record, the route, the panel id and every rule below are unchanged; what
 moved is the chip's label and the heading a filed row reads under, because the
 first lawyer test needed «a member company answered our consultation» told apart
@@ -136,12 +136,12 @@ def test_the_panel_asks_for_the_seven_things_and_nothing_else(page, base_url):
     expect(panel(page).locator("[name=url]")).to_be_visible()
     expect(panel(page).locator("input[type=file]")).to_have_count(1)
     expect(panel(page).locator("[name=engagement]")).to_be_visible()
-    # `Juristi märkus` — the seventh, and the one docs/adr/0088 §4 added: this
+    # `Juristi märkus` — the seventh, and the one docs/adr/0090 §4 added: this
     # office's reading of the position, beside it and never inside it.
     expect(panel(page).locator("[name=lawyer_note]")).to_be_visible()
     # And **no** `Allikas` here. A discovered position has an author by
     # definition, and a free text box answering «whose position is this» would be
-    # a ninth way of naming an institution (docs/adr/0088 §3.3).
+    # a ninth way of naming an institution (docs/adr/0090 §3.3).
     expect(panel(page).locator("[name=source_label]")).to_have_count(0)
     # The four precisions, through the one shared control.
     for label in ("Täpne päev", "Kuu", "Kvartal", "Aasta"):

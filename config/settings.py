@@ -485,6 +485,31 @@ INTAKE_READER_IDLE_SECONDS = env_float("INTAKE_READER_IDLE_SECONDS", 0.5)
 # would strand the form it was reading for long past the session's own life.
 INTAKE_READER_STALE_CLAIM_MINUTES = env_int("INTAKE_READER_STALE_CLAIM_MINUTES", 5)
 
+# Whether `Uus teema` offers what the reader found in the file.
+#
+# **Off, by product decision of 2026-09-16, and the code stays.** The first
+# structured feedback from the lawyers using the demo was that the suggestion
+# area on the creation form costs more attention than it returns: a panel of
+# machine proposals over a form somebody is already filling in is one more thing
+# to read, evaluate and dismiss on the page they use most. The capture path is
+# manual-first again until the department asks for the reading back
+# (docs/adr/0088).
+#
+# **What this switch governs, exactly.** Whether the document-derived
+# suggestions reach the lawyer: the «Failist leitud» panel, the `data-prefill-*`
+# markers the browser writes into empty controls, and the reading states the
+# form prints while it waits for them. It governs nothing about *files*.
+# Choosing a file still stages it, staging still promotes it into one Document
+# with one immutable version, and a refused save still holds it
+# (app/matters/views.py `_intake_context`, app/matters/intake_staging.py).
+#
+# **And it is a switch rather than a deletion** for the reason ADR 0072 gave
+# for the capability in the first place: the rules, the vocabulary and the
+# reader are reviewed work with a corpus behind them, and the decision withdrawn
+# here is about where a lawyer meets them, not about whether they are right.
+# Turning it on restores the feature; nothing is migrated in either direction.
+MATTER_INTAKE_SUGGESTIONS_ENABLED = env_bool("MATTER_INTAKE_SUGGESTIONS_ENABLED", default=False)
+
 # --------------------------------------------------------------------------
 # Search freshness
 # --------------------------------------------------------------------------

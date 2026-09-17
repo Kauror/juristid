@@ -95,7 +95,7 @@ def _recorded(matter, organisation, actor, **kwargs):
 
     **Provenance is left to the default**, which is `DISCOVERED` — so everything
     this file records is a `Teiste arvamus`, and that is why the headlines below
-    read under that name rather than under `Väline seisukoht`. docs/adr/0088 §3
+    read under that name rather than under `Väline seisukoht`. docs/adr/0090 §3
     split the chip in two and named the record by how it reached the file; nothing
     else in this file's subject moved, and the two rules that genuinely differ —
     the optional author for aggregate received feedback, and the lawyer's own note
@@ -1040,7 +1040,7 @@ def _post(client, name, matter, data=None, **kwargs):
 def _panel_markup(body: str) -> str:
     """The `+ Teiste arvamus` panel alone, sliced out of the page.
 
-    **The page now renders this panel twice.** docs/adr/0088 §3 split the chip in
+    **The page now renders this panel twice.** docs/adr/0090 §3 split the chip in
     two over one record and one partial, so `+ Meile saadetud tagasiside` comes
     first and carries the same field names — and `_tag_with` finds the *first*
     match. Every assertion in this file is about the second one, which is the panel
@@ -1078,7 +1078,7 @@ def _stated_on_box(body: str) -> str:
     helper answers for both:
 
     * a **whole Teema page** — a fresh render or a refused save — renders the
-      shared panel twice since docs/adr/0088 §3, so the page is sliced to
+      shared panel twice since docs/adr/0090 §3, so the page is sliced to
       `+ Teiste arvamus` first and the box found inside it. Searching the page
       would find `+ Meile saadetud tagasiside`'s box, which no assertion here is
       about;
@@ -1111,7 +1111,7 @@ def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matte
 
     assert 'id="lisa-valine-seisukoht"' in body
     # The chip is named by how the record reached the file. It was
-    # `+ Väline seisukoht`; docs/adr/0088 §3 split it in two, and this panel is
+    # `+ Väline seisukoht`; docs/adr/0090 §3 split it in two, and this panel is
     # the half that records what Koda found somewhere.
     assert "+ Teiste arvamus" in body
     assert "Rahandusministeerium" in body
@@ -1212,7 +1212,7 @@ def test_a_save_recording_nothing_is_refused_and_keeps_what_was_typed(
     # in **this** panel's controls. `+ Meile saadetud tagasiside` renders the same
     # field names above it and is unbound, so a search over the whole page would
     # find its empty twin and pass or fail for the wrong reason
-    # (docs/adr/0088 §3.5, `_panel_markup`).
+    # (docs/adr/0090 §3.5, `_panel_markup`).
     panel = _panel_markup(body)
     assert 'value="14.03.2026"' in _stated_on_box(body)
     assert "selected" in _tag_with(panel, f'value="{engagement.pk}"')

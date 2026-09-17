@@ -46,14 +46,6 @@ pytestmark = pytest.mark.e2e
 
 WIDTHS = [1440, 1024, 420]
 
-#: Today, as the `Saadetud` field reads it. A registered send may not be in the
-#: future, and a Matter this file creates is created *now* — so today is the only
-#: day that puts a send after its own Matter's `Alustatud`. Anything earlier is a
-#: back-fill, which is a real shape and is pinned in
-#: `tests/test_teema_approved_target.py` rather than photographed here.
-TODAY_ET = date.today().strftime("%d.%m.%Y")
-TODAY_LABEL = f"{date.today().day}.{date.today().month}.{date.today().year}"
-
 #: The `N p` countdown the strip used to print on a future milestone.
 COUNTDOWN = re.compile(r"\d+\s+p")
 
@@ -100,6 +92,43 @@ def strip(page):
 
 def labels(page) -> list[str]:
     return [text.strip() for text in page.locator(".tl-step__what").all_inner_texts()]
+
+
+def dates_drawn(page) -> list[str]:
+    """Every column's date, in the order the strip draws them."""
+    return [text.strip() for text in page.locator(".tl-step__date").all_inner_texts()]
+
+
+def started_on(page) -> str:
+    """The day the *server* believes it is, read off the Matter just created.
+
+    Not `date.today()` in the test process. The `Saadetud` field is the one
+    value in this file that has to be *today*: a registered send may not be in
+    the future, and a Matter this file creates is created *now*, so today is the
+    only day that puts a send after its own Matter's `Alustatud`. Anything
+    earlier is a back-fill, which is a real shape and is pinned in
+    `tests/test_teema_approved_target.py` rather than photographed here.
+
+    The application answers in `Europe/Tallinn` and the browser server is a
+    different process from pytest, which on CI runs in UTC. For the three hours
+    a day those two calendars disagree, a `date.today()` read here is yesterday
+    to the server — so the send lands *before* the `Alustatud` it was meant to
+    follow, the strip sorts it first, and seven tests fail over a date nobody
+    typed. Read as a module-level constant it was worse still: the import
+    happens minutes before the assertion, so the two could straddle midnight on
+    their own.
+
+    `Alustatud` is the Matter's own beginning as that server stamped it, in the
+    `j.n.Y` form `parse_estonian_date` accepts, and it is exactly the value the
+    send must not precede — so the comparison is between two readings of one
+    clock instead of two clocks.
+    """
+    drawn = dates_drawn(page)
+    assert drawn, "the strip drew no dated column, so there is no server day to read"
+    assert labels(page)[0] == "Alustatud", (
+        f"the leftmost column is not the beginning: {labels(page)}"
+    )
+    return drawn[0]
 
 
 def assert_fits(page, width: int) -> None:
@@ -340,7 +369,7 @@ def test_the_whole_vocabulary_fits_on_one_row(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     matter_url = create_matter(page, base_url, f"Käiguriba kolm verstaposti {width}")
-    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=TODAY_ET)
+    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page))
 
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
@@ -373,8 +402,7 @@ def test_a_new_matter_reads_a_beginning_and_a_destination(page, base_url, width)
     create_matter_with_deadline(page, base_url, f"Käiguriba tähtaeg {width}", deadline=et(21))
 
     assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
-    dates = [text.strip() for text in page.locator(".tl-step__date").all_inner_texts()]
-    assert dates[-1] == et(21), dates
+    assert dates_drawn(page)[-1] == et(21), dates_drawn(page)
     # A future column claims nothing about the past and counts down to nothing.
     assert not COUNTDOWN.search(strip(page).inner_text()), "the strip still counts down"
     for gone in ("praegu", "Lõpp", "Plaanis", "Järgmiseks"):
@@ -392,7 +420,7 @@ def test_a_deadline_and_a_sent_opinion_read_in_date_order(page, base_url, width)
     matter_url = create_matter_with_deadline(
         page, base_url, f"Käiguriba tähtaeg ja arvamus {width}", deadline=et(21)
     )
-    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=TODAY_ET)
+    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page))
 
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
@@ -497,7 +525,7 @@ def test_a_five_column_file_still_fits_on_one_row(page, base_url, width):
     matter_url = create_matter_with_deadline(
         page, base_url, f"Käiguriba viis verstaposti {width}", deadline=et(21)
     )
-    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=TODAY_ET)
+    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page))
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
     add_a_commencement(page, what="põhiosa", when=et(400))
@@ -527,8 +555,9 @@ def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     matter_url = create_matter(page, base_url, f"Käiguriba kaks arvamust {width}")
-    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=TODAY_ET)
-    register_a_send(page, matter_url, filename="Koja-taiendav-arvamus.pdf", sent_on=TODAY_ET)
+    began = started_on(page)
+    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=began)
+    register_a_send(page, matter_url, filename="Koja-taiendav-arvamus.pdf", sent_on=began)
 
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
@@ -540,8 +569,7 @@ def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
     # `tests/test_teema_approved_target.py`, where a Matter's creation can be
     # backdated far enough for two distinct send days to be realistic.
     assert labels(page) == ["Alustatud", "Koja arvamus", "Koja arvamus"]
-    dates = [text.strip() for text in page.locator(".tl-step__date").all_inner_texts()]
-    assert dates == [TODAY_LABEL, TODAY_LABEL, TODAY_LABEL], dates
+    assert dates_drawn(page) == [began, began, began], dates_drawn(page)
     boxes = [
         page.locator(".tl-step").nth(index).bounding_box()
         for index in range(page.locator(".tl-step").count())
@@ -829,3 +857,112 @@ def test_a_round_with_no_reply_by_date_draws_nothing(page, base_url):
 
     assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
     assert "Tagasiside tähtaeg" not in strip(page).inner_text()
+
+
+# ---------------------------------------------------------------------------
+# Which clock this file reads — driven over the calendar, not waited for
+# ---------------------------------------------------------------------------
+#
+# `started_on` exists because pytest and the application are two processes with
+# two calendars. On CI the runner is UTC and the server answers in
+# `Europe/Tallinn`, so for the three hours after 21:00 UTC every day the two
+# disagree by a day — and on 2026-09-16 a run that began at 20:54 UTC and
+# asserted at 21:01 dated seven sends yesterday, which put `Koja arvamus` to the
+# left of the `Alustatud` it was supposed to follow.
+#
+# Waiting for midnight is not a test. What is asserted below is the property
+# that makes midnight uninteresting: the day this file types into `Saadetud` is
+# read from the page, and no calendar the test process can be given moves it.
+
+
+class _Column:
+    """One `all_inner_texts()` answer."""
+
+    def __init__(self, texts: list[str]) -> None:
+        self._texts = texts
+
+    def all_inner_texts(self) -> list[str]:
+        return list(self._texts)
+
+
+class _StubStrip:
+    """Exactly as much of a page as `started_on` is allowed to touch.
+
+    An unexpected selector raises rather than returning an empty list: the point
+    of the stub is that it fails if the helper ever starts reading something
+    else, not that it quietly answers whatever it is asked.
+    """
+
+    def __init__(self, columns: list[tuple[str, str]]) -> None:
+        self._columns = columns
+
+    def locator(self, selector: str):
+        if selector == ".tl-step__date":
+            return _Column([drawn for _, drawn in self._columns])
+        if selector == ".tl-step__what":
+            return _Column([what for what, _ in self._columns])
+        raise AssertionError(f"started_on read an unexpected selector: {selector}")
+
+
+class _ProcessDay(date):
+    """`date`, with a today this process chose. Set per test by `monkeypatch`."""
+
+    day_in_force = date(2026, 9, 16)
+
+    @classmethod
+    def today(cls) -> date:
+        return cls.day_in_force
+
+
+@pytest.mark.parametrize(
+    "process_day",
+    [
+        # The hour the failure happened: the server has turned over, pytest has
+        # not.
+        date(2026, 9, 16),
+        # And the mirror image, which a differently configured runner produces.
+        date(2026, 9, 18),
+        # A calendar with nothing to do with the server's at all.
+        date(2019, 1, 1),
+    ],
+)
+def test_the_send_day_is_the_server_s_whatever_day_this_process_thinks_it_is(
+    monkeypatch, process_day
+):
+    """The same strip, read under three test-process calendars, one answer."""
+    monkeypatch.setattr(_ProcessDay, "day_in_force", process_day)
+    monkeypatch.setitem(globals(), "date", _ProcessDay)
+
+    # The patch really is in force — otherwise the assertion below would hold
+    # for a helper that does read this clock, and prove nothing.
+    assert et(0) == f"{process_day.day}.{process_day.month}.{process_day.year}"
+
+    page = _StubStrip([("Alustatud", "17.9.2026"), ("Arvamuse tähtaeg", "8.10.2026")])
+    assert started_on(page) == "17.9.2026"
+
+
+def test_a_strip_with_no_beginning_is_a_failure_rather_than_a_date():
+    """A send dated off a strip whose first column is not `Alustatud` would be
+    dated off whatever that column is — a deadline three weeks out, and a
+    refused save. The helper says so instead of guessing."""
+    with pytest.raises(AssertionError):
+        started_on(_StubStrip([("Arvamuse tähtaeg", "8.10.2026")]))
+    with pytest.raises(AssertionError):
+        started_on(_StubStrip([]))
+
+
+def test_no_day_in_this_file_is_decided_at_import():
+    """The constants that caused it are gone and may not come back.
+
+    `TODAY_ET` and `TODAY_LABEL` were read once, when pytest imported this
+    module — minutes before the assertions that used them, which is how a single
+    test run came to straddle midnight on its own. `et` still reads the clock,
+    deliberately: it is only ever asked for a day nine or more ahead, where a
+    calendar that is off by one is still unambiguously the future.
+    """
+    at_import = [
+        name
+        for name, value in globals().items()
+        if isinstance(value, (str, date)) and name.isupper() and name.startswith("TODAY")
+    ]
+    assert at_import == [], at_import

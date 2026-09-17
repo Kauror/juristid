@@ -1266,6 +1266,67 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
         return ""
 
     @property
+    def policy_area_summary(self) -> str:
+        """The Valdkonnad this form currently holds, as labels to read.
+
+        What the collapsed Valdkond disclosure says after the word itself:
+        «Valdkonnad · Ehitus, Keskkond», or «Valdkonnad» when nothing is chosen.
+        The whole argument for folding the vocabulary away is that a shut field
+        is quieter than twenty-two chips; a shut field that also hid *the
+        answer* would be quieter and worse, because then it has to be opened
+        every time to find out (docs/adr/0090 §3).
+
+        Read off the rendered choices rather than by fetching the rows, for the
+        reason `addressee_summary` reads off its own: the catalogue is already
+        on the page as `(pk, name)` pairs and a query per render buys nothing.
+
+        `Muu` is included by name when it is ticked, because it *is* an answer
+        here — it is the affordance that reveals the free-text box, and a
+        summary reading «Valdkonnad» over a ticked `Muu` and a sentence of typed
+        text would be wrong about the one state somebody has to come back to.
+
+        Unbound — the ordinary first visit — is empty by construction: nothing
+        is chosen, so there is nothing to say.
+        """
+        if not self.is_bound:
+            return ""
+        # `_raw_value` and not `form.data.getlist`: a `CheckboxSelectMultiple`
+        # already knows how to read its own many-valued answer out of a
+        # `QueryDict` or an ordinary dict, and asking the widget is what keeps
+        # this working on a form a caller constructed by hand.
+        chosen = {str(value) for value in (_raw_value(self, "policy_areas") or [])}
+        # `fields[...]` is typed as the base Field, which has no `choices`. This
+        # one is a ModelMultipleChoiceField by construction.
+        names = [
+            str(label)
+            for value, label in cast(Any, self.fields["policy_areas"]).choices
+            if str(value) in chosen
+        ]
+        if _raw_value(self, "policy_area_other_selected"):
+            names.append(str(self.fields["policy_area_other_selected"].label))
+        return ", ".join(names)
+
+    @property
+    def policy_area_disclosure_open(self) -> bool:
+        """Whether the Valdkond disclosure renders open.
+
+        Server-decided and server-rendered, so a browser with scripting off gets
+        the same page: a refusal to read, or a `Muu` whose free-text box is
+        inside the fold and has to be reachable.
+
+        Deliberately *not* opened merely by an answer being present. A refused
+        save that comes back with two areas ticked says so in the summary, and
+        unfolding the vocabulary to prove it would undo the whole change on the
+        one path where somebody is already being asked to fix something else
+        (`addressee_disclosure_open` takes the same position, task §11 C).
+        """
+        if not self.is_bound:
+            return False
+        if self.errors.get("policy_areas") or self.errors.get("policy_area_other"):
+            return True
+        return bool(_raw_value(self, "policy_area_other_selected"))
+
+    @property
     def addressee_disclosure_open(self) -> bool:
         """Whether the Adressaat disclosure renders open.
 
@@ -2512,7 +2573,7 @@ def _precision_fields(
 #: here computes one.
 #:
 #: docs/adr/0086 §2 opened the box on today + 7 and this module held the seven.
-#: docs/adr/0088 §2 empties the box: recording that Koda asked somebody something
+#: docs/adr/0090 §2 empties the box: recording that Koda asked somebody something
 #: is a completed act, and a pre-filled reply-by date turned every such act into a
 #: managed wait with a work item and a second act to end it — work the application
 #: was assigning rather than work a lawyer had taken on (lawyer feedback 11).
@@ -2713,7 +2774,7 @@ class InitialOpinionActionForm(forms.Form):
     `matter_create.html` are being rewritten in parallel by the classification
     work: a field added to that class and that template would be a merge conflict
     in the two files most likely to move, over a question neither of them is about
-    (docs/adr/0088 §1.4).
+    (docs/adr/0090 §1.4).
 
     **One field, because the sentence is not a question.** A normal incoming
     consultation begins the same way every time — the lawyer will write Koda's
@@ -2733,7 +2794,7 @@ class InitialOpinionActionForm(forms.Form):
 
     A blank box therefore creates nothing. Not an undated step either: `WAIT` and
     `MONITOR` may be dateless and this is neither, and turning a blank field into
-    an open-ended commitment would be a promise nobody made (docs/adr/0088 §1.2).
+    an open-ended commitment would be a promise nobody made (docs/adr/0090 §1.2).
 
     `use_required_attribute` is off for the reason `NextActionForm`'s is: this is
     optional, and with the HTML attribute present a browser would refuse to submit
@@ -4283,7 +4344,7 @@ class CompactEngagementForm(forms.Form):
     pre-filled today + 7 opened on every such act is work the application was
     assigning rather than work a lawyer had taken on. The wait still exists, is
     still one `WorkItem`, and is still ended by `Lõpeta kaasamine` — it is now
-    asked for rather than given (lawyer feedback 11, docs/adr/0088 §2).
+    asked for rather than given (lawyer feedback 11, docs/adr/0090 §2).
 
     **`Liik` is gone from this panel and no longer a `ChipChoices` question.**
     `Küsitlus` / `Koosolek` / `Kirjade voor` was a classification the department
@@ -4370,7 +4431,7 @@ class CompactEngagementForm(forms.Form):
     #: asjad, and then required a second deliberate act — `Lõpeta kaasamine` — to
     #: get off the page. Lawyers described the result as too complicated, and they
     #: were describing work the application had assigned them rather than work
-    #: they had taken on (lawyer feedback 11, docs/adr/0088 §2).
+    #: they had taken on (lawyer feedback 11, docs/adr/0090 §2).
     #:
     #: **Nothing else about the wait moves.** The column stays, the quick spans
     #: stay beside the box, a set deadline still opens a wait and still draws
@@ -4378,7 +4439,7 @@ class CompactEngagementForm(forms.Form):
     #: columns and their `CHECK` are untouched, and every round already waiting
     #: goes on waiting. What changed is that the wait is now something a lawyer
     #: **asks for** rather than something a blank form gives them
-    #: (docs/adr/0086 §3, §6, narrowed by docs/adr/0088 §2).
+    #: (docs/adr/0086 §3, §6, narrowed by docs/adr/0090 §2).
     #:
     #: A past date is accepted: a consultation recorded months later had a
     #: deadline months ago, and refusing it would make the historical record
@@ -4995,7 +5056,7 @@ def _external_position_lawyer_note_field() -> forms.CharField:
     having said it, or a `Märge` that then said nothing about which position it
     was about. The first is the serious one — a professional record that
     attributes this office's criticism to the body being criticised is a record
-    that lies (docs/adr/0088 §4).
+    that lies (docs/adr/0090 §4).
 
     **It satisfies nothing.** The source rule counts the position, the address
     and the file; a save whose only content is this is refused exactly as an
@@ -5023,7 +5084,7 @@ def _external_position_source_label_field() -> forms.CharField:
     received-feedback panel only, because it is the only kind of record that may
     carry one, and it exists so that a survey of 234 companies does not have to
     be filed under an invented organisation or under one arbitrary respondent
-    standing for the rest (docs/adr/0088 §3.3).
+    standing for the rest (docs/adr/0090 §3.3).
 
     It is not a title and not a summary: it names *where the answers came from*,
     so the chronology row has an author to print. A record that needs more than a
@@ -5099,7 +5160,7 @@ class ExternalPositionFieldsMixin:
     #: box, so a POST carrying `source_label` to it is a value that did not come
     #: off a page and the shared `clean` refuses the record as unauthored. The
     #: service refuses it again under the row lock, because a form is not a
-    #: boundary (docs/adr/0088 §3.3).
+    #: boundary (docs/adr/0090 §3.3).
     allows_source_label: bool = False
 
     #: Where the organisation radio group stops being chips and starts being
@@ -5149,7 +5210,7 @@ class ExternalPositionFieldsMixin:
         #    collection of answers it came from. Which of the two sentences a
         #    person reads depends on which answers are actually available to
         #    them, because «vali organisatsioon» on a survey of 234 companies is
-        #    the refusal that made somebody invent one (docs/adr/0088 §3.3).
+        #    the refusal that made somebody invent one (docs/adr/0090 §3.3).
         named = bool(cleaned.get("organisation")) or bool(
             (cleaned.get("organisation_name") or "").strip()
         )
@@ -5164,7 +5225,7 @@ class ExternalPositionFieldsMixin:
         # The lawyer's own note, trimmed the way the service trims it — and
         # deliberately **not** read by rule 4 below. A record holding only this
         # office's comment about a position nobody can read is refused exactly as
-        # an empty one is (docs/adr/0088 §4).
+        # an empty one is (docs/adr/0090 §4).
         cleaned["lawyer_note"] = (cleaned.get("lawyer_note") or "").strip()
 
         # 2. The address, through the service's own door, so a hostile scheme is
@@ -5204,7 +5265,7 @@ class ExternalPositionFieldsMixin:
 class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     """One panel behind two chips — `+ Meile saadetud tagasiside` and `+ Teiste arvamus`.
 
-    Two professional facts with one shape, which is docs/adr/0088 §3's whole
+    Two professional facts with one shape, which is docs/adr/0090 §3's whole
     claim: an author, a source a colleague can open, an optional date at the
     precision it is known to, and — new in this round — an optional `Juristi
     märkus` that is never part of the source. Four models would have been four
@@ -5216,13 +5277,13 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     a crafted POST can move: `+ Teiste arvamus` cannot be made to file received
     feedback by adding a parameter, because neither instance reads one. It is the
     reasoning `NextActionForm` gives for having no `kind` field, applied to a
-    distinction the page genuinely does decide (ADR 0052 §1, docs/adr/0088 §3.5).
+    distinction the page genuinely does decide (ADR 0052 §1, docs/adr/0090 §3.5).
 
     **`Organisatsioon` is required for `Teiste arvamus` and not for received
     feedback**, and that asymmetry is the only place the authorship rule bends. A
     survey of 234 industrial companies that produced 58 answers has no single
     author; `Allikas` names the collection instead, and it is offered on that
-    panel alone (docs/adr/0088 §3.3).
+    panel alone (docs/adr/0090 §3.3).
 
     Six controls, of which two are required together and four are not: the
     institution, a source — a link, a file, or both — and then the date, the
@@ -5287,7 +5348,7 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
         # invalid HTML, a `<label for>` reaching the wrong box, and
         # `getElementById` answering whichever came first. The POST keys are
         # untouched, which is the reason `auto_id` is preferred over a form
-        # `prefix` here (docs/adr/0065, docs/adr/0088 §3.5).
+        # `prefix` here (docs/adr/0065, docs/adr/0090 §3.5).
         kwargs.setdefault("auto_id", f"id_{self.panel_slug}_%s")
         super().__init__(*args, **kwargs)
         # `workspace_attachments` puts its id on the *widget*, which `auto_id`
@@ -5301,7 +5362,7 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
             # a field a POST could fill either. `+ Teiste arvamus` has an author
             # by definition, and a free text box answering *whose position is
             # this* would be a ninth way of naming an institution beside the one
-            # shared catalogue (docs/adr/0073, docs/adr/0088 §3.3).
+            # shared catalogue (docs/adr/0073, docs/adr/0090 §3.3).
             del self.fields["source_label"]
         # No `record`: this panel only ever creates. The «Muutmata» chip is a
         # correction affordance and there is nothing here to keep unchanged.
@@ -5325,7 +5386,7 @@ class ReceivedFeedbackForm(CompactExternalPositionForm):
     because an aggregate answer has no single author and the two things this
     panel used to force were an invented organisation called «234 ettevõtet» and
     one arbitrary respondent standing for the rest (lawyer feedback 12,
-    docs/adr/0088 §3.3).
+    docs/adr/0090 §3.3).
 
     A subclass rather than a flag on the caller, so that *which questions this
     panel asks* and *what it writes* are one decision in one place. The
@@ -5407,7 +5468,7 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         # something*, made silently, on a record whose whole point is provenance.
         # Correcting a mis-filing is recording the position again under the right
         # chip; there is no delete, so both rows stay, which is the honest history
-        # of one (docs/adr/0088 §3.5).
+        # of one (docs/adr/0090 §3.5).
         #
         # The rule is `EngagementForm`'s, read the other way round: an editor must
         # not be able to write a shape its creating surface cannot.
@@ -5479,7 +5540,7 @@ class KodaOpinionForm(forms.Form):
     asks the four questions that act has and posts to
     `register_sent_opinion_on_open_matter`, which is the same service the
     `Dokumendid` form already posts to. No `KodaOpinion` model, no second
-    statistic, no second withdrawal path (lawyer feedback 13, docs/adr/0088 §6).
+    statistic, no second withdrawal path (lawyer feedback 13, docs/adr/0090 §6).
 
     **Four questions, and each of them is a fact a send really has.**
 
@@ -5494,14 +5555,14 @@ class KodaOpinionForm(forms.Form):
     `DocumentVersion` pipeline under `DocumentRole.KODA_SUBMISSION_FINAL`, and
     **uploading a file here is not what asserts the send** — pressing this button
     is, which is why the two are one transaction rather than one act
-    (docs/adr/0088 §6.2).
+    (docs/adr/0090 §6.2).
 
     `Adressaadid` — required, at least one, and **not** defaulted from the
     Matter's sender. An opinion on the first draft goes to the ministry; one at
     second reading goes to a Riigikogu committee; one on a revised text may go to
     a third body. Assuming the original sender would put a false recipient on the
     canonical outbound record of a professional letter, which is the one thing a
-    recipient column may not do (lawyer feedback 14, docs/adr/0088 §6.3).
+    recipient column may not do (lawyer feedback 14, docs/adr/0090 §6.3).
 
     `Pealkiri` — optional, and the filename answers it when it is left blank.
     «Koja arvamus pakendiseaduse eelnõule» is worth typing and
@@ -5520,7 +5581,7 @@ class KodaOpinionForm(forms.Form):
     opinion on the VTK, one on the draft, one during Riigikogu proceedings and one
     on the revised text are four sends and four Submissions. There is no
     `Matter.final_opinion` and this panel does not invent one (ADR 0061,
-    docs/adr/0088 §6.4).
+    docs/adr/0090 §6.4).
     """
 
     use_required_attribute = False
@@ -5647,7 +5708,7 @@ class ProceduralDevelopmentForm(forms.Form):
     attached, the `Hetkeseis` it puts the file in, and the next thing the lawyer
     will do about it. One panel, one save, one transaction.
 
-    **It writes an `Entry`, not a new model**, and that is docs/adr/0088 §5's
+    **It writes an `Entry`, not a new model**, and that is docs/adr/0090 §5's
     whole decision. A procedural development is a dated, attributable sentence
     about something that happened, which is exactly what the authored chronology
     is: `occurred_at` already means «when the work happened, not when it was
@@ -5663,7 +5724,7 @@ class ProceduralDevelopmentForm(forms.Form):
     or leaves it, and leaving it changes nothing. The vocabulary is
     `active_stages()` read through the canonical service, so a Package-A
     revision of the stage list arrives here without this form knowing about it
-    (docs/adr/0088 §5.3, §8).
+    (docs/adr/0090 §5.3, §8).
 
     `Järgmiseks` and `Millal?` are the same two questions `NextActionForm` asks,
     asked here because «the ministry sent a new draft» and «I will read it by
@@ -5680,7 +5741,7 @@ class ProceduralDevelopmentForm(forms.Form):
     since the foundational schema and every chronology reader, ordering and page
     of the timeline depends on it: a development somebody genuinely cannot date is
     a `+ Märge`, which stamps the moment it was recorded and claims nothing about
-    when anything happened (docs/adr/0088 §5.2).
+    when anything happened (docs/adr/0090 §5.2).
     """
 
     use_required_attribute = False
@@ -5741,7 +5802,7 @@ class ProceduralDevelopmentForm(forms.Form):
         # The active vocabulary, in the department's reviewed order, read through
         # the canonical selector rather than from a list in this module. Package A
         # may revise what is active; this form inherits that without being edited
-        # (`app/workflow/selectors.py`, docs/adr/0088 §8).
+        # (`app/workflow/selectors.py`, docs/adr/0090 §8).
         set_choices(self, "stage", active_stages())
 
     def clean_body(self) -> str:

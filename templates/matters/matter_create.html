@@ -72,8 +72,16 @@
       Outside the intake panel on purpose — the poller swaps `#intake-panel`
       every 1.2 s, and a field inside it would be reset to the server's copy
       on every swap.
+
+      Rendered only where there are suggestions to be in use. With the panel
+      withdrawn nothing ever writes it and nothing ever reads it back, and a
+      hidden field carrying an empty string about a feature that is not on
+      screen is the sort of leftover that outlives the reason for it
+      (docs/adr/0090).
     {% endcomment %}
-    <input type="hidden" name="suggestion_state" value="{{ suggestion_state }}">
+    {% if intake_suggestions_offered %}
+      <input type="hidden" name="suggestion_state" value="{{ suggestion_state }}">
+    {% endif %}
 
     {% if form.non_field_errors %}
       <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
@@ -298,13 +306,30 @@
         sender here *is* answering Adressaat, because it is the same
         `Organisation` — one catalogue, two questions about it (static/js/app.js
         `bindAddresseeDefault`, docs/adr/0069).
+
+        **`quiet`, and it is the whole of what the lawyers asked for here.** The
+        field used to open with a row of eight institutions under an empty box,
+        which is a list to read before a question anybody wanted to answer by
+        typing. It opens as an empty box now: type, and the bodies that match
+        appear; choose one and it is a chip, exactly as it was. Nothing about
+        what the field *means* moved — same two fields, same names, same
+        `resolve_source_organisations`, same refusal of an ambiguous spelling,
+        same catalogue — and the shortlist the form ranks is still what the
+        search ranks first and still what Adressaat defaults from
+        (docs/adr/0090 §2, organisation_picker.html `quiet`).
+
+        Adressaat below keeps its chips, and that is not an oversight: it is
+        behind a disclosure that is shut on the ordinary visit and answered by
+        the sender before anybody opens it, so it costs nothing at rest. What
+        `Uus teema` asks of the two fields is different and this round changed
+        only the one the feedback was about (task §5).
       {% endcomment %}
       <fieldset class="field senderpick">
         <legend class="field__label">
           {{ form.source_organisations.label }}
           <span class="field__count" data-chipcount-for="source_organisations"></span>
         </legend>
-        {% include "matters/partials/organisation_picker.html" with picker_id="saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True sender_row=True typed_hook="sender" %}
+        {% include "matters/partials/organisation_picker.html" with picker_id="saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True sender_row=True typed_hook="sender" quiet=True %}
         {% if form.source_organisations.errors %}
           <span class="field__error" id="{{ form.source_organisations.auto_id }}_error">{{ form.source_organisations.errors|first }}</span>
         {% elif form.source_organisations_other.errors %}
@@ -316,54 +341,86 @@
     {# 5 — Valdkonnad. #}
     <div class="createform__row">
       <fieldset class="field">
-        <legend class="field__label">
-          {{ form.policy_areas.label }}
-          <span class="field__count" data-chipcount-for="policy_areas"></span>
-        </legend>
+        <legend class="field__label visually-hidden">{{ form.policy_areas.label }}</legend>
         {% comment %}
-          All of them, wrapping, in the department's reviewed order.
+          Behind a door, and the door says what is behind it.
 
-          The approved design draws ten chips and a "Veel 15" affordance, drawn
-          against a vocabulary of twenty-five. Two of those were withdrawn with
-          this same design — `Olulised tähtajad`, which is a watch list and not
-          a subject area, and `Muud teemad`, which is `Muu` twice — and what is
-          left is twenty-one labels plus `Muu`. Three wrapped rows show all of
-          them; a "Veel" affordance over twenty-two would hide half the
-          vocabulary behind a click, and deciding *which* half means ordering by
-          usage, which this control deliberately stopped doing — an order
-          derived from records is a disclosure about those records
-          (app/taxonomy/vocabulary.py, Uus teema redesign §7).
+          This row used to draw the whole vocabulary — nineteen labels and `Muu`
+          — wrapping across three rows on every visit, on the argument that a
+          "Veel" affordance would hide half of it behind a click and that
+          deciding *which* half means ordering by usage, which is a disclosure
+          about the records. That argument is still true about a *partial*
+          list and it was never an argument for showing all of it: the lawyers'
+          first feedback round asked for this field not to sit permanently open,
+          and a disclosure holding the complete vocabulary hides none of it
+          selectively and ranks nothing (docs/adr/0090 §3, task §3).
+
+          **The controls did not move.** Same checkboxes, same `policy_areas`
+          name, same values, same many-to-many, same `Muu` affordance beside
+          them — `Matter.policy_areas` holds several and the control still says
+          so. What changed is that they are drawn inside a `<details>` rather
+          than under a legend (ADR 0025).
+
+          `<details>` rather than anything scripted, for the reason Adressaat
+          uses one: it opens with scripting off, and the server renders it open
+          wherever the fold would hide something that has to be read — a refusal,
+          or the free-text box a ticked `Muu` reveals
+          (`policy_area_disclosure_open`).
+
+          `data-stay-closed` so that a refused save carrying two ticked areas
+          comes back *shut*, saying so in its summary. Unfolding the vocabulary
+          to prove an answer the summary already states would undo the change on
+          the one path where somebody is being asked to fix something else
+          (static/js/app.js `bindOpenChosenDetails`).
         {% endcomment %}
-        <div class="chiprow">
-          {% for choice in form.policy_areas %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-            </label>
-          {% endfor %}
-          <label class="chip chip--other" id="valdkond-muu">
-            {{ form.policy_area_other_selected }}
-            <span class="chip__name">{{ form.policy_area_other_selected.label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-          </label>
-        </div>
-        {% comment %}
-          Ticking `Muu` reveals the free-text box directly under the row. It
-          creates no PolicyArea and no Tag — the text lands in
-          `Matter.policy_area_other` and stays free text (brief 20).
-        {% endcomment %}
-        <div class="createform__other" id="valdkond-muu-tekst"
-             {% if not form.policy_area_other_selected.value %}hidden{% endif %}>
-          <label class="field">
-            <span class="field__label">{{ form.policy_area_other.label }}</span>
-            {{ form.policy_area_other }}
-            {% if form.policy_area_other.errors %}
-              <span class="field__error" id="{{ form.policy_area_other.auto_id }}_error">{{ form.policy_area_other.errors|first }}</span>
+        <details class="chipdetails chipdetails--field" data-stay-closed
+                 data-valdkond-disclosure {% if form.policy_area_disclosure_open %}open{% endif %}>
+          {% comment %}
+            The names rather than a count. The row used to carry
+            «N valitud» beside its legend, which was the right affordance for
+            three wrapped rows of chips somebody had to scan — and beside the
+            answer itself it is the same fact said twice, on a page this round
+            exists to quieten. `bindChipSummaries` keeps it true while the fold
+            is open; the server renders the same words on load, so nothing is
+            lost with scripting off (static/js/app.js, `policy_area_summary`).
+          {% endcomment %}
+          <summary class="chipdetails__summary">
+            {{ form.policy_areas.label }}<span
+              data-chipsummary-for="policy_areas">{% if form.policy_area_summary %} · {{ form.policy_area_summary }}{% endif %}</span>
+          </summary>
+          <div class="createform__valdkond">
+            <div class="chiprow">
+              {% for choice in form.policy_areas %}
+                <label class="chip">
+                  {{ choice.tag }}
+                  <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+                </label>
+              {% endfor %}
+              <label class="chip chip--other" id="valdkond-muu">
+                {{ form.policy_area_other_selected }}
+                <span class="chip__name">{{ form.policy_area_other_selected.label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+              </label>
+            </div>
+            {% comment %}
+              Ticking `Muu` reveals the free-text box directly under the row. It
+              creates no PolicyArea and no Tag — the text lands in
+              `Matter.policy_area_other` and stays free text (brief 20).
+            {% endcomment %}
+            <div class="createform__other" id="valdkond-muu-tekst"
+                 {% if not form.policy_area_other_selected.value %}hidden{% endif %}>
+              <label class="field">
+                <span class="field__label">{{ form.policy_area_other.label }}</span>
+                {{ form.policy_area_other }}
+                {% if form.policy_area_other.errors %}
+                  <span class="field__error" id="{{ form.policy_area_other.auto_id }}_error">{{ form.policy_area_other.errors|first }}</span>
+                {% endif %}
+              </label>
+            </div>
+            {% if form.policy_areas.errors %}
+              <span class="field__error" id="{{ form.policy_areas.auto_id }}_error">{{ form.policy_areas.errors|first }}</span>
             {% endif %}
-          </label>
-        </div>
-        {% if form.policy_areas.errors %}
-          <span class="field__error" id="{{ form.policy_areas.auto_id }}_error">{{ form.policy_areas.errors|first }}</span>
-        {% endif %}
+          </div>
+        </details>
       </fieldset>
     </div>
 
@@ -579,7 +636,7 @@
       addition to the creation page so that the classification work rewriting this
       template and `MatterCreateForm` in parallel meets one line rather than a
       field, a label, a hint and an error block interleaved with its own
-      (templates/matters/partials/initial_opinion_action.html, docs/adr/0088 §1.4).
+      (templates/matters/partials/initial_opinion_action.html, docs/adr/0090 §1.4).
 
       **Before `Järgmine tegevus`, not after it.** The ordinary journey ends here:
       a lawyer filing an incoming consultation knows when they will write the

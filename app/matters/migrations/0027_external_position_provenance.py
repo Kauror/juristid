@@ -8,7 +8,7 @@ Additive, and deliberately carrying no data. Five schema changes and one
   corpus was recorded through one panel that never asked the question, so the two
   things a backfill could have read — whether a `Kaasamine` is linked, or
   whether the organisation is a member rather than a ministry — are exactly the
-  inferences docs/adr/0088 §3 refuses. A ministry does answer consultations and a
+  inferences docs/adr/0090 §3 refuses. A ministry does answer consultations and a
   member's position paper does get found on a website, so each rule would be
   wrong for some real record, and a wrong provenance is worse than an
   unspecified one.

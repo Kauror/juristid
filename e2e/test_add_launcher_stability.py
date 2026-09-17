@@ -33,7 +33,7 @@ pytestmark = pytest.mark.e2e
 #: The canonical order. `+ Järgmine tegevus` is absent while a step is open, and
 #: this Matter is new, so all thirteen are here.
 #:
-#: **Twelve where there were nine**, and the growth is docs/adr/0088's stated
+#: **Twelve where there were nine**, and the growth is docs/adr/0090's stated
 #: cost rather than a slip: the bar is the product's inventory of what can be
 #: recorded, and four of the things lawyers do had no chip. `+ Väline seisukoht`
 #: became two — `+ Meile saadetud tagasiside` and `+ Teiste arvamus` — over one
