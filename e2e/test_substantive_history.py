@@ -220,7 +220,12 @@ def test_an_approximate_act_prints_its_period_and_not_a_day(page, base_url):
     # (`DEVELOPMENT_PREFIX`). The day box keeps the name `occurred_on`; the
     # period selects carry the prefix, which is what lets several of these forms
     # sit on one page without one POST key meaning two dates.
-    form.get_by_role("radio", name="Kuu", exact=True).check()
+    #
+    # The **label** is clicked, not the radio: the input is visually clipped and
+    # the chip label sits over it, so `check()` on the control is intercepted by
+    # the very thing a person actually presses. `e2e/test_date_precision.py`
+    # chooses a precision exactly this way.
+    form.locator("label.precision__chip", has_text="Kuu").first.click()
     form.locator("[name=areng_month]").select_option(label="Märts")
     form.locator("[name=areng_year]").fill("2026")
     form.get_by_role("button", name="Salvesta areng").click()

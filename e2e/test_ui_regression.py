@@ -1104,7 +1104,7 @@ def _at_rest(page):
 
 
 def test_the_process_strip_is_the_first_thing_in_the_ajajoon(page, base_url):
-    """`Teema käik` — the course the file is on, before anything is scrolled.
+    """`Menetluse tähtajad` — the dated points, before anything is scrolled.
 
     A capture rather than an assertion because what is being locked is a
     *proportion*: the columns share the width evenly however many there are, and

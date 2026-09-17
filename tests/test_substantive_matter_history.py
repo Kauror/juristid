@@ -651,6 +651,41 @@ def test_a_developments_paper_reads_under_the_development(normal_matter, special
     ]
 
 
+def test_a_sent_opinions_final_text_reads_once_under_the_send(
+    normal_matter, specialist, ministry, evidence_root
+):
+    """One act, one row — including the upload that is part of it.
+
+    `+ Koja arvamus` captures the letter and registers the send in one
+    operation, and `Submission.final_version` is a column rather than a
+    `DocumentLink`, so the generic «this file reads on its record's row» rule
+    could not see it. The result was «Arvamus välja» and a second «lisas
+    dokumendi» line for one act, with the filename printed twice
+    (docs/adr/0092 §5).
+    """
+    add_matter_koda_opinion(
+        matter=normal_matter,
+        author=specialist,
+        upload=_pdf("koja-arvamus.pdf"),
+        recipients=[ministry],
+        sent_on=_days_ago(7),
+        title="Koja arvamus",
+    )
+
+    items = _history(normal_matter, specialist)
+    sends = [item for item in items if item.submission]
+    assert len(sends) == 1
+    assert [file.label for file in sends[0].files] == ["koja-arvamus.pdf"]
+    # And no evidence row of its own, with its own dot and its own upload time.
+    assert not [
+        item
+        for item in items
+        if item.event is not None
+        and item.event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+    ]
+    assert _rendered(items).count("koja-arvamus.pdf") == 1
+
+
 def test_a_restricted_final_text_hides_its_filename_and_leaves_the_send_readable(
     normal_matter, specialist, reader, ministry, evidence_root
 ):

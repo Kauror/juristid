@@ -1510,21 +1510,6 @@ def matter_timeline(
     suppressed = frozenset(SUPPRESSED_WHEN_ENTRY_SHOWN) | frozenset(RECORD_OPERATION_EVENT_TYPES)
     renderable = [event for event in events if event.event_type not in suppressed]
 
-    # A file that supports a structured fact reads on that fact's own row and
-    # nowhere else. Its evidence event would otherwise become a row of its own —
-    # the operation that wrote it has no `Entry` to be grouped onto — which is a
-    # second line, and a second dot, for one act (brief §25).
-    shown_on_their_record = _versions_shown_on_their_record(matter)
-    if shown_on_their_record:
-        renderable = [
-            event
-            for event in renderable
-            if not (
-                event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
-                and event.object_id in shown_on_their_record
-            )
-        ]
-
     # The structured facts, as their own rows, **before** the events are
     # assembled. Which effects fold onto which row depends on which records this
     # reader may actually see, so the projection — which is where `visible_to`
@@ -1534,6 +1519,33 @@ def matter_timeline(
         projected = projected_milestones(
             matter=matter, user=user, intelligence=intelligence, today=today
         )
+
+    # A file that supports a structured fact reads on that fact's own row and
+    # nowhere else. Its evidence event would otherwise become a row of its own —
+    # the operation that wrote it has no `Entry` to be grouped onto — which is a
+    # second line, and a second dot, for one act (brief §25).
+    #
+    # The sent opinions' final texts are handed over from the projection above
+    # rather than read again: those rows are already in hand, and asking the
+    # database a second time for a column this function has just been given is a
+    # query for an answer it already has.
+    shown_on_their_record = _versions_shown_on_their_record(
+        matter,
+        final_texts={
+            item.record.final_version_id
+            for item in projected
+            if item.submission is not None and item.record.final_version_id
+        },
+    )
+    if shown_on_their_record:
+        renderable = [
+            event
+            for event in renderable
+            if not (
+                event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+                and event.object_id in shown_on_their_record
+            )
+        ]
 
     # One operation, one act, one row. `record_operations` says which operation
     # wrote each canonical record; this says which operations wrote a record
@@ -1805,7 +1817,7 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     return resolved
 
 
-def _versions_shown_on_their_record(matter: Matter) -> set[Any]:
+def _versions_shown_on_their_record(matter: Matter, *, final_texts: set[Any]) -> set[Any]:
     """Evidence versions that read on a structured fact's own chronology row.
 
     **A file is not a chronology event.** Attaching two PDFs to a `Töövõit` is
@@ -1821,10 +1833,19 @@ def _versions_shown_on_their_record(matter: Matter) -> set[Any]:
     are deliberately left alone: a note's attachment has always read as a clause
     on the note's own row and still does.
 
+    **A sent opinion's final text is the same case reached by a different
+    column.** `Submission.final_version` is a foreign key rather than a
+    `DocumentLink`, so the link query below cannot see it — and since
+    docs/adr/0092 the send has a row of its own that renders those exact bytes,
+    which made `+ Koja arvamus` draw «Arvamus välja» and a second «lisas
+    dokumendi» line for one act. ``final_texts`` is those versions, handed in by
+    the caller from the projection it has already made, so naming them here
+    costs nothing (docs/adr/0092 §5).
+
     Unscoped on purpose — this decides *where* a file reads, never *whether*.
     Visibility is applied twice over, by `scope_change_events` on the event
-    stream and by `DocumentLink.visible_to` on the links, and this can only ever
-    remove a row.
+    stream and by `DocumentLink.visible_to` and `Document.visible_to` on the
+    files, and this can only ever remove a row.
     """
     from app.documents.links import DocumentLink
     from app.documents.models import DocumentVersion
@@ -1835,8 +1856,8 @@ def _versions_shown_on_their_record(matter: Matter) -> set[Any]:
         )
     )
     if not documents:
-        return set()
-    return set(
+        return final_texts
+    return final_texts | set(
         DocumentVersion.objects.filter(document_id__in=documents).values_list("id", flat=True)
     )
 

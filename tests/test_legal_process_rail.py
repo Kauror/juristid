@@ -246,18 +246,21 @@ def test_a_historical_row_that_carries_only_a_label_still_resolves(specialist):
     from app.audit.models import ChangeEvent
 
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
-    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
-    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
-    # Exactly what a pre-docs/adr/0092 row holds.
-    for event in ChangeEvent.objects.filter(
-        matter=matter, event_type=ChangeEventType.MATTER_STAGE_CHANGED
-    ):
-        payload = dict(event.payload)
-        payload.pop("to_key", None)
-        payload.pop("from_key", None)
-        ChangeEvent.objects.filter(pk=event.pk).update(payload=payload)
+    matter.stage = _stage("parliament")
+    matter.save(update_fields=["stage"])
+    # Exactly the row a pre-docs/adr/0092 `change_stage` wrote: the labels and
+    # no keys. Written as a new row rather than by rewriting one — the audit
+    # table is append-only and the database refuses an UPDATE, which is the
+    # property that makes the history worth reading in the first place.
+    ChangeEvent.objects.create(
+        matter=matter,
+        event_type=ChangeEventType.MATTER_STAGE_CHANGED,
+        summary="Kooskõlastusringil",
+        payload={"from_label": None, "to_label": "Kooskõlastusringil"},
+    )
 
     assert "consultation" in recorded_stage_keys(matter=matter, user=specialist)
+    assert _states(_rail(matter, specialist))["kooskolastus"] == STATE_RECORDED
 
 
 def test_nothing_is_recorded_from_a_title_a_file_or_a_link(specialist, organisation):
@@ -274,7 +277,7 @@ def test_nothing_is_recorded_from_a_title_a_file_or_a_link(specialist, organisat
         matter=matter,
         kind="RIIGIKOGU",
         url="https://www.riigikogu.ee/tegevus/eelnoud/eelnou/123",
-        title="Riigikogu menetluskäik",
+        label="Riigikogu menetluskäik",
         actor=specialist,
     )
 

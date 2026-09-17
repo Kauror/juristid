@@ -383,16 +383,44 @@ def legal_process_rail(
     the application knows nothing, which is the standing empty section the
     approved target removed from this page everywhere else (docs/adr/0074 §15).
 
-    ``instrument_keys`` is the reviewed `Õigusakt` keys, passed in by the page
+    ``instrument_keys`` is the reviewed `Õigusakt` keys, passed in by a caller
     that has already read them so this does not ask a second time.
-    """
-    stage = matter.stage
-    stage_key = getattr(stage, "key", "") or ""
-    keys = instrument_keys
-    if keys is None:
-        keys = frozenset(matter.legal_instruments.values_list("key", flat=True))
 
-    template = template_for(track=matter.track or "", instrument_keys=keys)
+    **`Hetkeseis`, `Menetlusliik` and the disposition are read as they stand, in
+    one query, rather than off the instance handed in.** The rail's whole claim
+    is *where the procedure is now*, and the Matter page's own save path is the
+    case that proves the instance cannot answer it: `+ Menetluse areng` moves the
+    stage through `change_stage` on a row it locked for itself, then re-renders
+    the column from the `Matter` the request fetched **before** the POST — which
+    still holds the stage the file was on when the page was drawn. A rail built
+    from that says the ministry sent a new version and the file is still on the
+    round it just left, one line apart, which is the contradiction an HTMX swap
+    exists to avoid. Caught by the browser lane rather than reasoned about
+    (docs/adr/0092 §12).
+
+    Nothing here writes to the instance either: a projection that refreshed its
+    caller's object would be a read with a side effect, and the header band on
+    the same page deliberately does *not* re-render on this save.
+    """
+    snapshot = (
+        Matter.objects.filter(pk=matter.pk)
+        .values_list("stage__key", "stage__label_et", "track", "disposition")
+        .first()
+    )
+    if snapshot is None:  # pragma: no cover - the caller holds a saved Matter
+        return None
+    stage_key, stage_label, track, disposition = snapshot
+    stage_key = stage_key or ""
+
+    # `Õigusakt` is read **only when the track does not decide**, because it is a
+    # many-to-many and therefore a query of its own. A file that states its
+    # `Menetlusliik` costs nothing to place.
+    template = TRACK_TEMPLATES.get(track or "", "")
+    if not template:
+        keys = instrument_keys
+        if keys is None:
+            keys = frozenset(matter.legal_instruments.values_list("key", flat=True))
+        template = template_for(track=track or "", instrument_keys=keys)
     if not template:
         return None
     nodes = TEMPLATES[template]
@@ -438,14 +466,14 @@ def legal_process_rail(
     # stage on a domestic file — reads beside the rail in its own words rather
     # than being pushed onto the nearest node.
     unplaced = ""
-    if stage is not None and current_index is None:
-        unplaced = stage.label_et
+    if stage_label and current_index is None:
+        unplaced = stage_label
 
     return LegalProcessRail(
         template=template,
         nodes=tuple(drawn),
         unplaced_stage=unplaced,
-        koda_stopped=matter.disposition == Disposition.MONITORING_STOPPED,
+        koda_stopped=disposition == Disposition.MONITORING_STOPPED,
     )
 
 
