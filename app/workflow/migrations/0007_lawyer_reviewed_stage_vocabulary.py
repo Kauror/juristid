@@ -33,13 +33,28 @@ is what this migration carries, so the flag comes off — on the ten and on the
 new eleventh. Only rows that still carry the reviewed baseline are touched, for
 the reason the rewording is guarded.
 
-**The reverse is honest about one thing.** It restores the three version-1.0
-labels and puts ``is_provisional`` back on, and it deletes the new stage **only
-when no Matter stands in it** — a reverse that deleted a row a lawyer had
-already classified a file with would take the classification with it. If any
-Matter holds it, the row is deactivated instead, which is the same outcome the
-vocabulary's own retirement mechanism produces and is stated here rather than
-claimed as a clean rollback.
+**The reverse deactivates the new stage rather than deleting it**, and that is
+a decision rather than caution.
+
+A reverse may not delete a row a lawyer has already classified a file with, so
+it would have to ask whether any ``Matter`` stands in the stage — and a
+migration that queries another app's model in its *reverse* direction is asking
+it of whatever historical state that app happens to be in at the time.
+``migrate <app> zero`` rewinds ``matters`` past the state this migration was
+written against before it gets here, and the question then fails outright:
+``Cannot query "StageVocabulary object": Must be "StageVocabulary" instance``.
+CI found that; it is not hypothetical.
+
+So this migration reads and writes ``workflow`` and nothing else. Rolling it
+back leaves ``no_further_work`` as a row nobody is offered — which is exactly
+what the vocabulary's own retirement mechanism produces, destroys nothing, and
+keeps every Matter that already holds it able to keep it (docs/adr/0032
+§Amendment). Re-applying reactivates the same row rather than creating a second
+one.
+
+The reverse is otherwise exact: it restores the three version-1.0 labels and
+puts ``is_provisional`` back on, under the same guard the forward direction
+uses.
 """
 
 from django.db import migrations
@@ -129,12 +144,17 @@ def adopt(apps, schema_editor):
             # here: a file of any kind can be one this office stops following.
             applicable_tracks=[],
         )
+    else:
+        # Re-applying after a rollback. The reverse deactivates this row rather
+        # than deleting it, so the forward direction has to offer it again —
+        # and only that, because everything else about the row may since have
+        # been somebody's edit.
+        StageVocabulary.objects.filter(pk=held.pk, is_active=False).update(is_active=True)
 
 
 def revert(apps, schema_editor):
-    """Version 1.0's wording again, and the new stage gone if nothing holds it."""
+    """Version 1.0's wording again, and the new stage withdrawn rather than deleted."""
     StageVocabulary = apps.get_model("workflow", "StageVocabulary")
-    Matter = apps.get_model("matters", "Matter")
 
     for key, (seeded, reviewed) in REWORDED.items():
         StageVocabulary.objects.filter(key=key, label_et=reviewed).update(label_et=seeded)
@@ -143,24 +163,16 @@ def revert(apps, schema_editor):
         is_provisional=True
     )
 
-    stage = StageVocabulary.objects.filter(key=NEW_KEY).first()
-    if stage is None:
-        return
-    if Matter.objects.filter(stage=stage).exists():
-        # Deactivated rather than deleted. A rollback may not delete a fact
-        # somebody recorded, and `stages_including` keeps it readable and
-        # editable on the Matters standing in it (docs/adr/0032 §Amendment).
-        StageVocabulary.objects.filter(pk=stage.pk).update(is_active=False)
-        return
-    stage.delete()
+    # Deactivated, never deleted — see the module docstring. A rollback may not
+    # delete a fact somebody recorded, and `stages_including` keeps a withdrawn
+    # stage readable and editable on the Matters standing in it (docs/adr/0032
+    # §Amendment).
+    StageVocabulary.objects.filter(key=NEW_KEY).update(is_active=False)
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ("workflow", "0006_stage_help_from_the_department"),
-        # The reverse asks whether a Matter stands in the new stage, so the
-        # column has to exist by the time this runs in either direction.
-        ("matters", "0001_initial"),
     ]
 
     operations = [

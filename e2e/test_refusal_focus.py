@@ -68,12 +68,19 @@ def test_a_refusal_below_the_fold_brings_the_person_to_it(page, base_url):
     hidden behind the sticky bar.
     """
     sign_in(page, base_url, MARTIN)
+    # A window shorter than the form, because the premise is that the refused
+    # control is out of sight — and the form got 232px shorter when `Uus teema`
+    # stopped asking Menetlusliik and Adressaat (docs/adr/0089 §4, §5). At the
+    # default 900px the date box now sits at y≈873 and the test would assert
+    # nothing at all. 600px is an ordinary laptop window with the browser
+    # chrome taken off, which is the case this defect was reported from.
+    page.set_viewport_size({"width": 1440, "height": 600})
     create_form(page, base_url)
 
     page.fill("#id_title", "Kuupäevata samm, mis tuleb ise üles leida")
     page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
     # Proving the field really is out of sight to start with: this is the whole
-    # premise, and a shorter page would make the test vacuous.
+    # premise, and a window taller than the form would make the test vacuous.
     page.evaluate("() => window.scrollTo(0, 0)")
     assert page.locator("#id_next-target_date").bounding_box()["y"] > page.viewport_size["height"]
 
