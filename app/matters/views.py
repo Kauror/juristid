@@ -43,7 +43,7 @@ from app.accounts.selectors import (
     owner_filter_choices,
 )
 from app.audit.models import ChangeEvent
-from app.audit.visibility import scope_change_events
+from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     may_review_work_victory,
     may_write_business_content,
@@ -4797,6 +4797,37 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
 #: particular write rather than a history they read — and every row is one line.
 CHANGE_LOG_PAGE_SIZE = 100
 
+#: The furthest `?nihe=` this page will honour, and the reason it has a ceiling
+#: at all.
+#:
+#: `OFFSET` is a 64-bit signed integer in PostgreSQL, and `?nihe=` arrives as
+#: text from a URL somebody can type. Handing `2**63` straight to a slice earns a
+#: `DataError` from the driver and an HTTP 500 from a read-only audit page —
+#: a malformed query string is a bad request, not a server fault.
+#:
+#: A *clamp* rather than a rejection, because there is nothing on the far side
+#: of this number for anybody: a million rows is beyond the longest history this
+#: product will hold by two orders of magnitude, and a reader who reached the end
+#: of the log by pressing «Näita varasemaid» can never arrive here. Clamping
+#: shows the last honourable page; refusing would show an error to somebody who
+#: mistyped a digit.
+CHANGE_LOG_MAX_OFFSET = 1_000_000
+
+
+def _change_log_offset(raw: Any) -> int:
+    """`?nihe=` as a number this page can put in a SQL `OFFSET`.
+
+    Text that is not a number, a negative number and a number past
+    :data:`CHANGE_LOG_MAX_OFFSET` all resolve to a page that exists. Nothing
+    here raises, because every one of those is a URL a person can type and none
+    of them is a fault of the server's.
+    """
+    try:
+        offset = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return min(max(0, offset), CHANGE_LOG_MAX_OFFSET)
+
 
 @login_required
 def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
@@ -4815,6 +4846,17 @@ def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
     — an audit surface that needed a new authorization story would not have been
     worth the risk of getting one wrong (AUTH-003, app/audit/visibility.py).
 
+    **And fail-closed about which families it asks for.** `change_log_event_types`
+    is an explicit vocabulary: Matter-level types somebody has classified as safe
+    at Matter visibility, plus the child families `scope_change_events` knows how
+    to scope. It exists because this is the first surface that wanted
+    «everything», and `scope_change_events` passes an *unclassified* family
+    through as Matter-level — which is right for `MATTER_CREATED` and wrong for
+    `MATTER_RELATION_ADDED`, whose summary names another Matter this reader may
+    be refused with a 404. Unknown therefore means absent here, not allowed, and
+    a family arrives on this page when somebody classifies it rather than when
+    somebody adds it (docs/adr/0092 §11).
+
     **No payloads and no identifiers.** When, who, which kind of change, and the
     summary the write recorded. `ChangeEvent.payload` is not rendered, no primary
     key is printed and no `operation_id` is: an operation identifier is a fact
@@ -4824,27 +4866,36 @@ def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
     reachable from here (master specification 16.5).
     """
     matter = get_visible_matter(request, pk)
-    try:
-        offset = max(0, int(request.GET.get("nihe", 0)))
-    except ValueError:
-        offset = 0
+    offset = _change_log_offset(request.GET.get("nihe", 0))
 
-    window = offset + CHANGE_LOG_PAGE_SIZE + 1
-    rows = list(
-        scope_change_events(ChangeEvent.objects.filter(matter=matter), request.user)
+    # **The database does the skipping.** The queryset is sliced to this window
+    # and no other, so page four costs four hundred rows less than it used to:
+    # the previous spelling fetched `offset + 101` rows and threw the first
+    # `offset` of them away in Python, which made the tenth page ten times the
+    # work of the first for the same hundred lines on screen.
+    #
+    # One row past the page, and that row is the whole of `has_more` — a second
+    # `COUNT(*)` over a scoped population to answer a yes/no question is a query
+    # this page does not need (`timeline_page` pages the chronology the same way).
+    page = list(
+        scope_change_events(
+            ChangeEvent.objects.filter(matter=matter, event_type__in=change_log_event_types()),
+            request.user,
+        )
         .select_related("actor")
-        .order_by("-occurred_at", "-created_at", "-id")[:window]
+        .order_by("-occurred_at", "-created_at", "-id")[offset : offset + CHANGE_LOG_PAGE_SIZE + 1]
     )
-    page = rows[offset : offset + CHANGE_LOG_PAGE_SIZE]
+    has_more = len(page) > CHANGE_LOG_PAGE_SIZE
+    del page[CHANGE_LOG_PAGE_SIZE:]
     return render(
         request,
         "matters/matter_changes.html",
         {
             "matter": matter,
             "changes": page,
-            "has_more": len(rows) > offset + CHANGE_LOG_PAGE_SIZE,
+            "has_more": has_more,
             "offset": offset,
-            "next_offset": offset + CHANGE_LOG_PAGE_SIZE,
+            "next_offset": min(offset + CHANGE_LOG_PAGE_SIZE, CHANGE_LOG_MAX_OFFSET),
             "previous_offset": max(0, offset - CHANGE_LOG_PAGE_SIZE),
         },
     )

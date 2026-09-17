@@ -64,6 +64,15 @@ def _states(rail) -> dict[str, str]:
     return {node.key: node.state for node in rail.nodes}
 
 
+def _stage_labels(rail) -> dict[str, str]:
+    """The explicit `Hetkeseis` each node carries.
+
+    Empty on every node but the current one, which is the whole of
+    `ProcessNode.stage_label`'s contract.
+    """
+    return {node.key: node.stage_label for node in rail.nodes}
+
+
 # ---------------------------------------------------------------------------
 # Choosing a rail
 # ---------------------------------------------------------------------------
@@ -366,13 +375,158 @@ def test_joustunud_does_not_close_the_matter(specialist):
 
 
 def test_awaiting_entry_and_in_force_share_the_final_node(specialist):
-    """Two sides of one point in the procedure, told apart by the state."""
+    """Two sides of one point in the procedure, and one node for both."""
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("awaiting_entry"), actor=specialist)
     assert _states(_rail(matter, specialist))["joustumine"] == STATE_CURRENT
 
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
     assert _states(_rail(matter, specialist))["joustumine"] == STATE_CURRENT
+    # And no sixth node was invented to hold the second of them.
+    assert [node.key for node in _rail(matter, specialist).nodes] == [
+        "algus",
+        "kooskolastus",
+        "valitsus",
+        "riigikogu",
+        "joustumine",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# What the current node says the stage actually is
+# ---------------------------------------------------------------------------
+
+
+def test_the_current_node_names_the_stage_the_file_actually_holds(specialist):
+    """The node is broad on purpose; the label says which side of it this is.
+
+    `Jõustumine · Praegu` is the same three words for a file waiting for the act
+    to come into force and for one already in force, and those are not the same
+    answer to «where is this». The explicit `Hetkeseis` rides on the current node
+    (docs/adr/0092 §13, amended).
+    """
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("awaiting_entry"), actor=specialist)
+    waiting = _stage_labels(_rail(matter, specialist))
+
+    change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
+    in_force = _stage_labels(_rail(matter, specialist))
+
+    assert waiting["joustumine"] == "Jõustumise ootel"
+    assert in_force["joustumine"] == "Jõustunud"
+    assert waiting["joustumine"] != in_force["joustumine"]
+
+
+def test_the_three_european_end_stages_are_not_rendered_identically(specialist):
+    """The strongest case: `Ülevõtmine / jõustumine` holds three stages."""
+    matter = factories.MatterFactory(owner=specialist, track=Track.EU_INITIATIVE.value)
+    seen = []
+    for key in ("awaiting_transposition", "awaiting_entry", "in_force"):
+        change_stage(matter=matter, stage=_stage(key), actor=specialist)
+        rail = _rail(matter, specialist)
+        assert _states(rail)["ulevotmine"] == STATE_CURRENT
+        seen.append(_stage_labels(rail)["ulevotmine"])
+
+    assert seen == ["ELi õiguse ülevõtmise ootel", "Jõustumise ootel", "Jõustunud"]
+    assert len(set(seen)) == 3
+
+
+def test_no_stage_vocabulary_value_is_invented_for_the_rail(specialist):
+    """Whatever a node prints is a reviewed row's own `label_et`."""
+    reviewed = set(StageVocabulary.objects.values_list("label_et", flat=True))
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    for key in ("consultation", "government", "parliament", "awaiting_entry", "in_force"):
+        change_stage(matter=matter, stage=_stage(key), actor=specialist)
+        printed = {label for label in _stage_labels(_rail(matter, specialist)).values() if label}
+        assert printed <= reviewed
+
+
+def test_a_node_whose_words_are_the_stages_own_words_does_not_say_them_twice(specialist):
+    """`Kooskõlastus · Praegu · Kooskõlastusringil` would state one thing twice.
+
+    The node's own label already answers it, so the stage label is carried only
+    where it adds something.
+    """
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("government"), actor=specialist)
+    rail = _rail(matter, specialist)
+
+    # `Valitsus` the node, `Valitsuses` the stage — different words, so it reads.
+    assert _stage_labels(rail)["valitsus"] == "Valitsuses"
+    # And it rides on the current node and on no other.
+    assert [node.key for node in rail.nodes if node.stage_label] == ["valitsus"]
+
+
+def test_an_unplaceable_stage_puts_no_label_on_any_node(specialist):
+    """`Muu` reads beside the rail, and does not attach itself to a node."""
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    matter.stage = _stage("other")
+    matter.save(update_fields=["stage"])
+
+    rail = _rail(matter, specialist)
+    assert rail.unplaced_stage == "Muu"
+    assert [node.stage_label for node in rail.nodes] == ["", "", "", "", ""]
+
+
+# ---------------------------------------------------------------------------
+# `Kirjas` describes the path to here, not evidence anywhere
+# ---------------------------------------------------------------------------
+
+
+def test_a_stage_recorded_ahead_of_the_current_one_is_not_kirjas(specialist):
+    """A correction must not leave the rail asserting two places at once.
+
+    Somebody picked `Jõustunud` by mistake and moved the file back to the
+    consultation round. Read literally, the audit history says `joustumine` was
+    reached — and the rail then read `Kooskõlastus · Praegu` and
+    `Jõustumine · Kirjas` on one line, which tells a reader the act is both in
+    force and out for consultation (docs/adr/0092 §13, amended).
+    """
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
+    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+
+    assert _states(_rail(matter, specialist)) == {
+        "algus": STATE_UNKNOWN,
+        "kooskolastus": STATE_CURRENT,
+        "valitsus": STATE_POSSIBLE,
+        "riigikogu": STATE_POSSIBLE,
+        "joustumine": STATE_POSSIBLE,
+    }
+
+
+def test_the_audit_history_still_holds_the_stage_that_was_corrected(specialist):
+    """A projection rule, and not a rewriting of what was recorded."""
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
+    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+
+    assert "in_force" in recorded_stage_keys(matter=matter, user=specialist)
+
+
+def test_a_recorded_stage_before_the_current_one_is_still_kirjas(specialist):
+    """The ordinary case is untouched: evidence on the way here still reads."""
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
+
+    assert _states(_rail(matter, specialist))["kooskolastus"] == STATE_RECORDED
+
+
+def test_the_late_entry_rule_is_unchanged_by_the_recorded_rule(specialist):
+    """A file with no recorded history still reads `Teadmata` to its left."""
+    matter = factories.ArchiveMatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    matter.stage = _stage("parliament")
+    matter.save(update_fields=["stage"])
+
+    assert _states(_rail(matter, specialist)) == {
+        "algus": STATE_UNKNOWN,
+        "kooskolastus": STATE_UNKNOWN,
+        "valitsus": STATE_UNKNOWN,
+        "riigikogu": STATE_CURRENT,
+        "joustumine": STATE_POSSIBLE,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +552,96 @@ def test_the_rail_renders_on_the_matter_page_with_its_states_in_words(signed_in,
     assert 'aria-current="step"' in rail
     # And the history section is still below it, saying what actually happened.
     assert "Teema käik" in body
+
+
+def test_the_current_nodes_stage_label_reaches_the_page(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("awaiting_entry"), actor=specialist)
+
+    url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    waiting = signed_in.get(url).content.decode()
+    assert "Jõustumise ootel" in waiting[waiting.index('class="lprail"') :][:2000]
+
+    change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
+    in_force = signed_in.get(url).content.decode()
+    rail = in_force[in_force.index('class="lprail"') :][:2000]
+    assert "Jõustunud" in rail
+    assert "Jõustumise ootel" not in rail
+
+
+# ---------------------------------------------------------------------------
+# `Menetluse kulg` is a sibling of `Teema käik`, not a block inside it
+# ---------------------------------------------------------------------------
+#
+# Three sections answer three questions: `Menetluse tähtajad` the dated points,
+# `Teema käik` what happened, `Menetluse kulg` where the procedure stands.
+# Nesting the third inside the second made collapsing the history — the ordinary
+# thing to do when it runs to six months — take the answer to the other question
+# with it (docs/adr/0092 §2, amended).
+
+
+def _detail(signed_in, matter) -> str:
+    return signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    ).content.decode()
+
+
+def test_the_rail_is_not_inside_the_teema_kaik_disclosure(signed_in, specialist):
+    """The structural assertion: `.lprail` is not a descendant of `#ajajoon`.
+
+    `#ajajoon` is a `<details>` and it is the last of the two, so «outside» is
+    «before its opening tag» — which is also the reading order the lawyers use:
+    where is this, then how did it get there.
+    """
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
+    body = _detail(signed_in, matter)
+
+    assert body.index('class="lprail"') < body.index('id="ajajoon"')
+    inside = body[body.index('id="ajajoon"') :]
+    assert "lprail" not in inside
+
+
+def test_menetluse_tahtajad_stays_where_it_was(signed_in, specialist):
+    """Only the rail moved. The dated strip is history's own summary line."""
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
+    body = _detail(signed_in, matter)
+
+    inside = body[body.index('id="ajajoon"') :]
+    assert 'aria-label="Menetluse tähtajad"' in inside
+
+
+def test_the_rail_heading_is_a_sibling_heading_and_not_a_sub_heading(signed_in, specialist):
+    """A section of the page carries the page's section level.
+
+    It was an `h3` under `Teema käik`'s `h2`, which told a screen reader that
+    «where is the procedure» is part of «what happened». Both are `h2` now, and
+    the level below the last `h2` before it is not skipped.
+    """
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
+    body = _detail(signed_in, matter)
+
+    head = body[body.index('id="menetluse-kulg-heading"') - 60 :]
+    assert head.startswith("<h2") or "<h2" in head[:60]
+    assert '<h3 class="lprail__head"' not in body
+    assert 'aria-labelledby="menetluse-kulg-heading"' in body
+
+
+def test_the_anchor_and_the_filter_query_are_unchanged(signed_in, specialist):
+    """Links people have already sent still work."""
+    matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
+
+    body = _detail(signed_in, matter)
+    assert 'id="ajajoon"' in body
+
+    filtered = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": matter.pk}), {"ajajoon": "sissekanded"}
+    )
+    assert filtered.status_code == 200
+    assert 'class="lprail"' in filtered.content.decode()
 
 
 def test_the_rail_is_absent_rather_than_empty(signed_in, specialist):

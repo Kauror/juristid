@@ -10891,10 +10891,15 @@ section:has(.pw-more[open]) tbody.uxextra {
  * `Praegu`, `Kirjas`, `Teadmata` or `Võimalik`, so the rail reads correctly
  * with no stylesheet, in a screen reader and on a printout; everything below is
  * decoration of a sentence that is already there. Nothing in this block is the
- * only carrier of a distinction. */
+ * only carrier of a distinction.
+ *
+ * It is a section of the page rather than a block inside `Teema käik`, so it
+ * carries its own top margin: the accordion body used to supply that spacing,
+ * and a rail that sat flush against whatever precedes it read as part of that
+ * thing (docs/adr/0092 §2, amended). */
 
 #teema-vaade-wrap .lprail {
-  margin: 0 0 14px;
+  margin: var(--spacing-4) 0 14px;
   padding: var(--spacing-3) 0 var(--spacing-2);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -11019,6 +11024,18 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .lprail__node--current .lprail__state {
   color: var(--accent-link);
   font-weight: var(--typography-weight-semibold);
+}
+
+/* The explicit `Hetkeseis` under `Praegu`, on the current node only.
+ *
+ * Body ink rather than muted, and a size between the node's name and its state:
+ * it is the most specific true thing the rail says about where the file is, and
+ * on the two collapsing nodes it is the only thing distinguishing «ootel» from
+ * «jõustunud». Muting it would put the sharper answer behind the vaguer one. */
+#teema-vaade-wrap .lprail__stage {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-body);
 }
 
 #teema-vaade-wrap .lprail__aside {

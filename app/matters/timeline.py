@@ -1095,6 +1095,11 @@ def submission_chronology_day(submission: Any) -> date:
     So there is no fallback here and no «kuupäev teadmata» constant beside this
     function: the one record on this page whose business date cannot be missing
     is this one.
+
+    A withdrawn or superseded opinion keeps that timestamp — nothing clears it,
+    and the population `projected_milestones` reads is `historically_sent`,
+    which requires it — so the row goes on sitting on the day the letter
+    actually went rather than moving when the opinion's status later did.
     """
     return _local_day(submission.sent_at)
 
@@ -1324,6 +1329,15 @@ def projected_milestones(
     # Matter is ordinary and each draws its own row: nothing here elects a final
     # opinion (docs/adr/0061, master specification 6.4).
     #
+    # **`historically_sent`, never `sent`.** The population is «was this actually
+    # sent», answered by the canonical `sent_at`, and not «is this the opinion
+    # that currently stands». Sending was a business act on a day; withdrawing
+    # the opinion afterwards adds a second act and takes nothing away from the
+    # first, and `SUBMISSION_WITHDRAWN` draws its own `Arvamus tagasi võetud`
+    # line from the audit vocabulary directly above this one. Reading
+    # `status=SENT` here made a sent opinion disappear from the file's own
+    # history the moment it was withdrawn or superseded (docs/adr/0092 §3).
+    #
     # `prefetch_related` on the addressee rows, so a Matter carrying four
     # opinions costs two queries to name their recipients rather than eight. The
     # prefetch is filtered to `ADDRESSEE` in SQL rather than in Python, because
@@ -1331,7 +1345,7 @@ def projected_milestones(
     for submission in (
         Submission.objects.filter(matter=matter)
         .visible_to(user)
-        .sent()
+        .historically_sent()
         .prefetch_related(
             models.Prefetch(
                 "recipient_rows",

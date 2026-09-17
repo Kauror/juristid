@@ -29,6 +29,17 @@ stage or a date from one.
 *Narrows nothing.* No record is retired, no column is dropped, no vocabulary is
 reworded and no history is rewritten.
 
+*Amended 2026-09-18, after an independent adversarial review of the
+implementation.* Six sections carry an amendment and each is marked where it
+stands: §2 (the rail is a sibling of the history, and the empty state is renamed),
+§3 (a sent opinion stays in the history after it is withdrawn or superseded), §11
+(the audit page renders an explicit fail-closed event vocabulary, and its
+pagination is bounded and pushed into SQL) and §13 (the current node names the
+stage the file holds; a recorded node ahead of the current one is not `Kirjas`).
+No decision in this record is reversed: each amendment is the same rule applied
+where the first implementation had not applied it. No migration, no model change,
+no index version bump and no new vocabulary value accompanies any of them.
+
 ## Context
 
 The second structured lawyer round asked one question of the Matter page:
@@ -107,6 +118,30 @@ docs/adr/0074 §12 and docs/adr/0083 decided. Its `aria-label` moves from
 deadline three weeks out is not a history, and those two words now name the
 section it sits inside.
 
+**`Menetluse kulg` is a sibling of `Teema käik`, not a block inside it.**
+*Amended after the independent review of this package.* The first implementation
+rendered the rail inside the `#ajajoon` `<details>`, which made the markup
+contradict the table above: three questions, and the answer to one of them living
+inside the answer to another. The cost is concrete — collapsing the history is the
+ordinary thing to do when it runs to six months and the question is where the bill
+has got to, and doing so hid the rail with it; a screen reader was told that «where
+is the procedure» is part of «what happened»; and the section's `h3` under the
+history's `h2` said the same thing to anything reading structure.
+
+So the rail renders before the disclosure, at the same heading level, and
+`.lprail` is not a descendant of `#ajajoon`. The reading order is unchanged and is
+the one a lawyer uses: where is this, then how did it get there.
+`Menetluse tähtajad` stays inside `Teema käik` — the dated points a file has and
+is heading for are that file's own summary line, drawn at the head of the history
+they summarise. The anchor, the `?ajajoon=` filter and every shared link are
+untouched, as above.
+
+**And the empty state is named after the section it is in.** «Ajajoon on tühi»
+survived the rename and said the widget's old name to the one reader guaranteed to
+see it — somebody looking at a file with no history yet. It reads «Teema käik on
+tühi» now. `Ajajoon` remains the id and the query parameter, and nowhere a reader
+can see it.
+
 ## 3 — Every primary row is projected from a canonical record
 
 Two sources still came out of the audit stream, and both are read from their own
@@ -130,6 +165,30 @@ The event is not deleted, is still written, is still audited and is still readab
 on `Kõik muudatused` (§11). What it stopped being is the source of a business
 date.
 
+**The population is «was sent», not «is currently SENT».** *Amended after the
+independent review.* The first implementation read `status=SENT`, which answers
+«is this the opinion that currently stands» — the right question for a portfolio
+and the wrong one for a history. Sending was a business act performed on a day, by
+a person, to named recipients; withdrawing the opinion afterwards does not mean the
+letter never went out, it means one more thing happened. Under the first reading a
+sent opinion vanished from the file's own history the moment it was withdrawn or
+superseded, taking its date, its recipients and its final text with it.
+
+The chronology therefore reads `Submission.historically_sent()`: `sent_at IS NOT
+NULL`, in one of the three terminal statuses, and `visible_to` the reader as
+before. `sent_at` remains canonical and no audit timestamp is revived as a business
+date. A `DRAFT` is excluded even when it carries a timestamp — the CHECK constraint
+binds `sent_at` to the SENT status and says nothing about a draft, so such a row is
+malformed data, and materialising a send out of one would be inventing an act. The
+three statuses are named positively rather than DRAFT being excluded, so a status
+added later is absent until somebody decides about it.
+
+A withdrawal still draws its own `Arvamus tagasi võetud` line, from
+`SUBMISSION_WITHDRAWN` in `TIMELINE_EVENT_TYPES`, so the file reads «the letter
+went out» and then «it was taken back». A supersession collapses nothing: a later
+opinion is another send with its own row, which is §3's existing rule read from the
+other end.
+
 **The canonical source inventory**, as projected today:
 
 | record | headline | business date |
@@ -137,7 +196,7 @@ date.
 | `MatterProceduralDevelopment` | `Menetluse areng: …` | `occurred_on` + precision, may be unknown |
 | `MatterExternalPosition` | `Meile saadetud tagasiside: …` / `Teiste arvamus: …` / the historical heading | `stated_on` + precision, may be unknown |
 | `MatterEngagement` | `Kaasamine: …` | `occurred_on` + precision, may be unknown |
-| `Submission` (SENT) | `Arvamus välja` | `sent_at`, never null on a SENT row |
+| `Submission` (ever sent) | `Arvamus välja` | `sent_at`, and the row's own requirement |
 | `MatterWebsiteOverview` | `Ülevaade / uudis` | `published_on`, may be unknown |
 | `MatterWorkVictory` (confirmed) | `Töövõit` | `period_date` + precision, may be unknown |
 | `MatterImportantDate` | the record's own title | its period |
@@ -305,12 +364,62 @@ authorization architecture and could not be got wrong in a new way. Had it neede
 one, the decision would have been to leave the gap documented rather than ship an
 unsafe view — security over completeness.
 
+**But the chokepoint's default is the wrong default for a surface that asks for
+everything.** *Amended after the independent review, which reproduced a leak.*
+`scope_change_events` lets an event type it does not recognise through as
+Matter-level, and that is correct: for `MATTER_CREATED` and its siblings the Matter
+genuinely is the subject, and the caller's own Matter filter is the whole answer.
+It is safe for a caller that names its own vocabulary, which every surface did —
+`TIMELINE_EVENT_TYPES` for the chronology, its own list for the department feed.
+This page named none, and «everything» plus «unknown means Matter-level» is
+«unknown means allowed». The review's reproduction: a reader who receives 404 for a
+RESTRICTED related Matter could read that Matter's title out of `Kõik muudatused`
+on a Matter they may open.
+
+The page therefore renders an **explicit vocabulary**, `change_log_event_types()`:
+
+* `MATTER_LEVEL_EVENT_TYPES` — event types somebody has declared safe at Matter
+  visibility, because the Matter really is their subject; **union**
+* `child_event_types()` — the families `app.audit.visibility._child_families` knows
+  how to scope.
+
+Anything in neither is **absent from the page**, not redacted: no title, no
+summary, no actor, no timestamp, no row and no gap in the count. Six families are
+in neither today — `MATTER_RELATION_ADDED` / `_REMOVED`,
+`BACKGROUND_MATERIAL_ADDED` / `_REMOVED`, and the four `WEBSITE_OVERVIEW_*` — and
+each is a real leak rather than a precaution: a relation's summary names the other
+Matter, background material names a `Document` or a foreign `Submission`, and a
+`MatterWebsiteOverview` is a `VisibilityInheritingModel` whose very existence is a
+disclosure. Classifying them is the right fix and it is a change to `_child_families`,
+where it belongs; until somebody makes it the audit page is *incomplete* rather than
+*unsafe*, which is the trade this record already committed to above.
+
+A structural test asserts that what the page may render is a subset of that union,
+so a future event family cannot become visible by being added to the enum. It is a
+guard against silence, not a rule to widen.
+
 What it shows: when, who, which kind of change, and the summary the write itself
 recorded. What it does not: `ChangeEvent.payload`, any primary key, any
 `operation_id`, and `SecurityAuditEvent`, which is a compliance record with its own
 readers (master specification 16.5). It is a page rather than a third tab, because
 two tabs is the whole of this record's navigation and an audit log is looked up
 rather than navigated between. Django admin is not used and is not linked.
+
+**`?nihe=` is bounded and the database does the skipping.** *Amended after the
+independent review.* `OFFSET` is a 64-bit signed integer in PostgreSQL and `?nihe=`
+arrives as text off a URL, so `2**63` reached the driver as a `DataError` and left
+a read-only audit page returning 500 — a malformed query string is a bad request,
+not a server fault. It is normalised instead: non-numeric text and a negative number
+resolve to the first page, and anything past `CHANGE_LOG_MAX_OFFSET` is clamped to
+it. A clamp rather than a rejection, because there is nothing beyond that number for
+anybody and showing an error to somebody who mistyped a digit buys nothing.
+
+The same correction fixed the cost. The first implementation fetched
+`offset + 101` rows and discarded the first `offset` of them in Python, so page ten
+was ten times the work of page one for the same hundred lines. The queryset is
+sliced to the current window now — page size plus one row, which is the whole of
+`has_more` — which is how `timeline_page` already pages the chronology. No new
+pagination framework, no cursor, and no second `COUNT(*)`.
 
 ## 12 — `Menetluse kulg`: choosing a rail
 
@@ -397,6 +506,51 @@ anywhere would be the rail asserting a position the person explicitly declined t
 give. The same holds for a European stage on a domestic file. Either reads beside
 the rail, in its own words.
 
+**The current node names the stage the file actually holds.** *Amended after the
+independent review.* §14 keeps the rails deliberately broad: `Jõustumine` takes
+both `awaiting_entry` and `in_force`, and the European `Ülevõtmine / jõustumine`
+takes three stages. This record originally claimed the node's *state* told them
+apart. It does not — `Praegu` is identical for all of them — so a file waiting for
+an act to come into force and one already in force rendered as the same three
+words, and the distinction the header had already made was destroyed.
+
+The fix is neither a sixth node nor a new `StageVocabulary` value. The explicit
+canonical `Hetkeseis` label rides on the **current** node and on no other:
+
+```
+Jõustumine                    Ülevõtmine / jõustumine
+Praegu                        Praegu
+Jõustumise ootel              ELi õiguse ülevõtmise ootel
+```
+
+It is the reviewed row's own `label_et`, read from the snapshot the rail was
+already built from, so no query is added and no word is invented. It is omitted
+where the stage's words and the node's are the same, because
+`Kooskõlastus · Praegu · Kooskõlastus` states one thing twice.
+
+**`Kirjas` means evidence on the way *here*, not evidence anywhere.** *Amended
+after the independent review.* A stage recorded and then corrected — somebody
+picked `Jõustunud` by mistake and moved the file back to `Kooskõlastus`, or the
+procedure genuinely went backwards — leaves a `MATTER_STAGE_CHANGED` row for a node
+to the right of where the file now stands. Read literally, that produced:
+
+```
+Algus         Kirjas
+Kooskõlastus  Praegu
+…
+Jõustumine    Kirjas
+```
+
+which tells a reader the act is both in force and out for consultation. On a rail
+this broad the honest reading of a node ahead of the current one is `Võimalik`: it
+may still be coming. So `RECORDED` is constrained to nodes before the current one.
+
+This is a projection rule for the overview and nothing more. **No event is deleted,
+rewritten or hidden**: `Teema käik` renders the stage change from the audit record
+exactly as it did, `recorded_stage_keys` still reads it, and the detailed history
+is where a correction belongs. The late-entry rule above is untouched — a file with
+no recorded history still reads `Teadmata` to the left of where it stands.
+
 ## 14 — `Menetluse kulg`: two generic V1 templates
 
 Deliberately generic, and two.
@@ -415,8 +569,10 @@ seisukoht, `eu_procedure`→EL menetlus,
 `awaiting_transposition`/`awaiting_entry`/`in_force`→Ülevõtmine / jõustumine.
 
 `awaiting_entry` and `in_force` share a node because they are the same point of
-the procedure read from two sides — waiting for it and past it — and the node's
-*state* is what tells them apart.
+the procedure read from two sides — waiting for it and past it. A sixth node is
+still the wrong answer; the node's *state* is not the right one either, and §13's
+amendment says what carries the distinction instead: the explicit `Hetkeseis`
+label on the current node.
 
 `Vastu võetud` maps no stage key, which is an omission in the vocabulary rather
 than in this list: there is no `Hetkeseis` value for «the EU institutions adopted

@@ -31,17 +31,31 @@ import datetime as dt
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.audit.visibility import (
+    MATTER_LEVEL_EVENT_TYPES,
+    change_log_event_types,
+    child_event_types,
+)
 from app.core.enums import Visibility
 from app.documents.models import Document
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterWorkVictory
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
-from app.matters.services import add_engagement, compose_update
+from app.matters.services import (
+    add_engagement,
+    change_stage,
+    compose_update,
+    create_matter,
+    plan_website_overview,
+    publish_website_overview,
+)
 from app.matters.timeline import (
     SUBMISSION_MILESTONE,
     WORK_VICTORY_DATE_UNKNOWN,
@@ -49,12 +63,15 @@ from app.matters.timeline import (
     matter_timeline,
     work_victory_chronology_day,
 )
+from app.matters.views import CHANGE_LOG_PAGE_SIZE
 from app.matters.workspace import (
     add_matter_external_position,
     add_matter_koda_opinion,
     add_procedural_development,
 )
-from app.submissions.enums import SubmissionKind
+from app.related_materials.services import add_background_submission, link_related_matters
+from app.submissions.enums import SubmissionKind, SubmissionStatus
+from app.submissions.services import supersede_submission, withdraw_submission
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
 from tests import factories
@@ -985,3 +1002,415 @@ def test_the_change_log_refuses_a_matter_this_reader_may_not_open(client, reader
 
     response = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk}))
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# A sent opinion is history, and a later status does not unsend it
+# ---------------------------------------------------------------------------
+#
+# The chronology used to be populated by `status=SENT`, which answers «is this
+# the opinion that currently stands» — the right question for a portfolio and
+# the wrong one for a history. Sending was a business act on a day; withdrawing
+# the opinion afterwards adds a second act and takes nothing away from the first
+# (docs/adr/0092 §3, `SubmissionQuerySet.historically_sent`).
+
+
+def test_a_withdrawn_opinion_keeps_the_send_it_is_a_withdrawal_of(
+    normal_matter, specialist, ministry, evidence_root
+):
+    """Scenario B. Two lines: the letter went, and then it was taken back."""
+    sent_on = _days_ago(30)
+    submission = add_matter_koda_opinion(
+        matter=normal_matter,
+        author=specialist,
+        upload=_pdf("arvamus.pdf", b"%PDF-1.4 arvamus"),
+        recipients=[ministry],
+        sent_on=sent_on,
+        title="Koja arvamus",
+    ).record
+    withdraw_submission(submission=submission, actor=specialist, reason="Uus info")
+
+    items = _history(normal_matter, specialist)
+    sends = [item for item in items if item.submission]
+
+    assert len(sends) == 1
+    assert sends[0].milestone.what == SUBMISSION_MILESTONE
+    # The send keeps its own business date, its recipients and its final text.
+    assert sends[0].milestone.display_date == _et(sent_on)
+    assert "Majandus- ja Kommunikatsiooniministeerium" in sends[0].milestone.sub
+    assert [file.label for file in sends[0].files] == ["arvamus.pdf"]
+    # And the withdrawal reads as its own line, from the audit vocabulary.
+    assert "Arvamus tagasi võetud" in _rendered(items)
+
+
+def test_a_superseded_opinion_is_still_the_act_it_was(
+    normal_matter, specialist, ministry, committee, evidence_root
+):
+    """Scenario C. A later opinion is another send, not a correction of this one."""
+    first_day, second_day = _days_ago(60), _days_ago(12)
+    first = add_matter_koda_opinion(
+        matter=normal_matter,
+        author=specialist,
+        upload=_pdf("arvamus_1.pdf", b"%PDF-1.4 esimene"),
+        recipients=[ministry],
+        sent_on=first_day,
+        title="Koja arvamus",
+    ).record
+    add_matter_koda_opinion(
+        matter=normal_matter,
+        author=specialist,
+        upload=_pdf("arvamus_2.pdf", b"%PDF-1.4 teine"),
+        recipients=[committee],
+        sent_on=second_day,
+        title="Koja täiendav arvamus",
+    )
+    supersede_submission(submission=first, actor=specialist)
+
+    rows = [item for item in _history(normal_matter, specialist) if item.submission]
+
+    # Two sends, two rows. Nothing elects a final opinion.
+    assert len(rows) == 2
+    assert {row.milestone.display_date for row in rows} == {_et(first_day), _et(second_day)}
+    superseded = next(row for row in rows if row.milestone.display_date == _et(first_day))
+    # Its final text is still reachable under the row that stands for the send.
+    assert [file.label for file in superseded.files] == ["arvamus_1.pdf"]
+
+
+def test_a_draft_carrying_a_stray_timestamp_is_not_a_send(
+    normal_matter, specialist, ministry, evidence_root
+):
+    """The population is «was sent», not «has a timestamp».
+
+    The CHECK constraint binds `sent_at` to the SENT status and says nothing
+    about a draft, so a row carrying both `DRAFT` and a timestamp is malformed
+    data. A history that materialised a send out of one would be inventing an
+    act nobody performed.
+    """
+    submission = add_matter_koda_opinion(
+        matter=normal_matter,
+        author=specialist,
+        upload=_pdf(),
+        recipients=[ministry],
+        sent_on=_days_ago(5),
+        title="Koja arvamus",
+    ).record
+    # The constraint refuses `SENT` without evidence, never `DRAFT` with a date.
+    submission.status = SubmissionStatus.DRAFT
+    submission.save(update_fields=["status"])
+
+    assert submission.sent_at is not None
+    assert [item for item in _history(normal_matter, specialist) if item.submission] == []
+
+
+def test_the_send_date_is_the_records_own_and_not_the_day_it_was_withdrawn(
+    normal_matter, specialist, ministry, evidence_root
+):
+    """`sent_at` stays canonical, and no audit timestamp is revived as a date."""
+    sent_on = _days_ago(45)
+    submission = add_matter_koda_opinion(
+        matter=normal_matter,
+        author=specialist,
+        upload=_pdf(),
+        recipients=[ministry],
+        sent_on=sent_on,
+        title="Koja arvamus",
+    ).record
+    withdraw_submission(submission=submission, actor=specialist)
+
+    rows = [item for item in _history(normal_matter, specialist) if item.submission]
+    assert rows[0].milestone.display_date == _et(sent_on)
+    submission.refresh_from_db()
+    assert submission.status == SubmissionStatus.WITHDRAWN
+
+
+def test_a_restricted_withdrawn_opinion_stays_hidden(
+    normal_matter, specialist, reader, ministry, evidence_root
+):
+    """Widening the population must not widen visibility with it."""
+    result = add_matter_koda_opinion(
+        matter=normal_matter,
+        author=specialist,
+        upload=_pdf("salajane.pdf", b"%PDF-1.4 salajane"),
+        recipients=[ministry],
+        sent_on=_days_ago(20),
+        title="Koja salajane arvamus",
+    )
+    submission = result.record
+    withdraw_submission(submission=submission, actor=specialist)
+    # The document first: `submissions_check_final_evidence` refuses final
+    # evidence less restricted than the send it proves.
+    document = result.documents[0]
+    document.visibility_override = Visibility.RESTRICTED
+    document.save(update_fields=["visibility_override"])
+    submission.visibility_override = Visibility.RESTRICTED
+    submission.save(update_fields=["visibility_override"])
+
+    body = _rendered(_history(normal_matter, reader))
+    assert "salajane" not in body
+    assert SUBMISSION_MILESTONE not in body
+    assert "Arvamus tagasi võetud" not in body
+
+
+# ---------------------------------------------------------------------------
+# `Kõik muudatused` renders a vocabulary somebody chose
+# ---------------------------------------------------------------------------
+#
+# `scope_change_events` lets an *unclassified* event family through as
+# Matter-level, which is right for `MATTER_CREATED` and wrong for a family whose
+# summary names a child. Every other surface named its own vocabulary; this page
+# asked for «everything», and «everything» plus «unknown means Matter-level» is
+# «unknown means allowed» (AUTH-003, docs/adr/0092 §11).
+
+
+def test_the_change_log_vocabulary_is_a_subset_of_what_somebody_classified():
+    """The structural guard. A new event family cannot become visible silently.
+
+    If this fails, an event type reached `Kõik muudatused` without being either
+    declared safe at Matter visibility or given a visibility classifier in
+    `app.audit.visibility._child_families`. Add it to whichever of the two is
+    true; do not widen this assertion.
+    """
+    assert change_log_event_types() <= (MATTER_LEVEL_EVENT_TYPES | child_event_types())
+    # And the two halves are disjoint: a type is Matter-level or it is a child's,
+    # never both, or one of the two answers is wrong about it.
+    assert not (MATTER_LEVEL_EVENT_TYPES & child_event_types())
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    [
+        ChangeEventType.MATTER_RELATION_ADDED,
+        ChangeEventType.MATTER_RELATION_REMOVED,
+        ChangeEventType.BACKGROUND_MATERIAL_ADDED,
+        ChangeEventType.BACKGROUND_MATERIAL_REMOVED,
+        ChangeEventType.WEBSITE_OVERVIEW_PLANNED,
+        ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
+        ChangeEventType.WEBSITE_OVERVIEW_CANCELLED,
+        ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
+    ],
+)
+def test_an_unclassified_family_is_absent_rather_than_allowed(event_type):
+    """The families the review proved leak, named one by one.
+
+    Each summary or event label names an object carrying its own
+    `visibility_override`, and none of them has a classifier in
+    `_child_families` yet. Classifying them is the right fix and belongs in that
+    map; until somebody makes it, they are off this page.
+    """
+    assert event_type not in change_log_event_types()
+
+
+def test_a_restricted_related_matters_title_is_not_in_the_change_log(client, specialist, reader):
+    """The review's own reproduction.
+
+    A reader who receives 404 for a RESTRICTED Matter could read its title out of
+    `Kõik muudatused` on a Matter they may open.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    secret = factories.MatterFactory(
+        owner=specialist,
+        visibility=Visibility.RESTRICTED,
+        title="Riigisaladuse seaduse muudatused",
+    )
+    link_related_matters(matter=matter, other=secret, actor=specialist)
+
+    client.force_login(reader)
+    # The 404 that makes the disclosure a disclosure.
+    assert client.get(reverse("matters:matter_detail", kwargs={"pk": secret.pk})).status_code == 404
+
+    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+    assert "Riigisaladuse" not in body
+    assert "Teema seotud teise teemaga" not in body
+
+
+def test_a_foreign_submissions_title_is_not_in_the_change_log(
+    client, specialist, reader, ministry, evidence_root
+):
+    """Background material names a `Submission` that lives on another Matter."""
+    matter = factories.MatterFactory(owner=specialist)
+    source = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    submission = add_matter_koda_opinion(
+        matter=source,
+        author=specialist,
+        upload=_pdf("taust.pdf", b"%PDF-1.4 taust"),
+        recipients=[ministry],
+        sent_on=_days_ago(80),
+        title="Koja salajane taustarvamus",
+    ).record
+    add_background_submission(matter=matter, submission=submission, actor=specialist)
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "salajane" not in body
+    assert "Taustmaterjal lisatud" not in body
+
+
+def test_a_restricted_website_overview_is_not_named_in_the_change_log(client, specialist, reader):
+    """Not even its existence: the event label alone says one was published."""
+    matter = factories.MatterFactory(owner=specialist)
+    overview = plan_website_overview(matter=matter, actor=specialist)
+    publish_website_overview(
+        overview=overview,
+        url="https://koda.ee/uudised/salajane-ulevaade",
+        published_on=_days_ago(3),
+        actor=specialist,
+    )
+    overview.refresh_from_db()
+    overview.visibility_override = Visibility.RESTRICTED
+    overview.save(update_fields=["visibility_override"])
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "Ülevaade / uudis avaldatud" not in body
+    assert "Ülevaade / uudis plaanis" not in body
+    assert "salajane-ulevaade" not in body
+
+
+def test_an_already_classified_restricted_development_is_still_hidden(client, specialist, reader):
+    """The classified half of the union keeps working exactly as it did."""
+    matter = factories.MatterFactory(owner=specialist)
+    development = add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Ministeerium saatis salajase versiooni",
+        occurred_on=_days_ago(5),
+    ).record
+    development.visibility_override = Visibility.RESTRICTED
+    development.save(update_fields=["visibility_override"])
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+    assert "salajase" not in body
+    assert "Menetluse areng lisatud" not in body
+
+
+def test_the_matter_level_writes_the_page_exists_for_are_all_still_there(
+    signed_in, specialist, consultation
+):
+    """Fail-closed must not mean fail-empty: the audit page still audits."""
+    matter = create_matter(title="Algne pealkiri", actor=specialist, owner=specialist)
+    compose_update(matter=matter, author=specialist, body="Märkus")
+    change_stage(matter=matter, stage=consultation, actor=specialist)
+
+    body = signed_in.get(
+        reverse("matters:matter_changes", kwargs={"pk": matter.pk})
+    ).content.decode()
+
+    assert "Teema loodud" in body
+    assert "Hetkeseis muudetud" in body
+    assert "Sissekanne lisatud" in body
+
+
+# ---------------------------------------------------------------------------
+# `?nihe=` is a number off a URL, and the page treats it as one
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw", ["-1", "abc", "", "1e9", "9" * 40, str(2**63), str(10**30)])
+def test_a_pathological_offset_is_a_page_and_never_a_500(signed_in, specialist, raw):
+    """A malformed query string is a bad request, not a server fault.
+
+    `OFFSET` is a 64-bit signed integer in PostgreSQL, so `2**63` reached the
+    driver as a `DataError` and left a read-only audit page returning 500.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.get(
+        reverse("matters:matter_changes", kwargs={"pk": matter.pk}), {"nihe": raw}
+    )
+    assert response.status_code == 200
+
+
+def test_an_ordinary_second_page_reads_the_rows_after_the_first(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    for index in range(CHANGE_LOG_PAGE_SIZE + 5):
+        ChangeEvent.objects.create(
+            matter=matter,
+            event_type=ChangeEventType.MATTER_TITLE_CHANGED,
+            summary=f"Pealkiri {index}",
+            occurred_at=timezone.now() - dt.timedelta(minutes=index + 1),
+        )
+
+    first = signed_in.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk}))
+    second = signed_in.get(
+        reverse("matters:matter_changes", kwargs={"pk": matter.pk}),
+        {"nihe": CHANGE_LOG_PAGE_SIZE},
+    )
+
+    assert len(first.context["changes"]) == CHANGE_LOG_PAGE_SIZE
+    assert first.context["has_more"] is True
+    assert second.context["has_more"] is False
+    # Disjoint pages: nothing is shown twice and nothing is skipped.
+    assert not {row.pk for row in first.context["changes"]} & {
+        row.pk for row in second.context["changes"]
+    }
+    assert len(first.context["changes"]) + len(second.context["changes"]) == (
+        ChangeEvent.objects.filter(matter=matter).count()
+    )
+
+
+def test_the_query_does_not_materialise_the_pages_before_it(signed_in, specialist):
+    """LOW 7. The queryset is sliced; previous pages never reach Python.
+
+    The old spelling asked for `offset + 101` rows and threw the first `offset`
+    of them away, so page four cost four times page one for the same hundred
+    lines on screen. What that defect *was* is the `LIMIT` the database was
+    given, so that is what this measures.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    for index in range(CHANGE_LOG_PAGE_SIZE * 3):
+        ChangeEvent.objects.create(
+            matter=matter,
+            event_type=ChangeEventType.MATTER_TITLE_CHANGED,
+            summary=f"Pealkiri {index}",
+            occurred_at=timezone.now() - dt.timedelta(minutes=index + 1),
+        )
+
+    url = reverse("matters:matter_changes", kwargs={"pk": matter.pk})
+    with CaptureQueriesContext(connection) as shallow:
+        signed_in.get(url)
+    with CaptureQueriesContext(connection) as deep:
+        signed_in.get(url, {"nihe": CHANGE_LOG_PAGE_SIZE * 2})
+
+    def _changelog_sql(captured) -> str:
+        return next(
+            query["sql"]
+            for query in captured.captured_queries
+            if "audit_changeevent" in query["sql"] and "LIMIT" in query["sql"]
+        )
+
+    shallow_sql, deep_sql = _changelog_sql(shallow), _changelog_sql(deep)
+    assert f"LIMIT {CHANGE_LOG_PAGE_SIZE + 1}" in shallow_sql
+    # The same bounded window however deep the page is, and an OFFSET the
+    # database honours rather than a slice Python takes afterwards.
+    assert f"LIMIT {CHANGE_LOG_PAGE_SIZE + 1}" in deep_sql
+    assert f"OFFSET {CHANGE_LOG_PAGE_SIZE * 2}" in deep_sql
+    # And no N+1: a deeper page is the same number of queries.
+    assert len(shallow.captured_queries) == len(deep.captured_queries)
+
+
+def test_the_empty_history_is_named_after_the_section_it_is_in(signed_in, specialist):
+    """LOW 8. The heading says `Teema käik`; so does the empty state.
+
+    `Ajajoon` survives as the id and the `?ajajoon=` filter, where renaming it
+    would break links people have already sent, and nowhere a reader can see it.
+    A section whose heading and whose empty state name it differently reads as
+    two components (docs/adr/0092 §9).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    body = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    ).content.decode()
+
+    assert "Teema käik on tühi. Esimene sissekanne ilmub siia." in body
+    assert "Ajajoon on tühi" not in body
+    # The compatibility surface is untouched.
+    assert 'id="ajajoon"' in body
+    assert (
+        signed_in.get(
+            reverse("matters:matter_detail", kwargs={"pk": matter.pk}),
+            {"ajajoon": "sissekanded"},
+        ).status_code
+        == 200
+    )

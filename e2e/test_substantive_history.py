@@ -134,6 +134,62 @@ def test_the_history_section_is_called_teema_kaik(page, base_url):
     expect(section).to_have_count(1)
 
 
+def test_an_empty_history_is_named_after_the_section_it_is_in(page, base_url):
+    """The empty state says `Teema käik`, because that is what the heading says.
+
+    `Ajajoon` survives as the id and the query parameter and nowhere a reader can
+    see it; a section whose heading and whose empty state name it differently
+    reads as two components (docs/adr/0092 §9).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+
+    empty = page.locator("#ajajoon .uxtl__none")
+    expect(empty).to_have_text("Teema käik on tühi. Esimene sissekanne ilmub siia.")
+    expect(page.locator("#ajajoon")).not_to_contain_text("Ajajoon on tühi")
+
+
+def test_collapsing_the_history_does_not_hide_menetluse_kulg(page, base_url):
+    """The reason the rail is a sibling and not a block inside the disclosure.
+
+    Collapsing six months of history is the ordinary thing to do when the
+    question is where the bill has got to — and until this round it took the
+    answer to that question away with it (docs/adr/0092 §2, amended).
+    """
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
+
+    expect(rail(page)).to_be_visible()
+    # The structural fact, in the browser's own tree rather than in the markup.
+    expect(page.locator("#ajajoon .lprail")).to_have_count(0)
+
+    page.locator("#ajajoon > summary").click()
+    expect(page.locator("#ajajoon")).not_to_have_attribute("open", "")
+    expect(history(page)).not_to_be_visible()
+    expect(rail(page)).to_be_visible()
+    expect(rail(page)).to_contain_text("Menetluse kulg")
+
+
+def test_the_two_sections_are_headings_of_the_same_level(page, base_url):
+    """«Where is this» is not a sub-part of «what happened»."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
+
+    expect(page.get_by_role("heading", name="Teema käik", level=2)).to_have_count(1)
+    expect(page.get_by_role("heading", level=2).filter(has_text="Menetluse kulg")).to_have_count(1)
+
+
+def test_the_current_node_says_which_side_of_its_node_the_file_is_on(page, base_url):
+    """`Jõustumine · Praegu` alone cannot tell two real situations apart."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage="Jõustumise ootel")
+
+    current = rail(page).locator(".lprail__node--current")
+    expect(current).to_contain_text("Jõustumine")
+    expect(current).to_contain_text("Praegu")
+    expect(current).to_contain_text("Jõustumise ootel")
+
+
 # ---------------------------------------------------------------------------
 # One act, one row
 # ---------------------------------------------------------------------------

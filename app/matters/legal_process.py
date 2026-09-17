@@ -133,8 +133,12 @@ class ProcessTemplateNode:
 #: The domestic rail. Five nodes, and the vocabulary is the procedure's own.
 #:
 #: `Jõustumine` takes both `awaiting_entry` and `in_force`, which are the same
-#: point of the procedure read from two sides — waiting for it and past it. The
-#: node's *state* is what tells them apart, not a sixth node.
+#: point of the procedure read from two sides — waiting for it and past it. A
+#: sixth node is still the wrong answer, but the node's *state* is not the right
+#: one either: `Praegu` is identical for both, and a reader cannot tell a file
+#: waiting for commencement from one already in force. The explicit `Hetkeseis`
+#: rides on the current node instead — `ProcessNode.stage_label` — which keeps
+#: the rail generic and still says which side of it the file is on.
 DOMESTIC_TEMPLATE: tuple[ProcessTemplateNode, ...] = (
     ProcessTemplateNode("algus", "Algus", frozenset({"idea"})),
     ProcessTemplateNode("kooskolastus", "Kooskõlastus", frozenset({"consultation"})),
@@ -154,7 +158,10 @@ DOMESTIC_TEMPLATE: tuple[ProcessTemplateNode, ...] = (
 #:
 #: `awaiting_entry` and `in_force` join `awaiting_transposition` on the last
 #: node: a directive that has been transposed and the act that transposed it
-#: coming into force are the same end of this rail.
+#: coming into force are the same end of this rail. Three stages on one node is
+#: the strongest case for `ProcessNode.stage_label` — `Praegu` alone would read
+#: identically for a file awaiting transposition, one awaiting commencement and
+#: one already in force, which are three different answers.
 EU_TEMPLATE: tuple[ProcessTemplateNode, ...] = (
     ProcessTemplateNode("algus", "Algus / konsultatsioon", frozenset({"idea", "consultation"})),
     ProcessTemplateNode("eesti-seisukoht", "Eesti seisukoht", frozenset({"estonian_eu_position"})),
@@ -205,11 +212,32 @@ KODA_STOPPED_LABEL = "Koda ei tegele edasi"
 
 @dataclass(frozen=True)
 class ProcessNode:
-    """One node as a reader sees it: a name and one of four states."""
+    """One node as a reader sees it: a name, one of four states, and — on the
+    current node only — which `Hetkeseis` the file actually holds.
+
+    ``stage_label`` exists because a node is deliberately broader than a stage.
+    `Jõustumine` takes both `awaiting_entry` and `in_force`; the European
+    `Ülevõtmine / jõustumine` takes three. Those are the same *point of the
+    procedure* read from different sides, which is why they share a node — but
+    «waiting for the act to come into force» and «it is in force» are not the
+    same answer to «where is this», and a rail that printed `Jõustumine · Praegu`
+    for both destroyed the distinction the header had already made.
+
+    So the broad node stays broad and the explicit canonical label rides on it,
+    naming which side of that node the file occupies. **No new node and no new
+    `StageVocabulary` value**: the label is the reviewed stage's own words, read
+    from the same snapshot the rail was built from, and nothing here invents a
+    vocabulary entry (docs/adr/0092 §13, amended).
+
+    It is empty on every other node, and empty on the current node when the
+    stage's words and the node's are the same — `Kooskõlastus · Praegu ·
+    Kooskõlastus` states one thing twice and tells a reader nothing.
+    """
 
     key: str
     label: str
     state: str
+    stage_label: str = ""
 
     @property
     def state_label(self) -> str:
@@ -438,6 +466,23 @@ def legal_process_rail(
         for index, node in enumerate(nodes)
         if node.stage_keys & recorded and index != current_index
     }
+    if current_index is not None:
+        # **`Kirjas` means evidence on the way *here*, not evidence anywhere.**
+        #
+        # A stage recorded and then corrected — somebody picked `Jõustunud` by
+        # mistake and moved the file back to `Kooskõlastus`, or the procedure
+        # genuinely went backwards — leaves a `MATTER_STAGE_CHANGED` row for a
+        # node to the right of where the file now stands. Read literally, that
+        # row drew `Algus · Kirjas … Kooskõlastus · Praegu … Jõustumine · Kirjas`,
+        # which tells a reader the act is both in force and out for consultation.
+        #
+        # On a rail this broad the honest reading of a node ahead of the current
+        # one is `Võimalik`: it may still be coming. The event is not deleted, not
+        # rewritten and not hidden — `Teema käik` renders the stage change from
+        # the audit record exactly as before, and the *detailed* history is where
+        # a correction belongs. This is a projection rule for the overview and
+        # nothing more (docs/adr/0092 §13, amended).
+        recorded_indexes = {index for index in recorded_indexes if index < current_index}
 
     # Where «earlier» stops and «later» begins. The current node when there is
     # one; otherwise the furthest node the file can prove it reached. Without
@@ -460,7 +505,14 @@ def legal_process_rail(
             state = STATE_UNKNOWN
         else:
             state = STATE_POSSIBLE
-        drawn.append(ProcessNode(key=node.key, label=node.label, state=state))
+        # The explicit `Hetkeseis` rides on the current node and nowhere else,
+        # and only when it adds a word the node has not already said. Read from
+        # the snapshot above rather than fetched again: the rail already paid for
+        # this column.
+        on_node = ""
+        if state == STATE_CURRENT and stage_label and stage_label != node.label:
+            on_node = stage_label
+        drawn.append(ProcessNode(key=node.key, label=node.label, state=state, stage_label=on_node))
 
     # A `Hetkeseis` the chosen rail cannot honestly hold — `Muu`, or a European
     # stage on a domestic file — reads beside the rail in its own words rather

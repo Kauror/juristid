@@ -239,7 +239,14 @@ record, not professional chronology (master specification 16.5).
     </div>
   </article>
 {% empty %}
-  <p class="uxtl__none">Ajajoon on tühi. Esimene sissekanne ilmub siia.</p>
+  {% comment %}
+    The section is called `Teema käik` since docs/adr/0092 §9, and the empty
+    state says so. `Ajajoon` survives as the id and the query parameter, where
+    changing it would break links people have already sent, and nowhere a reader
+    can see it — a section whose heading and whose empty state name it
+    differently reads as two components.
+  {% endcomment %}
+  <p class="uxtl__none">Teema käik on tühi. Esimene sissekanne ilmub siia.</p>
 {% endfor %}
 {% comment %}
   The continuation control, at the **bottom** of the list where the list runs

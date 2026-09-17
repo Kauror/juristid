@@ -9,6 +9,14 @@ a strip mixing «Alustatud», «Koja arvamus» and «Arvamuse tähtaeg» reads a
 history of dated points and was labelled as the file's course, so neither
 question had an answer a reader could trust (docs/adr/0092 §2).
 
+**And therefore a sibling of `Teema käik`, not a child of it.** This section
+renders *outside* the `#ajajoon` disclosure and carries its own `h2`. Nesting it
+inside made the structure contradict the sentence above: a reader who collapsed
+the history — which is exactly what somebody does when they want to see where
+the procedure stands without scrolling six months of it — lost the answer to the
+other question, and a screen reader was told that «where is this» is part of
+«what happened» (docs/adr/0092 §2, amended).
+
 **Four states, in words.** `Praegu`, `Kirjas`, `Teadmata`, `Võimalik`. Each node
 prints its own state as text; the stylesheet decorates what the text already
 says. A rail whose four states were four hues would say nothing with the
@@ -28,7 +36,7 @@ announcing that the application knows nothing.
 {% endcomment %}
 {% if legal_process %}
   <section class="lprail" aria-labelledby="menetluse-kulg-heading">
-    <h3 class="lprail__head" id="menetluse-kulg-heading">
+    <h2 class="lprail__head" id="menetluse-kulg-heading">
       Menetluse kulg
       {% comment %}
         Which of the two generic V1 rails this is. A reader has to be able to
@@ -37,7 +45,7 @@ announcing that the application knows nothing.
         than a mismatch (docs/adr/0092 §14).
       {% endcomment %}
       <span class="lprail__template">{{ legal_process.label }}</span>
-    </h3>
+    </h2>
     <ol class="lprail__nodes">
       {% for node in legal_process.nodes %}
         <li class="lprail__node lprail__node--{{ node.state }}"
@@ -45,6 +53,19 @@ announcing that the application knows nothing.
           <span class="lprail__dot" aria-hidden="true"></span>
           <span class="lprail__what">{{ node.label }}</span>
           <span class="lprail__state">{{ node.state_label }}</span>
+          {% comment %}
+            The explicit `Hetkeseis`, on the current node and nowhere else.
+
+            A node is deliberately broader than a stage: `Jõustumine` holds both
+            «ootel» and «jõustunud», and the European last node holds three. Two
+            files on opposite sides of that node both read `Praegu`, so the state
+            alone said nothing — this is the canonical stage's own words saying
+            which side the file is on, without a sixth node and without a new
+            vocabulary value (app/matters/legal_process.py `ProcessNode`).
+          {% endcomment %}
+          {% if node.stage_label %}
+            <span class="lprail__stage">{{ node.stage_label }}</span>
+          {% endif %}
         </li>
       {% endfor %}
     </ol>
