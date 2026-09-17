@@ -79,6 +79,44 @@ def select_block(body: str, field: str) -> str:
     return body[start : body.index("</select>", start)]
 
 
+def answer_on_muuda_teemat(signed_in, matter, **fields) -> None:
+    """Answer a counterparty question on `Muuda teemat`.
+
+    `Uus teema` asks who sent the file and nothing else since docs/adr/0090 §5,
+    so a test that needs an addressee names one where the question is asked.
+    """
+    signed_in.post(
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
+        {
+            "title": matter.title,
+            "brief_summary": matter.brief_summary,
+            "visibility": matter.visibility,
+            # Carried, not omitted: every control on this form posts, and an
+            # omitted multi-select means «none of them».
+            "source_organisations": [
+                str(organisation.pk) for organisation in matter.source_organisations.all()
+            ],
+            **fields,
+        },
+    )
+
+
+def name_the_body(signed_in, title: str, payload_key: str) -> None:
+    """File a Teema naming `Zeta Näidisliit` in one direction, through the UI.
+
+    `sender_name` reaches the create form; `addressee_name` reaches the edit
+    form. Both resolve through the same catalogue in the same transaction, which
+    is what these tests are about.
+    """
+    if payload_key == "sender_name":
+        signed_in.post(CREATE, {"title": title, "sender_name": "Zeta Näidisliit"})
+        return
+    signed_in.post(CREATE, {"title": title})
+    answer_on_muuda_teemat(
+        signed_in, Matter.objects.get(title=title), **{payload_key: "Zeta Näidisliit"}
+    )
+
+
 # ---------------------------------------------------------------------------
 # A. the lifecycle — created on Uus teema, found in the register
 # ---------------------------------------------------------------------------
@@ -98,7 +136,7 @@ def test_a_body_typed_on_uus_teema_is_immediately_findable(signed_in, typed_fiel
     nothing here may start to.
     """
     crowd_the_catalogue()
-    signed_in.post(CREATE, {"title": "Uue asutusega teema", payload_key: "Zeta Näidisliit"})
+    name_the_body(signed_in, "Uue asutusega teema", payload_key)
 
     created = Organisation.objects.get(name="Zeta Näidisliit")
 
@@ -119,7 +157,7 @@ def test_the_register_filter_uses_the_very_row_uus_teema_created(signed_in, payl
     asserts the primary key on the Matter is the primary key the chooser
     offered, which no copy can satisfy.
     """
-    signed_in.post(CREATE, {"title": "Sama rida", payload_key: "Zeta Näidisliit"})
+    name_the_body(signed_in, "Sama rida", payload_key)
 
     created = Organisation.objects.get(name="Zeta Näidisliit")
     matter = Matter.objects.get(title="Sama rida")
@@ -134,27 +172,10 @@ def test_the_register_filter_uses_the_very_row_uus_teema_created(signed_in, payl
     assert [row.pk for row in offered.context["organisation_options"]] == [created.pk]
 
 
-#: A Teema that names Zeta as its Saatja and **nobody** as its Adressaat.
-#:
-#: Since docs/adr/0069 a single unambiguous Saatja answers Adressaat by
-#: default, so `{"sender_name": …}` alone no longer builds a one-directional
-#: Matter — it builds one where Zeta is both, which is the intended product
-#: behaviour and not something to work around. `addressee_is_manual` is the
-#: field that exists for exactly this: it is how the form says «this person
-#: answered Adressaat themselves», and answering it with nothing is choosing
-#: «Määramata» beside a sender (app/matters/forms.py `_default_addressee`).
-#:
-#: Both tests below need the one-directional case to mean anything at all —
-#: one of them would otherwise assert that a body is found in «either»
-#: direction while only ever having been stored in one.
-SENDER_ONLY = {"sender_name": "Zeta Näidisliit", "addressee_is_manual": "1"}
-ADDRESSEE_ONLY = {"addressee_name": "Zeta Näidisliit"}
-
-
 def test_asutus_finds_the_body_in_either_direction(signed_in):
     """The convenience filter, for when somebody only remembers who was involved."""
-    signed_in.post(CREATE, {"title": "Saatjana", **SENDER_ONLY})
-    signed_in.post(CREATE, {"title": "Adressaadina", **ADDRESSEE_ONLY})
+    name_the_body(signed_in, "Saatjana", "sender_name")
+    name_the_body(signed_in, "Adressaadina", "addressee_name")
 
     created = Organisation.objects.get(name="Zeta Näidisliit")
     response = signed_in.get(REGISTER, {"asutus": str(created.pk), "olek": "koik"})
@@ -169,8 +190,8 @@ def test_the_precise_directions_still_tell_the_two_apart(signed_in):
     addressee from 2020, so a combined filter would answer a question nobody
     asked (Stage-2E brief 27).
     """
-    signed_in.post(CREATE, {"title": "Saatjana", **SENDER_ONLY})
-    signed_in.post(CREATE, {"title": "Adressaadina", **ADDRESSEE_ONLY})
+    name_the_body(signed_in, "Saatjana", "sender_name")
+    name_the_body(signed_in, "Adressaadina", "addressee_name")
     created = Organisation.objects.get(name="Zeta Näidisliit")
 
     sent = signed_in.get(REGISTER, {"saatja": str(created.pk), "olek": "koik"})
@@ -180,23 +201,27 @@ def test_the_precise_directions_still_tell_the_two_apart(signed_in):
     assert titles_on(addressed) == ["Adressaadina"]
 
 
-def test_a_defaulted_addressee_is_found_by_both_precise_filters(signed_in):
-    """And the composed case is not a gap in the two above — it is the ordinary one.
+def test_one_body_on_both_relations_is_found_by_both_precise_filters(signed_in):
+    """And the composed case is not a gap in the two above — it is ordinary.
 
-    A Teema created with one Saatja and nothing said about Adressaat has *both*
-    relations pointing at that body since docs/adr/0069. It must therefore
-    answer `?saatja=` **and** `?adressaat=`, because both are true of it — and
-    the two tests above deliberately construct the one-directional case
-    instead, so without this one nothing would assert what the default actually
-    does to the register.
+    A Teema whose sender and addressee are the same body must answer `?saatja=`
+    **and** `?adressaat=`, because both are true of it, and the two tests above
+    deliberately construct the one-directional case instead.
+
+    Built in two steps now. `Uus teema` used to answer Adressaat from Saatja and
+    this was the test of what that did to the register; the default is gone with
+    the question (docs/adr/0090 §5), so the composed case is what a lawyer makes
+    by answering both — which is the case the register still has to handle.
     """
-    signed_in.post(CREATE, {"title": "Mõlemana", "sender_name": "Zeta Näidisliit"})
+    name_the_body(signed_in, "Mõlemana", "sender_name")
+    matter = Matter.objects.get(title="Mõlemana")
+    answer_on_muuda_teemat(signed_in, matter, addressee_name="Zeta Näidisliit")
     created = Organisation.objects.get(name="Zeta Näidisliit")
 
     for parameter in ("saatja", "adressaat", "asutus"):
         response = signed_in.get(REGISTER, {parameter: str(created.pk), "olek": "koik"})
         assert titles_on(response) == ["Mõlemana"], (
-            f"a Teema whose Adressaat was defaulted from its Saatja is not found by ?{parameter}="
+            f"a Teema naming one body in both directions is not found by ?{parameter}="
         )
 
 

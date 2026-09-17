@@ -1,28 +1,26 @@
 """Saatja and Adressaat: one catalogue, two questions, one shape.
 
-Three things this file pins, and they are the three the department asked for.
+Two things this file pins, and a third it used to.
 
 **Saatja looks like Adressaat.** One control: a box reading «Otsi või lisa
 asutus…» with a `+` attached to it, and the quick choices under it. A person
 should not learn one interaction for the field on the left and a different one
-for the field on the right when the two sit on the same row of the same form and
-answer the two halves of one question — and they should not learn three
-interactions for either of them, which is what the shortlist, the «Vali
-nimekirjast» disclosure and the separate «Uus saatja» box added up to
-(docs/adr/0073).
-
-**Whoever wrote to you is the first person you might answer** — and since
-docs/adr/0069, the one the form answers. A body chosen as the sender is moved to
-the front of the addressee choices *and* becomes the addressee. This file owns
-the first half of that sentence, which is what makes the second half visible: a
-default sitting in the long tail behind a closed disclosure would be an answer
-nobody could find. What the default *is* belongs to
-`tests/test_addressee_defaults_to_sender.py`.
+for the field on the right, and they should not learn three interactions for
+either of them, which is what the shortlist, the «Vali nimekirjast» disclosure
+and the separate «Uus saatja» box added up to (docs/adr/0073).
 
 **One name is one institution.** Naming the same new body as sender and as
-addressee on one form creates exactly one `Organisation` row, used twice.
-Two rows would be the catalogue quietly acquiring a duplicate on the most
-ordinary journey there is (docs/adr/0063, docs/adr/0067).
+addressee creates exactly one `Organisation` row, used twice. Two rows would be
+the catalogue quietly acquiring a duplicate on the most ordinary journey there
+is (docs/adr/0063, docs/adr/0067). That journey is now `Muuda teemat`, and it is
+where these are asserted.
+
+**The promotion is gone**, with the question it served. `Uus teema` asked who
+Koda answers, pre-filled it from Saatja and moved the chosen sender to the front
+of the addressee choices so the answer would be visible — and the lawyers
+reported the whole arrangement as one question asked twice (docs/adr/0090 §5).
+The eight tests that pinned the ordering went with the ordering; what the
+default *was* is recorded in ADR 0069 and in this file's history.
 """
 
 from __future__ import annotations
@@ -32,8 +30,7 @@ import re
 import pytest
 from django.urls import reverse
 
-from app.matters.forms import MatterCreateForm
-from app.matters.models import Matter
+from app.matters.forms import MatterCreateForm, MatterEditForm
 from app.organisations.models import Organisation, OrganisationType
 from tests import factories
 
@@ -80,7 +77,9 @@ def test_the_sender_control_is_a_search_box_and_then_chips(signed_in, komisjon):
 
     assert "Otsi või lisa asutus…" in page
     assert "Lisa uus saatja" in page
-    assert "Lisa uus adressaat" in page
+    # `Lisa uus adressaat` is on `Muuda teemat`, not here: `Uus teema` asks one
+    # counterparty question now (docs/adr/0090 §5).
+    assert "Lisa uus adressaat" not in page
 
 
 def test_the_retired_controls_are_gone_from_the_scripted_page(signed_in, komisjon):
@@ -92,9 +91,8 @@ def test_the_retired_controls_are_gone_from_the_scripted_page(signed_in, komisjo
     document *minus* those blocks, which is what the person actually sees
     (task §12, §22).
 
-    `Muuda teemat` and `Saabunud` keep the old pair of controls and are not
-    asserted here: this round changed `Uus teema` and deliberately nothing else
-    (task §26).
+    `Saabunud` keeps the old pair of controls and is not asserted here: that
+    round changed `Uus teema` and deliberately nothing else (task §26).
     """
     for index in range(12):
         Organisation.objects.create(name=f"Asutus {index:02d}")
@@ -107,10 +105,11 @@ def test_the_retired_controls_are_gone_from_the_scripted_page(signed_in, komisjo
     # The field is not merely invisible: it still posts, because `+` writes into
     # it and a refused save has to come back holding what was typed.
     assert 'name="sender_name"' in scripted
-    assert 'name="addressee_name"' in scripted
+    # Adressaat's half is not on this page at all (docs/adr/0090 §5).
+    assert 'name="addressee_name"' not in scripted
 
 
-def test_the_search_box_is_the_first_control_in_each_field(signed_in, komisjon):
+def test_the_search_box_is_the_first_control_in_each_field(signed_in, specialist, komisjon):
     """The one structural claim worth making with a parser rather than a substring.
 
     «Search first» is the whole product decision, and a template that rendered
@@ -122,7 +121,13 @@ def test_the_search_box_is_the_first_control_in_each_field(signed_in, komisjon):
 
     for index in range(12):
         Organisation.objects.create(name=f"Asutus {index:02d}")
-    page = _without_noscript(signed_in.get(CREATE).content.decode())
+    # Both Teema forms: `Uus teema` renders one picker and `Muuda teemat` two,
+    # and «search first» has to hold in every one of them.
+    matter = factories.MatterFactory(owner=specialist)
+    page = _without_noscript(
+        signed_in.get(CREATE).content.decode()
+        + signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
+    )
 
     class Reader(HTMLParser):
         """The controls inside each picker, in the order they are written."""
@@ -172,7 +177,7 @@ def test_a_catalogue_smaller_than_the_shortlist_has_no_hidden_tail(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_an_existing_sender_is_in_the_rendered_addressee_catalogue(signed_in, komisjon):
+def test_an_existing_sender_is_in_the_rendered_addressee_catalogue(signed_in, specialist, komisjon):
     """CASE C from the report, asserted where the person would look for it.
 
     `tests/test_sender_free_entry.py` pins this on the form's choices. This pins
@@ -180,10 +185,14 @@ def test_an_existing_sender_is_in_the_rendered_addressee_catalogue(signed_in, ko
     the page" are different claims and the second is the one that was doubted:
     a template that sliced the radio group wrongly would satisfy the first and
     fail the second.
-    """
-    factories.MatterFactory().source_organisations.add(komisjon)
 
-    page = signed_in.get(CREATE).content.decode()
+    On `Muuda teemat`, which is the form that asks both questions now
+    (docs/adr/0090 §5).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    matter.source_organisations.add(komisjon)
+
+    page = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
     radios = page.count(f'name="addressee_organisation" value="{komisjon.pk}"')
 
     assert radios == 1, "the sender organisation is not offered exactly once as an addressee"
@@ -199,7 +208,7 @@ def test_every_organisation_is_offered_in_both_directions(signed_in, specialist,
     for index in range(5):
         Organisation.objects.create(name=f"Asutus {index}")
 
-    form = MatterCreateForm(viewer=specialist)
+    form = MatterEditForm(matter=factories.MatterFactory(owner=specialist), viewer=specialist)
     senders = {
         value
         for field in ("source_organisations", "source_organisations_other")
@@ -215,149 +224,33 @@ def test_every_organisation_is_offered_in_both_directions(signed_in, specialist,
 
 
 # ---------------------------------------------------------------------------
-# The selected sender comes first — and is the answer
-# ---------------------------------------------------------------------------
-
-
-def _addressee_order(form: MatterCreateForm) -> list:
-    return [value for value, _label in form.fields["addressee_organisation"].choices if value != ""]
-
-
-def test_a_selected_sender_is_the_first_addressee_offered(specialist, komisjon):
-    """The reported case, exactly: pick Euroopa Komisjon as Saatja.
-
-    The bound form is what a refused save re-renders, and it is also what the
-    server can promise without any script at all — the browser does the same
-    thing live, but this is the half that survives scripting being off.
-
-    Being *first* matters more than it did. Adressaat is a closed disclosure
-    now, so the shortlist is what opening it shows; an answer that had fallen
-    into «Vali nimekirjast» would be one the person could only find by opening a
-    second door to look for something the page had already decided.
-    """
-    for index in range(6):
-        # Bodies with real addressee history, so the shortlist is not empty and
-        # the promotion has something to actually beat.
-        other = Organisation.objects.create(name=f"Asutus {index}")
-        factories.MatterFactory(owner=specialist, addressee_organisation=other)
-
-    form = MatterCreateForm(
-        {"title": "Vastus komisjonile", "source_organisations": [str(komisjon.pk)]},
-        viewer=specialist,
-    )
-
-    assert _addressee_order(form)[0] == komisjon.pk
-
-
-def test_the_promoted_sender_is_also_the_answer(specialist, komisjon):
-    """The decision this file used to assert the opposite of.
-
-    It read `test_promoting_a_sender_never_selects_it`, on the argument that
-    ordering is a suggestion and a counterparty is a fact that should be stated
-    rather than guessed. The argument was right about the risk and wrong about
-    the trade: answering the body that wrote to you is the ordinary case, and
-    making the ordinary case free costs somebody answering a different body one
-    correction they can see themselves making (docs/adr/0069, task §2).
-    """
-    form = MatterCreateForm(
-        {"title": "Vastus komisjonile", "source_organisations": [str(komisjon.pk)]},
-        viewer=specialist,
-    )
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["addressee_organisation"] == komisjon
-
-
-def test_a_manually_chosen_addressee_survives_the_promotion(specialist, komisjon):
-    """Display order may change under somebody. Their answer may not.
-
-    The failure this prevents is the worst kind: silent, plausible, and only
-    visible on the saved record — a Teema answered to the ministry that happened
-    to be re-sorted into the slot the person had clicked. It is also why the
-    default above may never be inferred from *position*: this test's whole point
-    is that the first chip and the chosen one are different bodies.
-    """
-    chosen = Organisation.objects.create(name="Riigikogu majanduskomisjon")
-
-    form = MatterCreateForm(
-        {
-            "title": "Vastus",
-            "source_organisations": [str(komisjon.pk)],
-            "addressee_organisation": str(chosen.pk),
-        },
-        viewer=specialist,
-    )
-
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["addressee_organisation"] == chosen
-    # Moved for display, and still not the answer: an answer already given
-    # outranks the one the sender would have supplied.
-    assert _addressee_order(form)[0] == komisjon.pk
-
-
-def test_several_selected_senders_all_come_first_in_a_stable_order(specialist):
-    """Deterministic among themselves, so two renders of one form agree."""
-    zulu = Organisation.objects.create(name="Zulu Amet")
-    alfa = Organisation.objects.create(name="Alfa Amet")
-    for index in range(6):
-        other = Organisation.objects.create(name=f"Muu {index}")
-        factories.MatterFactory(owner=specialist, addressee_organisation=other)
-
-    form = MatterCreateForm(
-        {
-            "title": "Vastus",
-            "source_organisations": [str(zulu.pk), str(alfa.pk)],
-        },
-        viewer=specialist,
-    )
-
-    assert _addressee_order(form)[:2] == [alfa.pk, zulu.pk]
-
-
-def test_a_sender_chosen_from_the_long_tail_is_promoted_too(specialist, komisjon):
-    """Both sender fields are one set, so both feed the promotion.
-
-    `source_organisations_other` is the disclosure's half of the same answer.
-    A promotion that read only the shortlist field would work on the eight
-    frequent bodies and silently not work on the other forty — which is the
-    half somebody opened the disclosure to reach.
-    """
-    for index in range(10):
-        other = Organisation.objects.create(name=f"Muu {index}")
-        factories.MatterFactory(owner=specialist, addressee_organisation=other)
-
-    form = MatterCreateForm(
-        {"title": "Vastus", "source_organisations_other": [str(komisjon.pk)]},
-        viewer=specialist,
-    )
-
-    assert _addressee_order(form)[0] == komisjon.pk
-
-
-def test_an_unbound_form_promotes_nothing(specialist, komisjon):
-    """A fresh GET has no senders, so it has no reordering to do."""
-    for index in range(6):
-        other = Organisation.objects.create(name=f"Muu {index}")
-        factories.MatterFactory(owner=specialist, addressee_organisation=other)
-
-    unbound = _addressee_order(MatterCreateForm(viewer=specialist))
-    assert unbound[0] != komisjon.pk
-
-
-def test_a_malformed_sender_identifier_reorders_nothing_and_raises_nothing(specialist, komisjon):
-    """The promotion runs in `__init__`, before validation, so it meets raw input."""
-    form = MatterCreateForm(
-        {"title": "Vastus", "source_organisations": ["not-a-uuid", ""]},
-        viewer=specialist,
-    )
-    assert _addressee_order(form)  # rendered, not crashed
-
-
-# ---------------------------------------------------------------------------
 # One typed name, one row
 # ---------------------------------------------------------------------------
+#
+# On `Muuda teemat`, which is the one form that asks both questions since
+# Adressaat left the create screen (docs/adr/0090 §5). The rule being pinned is
+# the transaction's — two independent resolvers naming the same body must not
+# each decide it is new — and that is as true of a correction as it was of a
+# capture.
 
 
-def test_one_new_name_typed_into_both_fields_creates_one_organisation(signed_in):
+def both_fields(signed_in, specialist, **fields):
+    """POST `Muuda teemat` with both typed controls filled, and return the Matter."""
+    matter = factories.MatterFactory(owner=specialist, title="Vastus komisjonile")
+    signed_in.post(
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
+        {
+            "title": matter.title,
+            "brief_summary": matter.brief_summary,
+            "visibility": matter.visibility,
+            **fields,
+        },
+    )
+    matter.refresh_from_db()
+    return matter
+
+
+def test_one_new_name_typed_into_both_fields_creates_one_organisation(signed_in, specialist):
     """The whole of §14, as the only assertion that matters: a count of one.
 
     A person types «Euroopa Näidiskomisjon» as the sender, chooses that same
@@ -366,48 +259,45 @@ def test_one_new_name_typed_into_both_fields_creates_one_organisation(signed_in)
     decide the name is new — so the register would gain two identical
     institutions on the most ordinary journey the form has.
     """
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Vastus komisjonile",
-            "sender_name": "Euroopa Näidiskomisjon",
-            "addressee_name": "Euroopa Näidiskomisjon",
-        },
+    matter = both_fields(
+        signed_in,
+        specialist,
+        sender_name="Euroopa Näidiskomisjon",
+        addressee_name="Euroopa Näidiskomisjon",
     )
 
     rows = Organisation.objects.filter(name="Euroopa Näidiskomisjon")
     assert rows.count() == 1
 
-    matter = Matter.objects.get(title="Vastus komisjonile")
     organisation = rows.get()
     assert list(matter.source_organisations.all()) == [organisation]
     assert matter.addressee_organisation == organisation
 
 
-def test_the_same_name_in_different_spacing_is_still_one_row(signed_in):
+def test_the_same_name_in_different_spacing_is_still_one_row(signed_in, specialist):
     """Normalisation is shared, so the two fields cannot disagree about identity."""
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Vastus",
-            "sender_name": "Euroopa   Näidiskomisjon",
-            "addressee_name": " Euroopa Näidiskomisjon ",
-        },
+    both_fields(
+        signed_in,
+        specialist,
+        sender_name="Euroopa   Näidiskomisjon",
+        addressee_name=" Euroopa Näidiskomisjon ",
     )
 
     assert Organisation.objects.filter(name="Euroopa Näidiskomisjon").count() == 1
 
 
-def test_a_refused_save_creates_no_organisation_from_either_field(signed_in):
+def test_a_refused_save_creates_no_organisation_from_either_field(signed_in, specialist):
     """One transaction, so a late refusal takes both resolutions with it."""
+    matter = factories.MatterFactory(owner=specialist)
     before = Organisation.objects.count()
 
     response = signed_in.post(
-        CREATE,
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
         {
             # No title: the one required field, so the save is refused after the
             # form has already been asked what the names mean.
             "title": "",
+            "visibility": matter.visibility,
             "sender_name": "Euroopa Näidiskomisjon",
             "addressee_name": "Euroopa Näidiskomisjon",
         },
@@ -418,18 +308,17 @@ def test_a_refused_save_creates_no_organisation_from_either_field(signed_in):
     assert not Organisation.objects.filter(name="Euroopa Näidiskomisjon").exists()
 
 
-def test_a_typed_name_matching_an_existing_body_reuses_it_in_both_fields(signed_in, komisjon):
+def test_a_typed_name_matching_an_existing_body_reuses_it_in_both_fields(
+    signed_in, specialist, komisjon
+):
     """Reuse, not create — and the same row on both relations."""
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Vastus",
-            "sender_name": "Euroopa Komisjon",
-            "addressee_name": "Euroopa Komisjon",
-        },
+    matter = both_fields(
+        signed_in,
+        specialist,
+        sender_name="Euroopa Komisjon",
+        addressee_name="Euroopa Komisjon",
     )
 
     assert Organisation.objects.filter(name="Euroopa Komisjon").count() == 1
-    matter = Matter.objects.get(title="Vastus")
     assert list(matter.source_organisations.all()) == [komisjon]
     assert matter.addressee_organisation == komisjon

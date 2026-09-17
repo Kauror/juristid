@@ -118,7 +118,7 @@ def sparse_matter(page, base_url: str, title: str) -> str:
     at position 1 is whatever the shared catalogue happens to sort first, and a
     long name there makes the row two lines tall and fails the density
     assertion below for a reason that has nothing to do with density.
-    `Menetlusliik` and `Kellelt` are deliberately left empty: the whole
+    `Menetlusliik` and `Saatja` are deliberately left empty: the whole
     complaint was that empty facts made the column tall.
 
     Built here rather than seeded: adding a Matter to the shared world changes
@@ -161,7 +161,7 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
     assert keys[:4] == [
         "Teemaviide",
         "Menetlusliik",
-        "Kellelt",
+        "Saatja",
         "Kellele",
     ], keys
     for gone in ("Saabus", "Muu valdkond", "Andmeklass"):
@@ -226,7 +226,7 @@ def test_a_multi_sender_value_wraps_and_pushes_the_rest_down(page, base_url):
     open_matter(page, base_url, MULTI_SENDER_TITLE)
 
     rows = {row["key"]: row for row in row_geometry(page)}
-    senders = rows["Kellelt"]
+    senders = rows["Saatja"]
     reference = rows["Teemaviide"]
 
     assert senders["height"] > reference["height"] + 4, (
@@ -241,7 +241,7 @@ def test_a_multi_sender_value_wraps_and_pushes_the_rest_down(page, base_url):
         )
 
     # The whole list is rendered, and it is inside the rail.
-    value = fact_value(page, "Kellelt")
+    value = fact_value(page, "Saatja")
     clipped = value.evaluate("n => n.scrollWidth > n.clientWidth + 1")
     assert not clipped, "the sender list is cut off rather than wrapped"
     assert not document_overflows(page)
@@ -260,7 +260,7 @@ def test_a_multi_sender_value_wraps_and_pushes_the_rest_down(page, base_url):
 #: Each editable fact, with the control its editor opens and how to commit it.
 #: Three, not four: `Saabus` is edited in the header metaline now, where the
 #: `Teema andmed` rail no longer carries it (docs/adr/0074 §2).
-EDITABLE_FACTS = ["Menetlusliik", "Kellelt", "Kellele"]
+EDITABLE_FACTS = ["Menetlusliik", "Saatja", "Kellele"]
 
 
 @pytest.mark.parametrize("key", EDITABLE_FACTS)
@@ -362,17 +362,17 @@ def test_adding_a_sender_saves_and_the_rail_shows_it(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Saatja lisamine")
 
-    row = fact_row(page, "Kellelt")
-    expect(fact_value(page, "Kellelt")).to_have_text("+ Lisa")
+    row = fact_row(page, "Saatja")
+    expect(fact_value(page, "Saatja")).to_have_text("+ Lisa")
     row.get_by_text("+ Lisa").click()
     checkbox = row.get_by_role("checkbox").first
     name = row.locator(".checkitem").first.inner_text().strip()
     checkbox.check()
     row.get_by_role("button", name="Salvesta saatjate muudatus").click()
 
-    expect(fact_value(page, "Kellelt")).to_have_text(name)
+    expect(fact_value(page, "Saatja")).to_have_text(name)
     page.reload()
-    expect(fact_value(page, "Kellelt")).to_have_text(name)
+    expect(fact_value(page, "Saatja")).to_have_text(name)
 
 
 def test_adding_an_addressee_saves_and_the_rail_shows_it(page, base_url):

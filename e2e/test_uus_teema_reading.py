@@ -218,7 +218,7 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
         page.get_by_text("Palume esitada arvamus hiljemalt 18. septembriks 2026").first
     ).to_be_visible()
     expect(page.get_by_text("Arvamuse tähtaeg").first).to_be_visible()
-    expect(page.get_by_text("Kellelt").first).to_be_visible()
+    expect(page.get_by_text("Saatja", exact=True).first).to_be_visible()
     expect(page.get_by_text("EIS").first).to_be_visible()
     # The deadline is strong and unopposed, so it is already in the box; the
     # sender is ticked in the real control. Neither is saved.
@@ -1041,7 +1041,7 @@ def test_a_checkbox_suggestion_is_added_and_removed_without_touching_the_rest(
     """**E, H.** A multi-value target, where apply and unapply mean something
     narrower: this box, and never the field.
 
-    `Kellelt` is a checkbox group that may be rendered in two places, so the
+    `Saatja` is a checkbox group that may be rendered in two places, so the
     logical value is what matters rather than the visible chip — and a
     withdrawal must leave every other answer exactly as it was.
     """

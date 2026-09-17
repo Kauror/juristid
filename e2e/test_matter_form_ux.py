@@ -51,11 +51,17 @@ def typed_date(days: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Hetkeseis and Menetlusliik
+# Hetkeseis
 # ---------------------------------------------------------------------------
+#
+# `track` and `addressee_organisation` were parametrised here and are not
+# controls on this page any more: `Menetlusliik` is read off `Õigusakt` and
+# `Adressaat` is asked where the decision to answer is made (docs/adr/0090
+# §4, §5). Both are still visible chips on `Muuda teemat`, which
+# `e2e/test_post_qa_surfaces.py` drives.
 
 
-@pytest.mark.parametrize("field", ["stage", "track", "addressee_organisation"])
+@pytest.mark.parametrize("field", ["stage"])
 def test_the_procedural_fields_are_visible_choices_not_dropdowns(page, base_url, field):
     """For a department of four, a select is a click spent finding out what the
     options even are.
@@ -114,13 +120,16 @@ def test_the_chip_hides_the_box_and_keeps_the_control(page, base_url):
     expect(box).to_be_checked()
 
 
-@pytest.mark.parametrize("field", ["stage", "track"])
+@pytest.mark.parametrize("field", ["stage"])
 def test_choosing_a_second_value_replaces_the_first(page, base_url, screenshots, field):
     """The cardinality promise, seen rather than inferred.
 
-    `Matter.stage` and `Matter.track` hold one value each. A control that let
-    two stay ticked would be promising something the model cannot keep — and a
-    checkmark on a card is decoration on a radio, not a second checkbox.
+    `Matter.stage` holds one value. A control that let two stay ticked would be
+    promising something the model cannot keep — and a checkmark on a card is
+    decoration on a radio, not a second checkbox.
+
+    `track` was the other parameter and is not a control on this page any more
+    (docs/adr/0090 §4).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
@@ -590,8 +599,8 @@ def _document_overflows(page) -> bool:
 def test_the_form_survives_a_narrow_window(page, base_url, width):
     """Five rows of chips now, and nothing hidden behind a disclosure.
 
-    Vastutaja, Saatja, twenty-two Valdkonnad, eleven Hetkeseis, eight
-    Menetlusliik and Adressaat — plus the four quick spans and the «Kuupäev…»
+    Vastutaja, Saatja, twenty-two Valdkonnad, eleven Hetkeseis and ten
+    Õigusakt — plus the four quick spans and the «Kuupäev…»
     disclosure on the `Millal?` row. A chip that refused to wrap would take the
     whole page sideways with it, and at 1024 the paired rows have to stop being
     pairs.
@@ -642,8 +651,11 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
         "next-target_date",
     ):
         expect(page.locator(f'[name="{name}"]')).to_have_count(1)
-    for group in ("owner", "source_organisations", "policy_areas", "stage", "track"):
+    for group in ("owner", "source_organisations", "policy_areas", "stage", "legal_instruments"):
         expect(page.locator(f'[name="{group}"]').first).to_be_attached()
+    # And the two questions this page stopped asking (docs/adr/0090 §4, §5).
+    for gone in ("track", "addressee_organisation", "addressee_name", "addressee_is_manual"):
+        expect(page.locator(f'[name="{gone}"]')).to_have_count(0)
 
     expect(page.get_by_role("button", name="Loo teema")).to_be_visible()
 
@@ -725,7 +737,7 @@ def test_the_choice_cards_are_real_controls_with_real_labels(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    for name in ("stage", "track", "owner", "policy_areas", "addressee_organisation"):
+    for name in ("stage", "owner", "policy_areas", "legal_instruments"):
         inputs = page.locator(f'input[name="{name}"]')
         expect(inputs.first).to_be_attached()
         # Wrapped in their own <label>, so the whole chip is the hit area and

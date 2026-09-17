@@ -277,17 +277,25 @@ def test_the_two_withdrawn_areas_are_not_offered(signed_in, specialist):
     assert PolicyArea.objects.filter(key__in=WITHDRAWN).count() == 2
 
 
-def test_menetlusliik_still_offers_the_words_the_area_gave_up(signed_in):
+def test_menetlusliik_still_offers_the_words_the_area_gave_up(signed_in, specialist):
     """The reason the area went, stated as an assertion.
 
-    «ELi õiguse ülevõtmine» is not gone from this page: it is `Menetlusliik`'s
-    answer and always was. The withdrawal removes the *second* place the same
+    «ELi õiguse ülevõtmine» is not gone from the product: it is `Menetlusliik`'s
+    answer and always was. The withdrawal removed the *second* place the same
     four words were asked for (docs/adr/0088 §3).
-    """
-    page = signed_in.get(CREATE).content.decode()
 
-    assert "ELi õiguse ülevõtmine" in page
-    assert "ELi õiguse ülevõtmine" not in valdkond_block(page)
+    Asserted on `Muuda teemat` rather than here, because the round after this
+    one took `Menetlusliik` off the create form as well — derived from `Õigusakt`
+    instead, and never as a transposition (docs/adr/0090 §4). The withdrawn
+    Valdkond is still absent from both, which is what this test is for.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    create = signed_in.get(CREATE).content.decode()
+    edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "ELi õiguse ülevõtmine" in edit
+    assert "ELi õiguse ülevõtmine" not in valdkond_block(create)
+    assert "ELi õiguse ülevõtmine" not in create
 
 
 @pytest.mark.parametrize("key", WITHDRAWN)

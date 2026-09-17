@@ -38,6 +38,16 @@ pytestmark = pytest.mark.django_db
 CREATE = reverse("matters:matter_create")
 
 
+#: The `Muu` row `Uus teema` offers today.
+#:
+#: Version 1.0's `muu` is still a row and is still on every Matter that carries
+#: it, but the reviewed vocabulary splits the escape hatch in two and offers
+#: `Muu siseriiklik` and `Muu ELi dokument` instead. The rules below are about
+#: what `Muu` *means*, and they are unchanged; which row says it is not what
+#: they are testing (docs/adr/0090 §3).
+OFFERED_MUU = "muu-siseriiklik"
+
+
 def instrument(key: str) -> LegalInstrumentType:
     return LegalInstrumentType.objects.get(key=key)
 
@@ -127,7 +137,7 @@ def test_the_same_instrument_twice_is_one_relation(signed_in):
 
 
 def test_muu_with_its_text_persists(signed_in):
-    muu = instrument("muu")
+    muu = instrument(OFFERED_MUU)
     signed_in.post(
         CREATE,
         {
@@ -138,12 +148,12 @@ def test_muu_with_its_text_persists(signed_in):
     )
 
     matter = Matter.objects.get(title="Muu liik")
-    assert [item.key for item in matter.legal_instruments.all()] == ["muu"]
+    assert [item.key for item in matter.legal_instruments.all()] == [OFFERED_MUU]
     assert matter.legal_instrument_other == "Komisjoni soovitus"
 
 
 def test_muu_without_its_text_is_refused_on_the_empty_box(signed_in):
-    muu = instrument("muu")
+    muu = instrument(OFFERED_MUU)
     response = signed_in.post(
         CREATE,
         {
@@ -194,7 +204,7 @@ def test_a_refused_save_keeps_every_choice_and_leaves_the_box_open(signed_in):
     The last of those is what makes the refusal legible without scripting: a
     reveal only JavaScript can open would hide the error behind a click.
     """
-    muu = instrument("muu")
+    muu = instrument(OFFERED_MUU)
     seadus = instrument("seadus")
     response = signed_in.post(
         CREATE,
@@ -211,7 +221,7 @@ def test_a_refused_save_keeps_every_choice_and_leaves_the_box_open(signed_in):
     assert {str(seadus.pk), str(muu.pk)} <= chosen
     assert form["legal_instrument_other"].value() == "Komisjoni soovitus"
     assert form.other_instrument_open is True
-    assert form.other_instrument_value == str(muu.pk)
+    assert str(muu.pk) in form.other_instrument_values
 
     body = response.content.decode()
     assert 'id="oigusakt-muu-tekst"' in body
@@ -219,7 +229,7 @@ def test_a_refused_save_keeps_every_choice_and_leaves_the_box_open(signed_in):
 
 
 def test_a_refused_muu_save_shows_the_error_inside_the_open_box(signed_in):
-    muu = instrument("muu")
+    muu = instrument(OFFERED_MUU)
     response = signed_in.post(
         CREATE, {"title": "Pealkiri on olemas", "legal_instruments": [str(muu.pk)]}
     )
@@ -253,18 +263,24 @@ def test_a_javascript_free_post_works(signed_in):
 # ---------------------------------------------------------------------------
 
 
-def test_a_matter_holds_a_track_and_an_instrument_at_once(signed_in):
-    """The example the brief names, asserted as a record (docs/adr/0070 §1)."""
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Ülevõtmine, seadus",
-            "track": Track.NATIONAL_TRANSPOSITION,
-            "legal_instruments": [str(instrument("seadus").pk)],
-        },
-    )
+def test_a_matter_holds_a_track_and_an_instrument_at_once(signed_in, specialist):
+    """The example the brief names, asserted as a record (docs/adr/0070 §1).
 
-    matter = Matter.objects.get(title="Ülevõtmine, seadus")
+    Still true, and now recorded through `Muuda teemat` rather than `Uus teema`:
+    the create form stopped asking `Menetlusliik` and derives only the
+    domestic/EU distinction, which `NATIONAL_TRANSPOSITION` deliberately is not
+    (docs/adr/0090 §4). That a *Matter* can carry both answers at once is the
+    property this test is about, and it is unchanged.
+    """
+    matter = factories.MatterFactory(title="Ülevõtmine, seadus", owner=specialist)
+    matter.legal_instruments.set([instrument("seadus")])
+
+    response = signed_in.post(
+        edit_url(matter), edit_payload(matter, track=Track.NATIONAL_TRANSPOSITION)
+    )
+    assert response.status_code in (302, 200), response.status_code
+
+    matter.refresh_from_db()
     assert matter.track == Track.NATIONAL_TRANSPOSITION
     assert [item.key for item in matter.legal_instruments.all()] == ["seadus"]
 
@@ -562,30 +578,33 @@ def test_the_control_is_checkboxes_over_the_whole_active_vocabulary(specialist):
         item.label_et
         for item in LegalInstrumentType.objects.filter(is_active=True).order_by("sort_order")
     ]
-    assert offered[-1] == "Muu"
+    # Each group's escape hatch is last in its own group, which is what «none of
+    # these» has to read after (docs/adr/0090 §2).
+    assert offered[-1] == "Muu ELi dokument"
+    assert offered[5] == "Muu siseriiklik"
 
 
-def test_the_rendered_page_puts_oigusakt_between_menetlusliik_and_adressaat(signed_in):
-    """The approved placement, asserted on the markup the server sends.
+def test_the_rendered_page_puts_oigusakt_last_in_the_classification_block(signed_in):
+    """The reviewed placement, asserted on the markup the server sends.
 
     `e2e/test_oigusakt_row.py` owns the geometry; this owns the order, which is
-    the half a screenshot cannot state.
+    the half a screenshot cannot state. Saatja · Valdkond · Hetkeseis ·
+    Õigusakt, with `Menetlusliik` and `Adressaat` no longer between any of them
+    (docs/adr/0090 §7).
     """
     body = signed_in.get(CREATE).content.decode()
 
-    track = body.index('name="track"')
+    valdkond = body.index("data-valdkond-disclosure")
+    stage = body.index('name="stage"')
     oigusakt = body.index('name="legal_instruments"')
-    addressee = body.index("data-addressee-disclosure")
-    assert track < oigusakt < addressee
+    assert valdkond < stage < oigusakt
 
 
 def test_the_page_offers_no_new_component(signed_in):
     """No select, no disclosure, no search over this vocabulary (design §14)."""
     body = signed_in.get(CREATE).content.decode()
     row_start = body.index('data-chipcount-for="legal_instruments"')
-    # The field's own fieldset, and no further. Slicing to the Adressaat row
-    # below it would drag that row's `<details>` into the assertion and the
-    # test would fail for a disclosure it is not about.
+    # The field's own fieldset, and no further.
     row = body[row_start : body.index("</fieldset>", row_start)]
 
     assert "<details" not in row
@@ -596,41 +615,20 @@ def test_the_page_offers_no_new_component(signed_in):
     )
 
 
-def test_menetlusliik_gains_no_count_and_no_clear_marks(signed_in):
-    """The asymmetry that keeps the two rows from reading as one question.
+def test_hetkeseis_gains_no_count_and_no_clear_marks(signed_in):
+    """The asymmetry that keeps two neighbouring rows from reading as one question.
 
-    Menetlusliik holds one value, so it has neither the `field__count` nor the
-    `chip__clear` marks that mark a multi-select (design §4, §6).
+    Hetkeseis holds one value, so it has neither the `field__count` nor the
+    `chip__clear` marks that mark a multi-select (design §4, §6, ADR 0025). It
+    is `Menetlusliik` that used to carry this assertion; that row is gone from
+    the page and the rule it demonstrated is not (docs/adr/0090 §7).
     """
     body = signed_in.get(CREATE).content.decode()
-    start = body.index('name="track"')
-    track_field = body[start : body.index("</fieldset>", start)]
-    assert "field__count" not in track_field
-    assert "chip__clear" not in track_field
-    assert 'type="radio"' in track_field
-
-
-def test_the_create_page_still_holds_the_sender_default_and_the_folded_addressee(
-    signed_in, specialist
-):
-    """PR #169's behaviour, unchanged by the row inserted above it (task §15)."""
-    organisation = factories.OrganisationFactory(name="Kliimaministeerium")
-    response = signed_in.post(
-        CREATE,
-        {
-            "title": "Saatja täidab adressaadi",
-            "source_organisations": [str(organisation.pk)],
-            "legal_instruments": [str(instrument("seadus").pk)],
-        },
-    )
-
-    assert response.status_code == 302
-    matter = Matter.objects.get(title="Saatja täidab adressaadi")
-    assert matter.addressee_organisation == organisation
-
-    body = signed_in.get(CREATE).content.decode()
-    disclosure = body[body.index("data-addressee-disclosure") :][:400]
-    assert " open" not in disclosure.split(">")[0]
+    start = body.index('name="stage"')
+    stage_field = body[body.rindex("<fieldset", 0, start) : body.index("</fieldset>", start)]
+    assert "field__count" not in stage_field
+    assert "chip__clear" not in stage_field
+    assert 'type="radio"' in stage_field
 
 
 # ---------------------------------------------------------------------------

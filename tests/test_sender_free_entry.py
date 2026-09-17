@@ -29,7 +29,7 @@ from django.urls import reverse
 
 from app.core.enums import Visibility
 from app.core.errors import DomainError
-from app.matters.forms import MatterCreateForm, organisations_by_usage
+from app.matters.forms import MatterCreateForm, MatterEditForm, organisations_by_usage
 from app.matters.models import Matter
 from app.matters.services import resolve_source_organisations
 from app.organisations.models import AliasType, Organisation
@@ -226,12 +226,30 @@ def test_a_refused_save_leaves_no_stray_sender_organisation(signed_in, specialis
 # ---------------------------------------------------------------------------
 
 
+def _answer_addressee(signed_in, matter, name: str) -> None:
+    """Name an addressee on `Muuda teemat`, which is the form that asks.
+
+    `Uus teema` stopped asking who Koda answers (docs/adr/0090 §5). The
+    catalogue is still one catalogue and these three tests are about exactly
+    that, so they reach the addressee control where it lives.
+    """
+    signed_in.post(
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
+        {
+            "title": matter.title,
+            "brief_summary": matter.brief_summary,
+            "visibility": matter.visibility,
+            "addressee_name": name,
+        },
+    )
+
+
 def test_an_organisation_created_as_a_sender_is_offered_as_an_addressee(signed_in, specialist):
     """CASE A. The department's own words: one place containing organisations."""
     signed_in.post(CREATE, {"title": "Saatja kaudu", "sender_name": "Eesti Näidisliit"})
     created = Organisation.objects.get(name="Eesti Näidisliit")
 
-    form = MatterCreateForm(viewer=specialist)
+    form = MatterEditForm(matter=Matter.objects.get(title="Saatja kaudu"), viewer=specialist)
     offered = {value for value, _label in form.fields["addressee_organisation"].choices}
 
     assert created.pk in offered
@@ -239,7 +257,9 @@ def test_an_organisation_created_as_a_sender_is_offered_as_an_addressee(signed_i
 
 def test_an_organisation_created_as_an_addressee_is_offered_as_a_sender(signed_in, specialist):
     """CASE B, and the direction that used to be impossible to reach at all."""
-    signed_in.post(CREATE, {"title": "Adressaadi kaudu", "addressee_name": "Eesti Näidisliit"})
+    signed_in.post(CREATE, {"title": "Adressaadi kaudu"})
+    matter = Matter.objects.get(title="Adressaadi kaudu")
+    _answer_addressee(signed_in, matter, "Eesti Näidisliit")
     created = Organisation.objects.get(name="Eesti Näidisliit")
 
     form = MatterCreateForm(viewer=specialist)
@@ -255,11 +275,13 @@ def test_an_organisation_created_as_an_addressee_is_offered_as_a_sender(signed_i
 def test_the_same_row_is_reused_whichever_field_names_it_second(signed_in, specialist):
     """No sender-only or addressee-only catalogue: one `Organisation` row."""
     signed_in.post(CREATE, {"title": "Esimene", "sender_name": "Eesti Näidisliit"})
-    signed_in.post(CREATE, {"title": "Teine", "addressee_name": "Eesti Näidisliit"})
+    signed_in.post(CREATE, {"title": "Teine"})
+    second = Matter.objects.get(title="Teine")
+    _answer_addressee(signed_in, second, "Eesti Näidisliit")
+    second.refresh_from_db()
 
     assert Organisation.objects.filter(name="Eesti Näidisliit").count() == 1
     first = Matter.objects.get(title="Esimene")
-    second = Matter.objects.get(title="Teine")
     assert first.source_organisations.first() == second.addressee_organisation
 
 

@@ -1097,10 +1097,16 @@ def test_text_left_in_the_search_box_is_not_an_answer(signed_in, evidence_root, 
     assert _proposed(refused)[SuggestedField.SOURCE_ORGANISATIONS] == str(ministry.pk)
 
 
-def test_the_sender_to_addressee_default_still_composes(
+def test_staging_composes_with_the_sender_the_person_chose(
     signed_in, evidence_root, ministry, specialist
 ):
-    """§25. The R2-03 fix must not disturb the rule beside it (ADR 0069)."""
+    """§25. Promoting a staged file must not disturb the fields beside it.
+
+    This asserted ADR 0069's sender→addressee default until the lawyers'
+    second feedback round withdrew the question (docs/adr/0090 §5). What it is
+    about is the composition — a staged session, a chosen counterparty and one
+    save — and that is asserted on the field the form still carries.
+    """
     session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
     read_everything()
 
@@ -1115,13 +1121,16 @@ def test_the_sender_to_addressee_default_still_composes(
     assert created.status_code == 302, created.status_code
 
     matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
-    assert matter.addressee_organisation == ministry
+    assert list(matter.source_organisations.all()) == [ministry]
+    # And nothing fills the other counterparty on the person's behalf.
+    assert matter.addressee_organisation is None
+    assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
 
 
-def test_a_manual_addressee_override_survives_the_sender_rule(
+def test_a_forged_addressee_cannot_ride_in_on_a_staged_save(
     signed_in, evidence_root, ministry, specialist
 ):
-    """§25, the other half: a stated override is not taken back."""
+    """§25, the other half: the field is gone from the form, not hidden on it."""
     other = Organisation.objects.create(
         name="Kliimakaitse Amet", organisation_type=OrganisationType.AUTHORITY
     )
@@ -1141,7 +1150,7 @@ def test_a_manual_addressee_override_survives_the_sender_rule(
     assert created.status_code == 302, created.status_code
 
     matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
-    assert matter.addressee_organisation == other
+    assert matter.addressee_organisation is None
 
 
 # -- «Kasuta» is reversible, and the choice survives a refusal ---------------
