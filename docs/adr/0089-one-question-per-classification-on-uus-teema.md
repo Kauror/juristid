@@ -328,13 +328,26 @@ package and nothing here anticipates them.
 fail closed on a row somebody has renamed since review, and both hold a frozen
 copy of the manifest that a test holds to the manifest.
 
-Both reverses are honest about their limits and neither deletes a
-classification: a new row that a Matter already carries is deactivated rather
-than removed. What `taxonomy/0008`'s reverse cannot restore is an activation
-state that was already false before it ran — every one of the twelve is active
-today, seeded that way by `taxonomy/0006` and never since changed, so it is
-exact for the database this migrates and would be wrong for a deployment that
-had deactivated one by hand.
+Neither reverse deletes a classification, and they reach that differently.
+
+`workflow/0007` **always** deactivates `no_further_work` rather than deleting
+it, and reads no other app. The alternative — ask whether any `Matter` stands in
+the stage, delete it only if none does — is the right instinct in the wrong
+place: a reverse runs against whatever historical state the *other* app happens
+to be rewound to, and `migrate <app> zero` rewinds `matters` past this
+migration's own state before it gets here. CI found that as
+`Cannot query "StageVocabulary object": Must be "StageVocabulary" instance`.
+Deactivating is what the vocabulary's own retirement mechanism produces anyway,
+and re-applying reactivates the same row rather than creating a second one.
+
+`taxonomy/0008` does ask, because it can: it depends on
+`matters/0015_matter_legal_instruments`, which is what puts its reverse *before*
+any `matters` rewind, exactly as `taxonomy/0006` has done since it was written.
+A new type a Matter already carries is deactivated; a pristine unreferenced one
+is removed. What it cannot restore is an activation state that was already false
+before it ran — every one of the twelve is active today, seeded that way by
+`taxonomy/0006` and never since changed, so it is exact for the database this
+migrates and would be wrong for a deployment that had deactivated one by hand.
 
 **What this does not do.** It does not delete a vocabulary row, rewrite a
 historical classification, remap a Matter, infer a track from a domestic act,
