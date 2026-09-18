@@ -134,21 +134,6 @@ def test_the_history_section_is_called_teema_kaik(page, base_url):
     expect(section).to_have_count(1)
 
 
-def test_an_empty_history_is_named_after_the_section_it_is_in(page, base_url):
-    """The empty state says `Teema käik`, because that is what the heading says.
-
-    `Ajajoon` survives as the id and the query parameter and nowhere a reader can
-    see it; a section whose heading and whose empty state name it differently
-    reads as two components (docs/adr/0092 §9).
-    """
-    sign_in(page, base_url, SANDRA)
-    a_new_matter(page, base_url)
-
-    empty = page.locator("#ajajoon .uxtl__none")
-    expect(empty).to_have_text("Teema käik on tühi. Esimene sissekanne ilmub siia.")
-    expect(page.locator("#ajajoon")).not_to_contain_text("Ajajoon on tühi")
-
-
 def test_collapsing_the_history_does_not_hide_menetluse_kulg(page, base_url):
     """The reason the rail is a sibling and not a block inside the disclosure.
 

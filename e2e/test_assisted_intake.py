@@ -131,7 +131,22 @@ def test_the_review_pre_fills_what_it_is_sure_of_and_saves_what_the_person_confi
         page.get_by_role("heading", name="Pakendiseaduse muutmise seaduse eelnõu")
     ).to_be_visible()
     expect(page.get_by_text("19.9.2026").first).to_be_visible()
-    expect(page.get_by_text("18.9.2026")).to_have_count(0)
+    # **The deadline itself, not the whole page.**
+    #
+    # This read `get_by_text("18.9.2026")).to_have_count(0)`, which asked whether
+    # the letter's suggested day appears *anywhere* — and the letter's day is a
+    # fixed string in `LETTER` while half this page is dated from the clock. On
+    # 18 September 2026 in Tallinn the two met: `Saabus`, `Teema loodud` and the
+    # process strip all printed 18.9.2026 honestly, and the assertion failed
+    # without anything being wrong. A guard that depends on the calendar not
+    # reaching a date is a guard that is one morning from a false red.
+    #
+    # The fact being proved is narrower than the old spelling and is the whole
+    # point of the step above: the person replaced the suggested deadline, and
+    # the Matter carries theirs. So it is asked of the deadline.
+    deadline = page.locator(".metaline__value--deadline")
+    expect(deadline).to_contain_text("19.9.2026")
+    expect(deadline).not_to_contain_text("18.9.2026")
 
 
 def test_a_medium_suggestion_is_saved_only_when_chosen_and_a_typed_title_stays(
