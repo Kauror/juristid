@@ -21,9 +21,12 @@ at 768 and none at 1440. 1440 is the control — the token is shorter than the
 desktop content column, so a desktop layout that changed would mean this rule
 reached further than the word it was written for.
 
-The second test is the other half of the contract. Wrapping mid-word is the
-last resort and must stay that way: ordinary prose has to go on breaking at
-spaces, and a sentence with room to spare has to go on occupying one line.
+The other two tests are the rest of the contract, and both exist because a
+page that stops scrolling sideways is not by itself a fix. Wrapping must not
+hide: the whole address stays on the screen, unclipped and unelided, because
+the address is what the person pasted. And wrapping mid-word must stay the
+last resort: ordinary prose goes on breaking at spaces, and a sentence with
+room to spare goes on occupying one line.
 """
 
 from __future__ import annotations
