@@ -285,3 +285,124 @@ def test_the_block_posts_under_its_own_prefix(signed_in):
     assert 'name="url"' not in body
     assert 'name="kind"' not in body
     assert 'name="label"' not in body
+
+
+# ===========================================================================
+# QA-01 — an untouched optional block refuses nothing, whatever else fails
+# ===========================================================================
+#
+# The block arrives with `EIS` pre-selected, so a real browser posts
+# `menetlus-kind=EIS` on **every** save from this page, touched or not. That is
+# the state these tests describe, and the one the bug lived in: the form was
+# bound unconditionally, so a save refused for a reason somewhere else printed
+# «Menetluse link vajab veebiaadressi.» under an address box nobody had typed
+# in. `wants_link` is the single definition of whether this block was answered
+# — the address, and nothing else — and the form now validates only when it
+# says so.
+
+
+UNTOUCHED = {
+    "menetlus-kind": ProceduralLinkKind.EIS.value,
+    "menetlus-url": "",
+    "menetlus-label": "",
+}
+
+
+def test_a_refusal_elsewhere_prints_no_address_refusal_under_an_untouched_block(signed_in):
+    """QA-01, case A. A blank title is one problem, and it is the only one shown.
+
+    The pre-selected chip is what makes this the ordinary path rather than an
+    edge case: every browser submit carries `menetlus-kind`, so an
+    unconditionally validated block refused *every* save that had not used it.
+    """
+    response = _create(signed_in, title="", **UNTOUCHED)
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert "Menetluse link vajab veebiaadressi." not in body
+    assert "Vali, millise menetluse allikaga" not in body
+    assert not Matter.objects.exists()
+    assert not MatterProceduralLink.objects.exists()
+
+
+def test_the_untouched_block_stays_folded_when_something_else_is_refused(signed_in):
+    """A fold opens for a box somebody has to correct, not for one they never used."""
+    response = _create(signed_in, title="", **UNTOUCHED)
+    body = response.content.decode()
+    block = body[body.index('id="menetluse-link"') :]
+
+    assert response.status_code == 400
+    assert " open" not in block.split(">", 1)[0]
+    # And it says nothing it does not hold.
+    assert "Menetluse link ·" not in block
+
+
+def test_the_two_first_steps_refusal_is_the_only_one_shown(signed_in):
+    """QA-01, case B. The real refusal, and nothing invented beside it.
+
+    `Järgmiseks` and `Koostan arvamuse` both want the Matter's single open
+    action, so answering both is refused — and everything typed comes back.
+    """
+    response = _create(
+        signed_in,
+        **{
+            **UNTOUCHED,
+            "next-text": "Helista ministeeriumi",
+            "arvamus-prepare_by": "2026-12-01",
+        },
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert "üks pooleli tegevus" in body
+    assert "Menetluse link vajab veebiaadressi." not in body
+    # What was typed survives the refusal.
+    assert "Helista ministeeriumi" in body
+    assert "2026-12-01" in body
+    assert not Matter.objects.exists()
+
+
+def test_an_untouched_block_saves_the_teema_and_writes_no_link(signed_in):
+    """QA-01, case C. The ordinary submit from a real browser: silent.
+
+    `test_an_untouched_block_writes_nothing_and_refuses_nothing` above posts no
+    `menetlus-*` key at all; this one posts the chip the page actually sends.
+    """
+    response = _create(signed_in, **UNTOUCHED)
+
+    assert response.status_code == 302
+    matter = Matter.objects.get(title="Pakendiseaduse muutmise eelnõu")
+    assert not MatterProceduralLink.objects.filter(matter=matter).exists()
+
+
+def test_an_address_with_no_kind_is_still_refused_on_the_chip_row(signed_in):
+    """QA-01, case D. An answered block is validated exactly as before.
+
+    The address is what says this block was used, so clearing the chip beside a
+    typed address is a real omission rather than an untouched form — and it is
+    refused before anything is written, with what was typed back in the box.
+    """
+    response = _create(signed_in, **{"menetlus-kind": "", "menetlus-url": EIS_URL})
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert "Vali, millise menetluse allikaga" in body
+    assert f'value="{EIS_URL}"' in body
+    assert not Matter.objects.exists()
+    assert not MatterProceduralLink.objects.exists()
+
+
+def test_a_label_beside_an_untouched_address_still_refuses_nothing(signed_in):
+    """The address alone decides it — `wants_link`, unchanged by this fix.
+
+    A name for a link that does not exist is not a request to record one, so it
+    writes nothing and refuses nothing. `test_a_label_without_an_address_writes_nothing`
+    owns the saved outcome; this one owns the absence of a refusal on the page.
+    """
+    response = _create(signed_in, title="", **{**UNTOUCHED, "menetlus-label": "Eelnõu 123 SE"})
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert "Menetluse link vajab veebiaadressi." not in body
+    # What was typed into the optional box still comes back.
+    assert 'value="Eelnõu 123 SE"' in body

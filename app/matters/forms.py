@@ -188,6 +188,37 @@ def provider_link_field(label: str, placeholder: str) -> forms.CharField:
     )
 
 
+def engagement_response_count_field() -> forms.IntegerField:
+    """`Vastuseid` — one optional count, asked in the same words on both surfaces.
+
+    `+ Kaasamine` writes it and `Muuda` corrects it, and the two must not be
+    allowed to drift: a maximum enforced on one surface and not the other is a
+    record creatable in a shape it cannot be corrected into, which is the rule
+    docs/adr/0086 §1 states in both directions. One definition, so there is
+    nothing to keep in step.
+
+    `required=False` and `min_value=0`, because the column holds three facts and
+    all three have to be enterable: a number, an explicit zero, and nothing at
+    all. `None` is «keegi ei lugenud» and `0` is «keegi ei vastanud», and no
+    surface collapses them — the chronology prints a count only for a row that
+    carries one (`app/matters/timeline.py`).
+    """
+    return forms.IntegerField(
+        label="Vastuseid",
+        required=False,
+        min_value=0,
+        max_value=1_000_000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "numeric",
+                "autocomplete": "off",
+                "placeholder": "14",
+            }
+        ),
+    )
+
+
 def clean_provider_link(form: forms.Form, field: str) -> str:
     """The service's own rule, reported under the box somebody typed it in."""
     from app.matters.services import normalize_engagement_url
@@ -3562,11 +3593,17 @@ class EngagementForm(forms.Form):
     can have filled in.** A correction form missing a field does not leave that
     field alone — it leaves the person with a record they can read on the
     chronology and cannot fix. The fields here are therefore the stored ones a
-    person answers: `title`, `url`, the two provider links, `note`, both dates
-    and `Saadud tagasiside`. `response_count` is deliberately not among them —
-    the correction UI does not offer it, so the view never names it and
-    `update_engagement`'s `_UNSET` leaves whatever is stored untouched rather
-    than clearing it to «nobody counted».
+    person answers: `title`, `Vastuseid`, `url`, the two provider links, `note`,
+    both dates and `Saadud tagasiside`.
+
+    **`Vastuseid` is here because `+ Kaasamine` asks for it.** It was left off
+    this form while the creating panel did not offer it either, and the
+    reasoning held exactly as long as that was true: docs/adr/0086 §2 kept the
+    count on the panel, so a lawyer could type `7` where they meant `8` and then
+    find no box anywhere that would take the correction — a number stated on the
+    chronology with no route back out of it (QA-03). The rule this form keeps is
+    that it offers what the panel can write, and that is now this field too, from
+    the one definition both use (`engagement_response_count_field`).
 
     **`Liik` is not among them either, and that is this round's one deliberate
     subtraction.** The panel stopped asking which channel a round used, so the
@@ -3599,6 +3636,20 @@ class EngagementForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
         help_text="Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.",
     )
+    #: `Vastuseid`, corrected the way every other optional box on this form is:
+    #: **an empty control clears the column.**
+    #:
+    #: That is the ordinary rule here — an emptied `Märkus`, `Link` or
+    #: `Tagasisidet ootame kuni` all clear what is stored — and it is what makes
+    #: both of this column's facts reachable. `0` is «keegi ei vastanud» and is
+    #: saved, displayed and corrected as the number it is; blank is «keegi ei
+    #: lugenud», which is a different fact and the only honest answer for
+    #: somebody who no longer stands behind a count they typed. Nothing collapses
+    #: the two, and no clear-checkbox is needed: unlike an approximate
+    #: `Kaasamise kuupäev`, a stored count is always something this box can show,
+    #: so an empty box is never ambiguous about what it was opened holding
+    #: (docs/adr/0086 §1, QA-03).
+    response_count = engagement_response_count_field()
     #: The same two provider pointers the workspace panel asks for, so a
     #: correction made through this form round-trips them rather than dropping
     #: what `+ Kaasamine` stored (docs/adr/0027, amended 2026-09-12).
@@ -4308,20 +4359,10 @@ class CompactEngagementForm(forms.Form):
             }
         ),
     )
-    response_count = forms.IntegerField(
-        label="Vastuseid",
-        required=False,
-        min_value=0,
-        max_value=1_000_000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "inputmode": "numeric",
-                "autocomplete": "off",
-                "placeholder": "14",
-            }
-        ),
-    )
+    #: `Vastuseid`, and the same field object `EngagementForm` corrects it with.
+    #: What this panel can write, `Muuda` can fix — including back to blank
+    #: (`engagement_response_count_field`, QA-03).
+    response_count = engagement_response_count_field()
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
     #: **The date the panel never asked for**, and now an exact day.
@@ -6379,6 +6420,52 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
     url = _procedural_link_url_field()
     label = _procedural_link_label_field()
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Bound whatever happens, and **empty-permitted** — an untouched block is valid.
+
+        The two halves are both load-bearing and they pull in opposite
+        directions, which is why this is stated here rather than decided in the
+        view.
+
+        *Bound*, because the block has to come back holding what was typed into
+        it when the save is refused for a reason somewhere else. Leaving it
+        unbound on those attempts would be the easy way to stop it refusing
+        anything, and it would silently empty the `Nimetus` box of somebody who
+        had filled it.
+
+        *Empty-permitted*, because a bound form validates, and this one has
+        nothing to validate until somebody answers it. `empty_permitted` is
+        Django's own name for exactly this — a sub-form that may legitimately
+        be left alone — and with :meth:`has_changed` below it makes
+        `full_clean` return with no errors and no `cleaned_data` on precisely
+        the attempts where :attr:`wants_link` is false.
+
+        The mixin's rules are untouched, which is the point: `ProceduralLinkForm`
+        behind `+ Menetluse link` on a Teema page was opened deliberately, so an
+        empty address there is an unfinished answer and stays refused. Only
+        *this* form — the optional block nobody has to use — is a no-op when
+        nobody used it (QA-01, docs/adr/0089 §13).
+        """
+        kwargs.setdefault("empty_permitted", True)
+        super().__init__(*args, **kwargs)
+
+    def has_changed(self) -> bool:
+        """Did anybody answer this block? — :attr:`wants_link`, and nothing else.
+
+        This is the hook `empty_permitted` consults, so it is where the one
+        definition of «somebody used this block» has to be, rather than beside
+        a second list of field checks that could drift away from it.
+
+        Django's own answer would be `changed_data`, and it is the wrong one
+        here: `kind` arrives with `EIS` selected, so a browser posts
+        `menetlus-kind=EIS` on *every* save from this page while an omitted
+        `menetlus-kind` — what a test client sends — reads as a change *away*
+        from the initial. Both are noise about a chip nobody clicked, and both
+        would put «Menetluse link vajab veebiaadressi.» under an address box
+        nobody had typed in.
+        """
+        return self.wants_link
+
     @property
     def chosen_summary(self) -> str:
         """What the collapsed disclosure says after the word itself.
@@ -6438,9 +6525,11 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
         anything, and treating either as one would file a refusal at somebody
         who had simply not used this part of the form.
 
-        Read from the **raw** data rather than from `cleaned_data`, because the
-        view needs the answer before deciding whether to bind and validate at
-        all — the shape `matter_create` already uses for `Järgmine tegevus`.
+        Read from the **raw** data rather than from `cleaned_data`, because it
+        is what decides whether there is any cleaning to do: :meth:`has_changed`
+        asks it before `full_clean` runs, and the view asks the same property
+        again before calling the service, so the page and the write agree by
+        construction rather than by two lists of field checks matching.
         """
         if not self.is_bound:
             return False
