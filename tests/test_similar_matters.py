@@ -675,3 +675,64 @@ def test_the_create_page_asks_for_suggestions_without_touching_the_form(client, 
     # Nothing but the four matching fields may cost a round trip.
     assert "from:#id_title" in region
     assert "from:#id_stage" not in region
+
+
+def test_the_region_listens_for_a_restored_form(client, specialist):
+    """QA-11: the region is woken by the browser as well as by the fields.
+
+    A restored form fires none of the field triggers — nothing changed — so
+    the region needs one trigger that is not a field. `app.js` says
+    `sarnased:restored` on `pageshow` when the form has a matching answer in
+    it, and this holds the two halves to the same name.
+
+    Asserted as *added to* the field triggers rather than instead of them: the
+    debounced list is ADR 0087 §4's and this round changes none of it.
+    """
+    client.force_login(specialist)
+
+    body = client.get(reverse("matters:matter_create")).content.decode()
+    region = body.split('id="sarnased-teemad"')[1][:900]
+
+    assert "sarnased:restored" in region
+    for field in (
+        "#id_title",
+        "#id_brief_summary",
+        "#id_policy_areas",
+        "#id_legal_instruments",
+        "#id_source_organisations",
+    ):
+        assert f"from:{field}" in region
+    # And still nothing that cannot change the answer.
+    assert "from:#id_stage" not in region
+
+
+def test_the_restore_asks_the_same_read_only_route(client, specialist, pakend, ministry):
+    """A restore is the ordinary GET, so it inherits the ordinary boundary.
+
+    There is no second endpoint, no restore flag and no server-side memory of a
+    previous page: the same URL, answered the same way, writes nothing. The
+    permission filtering that makes
+    `test_the_draft_never_suggests_a_matter_the_reader_may_not_open` true is
+    therefore true of a restored form for free — which is the whole reason the
+    fix is a browser event rather than a route.
+    """
+    client.force_login(specialist)
+    _matter(
+        specialist, "Pakendiseaduse muutmise eelnõu", number=1, tags=[pakend], addressee=ministry
+    )
+    before = (
+        Matter.objects.count(),
+        MatterRelation.objects.count(),
+        RelatedSuggestionDismissal.objects.count(),
+    )
+
+    first = _draft(client, title="Pakendiseaduse muutmise eelnõu")
+    again = _draft(client, title="Pakendiseaduse muutmise eelnõu")
+
+    assert first == again
+    after = (
+        Matter.objects.count(),
+        MatterRelation.objects.count(),
+        RelatedSuggestionDismissal.objects.count(),
+    )
+    assert after == before

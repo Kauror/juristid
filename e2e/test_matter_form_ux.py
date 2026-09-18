@@ -17,6 +17,7 @@ nothing here may need a click to become true.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from uuid import uuid4
 
 import pytest
 from playwright.sync_api import expect
@@ -908,3 +909,235 @@ def test_the_similar_section_survives_a_narrow_screen(page, base_url):
 
     expect(page.locator(SIMILAR_SECTION)).to_be_visible()
     assert not _document_overflows(page), "Uus teema scrolls sideways at 420px"
+
+
+# ---------------------------------------------------------------------------
+# …and after the browser puts a finished form back on the screen
+# ---------------------------------------------------------------------------
+#
+# QA-11. `Sarnased teemad` is recomputed by the fields that decide the answer,
+# which is right while somebody is typing and silent at the one moment the
+# warning matters most: a lawyer files a Teema, presses Back, and the browser
+# hands the whole form back with every value in it. The region comes back
+# empty, because the server renders it empty and only a swap ever fills it —
+# so the page says «nothing resembles this» about the file that was created
+# seconds ago, and pressing `Loo teema` again files it twice. A Teema cannot be
+# deleted, so that is durable data nobody meant to create.
+#
+# Measured before the fix, in Chromium 151 against this application: the
+# restore fires `pageshow` with `persisted=false`, because this page is
+# `no-store` and therefore not BFCache-eligible at all. So the fix gates on the
+# form's contents rather than on `event.persisted`, and these tests assert the
+# behaviour rather than the mechanism.
+#
+# **Nothing here may touch a field after the Back.** No `fill`, no keystroke,
+# no dispatched `input`, no click on a neighbouring control: any of those would
+# fire one of the ordinary triggers, and the test would then pass against the
+# defect it exists to hold.
+
+
+def _coined_subject() -> str:
+    """A title the register cannot already hold, twice over.
+
+    Unique per run, so «there was nothing before the create» stays true however
+    many times this file has run against the same seeded world — the browser
+    suite shares one, and an earlier run's Matter would otherwise answer this
+    run's question. Two distinctive subject words, so it qualifies on
+    `W_TITLE_STRONG` under the engine exactly as it stands: no weight, cap or
+    threshold is touched to make this deterministic (docs/adr/0087 §2).
+
+    **Letters only, and that is load-bearing.** `uuid4().hex` on its own is not
+    safe here: `app/related_materials/text.py` splits a word at its digits, so
+    a token ending in one leaves «seaduse» standing alone — a generic word the
+    subject filter drops — and the title then carries a *single* subject term,
+    which is `W_TITLE_TERM` 1.5 against a threshold of 3.5. The first CI run
+    drew such a token and both restore tests failed for a reason that had
+    nothing to do with a restore. Mapping the digits onto letters keeps the
+    token unique and keeps the term count at two whatever is drawn.
+    """
+    token = uuid4().hex[:10].translate(str.maketrans("0123456789", "gjklmnprst"))
+    return f"Katselise {token}seaduse muutmise eelnõu"
+
+
+def _draft_requests(page) -> list[str]:
+    """Every suggestion request the page makes from now on, in order."""
+    seen: list[str] = []
+    page.on(
+        "request",
+        lambda request: (
+            seen.append(request.url) if "/teemad/uus/sarnased/" in request.url else None
+        ),
+    )
+    return seen
+
+
+def test_back_after_creating_brings_the_warning_back(page, base_url):
+    """The reported defect, end to end, with nothing touched after the Back.
+
+    Create the Teema through the form, press Back, touch nothing — and the
+    Teema just created must be named under `Sarnased teemad` before the button
+    could be pressed a second time.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    subject = _coined_subject()
+
+    page.fill("#id_title", subject)
+    _settle_suggestions(page)
+    # The precondition the whole test rests on: the register holds nothing like
+    # this yet, so anything that appears later appeared because of the create.
+    expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
+
+    page.click("button:has-text('Loo teema')")
+    page.wait_for_load_state("networkidle")
+    assert "/teemad/uus/" not in page.url, "the Teema was not created"
+
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+    # The form came back exactly as the person left it.
+    expect(page.locator("#id_title")).to_have_value(subject)
+    _settle_suggestions(page)
+
+    expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+    expect(page.locator(f"{SIMILAR_SECTION} .relatedcard").first).to_be_visible()
+    assert subject in page.locator(SIMILAR_REGION).inner_text(), (
+        "the Teema just created is not named in the restored warning"
+    )
+
+
+def test_the_restored_warning_needs_no_keystroke(page, base_url):
+    """The same restore, asserted as a request rather than as a rendering.
+
+    A card could in principle arrive because something else woke the region up.
+    This counts what the page asks for: exactly one suggestion request between
+    the Back and the cards, with no field touched in between.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    subject = _coined_subject()
+
+    page.fill("#id_title", subject)
+    _settle_suggestions(page)
+    page.click("button:has-text('Loo teema')")
+    page.wait_for_load_state("networkidle")
+
+    asked = _draft_requests(page)
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+    _settle_suggestions(page)
+
+    assert len(asked) == 1, f"the restore asked {len(asked)} times, not once"
+    expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+
+
+def test_a_restored_empty_form_asks_for_nothing(page, base_url):
+    """Back onto a form nobody filled in costs no query and shows no box."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    page.goto(f"{base_url}/minu-asjad/")
+    page.wait_for_load_state("networkidle")
+
+    asked = _draft_requests(page)
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+    _settle_suggestions(page)
+
+    assert asked == [], f"an empty restored form asked anyway: {asked}"
+    expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
+
+
+def test_a_restored_draft_that_resembles_nothing_shows_nothing(page, base_url):
+    """The warning is recomputed, not remembered.
+
+    The form held a real subject and then a generic one. What comes back must
+    be the answer to what is in the form now — silence — rather than the cards
+    the region was last holding.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+    expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+    page.fill("#id_title", "Eelnõu kooskõlastamine")
+    _settle_suggestions(page)
+
+    page.goto(f"{base_url}/minu-asjad/")
+    page.wait_for_load_state("networkidle")
+    asked = _draft_requests(page)
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+    _settle_suggestions(page)
+
+    assert len(asked) == 1, f"the restore asked {len(asked)} times, not once"
+    expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
+    assert page.locator(SIMILAR_REGION).inner_html().strip() == "", (
+        "a stale card survived the restore"
+    )
+
+
+def test_back_and_forward_and_back_is_one_refresh_each(page, base_url):
+    """No second handler, and no request storm.
+
+    The listener is registered once per document and says one thing to one
+    element, so three restores are three requests — not one, four or nine.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+    page.goto(f"{base_url}/minu-asjad/")
+    page.wait_for_load_state("networkidle")
+
+    asked = _draft_requests(page)
+    for _ in range(3):
+        page.go_back()
+        page.wait_for_load_state("networkidle")
+        _settle_suggestions(page)
+        expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+        page.go_forward()
+        page.wait_for_load_state("networkidle")
+        _settle_suggestions(page)
+
+    assert len(asked) == 3, f"three restores asked {len(asked)} times"
+
+
+def test_a_fresh_create_page_still_asks_for_nothing(page, base_url):
+    """What the fix costs on the ordinary path: nothing.
+
+    `load` would have asked the engine about every empty form. This asks about
+    a form with something in it, so opening `Uus teema` is the round trip it
+    always was.
+    """
+    sign_in(page, base_url, MARTIN)
+    asked = _draft_requests(page)
+    create_form(page, base_url)
+    _settle_suggestions(page)
+
+    assert asked == [], f"an untouched create page asked anyway: {asked}"
+    expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
+
+
+def test_a_refused_save_still_says_what_the_form_resembles(page, base_url):
+    """A refusal re-renders this page with the answers still in it.
+
+    The region is server-rendered empty there as everywhere, so before this it
+    came back blank too — the same untruth as the Back, reached by a different
+    route. `Valdkond` «Muu» ticked without naming it is the refusal used here,
+    because `Pealkiri` carries the HTML5 `required` attribute and so never
+    reaches the server empty.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", SIMILAR_SUBJECT)
+    _settle_suggestions(page)
+    open_valdkond(page)
+    page.locator("#valdkond-muu").click()
+
+    page.click("button:has-text('Loo teema')")
+    page.wait_for_load_state("networkidle")
+    _settle_suggestions(page)
+
+    expect(page.locator("#id_title")).to_have_value(SIMILAR_SUBJECT)
+    expect(page.locator(SIMILAR_SECTION)).to_be_visible()

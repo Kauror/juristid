@@ -30,12 +30,14 @@ import datetime as dt
 import re
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.errors import DomainError
+from app.documents.models import Document
 from app.intelligence.models import MatterImportantDate
 from app.matters import work_items as wi
 from app.matters.enums import EngagementKind, RecordMode
@@ -1256,3 +1258,190 @@ def test_a_wait_aimed_at_another_matters_round_is_a_404(signed_in, specialist):
     assert response.status_code == 404
     engagement.refresh_from_db()
     assert engagement.feedback_deadline is None
+
+
+# ---------------------------------------------------------------------------
+# The answer that arrived as a file
+# ---------------------------------------------------------------------------
+#
+# `Lõpeta kaasamine` is one professional act: what came back, the evidence it
+# came back *as*, and the decision that the round is over. The view's own
+# docstring has promised since docs/adr/0086 §6 that the files ride with the
+# decision through the ordinary evidence path — and the form was bound with
+# `request.POST` alone, so `attachments` was empty on every save and a PDF a
+# member sent in was discarded with no error, no warning and no row anywhere.
+#
+# These post through the real endpoint with a real file, because the defect sat
+# between the request and the form: a test reading `form.cleaned_data`, or
+# calling `add_engagement_feedback` directly, sees the list the caller passed
+# and would have stayed green throughout.
+
+
+def _upload(name: str = "vastus.pdf", body: bytes = b"%PDF-1.4 vastus") -> SimpleUploadedFile:
+    return SimpleUploadedFile(name, body, content_type="application/pdf")
+
+
+def _evidence_of(engagement):
+    """The documents explicitly linked to this round.
+
+    Through `DocumentLink.engagement`, which is the row that says these bytes are
+    the answer to *this* consultation rather than something else that turned up
+    the same afternoon — the relationship a file attached to the Matter in
+    general does not have (docs/adr/0075 §10).
+    """
+    return Document.objects.filter(links__engagement=engagement)
+
+
+def test_a_file_attached_to_the_completion_becomes_evidence_on_the_round(signed_in, specialist):
+    """The answer that arrived as a PDF is attached to the round it answers.
+
+    Asserts the canonical records rather than the form's own output, because the
+    binding defect was upstream of the form and every existing test posted text
+    alone.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+
+    response = _finish(
+        signed_in, engagement, feedback_received="Liikmed vastasid kirjaga.", attachments=_upload()
+    )
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement.refresh_from_db()
+    assert engagement.feedback_closed_at is not None
+    assert engagement.feedback_received == "Liikmed vastasid kirjaga."
+
+    evidence = _evidence_of(engagement)
+    assert evidence.count() == 1
+    document = evidence.get()
+    assert document.matter_id == matter.pk
+    assert document.title == "vastus.pdf"
+    assert document.versions.count() == 1
+    assert document.versions.get().original_filename == "vastus.pdf"
+
+
+def test_the_attached_file_is_named_under_the_round_it_answers(signed_in, specialist):
+    """The filename reads on the row, under the `Kaasamine` fact.
+
+    Through the generic evidence pass every milestone's files go through, so it
+    arrives under the round that answers for it rather than as a second
+    chronology act pretending to be another business step (docs/adr/0092 §5).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+
+    _finish(signed_in, engagement, feedback_received="Vastus tuli.", attachments=_upload())
+
+    assert "vastus.pdf" in _row(signed_in, matter, engagement)
+
+
+def test_a_file_with_no_words_beside_it_is_a_complete_answer(signed_in, specialist):
+    """The prose is optional and the file is the answer.
+
+    `EngagementFeedbackForm` requires nothing, deliberately. Nothing invents a
+    sentence to go with the bytes.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+
+    response = _finish(signed_in, engagement, attachments=_upload("liidu-vastus.pdf"))
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement.refresh_from_db()
+    assert engagement.feedback_closed_at is not None
+    assert engagement.feedback_received == ""
+    assert _evidence_of(engagement).get().title == "liidu-vastus.pdf"
+
+
+def test_a_refused_upload_unwinds_the_whole_completion(signed_in, specialist):
+    """All or none, across the words, the bytes and the closure.
+
+    `add_engagement_feedback` captures the evidence **after** the completion
+    inside one transaction precisely so that a refused file takes the completion
+    with it. A round recorded as answered whose answer was refused is the state
+    docs/adr/0075 §8 exists to make impossible.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+    deadline = engagement.feedback_deadline
+
+    response = _finish(
+        signed_in,
+        engagement,
+        feedback_received="Liikmed vastasid.",
+        attachments=SimpleUploadedFile(
+            "vastus.exe", b"MZ ei ole pdf", content_type="application/pdf"
+        ),
+    )
+
+    assert response.status_code == 400
+    engagement.refresh_from_db()
+    assert engagement.feedback_closed_at is None
+    assert engagement.feedback_received == ""
+    assert engagement.feedback_deadline == deadline
+    assert not Document.objects.filter(matter=matter).exists()
+
+
+def test_a_stale_completion_carrying_a_file_leaves_no_orphan_evidence(signed_in, specialist):
+    """A conflict writes nothing — and nothing includes the bytes.
+
+    The completion is refused under the Matter's row lock before any evidence is
+    captured, so a browser holding a page from before a colleague finished the
+    same round cannot leave a `Document` behind on its way to a 409.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+    stale = engagement_revision_token(engagement)
+    correct_engagement(engagement=engagement, actor=specialist, title="liikmed ja partnerid")
+
+    response = signed_in.post(
+        _finish_url(engagement),
+        {
+            "revision": stale,
+            "feedback_received": "Liikmed vastasid.",
+            "attachments": _upload(),
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 409
+    engagement.refresh_from_db()
+    assert engagement.feedback_closed_at is None
+    assert not Document.objects.filter(matter=matter).exists()
+
+
+def test_a_completion_with_no_attachment_is_unchanged(signed_in, specialist):
+    """The text-only path, byte for byte what it was.
+
+    Binding the form with `request.FILES` must not turn an empty picker into a
+    refusal: the commonest completion of all is somebody recording that the
+    deadline passed and nothing came back.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _waiting(matter, actor=specialist)
+
+    response = _finish(signed_in, engagement, feedback_received="Keegi ei vastanud.")
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    engagement.refresh_from_db()
+    assert engagement.feedback_closed_at is not None
+    assert engagement.feedback_received == "Keegi ei vastanud."
+    assert not Document.objects.filter(matter=matter).exists()
+
+
+def test_two_waiting_rounds_keep_their_own_file_controls(signed_in, specialist):
+    """The picker is per record, and it survived the binding change.
+
+    `_engagement_feedback_form` overrides the widget's own fixed id per
+    engagement, because a Matter waiting on three rounds would otherwise render
+    three inputs sharing one id and the second label would open the first
+    round's picker (docs/adr/0086 §6).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    first = _waiting(matter, actor=specialist)
+    second = _waiting(matter, actor=specialist)
+
+    body = _detail(signed_in, matter)
+
+    assert f'id="id_kaasamine_{first.pk}_tagasiside"' in body
+    assert f'id="id_kaasamine_{second.pk}_tagasiside"' in body
