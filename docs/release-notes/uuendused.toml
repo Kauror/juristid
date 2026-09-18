@@ -86,7 +86,42 @@ basis = "deployment"
 # parandus — kuvatõmmised jäädvustasid oma jooksupäeva kuupäeva ja vananesid
 # öö jooksul. README ütleb, et testid ja CI punkti ei saa, ja siin ei muutu
 # lugeja jaoks midagi.
-prs = [233, 235, 236, 237, 239]
+#
+# **Üheksas, kümnes ja üheteistkümnes punkt tulid juurde sama päeva kolmanda
+# väljalaskega** (#246). Endiselt üks kirje ühe kalendripäeva kohta, nii et need
+# on read olemasolevas kirjes, mitte uus päev.
+#
+# Kõik kolm parandavad vigu, mille leidis sama päeva öine läbivaatus, ja kõik
+# kolm puudutavad punkte, mis on ülalpool juba lubatud — seepärast on nad siin
+# eraldi read ja mitte parandused nendesse punktidesse. Lugeja, kes eile lehte
+# luges, on ülemised laused juba näinud; ta peab teada saama, mis nendest
+# päriselt ei töötanud.
+#
+# **Üheksas punkt on tõendite kadu, ja see on neist kolmest kõige tõsisem.**
+# Kaasamise lõpetamisel sai faili juurde panna, salvestamine õnnestus ja fail
+# kadus jäljetult — ei veateadet, ei hoiatust, ei rida dokumentides. Punkt
+# ütleb otse, et failid *säilivad nüüd*, sest lugeja, kes on sel viisil ühe
+# vastuskirja kaotanud, peab aru saama, et see oli viga ja et seda enam ei
+# juhtu. Ülalpool kuues punkt lubab menetluse arengu juures faile; kaasamise
+# lõpetamine on eraldi koht ja seal see lubadus ei pidanud.
+#
+# **Kümnes punkt ei korda viiendat punkti.** Viies ütleb, et juristi märkus on
+# allika sõnadest nähtavalt eraldi — see käis välise seisukoha kohta ja see
+# vastab tõele. Menetluse arengu juures küsiti sama märkust, salvestati see ära
+# ja ei näidatud seda mitte kusagil. Punkt nimetab seepärast menetluse arengu
+# eraldi välja, muidu loeks lugeja seda kordusena ega saaks aru, et miski oli
+# katki.
+#
+# **Üheteistkümnes punkt on ainus, mis midagi ära võtab, ja seepärast ütleb ta
+# välja ka põhjuse.** Menetluse arenguna sai varem kirja panna tulevikus toimuva
+# sammu; rakendus võttis selle vastu, kuid ei näidanud seda teema käigus, ja
+# samal salvestusel valitud hetkeseis jõustus sellest hoolimata kohe. Nii seisis
+# failil hetkeseis, milleni menetlus ei olnud jõudnud, ja lause, mis seda
+# selgitanuks, ei olnud kusagil näha. Nüüd keeldub rakendus tervest
+# salvestusest. Punkt nimetab ka koha, kuhu plaan käib — „Järgmiseks” ja
+# „Oluline tähtaeg” —, sest muidu jääks lugejale mulje, et tulevikukuupäeva ei
+# saa kuhugi kirja panna. Varem sisestatud kirjeid ei muudetud ega kustutatud.
+prs = [233, 235, 236, 237, 239, 246]
 changes = [
   "Uue teema loomisel ei küsita enam menetlusliiki ega adressaati; mõlemat saab vajaduse korral täita teema andmetes ning saatjat nimetatakse nüüd kõikjal saatjaks.",
   "Hetkeseisu kolm nimetust on ümber sõnastatud ja õigusakti valik on lühem ning ütleb nimetuses ära, kas tegu on siseriikliku või ELiga seotud aktiga; varasemad valikud säilivad.",
@@ -96,6 +131,9 @@ changes = [
   "Koja arvamuse ja menetluse arengu saab lisada otse teema lehelt; menetluse arenguga saab sama salvestusega kirja panna ka uue hetkeseisu, järgmise tegevuse ja failid.",
   "Teema lehel on nüüd eraldi sisuline „Teema käik” ja „Menetluse kulg”, tehnilise muutmisajaloo saab avada „Kõik muudatused” kaudu, töövõit seisab ajaloos oma tegeliku perioodi juures ning teadmata kuupäev kirjutatakse välja, mitte ei asendata tänase päevaga.",
   "Vormiväljade selgitused seisavad nüüd välja enda juures ja jõuavad ka ekraanilugejani — nende hulgas ülevaate või uudise avaldamiskuupäeva selgitus ning teema lühikokkuvõtte oma, mida varem üldse ei kuvatud.",
+  "Kaasamise lõpetamisel lisatud failid säilivad nüüd koos saabunud tagasisidega ja on selle kaasamise juures tõendina avatavad; varem läksid need salvestamisel kaduma ilma veateateta.",
+  "Menetluse arengu juures sisestatud juristi märkus on nüüd teema käigus näha, oma pealkirja all ja menetlussündmusest selgelt eraldi.",
+  "Menetluse arenguna ei saa enam salvestada sündmust, mis alles tuleb — rakendus keeldub tervest salvestusest ega muuda ka teema hetkeseisu; tulevikus toimuva jaoks on „Järgmiseks” ja „Oluline tähtaeg”.",
 ]
 
 [[day]]
