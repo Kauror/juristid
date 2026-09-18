@@ -231,6 +231,31 @@ urlpatterns = [
         views.add_development,
         name="add_development",
     ),
+    # `Muuda` on a filed `Menetluse areng`, under the record rather than under
+    # the Teema, and spelled the way `update_external_position` and
+    # `update_engagement` are — one address for the form and the save, GET
+    # opening the box in the chronology row and POST writing it. There is no
+    # state between them, so a second route would only be a second place for the
+    # authorization to be written out (app/matters/views.py,
+    # `update_development_view`).
+    #
+    # The Matter stays in the path even though the development's own id is
+    # unique, so the view can prove the child belongs to it before it reads
+    # either — and so the correction is spelled as what it is: a change to a
+    # record on this file.
+    #
+    # Deliberately **not** under `lisa/`: it is a correction to something already
+    # on the file, and a route that spelled it as an addition would be the one
+    # place somebody later moved the closed-Matter guard to (docs/adr/0089 §6).
+    #
+    # There is deliberately **no delete route**, on an open Matter or a closed
+    # one: a mistaken development is corrected, because what the file recorded
+    # and who recorded it is part of the file (docs/adr/0084 §8).
+    path(
+        "teemad/<uuid:pk>/menetluse-areng/<uuid:development_id>/muuda/",
+        views.update_development_view,
+        name="update_development",
+    ),
     # `+ Menetluse link`, and the correction to one. The same pair, spelled the
     # same way and for the same reasons, as the two directly above: the addition
     # is under `lisa/` because it is new business content on the Matter, and the
