@@ -2845,6 +2845,17 @@ fieldset.field > legend {
   margin-top: var(--spacing-15);
   font-size: var(--typography-size-row);
   line-height: 1.5;
+  /* An unbroken token — a pasted EUR-Lex address is one 179-character word —
+     is otherwise this element's minimum content width, every ancestor is
+     `overflow-x: visible`, and the width propagates out to the document. The
+     primitive `.richtext` already uses since QA-10, applied here because this
+     surface carries the same kind of text: something a person typed.
+     `anywhere` rather than `break-word`, because only `anywhere` shrinks that
+     minimum — `break-word` wraps the line and still hands the layout the
+     unbroken width to size against. Ordinary prose is untouched: a break
+     inside a word is the last resort, taken only when the word cannot fit on
+     a line of its own. */
+  overflow-wrap: anywhere;
 }
 
 .result__snippet mark {
@@ -11236,6 +11247,17 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-weight: var(--typography-weight-semibold);
   line-height: 1.35;
   color: var(--text-primary);
+  /* An unbroken token — a pasted EUR-Lex address is one 179-character word —
+     is otherwise this element's minimum content width, every ancestor is
+     `overflow-x: visible`, and the width propagates out to the document. The
+     primitive `.richtext` already uses since QA-10, applied here because this
+     surface carries the same kind of text: something a person typed.
+     `anywhere` rather than `break-word`, because only `anywhere` shrinks that
+     minimum — `break-word` wraps the line and still hands the layout the
+     unbroken width to size against. Ordinary prose is untouched: a break
+     inside a word is the last resort, taken only when the word cannot fit on
+     a line of its own. */
+  overflow-wrap: anywhere;
 }
 
 #teema-vaade-wrap .uxtl__msdate {
@@ -11251,6 +11273,17 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-body);
+  /* An unbroken token — a pasted EUR-Lex address is one 179-character word —
+     is otherwise this element's minimum content width, every ancestor is
+     `overflow-x: visible`, and the width propagates out to the document. The
+     primitive `.richtext` already uses since QA-10, applied here because this
+     surface carries the same kind of text: something a person typed.
+     `anywhere` rather than `break-word`, because only `anywhere` shrinks that
+     minimum — `break-word` wraps the line and still hands the layout the
+     unbroken width to size against. Ordinary prose is untouched: a break
+     inside a word is the last resort, taken only when the word cannot fit on
+     a line of its own. */
+  overflow-wrap: anywhere;
 }
 
 /* `Juristi märkus` — this office's own reading of somebody else's position,
@@ -11297,6 +11330,17 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-body);
+  /* An unbroken token — a pasted EUR-Lex address is one 179-character word —
+     is otherwise this element's minimum content width, every ancestor is
+     `overflow-x: visible`, and the width propagates out to the document. The
+     primitive `.richtext` already uses since QA-10, applied here because this
+     surface carries the same kind of text: something a person typed.
+     `anywhere` rather than `break-word`, because only `anywhere` shrinks that
+     minimum — `break-word` wraps the line and still hands the layout the
+     unbroken width to size against. Ordinary prose is untouched: a break
+     inside a word is the last resort, taken only when the word cannot fit on
+     a line of its own. */
+  overflow-wrap: anywhere;
 }
 
 /* The label, quiet and inline, so the sentence after it starts on the same line
@@ -11548,6 +11592,17 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-2);
   margin: 0 0 var(--spacing-2);
+  /* An unbroken token — a pasted EUR-Lex address is one 179-character word —
+     is otherwise this element's minimum content width, every ancestor is
+     `overflow-x: visible`, and the width propagates out to the document. The
+     primitive `.richtext` already uses since QA-10, applied here because this
+     surface carries the same kind of text: something a person typed.
+     `anywhere` rather than `break-word`, because only `anywhere` shrinks that
+     minimum — `break-word` wraps the line and still hands the layout the
+     unbroken width to size against. Ordinary prose is untouched: a break
+     inside a word is the last resort, taken only when the word cannot fit on
+     a line of its own. */
+  overflow-wrap: anywhere;
 }
 
 .curact__text {
