@@ -121,7 +121,40 @@ basis = "deployment"
 # salvestusest. Punkt nimetab ka koha, kuhu plaan käib — „Järgmiseks” ja
 # „Oluline tähtaeg” —, sest muidu jääks lugejale mulje, et tulevikukuupäeva ei
 # saa kuhugi kirja panna. Varem sisestatud kirjeid ei muudetud ega kustutatud.
-prs = [233, 235, 236, 237, 239, 246]
+#
+# **Kaheteistkümnes kuni kuueteistkümnes punkt tulid juurde sama päeva neljanda
+# väljalaskega** (#241, #242, #243, #244, #245). Ikka üks kirje ühe
+# kalendripäeva kohta, nii et need on read olemasolevas kirjes, mitte uus päev.
+#
+# Viis parandust samast öisest läbivaatusest, mis andis üheksanda kuni
+# üheteistkümnenda punkti. Need viis olid vähem tõsised ja läksid seepärast
+# eraldi ringiga; tööpind on igal neist erinev, nii et nad on viis rida ja mitte
+# üks.
+#
+# **Kaheteistkümnes punkt on veateade, mida ei oleks tohtinud olla.** Uue teema
+# vormil on menetluslink vabatahtlik, aga kui salvestus keelduti mõnel muul
+# põhjusel — näiteks puuduva pealkirja pärast —, kurtis vorm ka lingi puudumise
+# üle, mida keegi täitma ei pidanudki. Punkt ütleb selle välja, sest lugeja, kes
+# nägi kahte viga ja parandas ühe, ei saanud aru, miks teine ei kadunud.
+#
+# **Kolmeteistkümnes punkt ei korda neljandat.** Neljas räägib sellest, mis
+# kaasamise lisamisel juhtub; siin on juurde tulnud see, et juba salvestatud
+# vastuste arvu saab parandada — ja tühjaks jätta, mis tähendab «keegi ei
+# lugenud» ja on midagi muud kui null vastust.
+#
+# **Neljateistkümnes punkt on kolmanda paranduse teine pool.** Teema loomise
+# järel Tagasi-nupuga vormile naastes jäi sarnaste teemade hoiatus tühjaks ja
+# lehekülg väitis, et midagi sarnast ei ole — sealhulgas teema kohta, mis oli
+# just loodud. Punkt nimetab olukorra ära, sest just seal oleks keegi võinud
+# sama teema teist korda luua.
+#
+# **Viieteistkümnes ja kuueteistkümnes punkt on kaks eraldi ebamugavust ühel ja
+# samal teemal — asjad on väikesed.** Pikk katkestusteta tekst, näiteks
+# kopeeritud link, venitas märkme mobiilis ekraanist laiemaks, nii et lehte sai
+# külgsuunas kerida. Ja kuupäevavälja kalendrinupp koos kuu vahetamise nuppudega
+# oli nii väike, et sellesse oli raske tabada. Kummalgi ei muutu see, mida
+# rakendus teeb — muutub see, kas sellega saab mugavalt töötada.
+prs = [233, 235, 236, 237, 239, 241, 242, 243, 244, 245, 246]
 changes = [
   "Uue teema loomisel ei küsita enam menetlusliiki ega adressaati; mõlemat saab vajaduse korral täita teema andmetes ning saatjat nimetatakse nüüd kõikjal saatjaks.",
   "Hetkeseisu kolm nimetust on ümber sõnastatud ja õigusakti valik on lühem ning ütleb nimetuses ära, kas tegu on siseriikliku või ELiga seotud aktiga; varasemad valikud säilivad.",
@@ -134,6 +167,11 @@ changes = [
   "Kaasamise lõpetamisel lisatud failid säilivad nüüd koos saabunud tagasisidega ja on selle kaasamise juures tõendina avatavad; varem läksid need salvestamisel kaduma ilma veateateta.",
   "Menetluse arengu juures sisestatud juristi märkus on nüüd teema käigus näha, oma pealkirja all ja menetlussündmusest selgelt eraldi.",
   "Menetluse arenguna ei saa enam salvestada sündmust, mis alles tuleb — rakendus keeldub tervest salvestusest ega muuda ka teema hetkeseisu; tulevikus toimuva jaoks on „Järgmiseks” ja „Oluline tähtaeg”.",
+  "Uue teema loomisel ei näidata enam kasutamata menetluslingi kohta ekslikku veateadet.",
+  "Kaasamise juures saab nüüd parandada ka vastuste arvu, sealhulgas eemaldada varem sisestatud arvu.",
+  "Kui naasta pärast teema loomist brauseri Tagasi-nupuga täidetud vormile, uuendatakse sarnaste teemade soovitusi automaatselt.",
+  "Pikad lingid ja muud katkestusteta tekstid ei venita enam märkmete vaadet mobiilis ekraanist laiemaks.",
+  "Kuupäevavälja kalendrinupp ja kuu vahetamise nupud on nüüd mugavamalt vajutatavad.",
 ]
 
 [[day]]
