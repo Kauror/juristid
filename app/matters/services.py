@@ -66,6 +66,7 @@ from app.matters.models import (
     TagAssignment,
 )
 from app.submissions.models import Submission
+from app.workflow.dates import period_starts_after
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
 from app.workflow.models import NextAction
 from app.workflow.services import (
@@ -3795,6 +3796,19 @@ def correct_external_position(
 
 #: What a development with nothing said about it is told.
 DEVELOPMENT_NEEDS_TITLE = "Kirjuta, mis menetluses juhtus."
+#: What somebody filing next month's committee sitting as a development is told.
+#:
+#: `Menetluse areng` records something that **has happened** (docs/adr/0092 §3,
+#: §4). A plan belongs to `Järgmiseks` or to `+ Oluline tähtaeg`, which are the
+#: product's two forward-looking facts and have their own dates, their own
+#: lateness and their own place on the page.
+#:
+#: The sentence names the record rather than the box, deliberately. «Menetluse
+#: arengu kuupäev ei saa olla tulevikus» invites somebody to clear the date and
+#: file the future step undated, which is the same untruth with less of it
+#: written down. One wording, used by the form and by the service, so the two
+#: cannot come to mean subtly different things.
+DEVELOPMENT_CANNOT_BE_FUTURE = "Menetluse areng ei saa olla tulevikus."
 #: What a stale correction is told. The sibling of `EXTERNAL_POSITION_EDIT_CONFLICT`
 #: and deliberately the same shape of sentence.
 DEVELOPMENT_EDIT_CONFLICT = "Menetluse arengut on vahepeal mujal muudetud."
@@ -3883,6 +3897,16 @@ def record_procedural_development(
         raise DomainError(DEVELOPMENT_NEEDS_TITLE)
     clean_note = (note or "").strip()
     precision = _development_precision(occurred_on, occurred_on_precision)
+    # **The invariant, here rather than on the form.** This is the one seam every
+    # writer of a `MatterProceduralDevelopment` passes through, and it is the
+    # *first* write of `add_procedural_development`'s transaction — so a refusal
+    # raised here unwinds the record, its evidence, the `Hetkeseis` and the
+    # `Järgmiseks` together, and a caller that never renders a form cannot move
+    # a Matter to `Riigikogus` on the strength of a sitting that has not
+    # happened. The form adds the same refusal beside the control the person
+    # typed into, from the same helper and the same sentence.
+    if period_starts_after(occurred_on, precision, day=timezone.localdate()):
+        raise DomainError(DEVELOPMENT_CANNOT_BE_FUTURE)
 
     development = MatterProceduralDevelopment.objects.create(
         matter=matter,
@@ -3995,6 +4019,19 @@ def correct_procedural_development(
         # Nothing moved, so nothing is recorded. An audit row for a save that
         # changed no value would be a history of somebody pressing a button.
         return current
+    # **A correction may not move the date into the future**, the same invariant
+    # `record_procedural_development` states and the same sentence.
+    #
+    # Guarded on the date having actually *moved*, which is the difference
+    # between this seam and that one. A row filed before the rule existed is left
+    # exactly as it is and is not rewritten, so refusing every correction that
+    # merely *carries* its stored future date would make such a row's headline
+    # permanently uncorrectable — a second, quieter way of the file being unable
+    # to say what happened.
+    if ("occurred_on" in changed or "occurred_on_precision" in changed) and period_starts_after(
+        occurred_on, precision, day=timezone.localdate()
+    ):
+        raise DomainError(DEVELOPMENT_CANNOT_BE_FUTURE)
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "occurred_on" in changed:

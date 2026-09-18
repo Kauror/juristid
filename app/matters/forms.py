@@ -55,7 +55,14 @@ from app.taxonomy.vocabulary import (
     selectable_legal_instrument_types,
     selectable_policy_areas,
 )
-from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for, format_at_precision
+from app.workflow.dates import (
+    MAX_YEAR,
+    MIN_YEAR,
+    InvalidPeriod,
+    bounds_for,
+    format_at_precision,
+    period_starts_after,
+)
 from app.workflow.enums import (
     ESTONIAN_MONTHS,
     ROMAN_QUARTERS,
@@ -2197,6 +2204,25 @@ class RecipientNamesField(forms.Field):
         return [cleaned for cleaned in (" ".join(str(item).split()) for item in raw) if cleaned]
 
 
+def _precision_controls(prefix: str, exact_name: str) -> dict[str, str]:
+    """Which control in a precision group answers each precision.
+
+    So that a refusal lands on the box the person actually typed into: ADR 0052
+    §5's rule, and the reason «vali kuupäev» pinned to a sentence box points at
+    the wrong field. `_period_anchor` reports a half-stated period through this
+    map, and `ProceduralDevelopmentForm` reports a future one through the same
+    one — two refusals about one control, aimed the same way.
+    """
+    return {
+        DatePrecision.EXACT.value: exact_name,
+        DatePrecision.INFERRED.value: exact_name,
+        DatePrecision.MONTH.value: f"{prefix}_month",
+        DatePrecision.QUARTER.value: f"{prefix}_quarter",
+        DatePrecision.HALF_YEAR.value: f"{prefix}_half",
+        DatePrecision.YEAR.value: f"{prefix}_year",
+    }
+
+
 def _period_anchor(
     form: forms.Form, prefix: str, *, date_field: str | None = None
 ) -> tuple[date | None, date | None, str]:
@@ -2234,14 +2260,7 @@ def _period_anchor(
     if precision in _DAY_PRECISIONS and exact is None:
         return None, None, precision
 
-    field_for_precision = {
-        DatePrecision.EXACT.value: exact_name,
-        DatePrecision.INFERRED.value: exact_name,
-        DatePrecision.MONTH.value: f"{prefix}_month",
-        DatePrecision.QUARTER.value: f"{prefix}_quarter",
-        DatePrecision.HALF_YEAR.value: f"{prefix}_half",
-        DatePrecision.YEAR.value: f"{prefix}_year",
-    }
+    field_for_precision = _precision_controls(prefix, exact_name)
     derived_year = value("year")
     derived_month = value("month")
     derived_quarter = value("quarter")
@@ -5727,14 +5746,26 @@ class ProceduralDevelopmentForm(forms.Form):
     attached, the `Hetkeseis` it puts the file in, and the next thing the lawyer
     will do about it. One panel, one save, one transaction.
 
-    **It writes an `Entry`, not a new model**, and that is docs/adr/0091 §5's
-    whole decision. A procedural development is a dated, attributable sentence
-    about something that happened, which is exactly what the authored chronology
-    is: `occurred_at` already means «when the work happened, not when it was
-    typed up», `body` already holds the account, `DocumentLink` already carries
-    the files, and `EntryKind` already distinguishes kinds of chronology from one
-    another. What was missing was not a table — it was a panel that asked for the
-    date, and that could set the stage and the next step in the same breath.
+    **It writes a `MatterProceduralDevelopment`**, which is the canonical record
+    docs/adr/0091 §5 settled on — beside `MatterEngagement` and
+    `MatterExternalPosition`, through `workspace.add_procedural_development`.
+
+    This docstring said «it writes an `Entry`, not a new model» for one round,
+    and that was true for exactly that round. The Package D discovery retired the
+    design: an incoming development cannot be projected truthfully from an
+    `Entry`, because `Entry.occurred_at` is `NOT NULL` and a step learned about
+    months later frequently has no day anybody could defend, because the lawyer's
+    note has nowhere to go that is not the ministry's own sentence, and because a
+    projection would have to parse a title out of prose. The sentence outlived
+    the design it described, which on the feature whose renderer and whose date
+    rule are both being corrected here is the wrong thing to leave standing
+    (docs/adr/0091 §5.1, §5.2, docs/adr/0092 §3).
+
+    **A development is something that has already happened.** A future date is
+    refused — `clean` states the rule and `record_procedural_development`
+    enforces it — because the product's forward-looking facts are `Järgmiseks`
+    and `+ Oluline tähtaeg`, each with its own date, its own lateness and its own
+    place on the page.
 
     **Three optional halves, and each of them is somebody's decision.**
 
@@ -5875,19 +5906,44 @@ class ProceduralDevelopmentForm(forms.Form):
         return title
 
     def clean(self) -> dict[str, Any]:
-        """The period, and then the next step's two halves together or not at all.
+        """The period, its refusal, and the next step's two halves together or not at all.
 
         **The date is not required**, unlike the round this panel shipped in: an
         emptied box stores `NULL` and reads «Kuupäev teadmata», which is a fact
         the file has to be able to hold about a step somebody learned of late
         (docs/adr/0091 §5.2).
 
+        **And it may not be in the future.** A `Menetluse areng` records
+        something that has happened; «Riigikogu esimene lugemine toimub 30.09» is
+        a plan, and the product's forward-looking facts are `Järgmiseks` and
+        `+ Oluline tähtaeg`. The refusal is the service's — one invariant, one
+        sentence, and `record_procedural_development` is what actually enforces
+        it — and it is repeated here so a person sees it beside the control they
+        typed into rather than as a panel-level banner.
+
+        **A period is refused only when the whole of it is still ahead.** The
+        anchor of *september 2026* is 1 September, and rejecting it on 18
+        September would refuse a step the lawyer is plainly describing as past —
+        so the comparison is `period_starts_after`, and an approximate date is
+        never resolved to a day to make the question easier (docs/adr/0079 §2).
+
         The refusal for a half-filled next step lands on the **empty** control,
         which is ADR 0052 §5's rule and its wording: «vali kuupäev» pinned to the
-        sentence box points at the wrong field.
+        sentence box points at the wrong field. The future-date refusal lands on
+        the control the chosen precision is answered in, through the same map.
         """
+        from app.matters.services import DEVELOPMENT_CANNOT_BE_FUTURE
+
         cleaned = super().clean() or {}
         anchor, precision = development_period(cast(Any, self))
+        if period_starts_after(anchor, precision, day=timezone.localdate()):
+            self.add_error(
+                _precision_controls(DEVELOPMENT_PREFIX, "occurred_on").get(
+                    precision, "occurred_on"
+                ),
+                DEVELOPMENT_CANNOT_BE_FUTURE,
+            )
+            anchor = None
         cleaned["occurred_on_value"] = anchor
         cleaned["occurred_on_precision"] = precision
 
@@ -6225,6 +6281,52 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
     url = _procedural_link_url_field()
     label = _procedural_link_label_field()
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Bound whatever happens, and **empty-permitted** — an untouched block is valid.
+
+        The two halves are both load-bearing and they pull in opposite
+        directions, which is why this is stated here rather than decided in the
+        view.
+
+        *Bound*, because the block has to come back holding what was typed into
+        it when the save is refused for a reason somewhere else. Leaving it
+        unbound on those attempts would be the easy way to stop it refusing
+        anything, and it would silently empty the `Nimetus` box of somebody who
+        had filled it.
+
+        *Empty-permitted*, because a bound form validates, and this one has
+        nothing to validate until somebody answers it. `empty_permitted` is
+        Django's own name for exactly this — a sub-form that may legitimately
+        be left alone — and with :meth:`has_changed` below it makes
+        `full_clean` return with no errors and no `cleaned_data` on precisely
+        the attempts where :attr:`wants_link` is false.
+
+        The mixin's rules are untouched, which is the point: `ProceduralLinkForm`
+        behind `+ Menetluse link` on a Teema page was opened deliberately, so an
+        empty address there is an unfinished answer and stays refused. Only
+        *this* form — the optional block nobody has to use — is a no-op when
+        nobody used it (QA-01, docs/adr/0089 §13).
+        """
+        kwargs.setdefault("empty_permitted", True)
+        super().__init__(*args, **kwargs)
+
+    def has_changed(self) -> bool:
+        """Did anybody answer this block? — :attr:`wants_link`, and nothing else.
+
+        This is the hook `empty_permitted` consults, so it is where the one
+        definition of «somebody used this block» has to be, rather than beside
+        a second list of field checks that could drift away from it.
+
+        Django's own answer would be `changed_data`, and it is the wrong one
+        here: `kind` arrives with `EIS` selected, so a browser posts
+        `menetlus-kind=EIS` on *every* save from this page while an omitted
+        `menetlus-kind` — what a test client sends — reads as a change *away*
+        from the initial. Both are noise about a chip nobody clicked, and both
+        would put «Menetluse link vajab veebiaadressi.» under an address box
+        nobody had typed in.
+        """
+        return self.wants_link
+
     @property
     def chosen_summary(self) -> str:
         """What the collapsed disclosure says after the word itself.
@@ -6284,9 +6386,11 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
         anything, and treating either as one would file a refusal at somebody
         who had simply not used this part of the form.
 
-        Read from the **raw** data rather than from `cleaned_data`, because the
-        view needs the answer before deciding whether to bind and validate at
-        all — the shape `matter_create` already uses for `Järgmine tegevus`.
+        Read from the **raw** data rather than from `cleaned_data`, because it
+        is what decides whether there is any cleaning to do: :meth:`has_changed`
+        asks it before `full_clean` runs, and the view asks the same property
+        again before calling the service, so the page and the write agree by
+        construction rather than by two lists of field checks matching.
         """
         if not self.is_bound:
             return False

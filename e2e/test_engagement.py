@@ -372,3 +372,114 @@ def test_an_engagement_with_no_links_shows_no_empty_link_row(page, base_url):
     row = chronology(page).locator(".uxtl__item", has_text=f"Kaasamine: {audience}").first
     expect(row).to_be_visible()
     expect(row.locator(".uxtl__links")).to_have_count(0)
+
+
+def test_a_file_attached_to_lopeta_kaasamine_survives_the_save(page, base_url):
+    """The whole round, in a browser: record, wait, finish with the answer attached.
+
+    Only this path exercises the defect. `Lõpeta kaasamine` declares a file
+    control, the view bound the form with the POST body alone, and a Django form
+    bound without its files sees no upload — so the picker worked, the save
+    succeeded, the row re-rendered, and the PDF a member sent in existed nowhere.
+    No error, no warning, and nothing in `Dokumendid` to notice it by.
+
+    A server test that posts to the endpoint catches it too and is the faster
+    guard; this one is here because the defect lived in the gap between what the
+    page offers and what the request carries, and that gap is what a browser
+    crosses.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_scratch_matter(page, base_url)
+
+    open_panel(page)
+    panel(page).locator("[name=audience]").fill("faili proov")
+    panel(page).locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    row = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="faili proov")
+    )
+    row.get_by_text("Ootan tagasisidet", exact=True).click()
+    row.locator("[data-quickdate]", has_text="1 kuu").click()
+    row.get_by_role("button", name="Salvesta ootus").click()
+    page.wait_for_load_state("networkidle")
+
+    waiting = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="faili proov")
+    )
+    waiting.get_by_text("Lõpeta kaasamine", exact=True).click()
+    waiting.locator("[name=feedback_received]").fill("Liidu vastus tuli kirjaga.")
+    waiting.locator("input[type=file]").first.set_input_files(
+        {
+            "name": "liidu-vastuskiri.pdf",
+            "mimeType": "application/pdf",
+            "buffer": b"%PDF-1.4 liidu vastus",
+        }
+    )
+    waiting.get_by_role("button", name="Salvesta ja lõpeta").click()
+    page.wait_for_load_state("networkidle")
+
+    finished = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="faili proov")
+    )
+    expect(finished).to_contain_text("Liidu vastus tuli kirjaga.")
+    # The round is over, so the control that could upload again is gone.
+    expect(finished.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(0)
+
+    # **The filename arrives on the next render, and that is the swap target's
+    # documented shape rather than a second defect.** The completion answers with
+    # `engagement_row.html` — the record's own region — and a milestone's files
+    # render beside that element, so that a correction cannot move the row or
+    # grow a second line in the chronology (`_engagement_row`,
+    # `timeline_items.html`). Showing the new file without a reload means swapping
+    # that region out of band, which is a presentation change and not this fix.
+    page.reload()
+    page.wait_for_load_state("networkidle")
+
+    # The evidence, on this round's own chronology item rather than loose on the
+    # Matter, and linked to the exact bytes rather than named in a sentence.
+    item = chronology(page).locator(
+        ".uxtl__item", has=page.locator(".uxtl__mswhat", has_text="faili proov")
+    )
+    attachment = item.get_by_role("link", name="liidu-vastuskiri.pdf")
+    expect(attachment).to_have_count(1)
+    assert attachment.first.get_attribute("href"), "the filename is text, not a link to evidence"
+
+
+def test_finishing_a_round_with_no_file_is_unchanged(page, base_url):
+    """The commonest completion of all: the deadline passed and nothing came back.
+
+    Binding the form with its files must not turn an empty picker into a
+    refusal — `EngagementFeedbackForm` requires nothing, deliberately, because a
+    completion that demanded prose would make «keegi ei vastanud» the one result
+    a lawyer could not file (docs/adr/0086 §6).
+    """
+    sign_in(page, base_url, SANDRA)
+    open_scratch_matter(page, base_url)
+
+    open_panel(page)
+    panel(page).locator("[name=audience]").fill("tühja vastuse proov")
+    panel(page).locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    row = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="tühja vastuse proov")
+    )
+    row.get_by_text("Ootan tagasisidet", exact=True).click()
+    row.locator("[data-quickdate]", has_text="1 kuu").click()
+    row.get_by_role("button", name="Salvesta ootus").click()
+    page.wait_for_load_state("networkidle")
+
+    waiting = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="tühja vastuse proov")
+    )
+    waiting.get_by_text("Lõpeta kaasamine", exact=True).click()
+    waiting.locator("[name=feedback_received]").fill("Keegi ei vastanud.")
+    waiting.get_by_role("button", name="Salvesta ja lõpeta").click()
+    page.wait_for_load_state("networkidle")
+
+    finished = chronology(page).locator(
+        ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="tühja vastuse proov")
+    )
+    expect(finished).to_contain_text("Keegi ei vastanud.")
+    expect(finished.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(0)
