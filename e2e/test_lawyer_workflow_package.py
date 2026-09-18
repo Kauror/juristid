@@ -500,3 +500,159 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     expect(page.locator(".tl-strip")).to_contain_text("Koja arvamus")
     expect(chronology(page)).to_contain_text("Meile saadetud tagasiside:")
     expect(chronology(page)).to_contain_text("Teiste arvamus:")
+
+
+def test_a_developments_lawyer_note_reads_on_the_row_under_its_own_label(page, base_url):
+    """`Juristi märkus` is offered, saved, and — now — shown.
+
+    The panel asked for this office's reading of the step and no reading surface
+    printed it: the read model set it, and the label, the value and the whole
+    separation lived in the `Väline seisukoht` partial alone. A lawyer had every
+    reason to believe it would appear, because the identical field on two
+    neighbouring panels does.
+
+    Asserted after a full reload rather than off the HTMX answer, because what
+    was broken was the rendering of the stored record.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-menetluse-areng")
+
+    form = panel(page, "lisa-menetluse-areng")
+    form.locator("[name=title]").fill("Ministeerium saatis parandatud eelnõu")
+    form.locator("[name=occurred_on]").fill(_past(3))
+    form.locator("[name=note]").fill("Muudatused ei arvesta Koja ettepanekut.")
+    form.get_by_role("button", name="Salvesta areng").click()
+
+    chronology(page).get_by_text("Ministeerium saatis parandatud eelnõu").first.wait_for()
+    page.reload()
+    page.wait_for_load_state("networkidle")
+
+    item = chronology(page).locator(
+        ".uxtl__item",
+        has=page.locator(".uxtl__mswhat", has_text="Ministeerium saatis parandatud eelnõu"),
+    )
+    note = item.locator(".uxtl__msnote")
+    expect(note).to_have_count(1)
+    expect(note).to_contain_text("Muudatused ei arvesta Koja ettepanekut.")
+    # Under its own label, which is what keeps a colleague from reading Koda's
+    # assessment as part of what the ministry said (docs/adr/0091 §4).
+    expect(note.locator(".uxtl__msnotelabel")).to_have_text("Juristi märkus")
+    # And never folded into the headline.
+    expect(item.locator(".uxtl__mswhat")).not_to_contain_text("Muudatused ei arvesta")
+
+
+def test_a_development_with_no_note_gains_no_empty_note_block(page, base_url):
+    """Most steps carry no assessment, and none of them gains a bordered gap."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-menetluse-areng")
+
+    form = panel(page, "lisa-menetluse-areng")
+    form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
+    form.locator("[name=occurred_on]").fill(_past(2))
+    form.get_by_role("button", name="Salvesta areng").click()
+
+    chronology(page).get_by_text("Eelnõu jõudis Riigikokku").first.wait_for()
+    item = chronology(page).locator(
+        ".uxtl__item", has=page.locator(".uxtl__mswhat", has_text="Eelnõu jõudis Riigikokku")
+    )
+    expect(item.locator(".uxtl__msnote")).to_have_count(0)
+
+
+def test_a_future_development_is_refused_and_moves_no_stage(page, base_url):
+    """The product decision, in the browser: a development records what happened.
+
+    «Riigikogu esimene lugemine toimub 30.09» is a plan, and filing it here used
+    to succeed silently — the chronology declined to draw a future row, and the
+    stage change saved in the same breath was not declined, so the file read
+    «Hetkeseis: Riigikogus» dated to the afternoon somebody typed it, with
+    nothing anywhere saying why.
+
+    The whole save is refused now, with the panel open and the answer still in
+    it.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-menetluse-areng")
+
+    form = panel(page, "lisa-menetluse-areng")
+    form.locator("[name=title]").fill("Riigikogu esimene lugemine")
+    form.locator("[name=occurred_on]").fill(_future(12))
+    form.locator("[name=stage]").select_option(label="Riigikogus")
+    form.get_by_role("button", name="Salvesta areng").click()
+    page.wait_for_load_state("networkidle")
+
+    panel_after = panel(page, "lisa-menetluse-areng")
+    expect(panel_after).to_contain_text("Menetluse areng ei saa olla tulevikus.")
+    # Nothing was written, and that includes the half of the act that used to
+    # survive on its own: a standalone `Hetkeseis` row, carrying the day of data
+    # entry, for a stage the file had not reached.
+    expect(chronology(page)).not_to_contain_text("Riigikogu esimene lugemine")
+    expect(chronology(page)).not_to_contain_text("Hetkeseis")
+    # The typed answer is still there to be corrected rather than retyped.
+    expect(panel_after.locator("[name=title]")).to_have_value("Riigikogu esimene lugemine")
+
+
+def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
+    """The rule is about the period, not about the day box.
+
+    A lawyer who picks `Kuu` and says *the month after next* has stated something
+    as wholly ahead as an exact date does, and the refusal has to reach the
+    control they answered it in.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+
+    next_year = date.today().year + 1
+    for precision, fill in (
+        ("Kuu", lambda f: f.locator("[name=areng_month]").select_option(value="12")),
+        ("Kvartal", lambda f: f.locator("[name=areng_quarter]").select_option(value="4")),
+        ("Aasta", lambda f: None),
+    ):
+        open_add_panel(page, "lisa-menetluse-areng")
+        form = panel(page, "lisa-menetluse-areng")
+        form.locator("[name=title]").fill(f"Tulevane samm, {precision}")
+        form.locator("label.precision__chip", has_text=precision).click()
+        fill(form)
+        form.locator("[name=areng_year]").fill(str(next_year))
+        form.get_by_role("button", name="Salvesta areng").click()
+        page.wait_for_load_state("networkidle")
+
+        expect(panel(page, "lisa-menetluse-areng")).to_contain_text(
+            "Menetluse areng ei saa olla tulevikus."
+        )
+        expect(chronology(page)).not_to_contain_text(f"Tulevane samm, {precision}")
+        page.reload()
+        page.wait_for_load_state("networkidle")
+
+
+def test_a_current_month_is_accepted_and_prints_its_period(page, base_url):
+    """*septembris* is not evidence of the future, and is not refused as though it were.
+
+    The load-bearing half of the rule. A month covering today, a quarter covering
+    today and the current year all begin before it, and rejecting any of them
+    would leave a lawyer who knows only the month choosing between an invented
+    day and an empty field — the choice docs/adr/0079 exists to remove.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-menetluse-areng")
+
+    today = date.today()
+    form = panel(page, "lisa-menetluse-areng")
+    form.locator("[name=title]").fill("Ministeerium saatis uue versiooni")
+    form.locator("label.precision__chip", has_text="Kuu").click()
+    form.locator("[name=areng_month]").select_option(value=str(today.month))
+    form.locator("[name=areng_year]").fill(str(today.year))
+    form.get_by_role("button", name="Salvesta areng").click()
+    page.wait_for_load_state("networkidle")
+
+    item = chronology(page).locator(
+        ".uxtl__item",
+        has=page.locator(".uxtl__mswhat", has_text="Ministeerium saatis uue versiooni"),
+    )
+    expect(item).to_have_count(1)
+    # The period, never its anchor: `01.09.2026` is a day nobody named.
+    expect(item.locator(".uxtl__msdate")).to_contain_text(str(today.year))
+    expect(item.locator(".uxtl__msdate")).not_to_contain_text(f"1.{today.month}.{today.year}")

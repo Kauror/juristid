@@ -1766,11 +1766,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     opinion_action_form = InitialOpinionActionForm(
         request.POST if wants_opinion_action else None, prefix="arvamus"
     )
-    # `Menetluse link`, bound only when somebody actually typed an address — the
-    # rule `wants_action` above states, for the same reason. The chip row
-    # arrives with `EIS` pre-selected, so binding unconditionally would refuse
-    # every save that had not used this block, with «Menetluse link vajab
-    # veebiaadressi.» under a box nobody had touched (docs/adr/0089 §13).
+    # `Menetluse link`, bound *and* empty-permitted, which is the same rule
+    # `wants_action` states above reached from the other side. The block must
+    # come back holding what was typed when the save is refused elsewhere, so it
+    # stays bound; and the chip row arrives with `EIS` pre-selected, so a bound
+    # form that also validated would refuse every save that had not used this
+    # block, with «Menetluse link vajab veebiaadressi.» under a box nobody had
+    # touched. `ProceduralLinkCreateForm.has_changed` is where that is settled,
+    # off the same `wants_link` this line reads (docs/adr/0089 §13, QA-01).
     procedural_form = ProceduralLinkCreateForm(request.POST or None, prefix="menetlus")
     wants_procedural_link = procedural_form.wants_link
     uploads: list[Any] = []
@@ -3379,6 +3382,11 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             feedback_received=form.cleaned_data.get("feedback_received") or "",
+            # Named here for the reason this door exists to serve: the form it
+            # posts now carries `Vastuseid`, and a route that rendered a box and
+            # dropped what was typed into it would be the defect QA-03 fixed,
+            # one surface along.
+            response_count=form.cleaned_data.get("response_count"),
             actor=request.user,
         )
     except DomainError:
@@ -3433,6 +3441,11 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
             # would invite somebody to re-save an invented day
             # (docs/adr/0079 §2, docs/adr/0086 §1).
             "occurred_on": (None if engagement.has_approximate_date else engagement.occurred_on),
+            # `Vastuseid`, as stored and only as stored. A row counted at zero
+            # opens holding `0` and a row nobody counted opens blank, because
+            # those are two different facts and a blank box defaulted to zero
+            # would invent the second one on somebody's behalf (QA-03).
+            "response_count": engagement.response_count,
             "feedback_deadline": engagement.feedback_deadline,
             "feedback_received": engagement.feedback_received,
             "revision": engagement_revision_token(engagement),
@@ -3460,7 +3473,7 @@ def _engagement_for_correction(
 
 
 def _engagement_feedback_form(
-    engagement: MatterEngagement, data: Any = None
+    engagement: MatterEngagement, data: Any = None, files: Any = None
 ) -> EngagementFeedbackForm:
     """One round's `Lõpeta kaasamine` form, with ids nothing else can share.
 
@@ -3472,10 +3485,19 @@ def _engagement_feedback_form(
     typed when they created it — an empty box would invite them to overwrite
     their own words with nothing. A bound form ignores `initial`, so a refused
     completion comes back carrying what was typed.
+
+    **``files`` is not optional in practice, and the parameter exists because
+    leaving it out was silent.** This form declares `attachments`, and a Django
+    form bound with `data` alone never sees an upload — `cleaned_data` holds an
+    empty list, the service is handed nothing, and a PDF a member sent in is
+    discarded with no error and no row anywhere. `Lõpeta kaasamine` was the one
+    file-bearing form in the product bound without `request.FILES`. The binding
+    is done here rather than at the call site so the answer cannot go missing
+    again on a second caller.
     """
     auto_id = f"id_kaasamine_{engagement.pk}_tagasiside_%s"
     form = (
-        EngagementFeedbackForm(data, auto_id=auto_id)
+        EngagementFeedbackForm(data, files, auto_id=auto_id)
         if data is not None
         else EngagementFeedbackForm(
             initial={
@@ -3696,6 +3718,14 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             feedback_received=form.cleaned_data.get("feedback_received") or "",
+            # `Vastuseid`, named on every save for the same reason both dates
+            # are: naming a field is how this form says «I am the editor of this
+            # value», and it is the only way an emptied box can clear a count
+            # somebody no longer stands behind. `None` here is «keegi ei
+            # lugenud» and `0` is «keegi ei vastanud» — the service keeps them
+            # apart, and `_UNSET` still protects every caller that names neither
+            # (`update_engagement`, QA-03).
+            response_count=form.cleaned_data.get("response_count"),
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
         )
@@ -3802,7 +3832,7 @@ def complete_engagement_feedback_view(
     """
     matter = get_visible_matter(request, pk)
     engagement = _engagement_for_correction(request, matter, engagement_id)
-    form = _engagement_feedback_form(engagement, request.POST)
+    form = _engagement_feedback_form(engagement, request.POST, request.FILES)
     if not form.is_valid():
         return _engagement_row(
             request, matter, engagement, feedback_form=form, feedback_open=True, status=400

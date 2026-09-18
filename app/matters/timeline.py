@@ -326,7 +326,8 @@ class ChronologyMilestone:
     links: tuple[ChronologyLink, ...] = ()
     #: **This office's own words, and never the source's.**
     #:
-    #: Set only by a `Väline seisukoht` carrying a `Juristi märkus`. It is a
+    #: Set by a `Väline seisukoht` and by a `Menetluse areng`, each carrying its
+    #: own `Juristi märkus`. It is a
     #: field of its own rather than another clause appended to :attr:`sub`
     #: because the whole reason the column exists is that «MKM toetab varianti B»
     #: and «nende põhjendus ei arvesta liikmete kulumõjuga» must not become one
@@ -335,18 +336,19 @@ class ChronologyMilestone:
     #:
     #: The surface renders it under :attr:`own_note_label` on its own line.
     #: Nothing here decides how it looks; what is decided here is that it is not
-    #: part of the position.
+    #: part of the source's statement.
     own_note: str = ""
     #: What that line is labelled — carried on the milestone rather than looked
     #: up by the template.
     #:
-    #: Two surfaces render this row: the chronology, through
-    #: `timeline_items.html`, and the correction partial, which the view renders
-    #: on its own with a context of its own. A label in the page context would
-    #: have to be added to both, and the day somebody added a third the line
-    #: would render with an empty label — which is the unattributed paragraph
-    #: this field exists to prevent. Travelling with the value is the only shape
-    #: in which it cannot go missing (docs/adr/0091 §4).
+    #: Three templates render a milestone row: the generic chronology item, the
+    #: `Väline seisukoht` partial and the `Kaasamine` one, each with a context of
+    #: its own and the last two swap targets for their own corrections. A label
+    #: in the page context would have to be added to every one of them, and the
+    #: day somebody added a fourth the line would render with an empty label —
+    #: which is the unattributed paragraph this field exists to prevent.
+    #: Travelling with the value is the only shape in which it cannot go missing
+    #: (docs/adr/0091 §4).
     own_note_label: str = ""
 
 
@@ -1004,11 +1006,16 @@ def development_chronology_day(development: MatterProceduralDevelopment) -> date
 def development_milestone(development: MatterProceduralDevelopment) -> ChronologyMilestone:
     """One `Menetluse areng` as the chronology row a reader sees.
 
-    Built here rather than inline in :func:`projected_milestones` because the
-    correction form swaps this one row back in place after a save, and the two
-    renderings have to be the same rendering — a second copy is a second place for
-    the note to gain a separator or lose its label (`app/matters/views.py`,
-    `_development_row`).
+    Built here rather than inline in :func:`projected_milestones` so that one
+    function decides what a development row says — a second copy is a second
+    place for the note to gain a separator or lose its label.
+
+    It named `views._development_row` as the second caller, and there is no such
+    function: a `Menetluse areng` has no correction route, so nothing swaps this
+    row back in place after a save. The sentence described the shape its two
+    siblings have rather than the one this record has, and it is corrected here
+    because a maintainer reading it while looking for where the note is rendered
+    is sent to a view that does not exist.
 
     **The headline is the step itself**, which is what the record's `title` holds
     and what Package D will project: «Menetluse areng: Ministeerium saatis uue
@@ -1319,6 +1326,14 @@ def projected_milestones(
             # A development dated in the future is not history yet, and the
             # chronology reads newest-first and means *past*. The same rule the
             # two records above it follow.
+            #
+            # **Nothing new reaches this branch.** `record_procedural_development`
+            # refuses a period that begins after today, so a development written
+            # from now on is never ahead of the list it belongs to. It stays
+            # because rows filed before that rule exist, are real, and are not
+            # rewritten — a projection quietly showing them under a day they were
+            # not recorded to would be the invention docs/adr/0092 §4 refuses,
+            # and they arrive here honestly when their date does.
             continue
         add(development, _end_of_day(when), development_milestone(development))
 

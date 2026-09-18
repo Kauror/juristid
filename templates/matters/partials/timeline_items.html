@@ -90,6 +90,35 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
           {% endif %}
           {% comment %}
+            `Juristi märkus` — this office's own reading of what happened, on its
+            own line, under its own label, and never appended to the line above.
+
+            The label is what does the work, and the reasoning is the one
+            `external_position_row.html` states: a paragraph of Koda's
+            assessment, printed unlabelled under a headline naming a ministry,
+            is the attribution defect with better line spacing — a colleague
+            scanning the chronology reads it as part of what the ministry said.
+
+            This branch is the one that was missing it. A `Menetluse areng`
+            renders here, `development_milestone` has set `own_note` and
+            `own_note_label` since docs/adr/0091 §5, and the whole rendering
+            lived in the `Väline seisukoht` partial — so a lawyer's own
+            judgement of a procedural step was stored and shown nowhere. Same
+            markup and same stylesheet as that partial's, because it is the same
+            fact about the same author (app/matters/timeline.py
+            `LAWYER_NOTE_LABEL`, docs/adr/0091 §4).
+
+            A milestone with no note renders nothing at all: most steps carry no
+            assessment, and a bordered empty block under every one of them would
+            be the row announcing a gap in itself.
+          {% endcomment %}
+          {% if item.milestone.own_note %}
+            <span class="uxtl__msnote">
+              <span class="uxtl__msnotelabel">{{ item.milestone.own_note_label }}</span>
+              {{ item.milestone.own_note }}
+            </span>
+          {% endif %}
+          {% comment %}
             A milestone's own addresses, named by the tool and never by the
             address: a campaign URL is mostly tracking parameters and a
             recipient token, and printing it would put somebody's one-time key

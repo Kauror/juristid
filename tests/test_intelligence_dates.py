@@ -20,6 +20,7 @@ from app.workflow.dates import (
     half_year_bounds,
     is_approximate,
     period_bounds,
+    period_starts_after,
     quarter_bounds,
 )
 from app.workflow.enums import DatePrecision
@@ -197,3 +198,85 @@ def test_a_half_year_sits_at_the_start_of_the_period_it_represents():
     assert (start, end) == (date(2027, 7, 1), date(2027, 12, 31))
     assert start >= date(2027, 7, 1)
     assert end < date(2028, 1, 1)
+
+
+# -- is the whole period still ahead of us ----------------------------------
+#
+# The mirror of the lateness rule: that one asks whether a period has wholly
+# *ended*, `period_starts_after` whether it has wholly *begun*. It exists
+# because `Menetluse areng` records something that has happened, and a surface
+# refusing a future step has to be able to tell «30.09.2026» — which is plainly
+# still to come — from «september 2026», which covers today and says nothing of
+# the kind.
+
+
+@pytest.mark.parametrize(
+    ("value", "precision", "expected"),
+    [
+        # A day, on both sides of today and on it.
+        (date(2026, 9, 30), DatePrecision.EXACT, True),
+        (date(2026, 9, 19), DatePrecision.EXACT, True),
+        (date(2026, 9, 18), DatePrecision.EXACT, False),
+        (date(2026, 9, 17), DatePrecision.EXACT, False),
+        # A month: october is ahead, september is the one we are in.
+        (date(2026, 10, 1), DatePrecision.MONTH, True),
+        (date(2026, 9, 1), DatePrecision.MONTH, False),
+        (date(2026, 8, 1), DatePrecision.MONTH, False),
+        # A quarter.
+        (date(2026, 10, 1), DatePrecision.QUARTER, True),
+        (date(2026, 7, 1), DatePrecision.QUARTER, False),
+        # A half-year. Still stored, still compared, and not offered as a chip
+        # (docs/adr/0079 §7) — which is exactly why it has to be in this table.
+        (date(2027, 7, 1), DatePrecision.HALF_YEAR, True),
+        (date(2026, 7, 1), DatePrecision.HALF_YEAR, False),
+        (date(2026, 1, 1), DatePrecision.HALF_YEAR, False),
+        # A year.
+        (date(2027, 1, 1), DatePrecision.YEAR, True),
+        (date(2026, 1, 1), DatePrecision.YEAR, False),
+        # `INFERRED` is a day, not vagueness, and behaves as `EXACT` here as
+        # everywhere else in this module (docs/adr/0079 §8).
+        (date(2026, 9, 30), DatePrecision.INFERRED, True),
+        (date(2026, 9, 17), DatePrecision.INFERRED, False),
+    ],
+)
+def test_a_period_is_ahead_only_when_its_first_day_is(value, precision, expected):
+    assert period_starts_after(value, precision, day=date(2026, 9, 18)) is expected
+
+
+def test_an_unknown_date_is_not_in_the_future():
+    """Unknown is a fact the product keeps, not a value to resolve against today.
+
+    Answering `True` would make «kuupäev teadmata» a refusable answer, and an
+    undated development is the case that made `MatterProceduralDevelopment` a
+    record rather than an `Entry` (docs/adr/0091 §5.2).
+    """
+    for precision in DatePrecision.values:
+        assert period_starts_after(None, precision, day=date(2026, 9, 18)) is False
+
+
+def test_a_broad_period_is_never_resolved_to_a_day_to_answer_the_question():
+    """*2026* read on 18 September is not the future, and *2027* is.
+
+    The whole reason the comparison is on the period's **start**: rejecting
+    «2026» because its anchor is 1 January would be right, and rejecting it
+    because somebody resolved it to 31 December would be a different rule that
+    happens to agree on this example and not on the next one.
+    """
+    today = date(2026, 9, 18)
+    assert period_starts_after(date(2026, 1, 1), DatePrecision.YEAR, day=today) is False
+    assert period_starts_after(date(2027, 1, 1), DatePrecision.YEAR, day=today) is True
+
+
+def test_the_answer_is_read_from_the_period_and_not_from_the_stored_number():
+    """A mid-period anchor still answers for the period it stands for.
+
+    `period_bounds` normalises, so a row stored as `2026-10-17` + `MONTH` — which
+    the composer cannot produce and an import could — is read as *oktoober 2026*
+    and begins on 1 October, not on the 17th.
+    """
+    assert (
+        period_starts_after(date(2026, 9, 24), DatePrecision.MONTH, day=date(2026, 9, 18)) is False
+    )
+    assert (
+        period_starts_after(date(2026, 11, 24), DatePrecision.MONTH, day=date(2026, 9, 18)) is True
+    )

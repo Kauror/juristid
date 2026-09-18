@@ -780,6 +780,23 @@ def test_a_missing_kind_is_refused_on_the_chip_row(signed_in, normal_matter):
     assert f'value="{EIS_URL}"' in body
 
 
+def test_an_empty_address_is_refused_on_the_panel_too(signed_in, normal_matter):
+    """`+ Menetluse link` is not the optional block on `Uus teema`.
+
+    Somebody opened this panel on purpose, so an empty address is an unfinished
+    answer rather than an unused control, and it is refused here exactly as the
+    service refuses it. QA-01 made the *embedded* create sub-form a no-op when
+    nobody answered it; this test is what says that did not reach the panel and
+    turn its submit into a silent one.
+    """
+    response = _add(signed_in, normal_matter, kind=ProceduralLinkKind.EIS.value, url="")
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert "Menetluse link vajab veebiaadressi." in body
+    assert not MatterProceduralLink.objects.filter(matter=normal_matter).exists()
+
+
 def test_a_correction_refusal_reopens_the_row_it_came_from(signed_in, normal_matter, specialist):
     link = _record(normal_matter, specialist, url=EIS_URL)
 
