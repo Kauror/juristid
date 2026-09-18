@@ -6240,6 +6240,52 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
     url = _procedural_link_url_field()
     label = _procedural_link_label_field()
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Bound whatever happens, and **empty-permitted** — an untouched block is valid.
+
+        The two halves are both load-bearing and they pull in opposite
+        directions, which is why this is stated here rather than decided in the
+        view.
+
+        *Bound*, because the block has to come back holding what was typed into
+        it when the save is refused for a reason somewhere else. Leaving it
+        unbound on those attempts would be the easy way to stop it refusing
+        anything, and it would silently empty the `Nimetus` box of somebody who
+        had filled it.
+
+        *Empty-permitted*, because a bound form validates, and this one has
+        nothing to validate until somebody answers it. `empty_permitted` is
+        Django's own name for exactly this — a sub-form that may legitimately
+        be left alone — and with :meth:`has_changed` below it makes
+        `full_clean` return with no errors and no `cleaned_data` on precisely
+        the attempts where :attr:`wants_link` is false.
+
+        The mixin's rules are untouched, which is the point: `ProceduralLinkForm`
+        behind `+ Menetluse link` on a Teema page was opened deliberately, so an
+        empty address there is an unfinished answer and stays refused. Only
+        *this* form — the optional block nobody has to use — is a no-op when
+        nobody used it (QA-01, docs/adr/0089 §13).
+        """
+        kwargs.setdefault("empty_permitted", True)
+        super().__init__(*args, **kwargs)
+
+    def has_changed(self) -> bool:
+        """Did anybody answer this block? — :attr:`wants_link`, and nothing else.
+
+        This is the hook `empty_permitted` consults, so it is where the one
+        definition of «somebody used this block» has to be, rather than beside
+        a second list of field checks that could drift away from it.
+
+        Django's own answer would be `changed_data`, and it is the wrong one
+        here: `kind` arrives with `EIS` selected, so a browser posts
+        `menetlus-kind=EIS` on *every* save from this page while an omitted
+        `menetlus-kind` — what a test client sends — reads as a change *away*
+        from the initial. Both are noise about a chip nobody clicked, and both
+        would put «Menetluse link vajab veebiaadressi.» under an address box
+        nobody had typed in.
+        """
+        return self.wants_link
+
     @property
     def chosen_summary(self) -> str:
         """What the collapsed disclosure says after the word itself.
@@ -6299,9 +6345,11 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
         anything, and treating either as one would file a refusal at somebody
         who had simply not used this part of the form.
 
-        Read from the **raw** data rather than from `cleaned_data`, because the
-        view needs the answer before deciding whether to bind and validate at
-        all — the shape `matter_create` already uses for `Järgmine tegevus`.
+        Read from the **raw** data rather than from `cleaned_data`, because it
+        is what decides whether there is any cleaning to do: :meth:`has_changed`
+        asks it before `full_clean` runs, and the view asks the same property
+        again before calling the service, so the page and the write agree by
+        construction rather than by two lists of field checks matching.
         """
         if not self.is_bound:
             return False

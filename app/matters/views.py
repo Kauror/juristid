@@ -1766,11 +1766,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     opinion_action_form = InitialOpinionActionForm(
         request.POST if wants_opinion_action else None, prefix="arvamus"
     )
-    # `Menetluse link`, bound only when somebody actually typed an address — the
-    # rule `wants_action` above states, for the same reason. The chip row
-    # arrives with `EIS` pre-selected, so binding unconditionally would refuse
-    # every save that had not used this block, with «Menetluse link vajab
-    # veebiaadressi.» under a box nobody had touched (docs/adr/0089 §13).
+    # `Menetluse link`, bound *and* empty-permitted, which is the same rule
+    # `wants_action` states above reached from the other side. The block must
+    # come back holding what was typed when the save is refused elsewhere, so it
+    # stays bound; and the chip row arrives with `EIS` pre-selected, so a bound
+    # form that also validated would refuse every save that had not used this
+    # block, with «Menetluse link vajab veebiaadressi.» under a box nobody had
+    # touched. `ProceduralLinkCreateForm.has_changed` is where that is settled,
+    # off the same `wants_link` this line reads (docs/adr/0089 §13, QA-01).
     procedural_form = ProceduralLinkCreateForm(request.POST or None, prefix="menetlus")
     wants_procedural_link = procedural_form.wants_link
     uploads: list[Any] = []
