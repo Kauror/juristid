@@ -530,6 +530,30 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["external_position"].pk)
         ),
     ),
+    # `Menetluse areng`, in both of its write routes: the record, and the
+    # correction to one. Both are ordinary new business content on an open
+    # Matter — like a `Väline seisukoht` correction and unlike the overview's
+    # link correction, a development correction is refused on a closed file,
+    # because every field on the record is substantive (docs/adr/0084 §8).
+    WriteRoute(
+        name="matters:update_development",
+        label="Menetluse arengu parandamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "development_id": w["development"].pk},
+            {
+                "title": "Komisjon arutas eelnõu",
+                "note": "",
+                "occurred_on": "",
+                "areng_precision": "EXACT",
+                "revision": "",
+            },
+        ),
+        probe=lambda w: (
+            w["development"]
+            .__class__.objects.values_list("title", flat=True)
+            .get(pk=w["development"].pk)
+        ),
+    ),
     # `Menetluse link`, in both of its write routes. Adding one is ordinary new
     # business content on an open Matter; correcting one is allowed on a closed
     # file as well, exactly like the overview's link correction below and for
@@ -832,6 +856,7 @@ def world(db):
         plan_website_overview,
         publish_website_overview,
         record_external_position,
+        record_procedural_development,
         record_procedural_link,
     )
 
@@ -884,6 +909,17 @@ def world(db):
         matter=matter,
         organisation=organisation,
         url="https://example.org/olemasolev-seisukoht",
+        actor=author,
+    )
+
+    # A `Menetluse areng` already on the file, for the correction route: `Muuda`
+    # changes a record that exists rather than creating one, so a world without
+    # one would have nothing for a forbidden actor to be refused *on* — and the
+    # refusal would be indistinguishable from a 404 for a row that is not there.
+    development = record_procedural_development(
+        matter=matter,
+        title="Ministeerium saatis uue eelnõu versiooni",
+        note="Versioon ei arvesta meie varasemat ettepanekut.",
         actor=author,
     )
 
@@ -958,6 +994,7 @@ def world(db):
         "waiting_engagement": waiting_engagement,
         "quiet_engagement": quiet_engagement,
         "external_position": external_position,
+        "development": development,
         "procedural_link": procedural_link,
         "planned_overview": planned_overview,
         "published_overview": published_overview,

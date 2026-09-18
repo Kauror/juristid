@@ -115,6 +115,7 @@ from app.matters.forms import (
     OtherOpinionForm,
     PersonalNoteForm,
     PositionForm,
+    ProceduralDevelopmentEditForm,
     ProceduralDevelopmentForm,
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
@@ -122,6 +123,7 @@ from app.matters.forms import (
     ReceivedFeedbackForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
+    development_period_initial,
     edit_initial,
     external_position_period_initial,
     period_initial,
@@ -145,6 +147,7 @@ from app.matters.models import (
     MatterAssignmentNotice,
     MatterEngagement,
     MatterExternalPosition,
+    MatterProceduralDevelopment,
     MatterProceduralLink,
     MatterWebsiteOverview,
 )
@@ -161,6 +164,7 @@ from app.matters.services import (
     EntryEditConflict,
     ExternalPositionConflict,
     PersonalNoteConflict,
+    ProceduralDevelopmentConflict,
     ProceduralLinkConflict,
     WebsiteOverviewConflict,
     acknowledge_assignment_notice,
@@ -171,6 +175,7 @@ from app.matters.services import (
     compose_update,
     correct_engagement,
     correct_external_position,
+    correct_procedural_development,
     create_matter,
     edit_entry,
     engagement_revision_token,
@@ -200,6 +205,7 @@ from app.matters.services import (
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
     TIMELINE_FILTERS,
+    development_milestone,
     engagement_milestone,
     external_position_milestone,
     matter_timeline,
@@ -6414,6 +6420,201 @@ def add_development(request: HttpRequest, pk: Any) -> HttpResponse:
             request, matter, key="development_form", form=form, error=str(error)
         )
     return _render_overview(request, matter)
+
+
+# ---------------------------------------------------------------------------
+# `Menetluse areng`
+# ---------------------------------------------------------------------------
+
+
+def _development_for_correction(
+    request: HttpRequest, matter: Matter, development_id: Any
+) -> MatterProceduralDevelopment:
+    """The development this request may correct, or a 404.
+
+    Scoped through the child's own `visible_to` and not fetched by id off the
+    Matter: a `Menetluse areng` may carry a stricter visibility override than its
+    parent, and reading it any other way would bypass that. A restricted
+    development inside a Matter somebody may see is therefore indistinguishable
+    here from one that does not exist — the same answer, in the same shape, to a
+    GET of the form and to a POST guessing the UUID, so that neither can be used
+    to learn that the row is there (AUTH-003, docs/adr/0038,
+    `_external_position_for_correction`).
+    """
+    return get_object_or_404(
+        MatterProceduralDevelopment.objects.visible_to(request.user)
+        .filter(matter=matter)
+        .select_related("matter"),
+        pk=development_id,
+    )
+
+
+def _development_edit_form(
+    request: HttpRequest, development: MatterProceduralDevelopment, data: Any = None
+) -> ProceduralDevelopmentEditForm:
+    """The correction form for one development, opened on what the record says.
+
+    `auto_id` is derived from the record's primary key because a chronology may
+    show several of these and two controls sharing an id is enough to make a
+    `<label for>` reach the wrong box — the same reason
+    `_external_position_edit_form` derives its own.
+
+    **The date reopens on the record and never on today.** An undated development
+    opens with an empty box, not with the day somebody is reading the page; an
+    approximate one reopens on its own chip with the day box left empty, because
+    the stored anchor is a place in a sort and not a day to hand back to somebody
+    to re-save (docs/adr/0079 §2, `development_period_initial`).
+    """
+    auto_id = f"id_menetluse_areng_{development.pk}_%s"
+    if data is not None:
+        return ProceduralDevelopmentEditForm(data, auto_id=auto_id, record=development)
+    return ProceduralDevelopmentEditForm(
+        initial={
+            "title": development.title,
+            "note": development.note,
+            # Explicit, and not merely absent. `development_period_initial`
+            # returns `{}` for a row with no date at all, so a bare `**` would
+            # leave the day box to whatever default it could find — which is the
+            # mistake `external_position_period_initial` carries its own `None`
+            # to prevent. This form declares no `initial` on the field either, so
+            # this says the same thing a second time rather than trusting two
+            # declarations to stay apart (docs/adr/0078 §2).
+            "occurred_on": None,
+            **development_period_initial(development),
+            "revision": development.revision_token,
+        },
+        auto_id=auto_id,
+        record=development,
+    )
+
+
+def _development_row(
+    request: HttpRequest,
+    matter: Matter,
+    development: MatterProceduralDevelopment,
+    *,
+    form: ProceduralDevelopmentEditForm | None = None,
+    error: str = "",
+    conflict: MatterProceduralDevelopment | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    """The corrected development back in place, or the form that could not save.
+
+    One renderer for both, because they swap the same element: `Muuda` replaces
+    the milestone's text region with the form, and every answer replaces it
+    again — with the corrected record, or with the form still open and what the
+    person typed still in it. The `<article>` around it, its 12 px dot, its spine
+    and its attached files are never in the response, so a correction cannot move
+    the row and cannot turn into a second line in the chronology
+    (`_external_position_row`, which this deliberately mirrors).
+
+    The milestone is rebuilt through `development_milestone`, the same function
+    the chronology itself renders from, so a corrected row cannot come back
+    worded differently from the way it will read on the next page load — and so
+    that `Juristi märkus` keeps its own label and its own attribution after a
+    correction exactly as it has after an initial save (docs/adr/0091 §4).
+    """
+    return render(
+        request,
+        "matters/partials/development_row.html",
+        {
+            "matter": matter,
+            "development": development,
+            "milestone": development_milestone(development),
+            "development_edit_form": form,
+            "development_edit_error": error,
+            "development_conflict_milestone": (
+                development_milestone(conflict) if conflict is not None else None
+            ),
+            "development_read_query": ENGAGEMENT_READ_QUERY,
+        },
+        status=status,
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def update_development_view(request: HttpRequest, pk: Any, development_id: Any) -> HttpResponse:
+    """`Muuda` on a `Menetluse areng`. There is no delete; a wrong row is corrected.
+
+    GET opens the form in the chronology row; POST saves it. One route, because
+    they are one interaction and the second is only reachable from the first —
+    the shape `update_external_position_view`, `update_engagement_view` and
+    `edit_entry_view` already use.
+
+    **It corrects this record and nothing beside it.** A `+ Menetluse areng` save
+    may have moved `Matter.stage` and set a `Järgmiseks` in the same atomic
+    operation; correcting the sentence it recorded does not rewind either of
+    them. Those are separate canonical facts with their own correction surfaces,
+    and what ties the original three writes together is the `operation_id` they
+    share — not a claim that this row owns them. Nor are the development's files
+    touched: they are not re-posted here, so a correction can neither detach one
+    nor replace an immutable `DocumentVersion` (docs/adr/0084 §8,
+    docs/adr/0091 §5.4, docs/adr/0092 §6).
+
+    **Refused on a closed Matter**, like a `Kaasamine` correction and unlike an
+    entry's. Every field on this record is substantive — what happened, when, and
+    what this office made of it — so correcting one is normal interactive
+    business work and a finished file refuses it; reopening is the way out and
+    leaves somebody's name on both decisions. The rule is enforced under the
+    Matter's row lock inside `correct_procedural_development`, never by whether
+    this page rendered a button (docs/adr/0076 §2, docs/adr/0084 §8).
+    """
+    matter = get_visible_matter(request, pk)
+    development = _development_for_correction(request, matter, development_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving edit mode is a re-read rather than a client-side
+        # hide: the boxes may be holding values that were never saved, and the
+        # only honest way out of them is to fetch what the record actually says.
+        if request.GET.get(ENGAGEMENT_READ_PARAM) == ENGAGEMENT_READ_VALUE:
+            return _development_row(request, matter, development)
+        return _development_row(
+            request, matter, development, form=_development_edit_form(request, development)
+        )
+
+    form = _development_edit_form(request, development, request.POST)
+    if not form.is_valid():
+        return _development_row(request, matter, development, form=form, status=400)
+
+    try:
+        corrected = correct_procedural_development(
+            development=development,
+            title=form.cleaned_data["title"],
+            # The resolved anchor and its precision, not the day box: `Kuu`,
+            # `Kvartal` and `Aasta` leave that box empty on purpose, and an
+            # emptied one is «kuupäev teadmata» rather than a refusal.
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+            note=form.cleaned_data.get("note") or "",
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except ProceduralDevelopmentConflict as conflict:
+        # 409, and nothing was written. The form stays open holding this person's
+        # values and the version that beat them arrives beside it to read;
+        # neither is chosen for them. The hidden token is **not** advanced:
+        # adopting the newer one here would be this view deciding that the next
+        # submit may overwrite what the other writer saved (QA-09).
+        return _development_row(
+            request,
+            matter,
+            development,
+            form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except DomainError as error:
+        # A closed Matter lands here, and so does any refusal the service makes.
+        # The sentence goes into the form that is still open rather than into a
+        # panel this row does not have.
+        return _development_row(
+            request, matter, development, form=form, error=str(error), status=400
+        )
+
+    return _development_row(request, matter, corrected)
 
 
 @login_required

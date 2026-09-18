@@ -5916,6 +5916,145 @@ class ProceduralDevelopmentForm(forms.Form):
         return cleaned
 
 
+class ProceduralDevelopmentEditForm(forms.Form):
+    """`Muuda` on a recorded `Menetluse areng`. What the record says, and nothing else.
+
+    **Four questions, and they are the record's own four.** `Sündmus`, the
+    period, and `Juristi märkus` — the whole of what a
+    `MatterProceduralDevelopment` stores that a person may correct, and exactly
+    what `correct_procedural_development` accepts.
+
+    **Deliberately not `ProceduralDevelopmentForm` reopened.** That panel asks
+    three further questions — `Uus hetkeseis`, `Järgmiseks` / `Millal?` and the
+    attachments — and every one of them writes something that is *not* this row.
+    A save through it moves `Matter.stage`, supersedes a `NextAction` and
+    captures evidence, which is right when a step is being recorded and wrong
+    when its sentence is being corrected: a lawyer fixing «Eelnõu jõudis
+    Riigikokku» to «Komisjon arutas eelnõu» is not asking for the file's
+    `Hetkeseis` to be rewound, and a form that carried the control would let one
+    press do it. Those are separately correctable facts with their own surfaces
+    and their own audit trails, and the correction of this row leaves them
+    exactly as the original operation left them (docs/adr/0091 §5.4,
+    docs/adr/0092 §6).
+
+    **No upload control either**, for the reason `ExternalPositionEditForm`
+    states: correcting what a development says and adding a second piece of
+    evidence to it are different acts with different audit trails, and a
+    correction form that also captured bytes would make «what changed»
+    unanswerable from one event. The files a development already carries are
+    read on its chronology row through the ordinary `DocumentLink` projection and
+    are not re-posted here — so a correction can never silently detach one
+    either (docs/adr/0084 §8).
+
+    **The day box carries no `initial`, which is the whole difference from the
+    panel.** `+ Menetluse areng` opens on today because the common case is
+    writing up something just learned, and docs/adr/0078 §2 allows a default
+    exactly in that visible, clearable shape. An *editor* inheriting it would
+    open an undated development showing today — one `Salvesta` away from storing
+    a day nobody ever knew — so the field is declared here without one and
+    `development_period_initial` fills the boxes from the record. A row stored as
+    `2026-10-01` + `MONTH` reopens on its `Kuu` chip with the day box empty,
+    never as `01.10.2026` (docs/adr/0079 §2, §9, `ExternalPositionEditForm`).
+
+    ``revision`` is the version the form was filled from, carried through the
+    round trip so the service can refuse a save whose record has moved on. The
+    same hidden field `EntryEditForm`, `WebsiteOverviewLinkForm` and
+    `ExternalPositionEditForm` all carry, for the same reason.
+    """
+
+    use_required_attribute = False
+
+    title = forms.CharField(
+        label="Mis menetluses juhtus",
+        required=False,
+        max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
+        widget=forms.TextInput(attrs={"class": "field__input field__input--compact"}),
+    )
+    #: The day it happened, optional, and **without the panel's `initial`**.
+    #:
+    #: See the class docstring: a default of today on an editor is a stored
+    #: «kuupäev teadmata» one press away from becoming a day this application
+    #: invented.
+    occurred_on = EstonianDateField(
+        label="Kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+    )
+    note = forms.CharField(
+        label="Juristi märkus",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "field__input field__input--compact", "rows": "2"}),
+    )
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
+        #: The development being corrected.
+        #:
+        #: Read for the same one thing the panel reads it for: whether it carries
+        #: a precision the control does not otherwise offer, so that correcting
+        #: the sentence of a development recorded as *oktoober 2026* does not
+        #: rewrite it into a day — and so that a crafted `HALF_YEAR` on a record
+        #: that never had one is refused by the field's own choices
+        #: (docs/adr/0079 §9).
+        self.record = record
+        super().__init__(*args, **kwargs)
+        attach_development_precision(self, record=record)
+
+    @property
+    def precision_chips(self) -> list[dict[str, Any]]:
+        """The `Täpsus` radios, as the template renders every other chip row."""
+        return _precision_chips(self, f"{DEVELOPMENT_PREFIX}_precision")
+
+    def clean_title(self) -> str:
+        from app.matters.services import DEVELOPMENT_NEEDS_TITLE
+
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise forms.ValidationError(DEVELOPMENT_NEEDS_TITLE)
+        return title
+
+    def clean(self) -> dict[str, Any]:
+        """The period, and the one refusal a correction may raise about it.
+
+        **A correction may not move the date into the future**, the same
+        invariant `+ Menetluse areng` states and the same sentence: a
+        `Menetluse areng` records something that has happened, and the product's
+        forward-looking facts are `Järgmiseks` and `+ Oluline tähtaeg`.
+
+        Guarded here on the period having actually **moved**, which is the rule
+        `correct_procedural_development` enforces under the row lock and the
+        reason this form must not simply repeat the panel's check. A row filed
+        before the invariant existed still carries its future date; refusing
+        every correction that merely *carries* it would make such a row's
+        headline permanently uncorrectable — a second, quieter way of the file
+        being unable to say what happened. So the comparison is against what the
+        record stores, and correcting only the sentence of such a row is allowed
+        through (docs/adr/0079 §2).
+
+        The refusal lands on the control the chosen precision is answered in,
+        through the same map the panel uses: «ei saa olla tulevikus» pinned to an
+        empty day box when the person stated a quarter points at the wrong field.
+        """
+        from app.matters.services import DEVELOPMENT_CANNOT_BE_FUTURE
+
+        cleaned = super().clean() or {}
+        anchor, precision = development_period(cast(Any, self))
+        stored_anchor = getattr(self.record, "occurred_on", None)
+        stored_precision = getattr(self.record, "occurred_on_precision", "") or ""
+        period_moved = anchor != stored_anchor or precision != stored_precision
+        if period_moved and period_starts_after(anchor, precision, day=timezone.localdate()):
+            self.add_error(
+                _precision_controls(DEVELOPMENT_PREFIX, "occurred_on").get(
+                    precision, "occurred_on"
+                ),
+                DEVELOPMENT_CANNOT_BE_FUTURE,
+            )
+            anchor = None
+        cleaned["occurred_on_value"] = anchor
+        cleaned["occurred_on_precision"] = precision
+        return cleaned
+
+
 class CompactClosureForm(ChipChoices, forms.Form):
     """`+ Lõpeta teema` — two questions, and nothing invented from them.
 

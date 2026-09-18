@@ -1010,12 +1010,14 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
     function decides what a development row says — a second copy is a second
     place for the note to gain a separator or lose its label.
 
-    It named `views._development_row` as the second caller, and there is no such
-    function: a `Menetluse areng` has no correction route, so nothing swaps this
-    row back in place after a save. The sentence described the shape its two
-    siblings have rather than the one this record has, and it is corrected here
-    because a maintainer reading it while looking for where the note is rendered
-    is sent to a view that does not exist.
+    Its second caller is `views._development_row`, which is what swaps this row
+    back in place after a correction — so a corrected development cannot come
+    back worded differently from the way it will read on the next page load.
+
+    That function did not exist until QA-06, and this paragraph said so: a
+    `Menetluse areng` was the one milestone with no correction route, and the
+    chronology rendered it through the generic block. It has one now, spelled the
+    way a `Kaasamine`'s and a `Väline seisukoht`'s are.
 
     **The headline is the step itself**, which is what the record's `title` holds
     and what Package D will project: «Menetluse areng: Ministeerium saatis uue

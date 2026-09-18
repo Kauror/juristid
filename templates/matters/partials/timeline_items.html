@@ -67,6 +67,27 @@ record, not professional chronology (master specification 16.5).
             (matters/partials/external_position_row.html, docs/adr/0084 §6).
           {% endcomment %}
           {% include "matters/partials/external_position_row.html" with position=item.record milestone=item.milestone matter=matter external_position_edit_form=None %}
+        {% elif item.procedural_development %}
+          {% comment %}
+            A `Menetluse areng` is the third milestone a person can correct in
+            place, so — like a `Kaasamine` and a `Väline seisukoht` — its
+            headline, its date and its `Juristi märkus` are their own element and
+            their own swap target: the dot, the spine and the attached files
+            below stay put while the record inside changes.
+
+            Until QA-06 this row rendered through the generic block below and had
+            no correction route at all, so a lawyer who recorded «Eelnõu jõudis
+            Riigikokku» and meant «Komisjon arutas eelnõu» had nowhere to say so
+            — on the one record whose whole purpose is to let the file state what
+            the procedure actually did.
+
+            The branch is chosen on `item.procedural_development`, the typed
+            property, rather than on a string comparison against a class name: a
+            rename would silently offer `Muuda` on none of these rows
+            (app/matters/timeline.py, `ChronologyItem.procedural_development`,
+            matters/partials/development_row.html).
+          {% endcomment %}
+          {% include "matters/partials/development_row.html" with development=item.record milestone=item.milestone matter=matter development_edit_form=None %}
         {% else %}
           <p class="uxtl__ms">
             <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
