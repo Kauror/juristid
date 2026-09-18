@@ -40,6 +40,16 @@ saying so, which is the same treatment every external link on this page gets.
       <label class="cx-f cx-f--date">
         <span class="cx-f__lab">{{ website_overview_link_form.published_on.label }}</span>
         {{ website_overview_link_form.published_on }}
+        {% comment %}
+          The correction form's date box is the one that *clears* a date that
+          turned out to be a guess (docs/adr/0089 §8), so the sentence saying an
+          empty box is a valid answer matters more here than anywhere. It is the
+          field's own `help_text`, under the id Django's `aria-describedby`
+          already names.
+        {% endcomment %}
+        <span class="field__help"
+              id="{{ website_overview_link_form.published_on.auto_id }}_helptext"
+              >{{ website_overview_link_form.published_on.help_text }}</span>
       </label>
       {{ website_overview_link_form.revision }}
       {% if website_overview_link_form.url.errors %}

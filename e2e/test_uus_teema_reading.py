@@ -262,7 +262,20 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
 
     # -- 5. exactly one Teema, carrying what was confirmed -----------------
     expect(page.get_by_role("heading", name=title)).to_be_visible()
-    expect(page.get_by_text("18.9.2026").first).to_be_visible()
+    # **The deadline control, not the whole page** — the same scoping 05d9a82
+    # made two tests along, read from the other end.
+    #
+    # This asked whether `18.9.2026` is visible *anywhere*, and the letter's day
+    # is a fixed string in `LETTER` while half this page is dated from the
+    # clock. On 18 September 2026 in Tallinn `Saabus`, `Teema loodud` and the
+    # process strip all print it honestly, so `.first` matches one of those and
+    # the step passes without the confirmed deadline having reached the Matter
+    # at all. A false red is one morning away; a false green can sit there for a
+    # year, which is the worse of the two.
+    #
+    # What this step means is «the deadline the person confirmed is this
+    # Matter's», so it is asked of the control that holds a Matter's deadline.
+    expect(page.locator(".metaline__value--deadline")).to_contain_text("18.9.2026")
     assert register_holds(page, base_url, title) == 1
 
     # -- 6. and the file is under Dokumendid, openable, byte for byte ------

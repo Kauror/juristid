@@ -72,6 +72,17 @@ controls and every write route still refuses it under the row lock
                     <label class="cx-f cx-f--date">
                       <span class="cx-f__lab">{{ publish_form.published_on.label }}</span>
                       {{ publish_form.published_on }}
+                      {% comment %}
+                        The `_helptext` id is the other half of what the comment
+                        below says about `_error`: Django points the control's
+                        `aria-describedby` at both, and renders neither. This
+                        form is the planned row's own publish form, so the
+                        sentence about an unknown date belongs here exactly as
+                        it belongs on the add panel.
+                      {% endcomment %}
+                      <span class="field__help"
+                            id="{{ publish_form.published_on.auto_id }}_helptext"
+                            >{{ publish_form.published_on.help_text }}</span>
                     </label>
                   </div>
                   {% comment %}

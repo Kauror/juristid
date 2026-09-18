@@ -35,12 +35,19 @@ proved against the calendar rather than against today in the last section of
 this file.
 
 A second table, `SCENARIO_NORMALISED_TEXT`, holds the case the first cannot: a
-date slot whose *class* renders a clock value on one capture and a date the
-fixture chose on another. `.tl-step__date` and `.uxtl__msdate` are that — the
-seeded closed Matter's own «Alustatud» and «Lõpetatud» are the day the run
-happened, while the open Matter's are «Jõustumine 1.1.2028» and a Kaasamine in
-May. Held still on `teema-suletud` alone, so the fixture's own dates stay in
-every other baseline exactly as they are.
+date slot whose *class* renders a clock value in one row and a date the fixture
+chose in the next. `.tl-step__date` and `.uxtl__msdate` are that. The seeded
+closed Matter's «Alustatud» and «Lõpetatud» are the day the run happened, and so
+are the open Matter's «Alustatud» / «Koja arvamus» and its «Teema loodud» /
+«Arvamus välja» — `created_at` and `sent_at`, stamped by the seeding
+transaction. Beside them on the same page, through the same two classes, are
+«Jõustumine 1.1.2028» and a Kaasamine in May, which `seed_e2e_data` chose and
+which belong in the baseline.
+
+So an entry says which capture it applies to, and — where one capture prints
+both meanings — which milestone by name. A baseline goes red for a seeded date
+that moved, and not because midnight passed. The table itself carries the
+contract in full.
 
 Inside a table it is not a line that moves but the whole grid. An auto-layout
 table sizes every column from its content, so one cell that gains a character
@@ -474,14 +481,71 @@ CLOSED_ON = (".banner--closed .banner__text .muted",)
 #: the morning it was taken.
 #:
 #: **Scenario-scoped, and this is the whole reason `SCENARIO_NORMALISED_TEXT`
-#: exists.** Both classes render on the open Matter too, where their dates are
-#: nothing of the kind: `teema-ulevaade` prints «Jõustumine 1.1.2028» and
-#: «Kaasamine … 12.5.2026» through the same two selectors, and those are dates
-#: the fixture chose. A global entry would rewrite them into a canonical, move
-#: three baselines that have nothing to do with this, and — far worse — take
-#: real, fixture-chosen content out of the comparison, which is exactly the
-#: masking-too-much failure the rest of this module is written against.
+#: exists.** Both classes render on the open Matter too, where *some* of what
+#: they hold is nothing of the kind: `teema-ulevaade` prints «Jõustumine
+#: 1.1.2028» and «Kaasamine … 12.5.2026» through the same two selectors, and
+#: those are dates the fixture chose. A global entry would rewrite them into a
+#: canonical, move three baselines that have nothing to do with this, and — far
+#: worse — take real, fixture-chosen content out of the comparison, which is
+#: exactly the masking-too-much failure the rest of this module is written
+#: against. The open Matter's *own* run-day slots are held still by name
+#: instead: see `STRIP_RUN_DAY` and `CHRONOLOGY_RUN_DAY` below.
 CLOSED_MATTER_DAYS = (".tl-step__date", ".uxtl__msdate")
+
+#: The two process-strip columns whose date is the day the run happened, named
+#: by the label beside them rather than by the class they share.
+#:
+#: `seed_e2e_data` creates `OPEN_TITLE` and sends its one opinion in the same
+#: seeding transaction, so `Matter.created_at` and `Submission.sent_at` are both
+#: the wall clock of the run — and `Alustatud` and `Koja arvamus` are the two
+#: columns `process_steps` derives from exactly those two records. Both print
+#: through `format_estonian_date`, `j.n.Y`, which does not zero-pad: `9.9.2026`
+#: is eight characters and `12.9.2026` is nine.
+#:
+#: The other two columns on this strip are **not** here and must not be. They
+#: are the Matter's two commencements — «Jõustumine 27.9.2027 / 1.1.2028», from
+#: `add_effective_date` — and a strip that had frozen them would stop comparing
+#: the one thing `teema-kaik` exists to compare, which is that a known future
+#: milestone is drawn exactly like a completed one (docs/adr/0074 §12.2).
+#:
+#: Scoped by `.tl-step__what` and not by position. The columns are ordered by
+#: date, so a fixture that gave this Matter a `Arvamuse tähtaeg` would renumber
+#: them and an `:nth-child` would quietly start holding a seeded date still; the
+#: label is what actually identifies the milestone, and `process_timeline.py`
+#: declares both of these as constants.
+STRIP_RUN_DAY = (
+    '.tl-step:has(.tl-step__what:text-is("Alustatud")) .tl-step__date',
+    '.tl-step:has(.tl-step__what:text-is("Koja arvamus")) .tl-step__date',
+)
+
+#: The chronology's two run-day milestones, named the same way and for the same
+#: reason: they are the other rendering of the same two records.
+#:
+#: `Teema loodud` is the `MATTER_CREATED` audit event and `Arvamus välja` is the
+#: sent `Submission`, so both are stamped by the seeding run — the strip calls
+#: them `Alustatud` and `Koja arvamus`, the chronology calls them these, and
+#: they are one pair of facts printed twice (`app/matters/timeline.py`).
+#:
+#: The two chronology dates that stay in the baseline are the ones a person
+#: chose: «Kaasamine … 12.5.2026», which `seed_e2e_data` passes as
+#: `occurred_on=date(2026, 5, 12)`, and the `Töövõit`'s reporting period. The
+#: engagement's date is the whole content of the row `teema-ajajoon` compares,
+#: so holding it still would photograph a canonical instead of the fixture.
+CHRONOLOGY_RUN_DAY = (
+    '.uxtl__ms:has(.uxtl__mswhat:text-is("Teema loodud")) .uxtl__msdate',
+    '.uxtl__ms:has(.uxtl__mswhat:text-is("Arvamus välja")) .uxtl__msdate',
+)
+
+#: `12.9.2026` — the canonical visual day, and the same one `teema-suletud`
+#: already holds.
+#:
+#: One string for every scenario in the table below, because these are all the
+#: same fact: this world was seeded today. Two canonicals would put two
+#: different "today"s in one baseline set, and the first person to compare
+#: `teema-kaik` against `teema-suletud` would be reading a contradiction the
+#: product cannot produce. It is a value `format_estonian_date` really renders —
+#: the twelfth of September.
+CANONICAL_RUN_DAY = "12.9.2026"
 
 #: The Ajajoon summary's «29.8», the `<time>` the timeline preview leads with.
 #:
@@ -566,24 +630,72 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
 #: in it: each of those selectors names one element that renders on a handful of
 #: pages and is clock-derived on all of them. `.tl-step__date` and
 #: `.uxtl__msdate` are not like that. They are the process strip's and the
-#: chronology's date slots, and *what* they hold is a property of the Matter
-#: rather than of the class: the seeded closed Matter's are its `created_at` and
-#: `closed_at`, both stamped by the run, while the open Matter's are
-#: «1.1.2028» and «12.5.2026» — dates `seed_e2e_data` chose, which belong in the
-#: baseline and would be silently frozen by a global entry.
+#: chronology's date slots, and *what* they hold is a property of the record
+#: behind the row rather than of the class: the same two classes print a
+#: `created_at` the run stamped a moment ago, a commencement in 2028 and a
+#: consultation held in May, all on one page.
 #:
-#: So the scenario is part of the declaration. An entry here holds a value still
-#: on the one capture that renders it from the clock, and leaves the identical
-#: markup alone everywhere else. Anything whose *selector* can carry the scoping
-#: belongs in `NORMALISED_TEXT` above, where it is one list to read; this is for
-#: the case where scoping by selector would mean asserting a fact about the
-#: page's structure that is not the fact being relied on.
+#: The contract, stated once because everything below is an instance of it:
+#:
+#: 1. **Scenario-scoped normalisation is required.** A capture may hold a date
+#:    slot still only where *that* capture renders a clock value in it, and must
+#:    leave the identical markup alone on every other capture.
+#: 2. **Some of these slots hold meaningful seeded dates, and those stay in the
+#:    baseline.** «Jõustumine 27.9.2027 / 1.1.2028», «Kaasamine … 12.5.2026»
+#:    and the `Töövõit`'s reporting period are what `seed_e2e_data` chose, and
+#:    they are the content the Matter captures exist to compare. Freezing them
+#:    would take real, fixture-chosen content out of the comparison — the
+#:    masking-too-much failure the rest of this module is written against.
+#: 3. **`teema-suletud` is scoped by scenario alone; every other Matter capture
+#:    is scoped by selector as well.** On the closed Matter *every* slot in both
+#:    classes is a run-day value — `created_at` and `closed_at`, stamped in one
+#:    seeding transaction — so the bare class is exactly the right scope there.
+#:    The open and archive Matters mix run-day and seeded dates in one list, so
+#:    their entries name the milestone by its own label instead
+#:    (`STRIP_RUN_DAY`, `CHRONOLOGY_RUN_DAY`).
+#: 4. **A visual test should fail for a seeded-date regression, and not because
+#:    midnight passed.** Both halves are asserted, not trusted: the section at
+#:    the foot of this file proves that the run-day slots come out the same on
+#:    every calendar day *and* that the seeded ones come out untouched, and
+#:    `REQUIRED_NORMALISATIONS` turns a selector that stops matching into a
+#:    failed capture rather than a baseline that quietly goes stale.
+#:
+#: Anything whose *selector* can carry the scoping on its own belongs in
+#: `NORMALISED_TEXT` above, where it is one list to read; this table is for the
+#: case where the page renders one class in two meanings at once.
+_STRIP_AND_CHRONOLOGY_RUN_DAYS = (*STRIP_RUN_DAY, *CHRONOLOGY_RUN_DAY)
+
 SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
-    # `12.9.2026`, because that is the day the committed baseline was taken and
-    # therefore the string it already holds: stabilising these moves no image,
-    # and no baseline is regenerated to adopt the fix. It is a value the product
-    # really produces — `format_estonian_date` on the twelfth of September.
-    "teema-suletud": tuple((selector, "12.9.2026") for selector in CLOSED_MATTER_DAYS),
+    # The closed Matter: created and closed by the run, so both classes hold a
+    # run-day value in every slot and the bare class is the correct scope.
+    "teema-suletud": tuple((selector, CANONICAL_RUN_DAY) for selector in CLOSED_MATTER_DAYS),
+    # The open Matter, clipped to the process strip and to the chronology. Each
+    # clip carries only the slots that are inside it, so a selector declared
+    # here is a selector that capture really renders — which is what lets
+    # `REQUIRED_NORMALISATIONS` insist on all of them.
+    "teema-kaik": tuple((selector, CANONICAL_RUN_DAY) for selector in STRIP_RUN_DAY),
+    "teema-ajajoon": tuple((selector, CANONICAL_RUN_DAY) for selector in CHRONOLOGY_RUN_DAY),
+    # The same open Matter, whole, at both widths. These two carry the strip and
+    # the chronology together, and they were drifting exactly as the clipped
+    # pair were — more quietly, because a few hundred differing pixels is a far
+    # smaller fraction of a full page than of a 1,400×120 strip. A stale
+    # baseline nobody can see is worse than a red one: the cost lands on
+    # whoever's unrelated change finally pushes the total past the limit.
+    "teema-ulevaade": tuple(
+        (selector, CANONICAL_RUN_DAY) for selector in _STRIP_AND_CHRONOLOGY_RUN_DAYS
+    ),
+    "teema-1024": tuple(
+        (selector, CANONICAL_RUN_DAY) for selector in _STRIP_AND_CHRONOLOGY_RUN_DAYS
+    ),
+    # The archive row, which has one of the four and only one. It is a
+    # register-archive record, so `process_steps` gives it no `Alustatud` — an
+    # imported row's `created_at` is a fact about a migration — and it draws no
+    # strip at all; it never sent an opinion either. What it does have is the
+    # `MATTER_CREATED` event this seeding run wrote, which prints «Teema loodud»
+    # with today's date exactly as the other two Matters do. Declaring the
+    # absent three would fail every capture, which is `REQUIRED_NORMALISATIONS`
+    # working rather than a reason to widen the entry.
+    "teema-arhiiv": ((CHRONOLOGY_RUN_DAY[0], CANONICAL_RUN_DAY),),
 }
 
 
@@ -637,6 +749,22 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # by the run, so all four are on this page every time, and an absence means
     # the markup moved rather than that the world was quiet.
     "teema-suletud": (*CLOSED_ON, *CLOSED_MATTER_DAYS),
+    # The open Matter's own two records, on the four captures that render them.
+    # `seed_e2e_data` creates this Matter and sends its opinion on every run, so
+    # each of these is on its page every time: an absence means the markup or
+    # the projection moved, which is the failure this declaration buys.
+    #
+    # Named per capture rather than as one set, because the clipped pair really
+    # do hold only half each — `teema-kaik` photographs `.tl-strip` and
+    # `teema-ajajoon` photographs `#ajalugu-loend`. Requiring the other half
+    # there would fail every run for a value that is genuinely not in the image.
+    "teema-kaik": STRIP_RUN_DAY,
+    "teema-ajajoon": CHRONOLOGY_RUN_DAY,
+    "teema-ulevaade": _STRIP_AND_CHRONOLOGY_RUN_DAYS,
+    "teema-1024": _STRIP_AND_CHRONOLOGY_RUN_DAYS,
+    # The archive row draws no process strip and has sent no opinion, so
+    # «Teema loodud» is the whole of what it renders from the run's clock.
+    "teema-arhiiv": (CHRONOLOGY_RUN_DAY[0],),
     # The seeded world sends one opinion on `OPEN_TITLE`, so both of these
     # render a `Saadetud <date>` under a filename on every run — and both are
     # the same evidence table, so both carry a `Kuupäev` column whose width is
@@ -1685,26 +1813,172 @@ def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, se
     )
 
 
+# ---------------------------------------------------------------------------
+# The open and archive Matters, where one class holds both meanings at once
+# ---------------------------------------------------------------------------
+#
+# The closed Matter above is the easy half: every slot in both classes is a
+# run-day value, so the bare class is the right scope. The open Matter is the
+# hard half and the reason `STRIP_RUN_DAY` and `CHRONOLOGY_RUN_DAY` name
+# milestones rather than classes — its strip prints `Alustatud` and
+# `Koja arvamus` from records this run stamped, and two commencements the
+# fixture chose, through one class; its chronology does the same with
+# `Teema loodud` / `Arvamus välja` against a Kaasamine in May and a `Töövõit`.
+#
+# Three properties are asserted here, and all three are needed. That the
+# run-day slots come out identical on any calendar day; that they really do
+# move without the normalisation, so the first test cannot pass vacuously; and
+# that the seeded slots beside them are untouched — which is the one a future
+# fixture change could quietly break, by giving a seeded date a label the
+# scoping happens to match.
+
+
+def _open_matter_fixture(page, day: str) -> None:
+    """The open Matter's six date slots, in the two shapes the page renders.
+
+    Every slot, not only the varying ones, because the scoping is the thing
+    under test: a fixture holding just the two run-day dates would pass under a
+    global `.uxtl__msdate` entry, which is precisely the mistake this exists to
+    refuse. `display:contents` on the two wrappers puts the leaf spans directly
+    in the flex row, so `#probe`'s x is a readout of the whole line — any slot
+    that moves, moves it.
+
+    The seeded values are `seed_e2e_data`'s own: `add_effective_date` in 2028
+    and `add_engagement(occurred_on=date(2026, 5, 12))`.
+    """
+    page.set_content(
+        f'<div id="row" style="{_ROW}">'
+        '<span class="tl-step" style="display:contents">'
+        f'<span class="tl-step__what">Alustatud</span>'
+        f'<span class="tl-step__date">{day}</span></span>'
+        '<span class="tl-step" style="display:contents">'
+        f'<span class="tl-step__what">Koja arvamus</span>'
+        f'<span class="tl-step__date">{day}</span></span>'
+        '<span class="tl-step" style="display:contents">'
+        '<span class="tl-step__what">Jõustumine</span>'
+        '<span class="tl-step__date">1.1.2028</span></span>'
+        '<p class="uxtl__ms" style="display:contents">'
+        '<span class="uxtl__mswhat">Teema loodud</span>'
+        f'<span class="uxtl__msdate">{day}</span></p>'
+        '<p class="uxtl__ms" style="display:contents">'
+        '<span class="uxtl__mswhat">Arvamus välja</span>'
+        f'<span class="uxtl__msdate">{day}</span></p>'
+        '<p class="uxtl__ms" style="display:contents">'
+        '<span class="uxtl__mswhat">Kaasamine: Liikmete kaasamiskutse</span>'
+        '<span class="uxtl__msdate">12.5.2026</span></p>'
+        '<span id="probe">·</span></div>'
+    )
+
+
+#: The seeded dates on that fixture, each with the selector that reaches it and
+#: what it has to still say afterwards. Reached through the same
+#: label-scoped shape the normalisation uses, so a scoping mistake shows up as
+#: this test failing rather than as a selector that silently matches nothing.
+SEEDED_MATTER_DATES = (
+    ('.tl-step:has(.tl-step__what:text-is("Jõustumine")) .tl-step__date', "1.1.2028"),
+    ('.uxtl__ms:has(.uxtl__mswhat:has-text("Kaasamine")) .uxtl__msdate', "12.5.2026"),
+)
+
+#: The captures that render the open Matter's own strip and chronology, and are
+#: therefore the ones whose normalisation has to be narrow.
+OPEN_MATTER_SCENARIOS = ("teema-ulevaade", "teema-1024")
+
+
+@pytest.mark.parametrize("selector", _STRIP_AND_CHRONOLOGY_RUN_DAYS)
+def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
+    """`created_at` and `sent_at`, both stamped by the run that renders them.
+
+    `seed_e2e_data` creates `OPEN_TITLE` and sends its one opinion in the same
+    transaction, so `Alustatud`, `Koja arvamus`, `Teema loodud` and
+    `Arvamus välja` all print the morning CI ran — eight characters on
+    `9.9.2026`, nine on `12.9.2026`, ten on `1.10.2026`. Nothing covers them and
+    nothing sized them, which is why a baseline adopted on one morning differs
+    from every later one.
+    """
+    seen = set()
+    for day in CLOSED_MATTER_DAY_VARIANTS:
+        _open_matter_fixture(page, day)
+        normalise_clock_text(page, "teema-ulevaade")
+        seen.add(_geometry(page, selector))
+    assert len(seen) == 1, (
+        f"{selector!r} did not come out the same for every day: {sorted(seen)}. "
+        f"Each entry is (text, own width, where the next element starts) — two "
+        f"entries means the baseline holds one morning's digits and is red on "
+        f"another's."
+    )
+
+
+@pytest.mark.parametrize("selector", _STRIP_AND_CHRONOLOGY_RUN_DAYS)
+def test_an_open_matter_run_day_really_does_move_without_the_normalisation(page, selector):
+    """The hazard itself, before anything is asked to hold it still.
+
+    Without this the test above would pass on a fixture that could not move at
+    all — a class that stopped rendering a date, a selector that matches nothing
+    — and would go on passing after somebody removed the entry it is guarding.
+    """
+    seen = set()
+    for day in CLOSED_MATTER_DAY_VARIANTS:
+        _open_matter_fixture(page, day)
+        seen.add(_geometry(page, selector))
+    assert len(seen) == len(CLOSED_MATTER_DAY_VARIANTS), (
+        f"{selector!r} rendered {len(seen)} distinct geometries for "
+        f"{len(CLOSED_MATTER_DAY_VARIANTS)} different days: {sorted(seen)}. Either "
+        f"the fixture stopped modelling the element or the date stopped changing "
+        f"— and if the drift is really gone, the test above proves nothing."
+    )
+
+
+@pytest.mark.parametrize(("selector", "seeded"), SEEDED_MATTER_DATES)
+@pytest.mark.parametrize("scenario", OPEN_MATTER_SCENARIOS)
+def test_the_seeded_matter_dates_survive_every_matter_normalisation(
+    page, scenario, selector, seeded
+):
+    """The narrowness, asserted rather than trusted — and in both directions.
+
+    «Jõustumine 1.1.2028» and «Kaasamine … 12.5.2026» reach the page through the
+    very classes the run-day slots use, and they are what `teema-ulevaade`,
+    `teema-1024`, `teema-ajajoon` and `teema-kaik` exist to compare: a
+    commencement drawn exactly like a completed milestone, and a consultation on
+    the day it was held. Freezing either into a canonical would take real
+    content out of four baselines and leave the suite green while it happened.
+
+    Two ways that could start happening, and this refuses both. `teema-suletud`
+    normalises the bare `.tl-step__date` and `.uxtl__msdate`; if that entry ever
+    stopped being scoped to its own scenario, it would reach this fixture and
+    rewrite these two. And a widened `STRIP_RUN_DAY` / `CHRONOLOGY_RUN_DAY` — a
+    label dropped, `:text-is` loosened to `:has-text` — would match a seeded row
+    directly. Either way the rewrite is asked for here and has to decline.
+    """
+    for day in CLOSED_MATTER_DAY_VARIANTS:
+        _open_matter_fixture(page, day)
+        normalise_clock_text(page, scenario)
+        assert page.locator(selector).inner_text().strip() == seeded, (
+            f"{selector!r} was rewritten on {scenario!r}, where it holds a date "
+            f"the fixture chose. Normalising it there hides the one thing that "
+            f"baseline is comparing."
+        )
+
+
 @pytest.mark.parametrize("selector", CLOSED_MATTER_DAYS)
 def test_the_closed_matter_days_are_left_alone_on_every_other_scenario(page, selector):
-    """The narrowness, asserted rather than trusted.
+    """The closed Matter's *unscoped* entries stay its own.
 
-    `.tl-step__date` and `.uxtl__msdate` are the open Matter's date slots too,
-    and there they hold «Jõustumine 1.1.2028» and a Kaasamine in May — dates
-    `seed_e2e_data` chose, which move only when somebody changes the fixture and
-    are exactly what `teema-ulevaade`, `teema-1024` and `teema-arhiiv` exist to
-    compare. A global entry would freeze them into a canonical and take real
-    content out of three baselines.
+    `teema-suletud` is the one capture whose every date slot is a run-day value,
+    so its entries name the bare classes. That is only safe while the scoping by
+    scenario holds: the same two classes are on every other Matter capture, and
+    three of them carry dates the fixture chose.
 
-    So the rewrite is asked for under another scenario's name and has to decline.
+    Asked for under `teema-pais`, which renders the Matter header and declares no
+    normalisation of its own — so nothing here can be satisfied by a scenario's
+    own entry, and a leak from `teema-suletud` is the only thing that could
+    rewrite these.
     """
     for day in FIXTURE_DAY_VARIANTS:
         _closed_matter_fixture(page, _closed_matter_days(day))
-        normalise_clock_text(page, "teema-ulevaade")
+        normalise_clock_text(page, "teema-pais")
         assert page.locator(selector).inner_text().strip() == day, (
-            f"{selector!r} was rewritten on `teema-ulevaade`, where it holds a "
-            f"date the fixture chose. Normalising it there hides the one thing "
-            f"that baseline is comparing."
+            f"{selector!r} was rewritten under a scenario that declares nothing, "
+            f"so `teema-suletud`'s entry is reaching captures it does not name."
         )
 
 

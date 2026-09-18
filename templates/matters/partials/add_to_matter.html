@@ -416,6 +416,22 @@ row of controls that refuse (brief §30, §31).
                      for="{{ website_overview_form.published_on.id_for_label }}">
                 <span class="cx-f__lab">{{ website_overview_form.published_on.label }}</span>
                 {{ website_overview_form.published_on }}
+                {% comment %}
+                  The field's own `help_text`, under the box, carrying the id
+                  Django already points the control's `aria-describedby` at.
+
+                  It used to be the third sentence of the `cx-note` below —
+                  prose beside the fieldset, not attached to anything — while
+                  the input said `aria-describedby="id_published_on_helptext"`
+                  about an element that did not exist. A screen reader followed
+                  the pointer, found nothing, and read the box with no
+                  description at all; a sighted reader got the sentence. One
+                  source now serves both, and it is the one that lives with the
+                  field (`CompactWebsiteOverviewForm.published_on`).
+                {% endcomment %}
+                <span class="field__help"
+                      id="{{ website_overview_form.published_on.auto_id }}_helptext"
+                      >{{ website_overview_form.published_on.help_text }}</span>
               </label>
             </div>
             {% if website_overview_form.url.errors %}
@@ -426,10 +442,16 @@ row of controls that refuse (brief §30, §31).
               <p class="field__error" id="{{ website_overview_form.published_on.auto_id }}_error">
                 {{ website_overview_form.published_on.errors|first }}</p>
             {% endif %}
+            {% comment %}
+              The address rules, and only those. The date's own sentence moved
+              up to the box it is about, where it is the accessible description
+              as well — repeating it here would have one instruction read twice
+              to somebody using a screen reader and written twice to everybody
+              else.
+            {% endcomment %}
             <p class="cx-note">
               Lisa link ja ülevaade või uudis salvestatakse kohe avaldatuna.
               Link peab olema avalik http:// või https:// aadress.
-              Avaldamise kuupäev on valikuline — kui see ei ole teada, jäta tühjaks.
             </p>
           </fieldset>
           <div class="addform__actions">

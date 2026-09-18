@@ -12,7 +12,14 @@ IV kvartal". CI found it: a browser test could not address the field at all.
   <div class="field">
     <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
     {{ field }}
-    {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
+    {% comment %}
+      The id is Django's own: a field with `help_text` gets
+      `aria-describedby="<auto_id>_helptext"` on its widget, and nothing renders
+      that element unless a template does. Without the id the sentence is on the
+      page for a sighted reader and the pointer beside it leads nowhere.
+    {% endcomment %}
+    {% if field.help_text %}<span class="field__help"
+      id="{{ field.auto_id }}_helptext">{{ field.help_text }}</span>{% endif %}
     {% for error in field.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
   </div>
 {% endif %}
