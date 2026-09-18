@@ -1,7 +1,15 @@
 {% comment %}
-`Teema käik` — the horizontal process strip, first thing inside the `Ajajoon`
-body and above the chronology. You see which major procedural acts a file has
-been through before you scroll anything (TEEMA_TARGET_SPEC §D).
+`Menetluse tähtajad` — the horizontal strip of dated points, under the
+`Menetluse kulg` rail and above the history. You see which major procedural acts
+a file has been through, and the next dated point it is heading for, before you
+scroll anything (TEEMA_TARGET_SPEC §D).
+
+**It stopped being called `Teema käik` in docs/adr/0092 §2, and nothing else
+about it changed.** Those two words now name the section this strip sits inside
+— the file's substantive history — and a strip of dated points is not that: it
+holds a deadline three weeks out, which no history contains. Every column, every
+label, every source and every state is exactly what docs/adr/0074 §12 and
+docs/adr/0083 decided; the `aria-label` is the whole diff.
 
 **Six labels and no more:** `Alustatud`, `Tagasiside tähtaeg`, `Koja arvamus`,
 `Arvamuse tähtaeg`, `Jõustumine`, `Lõpetatud`. The 2026-09-12 amendment changed
@@ -42,7 +50,7 @@ Rendered only when there is something to render. A strip is a comparison, and a
 heading over an empty grid would read as a data-quality problem.
 {% endcomment %}
 {% if process_steps %}
-  <div class="tl-strip" aria-label="Teema käik">
+  <div class="tl-strip" aria-label="Menetluse tähtajad">
     {% for step in process_steps %}
       {% comment %}
         `title` carries the closure's `Disposition` and a commencement's «mis

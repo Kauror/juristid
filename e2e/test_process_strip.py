@@ -1,4 +1,8 @@
-"""`Teema käik` — the sparse process strip, in a real browser.
+"""`Menetluse tähtajad` — the sparse strip of dated points, in a real browser.
+
+Named `Teema käik` until docs/adr/0092 §2, which gave those two words to the
+section this strip sits inside — the file's substantive history. Every column,
+source and state below is exactly what it was.
 
 Five labels and no more: `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`,
 `Jõustumine`, `Lõpetatud`. The Python suite proves the projection; what only a

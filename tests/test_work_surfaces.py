@@ -354,10 +354,22 @@ def test_a_unique_reference_hit_opens_the_matter(signed_in, specialist):
 
 
 def test_timeline_merges_entries_and_selected_events(normal_matter, specialist):
+    """Both sources reach the projection, and the event vocabulary still filters.
+
+    The step is **superseded** rather than left open, because since
+    docs/adr/0092 §8 the action that is currently open reads at the top of the
+    page under `PRAEGUNE TEGEVUS` and not a second time as history — a
+    `Järgmiseks` printed in both places reads as two instructions. A step that
+    has been replaced is history, and draws its row exactly as it always did,
+    which is what this test is about.
+    """
     create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
     add_entry(matter=normal_matter, body="<p>Kohtumine</p>", author=specialist)
     set_next_action(
         matter=normal_matter, text="Koosta arvamus", actor=specialist, target_date=_days(1)
+    )
+    set_next_action(
+        matter=normal_matter, text="Vaata vastus üle", actor=specialist, target_date=_days(3)
     )
 
     items, _has_more = matter_timeline(matter=normal_matter, user=specialist)
@@ -366,6 +378,9 @@ def test_timeline_merges_entries_and_selected_events(normal_matter, specialist):
     assert ChangeEventType.NEXT_ACTION_SET in kinds
     # SUBMISSION_CREATED is not timeline-worthy; sending one is.
     assert ChangeEventType.SUBMISSION_CREATED not in kinds
+    # And the one that is still open is not among them.
+    rendered = " ".join(item.next_step.text for item in items if item.next_step is not None)
+    assert "Vaata vastus üle" not in rendered
 
 
 def test_timeline_is_newest_first_by_occurrence(normal_matter, specialist):

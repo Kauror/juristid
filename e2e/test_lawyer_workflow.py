@@ -297,12 +297,18 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The note says what happened and nothing about what happens next.
     expect(entry.locator(".uxtl__next")).to_have_count(0)
 
-    step = page.locator(".uxtl__next").filter(has_text="Kontrollida ministeeriumi uut sõnastust")
-    expect(step).to_have_count(1)
-    # The strip states the step, not its category. It re-states the same fact
-    # the zone above it carries, and that zone stopped naming a kind
-    # (ADR 0052 §6).
-    assert "TEEN" not in step.inner_text()
+    # **And the step reads once, at the top.** It was set through
+    # `+ Järgmine tegevus`, which writes nothing else — so since docs/adr/0092 §8
+    # it draws no row of its own in the chronology: an open `Järgmiseks` printed
+    # prominently in `PRAEGUNE TEGEVUS` *and* again halfway down the file reads
+    # as two instructions, and a reader scrolling for what is owed finds the
+    # older copy first. The strip still rides on a save that has a row — a note,
+    # a `Menetluse areng` — which is the case the paragraph above covers.
+    expect(
+        page.locator(".uxtl__next").filter(has_text="Kontrollida ministeeriumi uut sõnastust")
+    ).to_have_count(0)
+    # The zone states the step, not its category (ADR 0052 §6).
+    assert "TEEN" not in zone.inner_text()
     screenshots(page, "05-komposer-jarel")
 
     # The new step reached Minu asjad, still in the one list, banded by its date

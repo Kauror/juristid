@@ -200,6 +200,29 @@ record, not professional chronology (master specification 16.5).
         {% endfor %}
       {% endif %}
       {% comment %}
+        **What this one act did to the file**, under the act itself.
+
+        `+ Menetluse areng` writes up to four canonical records in one
+        transaction — the development, its evidence, `Hetkeseis` and
+        `Järgmiseks` — and until docs/adr/0092 each of the last two drew a
+        chronology row of its own, so «the ministry sent a new version» read as
+        three lines with the reason for the other two two rows away. They are
+        grouped **only** where the audit rows explicitly share an
+        `operation_id`: never because two records were written in the same
+        minute, by the same person, about the same organisation or under a
+        similar title (app/matters/timeline.py `OPERATION_EFFECT_EVENT_TYPES`).
+
+        The stage reads first because it is what happened to the file, and the
+        step second because it is what this office decided about it.
+      {% endcomment %}
+      {% if item.stage_effect %}
+        <span class="uxtl__next">
+          <span class="uxtl__nextmode" aria-hidden="true">→</span>
+          <span class="uxtl__nextlabel">Hetkeseis</span>
+          <span class="uxtl__nexttext">{{ item.stage_effect }}</span>
+        </span>
+      {% endif %}
+      {% comment %}
         What the save decided. Its own pill rather than its own line: it is the
         consequence of the thing above it, and a reader scrolling for "what did
         we agree to do" is looking for exactly this.
@@ -216,7 +239,14 @@ record, not professional chronology (master specification 16.5).
     </div>
   </article>
 {% empty %}
-  <p class="uxtl__none">Ajajoon on tühi. Esimene sissekanne ilmub siia.</p>
+  {% comment %}
+    The section is called `Teema käik` since docs/adr/0092 §9, and the empty
+    state says so. `Ajajoon` survives as the id and the query parameter, where
+    changing it would break links people have already sent, and nowhere a reader
+    can see it — a section whose heading and whose empty state name it
+    differently reads as two components.
+  {% endcomment %}
+  <p class="uxtl__none">Teema käik on tühi. Esimene sissekanne ilmub siia.</p>
 {% endfor %}
 {% comment %}
   The continuation control, at the **bottom** of the list where the list runs

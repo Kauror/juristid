@@ -31,6 +31,44 @@ class SubmissionQuerySet(models.QuerySet):
     def sent(self) -> SubmissionQuerySet:
         return self.filter(status=SubmissionStatus.SENT)
 
+    def historically_sent(self) -> SubmissionQuerySet:
+        """Every submission that **was actually sent**, whatever it is now.
+
+        `sent()` above asks a question about the present — «is this the opinion
+        that currently stands» — and it is the right question for a portfolio, a
+        count of live advocacy, or the card on the Matter page.
+
+        It is the wrong question for a *history*. Sending was a business act
+        performed on a day, by a person, to named recipients, and withdrawing
+        the opinion afterwards does not mean the letter never went out; it means
+        one more thing happened. A chronology populated by `status=SENT` makes a
+        sent opinion vanish from the file's own history the moment it is
+        withdrawn or superseded, which is the defect this method exists to close
+        (docs/adr/0092 §3).
+
+        **`sent_at` is the canonical fact and the audit event is not.**
+        `SUBMISSION_SENT.occurred_at` is when somebody pressed the button, which
+        for an opinion reconstructed from the historical register is a fact about
+        the import; `sent_at` is when the letter went. That distinction is the
+        whole of docs/adr/0092 §3 and is not reopened here.
+
+        **A `DRAFT` is excluded even when it carries a `sent_at`.** The CHECK
+        constraint `submissions_sent_requires_timestamp_and_evidence` binds the
+        timestamp to the SENT status and says nothing about a draft, so a row
+        carrying a stray timestamp is malformed data rather than a send — and a
+        history that materialised a draft out of one would be inventing an act.
+        The three terminal statuses are named positively rather than DRAFT being
+        excluded, so a status added later is absent until somebody decides.
+        """
+        return self.filter(
+            status__in=(
+                SubmissionStatus.SENT,
+                SubmissionStatus.WITHDRAWN,
+                SubmissionStatus.SUPERSEDED,
+            ),
+            sent_at__isnull=False,
+        )
+
 
 class Submission(VisibilityInheritingModel):
     matter = models.ForeignKey(

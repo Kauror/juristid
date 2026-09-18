@@ -1608,6 +1608,19 @@ def test_the_matter_page_does_not_explode_into_queries(
     query, is deliberately not called here (`forms.attach_organisation_picker`).
     That is three reads turned into one, and it is why this ceiling moved by
     six rather than by nine.
+
+    **Measured at 45 since docs/adr/0092**, and the seven it added are the
+    sources `Teema käik` and `Menetluse kulg` read rather than a per-row cost.
+    Four are the substantive history becoming canonical: the sent `Submission`s,
+    their `ADDRESSEE` rows in one prefetch, the open `Järgmiseks` the history is
+    handed so it does not print it twice, and the final-text link pass that now
+    has something to resolve. Three are the rail: the stage, track and
+    disposition as they stand, the explicit stage history, and the reviewed
+    `Õigusakt` keys — the last two only on a file the first does not already
+    place. Flat in the population, which is the property this test exists to
+    hold: doubling the updates and the engagements leaves all seven where they
+    are, and `tests/test_substantive_matter_history.py` measures the projection's
+    own shape directly at two populations under one budget.
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
@@ -1620,5 +1633,5 @@ def test_the_matter_page_does_not_explode_into_queries(
             actor=specialist,
         )
 
-    with django_assert_max_num_queries(44):
+    with django_assert_max_num_queries(50):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

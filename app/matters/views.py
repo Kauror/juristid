@@ -42,6 +42,8 @@ from app.accounts.selectors import (
     named_owner_in,
     owner_filter_choices,
 )
+from app.audit.models import ChangeEvent
+from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     may_review_work_victory,
     may_write_business_content,
@@ -136,6 +138,7 @@ from app.matters.intake_suggestions import (
     prefill_controls,
     prefill_initial,
 )
+from app.matters.legal_process import KODA_STOPPED_LABEL, legal_process_rail
 from app.matters.models import (
     Entry,
     Matter,
@@ -2503,12 +2506,26 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # beside it so the three surfaces cannot ask differently scoped questions
     # about one Matter — the rule `matter_intelligence` itself was written for.
     intelligence = matter_intelligence(matter, request.user)
+    # `selectors.current_action_of`, not `workflow.services.current_next_action`.
+    # The service answers "which action is open on this Matter" for the domain,
+    # which is a question about the file; a *page* asks "which action may this
+    # reader see", and a `NextAction` can be restricted below the Matter it
+    # hangs off. Read unscoped, the Järgmiseks row printed a restricted step's
+    # text and date to anybody who could open the Matter — the same leak
+    # `open_action_prefetch` closed on the register row (AUTH-003).
+    #
+    # Read before the chronology and handed to it, because the history has to
+    # know which step is open in order *not* to print it a second time, and two
+    # differently scoped answers to that on one page would be a row appearing or
+    # vanishing for reasons a reader could not see (docs/adr/0092 §8).
+    current_action = selectors.current_action_of(matter, request.user)
     items, has_more = matter_timeline(
         matter=matter,
         user=request.user,
         limit=TIMELINE_PAGE_SIZE,
         only=timeline_only,
         intelligence=intelligence,
+        current_action=current_action,
     )
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
@@ -2517,14 +2534,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     for item in items:
         if item.is_engagement:
             attach_wait_form(attach_feedback_form(item.record))
-    # `selectors.current_action_of`, not `workflow.services.current_next_action`.
-    # The service answers "which action is open on this Matter" for the domain,
-    # which is a question about the file; a *page* asks "which action may this
-    # reader see", and a `NextAction` can be restricted below the Matter it
-    # hangs off. Read unscoped, the Järgmiseks row printed a restricted step's
-    # text and date to anybody who could open the Matter — the same leak
-    # `open_action_prefetch` closed on the register row (AUTH-003).
-    current_action = selectors.current_action_of(matter, request.user)
     # The register's own `JÄRGMISEKS`, and only where no structured action
     # exists. Read here rather than in the template so the page cannot start
     # asking the database a question of its own — and read *conditionally*,
@@ -2536,6 +2545,15 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # `process_steps` twice would be two reads of the same scoped question.
     steps = process_steps(matter=matter, user=request.user, intelligence=intelligence)
     return {
+        # `Menetluse kulg` — where the external procedure stands, as one of two
+        # generic V1 rails with four honest node states. A deterministic
+        # read-only projection over `Hetkeseis`, the explicit stage history and
+        # — to choose between the two rails — `Menetlusliik` or the reviewed
+        # `Õigusakt` grouping. `None` where no rail can be chosen or where the
+        # file records nothing that places it on one, and the section is then
+        # not rendered at all (app/matters/legal_process.py, docs/adr/0092 §13).
+        "legal_process": legal_process_rail(matter=matter, user=request.user),
+        "legal_process_stopped_label": KODA_STOPPED_LABEL,
         "matter": matter,
         "current_action": current_action,
         "source_instruction": source_instruction,
@@ -4769,6 +4787,116 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
             "timeline_only": only,
+        },
+    )
+
+
+#: How many technical change rows `Kõik muudatused` shows at a time.
+#:
+#: Larger than the chronology's page, because this is a log somebody scans for a
+#: particular write rather than a history they read — and every row is one line.
+CHANGE_LOG_PAGE_SIZE = 100
+
+#: The furthest `?nihe=` this page will honour, and the reason it has a ceiling
+#: at all.
+#:
+#: `OFFSET` is a 64-bit signed integer in PostgreSQL, and `?nihe=` arrives as
+#: text from a URL somebody can type. Handing `2**63` straight to a slice earns a
+#: `DataError` from the driver and an HTTP 500 from a read-only audit page —
+#: a malformed query string is a bad request, not a server fault.
+#:
+#: A *clamp* rather than a rejection, because there is nothing on the far side
+#: of this number for anybody: a million rows is beyond the longest history this
+#: product will hold by two orders of magnitude, and a reader who reached the end
+#: of the log by pressing «Näita varasemaid» can never arrive here. Clamping
+#: shows the last honourable page; refusing would show an error to somebody who
+#: mistyped a digit.
+CHANGE_LOG_MAX_OFFSET = 1_000_000
+
+
+def _change_log_offset(raw: Any) -> int:
+    """`?nihe=` as a number this page can put in a SQL `OFFSET`.
+
+    Text that is not a number, a negative number and a number past
+    :data:`CHANGE_LOG_MAX_OFFSET` all resolve to a page that exists. Nothing
+    here raises, because every one of those is a URL a person can type and none
+    of them is a fault of the server's.
+    """
+    try:
+        offset = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return min(max(0, offset), CHANGE_LOG_MAX_OFFSET)
+
+
+@login_required
+def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Kõik muudatused` — the technical change history, read-only.
+
+    **The other half of docs/adr/0092.** `Teema käik` reads as a professional
+    case history because it projects canonical acts and leaves field-level
+    writes out; this is where those writes stay readable, so the primary history
+    was made legible without auditability being traded away (§11).
+
+    **Permission-safe by construction, not by filtering afterwards.**
+    `scope_change_events` is applied to the queryset, so a row about a child this
+    reader may not see is never in the population: it cannot be counted, cannot
+    shift the pagination and cannot appear as a gap. That is the same chokepoint
+    the chronology reads through, and the reason this page could be added at all
+    — an audit surface that needed a new authorization story would not have been
+    worth the risk of getting one wrong (AUTH-003, app/audit/visibility.py).
+
+    **And fail-closed about which families it asks for.** `change_log_event_types`
+    is an explicit vocabulary: Matter-level types somebody has classified as safe
+    at Matter visibility, plus the child families `scope_change_events` knows how
+    to scope. It exists because this is the first surface that wanted
+    «everything», and `scope_change_events` passes an *unclassified* family
+    through as Matter-level — which is right for `MATTER_CREATED` and wrong for
+    `MATTER_RELATION_ADDED`, whose summary names another Matter this reader may
+    be refused with a 404. Unknown therefore means absent here, not allowed, and
+    a family arrives on this page when somebody classifies it rather than when
+    somebody adds it (docs/adr/0092 §11).
+
+    **No payloads and no identifiers.** When, who, which kind of change, and the
+    summary the write recorded. `ChangeEvent.payload` is not rendered, no primary
+    key is printed and no `operation_id` is: an operation identifier is a fact
+    about how something was written, not something a lawyer has any use for.
+
+    `SecurityAuditEvent` is a different record with different readers and is not
+    reachable from here (master specification 16.5).
+    """
+    matter = get_visible_matter(request, pk)
+    offset = _change_log_offset(request.GET.get("nihe", 0))
+
+    # **The database does the skipping.** The queryset is sliced to this window
+    # and no other, so page four costs four hundred rows less than it used to:
+    # the previous spelling fetched `offset + 101` rows and threw the first
+    # `offset` of them away in Python, which made the tenth page ten times the
+    # work of the first for the same hundred lines on screen.
+    #
+    # One row past the page, and that row is the whole of `has_more` — a second
+    # `COUNT(*)` over a scoped population to answer a yes/no question is a query
+    # this page does not need (`timeline_page` pages the chronology the same way).
+    page = list(
+        scope_change_events(
+            ChangeEvent.objects.filter(matter=matter, event_type__in=change_log_event_types()),
+            request.user,
+        )
+        .select_related("actor")
+        .order_by("-occurred_at", "-created_at", "-id")[offset : offset + CHANGE_LOG_PAGE_SIZE + 1]
+    )
+    has_more = len(page) > CHANGE_LOG_PAGE_SIZE
+    del page[CHANGE_LOG_PAGE_SIZE:]
+    return render(
+        request,
+        "matters/matter_changes.html",
+        {
+            "matter": matter,
+            "changes": page,
+            "has_more": has_more,
+            "offset": offset,
+            "next_offset": min(offset + CHANGE_LOG_PAGE_SIZE, CHANGE_LOG_MAX_OFFSET),
+            "previous_offset": max(0, offset - CHANGE_LOG_PAGE_SIZE),
         },
     )
 

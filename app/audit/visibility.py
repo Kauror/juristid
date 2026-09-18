@@ -198,6 +198,87 @@ def child_event_types() -> frozenset[str]:
     )
 
 
+#: Event types whose subject genuinely **is** the Matter, and which are therefore
+#: safe to render to anybody the Matter itself is visible to.
+#:
+#: **An explicit vocabulary, because the default here is the wrong default for a
+#: rendering surface.** :func:`scope_change_events` lets an unclassified event
+#: type through — correctly, because for `MATTER_CREATED` and its siblings the
+#: Matter really is the subject, and the caller's own Matter filter is the whole
+#: answer. That rule is safe for a *caller that names its own vocabulary*, which
+#: every surface did until `Kõik muudatused` asked for «everything». «Everything»
+#: plus "unknown means Matter-level" is "unknown means allowed", and the day a
+#: new child family is added it becomes "unknown means leaked"
+#: (docs/adr/0092 §11, AUTH-003).
+#:
+#: So the change log renders this set, unioned with the child families
+#: :func:`child_event_types` has classified, and nothing else. A family that is
+#: neither is absent from the page until somebody decides which of the two it is.
+#: `tests/test_substantive_matter_history.py` fails if that stops being true.
+#:
+#: **Six families are deliberately not here**, and each is a concrete leak rather
+#: than a precaution:
+#:
+#: * `MATTER_RELATION_ADDED` / `MATTER_RELATION_REMOVED` — the summary names the
+#:   *other* Matter. A reader refused a RESTRICTED related Matter with a 404 could
+#:   read its title here.
+#: * `BACKGROUND_MATERIAL_ADDED` / `BACKGROUND_MATERIAL_REMOVED` — the summary
+#:   names a `Document` or a foreign `Submission`, each of which carries its own
+#:   override.
+#: * `WEBSITE_OVERVIEW_PLANNED` / `_PUBLISHED` / `_CANCELLED` /
+#:   `_LINK_CORRECTED` — `MatterWebsiteOverview` is a
+#:   `VisibilityInheritingModel` and the summary carries what it holds.
+#:
+#: None of the three has a visibility classifier in :func:`_child_families`
+#: today. Classifying them is the right fix and it is a change to *that* map, not
+#: to this one; until somebody makes it, the audit page is incomplete rather than
+#: unsafe, which is the trade this vocabulary exists to take.
+#:
+#: `TAG_ASSIGNED` and `TAG_REMOVED` are here because a `Tag` is department
+#: reference data with no visibility of its own. `IMPORT_APPLIED` and the four
+#: cutover events name an operation over the Matter, never a child.
+MATTER_LEVEL_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        ChangeEventType.MATTER_CREATED,
+        ChangeEventType.MATTER_ASSIGNED,
+        ChangeEventType.MATTER_TITLE_CHANGED,
+        ChangeEventType.MATTER_STAGE_CHANGED,
+        ChangeEventType.MATTER_TRACK_CHANGED,
+        ChangeEventType.MATTER_ORGANISATION_CHANGED,
+        ChangeEventType.MATTER_DATE_CHANGED,
+        ChangeEventType.MATTER_POSITION_UPDATED,
+        ChangeEventType.MATTER_BRIEF_SUMMARY_SET,
+        ChangeEventType.MATTER_POLICY_AREAS_CHANGED,
+        ChangeEventType.MATTER_POLICY_AREA_OTHER_SET,
+        ChangeEventType.MATTER_LEGAL_INSTRUMENTS_CHANGED,
+        ChangeEventType.MATTER_LEGAL_INSTRUMENT_OTHER_SET,
+        ChangeEventType.MATTER_VISIBILITY_CHANGED,
+        ChangeEventType.MATTER_DATA_CLASS_CHANGED,
+        ChangeEventType.MATTER_CLOSED,
+        ChangeEventType.MATTER_REOPENED,
+        ChangeEventType.MATTER_PROMOTED,
+        ChangeEventType.MATTER_HISTORICAL_CUTOVER_CLOSED,
+        ChangeEventType.MATTER_REGISTER_CUTOVER_RETIRED,
+        ChangeEventType.MATTER_REGISTER_CUTOVER_ACTIVATED,
+        ChangeEventType.MATTER_SOURCE_FIELDS_REFRESHED,
+        ChangeEventType.TAG_ASSIGNED,
+        ChangeEventType.TAG_REMOVED,
+        ChangeEventType.IMPORT_APPLIED,
+    }
+)
+
+
+def change_log_event_types() -> frozenset[str]:
+    """The whole vocabulary `Kõik muudatused` may render.
+
+    Explicitly-safe Matter-level types, plus the child families
+    :func:`_child_families` knows how to scope — and nothing else. Both halves
+    are enumerated rather than derived by exclusion, so a new event family
+    reaches that page only when somebody adds it to one of them.
+    """
+    return MATTER_LEVEL_EVENT_TYPES | child_event_types()
+
+
 def scope_change_events(events: QuerySet[ChangeEvent], user: Any) -> QuerySet[ChangeEvent]:
     """Narrow a `ChangeEvent` queryset to rows this reader may be shown.
 

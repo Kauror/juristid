@@ -646,6 +646,21 @@ def change_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
         payload={
             "from_label": getattr(previous, "label_et", None),
             "to_label": getattr(stage, "label_et", None),
+            # **The stable keys, beside the labels.** A label is what a reader
+            # saw and is the department's to reword — version 2.0 of the
+            # vocabulary reworded three of them without moving a row — so a
+            # later surface that had to answer «which stage was this» from the
+            # history could only match on a string that is allowed to change.
+            # `Menetluse kulg` is that surface, and it is why these two keys
+            # exist: an event written from here on says exactly which stage,
+            # and the labels stay because they are what the audit history reads
+            # as (docs/adr/0092 §12, app/workflow/reference_stages.py).
+            #
+            # Additive and nothing is backfilled: rows written before this
+            # carry labels alone and are resolved through the vocabulary, which
+            # is the honest reading of what they recorded.
+            "from_key": getattr(previous, "key", None),
+            "to_key": getattr(stage, "key", None),
         },
     )
     return matter
