@@ -3460,7 +3460,7 @@ def _engagement_for_correction(
 
 
 def _engagement_feedback_form(
-    engagement: MatterEngagement, data: Any = None
+    engagement: MatterEngagement, data: Any = None, files: Any = None
 ) -> EngagementFeedbackForm:
     """One round's `Lõpeta kaasamine` form, with ids nothing else can share.
 
@@ -3472,10 +3472,19 @@ def _engagement_feedback_form(
     typed when they created it — an empty box would invite them to overwrite
     their own words with nothing. A bound form ignores `initial`, so a refused
     completion comes back carrying what was typed.
+
+    **``files`` is not optional in practice, and the parameter exists because
+    leaving it out was silent.** This form declares `attachments`, and a Django
+    form bound with `data` alone never sees an upload — `cleaned_data` holds an
+    empty list, the service is handed nothing, and a PDF a member sent in is
+    discarded with no error and no row anywhere. `Lõpeta kaasamine` was the one
+    file-bearing form in the product bound without `request.FILES`. The binding
+    is done here rather than at the call site so the answer cannot go missing
+    again on a second caller.
     """
     auto_id = f"id_kaasamine_{engagement.pk}_tagasiside_%s"
     form = (
-        EngagementFeedbackForm(data, auto_id=auto_id)
+        EngagementFeedbackForm(data, files, auto_id=auto_id)
         if data is not None
         else EngagementFeedbackForm(
             initial={
@@ -3802,7 +3811,7 @@ def complete_engagement_feedback_view(
     """
     matter = get_visible_matter(request, pk)
     engagement = _engagement_for_correction(request, matter, engagement_id)
-    form = _engagement_feedback_form(engagement, request.POST)
+    form = _engagement_feedback_form(engagement, request.POST, request.FILES)
     if not form.is_valid():
         return _engagement_row(
             request, matter, engagement, feedback_form=form, feedback_open=True, status=400

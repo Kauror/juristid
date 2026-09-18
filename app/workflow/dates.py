@@ -178,6 +178,34 @@ def bounds_for(
     raise InvalidPeriod(f"Tundmatu täpsus {precision!r}.")
 
 
+def period_starts_after(value: date | None, precision: str, *, day: date) -> bool:
+    """Does the **whole** period ``value`` anchors lie after ``day``?
+
+    The question a surface asks when it has to know that something definitely has
+    not happened yet. It is the mirror of the lateness rule in docs/adr/0079 §4 —
+    that one asks whether a period has wholly *ended*, this one whether it has
+    wholly *begun* — and it is stated here, once, for the same reason: four
+    copies of an anchor comparison is how the same period came to sort into two
+    places.
+
+    **A broad period is not evidence of the future.** *september 2026* read on 18
+    September covers today, and *2026* covers most of the year behind it; neither
+    tells anybody that the thing it describes is still to come. Only a period
+    whose first day is later than ``day`` does, so that is the comparison — and
+    it is made through :func:`period_bounds` rather than against the stored
+    number, so a row whose anchor was not normalised is still read as the period
+    it stands for.
+
+    An unknown date is not in the future either. It is unknown, which is a fact
+    the product keeps rather than resolves (docs/adr/0079 §2), so ``None``
+    answers ``False``.
+    """
+    if value is None:
+        return False
+    start, _end = period_bounds(value, precision)
+    return start > day
+
+
 def format_at_precision(value: date | None, precision: str) -> str:
     """Write a date the way it was actually known.
 
