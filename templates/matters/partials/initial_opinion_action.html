@@ -51,6 +51,14 @@ the save refuses rather than quietly dropping one of two things somebody wrote
     {% if opinion_action_form.prepare_by.errors %}
       <span class="field__error" id="{{ opinion_action_form.prepare_by.auto_id }}_error">{{ opinion_action_form.prepare_by.errors|first }}</span>
     {% endif %}
-    <p class="nextpanel__hint">{{ opinion_action_form.prepare_by.help_text }}</p>
+    {% comment %}
+      The id pairs with the `_error` one above: Django puts both into the
+      control's `aria-describedby`, and renders neither. The hint keeps its own
+      element and its own class — what was missing was only the name the
+      pointer beside the box already uses.
+    {% endcomment %}
+    <p class="nextpanel__hint"
+       id="{{ opinion_action_form.prepare_by.auto_id }}_helptext"
+       >{{ opinion_action_form.prepare_by.help_text }}</p>
   </div>
 </div>

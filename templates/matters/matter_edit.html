@@ -70,6 +70,15 @@
       <label class="field">
         <span class="field__label">{{ form.brief_summary.label }}</span>
         {{ form.brief_summary }}
+        {% comment %}
+          `MatterEditForm.brief_summary` declares `help_text`, so Django puts
+          `aria-describedby="id_brief_summary_helptext"` on the textarea whether
+          or not anything renders it. Nothing did: the sentence that says what
+          this box is for reached nobody, and the pointer beside the control led
+          to an element that was not in the document.
+        {% endcomment %}
+        <span class="field__help"
+              id="{{ form.brief_summary.auto_id }}_helptext">{{ form.brief_summary.help_text }}</span>
         {% if form.brief_summary.errors %}
           <span class="field__error">{{ form.brief_summary.errors|first }}</span>
         {% endif %}
@@ -423,7 +432,8 @@
           control cannot show: restricting a Matter takes it away from
           colleagues who can see it today.
         {% endcomment %}
-        <span class="field__help">{{ form.visibility.help_text }}</span>
+        <span class="field__help"
+              id="{{ form.visibility.auto_id }}_helptext">{{ form.visibility.help_text }}</span>
         {% if form.visibility.errors %}
           <span class="field__error">{{ form.visibility.errors|first }}</span>
         {% endif %}

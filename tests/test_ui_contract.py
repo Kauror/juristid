@@ -315,6 +315,54 @@ def test_every_form_control_in_a_template_has_a_label() -> None:
     assert not offenders, "form control with no accessible name:\n" + "\n".join(offenders)
 
 
+#: `{{ something.help_text }}` — a bound field's own help text, rendered by a
+#: template. The dotted prefix is the field, and it is captured so the id can be
+#: required to name the same one.
+HELP_TEXT_RENDER = re.compile(r"\{\{\s*([A-Za-z_][\w.]*)\.help_text\s*\}\}")
+
+#: How far back the element carrying the id may be. Long enough for the id to
+#: sit on the previous line with an attribute or two between; short enough that
+#: an id belonging to a *different* field further up cannot satisfy it — and it
+#: could not anyway, because the prefix has to match.
+_HELP_ID_WINDOW = 400
+
+
+def test_every_rendered_help_text_carries_the_id_django_points_at() -> None:
+    """A field with `help_text` already has `aria-describedby` on its control.
+
+    Django's `BoundField` puts `aria-describedby="<auto_id>_helptext"` on the
+    widget of every field that declares `help_text`, whether or not anything
+    renders the sentence. So a template that prints the help text and gives the
+    element no id produces a control pointing at something that is not in the
+    document: a sighted reader gets the sentence, a screen-reader user gets a
+    dangling reference and a box with no description at all.
+
+    Found on `published_on` in the `Ülevaade / uudis` panel and then on six more
+    fields across five templates, none of which was doing anything unusual —
+    the shape is simply invisible unless somebody follows the pointer.
+
+    This is the half that can be checked without rendering. The other half — a
+    field whose help element is not rendered *anywhere*, which is what
+    `published_on` and `brief_summary` were — needs a response, and lives in
+    `tests/test_form_help_accessibility.py`, because this module is deliberately
+    database-free and browser-free.
+    """
+    offenders = []
+    for template in TEMPLATES:
+        text = template.read_text(encoding="utf-8")
+        for match in HELP_TEXT_RENDER.finditer(text):
+            field = match.group(1)
+            wanted = f'id="{{{{ {field}.auto_id }}}}_helptext"'
+            before = text[max(0, match.start() - _HELP_ID_WINDOW) : match.start()]
+            if wanted in before:
+                continue
+            offenders.append(
+                f"{template.relative_to(TEMPLATE_DIR)}: {{{{ {field}.help_text }}}} is "
+                f"rendered without {wanted} on the element carrying it"
+            )
+    assert not offenders, "help text nothing can be described by:\n" + "\n".join(offenders)
+
+
 def test_no_template_renders_the_same_id_twice() -> None:
     """Duplicate ids break every `for`, `aria-labelledby` and HTMX target."""
     for template in TEMPLATES:
