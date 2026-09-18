@@ -1962,6 +1962,16 @@ th[aria-sort="descending"] .colhead__mark::after {
   line-height: var(--typography-line-body);
   color: var(--text-body);
   max-width: 76ch;
+  /* A lawyer recording a call pastes the link they were sent, and an EUR-Lex
+     address with its tracking parameters is one 179-character word. Without
+     this the token is the element's minimum content width, every ancestor is
+     `overflow-x: visible`, and the whole page scrolls sideways — 505px of it
+     at 375px, measured on one note. `anywhere` rather than `break-word`
+     because only `anywhere` shrinks that minimum: `break-word` would wrap the
+     line and still hand the layout the unbroken width to size against.
+     Ordinary prose is untouched — a break inside a word is the last resort,
+     taken only when the word cannot fit on a line of its own. */
+  overflow-wrap: anywhere;
 }
 
 .richtext p {
