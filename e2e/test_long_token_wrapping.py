@@ -71,11 +71,35 @@ ROUNDING = 1
 
 
 def _file_a_note(page, text: str) -> None:
-    """Write one note through the real composer, the way a lawyer would."""
+    """Write one note through the real composer, the way a lawyer would.
+
+    **The wait is on the note, not on the network.** Filing two notes in a row
+    is the whole point of the fixture below, and `networkidle` alone does not
+    survive it: the save swaps `#teema-vaade` wholesale, so the idle that
+    follows the click can be the idle *before* the replacement lands. The next
+    `open_composer` then fills a composer that is about to be thrown away and
+    its submit posts nothing — leaving the page with the first note on it and
+    the second silently missing. Measured at roughly one run in three, on this
+    module's own branch before any of it was integrated, and it is the reason
+    the 375px test intermittently reported that the pasted link "is not on the
+    page".
+
+    Waiting until the text is actually rendered is the only signal that means
+    the note exists, so that is what is waited for.
+    """
     open_composer(page)
     page.locator("#lisa-marge .composer__body").fill(text)
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
+    # The distinctive tail of what was just filed, looked for in the authored
+    # bodies themselves. A prefix would match the composer's own value while
+    # the save is still on the wire.
+    marker = text.split(" ")[-1]
+    page.wait_for_function(
+        """marker => [...document.querySelectorAll('.richtext')]
+               .some(el => (el.textContent || '').includes(marker))""",
+        arg=marker,
+    )
 
 
 def _matter_carrying_the_paste(page, base_url: str) -> str:
