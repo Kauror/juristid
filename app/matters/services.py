@@ -1822,6 +1822,7 @@ def update_engagement(
     occurred_on_precision: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
     feedback_received: Any = _UNSET,
+    response_count: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterEngagement:
@@ -1832,12 +1833,18 @@ def update_engagement(
     into the audit table would turn the history into a second, worse copy of
     the notes themselves (brief 26).
 
-    **`_UNSET` is what protects `feedback_deadline`.** Every caller that
-    existed before the column did — the register enrichment, the opinion
-    mapping refresh, the Teema `Muuda` form — names the fields it is correcting
+    **`_UNSET` is what protects `feedback_deadline` and `response_count`.**
+    Every caller that existed before a column did — the register enrichment, the
+    opinion mapping refresh, the importer — names the fields it is correcting
     and no others, so a correction to a title or a date cannot quietly clear a
-    reply-by date somebody typed. An explicit ``None`` still clears it, which is
-    how a wrong deadline is removed rather than only overwritten.
+    reply-by date or a response count somebody typed. An explicit ``None`` still
+    clears it, which is how a wrong value is removed rather than only
+    overwritten, and it is how `Muuda` answers an emptied box.
+
+    ``response_count`` therefore has three readings and they are three different
+    things: not named at all leaves what is stored, ``None`` says nobody counted,
+    and ``0`` says nobody answered. The last two are distinct facts about a
+    consultation and no layer here collapses them (docs/adr/0086 §2, QA-03).
 
     **The row is locked and re-read before anything is decided**, and the
     comparison that produces `changed` is made against *that* row rather than
@@ -1891,6 +1898,12 @@ def update_engagement(
         proposed["note"] = (note or "").strip()
     if feedback_received is not _UNSET:
         proposed["feedback_received"] = (feedback_received or "").strip()
+    # The same validator `add_engagement` writes through, so a count cannot be
+    # corrected into a shape it could not have been created in — and so «7.2»,
+    # «-1» and «kolm» are one sentence rather than three different errors
+    # depending on which door they arrived at (`_engagement_response_count`).
+    if response_count is not _UNSET:
+        proposed["response_count"] = _engagement_response_count(response_count)
     if occurred_on is not _UNSET:
         proposed["occurred_on"] = occurred_on
     if feedback_deadline is not _UNSET:
@@ -1960,6 +1973,15 @@ def update_engagement(
         # correction removed the deadline the wait hung off, and the history has
         # to say that the completed wait stopped existing.
         payload["feedback_wait_reopened"] = True
+    # **No `response_count_from`/`_to`, deliberately.** `ENGAGEMENT_ADDED` files
+    # this column as `has_response_count` — «whether it was counted, not what the
+    # count was» — on brief 26's reasoning that the number belongs on the record,
+    # where a reader can correct it. That reasoning was a promise this product
+    # could not keep until `Muuda` grew the box (QA-03); keeping the number out
+    # of the correction payload now is what makes the two halves of one column's
+    # history follow one convention instead of the correction row disclosing what
+    # the creation row withheld. `fields` names it, which is what says a person
+    # changed it and when.
     if "feedback_deadline" in changed:
         payload["feedback_deadline_from"] = (
             locked.feedback_deadline.isoformat() if locked.feedback_deadline else None
@@ -2001,6 +2023,7 @@ def correct_engagement(
     occurred_on_precision: Any = _UNSET,
     feedback_deadline: Any = _UNSET,
     feedback_received: Any = _UNSET,
+    response_count: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterEngagement:
@@ -2052,6 +2075,7 @@ def correct_engagement(
         occurred_on_precision=occurred_on_precision,
         feedback_deadline=feedback_deadline,
         feedback_received=feedback_received,
+        response_count=response_count,
         actor=actor,
         expected_revision=expected_revision,
     )

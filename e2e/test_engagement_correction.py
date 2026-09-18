@@ -76,7 +76,9 @@ DATE_UNKNOWN = "Kuupäev teadmata"
 REPLY_BY_AHEAD = (dt.date.today() + dt.timedelta(days=21)).strftime("%d.%m.%Y")
 
 
-def _file_an_engagement(page, *, occurred_on: str = HELD_ON, reply_by: str = "") -> None:
+def _file_an_engagement(
+    page, *, occurred_on: str = HELD_ON, reply_by: str = "", response_count: str = ""
+) -> None:
     """Record one consultation through the real `+ Kaasamine` panel.
 
     ``reply_by`` defaults to **empty**, which is now simply what the panel does:
@@ -88,6 +90,8 @@ def _file_an_engagement(page, *, occurred_on: str = HELD_ON, reply_by: str = "")
     open_add_panel(page, "lisa-kaasamine")
     page.locator("#lisa-kaasamine input[name=audience]").fill(AUDIENCE)
     page.locator("#lisa-kaasamine input[name=occurred_on]").fill(occurred_on)
+    if response_count:
+        page.locator("#lisa-kaasamine input[name=response_count]").fill(response_count)
     with page.expect_response(
         lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
     ) as caught:
@@ -207,6 +211,81 @@ def test_an_emptied_date_reads_as_kuupaev_teadmata(page, base_url):
     page.reload()
     page.wait_for_load_state("networkidle")
     expect(_row(page)).to_contain_text(DATE_UNKNOWN)
+
+
+def test_a_response_count_typed_on_the_panel_can_be_corrected_afterwards(page, base_url):
+    """QA-03, in the browser it was found in.
+
+    `+ Kaasamine` takes `Vastuseid`, the chronology prints it, and until this
+    round the editor had no box for it — so a lawyer who typed `7` where they
+    meant `8` had no route back out of the number. The whole ladder in one pass,
+    because the three states are only interesting against each other:
+
+    * the editor opens holding what was filed;
+    * `7 -> 8` saves and the row says so;
+    * `8 -> 0` is a **zero**, not a blank — «keegi ei vastanud» is a real
+      outcome and the box hands it back as `0`;
+    * an emptied box clears the count, which is how somebody stops standing
+      behind one, and the row then claims no count at all.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Kaasamise paranduse katse: vastuseid"))
+    _file_an_engagement(page, response_count="7")
+
+    expect(_row(page)).to_contain_text("Vastuseid 7")
+
+    form = _open_the_editor(page)
+    count = form.locator("input[name=response_count]")
+    assert count.input_value() == "7", "the editor did not open holding the filed count"
+
+    count.fill("8")
+    saved = _save(page)
+    assert saved.status == 200, f"the correction was refused: {saved.status}"
+    page.wait_for_load_state("networkidle")
+    expect(_row(page)).to_contain_text("Vastuseid 8")
+
+    # Zero is a number and stays one, in the row and in the box it reopens in.
+    form = _open_the_editor(page)
+    form.locator("input[name=response_count]").fill("0")
+    assert _save(page).status == 200
+    page.wait_for_load_state("networkidle")
+    expect(_row(page)).to_contain_text("Vastuseid 0")
+
+    form = _open_the_editor(page)
+    assert form.locator("input[name=response_count]").input_value() == "0", (
+        "an explicit zero opened as a blank box"
+    )
+
+    # And empty means «nobody counted», which the row then states by saying
+    # nothing about a count.
+    form.locator("input[name=response_count]").fill("")
+    assert _save(page).status == 200
+    page.wait_for_load_state("networkidle")
+    expect(_row(page)).not_to_contain_text("Vastuseid")
+
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    expect(_row(page)).not_to_contain_text("Vastuseid")
+
+
+def test_a_refused_response_count_keeps_the_stored_one(page, base_url):
+    """A negative count is refused beside its own box, and 7 is still 7."""
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Kaasamise paranduse katse: vigane arv"))
+    _file_an_engagement(page, response_count="7")
+
+    form = _open_the_editor(page)
+    form.locator("input[name=response_count]").fill("-1")
+    assert _save(page).status == 400, "a negative response count was accepted"
+
+    form = page.locator(".uxtl__editform")
+    expect(form).to_have_count(1)
+    # What was typed is still in the box, and the record is untouched behind it.
+    assert form.locator("input[name=response_count]").input_value() == "-1"
+
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    expect(_row(page)).to_contain_text("Vastuseid 7")
 
 
 def test_tuhista_leaves_the_kaasamine_exactly_as_it_was(page, base_url):

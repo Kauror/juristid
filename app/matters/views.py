@@ -3379,6 +3379,11 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             feedback_received=form.cleaned_data.get("feedback_received") or "",
+            # Named here for the reason this door exists to serve: the form it
+            # posts now carries `Vastuseid`, and a route that rendered a box and
+            # dropped what was typed into it would be the defect QA-03 fixed,
+            # one surface along.
+            response_count=form.cleaned_data.get("response_count"),
             actor=request.user,
         )
     except DomainError:
@@ -3433,6 +3438,11 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
             # would invite somebody to re-save an invented day
             # (docs/adr/0079 §2, docs/adr/0086 §1).
             "occurred_on": (None if engagement.has_approximate_date else engagement.occurred_on),
+            # `Vastuseid`, as stored and only as stored. A row counted at zero
+            # opens holding `0` and a row nobody counted opens blank, because
+            # those are two different facts and a blank box defaulted to zero
+            # would invent the second one on somebody's behalf (QA-03).
+            "response_count": engagement.response_count,
             "feedback_deadline": engagement.feedback_deadline,
             "feedback_received": engagement.feedback_received,
             "revision": engagement_revision_token(engagement),
@@ -3696,6 +3706,14 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             feedback_received=form.cleaned_data.get("feedback_received") or "",
+            # `Vastuseid`, named on every save for the same reason both dates
+            # are: naming a field is how this form says «I am the editor of this
+            # value», and it is the only way an emptied box can clear a count
+            # somebody no longer stands behind. `None` here is «keegi ei
+            # lugenud» and `0` is «keegi ei vastanud» — the service keeps them
+            # apart, and `_UNSET` still protects every caller that names neither
+            # (`update_engagement`, QA-03).
+            response_count=form.cleaned_data.get("response_count"),
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
         )
