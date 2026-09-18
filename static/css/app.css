@@ -2845,6 +2845,14 @@ fieldset.field > legend {
   margin-top: var(--spacing-15);
   font-size: var(--typography-size-row);
   line-height: 1.5;
+  /* QA-10b, and the one of the five that was **not** taking the page sideways.
+     The excerpt is drawn from authored text, so it carries whatever address
+     somebody pasted; `.card--tight` around it is `overflow: hidden`, so the
+     document measured clean at every width while 678px of the excerpt at 375px
+     was simply clipped — no scrollbar, no ellipsis, and no way for the reader
+     to see the rest of the sentence they searched for. The document was never
+     the symptom here; the lost text was. */
+  overflow-wrap: anywhere;
 }
 
 .result__snippet mark {
@@ -11236,6 +11244,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-weight: var(--typography-weight-semibold);
   line-height: 1.35;
   color: var(--text-primary);
+  /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
+     sweep did not reach. A lawyer writes the step up with the address they
+     were sent, and the milestone headline carries it: measured at 522px of horizontal document
+     scroll at 375px on one record, 477px at 420 and 149px at 768. `anywhere` rather
+     than `break-word` for the reason `.richtext` gives — only `anywhere`
+     shrinks the element's min-content width, which is what the layout sizes
+     against. Ordinary prose is untouched: a break inside a word is the last
+     resort. */
+  overflow-wrap: anywhere;
 }
 
 #teema-vaade-wrap .uxtl__msdate {
@@ -11251,6 +11268,16 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-body);
+  /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
+     sweep did not reach. A lawyer writes the step up with the address they
+     were sent, and the second line — a `Väline seisukoht` summary, a `Töövõit` title, a
+     jõustumine description carries it: measured at 505px of horizontal document
+     scroll at 375px on one record, 460px at 420 and 132px at 768. `anywhere` rather
+     than `break-word` for the reason `.richtext` gives — only `anywhere`
+     shrinks the element's min-content width, which is what the layout sizes
+     against. Ordinary prose is untouched: a break inside a word is the last
+     resort. */
+  overflow-wrap: anywhere;
 }
 
 /* `Juristi märkus` — this office's own reading of somebody else's position,
@@ -11297,6 +11324,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-body);
+  /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
+     sweep did not reach. A lawyer writes the step up with the address they
+     were sent, and `Juristi märkus`, the authored line QA-05 gave a surface of its own carries it: measured at 517px of horizontal document
+     scroll at 375px on one record, 472px at 420 and 144px at 768. `anywhere` rather
+     than `break-word` for the reason `.richtext` gives — only `anywhere`
+     shrinks the element's min-content width, which is what the layout sizes
+     against. Ordinary prose is untouched: a break inside a word is the last
+     resort. */
+  overflow-wrap: anywhere;
 }
 
 /* The label, quiet and inline, so the sentence after it starts on the same line
@@ -11394,6 +11430,28 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 12.5px;
   line-height: 1.4;
   color: var(--text-body);
+}
+
+/* The step's own sentence inside the pill, and the sixth surface QA-10b found.
+ *
+ * It had **no rule at all** until now: the pill styled itself and the text
+ * inherited. That was fine until somebody wrote a step up with the address they
+ * were sent — `.uxtl__next` is `inline-flex`, so this span is a flex item whose
+ * automatic minimum size is its content, and a 179-character word made that
+ * minimum 802px. Measured at 493px of horizontal document scroll at 375px,
+ * 448px at 420 and 120px at 768, on a page whose `.curact__task` copy of the
+ * same sentence had already been taught to wrap — which is why fixing only the
+ * `Praegu` card left the page still moving sideways.
+ *
+ * `min-width: 0` was written here first and then taken out again, because it
+ * turned out to be redundant: a flex item's automatic minimum size *is* its
+ * min-content size, and `overflow-wrap: anywhere` is precisely the thing that
+ * shrinks that. Verified by removing it and re-measuring — the page stayed at
+ * 375px — and left out rather than kept «to be safe», because an extra
+ * declaration on a flex item is a layout change looking for an unrelated
+ * regression to cause. */
+#teema-vaade-wrap .uxtl__next .uxtl__nexttext {
+  overflow-wrap: anywhere;
 }
 
 #teema-vaade-wrap .uxtl__next .uxtl__nextmode {
@@ -11548,6 +11606,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-2);
   margin: 0 0 var(--spacing-2);
+  /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
+     sweep did not reach. A lawyer writes the step up with the address they
+     were sent, and the open `Järgmiseks` step carries it: measured at 493px of horizontal document
+     scroll at 375px on one record, 448px at 420 and 120px at 768. `anywhere` rather
+     than `break-word` for the reason `.richtext` gives — only `anywhere`
+     shrinks the element's min-content width, which is what the layout sizes
+     against. Ordinary prose is untouched: a break inside a word is the last
+     resort. */
+  overflow-wrap: anywhere;
 }
 
 .curact__text {
