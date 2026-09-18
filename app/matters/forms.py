@@ -6096,6 +6096,59 @@ class ProceduralDevelopmentEditForm(forms.Form):
         return cleaned
 
 
+class DevelopmentEvidenceForm(forms.Form):
+    """`+ Lisa tõend` on a recorded `Menetluse areng`. Files, and nothing else.
+
+    **One question, because only one thing is being added.** A ministry sends the
+    revised draft a fortnight after the step was written up, and the file learns
+    about another paper that supports a development it already records correctly.
+    Nothing about the record is in question, so nothing about the record is on
+    this form: no `Sündmus`, no period, no `Juristi märkus`, and no `Hetkeseis` —
+    every one of those is a different act with a different audit trail, and the
+    surface that corrects them is `Muuda` (`ProceduralDevelopmentEditForm`).
+
+    **Deliberately not a field on that correction form either**, which is the
+    rule `ExternalPositionEditForm` states and this is the other half of: a
+    correction form that also captured bytes would make «what changed»
+    unanswerable from one event, and a correction that re-posted the files could
+    silently detach one. Keeping them apart is what lets the audit say which act
+    happened (docs/adr/0084 §8).
+
+    **At least one file, and the refusal says so.** `workspace_attachments` is
+    `required=False` because on every other panel the files are optional beside a
+    record being written. Here they *are* the record being written, and a save
+    with an empty picker is a person who meant to choose something — an operation
+    that quietly wrote nothing and answered 200 would be the page telling them it
+    worked.
+
+    ``record`` is the development this form belongs to, read for one thing: a
+    chronology may show a dozen of these and Django would give every picker the
+    same `id`, which is enough to make a `<label for>` reach the wrong control —
+    the collision `workspace_attachments` exists to warn about.
+    """
+
+    use_required_attribute = False
+
+    attachments = workspace_attachments("id_menetluse_areng_toend_failid")
+
+    def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
+        self.record = record
+        super().__init__(*args, **kwargs)
+        if record is not None:
+            # `workspace_attachments` puts its id on the *widget*, so that is
+            # where the per-record one has to go too — `auto_id` would not reach
+            # it (`ExternalPositionEditForm`).
+            cast(Any, self.fields["attachments"].widget).attrs["id"] = (
+                f"id_menetluse_areng_{record.pk}_toend_failid"
+            )
+
+    def clean_attachments(self) -> list[Any]:
+        files = self.cleaned_data.get("attachments") or []
+        if not files:
+            raise forms.ValidationError("Vali vähemalt üks fail.")
+        return list(files)
+
+
 class CompactClosureForm(ChipChoices, forms.Form):
     """`+ Lõpeta teema` — two questions, and nothing invented from them.
 

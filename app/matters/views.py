@@ -99,6 +99,7 @@ from app.matters.forms import (
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
     ComposerForm,
+    DevelopmentEvidenceForm,
     EngagementFeedbackForm,
     EngagementForm,
     EngagementWaitForm,
@@ -6515,11 +6516,12 @@ def _development_row(
     development: MatterProceduralDevelopment,
     *,
     form: ProceduralDevelopmentEditForm | None = None,
+    evidence_form: DevelopmentEvidenceForm | None = None,
     error: str = "",
     conflict: MatterProceduralDevelopment | None = None,
     status: int = 200,
 ) -> HttpResponse:
-    """The corrected development back in place, or the form that could not save.
+    """The development back in place, the form that could not save, or the picker.
 
     One renderer for both, because they swap the same element: `Muuda` replaces
     the milestone's text region with the form, and every answer replaces it
@@ -6534,6 +6536,16 @@ def _development_row(
     worded differently from the way it will read on the next page load — and so
     that `Juristi märkus` keeps its own label and its own attribution after a
     correction exactly as it has after an initial save (docs/adr/0091 §4).
+
+    ``evidence_form`` is the third thing this region can hold: the `+ Lisa tõend`
+    picker. It is a separate argument rather than a mode flag because the two
+    forms are two acts — one changes what the row says and one adds a paper to
+    what it says — and a single «the row is in edit mode» would be the shape in
+    which somebody later gave the correction an upload field. Only one of them is
+    ever passed; they replace the same region, so a row cannot be correcting and
+    capturing at once. A successful capture does **not** come back through here:
+    the file it added is rendered by the chronology around this element, so that
+    answer is the whole column (`add_development_evidence_view`).
     """
     return render(
         request,
@@ -6543,6 +6555,7 @@ def _development_row(
             "development": development,
             "milestone": development_milestone(development),
             "development_edit_form": form,
+            "development_evidence_form": evidence_form,
             "development_edit_error": error,
             "development_conflict_milestone": (
                 development_milestone(conflict) if conflict is not None else None
@@ -6636,6 +6649,101 @@ def update_development_view(request: HttpRequest, pk: Any, development_id: Any) 
         )
 
     return _development_row(request, matter, corrected)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def add_development_evidence_view(
+    request: HttpRequest, pk: Any, development_id: Any
+) -> HttpResponse:
+    """`+ Lisa tõend` — another paper supporting a step the file already records.
+
+    GET opens the picker in the chronology row; POST captures what was chosen.
+    One route, because they are one interaction and the second is only reachable
+    from the first — the shape `update_development_view` beside it already uses,
+    and the picker replaces the same region, so `Muuda` and this cannot both be
+    open on one row.
+
+    **It adds, and it does not touch the record.** `Sündmus`, the period,
+    `Juristi märkus`, the `Hetkeseis` the original save may have moved and the
+    `Järgmiseks` it may have opened are all left exactly as that operation left
+    them; the files the development already carries are not re-posted, so nothing
+    here can detach one or supersede an immutable `DocumentVersion`. This is not
+    `Muuda` widened — it is the act `Muuda` deliberately does not perform
+    (`ProceduralDevelopmentEditForm`, docs/adr/0084 §8, docs/adr/0091 §5.4).
+
+    **The answer is the whole column, not the row**, and that is the one place
+    this differs from the correction beside it. A correction changes words inside
+    the row and the row is the honest swap target; an addition puts a *file*
+    under the row, and the file list is rendered by the chronology around it
+    (`timeline_items.html`, `timeline._with_linked_files`). Coming back with the
+    row alone would answer a successful upload with a row that looks exactly as
+    it did before. So this returns the re-rendered column, which is what every
+    other addition on this workspace returns and what makes the new file appear
+    where a reader is already looking.
+
+    A refusal takes the same route for the same reason, through
+    `_workspace_refusal`: the column comes back with the sentence above it. There
+    is nothing to preserve in the form — a browser will not repopulate a file
+    picker whatever the server sends — so the usual «bring their words back»
+    concern does not arise here, and a refusal that left a stale picker open
+    would be the page suggesting the choice survived.
+
+    **Every rule is the service's**, taken under the Matter's row lock rather
+    than decided by whether this page drew a button: a closed Matter, a
+    development that is not on this Teema, and an upload the evidence rules
+    refuse are all answered inside `add_development_evidence`. The browser that
+    posts may be holding a page from before somebody else closed the file.
+
+    The development is resolved through its **own** `visible_to` scope before
+    anything else, so a restricted step inside a Matter this reader may see is
+    indistinguishable here from one that does not exist — the same answer, in the
+    same shape, to a GET of the picker and to a POST guessing the UUID
+    (AUTH-003, `_development_for_correction`).
+    """
+    matter = get_visible_matter(request, pk)
+    development = _development_for_correction(request, matter, development_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving the picker is a re-read rather than a client-side
+        # hide, exactly as it is for the correction: the row is rendered from
+        # what the record actually says.
+        if request.GET.get(ENGAGEMENT_READ_PARAM) == ENGAGEMENT_READ_VALUE:
+            return _development_row(request, matter, development)
+        return _development_row(
+            request,
+            matter,
+            development,
+            evidence_form=DevelopmentEvidenceForm(record=development),
+        )
+
+    form = DevelopmentEvidenceForm(request.POST, request.FILES, record=development)
+    if not form.is_valid():
+        return _workspace_refusal(
+            request,
+            matter,
+            key="development_evidence_form",
+            form=form,
+            # The field's own sentence, because this form has exactly one field
+            # and a bare «parandage vead» over an empty picker says nothing a
+            # person can act on. `_workspace_refusal` puts it above the column,
+            # which is where a refusal no panel owns belongs.
+            error=str(next(iter(form.errors.get("attachments", [])), "")),
+        )
+
+    try:
+        workspace.add_development_evidence(
+            development=development,
+            author=request.user,
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="development_evidence_form", form=form, error=str(error)
+        )
+
+    return _render_overview(request, matter)
 
 
 @login_required
