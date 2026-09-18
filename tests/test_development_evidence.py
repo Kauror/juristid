@@ -512,6 +512,56 @@ def test_k_evidence_added_later_is_no_more_visible_than_the_step_it_supports(
     assert all(item.record != hidden for item in page)
 
 
+def test_k_the_document_row_itself_is_at_matter_visibility_either_way(
+    normal_matter, specialist, reader
+):
+    """A pre-existing gap, pinned here so this feature is not read as closing it.
+
+    `capture_supporting_evidence` sets no `visibility_override` on the `Document`
+    it creates, for any of the seven record kinds that use it. So the *link* to a
+    restricted development is hidden and the chronology row is gone (above), but
+    the document itself is listed in `Dokumendid` at the Matter's own visibility,
+    by its filename, to somebody who may not see the step it supports.
+
+    **This route changes nothing about that**, which is the whole point of
+    asserting it on both files at once: evidence added later is at exactly the
+    visibility evidence added with the step is at, no looser and no tighter. A
+    reader who takes the section above for «the contract is fully honoured» would
+    be wrong, and would be wrong about `+ Menetluse areng`, `+ Kaasamine` and
+    `+ Väline seisukoht` in the same breath.
+
+    Closing it is a real decision with real consequences — whether a document
+    inherits a child's override, and what happens when that override is later
+    relaxed — and it belongs to the evidence architecture rather than to this
+    surface. Recorded here rather than quietly fixed, so the next person to look
+    finds the measurement and not a surprise.
+    """
+    hidden = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Salajane samm",
+        occurred_on=_days_ago(2),
+        uploads=[_pdf(FIRST_FILE)],
+    ).record
+    hidden.visibility_override = Visibility.RESTRICTED
+    hidden.save(update_fields=["visibility_override"])
+
+    add_development_evidence(development=hidden, author=specialist, uploads=[_pdf(LATER_FILE)])
+
+    titles = set(
+        Document.objects.visible_to(reader)
+        .filter(matter=normal_matter)
+        .values_list("title", flat=True)
+    )
+    # Both, or neither — never the later one differing from the one that arrived
+    # with the step.
+    assert (FIRST_FILE in titles) == (LATER_FILE in titles)
+    assert {FIRST_FILE, LATER_FILE} <= titles
+    assert (
+        not Document.objects.filter(matter=normal_matter).exclude(visibility_override="").exists()
+    )
+
+
 def test_k_the_link_is_visible_to_somebody_who_may_see_the_step(
     normal_matter, development, specialist, other_specialist
 ):
