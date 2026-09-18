@@ -945,8 +945,18 @@ def _coined_subject() -> str:
     run's question. Two distinctive subject words, so it qualifies on
     `W_TITLE_STRONG` under the engine exactly as it stands: no weight, cap or
     threshold is touched to make this deterministic (docs/adr/0087 §2).
+
+    **Letters only, and that is load-bearing.** `uuid4().hex` on its own is not
+    safe here: `app/related_materials/text.py` splits a word at its digits, so
+    a token ending in one leaves «seaduse» standing alone — a generic word the
+    subject filter drops — and the title then carries a *single* subject term,
+    which is `W_TITLE_TERM` 1.5 against a threshold of 3.5. The first CI run
+    drew such a token and both restore tests failed for a reason that had
+    nothing to do with a restore. Mapping the digits onto letters keeps the
+    token unique and keeps the term count at two whatever is drawn.
     """
-    return f"Katseline {uuid4().hex[:8]}seaduse muutmise eelnõu"
+    token = uuid4().hex[:10].translate(str.maketrans("0123456789", "gjklmnprst"))
+    return f"Katselise {token}seaduse muutmise eelnõu"
 
 
 def _draft_requests(page) -> list[str]:
