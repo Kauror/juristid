@@ -256,6 +256,32 @@ urlpatterns = [
         views.update_development_view,
         name="update_development",
     ),
+    # `+ Lisa tõend` on a filed `Menetluse areng`: another paper supporting a step
+    # the file already records, arriving after the step was written up.
+    #
+    # **`lisa-` in the final segment, and not under the Teema's own `lisa/`.** It
+    # is new business content, which is what `lisa/` says everywhere else on this
+    # module — but it is new content on *this child record* rather than on the
+    # Matter at large, so it is addressed the way the correction above is, with
+    # the Matter in the path so the view can prove the development belongs to it
+    # before it reads either. The word that differs between the two addresses is
+    # the whole difference between the acts (app/matters/views.py,
+    # `add_development_evidence_view`).
+    #
+    # One address for the form and the save, like every other pair on this
+    # module: there is no state between a GET that opens a picker and the POST
+    # that sends it, so a second route would only be a second place for the
+    # authorization to be written out.
+    #
+    # There is deliberately **no remove route**, on an open Matter or a closed
+    # one. Evidence is additive and immutable: a file attached to the wrong step
+    # is answered by attaching it to the right one, because what the file
+    # recorded and who recorded it is part of the file (docs/adr/0084 §8).
+    path(
+        "teemad/<uuid:pk>/menetluse-areng/<uuid:development_id>/lisa-toend/",
+        views.add_development_evidence_view,
+        name="add_development_evidence",
+    ),
     # `+ Menetluse link`, and the correction to one. The same pair, spelled the
     # same way and for the same reasons, as the two directly above: the addition
     # is under `lisa/` because it is new business content on the Matter, and the

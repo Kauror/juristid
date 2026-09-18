@@ -783,6 +783,89 @@ def add_procedural_development(
 
 
 @transaction.atomic
+def add_development_evidence(
+    *,
+    development: Any,
+    author: Any,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Lisa tõend` — more evidence for a step the file already records.
+
+    **Additive, and that is the whole of it.** A ministry sends the revised draft
+    a fortnight after the development was written up; a colleague finds the
+    committee's text in the mailbox. The step itself was recorded correctly and
+    is not being corrected — the file simply learns about another paper that
+    supports it. So this writes a `Document`, its immutable `DocumentVersion` and
+    the `DocumentLink` naming which step these bytes evidence, and touches
+    nothing else on the record: not `Sündmus`, not the period, not
+    `Juristi märkus`, not `Matter.stage`, and not the `NextAction` the original
+    save may have opened. Those are separately correctable facts with their own
+    surfaces (`correct_procedural_development`, docs/adr/0091 §5.4).
+
+    **Never a replacement and never a removal.** The files the development
+    already carries are not read here, so nothing can detach one, and no
+    `DocumentVersion` is superseded: a revised draft is *new* bytes on a new
+    document, which is what makes the evidence store immutable rather than merely
+    append-mostly (docs/adr/0084 §8).
+
+    **No revision token, deliberately.** Optimistic concurrency exists on this
+    record's *correction* because two people editing one sentence is a lost
+    update. Two people attaching two different papers to one step is not: both
+    links are wanted, `link_document_to_record` is idempotent on the pair, and
+    there is no earlier value for a later writer to overwrite. Inventing a token
+    here would refuse the second lawyer's file to protect a sentence nobody
+    touched — and no evidence capture in this module carries one
+    (`capture_supporting_evidence`, `add_engagement_feedback`).
+
+    **Refused on a closed Matter**, under the Matter's row lock rather than by
+    whether a page drew a button: a browser that had `Teema käik` open before
+    somebody else closed the file still has the control on it, and its POST
+    reaches a server with no memory of which page it came from. Reopening is the
+    way out and leaves somebody's name on both decisions (docs/adr/0076 §2).
+
+    All or none. `capture_supporting_evidence` catches nothing, so a second file
+    being refused unwinds the first along with this transaction — a step claiming
+    evidence and holding half of it is the state this ordering exists to make
+    unreachable (docs/adr/0075 §8).
+    """
+    from app.matters.models import MatterProceduralDevelopment
+    from app.matters.services import record_procedural_development_document
+
+    locked_matter = lock_open_matter_for_business_write(development.matter_id)
+    # Re-read under the lock and against the locked Matter, the same existence
+    # check `correct_procedural_development` makes and for the same reason: the
+    # instance this arrived with was fetched before the lock, and «this
+    # development is on this Teema» is the one claim the link below cannot make
+    # for itself.
+    try:
+        current = MatterProceduralDevelopment.objects.select_for_update(no_key=True).get(
+            pk=development.pk, matter=locked_matter
+        )
+    except MatterProceduralDevelopment.DoesNotExist:
+        raise DomainError("Seda menetluse arengut ei ole sellel teemal.") from None
+
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = current
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=current,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        for document in result.documents:
+            # `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED` say bytes arrived on
+            # the Matter; neither says they are the ministry's revised draft
+            # rather than something else that turned up the same afternoon. The
+            # same event `+ Menetluse areng` records for the files that arrive
+            # with the step.
+            record_procedural_development_document(
+                development=current, document=document, actor=author
+            )
+        return result
+
+
+@transaction.atomic
 def add_matter_website_overview(
     *,
     matter: Matter,

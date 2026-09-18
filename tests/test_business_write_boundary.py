@@ -46,6 +46,7 @@ from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
+from app.documents.links import DocumentLink
 from app.matters.models import Matter
 from app.matters.staging import MatterIntakeFile
 from app.related_materials.models import (
@@ -553,6 +554,20 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .__class__.objects.values_list("title", flat=True)
             .get(pk=w["development"].pk)
         ),
+    ),
+    # `+ Lisa tõend` — another paper supporting a step already on the file. New
+    # business content on an open Matter like every other evidence capture, and
+    # deliberately separate from the correction above: one changes what the row
+    # says, the other adds a document to what it says, and an unauthorized caller
+    # must be refused both (docs/adr/0084 §8).
+    WriteRoute(
+        name="matters:add_development_evidence",
+        label="Tõendi lisamine menetluse arengule",
+        request=lambda w: ({"pk": w["matter"].pk, "development_id": w["development"].pk}, {}),
+        files=lambda: {"attachments": _pdf("loata-menetluse-toend.pdf")},
+        probe=lambda w: DocumentLink.objects.filter(
+            procedural_development=w["development"]
+        ).count(),
     ),
     # `Menetluse link`, in both of its write routes. Adding one is ordinary new
     # business content on an open Matter; correcting one is allowed on a closed

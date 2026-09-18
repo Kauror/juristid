@@ -161,6 +161,56 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-swap="outerHTML">Tühista</button>
       </p>
     </form>
+  {% elif development_evidence_form %}
+    {% comment %}
+      `+ Lisa tõend`. The picker, and nothing else: this act adds a paper to a
+      step the file already records correctly, so nothing about the record is on
+      the form. `Muuda` is the surface that changes what the row *says*, and the
+      two share this element deliberately — a row cannot be correcting and
+      capturing at once (app/matters/forms.py `DevelopmentEvidenceForm`).
+
+      **It swaps `#teema-vaade` rather than this element**, which is the one
+      place it differs from the correction above. The files a development
+      carries are rendered by the chronology *around* this element, so answering
+      a successful upload with this element alone would come back looking exactly
+      as it did before the file arrived. The whole column is what every other
+      addition on this workspace returns, and it is what puts the new file where
+      the reader is already looking (app/matters/views.py,
+      `add_development_evidence_view`).
+
+      A refusal takes the same route and prints above the column, because a file
+      picker is the one control a browser will not repopulate whatever the server
+      sends — so there is nothing here to bring back, and a stale picker left
+      open would suggest the choice survived.
+    {% endcomment %}
+    <form class="uxtl__editform" aria-label="Tõendi lisamine menetluse arengule"
+          hx-post="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
+          hx-target="#teema-vaade" hx-swap="outerHTML"
+          hx-encoding="multipart/form-data">
+      {% csrf_token %}
+      {% comment %}
+        Which step the paper is being attached to, in the words the row was
+        reading a moment ago — the same orientation the correction form opens
+        with, and the reason this is a capture rather than a guess about which
+        record the files belong to.
+      {% endcomment %}
+      <p class="uxtl__ms">
+        <span class="uxtl__mswhat">{{ milestone.what }}</span>
+      </p>
+      {% include "matters/partials/add_files.html" with field=development_evidence_form.attachments %}
+      <p class="uxtl__editactions">
+        <button class="button button--quiet button--tiny" type="submit">Lisa tõend</button>
+        {% comment %}
+          `Tühista` re-fetches this element in its read state, exactly as the
+          correction's does: leaving the picker is a re-read of what the record
+          actually says rather than a client-side hide.
+        {% endcomment %}
+        <button class="button button--quiet button--tiny" type="button"
+                hx-get="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}{{ development_read_query }}"
+                hx-target="#menetluse-areng-{{ development.pk }}-sisu"
+                hx-swap="outerHTML">Tühista</button>
+      </p>
+    </form>
   {% else %}
     <p class="uxtl__ms">
       <span class="uxtl__mswhat" id="menetluse-areng-{{ development.pk }}-pealkiri">{{ milestone.what }}</span>
@@ -199,6 +249,27 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-get="{% url 'matters:update_development' pk=matter.pk development_id=development.pk %}"
                 hx-target="#menetluse-areng-{{ development.pk }}-sisu"
                 hx-swap="outerHTML">Muuda</button>
+        {% comment %}
+          `+ Lisa tõend` — another paper supporting this step, arriving after the
+          step was written up. Beside `Muuda` and not inside it: correcting what
+          a development says and adding evidence to it are different acts with
+          different audit trails, and a correction form that also captured bytes
+          would make «what changed» unanswerable from one event
+          (docs/adr/0084 §8).
+
+          Named by reference like its neighbour, so a chronology showing a dozen
+          of these does not put «Menetluse areng: …» into the document twice.
+
+          There is deliberately no counterpart that removes one. Evidence is
+          additive and immutable: a file attached to the wrong step is answered by
+          attaching it to the right one.
+        {% endcomment %}
+        <button class="uxtl__edit" type="button"
+                id="menetluse-areng-{{ development.pk }}-toend"
+                aria-labelledby="menetluse-areng-{{ development.pk }}-toend menetluse-areng-{{ development.pk }}-pealkiri"
+                hx-get="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
+                hx-target="#menetluse-areng-{{ development.pk }}-sisu"
+                hx-swap="outerHTML">+ Lisa tõend</button>
       </p>
     {% endif %}
   {% endif %}
