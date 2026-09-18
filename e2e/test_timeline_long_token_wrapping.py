@@ -266,6 +266,66 @@ def test_a_valine_seisukoht_summary_does_not_widen_the_page(page, base_url: str)
 
 
 # ---------------------------------------------------------------------------
+# The row a correction puts back
+# ---------------------------------------------------------------------------
+
+
+def test_a_corrected_development_row_still_wraps_what_it_puts_back(page, base_url: str):
+    """The one case the merge with QA-06 makes worth asserting separately.
+
+    Every other test here measures a row the full page rendered. `Muuda` reaches
+    the same element by a different route: `views._development_row` renders
+    `matters/partials/development_row.html` and HTMX swaps it into a page that
+    has already been laid out. The stylesheet is the same stylesheet and the
+    classes are the same classes, so this should not be able to differ — but «it
+    is the same CSS» is exactly the assumption that stops being true the day
+    somebody gives the correction partial a wrapper of its own, and the swapped
+    row is the one place a reader meets the text right after editing it.
+
+    So: file the paste, correct the sentence and leave the address in it, and
+    require the page it lands on to be as calm as the page it was filed on.
+    """
+    sign_in(page, base_url, MARTIN)
+    url = create_matter(page, base_url, unique_title("Parandatud pikk viide"))
+    _file_a_development(
+        page,
+        url,
+        title=f"Ministeerium saatis eelnõu: {PASTED_LINK}",
+        occurred_on=_estonian(date.today() - timedelta(days=3)),
+        note=f"Vaata ka {PASTED_LINK}",
+    )
+
+    page.set_viewport_size({"width": 375, "height": 900})
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+
+    page.locator(".uxtl__ms-body").first.get_by_role("button", name="Muuda", exact=False).click()
+    form = page.locator(".uxtl__editform")
+    form.wait_for()
+    form.locator("[name=title]").fill(f"Komisjon arutas eelnõu: {PASTED_LINK}")
+    with page.expect_response(
+        lambda response: (
+            "/menetluse-areng/" in response.url
+            and response.url.endswith("/muuda/")
+            and response.request.method == "POST"
+        )
+    ):
+        form.locator("button[type=submit]").click()
+    page.wait_for_function(
+        """needle => [...document.querySelectorAll('.uxtl__mswhat')]
+               .some(el => (el.textContent || '').includes(needle))""",
+        arg="Komisjon arutas",
+    )
+
+    swapped = page.evaluate(MEASURE, [".uxtl__mswhat", NEEDLE])
+    swapped["width"] = 375
+    swapped["selector"] = ".uxtl__mswhat (swapped in by Muuda)"
+    _the_page_does_not_scroll_sideways([swapped])
+    _the_whole_address_is_still_there([swapped])
+    page.set_viewport_size({"width": 1440, "height": 900})
+
+
+# ---------------------------------------------------------------------------
 # The search snippet: a different defect, and a different assertion
 # ---------------------------------------------------------------------------
 
