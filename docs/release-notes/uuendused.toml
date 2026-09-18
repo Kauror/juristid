@@ -8,6 +8,80 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-18
+basis = "deployment"
+# Üks väljalase, neli ühendust: juristide teise tagasisidevooru neli paketti
+# korraga.
+#
+# Seitse punkti, mitte neli. Ühendusi on neli, aga lugeja ei kohta neid
+# ühenduste kaupa — punktid on jaotatud selle järgi, millisel tööpinnal
+# muudatus näha on: uue teema vorm, kaks üle vaadatud valikuloendit, menetluse
+# link ja avaldamiskuupäev, arvamuse koostamise algus koos kaasamisega,
+# tagasiside allikad, teema lehelt lisamine ja teema lehe lugemisvaade.
+#
+# **Esimene punkt ütleb, mida vormil enam ei ole.** Menetlusliik ja adressaat
+# olid mõlemad loomise hetkel küsimused, mida seal vaja ei ole: menetlusliik
+# palus juristil sama faili kaks korda liigitada, ja adressaat on fakt, mis
+# selgub alles siis, kui Koda vastama hakkab. Kumbki ei kadunud rakendusest —
+# mõlemat saab teema andmetes edasi täita —, ja punkt ütleb selle välja, sest
+# muidu loeks seda kui kaotust.
+#
+# **Teine punkt on kaks üle vaadatud loendit.** Hetkeseisus on kolm nimetust
+# ümber sõnastatud; ükski seis ei kadunud ja ükski teema ei liikunud. Õigusakti
+# loend on lühem ja iga nimetus ütleb ise, kas tegu on siseriikliku või ELiga
+# seotud aktiga — see on täpselt see, mida menetlusliigi küsimus varem teist
+# korda küsis. Varasemad valikud säilivad; see on sama lubadus, mille
+# 17. septembri viies ja seitsmes punkt hetkeseisu ja valdkondade kohta annavad.
+#
+# **Kolmas punkt parandab 17. septembri kirjet.** Sel päeval lubati, et ülevaate
+# või uudise lingi sisestamisel pakub vorm avaldamise kuupäevaks tänast
+# kuupäeva. Nii see enam ei ole: kuupäeva ei täideta ette ja tühi lahter on nüüd
+# korralik vastus, mis tähendab „kuupäev ei ole teada”. See on käitumise muutus,
+# mida lugeja ise ei tellinud, nii et punkt ütleb selle otse välja — muidu ootab
+# ta kuupäeva, mida vorm ei paku, ja arvab, et midagi on katki.
+#
+# **Neljas punkt on kaks käitumise muutust ühes lauses, sest mõlemad puudutavad
+# seda, mis juhtub iseenesest.** Uue teema loomisel saab kohe kirja panna
+# kuupäeva, mis ajaks arvamus koostatakse, ja sellest saab teema esimene
+# järgmine tegevus. Kaasamise lisamine seevastu ei pane enam ise tagasisidet
+# ootama — ootus on eraldi, nimeline tegu. Sellega ei ole vastuolus
+# 17. septembri esimene punkt: seal sai kaasamisele tähtaja määrata ja kaasamise
+# lõpetada, ja see on endiselt nii; muutunud on see, et ootus ei hakka ise peale.
+#
+# **Viies punkt ei korda 16. ega 17. septembri välise seisukoha punkte.** Seal
+# oli seisukoha koht üldse ja see, et piisab tekstist. Siin on juurde tulnud, et
+# rakendus eristab meile saadetud tagasisidet teiste arvamustest — kaks eri
+# asja, mis varem ühtemoodi paistsid — ja et juristi enda märkus on allika
+# sõnadest nähtavalt lahus.
+#
+# **Kuues punkt ütleb, kust kaks asja nüüd algavad.** Menetluse arengu juures on
+# nimetatud kolm asja, mida saab sama salvestusega kaasa panna, sest just see
+# teeb ühest väljast töövahendi.
+#
+# **Seitsmes punkt on teema lehe lugemisvaade.** Teema käik ja menetluse kulg
+# vastavad kahele eri küsimusele ja on nüüd kaks eri jaotist. Tehniline
+# muutmisajalugu on alles ja ühe lingi kaugusel — punkt ütleb selle, sest
+# sisulisest käigust on osa kirjeid välja jäetud ja lugeja peab teadma, kuhu
+# need läksid. Töövõidu koht ajaloos on muutunud: varem seisis ta seal, kus ta
+# kinnitati, nüüd seal, kuhu ta päriselt kuulub. Viimane pool lauset on tahtlik:
+# „kuupäev teadmata” on vastus, mida rakendus nüüd ütleb välja, selle asemel et
+# panna reale päev, mida keegi ei ole öelnud.
+#
+# `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalaset veel
+# toimunud. Vale või oletatud revisjoni siia panna oleks halvem kui selle
+# puudumine.
+prs = [233, 235, 236, 237]
+changes = [
+  "Uue teema loomisel ei küsita enam menetlusliiki ega adressaati; mõlemat saab vajaduse korral täita teema andmetes ning saatjat nimetatakse nüüd kõikjal saatjaks.",
+  "Hetkeseisu kolm nimetust on ümber sõnastatud ja õigusakti valik on lühem ning ütleb nimetuses ära, kas tegu on siseriikliku või ELiga seotud aktiga; varasemad valikud säilivad.",
+  "Teemale saab lisada ametliku menetluse lingid ning ülevaate või uudise avaldamiskuupäeva võib jätta teadmata — rakendus ei täida seda enam automaatselt tänase kuupäevaga, nagu 17. septembri uuendus lubas.",
+  "Uue teema loomisel saab määrata „Koostan arvamuse” kuupäeva, millest saab teema esimene järgmine tegevus, ning kaasamise lisamine ei pane enam ise tagasisidet ootama — ootus lisatakse eraldi valikuga „Ootan tagasisidet”.",
+  "Tagasiside juures saab eristada meile saadetud tagasisidet teiste arvamustest ning juristi enda märkus kuvatakse allika seisukohast nähtavalt eraldi.",
+  "Koja arvamuse ja menetluse arengu saab lisada otse teema lehelt; menetluse arenguga saab sama salvestusega kirja panna ka uue hetkeseisu, järgmise tegevuse ja failid.",
+  "Teema lehel on nüüd eraldi sisuline „Teema käik” ja „Menetluse kulg”, tehnilise muutmisajaloo saab avada „Kõik muudatused” kaudu, töövõit seisab ajaloos oma tegeliku perioodi juures ning teadmata kuupäev kirjutatakse välja, mitte ei asendata tänase päevaga.",
+]
+
+[[day]]
 date = 2026-09-17
 basis = "deployment"
 # Üks väljalase, seitse ühendust: kaasamise tagasiside ootamine ja lõpetamine,
@@ -68,9 +142,13 @@ basis = "deployment"
 # sama lubadus, mille viies punkt hetkeseisu kohta annab — vana teema
 # klassifikatsiooni ei võeta ära sellega, et uus valik on kitsam.
 #
-# `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalase veel
-# toimunud, ja toodangu revisjon on teada alles väljalaske raportist. Vale või
-# oletatud revisjoni siia panna oleks halvem kui selle puudumine.
+# `revisions` oli seda kirjet kirjutades tühi, sest väljalaset ei olnud veel
+# toimunud. Nüüd on ja revisjon on teada — loetud toodangu enda käest, `/healthz`
+# ja `/app/GIT_SHA` ühtelangevalt —, nii et see on siia kirja pandud, nagu
+# 16. septembri kirje juures.
+revisions = [
+  "b2d2001f08ac2fa8f8a02583fb1aa8fa7aaf1769",
+]
 prs = [225, 226, 227, 228, 230, 231]
 changes = [
   "Kaasamisele saab nüüd määrata tagasiside tähtaja, mis ilmub vastutaja tööde hulka; saabunud arvamused saab lisada ning kaasamise lõpetatuks märkida.",
