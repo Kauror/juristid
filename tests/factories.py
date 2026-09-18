@@ -164,8 +164,37 @@ class MatterFactory(factory.django.DjangoModelFactory):
             # handed a reference it never had.
             kwargs["reference_number"] = None
             return kwargs
-        from app.matters.services import allocate_matter_reference
+        from django.db.models import Max
 
+        from app.matters.models import Matter
+        from app.matters.services import allocate_matter_reference, reserve_matter_reference
+
+        # **Bring the sequence up to what the table actually holds, first.**
+        #
+        # Allocating alone is not enough, because the suite creates Matters by
+        # three different routes and only one of them touches the counter.
+        # `tests/synthetic_statistics.build_world` writes `2026/1` … `2026/6`
+        # through `Matter.objects.create` — the model manager, not the service —
+        # so `MatterReferenceSequence` has never heard of those rows. A factory
+        # Matter built into that world would then be allocated `1` and collide
+        # with the world's own first Teema, which is the original defect wearing
+        # the other shoe.
+        #
+        # So the high-water mark is read from the rows themselves and handed to
+        # `reserve_matter_reference` — the canonical service whose documented job
+        # is «make sure the sequence for this year will never hand out this
+        # number again», and which the register import already uses for exactly
+        # this. It is idempotent and takes the same row lock as allocation.
+        #
+        # Reading it from the database rather than from a counter in this process
+        # is what keeps the result independent of execution order: whatever the
+        # test has created by whatever route, this sees it, and the transaction
+        # rolls all of it back together.
+        highest = Matter.objects.filter(reference_year=year).aggregate(
+            highest=Max("reference_number")
+        )["highest"]
+        if highest is not None:
+            reserve_matter_reference(year, highest)
         _year, number = allocate_matter_reference(year)
         kwargs["reference_number"] = number
         return kwargs

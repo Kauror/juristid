@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import pytest
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from app.matters.models import Matter, MatterReferenceSequence
 from app.matters.services import allocate_matter_reference, create_matter
@@ -181,6 +182,68 @@ def test_building_a_matter_touches_no_sequence():
 
     assert built.reference_number is None
     assert not MatterReferenceSequence.objects.exists()
+
+
+# -- §B2. references this factory did not create -----------------------------
+
+
+def test_a_factory_matter_does_not_collide_with_a_hand_written_reference(specialist):
+    """The other shoe, and the one CI caught.
+
+    The suite creates Matters by three routes and only one of them touches the
+    counter. `tests/synthetic_statistics.build_world` writes `2026/1` … `2026/6`
+    through `Matter.objects.create` — the model manager, not the service — so
+    `MatterReferenceSequence` has never heard of those rows.
+
+    Allocating alone would then hand the next factory Matter `1` and collide with
+    a row that is already there: the original defect wearing the other shoe, and
+    a fix that only looked at the counter would have swapped one order-dependent
+    `IntegrityError` for another.
+    """
+    Matter.objects.create(
+        title="Käsitsi kirjutatud viide",
+        reference_year=2026,
+        reference_number=1,
+        owner=specialist,
+    )
+
+    made = factories.MatterFactory(owner=specialist, reference_year=2026)
+
+    assert made.reference_number == 2
+
+
+def test_the_factory_clears_a_whole_block_of_hand_written_references(specialist):
+    """A world holding `2026/1`…`2026/6` — `build_world`'s actual shape."""
+    for number in range(1, 7):
+        Matter.objects.create(
+            title=f"Maailma teema {number}",
+            reference_year=2026,
+            reference_number=number,
+            owner=specialist,
+        )
+
+    made = factories.MatterFactory(owner=specialist, reference_year=2026)
+    created = create_matter(title="Ja teenuse kaudu", actor=specialist)
+
+    assert made.reference_number == 7
+    # And the service, asked next, carries on from there rather than repeating.
+    assert created.reference_year == timezone.localdate().year
+    assert Matter.objects.filter(reference_year=2026, reference_number=7).count() == 1
+
+
+def test_a_hand_written_reference_above_the_counter_is_not_handed_out_again(specialist):
+    """The high-water mark is read from the rows, not from what was allocated."""
+    factories.MatterFactory(owner=specialist, reference_year=2026)
+    Matter.objects.create(
+        title="Kaugel ees",
+        reference_year=2026,
+        reference_number=500,
+        owner=specialist,
+    )
+
+    later = factories.MatterFactory(owner=specialist, reference_year=2026)
+
+    assert later.reference_number == 501
 
 
 # -- §C. the factory does not reach into another year ------------------------
