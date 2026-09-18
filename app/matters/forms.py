@@ -188,6 +188,37 @@ def provider_link_field(label: str, placeholder: str) -> forms.CharField:
     )
 
 
+def engagement_response_count_field() -> forms.IntegerField:
+    """`Vastuseid` — one optional count, asked in the same words on both surfaces.
+
+    `+ Kaasamine` writes it and `Muuda` corrects it, and the two must not be
+    allowed to drift: a maximum enforced on one surface and not the other is a
+    record creatable in a shape it cannot be corrected into, which is the rule
+    docs/adr/0086 §1 states in both directions. One definition, so there is
+    nothing to keep in step.
+
+    `required=False` and `min_value=0`, because the column holds three facts and
+    all three have to be enterable: a number, an explicit zero, and nothing at
+    all. `None` is «keegi ei lugenud» and `0` is «keegi ei vastanud», and no
+    surface collapses them — the chronology prints a count only for a row that
+    carries one (`app/matters/timeline.py`).
+    """
+    return forms.IntegerField(
+        label="Vastuseid",
+        required=False,
+        min_value=0,
+        max_value=1_000_000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "inputmode": "numeric",
+                "autocomplete": "off",
+                "placeholder": "14",
+            }
+        ),
+    )
+
+
 def clean_provider_link(form: forms.Form, field: str) -> str:
     """The service's own rule, reported under the box somebody typed it in."""
     from app.matters.services import normalize_engagement_url
@@ -3562,11 +3593,17 @@ class EngagementForm(forms.Form):
     can have filled in.** A correction form missing a field does not leave that
     field alone — it leaves the person with a record they can read on the
     chronology and cannot fix. The fields here are therefore the stored ones a
-    person answers: `title`, `url`, the two provider links, `note`, both dates
-    and `Saadud tagasiside`. `response_count` is deliberately not among them —
-    the correction UI does not offer it, so the view never names it and
-    `update_engagement`'s `_UNSET` leaves whatever is stored untouched rather
-    than clearing it to «nobody counted».
+    person answers: `title`, `Vastuseid`, `url`, the two provider links, `note`,
+    both dates and `Saadud tagasiside`.
+
+    **`Vastuseid` is here because `+ Kaasamine` asks for it.** It was left off
+    this form while the creating panel did not offer it either, and the
+    reasoning held exactly as long as that was true: docs/adr/0086 §2 kept the
+    count on the panel, so a lawyer could type `7` where they meant `8` and then
+    find no box anywhere that would take the correction — a number stated on the
+    chronology with no route back out of it (QA-03). The rule this form keeps is
+    that it offers what the panel can write, and that is now this field too, from
+    the one definition both use (`engagement_response_count_field`).
 
     **`Liik` is not among them either, and that is this round's one deliberate
     subtraction.** The panel stopped asking which channel a round used, so the
@@ -3599,6 +3636,20 @@ class EngagementForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
         help_text="Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.",
     )
+    #: `Vastuseid`, corrected the way every other optional box on this form is:
+    #: **an empty control clears the column.**
+    #:
+    #: That is the ordinary rule here — an emptied `Märkus`, `Link` or
+    #: `Tagasisidet ootame kuni` all clear what is stored — and it is what makes
+    #: both of this column's facts reachable. `0` is «keegi ei vastanud» and is
+    #: saved, displayed and corrected as the number it is; blank is «keegi ei
+    #: lugenud», which is a different fact and the only honest answer for
+    #: somebody who no longer stands behind a count they typed. Nothing collapses
+    #: the two, and no clear-checkbox is needed: unlike an approximate
+    #: `Kaasamise kuupäev`, a stored count is always something this box can show,
+    #: so an empty box is never ambiguous about what it was opened holding
+    #: (docs/adr/0086 §1, QA-03).
+    response_count = engagement_response_count_field()
     #: The same two provider pointers the workspace panel asks for, so a
     #: correction made through this form round-trips them rather than dropping
     #: what `+ Kaasamine` stored (docs/adr/0027, amended 2026-09-12).
@@ -4308,20 +4359,10 @@ class CompactEngagementForm(forms.Form):
             }
         ),
     )
-    response_count = forms.IntegerField(
-        label="Vastuseid",
-        required=False,
-        min_value=0,
-        max_value=1_000_000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "inputmode": "numeric",
-                "autocomplete": "off",
-                "placeholder": "14",
-            }
-        ),
-    )
+    #: `Vastuseid`, and the same field object `EngagementForm` corrects it with.
+    #: What this panel can write, `Muuda` can fix — including back to blank
+    #: (`engagement_response_count_field`, QA-03).
+    response_count = engagement_response_count_field()
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
     #: **The date the panel never asked for**, and now an exact day.

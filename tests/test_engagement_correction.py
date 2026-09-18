@@ -64,7 +64,7 @@ from app.matters.services import (
     engagement_revision_token,
 )
 from app.matters.timeline import ENGAGEMENT_DATE_UNKNOWN, matter_timeline
-from app.workflow.enums import Disposition
+from app.workflow.enums import DatePrecision, Disposition
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -125,12 +125,29 @@ def _fields(engagement, **changes) -> dict[str, str]:
     payload = {
         "kind": engagement.kind,
         "title": engagement.title,
+        # `Vastuseid`, and **`""` for a row nobody counted** — which is exactly
+        # what a browser sends for an empty box, and what proves that an
+        # ordinary correction of some other field does not invent a zero
+        # (QA-03).
+        "response_count": (
+            "" if engagement.response_count is None else str(engagement.response_count)
+        ),
         "url": engagement.url,
         "smaily_url": engagement.smaily_url,
         "alchemer_url": engagement.alchemer_url,
         "note": engagement.note,
+        # `Kaasamise kuupäev`, **as the rendered form actually carries it** — so
+        # empty for a row dated to a period, because the stored anchor of
+        # *oktoober 2025* is not a day anybody named and `_engagement_edit_form`
+        # refuses to put it in a date box (docs/adr/0079 §2, docs/adr/0086 §1).
+        # Sending `01.10.2025` here would be a request no browser makes, and it
+        # would read as somebody typing an exact day — which is how a test of
+        # «correct one unrelated field» would silently flatten the period it
+        # meant to prove was preserved.
         "occurred_on": (
-            format_estonian_date(engagement.occurred_on) if engagement.occurred_on else ""
+            format_estonian_date(engagement.occurred_on)
+            if engagement.occurred_on and not engagement.has_approximate_date
+            else ""
         ),
         "feedback_deadline": (
             format_estonian_date(engagement.feedback_deadline)
@@ -403,20 +420,300 @@ def test_a_refusal_writes_nothing_and_keeps_the_form_open(signed_in, normal_matt
 def test_a_correction_changes_no_field_the_form_does_not_offer(
     signed_in, normal_matter, specialist
 ):
-    """`response_count` is not on this form, so it is not this form's to clear."""
+    """`Liik` is not on this form, so it is not this form's to change.
+
+    The one deliberate subtraction docs/adr/0086 §1 made, and the harness posts
+    `kind` anyway because a real form carries what the browser was given. The
+    service never sees it: `update_engagement_view` does not name it, so
+    `_UNSET` leaves the stored channel exactly as it is even when a crafted
+    POST names another one.
+
+    This test used to make the same point with `response_count`, which was true
+    until `Muuda` grew the box QA-03 added. The claim moved to the field that is
+    still genuinely absent rather than being deleted with the defect.
+    """
     engagement = add_engagement(
         matter=normal_matter,
         kind=EngagementKind.SURVEY,
         title="Küsitlus",
         occurred_on=RECORDED,
-        response_count=14,
         actor=specialist,
     )
 
-    _save(signed_in, normal_matter, engagement, title="Küsitlus liikmetele")
+    _save(
+        signed_in,
+        normal_matter,
+        engagement,
+        title="Küsitlus liikmetele",
+        kind=EngagementKind.MEETING.value,
+    )
 
     engagement.refresh_from_db()
-    assert engagement.response_count == 14
+    assert engagement.title == "Küsitlus liikmetele"
+    assert engagement.kind == EngagementKind.SURVEY
+
+
+# -- B.1 `Vastuseid`, a fact this form stated and would not take back ---------
+#
+# QA-03. `+ Kaasamine` asks for a response count and the chronology prints it,
+# and until this round no correction surface offered the box — so `7` typed
+# where `8` was meant was a number on the record with no route back out of it.
+#
+# The contract these assert:
+#
+# * the editor opens holding the stored count, `0` included;
+# * an emptied box clears it, exactly as every other optional box here clears
+#   what it edits;
+# * `None` and `0` stay two different facts at every layer;
+# * a caller that does not name the field still changes nothing.
+
+
+@pytest.fixture
+def counted(normal_matter, specialist):
+    """A filed round that says seven people answered."""
+    return add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.SURVEY,
+        title="Näidisliidu liikmed",
+        occurred_on=RECORDED,
+        response_count=7,
+        actor=specialist,
+    )
+
+
+def _response_count_control(html: str) -> str:
+    """The markup of the `Vastuseid` input, so a `value=` assertion is about it."""
+    marker = 'name="response_count"'
+    assert marker in html, "the correction form offers no `Vastuseid` box"
+    start = html.rindex("<input", 0, html.index(marker))
+    return html[start : html.index(">", html.index(marker))]
+
+
+def test_the_form_opens_holding_the_stored_response_count(signed_in, normal_matter, counted):
+    """§13.A, the half that was missing: the box exists and it is filled."""
+    html = _open_form(signed_in, normal_matter, counted).content.decode()
+
+    assert "Vastuseid" in html
+    # Keyed on the record, like every other control in this row — a chronology
+    # may have two editors open at once and a shared id makes a label reach the
+    # wrong box.
+    assert f'id="id_kaasamine_{counted.pk}_response_count"' in html
+    assert f'for="id_kaasamine_{counted.pk}_response_count"' in html
+    assert 'value="7"' in _response_count_control(html)
+
+
+def test_a_response_count_can_be_corrected_to_another_number(signed_in, normal_matter, counted):
+    """§13.A. 7 -> 8, through the route a person uses, and the row says so."""
+    response = _save(signed_in, normal_matter, counted, response_count="8")
+
+    assert response.status_code == 200
+    counted.refresh_from_db()
+    assert counted.response_count == 8
+    assert "Vastuseid 8" in _chronology_row(signed_in, normal_matter, counted)
+
+
+def test_a_response_count_can_be_corrected_to_zero(signed_in, normal_matter, counted):
+    """§13.B. Zero is a real answer and it is not blank.
+
+    «Keegi ei vastanud» is a fact a consultation routinely has, and a form that
+    turned it into «keegi ei lugenud» would refuse to record the commonest
+    disappointing outcome.
+    """
+    _save(signed_in, normal_matter, counted, response_count="0")
+
+    counted.refresh_from_db()
+    assert counted.response_count == 0
+    assert counted.response_count is not None
+    assert "Vastuseid 0" in _chronology_row(signed_in, normal_matter, counted)
+    # And the editor hands the zero back rather than opening blank on it.
+    html = _open_form(signed_in, normal_matter, counted).content.decode()
+    assert 'value="0"' in _response_count_control(html)
+
+
+def test_an_emptied_box_clears_the_response_count(signed_in, normal_matter, counted):
+    """§13.C. The chosen semantics, stated as a test.
+
+    Empty means cleared — the rule every other optional box on this form
+    already keeps. It is what lets somebody who no longer stands behind a count
+    say so, instead of being trapped between a number they know is wrong and a
+    zero that says something else entirely.
+    """
+    _save(signed_in, normal_matter, counted, response_count="")
+
+    counted.refresh_from_db()
+    assert counted.response_count is None
+    assert "Vastuseid" not in _chronology_row(signed_in, normal_matter, counted)
+
+
+def test_a_count_can_be_added_to_a_round_that_never_had_one(signed_in, normal_matter, engagement):
+    """§13.D. None -> 4."""
+    assert engagement.response_count is None
+
+    _save(signed_in, normal_matter, engagement, response_count="4")
+
+    engagement.refresh_from_db()
+    assert engagement.response_count == 4
+
+
+@pytest.mark.parametrize("typed", ["-1", "7,2", "7.2", "kolm", "1000001"])
+def test_an_impossible_count_is_refused_and_changes_nothing(
+    signed_in, normal_matter, counted, typed
+):
+    """§13.E. Negative, fractional, verbal and over the maximum.
+
+    Each is a 400 with the form still open, and the stored record — the count
+    and everything beside it — is exactly as it was. The maximum is the
+    creating panel's own, because a correction form accepting what
+    `+ Kaasamine` refuses would be an editor writing a record that could not
+    have been created (`engagement_response_count_field`).
+    """
+    response = _save(signed_in, normal_matter, counted, response_count=typed)
+
+    assert response.status_code == 400
+    counted.refresh_from_db()
+    assert counted.response_count == 7
+    assert counted.title == "Näidisliidu liikmed"
+    assert counted.occurred_on == RECORDED
+    # The form is still open, holding what was typed, rather than a swap that
+    # looks like somebody else's successful save.
+    html = response.content.decode()
+    assert 'name="response_count"' in html
+    assert typed in html
+
+
+def test_a_caller_that_names_no_count_leaves_the_stored_one_alone(counted, specialist):
+    """§13.F. `_UNSET`, proved rather than trusted.
+
+    `app.legacy_import.register_outreach` corrects a title, a url, a note and a
+    date on imported rows and names nothing else. If omission meant «clear»,
+    every register refresh would quietly forget how many people answered.
+    """
+    correct_engagement(engagement=counted, title="Näidisliidu liikmed 2026", actor=specialist)
+
+    counted.refresh_from_db()
+    assert counted.title == "Näidisliidu liikmed 2026"
+    assert counted.response_count == 7
+
+
+def test_a_caller_may_still_clear_the_count_on_purpose(counted, specialist):
+    """The other half of `_UNSET`: an explicit `None` is not an omission."""
+    correct_engagement(engagement=counted, response_count=None, actor=specialist)
+
+    counted.refresh_from_db()
+    assert counted.response_count is None
+
+
+def test_a_stale_form_does_not_overwrite_a_newer_count(
+    signed_in, normal_matter, counted, specialist
+):
+    """§13.G. The newer writer keeps the field, and nothing is special-cased.
+
+    A reads 7, B saves 8, A submits 9 off the copy they are still holding.
+    """
+    stale = engagement_revision_token(counted)
+    correct_engagement(engagement=counted, response_count=8, actor=specialist)
+
+    response = signed_in.post(
+        _url(normal_matter, counted),
+        _fields(counted, response_count="9", revision=stale),
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 409
+    counted.refresh_from_db()
+    assert counted.response_count == 8
+    assert ENGAGEMENT_EDIT_CONFLICT in html
+    # The token is not advanced, so the next submit cannot silently win either.
+    assert _revision_in(html) == stale
+
+
+def test_a_closed_matter_refuses_a_count_correction_too(
+    signed_in, normal_matter, counted, specialist
+):
+    """§13.I. No escape hatch for the new field."""
+    _close(normal_matter, specialist)
+
+    response = _save(signed_in, normal_matter, counted, response_count="8")
+
+    assert response.status_code == 400
+    counted.refresh_from_db()
+    assert counted.response_count == 7
+
+
+def test_correcting_the_count_files_one_event_naming_the_field(counted, specialist):
+    """The existing correction event, with one more field name in it.
+
+    No new event type and no `response_count_from`/`_to`: `ENGAGEMENT_ADDED`
+    files this column as `has_response_count` on the reasoning that the number
+    belongs on the record, where a reader can correct it — which this round is
+    what finally makes true. The two halves of one column's history follow one
+    convention.
+    """
+    before = ChangeEvent.objects.count()
+
+    correct_engagement(engagement=counted, response_count=8, actor=specialist)
+
+    assert ChangeEvent.objects.count() == before + 1
+    event = ChangeEvent.objects.order_by("-created_at").first()
+    assert event.event_type == ChangeEventType.ENGAGEMENT_CHANGED
+    assert event.payload["fields"] == ["response_count"]
+    assert "response_count_from" not in event.payload
+    assert "response_count_to" not in event.payload
+
+
+def test_resaving_the_same_count_writes_no_event(counted, specialist):
+    """A no-op stays a no-op with the new field in the payload."""
+    before = ChangeEvent.objects.count()
+
+    correct_engagement(engagement=counted, response_count=7, actor=specialist)
+
+    assert ChangeEvent.objects.count() == before
+
+
+def test_correcting_only_the_count_touches_nothing_else(signed_in, normal_matter, specialist):
+    """§13.H. An approximate date survives a count-only correction.
+
+    The day box for a period-dated row opens **empty**, and an empty box there
+    means «leave the period alone» (docs/adr/0086 §1). A correction that only
+    moves `Vastuseid` therefore has to come back with `2025-10-01`/`MONTH`
+    intact — and with the deadline, the feedback, the links, the note and the
+    channel untouched beside it.
+    """
+    engagement = add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.MEETING,
+        title="Oktoobrikuu koosolek",
+        occurred_on=dt.date(2025, 10, 1),
+        occurred_on_precision=DatePrecision.MONTH.value,
+        feedback_deadline=RECORDED,
+        feedback_received="Liikmed toetasid.",
+        url="https://example.org/voor",
+        smaily_url="https://sendsmaily.net/a/b/c/",
+        note="Sisemine märkus.",
+        response_count=7,
+        actor=specialist,
+    )
+    fields = (
+        "occurred_on",
+        "occurred_on_precision",
+        "feedback_deadline",
+        "feedback_received",
+        "url",
+        "smaily_url",
+        "alchemer_url",
+        "note",
+        "kind",
+    )
+    stored = {field: getattr(engagement, field) for field in fields}
+
+    response = _save(signed_in, normal_matter, engagement, response_count="8")
+
+    assert response.status_code == 200
+    engagement.refresh_from_db()
+    assert engagement.response_count == 8
+    assert engagement.occurred_on == dt.date(2025, 10, 1)
+    assert engagement.occurred_on_precision == DatePrecision.MONTH.value
+    assert {field: getattr(engagement, field) for field in fields} == stored
 
 
 # -- C. the chronology row ----------------------------------------------------
