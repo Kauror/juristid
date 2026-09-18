@@ -17,8 +17,10 @@ cannot show:
 * the lawyer's own note is never the source's words — not in the record, not on
   the chronology row, not in the audit payload and not in the search projection
   (§4);
-* `Menetluse areng` is an `Entry` that may carry a stage and a step, atomically
-  (§5);
+* `Menetluse areng` is a canonical `MatterProceduralDevelopment` that may carry a
+  stage and a step, atomically — and it records something that **has happened**,
+  so a period still wholly ahead is refused before any of the four writes (§5,
+  §5.1);
 * `Koja arvamus` is a `Submission` through the service `Dokumendid` already posts
   to, several per Matter, with recipients that are not the `Saatja` (§6);
 * and none of it leaks across the visibility boundary (§10).
@@ -43,6 +45,7 @@ from app.documents.links import DocumentLink
 from app.documents.models import Document
 from app.matters import work_items
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
+from app.matters.forms import ProceduralDevelopmentForm
 from app.matters.models import (
     EXTERNAL_POSITION_LEGACY_HEADLINE,
     Entry,
@@ -50,6 +53,7 @@ from app.matters.models import (
     MatterProceduralDevelopment,
 )
 from app.matters.services import (
+    DEVELOPMENT_CANNOT_BE_FUTURE,
     DEVELOPMENT_NEEDS_TITLE,
     EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY,
     EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL,
@@ -94,6 +98,20 @@ pytestmark = pytest.mark.django_db
 PREPARE_BY = dt.date(2026, 9, 25)
 ENGAGED_ON = dt.date(2026, 9, 19)
 SENT_ON = dt.date(2026, 9, 17)
+
+
+def _happened(days: int = 12) -> dt.date:
+    """A day a `Menetluse areng` can honestly say something happened on.
+
+    Relative to the clock rather than written down. The §5 tests below were
+    dated `12.10.2026` — a day three weeks *after* the round that wrote them —
+    which was harmless only because nothing refused it. A development records
+    something that has already happened (§5.1), so a literal that drifts from
+    past to future and back is a fixture that changes what it is testing as the
+    calendar moves. The same reasoning `tests/test_substantive_matter_history.py`
+    states for its own `_days_ago`.
+    """
+    return timezone.localdate() - dt.timedelta(days=days)
 
 
 def _pdf(name: str = "arvamus.pdf", body: bytes = b"%PDF-1.4 sisu") -> SimpleUploadedFile:
@@ -1021,13 +1039,13 @@ def test_a_development_is_a_canonical_record(normal_matter, specialist):
         matter=normal_matter,
         author=specialist,
         title="Ministeerium saatis uue eelnõu versiooni",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
     )
 
     development = result.record
     assert isinstance(development, MatterProceduralDevelopment)
     assert development.title == "Ministeerium saatis uue eelnõu versiooni"
-    assert development.occurred_on == dt.date(2026, 10, 12)
+    assert development.occurred_on == _happened()
     assert development.occurred_on_precision == DatePrecision.EXACT
     assert development.created_by_id == specialist.pk
     assert result.action is None
@@ -1055,17 +1073,25 @@ def test_a_development_may_carry_no_date_at_all(normal_matter, specialist):
 
 
 def test_a_development_may_be_dated_to_a_period(normal_matter, specialist):
+    """A month the lawyer names, stored on its anchor and printed as the month.
+
+    The month is taken from the clock rather than written down, for `_happened`'s
+    reason: a literal month is in the past for part of the product's life and
+    ahead of it for the rest, and one of those two halves is now a refusal.
+    """
+    anchor = _happened(40).replace(day=1)
     development = add_procedural_development(
         matter=normal_matter,
         author=specialist,
         title="Eelnõu jõudis Riigikokku",
-        occurred_on=dt.date(2026, 10, 1),
+        occurred_on=anchor,
         occurred_on_precision=DatePrecision.MONTH.value,
     ).record
 
     assert development.has_approximate_date is True
-    # Never the anchor: `01.10.2026` is a day nobody named (docs/adr/0079 §2).
-    assert "01.10" not in development.display_date
+    # Never the anchor: its first day is a day nobody named (docs/adr/0079 §2).
+    assert anchor.strftime("01.%m") not in development.display_date
+    assert str(anchor.year) in development.display_date
     assert development_milestone(development).display_date == development.display_date
 
 
@@ -1086,7 +1112,7 @@ def test_a_development_keeps_the_lawyer_note_out_of_the_event(normal_matter, spe
         matter=normal_matter,
         author=specialist,
         title="Ministeerium saatis uue eelnõu versiooni",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
         note="Uus versioon ei arvesta meie ettepanekut.",
     ).record
 
@@ -1108,7 +1134,7 @@ def test_a_development_keeps_the_lawyer_note_out_of_the_event(normal_matter, spe
 def test_a_development_without_a_title_is_refused(normal_matter, specialist):
     with pytest.raises(DomainError) as refusal:
         add_procedural_development(
-            matter=normal_matter, author=specialist, title="   ", occurred_on=dt.date(2026, 10, 12)
+            matter=normal_matter, author=specialist, title="   ", occurred_on=_happened()
         )
 
     assert str(refusal.value) == DEVELOPMENT_NEEDS_TITLE
@@ -1120,7 +1146,7 @@ def test_a_development_may_carry_its_files(normal_matter, specialist, evidence_r
         matter=normal_matter,
         author=specialist,
         title="Ministeerium saatis uue eelnõu versiooni",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
         uploads=[_pdf("eelnou_v2.pdf")],
     )
 
@@ -1141,7 +1167,7 @@ def test_a_development_may_move_the_stage_and_set_the_next_step(normal_matter, s
         matter=normal_matter,
         author=specialist,
         title="Ministeerium saatis uue eelnõu versiooni",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
         stage=stage,
         next_text="Vaatan uue versiooni läbi",
         next_date=dt.date(2026, 10, 16),
@@ -1168,7 +1194,7 @@ def test_a_development_changes_neither_when_neither_is_named(normal_matter, spec
         matter=normal_matter,
         author=specialist,
         title="Ministeerium teatas, et eelnõu viibib",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
     )
 
     normal_matter.refresh_from_db()
@@ -1191,7 +1217,7 @@ def test_a_refused_upload_rolls_back_the_whole_development(
             matter=normal_matter,
             author=specialist,
             title="Ministeerium saatis uue eelnõu versiooni",
-            occurred_on=dt.date(2026, 10, 12),
+            occurred_on=_happened(),
             stage=stage,
             next_text="Vaatan uue versiooni läbi",
             next_date=dt.date(2026, 10, 16),
@@ -1214,7 +1240,7 @@ def test_a_development_is_refused_on_a_closed_matter(normal_matter, specialist):
             matter=normal_matter,
             author=specialist,
             title="Midagi juhtus",
-            occurred_on=dt.date(2026, 10, 12),
+            occurred_on=_happened(),
         )
 
 
@@ -1223,13 +1249,13 @@ def test_a_development_is_corrected_not_deleted(normal_matter, specialist):
         matter=normal_matter,
         author=specialist,
         title="Ministeerium saatis uue eelnõu",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
     ).record
 
     corrected = correct_procedural_development(
         development=development,
         title="Ministeerium saatis uue eelnõu versiooni",
-        occurred_on=dt.date(2026, 10, 13),
+        occurred_on=_happened(11),
         occurred_on_precision=DatePrecision.EXACT.value,
         note="Vaatan üle.",
         actor=specialist,
@@ -1237,11 +1263,11 @@ def test_a_development_is_corrected_not_deleted(normal_matter, specialist):
     )
 
     assert corrected.title == "Ministeerium saatis uue eelnõu versiooni"
-    assert corrected.occurred_on == dt.date(2026, 10, 13)
+    assert corrected.occurred_on == _happened(11)
     assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).count() == 1
     event = _events(normal_matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_CORRECTED).get()
     assert "title" in event.payload["fields"]
-    assert event.payload["occurred_on_to"] == "2026-10-13"
+    assert event.payload["occurred_on_to"] == _happened(11).isoformat()
 
 
 def test_a_stale_correction_writes_nothing(normal_matter, specialist):
@@ -1249,13 +1275,13 @@ def test_a_stale_correction_writes_nothing(normal_matter, specialist):
         matter=normal_matter,
         author=specialist,
         title="Ministeerium saatis uue eelnõu",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
     ).record
     stale = development_revision(development)
     correct_procedural_development(
         development=development,
         title="Esimene parandus",
-        occurred_on=dt.date(2026, 10, 12),
+        occurred_on=_happened(),
         occurred_on_precision=DatePrecision.EXACT.value,
         note="",
         actor=specialist,
@@ -1266,7 +1292,7 @@ def test_a_stale_correction_writes_nothing(normal_matter, specialist):
         correct_procedural_development(
             development=development,
             title="Teine parandus",
-            occurred_on=dt.date(2026, 10, 12),
+            occurred_on=_happened(),
             occurred_on_precision=DatePrecision.EXACT.value,
             note="",
             actor=specialist,
@@ -1279,9 +1305,8 @@ def test_a_stale_correction_writes_nothing(normal_matter, specialist):
 
 def test_a_development_reaches_the_chronology(normal_matter, specialist):
     """Dated in the **past**, because the chronology reads newest-first and means
-    *past* — `test_a_future_dated_development_is_not_history_yet` is the other
-    half, and the two together are why the fixed dates elsewhere in this file are
-    safe to leave alone."""
+    *past* — `test_a_future_dated_row_filed_before_the_rule_is_still_not_history`
+    is the other half."""
     add_procedural_development(
         matter=normal_matter,
         author=specialist,
@@ -1296,18 +1321,26 @@ def test_a_development_reaches_the_chronology(normal_matter, specialist):
     assert headlines.count("Menetluse areng: Eelnõu jõudis Riigikokku") == 1
 
 
-def test_a_future_dated_development_is_not_history_yet(normal_matter, specialist):
+def test_a_future_dated_row_filed_before_the_rule_is_still_not_history(normal_matter, specialist):
     """A step somebody expects is not a step that happened.
 
-    The rule `MatterEngagement` and `MatterExternalPosition` both follow, asserted
-    here because this record is the one a lawyer is most likely to date forward —
-    «the committee sits on the 12th» is a thing they know in advance.
+    The chronology's own rule, which `MatterEngagement` and
+    `MatterExternalPosition` follow too, and which is now unreachable through the
+    service: §5.1 refuses a future development before it is written, so no new
+    row can land here.
+
+    It is asserted against a row created **directly**, because rows filed before
+    that rule exist, are real, and are not rewritten (docs/adr/0092 §4). No
+    backfill clears them, no migration re-dates them, and the projection goes on
+    omitting each one until its day arrives rather than showing it under a day
+    nobody recorded it to.
     """
-    add_procedural_development(
+    MatterProceduralDevelopment.objects.create(
         matter=normal_matter,
-        author=specialist,
         title="Riigikogu komisjon arutab eelnõu",
         occurred_on=timezone.localdate() + dt.timedelta(days=21),
+        occurred_on_precision=DatePrecision.EXACT,
+        created_by=specialist,
     )
 
     items, _ = matter_timeline(matter=normal_matter, user=specialist, limit=50)
@@ -1324,11 +1357,11 @@ def test_the_development_route_records_everything_in_one_post(client, specialist
         reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
         {
             "title": "Eelnõu jõudis Riigikokku",
-            "occurred_on": "12.10.2026",
+            "occurred_on": _estonian(_happened()),
             "areng_precision": "EXACT",
             "stage": str(stage.pk),
             "next_text": "Vaatan uue teksti läbi",
-            "next_date": "16.10.2026",
+            "next_date": _estonian(timezone.localdate() + dt.timedelta(days=4)),
         },
     )
 
@@ -1346,7 +1379,7 @@ def test_a_half_filled_next_step_is_refused_on_the_empty_control(client, special
         reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
         {
             "title": "Eelnõu jõudis Riigikokku",
-            "occurred_on": "12.10.2026",
+            "occurred_on": _estonian(_happened()),
             "areng_precision": "EXACT",
             "next_text": "Vaatan uue teksti läbi",
         },
@@ -1562,6 +1595,324 @@ def test_the_koda_opinion_route_refuses_a_future_send_date(
     assert response.status_code == 400
     assert "Saatmise kuupäev ei saa olla tulevikus." in response.content.decode()
     assert not Submission.objects.filter(matter=normal_matter).exists()
+
+
+# ---------------------------------------------------------------------------
+# §5.1 — a `Menetluse areng` records something that has happened
+# ---------------------------------------------------------------------------
+#
+# The product decision this round makes. «Ministeerium saatis uue eelnõu
+# versiooni» belongs here; «Riigikogu esimene lugemine toimub 30.09» does not —
+# it is a plan, and the product's forward-looking facts are `Järgmiseks` and
+# `+ Oluline tähtaeg`, each with its own date, its own lateness and its own place
+# on the page. No scheduled-development model is invented for it.
+#
+# What made this a defect rather than a missing feature: the chronology already
+# declined to draw a future development, deliberately and correctly — and the
+# stage change saved in the same breath was *not* declined, so one half of an
+# atomic professional act survived as apparent truth. A file read «Hetkeseis:
+# Riigikogus», dated to the afternoon somebody typed it, with nothing anywhere
+# saying why.
+#
+# The refusal is therefore the whole save, at the canonical service, before any
+# of the four writes.
+
+
+#: The day these tests are read on. Written down rather than taken from the
+#: clock, because a rule about «the future» tested against whatever today
+#: happens to be is a rule that changes meaning on 1 October.
+QA_TODAY = dt.date(2026, 9, 18)
+
+
+@pytest.fixture
+def today_is_18_september(monkeypatch):
+    from django.utils import timezone as tz
+
+    monkeypatch.setattr(tz, "localdate", lambda *a, **kw: QA_TODAY)
+    return QA_TODAY
+
+
+def _development_url(matter) -> str:
+    return reverse("matters:add_development", kwargs={"pk": matter.pk})
+
+
+#: The four periods that are definitely still ahead on 18 September 2026, as the
+#: panel posts them. `HALF_YEAR` is not among them because the composer does not
+#: offer it as a chip (docs/adr/0079 §7); the predicate's own table covers it.
+FUTURE_PERIODS = [
+    ("exact 30.09.2026", {"areng_precision": "EXACT", "occurred_on": "30.09.2026"}),
+    ("oktoober 2026", {"areng_precision": "MONTH", "areng_month": "10", "areng_year": "2026"}),
+    ("IV kvartal 2026", {"areng_precision": "QUARTER", "areng_quarter": "4", "areng_year": "2026"}),
+    ("2027", {"areng_precision": "YEAR", "areng_year": "2027"}),
+]
+
+#: The six answers that are **not** evidence of the future, and must go through.
+#: *september 2026* and *2026* are the load-bearing ones: their stored anchor is
+#: before today but so is most of the period, and refusing them would manufacture
+#: a precision the lawyer explicitly said they do not have (docs/adr/0079 §2).
+PAST_OR_CURRENT_PERIODS = [
+    ("exact 18.09.2026", {"areng_precision": "EXACT", "occurred_on": "18.09.2026"}),
+    ("exact 17.09.2026", {"areng_precision": "EXACT", "occurred_on": "17.09.2026"}),
+    ("september 2026", {"areng_precision": "MONTH", "areng_month": "9", "areng_year": "2026"}),
+    (
+        "III kvartal 2026",
+        {"areng_precision": "QUARTER", "areng_quarter": "3", "areng_year": "2026"},
+    ),
+    ("2026", {"areng_precision": "YEAR", "areng_year": "2026"}),
+    ("kuupäev teadmata", {"areng_precision": "EXACT", "occurred_on": ""}),
+]
+
+
+@pytest.mark.parametrize(("label", "fields"), FUTURE_PERIODS, ids=[p[0] for p in FUTURE_PERIODS])
+def test_a_future_development_is_refused_at_every_precision(
+    signed_in, specialist, today_is_18_september, label, fields
+):
+    """The rule is about the period, not about the stored number.
+
+    Each of these has its whole span after 18 September, at a precision the panel
+    can produce, and each is refused with the same sentence beside the control it
+    was typed into.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    payload = {"title": f"Tulevane samm: {label}", "occurred_on": ""}
+    payload.update(fields)
+
+    response = signed_in.post(_development_url(matter), payload, headers={"HX-Request": "true"})
+
+    assert response.status_code == 400
+    assert DEVELOPMENT_CANNOT_BE_FUTURE in response.content.decode()
+    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+
+
+@pytest.mark.parametrize(
+    ("label", "fields"), PAST_OR_CURRENT_PERIODS, ids=[p[0] for p in PAST_OR_CURRENT_PERIODS]
+)
+def test_a_period_that_is_not_definitely_future_is_accepted(
+    signed_in, specialist, today_is_18_september, label, fields
+):
+    """A broad period covering today is a step somebody is describing as past.
+
+    *september 2026* on 18 September, and *2026* at any point in it, tell nobody
+    that the thing they describe is still to come. Refusing them would leave a
+    lawyer who knows only «septembris» choosing between an invented day and an
+    empty field, which is the choice docs/adr/0079 exists to remove.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    payload = {"title": f"Toimunud samm: {label}", "occurred_on": ""}
+    payload.update(fields)
+
+    response = signed_in.post(_development_url(matter), payload, headers={"HX-Request": "true"})
+
+    assert response.status_code == 200, response.content.decode()[:2000]
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert development.title == f"Toimunud samm: {label}"
+
+
+def test_the_refusal_names_the_control_the_period_was_typed_into(
+    signed_in, specialist, today_is_18_september
+):
+    """ADR 0052 §5's rule: the refusal lands on the box that is wrong.
+
+    A month is answered in the month select, and pinning «ei saa olla tulevikus»
+    to the empty day box — which an approximate save leaves empty on purpose —
+    would point at the wrong field.
+    """
+    form = ProceduralDevelopmentForm(
+        {
+            "title": "Komisjon arutab eelnõu",
+            "areng_precision": "MONTH",
+            "areng_month": "10",
+            "areng_year": "2026",
+            "occurred_on": "",
+        }
+    )
+
+    assert form.is_valid() is False
+    assert form.errors["areng_month"] == [DEVELOPMENT_CANNOT_BE_FUTURE]
+    assert "occurred_on" not in form.errors
+
+    exact = ProceduralDevelopmentForm(
+        {"title": "Esimene lugemine", "areng_precision": "EXACT", "occurred_on": "30.09.2026"}
+    )
+    assert exact.is_valid() is False
+    assert exact.errors["occurred_on"] == [DEVELOPMENT_CANNOT_BE_FUTURE]
+
+
+def test_a_refused_future_development_moves_no_stage_action_or_evidence(
+    signed_in, specialist, today_is_18_september, evidence_root
+):
+    """The atomic guarantee, and the reason QA-07 was HIGH rather than cosmetic.
+
+    The dangerous part was never that a future row was hidden. It was that the
+    stage change written in the same transaction survived the row's absence and
+    stood on the page as professional truth — a file claiming to be in the
+    Riigikogu, dated to the day of data entry, with nothing saying how it got
+    there.
+
+    So the refusal is proved against all five things the operation can write.
+    """
+    stage = factories.StageFactory(label_et="Kooskõlastusringil", is_active=True)
+    parliament = factories.StageFactory(label_et="Riigikogus", is_active=True)
+    matter = factories.MatterFactory(owner=specialist, stage=stage)
+
+    response = signed_in.post(
+        _development_url(matter),
+        {
+            "title": "Riigikogu esimene lugemine",
+            "areng_precision": "EXACT",
+            "occurred_on": "30.09.2026",
+            "stage": str(parliament.pk),
+            "next_text": "Valmistan märkused",
+            "next_date": "29.09.2026",
+            "attachments": _pdf("eelnou_v2.pdf"),
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
+    matter.refresh_from_db()
+    assert matter.stage_id == stage.pk
+    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    assert not NextAction.objects.filter(matter=matter).exists()
+    assert not Document.objects.filter(matter=matter).exists()
+    assert not DocumentLink.objects.filter(document__matter=matter).exists()
+    assert _events(matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED).count() == 0
+    assert _events(matter, ChangeEventType.MATTER_STAGE_CHANGED).count() == 0
+    assert _events(matter, ChangeEventType.NEXT_ACTION_SET).count() == 0
+
+
+def test_a_direct_service_call_is_refused_the_same_way(
+    normal_matter, specialist, today_is_18_september, evidence_root
+):
+    """§10 defence in depth: the invariant is the service's, not the form's.
+
+    A caller that renders no form — an importer, a management command, a future
+    API — must not be able to move `Matter.stage` on the strength of a sitting
+    that has not happened. `record_procedural_development` is the seam every
+    writer passes through and it is the *first* write of the transaction, so the
+    refusal unwinds all four together.
+    """
+    stage = factories.StageFactory(label_et="Kooskõlastusringil", is_active=True)
+    parliament = factories.StageFactory(label_et="Riigikogus", is_active=True)
+    normal_matter.stage = stage
+    normal_matter.save(update_fields=["stage"])
+
+    with pytest.raises(DomainError) as refusal:
+        add_procedural_development(
+            matter=normal_matter,
+            author=specialist,
+            title="Riigikogu esimene lugemine",
+            occurred_on=dt.date(2026, 9, 30),
+            stage=parliament,
+            next_text="Valmistan märkused",
+            next_date=dt.date(2026, 9, 29),
+            uploads=[_pdf("eelnou_v2.pdf")],
+        )
+
+    assert str(refusal.value) == DEVELOPMENT_CANNOT_BE_FUTURE
+    normal_matter.refresh_from_db()
+    assert normal_matter.stage_id == stage.pk
+    assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
+    assert not NextAction.objects.filter(matter=normal_matter).exists()
+    assert not Document.objects.filter(matter=normal_matter).exists()
+
+
+def test_a_correction_may_not_move_a_development_into_the_future(
+    normal_matter, specialist, today_is_18_september
+):
+    """The same invariant on the other writer of the date.
+
+    `correct_procedural_development` has no route yet (that is a separate round),
+    but it is a canonical writer of `occurred_on` and a rule with one enforced
+    seam and one unenforced one is a rule that holds until somebody wires the
+    second up.
+    """
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Ministeerium saatis uue eelnõu versiooni",
+        occurred_on=dt.date(2026, 9, 10),
+    ).record
+
+    with pytest.raises(DomainError) as refusal:
+        correct_procedural_development(
+            development=development,
+            title=development.title,
+            occurred_on=dt.date(2026, 10, 30),
+            occurred_on_precision=DatePrecision.EXACT.value,
+            note="",
+            actor=specialist,
+            expected_revision=development_revision(development),
+        )
+
+    assert str(refusal.value) == DEVELOPMENT_CANNOT_BE_FUTURE
+    development.refresh_from_db()
+    assert development.occurred_on == dt.date(2026, 9, 10)
+
+
+def test_a_row_already_dated_ahead_keeps_its_date_and_stays_correctable(
+    normal_matter, specialist, today_is_18_september
+):
+    """Existing rows are not rewritten, and not made permanently unfixable either.
+
+    Nothing backfills, clamps or clears a development filed before this rule
+    existed. Its headline can still be corrected — the refusal is on *moving* the
+    date into the future, not on a save that merely carries the one already
+    stored — and the chronology goes on omitting it until its day arrives, which
+    is the behaviour it already had (docs/adr/0092 §4).
+    """
+    development = MatterProceduralDevelopment.objects.create(
+        matter=normal_matter,
+        title="Vana kirje tuleviku kuupäevaga",
+        occurred_on=dt.date(2026, 10, 30),
+        occurred_on_precision=DatePrecision.EXACT,
+        created_by=specialist,
+    )
+
+    corrected = correct_procedural_development(
+        development=development,
+        title="Vana kirje, parandatud pealkiri",
+        occurred_on=dt.date(2026, 10, 30),
+        occurred_on_precision=DatePrecision.EXACT.value,
+        note="",
+        actor=specialist,
+        expected_revision=development_revision(development),
+    )
+
+    assert corrected.title == "Vana kirje, parandatud pealkiri"
+    assert corrected.occurred_on == dt.date(2026, 10, 30)
+
+
+def test_nothing_clamps_clears_or_half_saves_a_refused_future_date(
+    signed_in, specialist, today_is_18_september
+):
+    """The whole save is refused, and the person's answer comes back to them.
+
+    Not clamped to today, not cleared, not kept-but-suppressed, and not turned
+    into a `Järgmiseks` on their behalf. A form that silently rewrote the date
+    would file a fact nobody stated, which is the failure the refusal exists to
+    avoid rather than a gentler version of it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        _development_url(matter),
+        {
+            "title": "Riigikogu esimene lugemine",
+            "areng_precision": "EXACT",
+            "occurred_on": "30.09.2026",
+        },
+        headers={"HX-Request": "true"},
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    assert not NextAction.objects.filter(matter=matter).exists()
+    # The typed answer is still in the box, so the person can change it rather
+    # than retype the sentence they already wrote.
+    assert "30.09.2026" in body
+    assert "Riigikogu esimene lugemine" in body
 
 
 # ---------------------------------------------------------------------------
