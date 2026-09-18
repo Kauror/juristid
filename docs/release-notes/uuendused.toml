@@ -70,7 +70,23 @@ basis = "deployment"
 # `revisions` jääb siin tühjaks: seda kirjet kirjutades ei ole väljalaset veel
 # toimunud. Vale või oletatud revisjoni siia panna oleks halvem kui selle
 # puudumine.
-prs = [233, 235, 236, 237]
+#
+# **Kaheksas punkt tuli juurde sama päeva teise väljalaskega** (#239). Üks kirje
+# ühe kalendripäeva kohta, nii et see ei ole uus päev, vaid rida olemasolevas
+# kirjes.
+#
+# Punkt räägib vormiväljade selgitustest. Kolmas punkt ülalpool lubab, et
+# avaldamiskuupäeva võib jätta teadmata — seda lauset ei olnud lahtri juures
+# kirjas, vaid jaotise all eraldi lõiguna, ja ekraanilugejale ei jõudnud ta
+# üldse. Nüüd seisab ta lahtri juures ja on välja enda selgitus. Sama
+# parandust vajasid veel kuus välja; ainus, mille juures tekib päris uut teksti
+# näha, on teema lühikokkuvõte, mille selgitust ei kuvatud varem kusagil.
+#
+# **Sama väljalaske teine pool ei saa punkti.** See on visuaaltestide
+# parandus — kuvatõmmised jäädvustasid oma jooksupäeva kuupäeva ja vananesid
+# öö jooksul. README ütleb, et testid ja CI punkti ei saa, ja siin ei muutu
+# lugeja jaoks midagi.
+prs = [233, 235, 236, 237, 239]
 changes = [
   "Uue teema loomisel ei küsita enam menetlusliiki ega adressaati; mõlemat saab vajaduse korral täita teema andmetes ning saatjat nimetatakse nüüd kõikjal saatjaks.",
   "Hetkeseisu kolm nimetust on ümber sõnastatud ja õigusakti valik on lühem ning ütleb nimetuses ära, kas tegu on siseriikliku või ELiga seotud aktiga; varasemad valikud säilivad.",
@@ -79,6 +95,7 @@ changes = [
   "Tagasiside juures saab eristada meile saadetud tagasisidet teiste arvamustest ning juristi enda märkus kuvatakse allika seisukohast nähtavalt eraldi.",
   "Koja arvamuse ja menetluse arengu saab lisada otse teema lehelt; menetluse arenguga saab sama salvestusega kirja panna ka uue hetkeseisu, järgmise tegevuse ja failid.",
   "Teema lehel on nüüd eraldi sisuline „Teema käik” ja „Menetluse kulg”, tehnilise muutmisajaloo saab avada „Kõik muudatused” kaudu, töövõit seisab ajaloos oma tegeliku perioodi juures ning teadmata kuupäev kirjutatakse välja, mitte ei asendata tänase päevaga.",
+  "Vormiväljade selgitused seisavad nüüd välja enda juures ja jõuavad ka ekraanilugejani — nende hulgas ülevaate või uudise avaldamiskuupäeva selgitus ning teema lühikokkuvõtte oma, mida varem üldse ei kuvatud.",
 ]
 
 [[day]]
