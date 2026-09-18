@@ -737,6 +737,22 @@
       The form's own values are preserved by construction: the fragment replaces
       only `#sarnased-teemad`, so a refusal, an intake swap or a chip being
       picked leaves whatever is typed exactly where it is.
+
+      **And one trigger that is not a field, because the defect is not a
+      field.** `sarnased:restored` is said by `app.js` on `pageshow` when the
+      browser puts a *filled* form back on the screen — pressing Back after
+      filing a Teema is the reported one (QA-11). Every value the person typed
+      comes back and this region does not, because it is rendered empty and
+      filled only by a swap; nothing changed, so none of the triggers above
+      fires, and the page ends up saying «nothing resembles this» about a
+      subject that was filed a moment ago. Pressing the button again files it
+      twice, and a Teema cannot be deleted.
+
+      Not `load`: this page is `no-store` and therefore not BFCache-eligible,
+      so a restore here *does* run a fresh document — but `load` would ask the
+      engine on every empty `Uus teema` as well, which is several pool queries
+      to render nothing. The browser event is gated on the form having a
+      matching answer in it, so an empty form still asks nothing at all.
     {% endcomment %}
     <div id="sarnased-teemad"
          hx-get="{% url 'related_materials:draft_suggestions' %}"
@@ -744,7 +760,8 @@
                      input changed delay:600ms from:#id_brief_summary,
                      change from:#id_policy_areas,
                      change from:#id_legal_instruments,
-                     change from:#id_source_organisations"
+                     change from:#id_source_organisations,
+                     sarnased:restored"
          hx-include="closest form"
          hx-target="this"
          hx-swap="innerHTML"></div>

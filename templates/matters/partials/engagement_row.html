@@ -66,6 +66,35 @@ before the closure.
       {% endif %}
 
       {% comment %}
+        `Vastuseid`, directly under `Keda kaasati` — the order the
+        `+ Kaasamine` panel asks the same two questions in, so somebody fixing
+        what they typed there finds it where they left it.
+
+        It is the box this form did not have. A lawyer could enter a count on
+        the panel, read it back on the chronology, and then find nothing here
+        that would take a correction — 7 typed for 8 was a number stated on the
+        record with no route back out of it (QA-03).
+
+        **An empty box clears the count**, exactly as an empty `Märkus` or
+        `Link` clears those. `0` is «keegi ei vastanud» and is stored and shown
+        as the number it is; blank is «keegi ei lugenud». The two are different
+        facts and both have to be reachable, or one of them is a trap. There is
+        no `Kustuta` checkbox here and there does not need to be: unlike a
+        `Kaasamise kuupäev` stored as a period, a stored count is always
+        something this box can show, so an empty box is never ambiguous about
+        what it opened holding.
+      {% endcomment %}
+      <label class="cx-f cx-f--num"
+             for="{{ engagement_edit_form.response_count.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.response_count.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ engagement_edit_form.response_count }}
+      </label>
+      {% if engagement_edit_form.response_count.errors %}
+        <p class="field__error">{{ engagement_edit_form.response_count.errors|first }}</p>
+      {% endif %}
+
+      {% comment %}
         The two dates, in the same order and with the same labels the
         `+ Kaasamine` panel asks them in. A person who learns the panel must not
         have to learn a second vocabulary to fix what they typed into it, and a

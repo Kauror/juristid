@@ -57,6 +57,7 @@ from app.matters.services import (
     publish_website_overview,
 )
 from app.matters.timeline import (
+    LAWYER_NOTE_LABEL,
     SUBMISSION_MILESTONE,
     WORK_VICTORY_DATE_UNKNOWN,
     WORK_VICTORY_MILESTONE,
@@ -1414,3 +1415,211 @@ def test_the_empty_history_is_named_after_the_section_it_is_in(signed_in, specia
         ).status_code
         == 200
     )
+
+
+# ---------------------------------------------------------------------------
+# The lawyer's own note, on the row and under its own label
+# ---------------------------------------------------------------------------
+#
+# `development_milestone` has set `own_note` and `own_note_label` since
+# docs/adr/0091 §5, and the generic chronology row rendered neither: the label,
+# the value and the whole separation existed in exactly one template, the
+# `Väline seisukoht` partial. So a `Menetluse areng` saved with a
+# `Juristi märkus` printed the headline, the date and the files, and this
+# office's own assessment of the step reached no reading surface at all.
+#
+# These assert the rendered page rather than the read model, because the read
+# model was right the whole time.
+
+
+def _development_row_html(client, matter, title: str) -> str:
+    """The chronology article this development draws, as the page renders it."""
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    start = body.index(title)
+    return body[body.rindex("<article", 0, start) : body.index("</article>", start)]
+
+
+def test_a_development_renders_the_step_and_the_lawyers_note_separately(signed_in, specialist):
+    """What the procedure did, and what this office makes of it, are two lines.
+
+    Folding the assessment into the headline would make one line say two things
+    with two authors, which is the whole reason `note` is a column of its own
+    (docs/adr/0091 §4, §5).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Ministeerium saatis parandatud eelnõu",
+        occurred_on=_days_ago(4),
+        note="Muudatused ei arvesta Koja ettepanekut.",
+    )
+
+    row = _development_row_html(signed_in, matter, "Ministeerium saatis parandatud eelnõu")
+
+    assert "Ministeerium saatis parandatud eelnõu" in row
+    assert "Muudatused ei arvesta Koja ettepanekut." in row
+    headline = row.index("Ministeerium saatis parandatud eelnõu")
+    note = row.index("Muudatused ei arvesta Koja ettepanekut.")
+    assert headline < note, "the note reads under the step, never inside it"
+    assert "eelnõu Muudatused" not in row, "the two sentences are never one string"
+
+
+def test_the_developments_note_reads_under_the_juristi_markus_label(signed_in, specialist):
+    """The label is what does the work.
+
+    A paragraph of Koda's assessment printed unlabelled under a headline naming a
+    ministry is the attribution defect with better line spacing — a colleague
+    scanning the chronology reads it as part of what the ministry said. Same
+    label, same markup and same stylesheet as a `Väline seisukoht`'s, because it
+    is the same fact about the same author.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Valitsus kiitis eelnõu heaks",
+        occurred_on=_days_ago(6),
+        note="Meie kaks ettepanekut jäid arvestamata.",
+    )
+
+    row = _development_row_html(signed_in, matter, "Valitsus kiitis eelnõu heaks")
+
+    assert LAWYER_NOTE_LABEL in row
+    assert "uxtl__msnotelabel" in row
+    label = row.index(LAWYER_NOTE_LABEL)
+    assert label < row.index("Meie kaks ettepanekut jäid arvestamata.")
+
+
+def test_a_note_carrying_markup_is_escaped(signed_in, specialist):
+    """The note is a plain sentence somebody typed, rendered as one.
+
+    `Menetluse areng` has no rich-text control and `note` is not sanitised
+    markup, so the row must escape it rather than trust it — the ordinary Django
+    autoescape, asserted because this is the first surface that prints the
+    column.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Komisjon arutas eelnõu",
+        occurred_on=_days_ago(2),
+        note="<script>alert(1)</script> & muud",
+    )
+
+    row = _development_row_html(signed_in, matter, "Komisjon arutas eelnõu")
+
+    assert "<script>alert(1)</script>" not in row
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in row
+    assert "&amp; muud" in row
+
+
+def test_a_development_with_no_note_renders_no_note_block(signed_in, specialist):
+    """An ordinary step gains no empty label and no empty box.
+
+    Most developments carry no assessment — the ministry sent a draft and there
+    is nothing yet to say about it — and a bordered empty block under every one
+    of them would be the row announcing a gap in itself.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Eelnou joudis Riigikokku",
+        occurred_on=_days_ago(3),
+    )
+
+    row = _development_row_html(signed_in, matter, "Eelnou joudis Riigikokku")
+
+    assert "uxtl__msnote" not in row
+    assert LAWYER_NOTE_LABEL not in row
+
+
+def test_an_external_positions_note_still_renders_exactly_once(signed_in, specialist, ministry):
+    """The partial that already rendered this did not gain a second copy.
+
+    A `Väline seisukoht` renders its own row, including its own note, precisely
+    so that a correction swaps the record and not the spine around it. The
+    generic branch must not reach it — two labelled notes on one row is the same
+    attribution failure read twice.
+
+    Counted by the note element's own class rather than by the words
+    `Juristi märkus`, which are also the label of the `note` control on two
+    composer panels standing open on the same page: a page-wide count of the
+    phrase reads four and says nothing about the chronology.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    add_matter_external_position(
+        matter=matter,
+        author=specialist,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+        organisation=ministry,
+        summary="Ministeerium toetab varianti B.",
+        lawyer_note="Nende pohjendus ei arvesta kulumojuga.",
+        stated_on=_days_ago(9),
+    )
+
+    body = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    ).content.decode()
+
+    assert body.count("Nende pohjendus ei arvesta kulumojuga.") == 1
+    assert body.count("uxtl__msnotelabel") == 1
+
+
+def test_a_restricted_developments_note_is_invisible_to_a_reader(client, specialist, reader):
+    """§7. Permission before projection, and the note is inside that boundary.
+
+    A development restricted below its Matter contributes no row, so it
+    contributes no note either — the rendering fix must not turn `own_note` into
+    a value that escapes a record nobody may read.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    development = add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Ministeerium saatis salajase versiooni",
+        occurred_on=_days_ago(5),
+        note="Salajane hinnang eelnoule.",
+    ).record
+    development.visibility_override = Visibility.RESTRICTED
+    development.save(update_fields=["visibility_override"])
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "Salajane hinnang" not in body
+    assert "salajase versiooni" not in body
+    assert LAWYER_NOTE_LABEL not in body
+
+
+def test_rendering_the_note_costs_no_extra_query(
+    signed_in, specialist, django_assert_max_num_queries
+):
+    """§10. The column is already loaded, so printing it reads nothing new.
+
+    Asserted against a doubling population under one budget, the same shape
+    `test_the_history_does_not_cost_a_query_per_row` uses: a note that cost a
+    query per row would be the read model reaching back into the database from
+    inside the template.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    def populate(count: int) -> None:
+        for index in range(count):
+            add_procedural_development(
+                matter=matter,
+                author=specialist,
+                title=f"Menetlus liikus {index}",
+                occurred_on=_days_ago(index + 1),
+                note=f"Juristi hinnang {index}.",
+            )
+
+    budget = 18
+    populate(3)
+    with django_assert_max_num_queries(budget):
+        assert len(_history(matter, specialist)) >= 3
+    populate(6)
+    with django_assert_max_num_queries(budget):
+        assert len(_history(matter, specialist)) >= 9

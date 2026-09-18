@@ -6027,8 +6027,27 @@ fieldset,
   flex: 1 1 auto;
 }
 
+/* A target, not just a glyph.
+ *
+ * Padding around a 📅 sized the button by whatever the emoji happened to
+ * measure, which came out 32x23 — a pointer target one pixel under the 24x24
+ * floor, on every date box in the application. The minimums are stated here
+ * instead, so the box is the size somebody has to hit rather than the size the
+ * glyph rendered at, and the emoji itself is unchanged: this is the hit area
+ * growing, not the icon.
+ *
+ * 32 rather than 24, because the input beside it is 34 tall and a square that
+ * height reads as the other end of one control; and rather than 44, because a
+ * touch-sized square would be taller than the field it belongs to and would
+ * make a secondary affordance the heaviest thing on a dense form. Centred by
+ * flex, so the padding no longer decides where the glyph sits. */
 .datepicker__trigger {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
   padding: var(--spacing-1) var(--spacing-15);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -6087,7 +6106,20 @@ fieldset,
   color: var(--text-primary);
 }
 
+/* The same floor, for the same reason. Previous and next month measured
+   22.9x23.6 and 23.3x23.6 — under the minimum on both axes, and a calendar whose
+   opener is comfortable while its month arrows are not is half a fix. Matching
+   the trigger's 32 square also makes the two ends of the component agree.
+
+   `min-width` is what keeps them square under the head's `space-between`: a
+   flex item shrinks to its `min-width` and no further, so a long month name
+   can no longer squeeze the arrows. */
 .datepicker__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
   padding: 0 var(--spacing-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
