@@ -812,6 +812,89 @@
     }
   }
 
+  /* ---- Uus teema: a restored form gets its warning back ------------------
+   * `Sarnased teemad` recomputes on the fields that decide the answer and on
+   * nothing else, which is right while somebody is typing and wrong the
+   * moment the browser puts a finished form back on the screen.
+   *
+   * The reported workflow (QA-11): a lawyer fills the form, presses `Loo
+   * teema`, lands on the new Teema and presses Back. The browser restores
+   * every value they typed — and the suggestion region, which is
+   * server-rendered empty and filled only by HTMX, comes back empty. No field
+   * changed, so no trigger fires, and the page now says «nothing here
+   * resembles this» about a form whose exact subject was filed a moment ago.
+   * Pressing `Loo teema` again files it twice, and a Teema cannot be deleted.
+   *
+   * `pageshow` is the seam, because it is the one event that fires for *every*
+   * way a page arrives: an ordinary render, a BFCache restore, and — measured
+   * in Chromium 151 against this application — a history restore that rebuilds
+   * the document and then puts the typed values back. This page sends
+   * `Cache-Control: no-store`, so it is not BFCache-eligible at all and
+   * `event.persisted` is **false** on the very navigation this fixes. Gating
+   * on `persisted` would therefore have changed nothing, which is why the gate
+   * below is the form's own contents instead.
+   *
+   * **The gate is one matching signal, not the engine's threshold.** The
+   * question here is only «is there anything worth asking about», and the
+   * server stays the authority on what qualifies: it is asked with the same
+   * values `hx-include` would send and answers with the same weights, the same
+   * threshold and the same permission filtering as every other time. A form
+   * with nothing in it asks nothing, so an ordinary fresh `Uus teema` costs no
+   * request — and a refused save, which re-renders this page with the answers
+   * still in it, gets its suggestions back for the same reason a restored one
+   * does.
+   *
+   * One listener, registered once per document, dispatching one event on one
+   * element. Back, forward and back again is one refresh each, and the
+   * debounced typing triggers are untouched.
+   */
+  (function () {
+    /* The names the draft endpoint actually reads
+       (app/related_materials/views.py::draft_suggestions) — its list rather
+       than the trigger's, because the trigger names the fields worth
+       *watching* while this names the fields worth *asking* about. */
+    var MATCHING_FIELDS = [
+      "title",
+      "brief_summary",
+      "policy_areas",
+      "legal_instruments",
+      "source_organisations",
+      "addressee_organisation"
+    ];
+
+    function hasMatchingInput(form) {
+      /* `FormData` reads exactly what `hx-include="closest form"` would send:
+         ticked boxes only, no empty select, values as the browser restored
+         them. Re-deriving that from `querySelectorAll` is how the two drift. */
+      var data;
+      try {
+        data = new FormData(form);
+      } catch (error) {
+        return false;
+      }
+      return MATCHING_FIELDS.some(function (name) {
+        return data.getAll(name).some(function (value) {
+          return typeof value === "string" && value.trim() !== "";
+        });
+      });
+    }
+
+    window.addEventListener("pageshow", function () {
+      var region = document.getElementById("sarnased-teemad");
+      if (!region) {
+        return;
+      }
+      var form = region.closest("form");
+      if (!form || !hasMatchingInput(form)) {
+        return;
+      }
+      /* Said to the region itself, so nothing else on the page can be woken by
+         a page simply being shown. `hx-trigger` names this event beside the
+         typing ones (templates/matters/matter_create.html). */
+      region.dispatchEvent(new CustomEvent("sarnased:restored"));
+    });
+  })();
+
   /* ---- Composer: Ctrl/Cmd+Enter submits, Esc closes optional fields ------ */
   document.addEventListener("keydown", function (event) {
     var composer = event.target.closest ? event.target.closest("form[data-composer]") : null;
