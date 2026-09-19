@@ -84,8 +84,15 @@ def choose_organisation(page, picker: str, name: str = MINISTRY) -> None:
 
 
 # ---------------------------------------------------------------------------
-# §1 — `Koostan arvamuse` on Uus teema
+# §1 — `Arvamuse tähtaeg` on Uus teema, and the step it establishes
 # ---------------------------------------------------------------------------
+#
+# The box was `Koostan arvamuse` under an `arvamus-` prefix. `Uus teema` asked
+# the same date twice under two names — that box and `Arvamuse tähtaeg` beside
+# `Saabus` — and the lawyers read them as one question, so it is one box:
+# `response_deadline`, at the end of the form, recording the obligation and
+# establishing this step (docs/adr/0094 §5). Every rule below is docs/adr/0091
+# §1's; only the key moved.
 
 
 def test_the_preparation_date_becomes_the_files_first_step(page, base_url):
@@ -101,7 +108,7 @@ def test_the_preparation_date_becomes_the_files_first_step(page, base_url):
 
     prepare_by = _future(8)
     page.fill("#id_title", unique_title("Koostan arvamuse"))
-    page.fill("#id_arvamus-prepare_by", prepare_by)
+    page.fill("#id_response_deadline", prepare_by)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
@@ -121,9 +128,9 @@ def test_the_preparation_box_opens_empty_and_says_what_it_will_create(page, base
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
 
-    box = page.locator("#id_arvamus-prepare_by")
+    box = page.locator("#id_response_deadline")
     expect(box).to_have_value("")
-    expect(page.locator("#koostan-arvamuse")).to_contain_text("Koostan arvamuse")
+    expect(page.locator("#arvamuse-tahtaeg")).to_contain_text("Arvamuse tähtaeg")
     # The box directly above it legitimately holds today, which is what makes the
     # assertion above a measurement rather than a page with no dates on it.
     expect(page.locator("#id_received_date")).not_to_have_value("")
@@ -448,7 +455,7 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Terve töövoog"))
-    page.fill("#id_arvamus-prepare_by", _future(8))
+    page.fill("#id_response_deadline", _future(8))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     expect(page.locator("#praegune-tegevus")).to_contain_text("Koostan arvamuse")

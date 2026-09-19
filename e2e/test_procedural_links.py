@@ -58,17 +58,17 @@ def card(page):
     return page.locator("#menetluse-lingid")
 
 
-def open_create_block(page):
-    """Unfold `Menetluse link` on `Uus teema`, the way a person does.
+def create_block(page):
+    """`Menetluse link` on `Uus teema`, which is on screen when the page loads.
 
-    It arrives shut, because docs/adr/0088 is about this page having too much
-    expanded at once, and `data-stay-closed` keeps the pre-selected `EIS` chip
-    from unfolding it. A click is what opens it and a click is what shuts it, so
-    this looks first rather than toggling blindly.
+    It was a shut `<details>` and this helper opened it. docs/adr/0088's
+    complaint was about *four* blocks expanded at once; there are two now, and
+    what the fold cost instead was a click before the box could be typed into, on
+    the one question whose answer is already on the reader's screen
+    (docs/adr/0094 §3). Nothing to open, so this only names the block and waits
+    for the box to be real.
     """
     block = page.locator("#menetluse-link")
-    if not block.evaluate("node => node.open"):
-        block.locator("summary").click()
     block.locator("[name='menetlus-url']").wait_for(state="visible")
     return block
 
@@ -235,19 +235,26 @@ def test_a_reference_can_be_recorded_while_the_teema_is_created(page, base_url):
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Menetluse link loomisel"))
-    block = open_create_block(page)
-    block.get_by_role("radio", name="EIS", exact=True).check()
+    block = create_block(page)
     block.locator("[name='menetlus-url']").fill(EIS_URL)
     block.locator("[name='menetlus-label']").fill("Eelnõu 123 SE")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
-    expect(card(page)).to_contain_text("EIS")
+    # The lawyer's own name for it is what the card reads by. The *source* was a
+    # chip row on this form and is not asked here any more, so a row filed from
+    # `Uus teema` carries the enum's neutral value — asserted on the record by
+    # `tests/test_procedural_links_on_uus_teema.py` rather than on this card,
+    # because the card contains the inline `Paranda` form and that form offers
+    # every kind by name. A `not_to_contain_text("EIS")` here would be reading
+    # an option nobody chose, which is the trap
+    # `test_an_eu_matter_needs_no_second_european_question` documents about the
+    # rail's own editor (docs/adr/0094 §3).
     expect(card(page).get_by_role("link", name="Eelnõu 123 SE")).to_be_visible()
 
 
 def test_creating_a_teema_without_touching_the_block_records_nothing(page, base_url):
-    """`EIS` arrives selected and records nothing on its own."""
+    """Two empty boxes on screen, and an ordinary submit writes no row."""
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Menetluse linkideta"))
 
@@ -260,18 +267,16 @@ def test_a_refused_create_keeps_the_typed_address(page, base_url):
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Menetluse link keeldumisel"))
-    block = open_create_block(page)
-    block.get_by_role("radio", name="Riigikogu", exact=True).check()
+    block = create_block(page)
     block.locator("[name='menetlus-url']").fill("javascript:alert(1)")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    # A refusal this block owns opens it again, so the box to correct is on
-    # screen rather than behind a fold nobody was told to open.
-    assert page.locator("#menetluse-link").evaluate("node => node.open")
+    # The box to correct and the sentence explaining it are both simply on the
+    # page: there is nothing to open, which is the whole of docs/adr/0094 §3.
+    expect(page.locator("[name='menetlus-url']")).to_be_visible()
     expect(page.locator("[name='menetlus-url']")).to_have_value("javascript:alert(1)")
     expect(page.locator("#menetluse-link")).to_contain_text("http:// või https://")
-    expect(page.get_by_role("radio", name="Riigikogu", exact=True)).to_be_checked()
 
 
 # ---------------------------------------------------------------------------
@@ -338,40 +343,45 @@ def test_a_long_register_address_does_not_destroy_the_layout(page, base_url, wid
     assert not overflows, "a long register address makes the Teema page scroll sideways"
 
 
-def test_the_create_block_arrives_folded_and_opens_on_a_click(page, base_url):
-    """docs/adr/0088's complaint, answered rather than re-created.
+def test_the_create_block_is_on_screen_when_the_page_loads(page, base_url):
+    """docs/adr/0094 §3: the answer is already on the reader's screen.
 
-    The same feedback that asked for this block said the capture page reads as a
-    survey when too much on it is expanded at once — so it is shut on arrival,
-    the pre-selected `EIS` chip does not unfold it, and one click reaches
-    everything.
+    It was a shut `<details>`, on docs/adr/0088's argument that the capture page
+    reads as a survey when too much is expanded at once. That argument was about
+    four blocks and there are two; what the fold cost was a click before the box
+    could be typed into.
     """
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
 
     block = page.locator("#menetluse-link")
-    assert not block.evaluate("node => node.open")
-    expect(block.locator("[name='menetlus-url']")).to_be_hidden()
-
-    block.locator("summary").click()
-
+    expect(block).to_be_visible()
     expect(block.locator("[name='menetlus-url']")).to_be_visible()
-    expect(block.get_by_role("radio", name="EIS", exact=True)).to_be_checked()
+    expect(block.locator("[name='menetlus-label']")).to_be_visible()
+    # Nothing to open, and nothing to classify.
+    expect(block.locator("summary")).to_have_count(0)
+    expect(block.locator("[name='menetlus-kind']")).to_have_count(0)
 
 
-def test_the_summary_is_reachable_and_operable_from_the_keyboard(page, base_url):
-    """A `<summary>` is a native control, and it has to stay one."""
+def test_both_boxes_are_reachable_from_the_keyboard(page, base_url):
+    """Two labelled inputs in the tab order, and nothing in front of them.
+
+    It used to take a `<summary>` press to reach either. The block is open, so
+    the claim is simply that the boxes are real controls a keyboard can land on
+    (docs/adr/0094 §3).
+    """
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
 
-    summary = page.locator("#menetluse-link summary")
-    summary.focus()
-    expect(summary).to_be_focused()
-    page.keyboard.press("Enter")
-
-    expect(page.locator("#menetluse-link [name='menetlus-url']")).to_be_visible()
+    for name in ("menetlus-url", "menetlus-label"):
+        control = page.locator(f"#menetluse-link [name='{name}']")
+        control.focus()
+        expect(control).to_be_focused()
+        control.type("x")
+        expect(control).to_have_value("x")
+        control.fill("")
 
 
 @pytest.mark.parametrize("width", [420, 375])
@@ -380,7 +390,7 @@ def test_the_uus_teema_block_does_not_scroll_the_form_sideways(page, base_url, w
     page.set_viewport_size({"width": width, "height": 812})
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
-    open_create_block(page)
+    create_block(page)
     page.locator("[name='menetlus-url']").fill(LONG_REGISTER_URL)
 
     expect(page.locator("#menetluse-link")).to_be_visible()

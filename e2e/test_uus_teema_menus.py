@@ -134,13 +134,17 @@ def test_opening_hetkeseis_does_not_push_the_form_down(page, base_url, width):
     )
 
 
-def test_the_panel_really_is_over_the_field_below_it(page, base_url):
+def test_the_panel_really_is_over_the_field_below_it(page, base_url, screenshots):
     """Not merely «the form did not move» — the panel has to be *on top*.
 
     A panel rendered with zero height, or clipped to nothing, would satisfy the
     measurement above and be no use to anybody. So this asserts the opposite
     error: the open panel has a real box, and that box overlaps the row it is
     covering.
+
+    This is also where the **open** state is photographed into the CI artifact
+    directory, because a `uus-teema` baseline can only ever show the page at
+    rest and the open panel is the whole change (docs/adr/0094 §2).
     """
     create_form(page, base_url)
     open_valdkond(page)
@@ -152,6 +156,11 @@ def test_the_panel_really_is_over_the_field_below_it(page, base_url):
     assert panel["y"] + panel["height"] > below["y"], (
         "the open panel stops above the field it is meant to cover"
     )
+    screenshots(page, "valdkonnad-menuu-avatud")
+
+    page.keyboard.press("Escape")
+    open_hetkeseis(page)
+    screenshots(page, "hetkeseis-menuu-avatud")
 
 
 # ---------------------------------------------------------------------------
