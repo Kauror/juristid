@@ -5181,39 +5181,36 @@ a.barchart__row:hover {
   margin-top: var(--spacing-2);
 }
 
-/* -- Valdkonnad and Hetkeseis: a menu, not a fold ------------------------- *
+/* -- Valdkonnad and Hetkeseis: the choices, drawn ------------------------ *
  *
- * `.chipdetails` above folds a long tail *into the page*: opening it makes the
- * document taller and pushes everything below it down. That is right for a
- * catalogue which is part of what you are reading and wrong for a control you
- * open, answer and shut — the lawyers' complaint about `Valdkonnad` and
- * `Hetkeseis` was that choosing a value re-laid out the rest of the form under
- * their hands (docs/adr/0094 §2).
+ * A section that is open when the page arrives, in ordinary flow, and which the
+ * reader may collapse. Not a menu: the panel that overlaid the form is gone,
+ * and with it the click that stood in front of an ordinary choice
+ * (docs/adr/0096 §1).
  *
- * So the panel is taken out of flow. The measurable promise, and the one the
- * browser suite asserts, is that the y-position of the field *after* the menu
- * does not move when the menu opens.
+ * The complaint the menu was built for — answering a question re-laid out the
+ * form under the reader’s hands — is answered here by never being shut. Nothing
+ * below moves when a chip is pressed, because everything below is already drawn
+ * where it stays. It moves once, if and when the *reader* collapses the section,
+ * which is a thing they asked for rather than a thing that happened to them.
  *
  * Still a `<details>`, and deliberately: the trigger is keyboard-reachable,
  * announces its own expanded state, opens on Enter and Space, and works with
- * scripting off — none of which a `<div>` with a click handler gives. What the
- * script adds on top is Escape, click-outside, and closing a single-select menu
- * once it has been answered (static/js/app.js `bindChipMenus`).
+ * scripting off — none of which a `<div>` with a click handler gives. Nothing
+ * is scripted on top of it any more.
  *
- * `position: relative` is the containing block for the panel. Without it the
- * panel measures from the initial containing block and opens at the top of the
- * document — the defect `.rail .inlineedit` documents at length. */
-.chipmenu {
-  position: relative;
+ * No `position: relative` and no `z-index`: there is nothing out of flow left to
+ * contain. */
+.chipfold {
   display: block;
   max-width: 100%;
 }
 
 /* The pill, which is `.chipdetails__summary` in every respect a reader can see.
    A separate class rather than that one because the two components differ in
-   what they *do*, and a shared name would invite a rule written for the fold to
-   land on the menu. */
-.chipmenu__trigger {
+   what they *do*, and a shared name would invite a rule written for the long
+   tail to land on this. */
+.chipfold__trigger {
   display: inline-block;
   padding: 3px 11px;
   border: 1px dashed var(--border-strong);
@@ -5223,10 +5220,10 @@ a.barchart__row:hover {
   color: var(--text-secondary);
   cursor: pointer;
   list-style: none;
-  /* The trigger carries the answer, and an answer can be long: eleven
-     Hetkeseis labels, and Valdkonnad counts up to twenty-two. It stays one line
-     and cuts, so the caret — the affordance — is never the thing pushed off
-     the row (`.inlineedit__trigger` makes the same argument). */
+  /* The trigger carries the answer for the collapsed state, and an answer can
+     be long: eleven Hetkeseis labels, and Valdkonnad counts up to twenty-two.
+     It stays one line and cuts, so the caret — the affordance — is never the
+     thing pushed off the row (`.inlineedit__trigger` makes the same argument). */
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5234,74 +5231,48 @@ a.barchart__row:hover {
   vertical-align: bottom;
 }
 
-.chipmenu__trigger::-webkit-details-marker {
+.chipfold__trigger::-webkit-details-marker {
   display: none;
 }
 
-.chipmenu__trigger::after {
+.chipfold__trigger::after {
   content: " ▾";
   color: var(--text-muted);
 }
 
-.chipmenu[open] > .chipmenu__trigger::after {
+.chipfold[open] > .chipfold__trigger::after {
   content: " ▴";
 }
 
-.chipmenu__trigger:hover {
+.chipfold__trigger:hover {
   color: var(--text-primary);
   border-color: var(--accent-border);
 }
 
-.chipmenu__trigger:focus-visible {
+.chipfold__trigger:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset-width);
 }
 
-/* What the trigger opens onto, over the page rather than in it.
+/* What the trigger opens onto, in the page rather than over it.
  *
- * `width: 100%` of `.chipmenu`, which is a block in a full-width row, so the
- * panel is exactly as wide as the row it belongs to — at 1440 and at 375
- * alike. That is the whole of the narrow-width answer: a panel which cannot be
- * wider than its own row cannot put a horizontal scrollbar on the document,
- * whatever the longest label in it measures (task §9).
+ * No border, no shadow and no elevated surface. The menu needed all three to
+ * read as a layer above the form; a section of the form needs none of them, and
+ * `Õigusakt` directly below — a bare `<fieldset>` of the same chips — is the
+ * neighbour this has to match rather than out-dress (docs/adr/0096 §1).
  *
- * No `overflow` here. The scroll cap belongs on the chip row inside, because a
- * scroll container clips its absolutely positioned descendants — and the
- * Hetkeseis chips each carry a `.stagehelp` bubble which has to be able to hang
- * outside the box it opens from. */
-.chipmenu__panel {
-  position: absolute;
-  top: calc(100% + var(--spacing-1));
-  left: 0;
-  width: 100%;
-  z-index: 20;
-  padding: var(--spacing-3);
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-menu);
+ * No height cap and no internal scrolling either. A floating panel had to be
+ * capped because anything past the bottom of a phone was unreachable; a section
+ * in flow is reached by scrolling the page. That also removes the one rule that
+ * ever clipped the `.stagehelp` bubbles hanging off the Hetkeseis chips. */
+.chipfold__body {
+  margin-top: var(--spacing-2);
 }
 
-/* The vocabulary is twenty-one labels and `Muu`, which is several wrapped rows
-   at every width. It scrolls inside the panel rather than growing it past the
-   bottom of a phone, exactly as the catalogue inside `.chipdetails__body` does.
-   On the chip row and not on the panel, for the reason above.
-
-   A descendant selector and not `>`. The chips are wrapped in the `<fieldset>`
-   that names the group for a screen reader, so the row is the panel's
-   *grandchild* — written as a child selector this rule matched nothing at all
-   and the cap was silently absent. Found by measuring `overflowY` in the
-   browser, which is the only thing that can tell a rule that does not apply
-   from one that applies and has no effect (e2e/test_uus_teema_menus.py). */
-.chipmenu__panel--scroll .chiprow {
-  max-height: 190px;
-  overflow-y: auto;
-}
-
-/* Ticking `Muu` reveals its box **under the trigger**, not inside the panel.
-   A free-text answer which lived in the menu would vanish the moment the menu
-   was shut, and a refusal about it would be printed somewhere nobody can see
-   (docs/adr/0094 §2.3). */
+/* Ticking `Muu` reveals its box **under the trigger**, not inside the fold.
+   A free-text answer which lived in the section would vanish the moment
+   somebody collapsed it, and a refusal about it would be printed somewhere
+   nobody can see (docs/adr/0094 §2.3, kept). */
 .createform__valdkond {
   margin-top: var(--spacing-2);
 }

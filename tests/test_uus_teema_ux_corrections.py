@@ -1,14 +1,20 @@
-"""`Uus teema` answers with menus, and asks for one date (docs/adr/0094).
+"""`Uus teema` draws its choices, and asks for one date (docs/adr/0096).
 
-Four corrections from one round of lawyer feedback. This file owns the half a
-browser cannot state — what the server renders, what it binds and what it writes
-— and `e2e/test_uus_teema_menus.py` owns the half only a browser can: that
-opening a menu overlays the form instead of pushing it down, that Escape and a
-click outside close it, and that a multi-select menu survives being answered.
+The menus are withdrawn. `Valdkonnad` and `Hetkeseis` are `<details open>`
+sections in ordinary flow — every option on the page when it arrives, a
+collapsible trigger over them, and nothing floating over anything
+(docs/adr/0096 §1–§2). What the round before built, and this file used to
+assert, was the opposite: a pill over an out-of-flow panel that had to be opened
+before an ordinary choice could be made (docs/adr/0094 §2).
+
+This file owns the half a browser cannot state — what the server renders, what
+it binds and what it writes — and `e2e/test_uus_teema_valikud.py` owns the half
+only a browser can: that the options are visible without a click, that answering
+one does not move the other, and that collapsing is the reader's own act.
 
 The two halves are deliberately separate and deliberately *both*. A class name in
-the markup is not an overlay, and a measured overlay says nothing about what the
-POST stores.
+the markup is not a visible chip, and a measured layout says nothing about what
+the POST stores.
 
 Where a rule already had an owner it stays there and is not restated:
 
@@ -47,19 +53,22 @@ def _page(client) -> str:
     return response.content.decode()
 
 
-def _menu(page: str, *, single: bool) -> str:
-    """One `<details class="chipmenu">`, from its opening tag to its close."""
-    needle = (
-        '<details class="chipmenu" data-chipmenu data-chipmenu-single>'
-        if single
-        else '<details class="chipmenu" data-chipmenu>'
-    )
-    start = page.index(needle)
+#: The two folds, named by the field each one answers. Both open tags are now
+#: identical — which is the point, they are one component — so the discriminator
+#: is the summary's own `data-chipsummary-for`, i.e. the field name that reaches
+#: the server. Nothing here depends on the order of the two rows.
+FOLDS = {"valdkonnad": "policy_areas", "hetkeseis": "stage"}
+
+
+def _fold(page: str, which: str) -> str:
+    """One `<details class="chipfold">`, from its opening tag to its close."""
+    anchor = page.index(f'data-chipsummary-for="{FOLDS[which]}"')
+    start = page.rindex('<details class="chipfold"', 0, anchor)
     return page[start : page.index("</details>", start)]
 
 
-def _trigger(menu: str) -> str:
-    return menu[menu.index("<summary") : menu.index("</summary>")]
+def _trigger(fold: str) -> str:
+    return fold[fold.index("<summary") : fold.index("</summary>")]
 
 
 def _rendered_input(page: str, field_id: str) -> str:
@@ -69,37 +78,38 @@ def _rendered_input(page: str, field_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# §2 — both vocabularies are menus, and neither is a fold
+# §1 — both vocabularies are drawn, and neither is a menu
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("single", [False, True], ids=["valdkonnad", "hetkeseis"])
-def test_each_vocabulary_is_a_menu_with_a_trigger_and_a_panel(signed_in, single):
-    """The markup contract, which is what makes the overlay possible.
+@pytest.mark.parametrize("which", list(FOLDS), ids=list(FOLDS))
+def test_each_vocabulary_is_a_fold_that_arrives_open(signed_in, which):
+    """The markup contract, which is what makes the choices visible.
 
-    Not the overlay itself — that is CSS and is measured in the browser. What is
-    asserted here is that the panel is a separate element from the trigger and
-    carries the class the stylesheet positions, because a panel rendered inside
-    the summary could never be taken out of flow however the rule is written.
+    Not the layout itself — that is CSS and is measured in the browser. What is
+    asserted here is that the server renders the section *open*, because a
+    `<details>` without the attribute is shut before a single stylesheet loads,
+    and every option in it is then a click away on the ordinary first visit.
     """
     factories.StageFactory(label_et="Kooskõlastusringil")
-    menu = _menu(_page(signed_in), single=single)
+    page = _page(signed_in)
+    fold = _fold(page, which)
 
-    assert '<summary class="chipmenu__trigger">' in menu
-    assert "chipmenu__panel" in menu
-    # Shut on arrival, every time.
-    assert " open" not in _trigger(menu)
+    assert '<summary class="chipfold__trigger">' in fold
+    assert "chipfold__body" in fold
+    # Open on arrival, every time.
+    assert fold.startswith('<details class="chipfold" data-chipfold open>')
 
 
-@pytest.mark.parametrize("single", [False, True], ids=["valdkonnad", "hetkeseis"])
-def test_a_menu_is_shut_on_a_refused_render_too(signed_in, single):
-    """Nothing a reader has to see is inside a panel, so nothing opens one.
+@pytest.mark.parametrize("which", list(FOLDS), ids=list(FOLDS))
+def test_a_fold_is_open_on_a_refused_render_too(signed_in, which):
+    """A refusal is the one render where a shut section would be worst.
 
-    This is the rule that replaced `policy_area_disclosure_open`. The fold had
-    to render itself open on a refusal because the box being refused was inside
-    it; both refusals and the `Muu` box are outside the menu now, so a refused
-    save comes back with the menu shut and the trigger carrying the answer
-    (docs/adr/0094 §2.3).
+    This is also why the page still has no `policy_area_disclosure_open`. The
+    old fold had to be *computed* open on a refusal, because the box being
+    refused was inside it; the menu after it was shut on every render including
+    a refused one. Neither is a state any more: the section is open on every
+    render, so there is nothing for the server to decide (docs/adr/0096 §1).
     """
     factories.StageFactory(label_et="Kooskõlastusringil")
     areas = list(PolicyArea.objects.filter(is_active=True)[:2])
@@ -114,39 +124,44 @@ def test_a_menu_is_shut_on_a_refused_render_too(signed_in, single):
     )
 
     assert response.status_code == 400
-    menu = _menu(response.content.decode(), single=single)
-    assert " open" not in _trigger(menu)
+    fold = _fold(response.content.decode(), which)
+    assert fold.startswith('<details class="chipfold" data-chipfold open>')
 
 
-def test_the_muu_box_and_both_refusals_are_outside_the_valdkonnad_panel(signed_in):
-    """A box that vanishes when the menu shuts is a box nobody can finish."""
+def test_the_muu_box_and_both_refusals_are_outside_the_valdkonnad_fold(signed_in):
+    """A box that vanishes when the section is collapsed cannot be finished."""
     response = signed_in.post(
         CREATE, {"title": "Muu ilma tekstita", "policy_area_other_selected": "on"}
     )
     page = response.content.decode()
-    menu = _menu(page, single=False)
+    fold = _fold(page, "valdkonnad")
 
     assert response.status_code == 400
     # The reveal target and the refusal are both on the page.
     assert 'id="valdkond-muu-tekst"' in page
     assert "Kirjuta, millise valdkonnaga on tegemist." in page
-    # And neither is inside the menu.
-    assert 'id="valdkond-muu-tekst"' not in menu
-    assert "Kirjuta, millise valdkonnaga on tegemist." not in menu
+    # And neither is inside the fold.
+    assert 'id="valdkond-muu-tekst"' not in fold
+    assert "Kirjuta, millise valdkonnaga on tegemist." not in fold
     # The checkbox that reveals it stays inside, because it is a choice.
-    assert 'id="valdkond-muu"' in menu
+    assert 'id="valdkond-muu"' in fold
 
 
 # ---------------------------------------------------------------------------
-# §2.2 — what each trigger says, and why they say it differently
+# §2 — what each trigger says when the section is collapsed
 # ---------------------------------------------------------------------------
 
 
 def test_the_valdkonnad_trigger_counts_and_starts_at_nothing(signed_in, specialist):
-    """`Valdkonnad`, then `Valdkonnad · 3`. A count, because the names do not fit."""
+    """`Valdkonnad`, then `Valdkonnad · 3`. A count, because the names do not fit.
+
+    Redundant while the section is open — the ticked chips are right there — and
+    the only thing a reader who collapsed it has left, which is why it survives
+    the menu that first needed it (docs/adr/0096 §2).
+    """
     form = MatterCreateForm(viewer=specialist)
     assert form.policy_area_chosen_count == 0
-    assert "·" not in _trigger(_menu(_page(signed_in), single=False))
+    assert "·" not in _trigger(_fold(_page(signed_in), "valdkonnad"))
 
 
 def test_the_valdkonnad_count_is_what_is_ticked_including_muu(signed_in, specialist):
@@ -166,7 +181,7 @@ def test_the_valdkonnad_count_is_what_is_ticked_including_muu(signed_in, special
     assert with_muu.policy_area_chosen_count == 4
 
     response = signed_in.post(CREATE, payload)
-    assert "· 3" in _trigger(_menu(response.content.decode(), single=False))
+    assert "· 3" in _trigger(_fold(response.content.decode(), "valdkonnad"))
 
 
 def test_a_forged_area_is_not_counted(signed_in, specialist):
@@ -195,7 +210,7 @@ def test_the_hetkeseis_trigger_names_the_answer(signed_in, specialist):
     assert chosen.stage_summary == "Kooskõlastusringil"
 
     response = signed_in.post(CREATE, {"title": "", "stage": str(stage.pk)})
-    assert "· Kooskõlastusringil" in _trigger(_menu(response.content.decode(), single=True))
+    assert "· Kooskõlastusringil" in _trigger(_fold(response.content.decode(), "hetkeseis"))
 
 
 def test_the_hetkeseis_trigger_names_maaramata_rather_than_inventing_one(signed_in, specialist):
@@ -209,27 +224,29 @@ def test_the_hetkeseis_trigger_names_maaramata_rather_than_inventing_one(signed_
     factories.StageFactory(label_et="Kooskõlastusringil")
 
     assert MatterCreateForm(viewer=specialist).stage_summary == "Määramata"
-    assert "· Määramata" in _trigger(_menu(_page(signed_in), single=True))
+    assert "· Määramata" in _trigger(_fold(_page(signed_in), "hetkeseis"))
 
     # And nothing was written to the record by the page saying so.
     signed_in.post(CREATE, {"title": "Määramata seis"})
     assert Matter.objects.get(title="Määramata seis").stage is None
 
 
-def test_the_single_select_menu_is_marked_and_the_multi_select_is_not(signed_in):
-    """The attribute that closes a menu once it is answered, and its absence.
+def test_nothing_on_the_page_is_a_chipmenu_any_more(signed_in):
+    """The retired component, asserted as absent rather than assumed gone.
 
-    `Valdkonnad` must stay open across several ticks, so it deliberately does not
-    carry it. Asserted here rather than only in the browser because the flag is
-    what the browser behaviour is *read from* — a template that stopped writing
-    it would make the e2e assertion vacuous rather than red.
+    `data-chipmenu-single` was what told the script to shut `Hetkeseis` the
+    instant a radio was picked, and `.chipmenu__panel` was the class the
+    stylesheet took out of flow. Both are withdrawn (docs/adr/0096 §1), and
+    neither the stylesheet nor the script defines either any more — so a
+    template that kept one would not be *wrong* in a way a rendering test
+    notices. It would be an unstyled, unscripted leftover that the next reader
+    takes for a live contract, which is how a shut panel comes back.
     """
     factories.StageFactory(label_et="Kooskõlastusringil")
     page = _page(signed_in)
 
-    assert page.count("data-chipmenu-single") == 1
-    assert "data-chipmenu-single" in _menu(page, single=True)
-    assert "data-chipmenu-single" not in _menu(page, single=False)
+    assert "chipmenu" not in page
+    assert page.count('<details class="chipfold" data-chipfold open>') == 2
 
 
 # ---------------------------------------------------------------------------
@@ -238,12 +255,13 @@ def test_the_single_select_menu_is_marked_and_the_multi_select_is_not(signed_in)
 
 
 def test_valdkonnad_are_still_checkboxes_and_hetkeseis_still_radios(signed_in):
-    """A menu is a skin. What the controls *are* did not move (ADR 0025)."""
+    """A fold is a skin, as the menu before it was: what the controls *are* did
+    not move across either round (ADR 0025)."""
     factories.StageFactory(label_et="Kooskõlastusringil")
     page = _page(signed_in)
 
-    valdkonnad = _menu(page, single=False)
-    hetkeseis = _menu(page, single=True)
+    valdkonnad = _fold(page, "valdkonnad")
+    hetkeseis = _fold(page, "hetkeseis")
 
     assert 'type="checkbox" name="policy_areas"' in valdkonnad
     assert 'type="radio" name="stage"' in hetkeseis
@@ -252,51 +270,56 @@ def test_valdkonnad_are_still_checkboxes_and_hetkeseis_still_radios(signed_in):
     assert "<select" not in hetkeseis
 
 
-def test_neither_menu_is_a_native_multiple_listbox(signed_in):
+def test_neither_fold_is_a_native_multiple_listbox(signed_in):
     """Explicitly refused by the brief, and refused before by ADR 0025.
 
     A `<select multiple>` hides multi-selection behind a modifier key nobody
     uses, is unstyleable, and on a touch device is a platform sheet rather than
-    the page. Scoped to the two menus, because `Failid` is legitimately a
+    the page. It is also the shape a literal reading of «rippmenüü» could have
+    landed on at either end of this argument, so it is refused at both. Scoped
+    to the two folds, because `Failid` is legitimately a
     `<input type="file" multiple>` and always was.
     """
     factories.StageFactory(label_et="Kooskõlastusringil")
     page = _page(signed_in)
 
-    for single in (False, True):
-        menu = _menu(page, single=single)
-        assert "<select" not in menu
-        assert "multiple" not in menu
+    for which in FOLDS:
+        fold = _fold(page, which)
+        assert "<select" not in fold
+        assert "multiple" not in fold
 
 
-def test_each_menu_is_a_named_group_for_a_screen_reader(signed_in):
-    """A panel of unlabelled checkboxes is a group nobody can answer.
+def test_each_fold_is_a_named_group_for_a_screen_reader(signed_in):
+    """A run of unlabelled checkboxes is a group nobody can answer.
 
     The legend is visually hidden because the trigger directly above already says
-    the word, and printing it twice is what the menu exists to stop.
+    the word, and printing it twice is what the trigger exists to stop.
     """
     factories.StageFactory(label_et="Kooskõlastusringil")
     page = _page(signed_in)
 
-    for single, label in ((False, "Valdkonnad"), (True, "Hetkeseis")):
-        panel = _menu(page, single=single)
-        panel = panel[panel.index("chipmenu__panel") :]
-        assert "<fieldset" in panel
-        legend = re.search(r"<legend[^>]*>([^<]*)</legend>", panel)
+    for which, label in (("valdkonnad", "Valdkonnad"), ("hetkeseis", "Hetkeseis")):
+        body = _fold(page, which)
+        body = body[body.index("chipfold__body") :]
+        assert "<fieldset" in body
+        legend = re.search(r"<legend[^>]*>([^<]*)</legend>", body)
         assert legend is not None
         assert legend.group(1).strip() == label
-        assert "visually-hidden" in panel[: panel.index("<legend") + 200]
+        assert "visually-hidden" in body[: body.index("<legend") + 200]
 
 
 def test_the_stage_explanations_are_still_one_bubble_per_explained_chip(signed_in):
-    """Moved into the panel, and not otherwise touched.
+    """Carried through both rounds, and not otherwise touched.
 
     The description reaches a screen reader through `aria-describedby`, which is
     why it is a sibling of the label rather than inside it — putting it inside
-    renamed the radio to the whole paragraph (Uus teema redesign §8).
+    renamed the radio to the whole paragraph (Uus teema redesign §8). The fold
+    also ends the one thing that ever threatened these: a capped, scrolling
+    panel clips the bubbles hanging off its own chips, and there is no cap and
+    no scroll container anywhere near them now.
     """
     factories.StageFactory(label_et="Kooskõlastusringil", help_text="Kasuta siis, kui…")
-    hetkeseis = _menu(_page(signed_in), single=True)
+    hetkeseis = _fold(_page(signed_in), "hetkeseis")
 
     assert 'role="tooltip"' in hetkeseis
     assert "aria-describedby" in hetkeseis
@@ -315,9 +338,9 @@ def test_a_refused_save_gives_back_every_answer_the_four_controls_hold(signed_in
     """All four corrections at once, on the path that loses answers.
 
     A browser cannot put a value back into a box the server did not re-render,
-    so this is the whole of what «the values survive» means. The menus need not
-    come back open — they carry their answers on their triggers — but every
-    value has to still be there.
+    so this is the whole of what «the values survive» means. The folds come back
+    open and carry their answers on their triggers as well; what is asserted
+    here is the values.
     """
     stage = factories.StageFactory(label_et="Kooskõlastusringil")
     areas = list(PolicyArea.objects.filter(is_active=True)[:2])
@@ -340,14 +363,14 @@ def test_a_refused_save_gives_back_every_answer_the_four_controls_hold(signed_in
     assert not Matter.objects.exists()
 
     # Valdkonnad: ticked, and counted on the trigger.
-    valdkonnad = _menu(page, single=False)
+    valdkonnad = _fold(page, "valdkonnad")
     for area in areas:
         chosen = valdkonnad[valdkonnad.index(f'value="{area.pk}"') :]
         assert "checked" in chosen[: chosen.index(">")]
     assert "· 2" in _trigger(valdkonnad)
 
     # Hetkeseis: one value, named on the trigger.
-    hetkeseis = _menu(page, single=True)
+    hetkeseis = _fold(page, "hetkeseis")
     chosen = hetkeseis[hetkeseis.index(f'value="{stage.pk}"') :]
     assert "checked" in chosen[: chosen.index(">")]
     assert "· Kooskõlastusringil" in _trigger(hetkeseis)

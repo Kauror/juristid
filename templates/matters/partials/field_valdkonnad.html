@@ -1,0 +1,122 @@
+{% comment %}
+`VALDKONNAD` — the governed vocabulary, on both pages that ask for it.
+
+One partial, included by `Uus teema` and by `Muuda teemat`, which is
+docs/adr/0096 §2: `Lisa uus teema` is the master interaction for every fact a
+Matter carries, and a question drawn twice is a question that drifts. It drew
+two different controls here until this round — a menu on one page, a bare chip
+row on the other — for one many-to-many field.
+
+**The chips are on the page when the page arrives**, which is the reversal this
+round exists for (docs/adr/0096 §3).
+
+The control was a floating `.chipmenu` between docs/adr/0094 and here: a
+`<details>` whose panel was `position: absolute`, so opening it overlaid the
+form instead of lengthening it. That answered a real complaint — an in-flow
+fold pushed `Hetkeseis`, `Õigusakt` and the save button down the page while
+somebody was still ticking boxes — and it introduced a worse one. Ordinary
+selection began with a click on a closed pill, so the first thing a lawyer saw
+of the two questions that classify a file was two words and a caret; and a
+panel over the page is a panel that hides whatever it is over. The owner asked
+for the chips back, in the same interaction language `Õigusakt` uses directly
+below.
+
+**Still a `<details>`, and `open`.** The fold is not the defect — arriving shut
+was. Open, every choice is visible and selectable without opening anything, and
+the disclosure is there for the reader who has answered this once and wants the
+row back: a Matter filed under three areas out of twenty-two can be collapsed
+to one line and reopened. That is what docs/adr/0096 §3 permits and what it
+requires — visible on arrival, collapsible afterwards, never a popover.
+
+`<details>` rather than a scripted control for the reason docs/adr/0094 gave
+and this round keeps: one tab stop, Enter and Space, a native expanded state a
+screen reader already announces, and it works with scripting off. Nothing is
+bound to it. `bindChipMenus` — Escape, click-outside, close-on-answer — is
+retired with the overlay it existed for: none of the three is a behaviour an
+in-flow fold wants, and closing this one on an answer would take the other
+twenty-one choices off the screen mid-question.
+
+**The summary carries the count, and the count is not decoration.** Collapsed,
+it is the whole of what the control says: «Valdkonnad · 3». Open, it is the
+reader's confirmation that the three ticks they can see are the three the form
+holds. `policy_area_chosen_count` renders it server-side from the request or
+the record, so it is right on the first paint of either page and with no
+scripting at all; `bindChipSummaries` keeps it true while somebody ticks
+(app/matters/forms.py `ClassificationSummariesMixin`).
+
+**Nothing about the data moved, on either page.** Same `policy_areas` name,
+same values, same many-to-many, same `Muu` affordance, same governed vocabulary
+from `selectable_policy_areas()`. `Matter.policy_areas` holds several and the
+control still says so: ticking one does not close anything, ticking a second
+adds it, and unticking one leaves the rest (ADR 0025).
+
+**`retired_area_ids` is the edit page's, and the `{% templatetag openblock %} if {% templatetag closeblock %}` is what makes one partial
+serve both.** A Matter filed years ago under a since-withdrawn area keeps it,
+offered back and marked «kasutusest väljas», so correcting a title cannot
+silently drop the filing. `Uus teema` sets no such attribute — a new Matter
+cannot be filed under a retired area — and an undefined name is falsy in a
+Django template, so the branch is simply never taken there (Teema redesign
+§7.2).
+{% endcomment %}
+<div class="createform__row">
+  <details class="chipdetails chipdetails--field" open>
+    <summary class="chipdetails__summary">
+      {{ form.policy_areas.label }}<span
+        data-chipsummary-for="policy_areas"
+        data-chipsummary-count>{% if form.policy_area_chosen_count %} · {{ form.policy_area_chosen_count }}{% endif %}</span>
+    </summary>
+    {% comment %}
+      A real `<fieldset>` and `<legend>`, so what a screen reader enters is a
+      named group of checkboxes rather than twenty-two unlabelled ones. The
+      legend is visually hidden because the summary directly above already says
+      the word, and printing it twice is noise in the one place it cannot be
+      skimmed past.
+    {% endcomment %}
+    <fieldset class="field chipdetails__field">
+      <legend class="field__label visually-hidden">{{ form.policy_areas.label }}</legend>
+      <div class="chiprow">
+        {% for choice in form.policy_areas %}
+          <label class="chip{% if choice.data.value in form.retired_area_ids %} chip--retired{% endif %}">
+            {{ choice.tag }}
+            <span class="chip__name">{{ choice.choice_label }}{% if choice.data.value in form.retired_area_ids %} · kasutusest väljas{% endif %}<span class="chip__clear" aria-hidden="true">×</span></span>
+          </label>
+        {% endfor %}
+        <label class="chip chip--other" id="valdkond-muu">
+          {{ form.policy_area_other_selected }}
+          <span class="chip__name">{{ form.policy_area_other_selected.label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+        </label>
+      </div>
+    </fieldset>
+  </details>
+
+  {% comment %}
+    `Muu`'s box and both refusals live **outside** the disclosure.
+
+    Inside, they would be unreachable the moment somebody collapsed it:
+    a person who ticks `Muu` has to type a valdkond, and a box that disappears
+    when the fold shuts is a box they cannot finish. The refusal is worse —
+    «Kirjuta, millise valdkonnaga on tegemist.» printed inside a shut fold is
+    an error nobody can see, and it is exactly the error that brings a save
+    back (docs/adr/0094 §2.3, kept).
+
+    `#valdkond-muu-tekst` is revealed by `#valdkond-muu`'s checkbox from across
+    the boundary; the pair is named in `static/js/app.js`, and the server
+    renders the box open when the checkbox arrives ticked — so a refused save
+    shows it without any scripting having to run, and so `Muuda teemat` opens
+    showing what a Matter filed under `Muu` actually holds
+    (`edit_initial`, docs/adr/0096 §2).
+  {% endcomment %}
+  <div class="createform__other" id="valdkond-muu-tekst"
+       {% if not form.policy_area_other_selected.value %}hidden{% endif %}>
+    <label class="field">
+      <span class="field__label">{{ form.policy_area_other.label }}</span>
+      {{ form.policy_area_other }}
+      {% if form.policy_area_other.errors %}
+        <span class="field__error" id="{{ form.policy_area_other.auto_id }}_error">{{ form.policy_area_other.errors|first }}</span>
+      {% endif %}
+    </label>
+  </div>
+  {% if form.policy_areas.errors %}
+    <span class="field__error" id="{{ form.policy_areas.auto_id }}_error">{{ form.policy_areas.errors|first }}</span>
+  {% endif %}
+</div>

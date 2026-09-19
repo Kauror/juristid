@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load stage_help %}
 {% block title %}Uus teema · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -18,18 +17,22 @@
   the chip control, which is the same input with a smaller skin
   (design/mockups/Uus teema.dc.html 8a/8b/8c, Uus teema redesign §2, §3).
 
-  Since then the page has stopped drawing every vocabulary at rest. `Valdkonnad`
-  and `Hetkeseis` are menus — a pill carrying the answer, and a panel that
-  overlays the form rather than lengthening it — `Menetluse link` asks for an
-  address and nothing about it, and `Arvamuse tähtaeg` is the one date and the
-  last question, with `Järgmiseks` gone from creation altogether
-  (docs/adr/0094).
+  Since then `Menetluse link` asks for an address and nothing about it, and
+  `Arvamuse tähtaeg` is the one date and the last question, with `Järgmiseks`
+  gone from creation altogether (docs/adr/0094).
+
+  `Valdkonnad` and `Hetkeseis` were menus for one round — a pill carrying the
+  answer over a panel that overlaid the form — and are drawn again:
+  `.chipfold`, open as the server renders it, in flow, collapsible by the person
+  who wants the room back. The ordinary choice is made by looking at the page
+  and pressing a chip, which is what `Õigusakt` below has always asked for
+  (docs/adr/0096).
 
   Two things the shape still has to say, and one it must not:
 
   - the shape of a control is a promise about the data. One value where the model
-    holds one — Vastutaja, Hetkeseis — several where it holds several. Chips and
-    menus are how they look; what they are has not moved
+    holds one — Vastutaja, Hetkeseis — several where it holds several. Radios
+    and checkboxes are what they are; a chip is only how one looks
     (Stage-2E.1 brief 16, ADR 0025);
   - **one counterparty question, not two.** This page asks who sent the file and
     stops there. `Adressaat` is a different fact — Koda answers a ministry, the
@@ -348,223 +351,10 @@
     </div>
 
     {# 5 — Valdkonnad. #}
-    {% comment %}
-      A menu, and the trigger says how many are in it.
-
-      Three shapes, in order. It drew the whole vocabulary on every visit —
-      nineteen labels and `Muu`, wrapping across three rows. Then it went behind
-      a `<details>`, which stopped it costing three rows at rest and started it
-      costing them the moment anybody answered it: opening the fold pushed
-      `Hetkeseis`, `Õigusakt`, `Menetluse link` and the button itself down the
-      page while the reader was still ticking boxes. That is the shape the
-      lawyers asked us not to ship — they asked for a *rippmenüü*, and a
-      disclosure is not one however it is styled (docs/adr/0094 §2).
-
-      So the panel is out of flow. `.chipmenu__panel` is absolutely positioned
-      and overlays whatever is under it; the y-position of `Hetkeseis` below is
-      the same open as shut, which is what `e2e/test_uus_teema_menus.py`
-      measures rather than asserting a class name.
-
-      **Still a `<details>`, and still the same checkboxes.** The element is what
-      gives a keyboard the trigger for free — one tab stop, Enter and Space to
-      open, its own expanded state announced, and it works with scripting off,
-      which a scripted `<div>` menu gives up. What the script adds is the three
-      things a menu needs and a fold does not: Escape, click-outside, and — for
-      `Hetkeseis` only — closing once the question has been answered
-      (static/js/app.js `bindChipMenus`).
-
-      **Nothing about the data moved.** Same `policy_areas` name, same values,
-      same many-to-many, same `Muu` affordance, same twenty-one governed areas
-      from `selectable_policy_areas()`. `Matter.policy_areas` holds several and
-      the control still says so; ticking one does not close the menu, ticking a
-      second adds it and unticking one leaves the rest (ADR 0025, task §1).
-
-      **The count rather than the names**, which is the one presentation change.
-      A pill on one line cannot hold three Estonian policy areas, and
-      «Maksujõuetus, Energee…» says less than «· 3» about whether the question
-      has been answered at all. `policy_area_chosen_count` renders it on load and
-      `bindChipSummaries` keeps it true while the menu is open, so a browser with
-      scripting off still gets the right number on every render.
-    {% endcomment %}
-    <div class="createform__row">
-      <details class="chipmenu" data-chipmenu>
-        <summary class="chipmenu__trigger">
-          {{ form.policy_areas.label }}<span
-            data-chipsummary-for="policy_areas"
-            data-chipsummary-count>{% if form.policy_area_chosen_count %} · {{ form.policy_area_chosen_count }}{% endif %}</span>
-        </summary>
-        {% comment %}
-          A real `<fieldset>` and `<legend>` inside the panel, so what a screen
-          reader enters is a named group of checkboxes rather than twenty-two
-          unlabelled ones. The legend is visually hidden because the trigger
-          directly above already says the word, and printing it twice is what
-          the menu exists to stop.
-        {% endcomment %}
-        <div class="chipmenu__panel chipmenu__panel--scroll" id="valdkonnad-menuu">
-          <fieldset class="field">
-            <legend class="field__label visually-hidden">{{ form.policy_areas.label }}</legend>
-            <div class="chiprow">
-              {% for choice in form.policy_areas %}
-                <label class="chip">
-                  {{ choice.tag }}
-                  <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-                </label>
-              {% endfor %}
-              <label class="chip chip--other" id="valdkond-muu">
-                {{ form.policy_area_other_selected }}
-                <span class="chip__name">{{ form.policy_area_other_selected.label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-              </label>
-            </div>
-          </fieldset>
-        </div>
-      </details>
-
-      {% comment %}
-        `Muu`'s box and both refusals live **outside** the menu, under the
-        trigger.
-
-        Inside, they would be unreachable the moment the menu was shut: somebody
-        who ticks `Muu` has to type a valdkond, and a box that disappears when
-        the panel closes is a box they cannot finish. The refusal is worse —
-        «Kirjuta, millise valdkonnaga on tegemist.» printed inside a closed panel
-        is an error nobody can see, and it is exactly the error that brings a
-        save back (docs/adr/0094 §2.3).
-
-        Which is also why this page has no `policy_area_disclosure_open` any
-        more. The fold used to render itself open on a refusal or a ticked `Muu`,
-        because what had to be read was inside it. Nothing that has to be read is
-        inside it now, so the menu is shut on every render — including a refused
-        one, where the trigger still carries the count and every box is still
-        ticked.
-
-        `#valdkond-muu-tekst` is revealed by `#valdkond-muu`'s checkbox from
-        across the boundary; the pair is named in `static/js/app.js`, and the
-        server renders the box open when the checkbox arrives ticked, so a
-        refused save shows it without any scripting having to run.
-      {% endcomment %}
-      <div class="createform__other" id="valdkond-muu-tekst"
-           {% if not form.policy_area_other_selected.value %}hidden{% endif %}>
-        <label class="field">
-          <span class="field__label">{{ form.policy_area_other.label }}</span>
-          {{ form.policy_area_other }}
-          {% if form.policy_area_other.errors %}
-            <span class="field__error" id="{{ form.policy_area_other.auto_id }}_error">{{ form.policy_area_other.errors|first }}</span>
-          {% endif %}
-        </label>
-      </div>
-      {% if form.policy_areas.errors %}
-        <span class="field__error" id="{{ form.policy_areas.auto_id }}_error">{{ form.policy_areas.errors|first }}</span>
-      {% endif %}
-    </div>
+    {% include "matters/partials/field_valdkonnad.html" %}
 
     {# 6 — Where the procedure stands. #}
-    {% comment %}
-      The same menu `Valdkonnad` is, and single-select because the field holds
-      one value.
-
-      This row drew eleven chips on every visit, on the argument that eleven fit
-      on two lines. They do; what that argument left out is that a lawyer answers
-      `Hetkeseis` once and reads past it for the rest of the file's life, and two
-      lines of chips spent on an answered question — directly above two more for
-      `Õigusakt` — is what the lawyers reported as the page reading like a survey
-      (docs/adr/0094 §2).
-
-      **The trigger carries the answer by name**, because there is one:
-      «Hetkeseis · Riigikogus». `Valdkonnad` above counts instead, and the
-      asymmetry is deliberate — it is the two controls saying what kind of
-      question they are, in the same way the `×` on an `Õigusakt` chip and the
-      absence of one here do (`stage_summary`, docs/adr/0094 §2.2).
-
-      «Määramata» is named on the trigger like any other answer. It is a real
-      chip — `blank=True` exists so that «not decided yet» can be chosen and
-      un-chosen — and it is what a fresh form arrives with selected. Nothing is
-      invented: the trigger reports the option the form itself holds.
-
-      **`data-chipmenu-single`** is what closes the panel once a radio is picked.
-      The question is over at that point and the answer is on the trigger;
-      leaving the panel up would hide `Õigusakt` behind something already
-      answered. `Valdkonnad` carries no such attribute, on purpose
-      (static/js/app.js `bindChipMenus`).
-
-      **Nothing about the vocabulary or its meaning moved.** Same eleven stages
-      from `StageVocabulary`, same one value, same «Määramata», same
-      department-written explanation per chip. `Rohkem ei tegele` is still a
-      disposition and not a stage; no stage is inferred; `Matter.track` is not
-      written from this page (docs/adr/0090 §4).
-    {% endcomment %}
-    <div class="createform__row">
-      <details class="chipmenu" data-chipmenu data-chipmenu-single>
-        <summary class="chipmenu__trigger">
-          {{ form.stage.label }}<span
-            data-chipsummary-for="stage">{% if form.stage_summary %} · {{ form.stage_summary }}{% endif %}</span>
-        </summary>
-        <div class="chipmenu__panel" id="hetkeseis-menuu">
-          {% comment %}
-            No `--scroll` here, unlike `Valdkonnad`, and the reason is the
-            tooltips. A scroll container clips its absolutely positioned
-            descendants, and every explained chip carries a `.stagehelp` bubble
-            that has to be able to hang outside the chip it opens from. Eleven
-            chips need no cap: the panel is out of flow, so a tall one costs the
-            page nothing that the reader does not already see.
-          {% endcomment %}
-          <fieldset class="field">
-            <legend class="field__label visually-hidden">{{ form.stage.label }}</legend>
-            {% comment %}
-              The one control on this page whose options need explaining: whether
-              a file is `Kooskõlastusringil` or `Valitsuses` depends on an event
-              that has or has not happened, and the department wrote a sentence
-              per stage saying which.
-
-              A tooltip, not a modal and not a link — hovering a chip or tabbing
-              on to it shows it, moving away closes it, and Escape closes it. The
-              chip itself is the target rather than a separate icon button, so the
-              row gains no tab stops: a radio group is one stop, and eleven extra
-              buttons in it would make the keyboard path through this page longer
-              than the mouse path. The radio points at its own bubble with
-              `aria-describedby`, which is what a screen reader reads
-              (app/workflow/selectors.py, Uus teema redesign §8).
-            {% endcomment %}
-            <div class="chiprow">
-              {% for choice in form.stage %}
-                {% with help=form.stage_help|stage_help:choice.data.value %}
-                  {% if help %}
-                    {% comment %}
-                      The bubble is a sibling of the label, not a child of it.
-
-                      Inside, it became part of the option's accessible name: a
-                      screen reader announced "Kooskõlastusringil, Seaduse või
-                      määruse eelnõu kooskõlastusringile saatmisest kuni…" as the
-                      name of a radio button, and every by-name lookup for the
-                      chip matched a paragraph. The description reaches the
-                      reader through `aria-describedby`, which is what that
-                      attribute is for; the name is the three words on the chip.
-                    {% endcomment %}
-                    <span class="chip chip--explained">
-                      <label class="chip__hit">
-                        {{ choice.tag }}
-                        <span class="chip__name">{{ choice.choice_label }}</span>
-                      </label>
-                      <span class="stagehelp" role="tooltip"
-                            id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
-                    </span>
-                  {% else %}
-                    <label class="chip">
-                      {{ choice.tag }}
-                      <span class="chip__name">{{ choice.choice_label }}</span>
-                    </label>
-                  {% endif %}
-                {% endwith %}
-              {% endfor %}
-            </div>
-          </fieldset>
-        </div>
-      </details>
-      {% comment %}
-        The refusal outside the menu, for the reason `Valdkonnad`'s is outside
-        its own: an error printed inside a shut panel is an error nobody can see.
-      {% endcomment %}
-      {% if form.stage.errors %}<span class="field__error" id="{{ form.stage.auto_id }}_error">{{ form.stage.errors|first }}</span>{% endif %}
-    </div>
+    {% include "matters/partials/field_hetkeseis.html" %}
 
     {% comment %}
       **`Menetlusliik` is not on this page**, and the row it occupied is gone
@@ -578,85 +368,31 @@
       Readable, not derived. `Matter.track` says what kind of *procedure* a file
       is on, it has seven values rather than two, and no instrument type entails
       one: a `Seadus` transposing a directive is a domestic instrument on a
-      `NATIONAL_TRANSPOSITION` track. So this page writes nothing to it, and it
-      is answered where it is known — on `Muuda teemat` and in the Teema rail,
-      both of which offer the whole vocabulary (docs/adr/0090 §4).
+      `NATIONAL_TRANSPOSITION` track. So this page writes nothing to it.
+
+      **And neither does `Muuda teemat` any more**, which is what changed on
+      2026-09-20. This comment used to end «it is answered where it is known —
+      on `Muuda teemat` and in the Teema rail» and that is no longer true: both
+      controls are withdrawn, because a question asked on one of two pages that
+      are supposed to be one job seen twice is drift rather than a decision
+      (docs/adr/0090 §4, docs/adr/0096 §5). `Matter.track` keeps every stored
+      value and the importers still write it.
 
       The field is gone from `MatterCreateForm` too, so a forged POST carrying
       `track=NATIONAL_TRANSPOSITION` is not part of this request as far as this
       form is concerned.
     {% endcomment %}
 
+    {# 7b — Õigusakt: what kind of instrument this file is about. #}
     {% comment %}
-      7b — Õigusakt: what kind of instrument this file is about.
+      The last of the classification rows, and the last question the page asks
+      about what kind of file this is: Saatja, Valdkond, Hetkeseis, Õigusakt,
+      in that order and with nothing between them (docs/adr/0090 §7).
 
-      The last of the classification rows, and now the last question the page
-      asks about what kind of file this is: Saatja, Valdkond, Hetkeseis,
-      Õigusakt, in that order and with nothing between them
-      (docs/adr/0090 §7).
-
-      Checkboxes, a `field__count` and a `chip__clear` on every chip — a Matter
-      really can concern a directive and the act transposing it, and the control
-      says so (ADR 0025). Hetkeseis directly above has none of the three,
-      because it holds one value.
-
-      `Muu` is a real vocabulary row here, unlike Valdkonnad's, so the template
-      cannot tell it apart by field name and compares against the form instead
-      (app/matters/forms.py `other_instrument_values`, docs/adr/0070).
+      One partial, shared with `Muuda teemat`, for the reason the two above it
+      are shared (docs/adr/0096 §2).
     {% endcomment %}
-    <div class="createform__row">
-      <fieldset class="field">
-        <legend class="field__label">
-          {{ form.legal_instruments.label }}
-          <span class="field__count" data-chipcount-for="legal_instruments"></span>
-        </legend>
-        <div class="chiprow">
-          {% for choice in form.legal_instruments %}
-            {% comment %}
-              `in`, not `==`. The reviewed vocabulary offers two rows that mean
-              «some other kind» — `Muu siseriiklik` and `Muu ELi dokument` — and
-              a Matter filed before it may hold version 1.0's `Muu`. All of them
-              reveal the one free-text box, so the hook is a data attribute
-              rather than an id: ids are unique and there are several of these
-              (app/matters/forms.py `other_instrument_values`, docs/adr/0090).
-            {% endcomment %}
-            {% if choice.data.value|stringformat:"s" in form.other_instrument_values %}
-              <label class="chip chip--other" data-reveals="oigusakt-muu-tekst">
-                {{ choice.tag }}
-                <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-              </label>
-            {% else %}
-              <label class="chip">
-                {{ choice.tag }}
-                <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-              </label>
-            {% endif %}
-          {% endfor %}
-        </div>
-        {% comment %}
-          Ticking `Muu` reveals the free-text box directly under the row, the
-          same treatment `Valdkond · Muu` gets. It creates no
-          `LegalInstrumentType` — the text lands in
-          `Matter.legal_instrument_other` and stays this Matter's own.
-
-          Server-rendered open when `Muu` is ticked, so a refused save shows the
-          box and the refusal without any scripting having to run (§9, §16).
-        {% endcomment %}
-        <div class="createform__other" id="oigusakt-muu-tekst"
-             {% if not form.other_instrument_open %}hidden{% endif %}>
-          <label class="field">
-            <span class="field__label">{{ form.legal_instrument_other.label }}</span>
-            {{ form.legal_instrument_other }}
-            {% if form.legal_instrument_other.errors %}
-              <span class="field__error" id="{{ form.legal_instrument_other.auto_id }}_error">{{ form.legal_instrument_other.errors|first }}</span>
-            {% endif %}
-          </label>
-        </div>
-        {% if form.legal_instruments.errors %}
-          <span class="field__error" id="{{ form.legal_instruments.auto_id }}_error">{{ form.legal_instruments.errors|first }}</span>
-        {% endif %}
-      </fieldset>
-    </div>
+    {% include "matters/partials/field_oigusakt.html" %}
 
     {# 7a — Menetluse link: where the proceeding this file is about lives. #}
     {% comment %}

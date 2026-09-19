@@ -110,6 +110,7 @@ from app.matters.forms import (
     MatterCreateForm,
     MatterEditForm,
     MatterFieldForm,
+    MatterLinkForm,
     MatterNoteForm,
     NextActionForm,
     OtherOpinionForm,
@@ -170,12 +171,12 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
-    change_track,
     close_matter,
     compose_update,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
+    correct_procedural_link,
     create_matter,
     edit_entry,
     engagement_revision_token,
@@ -195,12 +196,10 @@ from app.matters.services import (
     set_matter_data_class,
     set_matter_dates,
     set_matter_title,
-    set_matter_visibility,
     set_organisations,
     set_policy_area_other,
     set_policy_areas,
     set_position,
-    set_tags,
 )
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
@@ -4204,15 +4203,24 @@ def _next_action_error(request: HttpRequest, matter: Matter, message: str) -> Ht
     return render(request, "matters/partials/next_action_row.html", context, status=400)
 
 
+#: Which facts the inline controls may change, one field per URL.
+#:
+#: `track`, `addressee_organisation` and `visibility` were removed here on
+#: 2026-09-20 with the controls that posted to them (docs/adr/0096 §4). Removed
+#: from the *set*, not merely from the templates: a branch left standing behind
+#: a control nobody is offered is a working write path reachable by a crafted
+#: POST, and «the button is gone» is not an answer to that. `update_field` 404s
+#: on a field it does not name, so the three addresses are now simply not
+#: routes.
+#:
+#: Nothing about the stored columns changed. The importers, the register
+#: refresh and the cutover all still write all three.
 FIELD_SERVICES = {
     "owner",
     "stage",
-    "track",
     "source_organisations",
-    "addressee_organisation",
     "received_date",
     "response_deadline",
-    "visibility",
     "policy_area_other",
     "policy_areas",
 }
@@ -4241,17 +4249,33 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     returns early when the value it was given is the value already there.
     """
     matter = get_visible_matter(request, pk)
+    # `Menetluse link` is a Matter fact and is answered on this page, so it
+    # rides in the same `<form>` element under its own prefix — exactly the
+    # arrangement `Uus teema` uses, for the same reason: two form classes,
+    # namespaced POST keys, and neither able to collide with a field name in
+    # the other (docs/adr/0089 §13, docs/adr/0096 §6).
+    link = _primary_procedural_link(matter)
     if request.method == "GET":
         form = MatterEditForm(initial=edit_initial(matter), matter=matter, viewer=request.user)
-        return render(request, "matters/matter_edit.html", _edit_context(request, matter, form))
-
-    form = MatterEditForm(request.POST, matter=matter, viewer=request.user)
-    if not form.is_valid():
-        # The bound form is re-rendered, so everything typed is still there.
         return render(
             request,
             "matters/matter_edit.html",
-            _edit_context(request, matter, form),
+            _edit_context(request, matter, form, MatterLinkForm(link=link, prefix="menetlus")),
+        )
+
+    form = MatterEditForm(request.POST, matter=matter, viewer=request.user)
+    link_form = MatterLinkForm(request.POST, link=link, prefix="menetlus")
+    # Both, and `and` after both have run rather than short-circuiting: a page
+    # refused for a wrong title must still come back with the address refusal
+    # under the address box, and `is_valid()` is what fills `errors` at all.
+    forms_valid = form.is_valid()
+    forms_valid = link_form.is_valid() and forms_valid
+    if not forms_valid:
+        # The bound forms are re-rendered, so everything typed is still there.
+        return render(
+            request,
+            "matters/matter_edit.html",
+            _edit_context(request, matter, form, link_form),
             status=400,
         )
 
@@ -4264,7 +4288,6 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             )
             assign_matter(matter=matter, owner=data.get("owner"), actor=request.user)
             change_stage(matter=matter, stage=data.get("stage"), actor=request.user)
-            change_track(matter=matter, track=data.get("track") or "", actor=request.user)
             # `list(...)` rather than the queryset on both set-valued fields,
             # so an empty POST arrives as "none of them" — a decision somebody
             # made — and never as the sentinel that means "leave them alone"
@@ -4272,17 +4295,20 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # Resolved inside this transaction, and before the Matter is
             # touched. A typed name that names a body nobody has filed against
             # yet becomes an Organisation here; if any service below refuses,
-            # the rollback takes that Organisation with it and the Matter keeps
-            # the addressee it already had (§6).
+            # the rollback takes that Organisation with it.
+            #
+            # **`addressee_organisation` is not passed, and that is the whole
+            # of what its removal means here.** The parameter defaults to
+            # `_UNSET`, which is the sentinel for «leave this alone» — so a
+            # Matter that carries an addressee from the register keeps it
+            # through every save of this form. Passing `None` would have been
+            # the defect: it is a decision, and it would clear a fact nobody
+            # was offered the chance to state (docs/adr/0096 §5).
             set_organisations(
                 matter=matter,
                 source_organisations=resolve_source_organisations(
                     chosen=data.get("source_organisations"),
                     typed_name=data.get("sender_name") or "",
-                ),
-                addressee_organisation=resolve_addressee(
-                    chosen=data.get("addressee_organisation"),
-                    typed_name=data.get("addressee_name") or "",
                 ),
                 actor=request.user,
             )
@@ -4310,19 +4336,39 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             set_legal_instrument_other(
                 matter=matter, value=data.get("legal_instrument_other") or "", actor=request.user
             )
-            set_tags(matter=matter, tags=list(data.get("tags") or []), actor=request.user)
-            set_matter_visibility(
-                matter=matter,
-                visibility=data.get("visibility") or Visibility.NORMAL,
-                actor=request.user,
-            )
+            # `Sildid` and `Nähtavus` are not written here any more, and their
+            # services are not called with a default either. `set_tags` and
+            # `set_matter_visibility` both still exist and still audit; what is
+            # gone is this page's claim to have an answer for them. A Matter's
+            # tags and its visibility survive every save of this form untouched
+            # (docs/adr/0096 §4).
+            _save_procedural_link(matter=matter, form=link_form, actor=request.user)
+    except ProceduralLinkConflict as conflict:
+        # Somebody else corrected the same address between this page being
+        # opened and being saved. Refused rather than overwritten, and the
+        # refusal lands under the address box rather than at the top of a page
+        # whose other twelve fields were fine — the rule
+        # `correct_procedural_link` enforces and `procedural_links.html`
+        # reports on its own card.
+        #
+        # Caught *before* `DomainError`, which it subclasses: the generic
+        # handler below would otherwise answer a stale-copy conflict with 400
+        # and a non-field error, losing both the status and the place.
+        link_form.add_error(None, str(conflict))
+        matter.refresh_from_db()
+        return render(
+            request,
+            "matters/matter_edit.html",
+            _edit_context(request, matter, form, link_form),
+            status=409,
+        )
     except DomainError as error:
         form.add_error(None, str(error))
         matter.refresh_from_db()
         return render(
             request,
             "matters/matter_edit.html",
-            _edit_context(request, matter, form),
+            _edit_context(request, matter, form, link_form),
             status=400,
         )
 
@@ -4382,15 +4428,98 @@ def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
     form = MatterEditForm(
         initial=initial, matter=matter, viewer=request.user, suggested_senders=suggested_senders
     )
-    context = _edit_context(request, matter, form)
+    context = _edit_context(
+        request,
+        matter,
+        form,
+        # Unbound, and the assisted review proposes nothing about it: the
+        # extraction reads facts off a document, and where the proceeding lives
+        # is not one of them. The block renders holding whatever the Matter
+        # already has (app/matters/intake_suggestions).
+        MatterLinkForm(link=_primary_procedural_link(matter), prefix="menetlus"),
+    )
     context["assisted"] = analysis
     return render(request, "matters/matter_edit.html", context)
 
 
-def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, Any]:
+def _primary_procedural_link(matter: Matter) -> Any:
+    """The one `Menetluse link` `Muuda teemat` puts in a box, or `None`.
+
+    Oldest first, so the address a Matter was filed with is the one the page
+    offers to correct — and so the choice is stable across renders rather than
+    depending on the order a query happened to come back in.
+
+    A Matter carrying several keeps every one of them; the rest are read and
+    corrected on the Teema page's `Menetluse lingid` card, which has held a
+    `Paranda` per row since docs/adr/0089 §6.
+    """
+    return matter.procedural_links.order_by("created_at", "pk").first()
+
+
+def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
+    """Record or correct this Matter's `Menetluse link`, or do nothing.
+
+    Three cases, and the third is the ordinary one:
+
+    * the Matter has a link and the form holds an address — a correction,
+      through `correct_procedural_link` under the revision the page was drawn
+      from, so a stale copy is refused rather than allowed to overwrite a
+      newer one;
+    * the Matter has none and somebody typed an address — a new row under
+      `STORED_KIND`, exactly as `Uus teema` files one;
+    * nobody answered the block — nothing at all. No row, no event, no empty
+      record (docs/adr/0089 §7).
+
+    Called inside `matter_edit`'s transaction, so an address the service
+    refuses takes the whole correction back with it. A page that saved twelve
+    fields and then reported that the thirteenth was wrong would have left the
+    record in a state nobody chose.
+    """
+    data = getattr(form, "cleaned_data", None) or {}
+    url = (data.get("url") or "").strip()
+    if form.link is not None:
+        if not url:
+            # Refused in `MatterLinkForm.clean`, so this is unreachable through
+            # the page. Belt and braces for a caller constructing the form by
+            # hand: there is no deletion of a procedural link, here or anywhere
+            # (docs/adr/0084 §8).
+            return
+        correct_procedural_link(
+            link=form.link,
+            # The kind this row already carries, not `STORED_KIND`. A
+            # correction of the address must not silently reclassify a link
+            # somebody deliberately filed as `EIS` — the kind is stated on the
+            # Teema page's own `Paranda`, which is the only control that offers
+            # the vocabulary (docs/adr/0094 §3, docs/adr/0096 §6).
+            kind=form.link.kind,
+            url=url,
+            label=data.get("label") or "",
+            actor=actor,
+            expected_revision=data.get("revision") or "",
+        )
+        return
+    if form.wants_link:
+        record_procedural_link(
+            matter=matter,
+            kind=MatterLinkForm.STORED_KIND,
+            url=url,
+            label=data.get("label") or "",
+            actor=actor,
+        )
+
+
+def _edit_context(
+    request: HttpRequest, matter: Matter, form: Any, link_form: Any
+) -> dict[str, Any]:
     return {
         "matter": matter,
         "form": form,
+        # Under the name `procedural_link_create.html` reads, because it is the
+        # same block: `Uus teema` and `Muuda teemat` draw one control from one
+        # partial, which is what stops `Link` and `Nimetus` drifting apart
+        # between the page somebody files from and the page they correct from
+        # (docs/adr/0096 §2, §6).
+        "procedural_link_form": link_form,
         # Named here rather than derived in the template: the page states, in
         # words, which facts about this Matter it will not let anybody change,
         # so their absence reads as a decision rather than as an omission
@@ -4458,8 +4587,6 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             assign_matter(matter=matter, owner=value, actor=request.user)
         elif field == "stage":
             change_stage(matter=matter, stage=value, actor=request.user)
-        elif field == "track":
-            change_track(matter=matter, track=value or "", actor=request.user)
         elif field == "source_organisations":
             # `list(...)` rather than the queryset, so an empty POST arrives as
             # `[]` — "clear every sender" — and never as the `_UNSET` that means
@@ -4479,16 +4606,10 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
                     ),
                     actor=request.user,
                 )
-        elif field == "addressee_organisation":
-            set_organisations(matter=matter, addressee_organisation=value, actor=request.user)
         elif field == "received_date":
             set_matter_dates(matter=matter, received_date=value, actor=request.user)
         elif field == "response_deadline":
             set_matter_dates(matter=matter, response_deadline=value, actor=request.user)
-        elif field == "visibility":
-            set_matter_visibility(
-                matter=matter, visibility=value or Visibility.NORMAL, actor=request.user
-            )
         elif field == "policy_area_other":
             set_policy_area_other(matter=matter, value=value or "", actor=request.user)
         elif field == "policy_areas":
