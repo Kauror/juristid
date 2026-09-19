@@ -321,11 +321,12 @@ def test_the_withdrawn_labels_are_not_offered_anywhere_on_the_page(
     assert withdrawn not in offered
 
     body = signed_in.get(CREATE).content.decode()
-    # Scoped to the Valdkonnad menu's own panel, which is where the row lives
-    # since docs/adr/0094 §2 — the fold and its `data-valdkond-disclosure` hook
-    # are gone, the panel has an id, and the reason for scoping is unchanged.
-    start = body.index('id="valdkonnad-menuu"')
-    assert withdrawn not in body[start : body.index("</details>", start)]
+    # Scoped to the Valdkonnad fieldset, which is where the row lives now that
+    # the vocabulary is drawn at rest again: no menu, no panel and no id to
+    # anchor on — the chip row's own count badge marks its start. The reason
+    # for scoping is unchanged (docs/adr/0096 §2).
+    start = body.index('data-chipcount-for="policy_areas"')
+    assert withdrawn not in body[start : body.index("</fieldset>", start)]
 
 
 def test_a_matter_already_filed_under_a_withdrawn_label_keeps_it(signed_in, specialist):

@@ -86,6 +86,7 @@ from app.matters import (
     workspace,
 )
 from app.matters import person_work as person_workspace
+from app.matters.deletion import delete_matter, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
@@ -195,7 +196,6 @@ from app.matters.services import (
     set_matter_data_class,
     set_matter_dates,
     set_matter_title,
-    set_matter_visibility,
     set_organisations,
     set_policy_area_other,
     set_policy_areas,
@@ -674,7 +674,12 @@ def intake(request: HttpRequest) -> HttpResponse:
                     sender_name=data.get("sender_name") or "",
                     received_date=data.get("received_date") or timezone.localdate(),
                     response_deadline=data.get("response_deadline"),
-                    visibility=data.get("visibility") or Visibility.NORMAL,
+                    # Decided here, never read from the form — the same rule
+                    # `matter_create` follows one screen over. The control is
+                    # gone from this page and the field is gone from
+                    # `IncomingIntakeForm`, so a crafted `visibility=` reaches
+                    # nothing (docs/adr/0096 §3).
+                    visibility=Visibility.NORMAL,
                     brief_summary=data.get("brief_summary", ""),
                     handover_note=data.get("handover_note", ""),
                 )
@@ -2813,7 +2818,6 @@ def _header_context(
         # be an N+1 nobody notices until the institution list grows.
         "selected_sender_ids": matter.source_organisation_ids,
         "tracks": Track.choices,
-        "visibilities": Visibility.choices,
         # No `current_action` either. The header band no longer shows the next
         # step — the Järgmiseks row does — and the overview context reads it
         # once for both.
@@ -4212,7 +4216,11 @@ FIELD_SERVICES = {
     "addressee_organisation",
     "received_date",
     "response_deadline",
-    "visibility",
+    # `visibility` is deliberately absent, so this endpoint answers 404 for it.
+    # The ordinary Teema UI does not ask who may see a Matter, and a field left
+    # in this set would be an accepted POST parameter behind a control nobody
+    # draws — which is exactly the shape the removal exists to close
+    # (docs/adr/0096 §3).
     "policy_area_other",
     "policy_areas",
 }
@@ -4311,11 +4319,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
                 matter=matter, value=data.get("legal_instrument_other") or "", actor=request.user
             )
             set_tags(matter=matter, tags=list(data.get("tags") or []), actor=request.user)
-            set_matter_visibility(
-                matter=matter,
-                visibility=data.get("visibility") or Visibility.NORMAL,
-                actor=request.user,
-            )
+            # No `set_matter_visibility` call. `Nähtavus` is gone from this page
+            # and from `MatterEditForm`, so there is no cleaned value to pass on
+            # and a crafted `visibility=RESTRICTED` in this POST changes nothing
+            # (docs/adr/0096 §3).
     except DomainError as error:
         form.add_error(None, str(error))
         matter.refresh_from_db()
@@ -4387,6 +4394,109 @@ def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
     return render(request, "matters/matter_edit.html", context)
 
 
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Kustuta teema` — a page that asks, and a POST that does it.
+
+    **A route of its own, not a second button on the edit form.** The question
+    "should this record exist" is a different question from "are these facts
+    right", and a destructive control inside the form that saves is one stray
+    Enter away from the wrong submit. The GET renders what would be removed;
+    the POST removes it. There is no third way in — `matters:matter_edit`
+    cannot delete, whatever it is sent (docs/adr/0096 §4.3).
+
+    **GET writes nothing.** `plan_matter_deletion` is a read: it walks the
+    ownership graph, counts the rows and evidence objects, and collects every
+    reason the deletion would refuse. A blocked Matter shows the reasons and no
+    final button, and the POST refuses independently — the page is presentation
+    and `delete_matter` is the boundary.
+
+    **The same authorization as editing, and no more.** This is what the owner
+    asked for: deleting a Teema is a thing the application's users do, not an
+    administrator's privilege. `business_write_required` is the cohort —
+    SPECIALIST and DEPARTMENT_HEAD, the same two `Muuda teemat` requires — and
+    `get_visible_matter` is the record-level gate, so a restricted Matter is a
+    404 to somebody who may not see it rather than a refusal that confirms it
+    exists. A crafted POST from a READER or an ADMINISTRATOR is refused by the
+    decorator before this body runs (app/core/decorators.py, docs/adr/0096
+    §4.2).
+
+    **Nothing stronger was invented.** There is no existing canonical
+    permission over destructive Matter operations to reuse: closing a Matter,
+    which is the nearest thing the product had, is the same business-write
+    cohort. `ROLES_WITH_WORK_VICTORY_REVIEW` is the only narrower set in the
+    codebase and it is about claiming influence, not about data
+    (app/core/authorization.py).
+    """
+    matter = get_visible_matter(request, pk)
+
+    if request.method == "POST":
+        # **No plan is built before the POST.** `delete_matter` builds its own
+        # under the row lock, which is the only one that decides anything — one
+        # taken out here would be a second walk of the same graph whose answer
+        # nothing may act on.
+        try:
+            delete_matter(matter=matter, actor=request.user)
+        except DomainError as error:
+            # The refusal, on the page that offered the button, with a fresh
+            # plan behind it — a blocker that appeared while somebody read the
+            # confirmation is exactly the case this branch exists for.
+            return render(
+                request,
+                "matters/matter_delete.html",
+                _delete_context(matter, plan_matter_deletion(matter), error=str(error)),
+                status=400,
+            )
+        messages.success(request, "Teema kustutati.")
+        # The register, never the Matter's own address: that URL answers 404
+        # now, and redirecting a successful deletion to a 404 would read as a
+        # failure (docs/adr/0096 §4.5).
+        return redirect("matters:matter_list")
+
+    return render(
+        request, "matters/matter_delete.html", _delete_context(matter, plan_matter_deletion(matter))
+    )
+
+
+def _delete_context(matter: Matter, plan: Any, error: str = "") -> dict[str, Any]:
+    """What the confirmation page reads.
+
+    The counts are named per business record rather than per table. A person
+    deciding whether to destroy a file needs to know it holds four entries and
+    two opinions; `matters.MatterSourceOrganisation` is a join row and telling
+    them about it would bury the sentence that matters.
+    """
+    labelled = [
+        (label, plan.count_of(model))
+        for label, model in DELETION_SUMMARY_ROWS
+        if plan.count_of(model)
+    ]
+    return {
+        "matter": matter,
+        "plan": plan,
+        "summary": labelled,
+        "evidence_objects": len(plan.evidence_keys),
+        "delete_error": error,
+    }
+
+
+#: What the confirmation page names, in the order it names them. A shortlist of
+#: the records a lawyer would recognise, deliberately not the whole inventory:
+#: the page's job is to make the size of the act legible, not to print a schema.
+DELETION_SUMMARY_ROWS: tuple[tuple[str, str], ...] = (
+    ("sissekannet", "matters.Entry"),
+    ("järgmist tegevust", "workflow.NextAction"),
+    ("kaasamist", "matters.MatterEngagement"),
+    ("välist seisukohta", "matters.MatterExternalPosition"),
+    ("menetluse arengut", "matters.MatterProceduralDevelopment"),
+    ("ülevaadet või uudist", "matters.MatterWebsiteOverview"),
+    ("arvamust", "submissions.Submission"),
+    ("dokumenti", "documents.Document"),
+)
+
+
 def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, Any]:
     return {
         "matter": matter,
@@ -4400,6 +4510,16 @@ def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, 
         # with material to read has anything to be read. The count is the
         # same scoped read the header makes for the Dokumendid tab.
         "has_documents": Document.objects.filter(matter=matter).visible_to(request.user).exists(),
+        # **No `can_delete` here, deliberately.** Reaching this page *is* the
+        # permission: `business_write_required` plus `get_visible_matter` is the
+        # cohort that may delete, and it is the same cohort that may edit — which
+        # is the answer the product asked for, because deletion is not an
+        # administrator's privilege but what somebody does about a Teema that
+        # should not exist (docs/adr/0096 §4.2).
+        #
+        # A flag that is always true is a decision point that is not one, and
+        # somebody would eventually read it as the gate. The gate is the delete
+        # route, which re-authorises and re-checks every blocker.
     }
 
 
@@ -4485,10 +4605,6 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             set_matter_dates(matter=matter, received_date=value, actor=request.user)
         elif field == "response_deadline":
             set_matter_dates(matter=matter, response_deadline=value, actor=request.user)
-        elif field == "visibility":
-            set_matter_visibility(
-                matter=matter, visibility=value or Visibility.NORMAL, actor=request.user
-            )
         elif field == "policy_area_other":
             set_policy_area_other(matter=matter, value=value or "", actor=request.user)
         elif field == "policy_areas":

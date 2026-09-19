@@ -1,0 +1,68 @@
+{% comment %}
+  `Valdkonnad` — the governed vocabulary, drawn at rest, on both pages that ask
+  it.
+
+  One partial, because the two pages ask one question about one record and had
+  grown two controls for it. `Uus teema` is the master; this is the master's
+  markup, and `Muuda teemat` includes the same file rather than a second copy
+  that has to be kept in step by hand (docs/adr/0096 §1).
+
+  **Chips, not a menu.** Three shapes have stood here. The whole vocabulary
+  drawn every visit; then a `<details>` fold, which stopped costing three rows
+  at rest and started costing them the moment anybody answered it; then a
+  `chipmenu` — a pill and a panel taken out of flow, overlaying the form. The
+  lawyers reviewing the live page asked for the visible chips back: a
+  classification you can read without opening anything is what the row beside
+  it (`Õigusakt`) has always been, and two controls for two vocabularies on one
+  screen should not be two different kinds of thing (docs/adr/0096 §2).
+
+  Nothing about the data moved with any of those shapes, and nothing moves with
+  this one: same `policy_areas` name, same values, same many-to-many, same
+  `Muu` affordance, same governed areas from `selectable_policy_areas()`.
+
+  **`retired_area_ids` is why this reads the form rather than the field.** A
+  Matter filed years ago under a since-withdrawn area keeps it, offered back and
+  marked «kasutusest väljas», so correcting a title cannot silently drop the
+  filing. `MatterCreateForm` carries the same name as an empty set — a Matter
+  being created cannot already hold a withdrawn row — so the test costs the
+  create page nothing and the markup stays one markup
+  (`PolicyAreaChoicesMixin`).
+{% endcomment %}
+<fieldset class="field">
+  <legend class="field__label">
+    {{ form.policy_areas.label }}
+    <span class="field__count" data-chipcount-for="policy_areas"></span>
+  </legend>
+  <div class="chiprow">
+    {% for choice in form.policy_areas %}
+      <label class="chip{% if choice.data.value in form.retired_area_ids %} chip--retired{% endif %}">
+        {{ choice.tag }}
+        <span class="chip__name">{{ choice.choice_label }}{% if choice.data.value in form.retired_area_ids %} · kasutusest väljas{% endif %}<span class="chip__clear" aria-hidden="true">×</span></span>
+      </label>
+    {% endfor %}
+    {% comment %}
+      `Muu` is a checkbox beside the vocabulary rather than a row in it, unlike
+      Õigusakt's — it creates no `PolicyArea` and the text it reveals stays this
+      Matter's own. `#valdkond-muu` is the hook `static/js/app.js` names for the
+      pair; the block below renders open server-side as well, so a refused save
+      and a stored answer are both legible with scripting off.
+    {% endcomment %}
+    <label class="chip chip--other" id="valdkond-muu">
+      {{ form.policy_area_other_selected }}
+      <span class="chip__name">{{ form.policy_area_other_selected.label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+    </label>
+  </div>
+  <div class="createform__other" id="valdkond-muu-tekst"
+       {% if not form.policy_area_other_open %}hidden{% endif %}>
+    <label class="field">
+      <span class="field__label">{{ form.policy_area_other.label }}</span>
+      {{ form.policy_area_other }}
+      {% if form.policy_area_other.errors %}
+        <span class="field__error" id="{{ form.policy_area_other.auto_id }}_error">{{ form.policy_area_other.errors|first }}</span>
+      {% endif %}
+    </label>
+  </div>
+  {% if form.policy_areas.errors %}
+    <span class="field__error" id="{{ form.policy_areas.auto_id }}_error">{{ form.policy_areas.errors|first }}</span>
+  {% endif %}
+</fieldset>

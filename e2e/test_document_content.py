@@ -19,10 +19,12 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from playwright.sync_api import expect
 
+from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
 from e2e.conftest import READER, SANDRA, sign_in, sign_out
 from tests.extraction_report import assert_expected_files_extracted
 
@@ -198,21 +200,45 @@ def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, syntheti
     and a search saying "1 vaste" beside an empty list would disclose it just as
     well (Stage-2B brief 44).
     """
-    sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/saabunud/lisa/")
-    page.set_input_files("input[name='uploads']", str(synthetic_pdf))
-    page.fill("input[name='title']", "Piiratud katsedokument")
-    page.select_option("select[name='visibility']", "RESTRICTED")
-    # An owner, because a RESTRICTED Matter with nobody on it is invisible to
-    # everybody including whoever filed it — restricted access follows
-    # participation, not authorship. Stage 2A.5 found this the same way.
+    # **Filed onto the seeded restricted Matter, not onto a new one.**
     #
-    # A chip since the v2 rebuild: the intake form uses the same controls as
-    # `Uus teema`, so the owner is a radio group rather than a select
-    # (02-EKRAANID §F).
-    page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
-    page.get_by_role("button", name="Registreeri ja loo teema").click()
-    expect(page.get_by_role("heading", name="Piiratud katsedokument")).to_be_visible()
+    # This used to register the material through `Saabunud` and pick
+    # `Piiratud` from a `Nähtavus` select on that form. The ordinary Teema
+    # product does not ask who may see a Matter on any surface any more, so
+    # there is no control to pick — and hunting for a back door would be
+    # testing around the product rather than through it (docs/adr/0096 §3).
+    #
+    # `RESTRICTED_TITLE` is Sandra's own restricted Teema from the seed, which
+    # is exactly the state this test needs: restricted, and with a participant
+    # who can see it. Restricted access follows participation and not
+    # authorship — a RESTRICTED Matter with nobody on it is invisible to
+    # everybody including whoever filed it, which Stage 2A.5 found the hard way.
+    #
+    # The PDF goes on through the Matter's own Dokumendid tab, which is where a
+    # lawyer puts a file onto a Teema that already exists.
+    sign_in(page, base_url, SANDRA)
+    page.goto(f"{base_url}/teemad/?olek=koik&q={quote(RESTRICTED_TITLE)}")
+    page.wait_for_load_state("networkidle")
+    # Followed by href rather than clicked, which is what
+    # `e2e/test_ui_regression.py::signed_in_matter` does and for the same
+    # reason: the register's table head is `position: sticky`, so a browser
+    # that scrolls the first row to the top of the viewport puts it under the
+    # header and the click lands on the header instead. The result is a
+    # navigation that silently did not happen.
+    href = page.locator(".table--register").get_by_role("link", name=RESTRICTED_TITLE)
+    matter_path = href.first.get_attribute("href")
+    assert matter_path, f"the register does not hold {RESTRICTED_TITLE!r}"
+
+    page.goto(f"{base_url}{matter_path}dokumendid/")
+    page.wait_for_load_state("networkidle")
+    page.locator('[data-reveals="lae-dokument"]').first.click()
+    page.locator("#lae-dokument select[name=role]").first.wait_for(state="visible")
+    page.locator("#lae-dokument input[type=file][name=upload]").first.set_input_files(
+        str(synthetic_pdf)
+    )
+    page.locator("#lae-dokument button[type=submit]").first.click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("body")).to_contain_text(synthetic_pdf.name)
 
     run_worker([synthetic_pdf.name])
 
@@ -226,7 +252,7 @@ def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, syntheti
     page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(ONLY_INSIDE_THE_PDF)
     page.keyboard.press("Enter")
 
-    expect(page.locator("body")).not_to_contain_text("Piiratud katsedokument")
+    expect(page.locator("body")).not_to_contain_text(RESTRICTED_TITLE)
     outsider_summary = page.locator(".pagehead__context").inner_text()
     assert outsider_summary != owner_summary, (
         "the outsider's result count matched the owner's, so the restricted "

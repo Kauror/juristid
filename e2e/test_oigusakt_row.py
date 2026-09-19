@@ -225,10 +225,11 @@ def test_the_count_reads_the_number_chosen(page, base_url):
         chips.nth(index).click()
 
     expect(count).to_have_text("3 valitud")
-    # And Valdkonnad, which since docs/adr/0088 names its answers in its own
-    # summary rather than counting them, says nothing about this field's chips.
-    summary = page.locator("[data-chipsummary-for='policy_areas']")
-    assert (summary.text_content() or "").strip() == "", "Valdkonnad summarised this field's chips"
+    # And Valdkonnad, which carries the same kind of badge one row above since
+    # its vocabulary went back to being drawn at rest, says nothing about this
+    # field's chips — each badge counts its own group (docs/adr/0096 §2).
+    areas = page.locator('[data-chipcount-for="policy_areas"]')
+    assert (areas.text_content() or "").strip() == "", "Valdkonnad counted this field's chips"
 
     assert labels() == before, "chips reordered themselves when they were chosen"
 

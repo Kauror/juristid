@@ -348,55 +348,48 @@ needs_intake_reading = pytest.mark.skipif(
 )
 
 
-#: The two `Uus teema` vocabularies that answer through a menu. `Valdkonnad`
-#: holds several and stays open while they are ticked; `Hetkeseis` holds one and
-#: shuts itself once it has been answered (docs/adr/0094 §2).
-VALDKONNAD_MENU = "details.chipmenu:not([data-chipmenu-single])"
-HETKESEIS_MENU = "details.chipmenu[data-chipmenu-single]"
+#: The two classification blocks that have changed shape most often. Selected by
+#: the field they hold rather than by a class, because the class is what three
+#: rounds have changed and the name is what has not.
+#:
+#: Both are plain `<fieldset>`s again. They were permanently drawn chip rows,
+#: then `<details>` folds (docs/adr/0088 §3), then `chipmenu`s whose panels
+#: overlaid the form (docs/adr/0094 §2), and the owner's live audit put them
+#: back: a classification a lawyer can read without opening anything is what
+#: `Õigusakt` beside them always was (docs/adr/0096 §2).
+VALDKONNAD_FIELD = 'fieldset:has(> .chiprow input[name="policy_areas"])'
+HETKESEIS_FIELD = 'fieldset:has(> .chiprow input[name="stage"])'
 
 
-def _open_chipmenu(page, selector: str) -> None:
-    """Open one menu on `Uus teema`, if it is not open already.
+def _reach_classification(page, selector: str) -> None:
+    """Bring one classification block into view, and prove it is on screen.
 
-    A shut `<details>` keeps its contents in the document — every
-    `to_be_attached` and every `evaluate` over the chips still works through it
-    — but nobody can *click* what nobody can see, so a test that ticks a chip
-    opens the menu first. That is also what the person does.
+    **It opens nothing**, and the name it is called by is kept deliberately.
+    Every caller means «make this vocabulary answerable», which for two rounds
+    meant opening a disclosure and now means nothing at all — so the call sites
+    keep saying what they mean and this is the one place that knows how much
+    work that is today.
 
-    Idempotent, so a caller may use it without knowing what an earlier step left
-    behind.
+    It is not a no-op, though: it asserts that the chips really are visible
+    without anything being opened, which is the promise the shape change makes.
+    A page that put them back behind a control would fail here, in every file
+    that files a Teema, rather than only in the one named after the shape.
     """
-    menu = page.locator(selector)
-    if menu.count() and not menu.evaluate("node => node.open"):
-        menu.locator("> summary").click()
+    block = page.locator(selector).first
+    if not block.count():
+        return
+    block.scroll_into_view_if_needed()
+    block.locator(".chip__input").first.wait_for(state="attached")
 
 
 def open_valdkond(page) -> None:
-    """Open Valdkonnad on `Uus teema`, which arrives shut.
-
-    The vocabulary went behind a disclosure when the lawyers' first feedback
-    round asked for the creation form to stop sitting permanently open
-    (docs/adr/0088 §3), and behind a *menu* when the next round said that
-    opening the disclosure re-laid out the form underneath them
-    (docs/adr/0094 §2). Shut is still the resting state either way; what changed
-    is that the panel overlays instead of lengthening the page.
-    """
-    _open_chipmenu(page, VALDKONNAD_MENU)
+    """Make `Valdkonnad` answerable on `Uus teema` — which it already is."""
+    _reach_classification(page, VALDKONNAD_FIELD)
 
 
 def open_hetkeseis(page) -> None:
-    """Open Hetkeseis on `Uus teema`, which arrives shut.
-
-    It was a permanently drawn row of eleven chips. A lawyer answers it once and
-    reads past it for the rest of a file's life, so it is a pill carrying the
-    answer and a menu behind it (docs/adr/0094 §2).
-
-    Anything that *checks* a stage radio has to call this first: a radio inside a
-    shut `<details>` is in the document and not on the screen, and Playwright
-    refuses to click what it cannot see — correctly, because neither can a
-    person. The menu closes itself again as soon as the radio is picked.
-    """
-    _open_chipmenu(page, HETKESEIS_MENU)
+    """Make `Hetkeseis` answerable on `Uus teema` — which it already is."""
+    _reach_classification(page, HETKESEIS_FIELD)
 
 
 def give_first_step(page, *, days: int = 7) -> None:

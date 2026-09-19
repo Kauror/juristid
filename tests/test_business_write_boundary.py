@@ -178,14 +178,23 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: Matter.objects.values_list("stage_id", flat=True).get(pk=w["matter"].pk),
     ),
+    # `matters:update_field` with `field="visibility"` stood here. The ordinary
+    # Teema UI no longer asks who may see a Matter, and `visibility` is out of
+    # `FIELD_SERVICES`, so that route answers 404 to everybody — which would make
+    # this row assert the gate using a refusal the gate has nothing to do with
+    # (docs/adr/0096 §3).
     WriteRoute(
-        name="matters:update_field",
-        label="Nähtavuse muutmine",
-        request=lambda w: (
-            {"pk": w["matter"].pk, "field": "visibility"},
-            {"visibility": Visibility.RESTRICTED},
+        name="matters:matter_delete",
+        label="Teema kustutamine",
+        request=lambda w: ({"pk": w["matter"].pk}, {}),
+        # `all_objects`, because the whole point of a refusal here is that the
+        # row is still *live* — read through the default manager a successful
+        # deletion and a refused one would both raise `DoesNotExist` and look
+        # identical (app/matters/deletion.py).
+        probe=lambda w: Matter.all_objects.values_list("deleted_at", flat=True).get(
+            pk=w["matter"].pk
         ),
-        probe=lambda w: Matter.objects.values_list("visibility", flat=True).get(pk=w["matter"].pk),
+        events=(ChangeEventType.MATTER_DELETED,),
     ),
     WriteRoute(
         name="matters:set_data_class",

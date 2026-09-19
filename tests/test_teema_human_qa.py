@@ -171,9 +171,11 @@ def test_the_edit_page_offers_every_editable_fact(signed_in, specialist):
         "source_organisations",
         "addressee_organisation",
         "tags",
-        "visibility",
     ):
         assert f'name="{field}"' in body, field
+    # And `Nähtavus`, which the page deliberately does not offer any more: the
+    # ordinary Teema UI does not ask who may see a Matter (docs/adr/0096 §3).
+    assert 'name="visibility"' not in body
 
 
 def test_one_save_changes_everything_and_audits_each_fact(
@@ -193,6 +195,7 @@ def test_one_save_changes_everything_and_audits_each_fact(
             "stage": "",
             "track": "",
             "policy_areas": [str(area.pk)],
+            "policy_area_other_selected": "on",
             "policy_area_other": "Ringmajandus",
             "source_organisations": [str(organisation.pk)],
             "addressee_organisation": "",
@@ -805,8 +808,8 @@ def test_a_policy_area_is_never_created_by_editing(signed_in, specialist):
         {
             "title": "Pealkiri",
             "owner": str(specialist.pk),
+            "policy_area_other_selected": "on",
             "policy_area_other": "Miski päris uus valdkond",
-            "visibility": Visibility.NORMAL,
         },
     )
 

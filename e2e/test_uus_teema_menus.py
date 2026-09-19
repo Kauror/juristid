@@ -1,20 +1,29 @@
-"""`Valdkonnad` and `Hetkeseis` as menus, in the browser (docs/adr/0094 §2).
+"""`Valdkonnad` and `Hetkeseis`, drawn at rest, in the browser (docs/adr/0096 §2).
+
+This file used to measure a menu: that opening one overlaid the form, that
+Escape and a click outside closed it, and that a multi-select survived being
+answered. The owner's live audit reversed that shape — the lawyers asked for the
+visible chips back — so it measures the promise the new shape makes instead.
+
+The filename is kept on purpose. `ci_sharding.partition` splits this suite by
+file, so renaming one re-partitions every shard and changes which scenarios
+share a world; that has cost CI rounds before and would cost them here for a
+cosmetic gain.
 
 `tests/test_uus_teema_ux_corrections.py` pins what the server renders, binds and
-writes. Four things it cannot say, and they are the whole reason the lawyers
-asked for this change:
+writes. Four things it cannot say, and they are why this file exists:
 
-* **opening a menu must not move the form.** That is a claim about layout, and
-  a class name in the markup is not one — a stylesheet that stopped positioning
-  the panel would leave every server-side assertion green and put the defect
-  straight back. So it is measured: the y-position of the field *after* the menu,
-  before and after opening it;
-* **Escape, a click outside, and closing on an answer** are script, and a script
-  either runs or it does not;
-* **a multi-select menu has to survive being answered** — several times, with the
-  earlier answers intact;
-* **it has to work at 375px**, which is the only width where a compact control
-  can turn out to be a cramped one.
+* **every choice is clickable without anything being opened first.** Markup is
+  not layout: a stylesheet that clipped the row to nothing, or a `display: none`
+  left behind by the retired menu, would leave every server-side assertion green
+  and put the click straight back;
+* **answering one control does not move the next.** That was the lawyers'
+  original complaint about the fold, and it is the one property both the menu
+  and this shape have to keep — a chip row does not grow when a box is ticked,
+  and this is what proves it;
+* **several areas can be ticked, and unticking one leaves the rest**;
+* **it has to work at 375px**, which is the only width where a wrapped chip row
+  can turn out to be a horizontal scrollbar.
 
 What is deliberately *not* here: the vocabulary, the withdrawals, the `Muu`
 semantics and what a POST stores. Those have owners
@@ -29,11 +38,9 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
-    HETKESEIS_MENU,
+    HETKESEIS_FIELD,
     MARTIN,
-    VALDKONNAD_MENU,
-    open_hetkeseis,
-    open_valdkond,
+    VALDKONNAD_FIELD,
     sign_in,
 )
 
@@ -47,6 +54,8 @@ WIDTHS = [375, 420, 768, 1440]
 
 AREAS = 'input[name="policy_areas"]'
 STAGES = 'input[name="stage"]'
+INSTRUMENTS = 'input[name="legal_instruments"]'
+OIGUSAKT_FIELD = 'fieldset:has(> .chiprow input[name="legal_instruments"])'
 
 
 def create_form(page, base_url, width: int = 1440) -> None:
@@ -60,9 +69,9 @@ def create_form(page, base_url, width: int = 1440) -> None:
 def document_top(page, selector: str) -> float:
     """Where an element sits on the *document*, not in the viewport.
 
-    Scroll-independent on purpose: opening a menu near the bottom of a tall form
-    can move the viewport without moving anything on the page, and a viewport
-    coordinate would report that as the form having shifted.
+    Scroll-independent on purpose: clicking a chip near the bottom of a tall
+    form can move the viewport without moving anything on the page, and a
+    viewport coordinate would report that as the form having shifted.
     """
     top = page.evaluate(
         "s => { const n = document.querySelector(s);"
@@ -79,342 +88,216 @@ def overflow(page) -> float:
     )
 
 
-def trigger_of(page, menu: str):
-    return page.locator(menu).locator("> summary")
-
-
-def is_open(page, menu: str) -> bool:
-    return page.locator(menu).evaluate("node => node.open")
-
-
 # ---------------------------------------------------------------------------
-# The measurable promise: a menu overlays, a fold does not
+# The promise: no click stands between a reader and an answer
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_opening_valdkonnad_does_not_push_the_form_down(page, base_url, width):
-    """The whole complaint, as one number.
+def test_every_classification_is_readable_without_opening_anything(page, base_url, width):
+    """The whole of the correction, at every width.
 
-    `Valdkonnad` was a `<details>` whose contents folded into the page: opening
-    it pushed `Hetkeseis`, `Õigusakt`, `Menetluse link` and the submit button
-    down while the reader was still ticking boxes, and shutting it pulled them
-    back up. The vocabulary is twenty-two chips, so the movement was hundreds of
-    pixels.
-
-    `Hetkeseis` is the field immediately below, so it is the one that would have
-    moved. `Loo teema` is checked too, because a rule that only held for the
-    nearest neighbour would not be an overlay at all.
+    Not the absence of a class name — the server suite owns that — but the
+    thing a class name is supposed to produce: the group is on the screen, its
+    first choice is on the screen, and nothing had to be pressed to get there.
     """
     create_form(page, base_url, width)
 
-    before = (document_top(page, HETKESEIS_MENU), document_top(page, ".createform__actions"))
-    open_valdkond(page)
-    expect(page.locator(VALDKONNAD_MENU)).to_have_attribute("open", "")
-    after = (document_top(page, HETKESEIS_MENU), document_top(page, ".createform__actions"))
-
-    assert after == pytest.approx(before, abs=1.0), (
-        f"opening Valdkonnad moved the form at {width}px: {before} -> {after}"
-    )
-
-
-@pytest.mark.parametrize("width", WIDTHS)
-def test_opening_hetkeseis_does_not_push_the_form_down(page, base_url, width):
-    """The same promise for the eleven stages, measured on what follows them."""
-    create_form(page, base_url, width)
-
-    instruments = '.createform__row:has(input[name="legal_instruments"])'
-    before = (document_top(page, instruments), document_top(page, ".createform__actions"))
-    open_hetkeseis(page)
-    expect(page.locator(HETKESEIS_MENU)).to_have_attribute("open", "")
-    after = (document_top(page, instruments), document_top(page, ".createform__actions"))
-
-    assert after == pytest.approx(before, abs=1.0), (
-        f"opening Hetkeseis moved the form at {width}px: {before} -> {after}"
-    )
-
-
-def test_the_panel_really_is_over_the_field_below_it(page, base_url, screenshots):
-    """Not merely «the form did not move» — the panel has to be *on top*.
-
-    A panel rendered with zero height, or clipped to nothing, would satisfy the
-    measurement above and be no use to anybody. So this asserts the opposite
-    error: the open panel has a real box, and that box overlaps the row it is
-    covering.
-
-    This is also where the **open** state is photographed into the CI artifact
-    directory, because a `uus-teema` baseline can only ever show the page at
-    rest and the open panel is the whole change (docs/adr/0094 §2).
-    """
-    create_form(page, base_url)
-    open_valdkond(page)
-
-    panel = page.locator(f"{VALDKONNAD_MENU} .chipmenu__panel").bounding_box()
-    below = page.locator(HETKESEIS_MENU).bounding_box()
-    assert panel is not None and below is not None
-    assert panel["height"] > 40, f"the open panel is {panel['height']}px tall"
-    assert panel["y"] + panel["height"] > below["y"], (
-        "the open panel stops above the field it is meant to cover"
-    )
-    screenshots(page, "valdkonnad-menuu-avatud")
-
-    page.keyboard.press("Escape")
-    open_hetkeseis(page)
-    screenshots(page, "hetkeseis-menuu-avatud")
-
-
-# ---------------------------------------------------------------------------
-# Valdkonnad — several answers in one visit
-# ---------------------------------------------------------------------------
-
-
-def test_several_areas_can_be_ticked_without_the_menu_closing(page, base_url):
-    """The point of a multi-select menu, and the thing a single-select must not do."""
-    create_form(page, base_url)
-    open_valdkond(page)
-
-    boxes = page.locator(AREAS)
-    if boxes.count() < 3:
-        pytest.skip("this world has fewer than three policy areas")
-
-    for index in range(3):
-        boxes.nth(index).click()
-        assert is_open(page, VALDKONNAD_MENU), f"the menu closed after ticking area {index}"
-
-    for index in range(3):
-        expect(boxes.nth(index)).to_be_checked()
-    assert "· 3" in (trigger_of(page, VALDKONNAD_MENU).inner_text() or "")
-
-
-def test_unticking_one_area_leaves_the_others(page, base_url):
-    """Selecting an already-selected option removes it, and only it."""
-    create_form(page, base_url)
-    open_valdkond(page)
-
-    boxes = page.locator(AREAS)
-    if boxes.count() < 3:
-        pytest.skip("this world has fewer than three policy areas")
-
-    for index in range(3):
-        boxes.nth(index).click()
-    boxes.nth(1).click()
-
-    expect(boxes.nth(0)).to_be_checked()
-    expect(boxes.nth(1)).not_to_be_checked()
-    expect(boxes.nth(2)).to_be_checked()
-    assert "· 2" in (trigger_of(page, VALDKONNAD_MENU).inner_text() or "")
-
-
-def test_reopening_shows_what_is_already_chosen(page, base_url):
-    """Shutting a menu is not answering it again."""
-    create_form(page, base_url)
-    open_valdkond(page)
-
-    first = page.locator(AREAS).first
-    first.click()
-    trigger_of(page, VALDKONNAD_MENU).click()
-    assert not is_open(page, VALDKONNAD_MENU)
-
-    open_valdkond(page)
-    expect(first).to_be_checked()
-    assert "· 1" in (trigger_of(page, VALDKONNAD_MENU).inner_text() or "")
-
-
-# ---------------------------------------------------------------------------
-# Hetkeseis — one answer, and the question is over
-# ---------------------------------------------------------------------------
-
-
-def test_picking_a_stage_closes_the_menu_and_names_it_on_the_trigger(page, base_url):
-    """A single-select menu is answered once, so it shuts itself."""
-    create_form(page, base_url)
-    open_hetkeseis(page)
-
-    radios = page.locator(STAGES)
-    if radios.count() < 3:
-        pytest.skip("this world offers fewer than two real stages")
-
-    # Index 0 is the named blank option; the ones after it are real stages.
-    label = (
-        page.locator('label.chip:has(input[name="stage"]), span.chip:has(input[name="stage"])')
-        .nth(2)
-        .locator(".chip__name")
-        .inner_text()
-    ).strip()
-    radios.nth(2).click()
-
-    assert not is_open(page, HETKESEIS_MENU), "the single-select menu stayed open once answered"
-    assert label and label in (trigger_of(page, HETKESEIS_MENU).inner_text() or "")
-
-
-def test_a_second_stage_replaces_the_first(page, base_url):
-    """One value, which is what a radio group already promises.
-
-    Reopened between the two picks, because the menu closed itself on the first
-    — which is the assertion directly above and the reason this one has to say
-    so out loud.
-    """
-    create_form(page, base_url)
-
-    radios = page.locator(STAGES)
-    if radios.count() < 4:
-        pytest.skip("this world offers fewer than three real stages")
-
-    open_hetkeseis(page)
-    radios.nth(1).click()
-    open_hetkeseis(page)
-    radios.nth(2).click()
-
-    expect(radios.nth(2)).to_be_checked()
-    expect(radios.nth(1)).not_to_be_checked()
-
-
-def test_the_stage_trigger_starts_on_maaramata(page, base_url):
-    """«Määramata» is a real answer and the one a fresh form holds.
-
-    Nothing is invented: the trigger reports the option the form itself has
-    selected. A blank trigger over a selected «Määramata» would hide the state
-    most files are actually in (docs/adr/0094 §2.2).
-    """
-    create_form(page, base_url)
-
-    assert "Määramata" in (trigger_of(page, HETKESEIS_MENU).inner_text() or "")
-    expect(page.locator(STAGES).first).to_be_checked()
-
-
-# ---------------------------------------------------------------------------
-# Opening and closing
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("menu", [VALDKONNAD_MENU, HETKESEIS_MENU], ids=["valdkonnad", "hetkeseis"])
-def test_escape_closes_the_menu_and_gives_the_trigger_back_the_cursor(page, base_url, menu):
-    """Otherwise a keyboard user who opened it by mistake tabs through
-    twenty-two checkboxes to get out."""
-    create_form(page, base_url)
-
-    trigger = trigger_of(page, menu)
-    trigger.click()
-    assert is_open(page, menu)
-
-    page.keyboard.press("Escape")
-    page.wait_for_timeout(120)
-
-    assert not is_open(page, menu)
-    assert page.evaluate(
-        "s => document.activeElement"
-        " === document.querySelector(s).querySelector(':scope > summary')",
-        menu,
-    ), "Escape did not put the cursor back on the trigger"
-
-
-@pytest.mark.parametrize("menu", [VALDKONNAD_MENU, HETKESEIS_MENU], ids=["valdkonnad", "hetkeseis"])
-def test_a_click_outside_closes_the_menu(page, base_url, menu):
-    """A fold may be left open; a menu left open covers the form under it."""
-    create_form(page, base_url)
-
-    trigger_of(page, menu)
-    trigger_of(page, menu).click()
-    assert is_open(page, menu)
-
-    page.get_by_role("heading", name="Uus teema").click()
-    page.wait_for_timeout(120)
-
-    assert not is_open(page, menu), "the menu stayed open over the form"
-
-
-@pytest.mark.parametrize("menu", [VALDKONNAD_MENU, HETKESEIS_MENU], ids=["valdkonnad", "hetkeseis"])
-def test_the_trigger_opens_from_the_keyboard_and_reports_its_state(page, base_url, menu):
-    """One tab stop, Enter and Space, and an expanded state something can read.
-
-    `aria-expanded` is written by the script rather than by the template, so
-    that it exists only where something is keeping it true: a `<summary>`
-    already exposes the state natively, and a server-rendered copy would go
-    stale the moment somebody toggled the element with scripting off
-    (docs/adr/0094 §2).
-    """
-    create_form(page, base_url)
-
-    trigger = trigger_of(page, menu)
-    expect(trigger).to_have_attribute("aria-expanded", "false")
-
-    trigger.focus()
-    page.keyboard.press("Enter")
-    assert is_open(page, menu)
-    expect(trigger).to_have_attribute("aria-expanded", "true")
-
-    page.keyboard.press("Escape")
-    page.wait_for_timeout(120)
-    expect(trigger).to_have_attribute("aria-expanded", "false")
-
-    page.keyboard.press(" ")
-    assert is_open(page, menu)
-    expect(trigger).to_have_attribute("aria-expanded", "true")
-
-
-def test_an_open_panel_really_does_cover_the_control_under_it(page, base_url):
-    """The overlay, asserted from the direction that makes it inconvenient.
-
-    An open `Valdkonnad` panel covers the `Hetkeseis` trigger, so that trigger
-    cannot be clicked *through* it — a click there lands on the panel, which is
-    what an overlay means and what every dropdown does. Stated here because it
-    is the one behaviour of this design that costs the reader something, and
-    because a test that could click through would be evidence the panel was not
-    over anything.
-
-    The way out is the way out of any menu: Escape, or a click somewhere that is
-    not the panel. Both are asserted above, and both are what the next test
-    walks.
-    """
-    create_form(page, base_url)
-    open_valdkond(page)
-
-    covered = page.evaluate(
-        """() => {
-            const trigger = document.querySelector(
-              'details.chipmenu[data-chipmenu-single] > summary');
-            const box = trigger.getBoundingClientRect();
-            const hit = document.elementFromPoint(
-              box.left + box.width / 2, box.top + box.height / 2);
-            return hit === trigger ? null : (hit && hit.className) || 'nothing';
-        }"""
-    )
-    assert covered is not None, "the open panel is not over the field below it"
-
-
-def test_answering_one_menu_and_then_the_other_is_two_ordinary_steps(page, base_url):
-    """The journey a lawyer actually walks, with nothing clicked through.
-
-    Tick the areas, dismiss the menu, open the next one, answer it. Escape is
-    used for the dismissal because it is the keyboard route and the one that
-    also returns the cursor; a click on the page background does the same and is
-    asserted separately.
-    """
+    for field, control in (
+        (VALDKONNAD_FIELD, AREAS),
+        (HETKESEIS_FIELD, STAGES),
+    ):
+        block = page.locator(field).first
+        expect(block).to_be_visible()
+        chips = page.locator(f"{field} .chip").first
+        expect(chips).to_be_visible()
+        assert page.locator(control).count() > 0
+
+
+def test_a_chip_can_be_ticked_straight_away(page, base_url):
+    """One click, not two. The click that was removed is the whole feature."""
     create_form(page, base_url)
 
     areas = page.locator(AREAS)
     if not areas.count():
         pytest.skip("this world has no policy areas")
 
-    open_valdkond(page)
     areas.first.click()
-    page.keyboard.press("Escape")
+    expect(areas.first).to_be_checked()
+
+
+def test_the_group_is_named_where_a_reader_can_see_it(page, base_url):
+    """The legend is visible again.
+
+    It was `visually-hidden` inside the menu's panel, because the trigger above
+    already said the word. There is no trigger now, so hiding it would leave a
+    row of chips with nothing naming them.
+    """
+    create_form(page, base_url)
+
+    expect(page.locator(VALDKONNAD_FIELD).locator("legend").first).to_be_visible()
+    expect(page.locator(HETKESEIS_FIELD).locator("legend").first).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# Answering one control does not move the next
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_ticking_an_area_does_not_move_the_field_below_it(page, base_url, width):
+    """The lawyers' original complaint, kept as a guard against the next shape.
+
+    The fold failed this — opening it pushed `Hetkeseis`, `Õigusakt` and the
+    submit button down the page while somebody was still ticking boxes. The menu
+    passed it by leaving the flow. A chip row passes it by not changing size,
+    which is the cheapest way of all to pass it and the easiest to break with a
+    `:checked` rule that changes a chip's padding.
+    """
+    create_form(page, base_url, width)
+
+    areas = page.locator(AREAS)
+    if not areas.count():
+        pytest.skip("this world has no policy areas")
+
+    before = document_top(page, HETKESEIS_FIELD)
+    areas.first.click()
     page.wait_for_timeout(120)
-    assert not is_open(page, VALDKONNAD_MENU)
+    after = document_top(page, HETKESEIS_FIELD)
+
+    assert abs(after - before) <= 1, f"{width}px: Hetkeseis moved {after - before}px"
+
+
+def test_picking_a_stage_does_not_move_oigusakt(page, base_url):
+    """The same rule one row down, on the single-select side."""
+    create_form(page, base_url)
 
     radios = page.locator(STAGES)
     if radios.count() < 3:
         pytest.skip("this world offers fewer than two real stages")
 
-    open_hetkeseis(page)
+    if not page.locator(INSTRUMENTS).count():
+        pytest.skip("this world has no legal instrument vocabulary")
+
+    # `document_top` runs `querySelector`, which is CSS and not Playwright's
+    # selector language — `>> nth=0` is a syntax error there rather than a
+    # miss. The fieldset is a plain CSS `:has()` and is the thing that would
+    # move anyway.
+    before = document_top(page, OIGUSAKT_FIELD)
     radios.nth(2).click()
     page.wait_for_timeout(120)
+    after = document_top(page, OIGUSAKT_FIELD)
 
-    assert not is_open(page, HETKESEIS_MENU)
     expect(radios.nth(2)).to_be_checked()
-    # And the first answer survived being left behind.
+    assert abs(after - before) <= 1
+
+
+# ---------------------------------------------------------------------------
+# Multi-select stays multi-select
+# ---------------------------------------------------------------------------
+
+
+def test_several_areas_can_be_ticked(page, base_url):
+    """`Matter.policy_areas` holds several, so the control has to let you say so."""
+    create_form(page, base_url)
+
+    areas = page.locator(AREAS)
+    if areas.count() < 3:
+        pytest.skip("this world offers fewer than three policy areas")
+
+    for index in range(3):
+        areas.nth(index).click()
+
+    for index in range(3):
+        expect(areas.nth(index)).to_be_checked()
+
+
+def test_unticking_one_area_leaves_the_others(page, base_url):
+    """The half that a control which merely *accepts* several can still fail."""
+    create_form(page, base_url)
+
+    areas = page.locator(AREAS)
+    if areas.count() < 3:
+        pytest.skip("this world offers fewer than three policy areas")
+
+    for index in range(3):
+        areas.nth(index).click()
+    areas.nth(1).click()
+
+    expect(areas.nth(0)).to_be_checked()
+    expect(areas.nth(1)).not_to_be_checked()
+    expect(areas.nth(2)).to_be_checked()
+
+
+def test_a_second_stage_replaces_the_first(page, base_url):
+    """One value, and the control says so by being radios."""
+    create_form(page, base_url)
+
+    radios = page.locator(STAGES)
+    if radios.count() < 3:
+        pytest.skip("this world offers fewer than two real stages")
+
+    radios.nth(1).click()
+    radios.nth(2).click()
+
+    expect(radios.nth(1)).not_to_be_checked()
+    expect(radios.nth(2)).to_be_checked()
+
+
+def test_the_muu_box_appears_beside_the_vocabulary_when_it_is_ticked(page, base_url):
+    """`Muu` is a chip among the chips, and its box opens under them.
+
+    The box lived outside the menu's panel, because a box inside a panel that
+    shuts is a box nobody can finish. There is no panel now, so it sits in the
+    fieldset it belongs to — and it still has to appear the moment the chip is
+    ticked, which is what a person does next.
+    """
+    create_form(page, base_url)
+
+    box = page.locator("#valdkond-muu-tekst")
+    expect(box).to_be_hidden()
+
+    page.locator("#valdkond-muu input[type=checkbox]").click()
+    expect(box).to_be_visible()
+    expect(page.locator("#id_policy_area_other")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# The keyboard
+# ---------------------------------------------------------------------------
+
+
+def test_the_vocabulary_is_walkable_from_the_keyboard(page, base_url):
+    """A radio group is one tab stop and the arrows move within it.
+
+    Native behaviour, and that is the point: what the menu added — Escape, a
+    click outside, a trigger to focus — is behaviour a plain fieldset never
+    needed, so removing the script removed nothing a keyboard depended on.
+    """
+    create_form(page, base_url)
+
+    radios = page.locator(STAGES)
+    if radios.count() < 3:
+        pytest.skip("this world offers fewer than two real stages")
+
+    radios.nth(1).focus()
+    page.keyboard.press("ArrowDown")
+
+    expect(radios.nth(2)).to_be_checked()
+
+
+def test_an_area_can_be_ticked_with_the_space_bar(page, base_url):
+    """The checkbox half of the same rule."""
+    create_form(page, base_url)
+
+    areas = page.locator(AREAS)
+    if not areas.count():
+        pytest.skip("this world has no policy areas")
+
+    areas.first.focus()
+    page.keyboard.press("Space")
+
     expect(areas.first).to_be_checked()
-    assert "· 1" in (trigger_of(page, VALDKONNAD_MENU).inner_text() or "")
 
 
 # ---------------------------------------------------------------------------
@@ -423,73 +306,52 @@ def test_answering_one_menu_and_then_the_other_is_two_ordinary_steps(page, base_
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_an_open_menu_never_takes_the_document_sideways(page, base_url, width):
-    """The failure an overlay makes easy and a fold made impossible.
+def test_the_chip_rows_never_take_the_document_sideways(page, base_url, width):
+    """A wrapped row that does not wrap is a horizontal scrollbar.
 
-    A panel wider than its row scrolls the *document* horizontally without
-    lengthening it, so nothing that measures height would notice — and a
-    horizontally scrolling document is the one thing no surface here may
-    produce (QA-08).
+    The failure mode a chip row makes easy: one long Estonian policy-area label
+    that will not break, and the whole document scrolls sideways at 375px
+    without anything looking wrong at 1440.
     """
     create_form(page, base_url, width)
-    assert overflow(page) <= 1, f"the page already scrolls sideways at {width}px"
 
-    # One at a time, and shut between: an open panel covers the trigger below
-    # it, so clicking straight from one menu to the next lands on the panel
-    # rather than on the trigger — which is what an overlay means.
-    for menu in (VALDKONNAD_MENU, HETKESEIS_MENU):
-        trigger_of(page, menu).click()
-        page.wait_for_timeout(80)
-        assert is_open(page, menu)
-        assert overflow(page) <= 1, f"an open menu scrolls the page sideways at {width}px"
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(80)
+    assert overflow(page) <= 1, f"{width}px: document overflows by {overflow(page)}px"
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_every_chip_stays_inside_the_viewport(page, base_url, width):
+    """And no individual chip hangs off the right edge.
+
+    Stronger than the document measurement above, which a chip clipped by an
+    ancestor's `overflow: hidden` would pass while being unreadable.
+    """
+    create_form(page, base_url, width)
+
+    widest = page.evaluate(
+        "s => Math.max(0, ...Array.from(document.querySelectorAll(s))"
+        "  .map(n => n.getBoundingClientRect().right))",
+        f"{VALDKONNAD_FIELD} .chip, {HETKESEIS_FIELD} .chip",
+    )
+    assert widest <= width + 1, f"{width}px: a chip reaches {widest}px"
 
 
 @pytest.mark.parametrize("width", [375, 420])
-def test_both_triggers_and_an_open_panel_stay_inside_a_phone(page, base_url, width):
-    """On the screen and within it, rather than merely attached to it."""
-    create_form(page, base_url, width)
+def test_the_whole_classification_block_is_reachable_on_a_phone(page, base_url, width):
+    """Every chip can be scrolled to and clicked, not merely rendered.
 
-    for menu in (VALDKONNAD_MENU, HETKESEIS_MENU):
-        trigger = trigger_of(page, menu).bounding_box()
-        assert trigger is not None
-        assert trigger["x"] >= -1 and trigger["x"] + trigger["width"] <= width + 1, (
-            f"a trigger hangs off the screen at {width}px: {trigger}"
-        )
-
-    open_valdkond(page)
-    panel = page.locator(f"{VALDKONNAD_MENU} .chipmenu__panel").bounding_box()
-    assert panel is not None
-    assert panel["x"] >= -1 and panel["x"] + panel["width"] <= width + 1, (
-        f"the open panel hangs off the screen at {width}px: {panel}"
-    )
-
-    # And the chips inside it are reachable: a panel that fits by clipping its
-    # own contents is a panel nobody can answer.
-    first = page.locator(f"{VALDKONNAD_MENU} label.chip").first.bounding_box()
-    assert first is not None
-    assert first["width"] > 0 and first["height"] >= 24, first
-
-
-@pytest.mark.parametrize("width", [375, 420])
-def test_a_long_vocabulary_scrolls_inside_its_own_panel(page, base_url, width):
-    """Bounded height and internal scrolling, rather than a panel past the fold.
-
-    `Hetkeseis` deliberately has no cap — a scroll container clips the
-    `.stagehelp` bubbles hanging off its chips — so this is asserted of
-    `Valdkonnad` alone, which is where the twenty-two chips are.
+    The measurement the retired panel needed a scroll cap for. Drawn in the flow
+    there is nothing to cap — the page is simply taller — and the thing worth
+    proving is that the last chip in the longest vocabulary is still clickable.
     """
     create_form(page, base_url, width)
-    open_valdkond(page)
 
-    row = page.locator(f"{VALDKONNAD_MENU} .chipmenu__panel .chiprow")
-    metrics = row.evaluate(
-        "node => ({ client: node.clientHeight, scroll: node.scrollHeight,"
-        "  overflow: getComputedStyle(node).overflowY })"
-    )
-    assert metrics["overflow"] in ("auto", "scroll"), metrics
-    assert metrics["client"] <= 200, metrics
-    if metrics["scroll"] > metrics["client"]:
-        row.evaluate("node => { node.scrollTop = node.scrollHeight; }")
-        assert row.evaluate("node => node.scrollTop") > 0, "the chip row does not actually scroll"
+    areas = page.locator(AREAS)
+    if areas.count() < 2:
+        pytest.skip("this world has fewer than two policy areas")
+
+    last = areas.nth(areas.count() - 1)
+    last.scroll_into_view_if_needed()
+    last.click()
+
+    expect(last).to_be_checked()
+    assert overflow(page) <= 1

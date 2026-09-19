@@ -62,6 +62,13 @@ class ChangeEventType(models.TextChoices):
     # about the policy work (Agent-C brief 19).
     MATTER_DATA_CLASS_CHANGED = "MATTER_DATA_CLASS_CHANGED", "Andmeklass muudetud"
     MATTER_CLOSED = "MATTER_CLOSED", "Teema suletud"
+    # A Teema that was deleted. Its own type, and the one event that describes a
+    # record which is no longer there: every owned business row is gone and the
+    # `Matter` row survives only because this row points at it under `PROTECT`
+    # onto an append-only table. Deliberately absent from
+    # `matters.timeline.TIMELINE_EVENT_TYPES` — there is no chronology left to
+    # render it on (docs/adr/0096 §4).
+    MATTER_DELETED = "MATTER_DELETED", "Teema kustutatud"
     MATTER_REOPENED = "MATTER_REOPENED", "Teema taasavatud"
     # An archive register record activated as current work. Distinct from
     # MATTER_CREATED — nothing was created, the identity and the provenance are

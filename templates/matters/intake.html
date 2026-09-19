@@ -10,10 +10,14 @@ questions about menetlusliik. The page says so in its own footer instead of in a
 paragraph at the top, which is why Hetkeseis and Menetlusliik are no longer on
 this form at all (02-EKRAANID §F).
 
-Nähtavus is the one field that did not go with them. Filing a restricted letter
-as NORMAL and correcting it on the Matter page means it was department-wide in
-between; that is not "the rest of the record"
-(docs/design-v2-compatibility.md, DS-15).
+Nähtavus used to be the one field that did not go with them, on the argument
+that filing a restricted letter as NORMAL and correcting it afterwards means it
+was department-wide in between (docs/design-v2-compatibility.md, DS-15). That
+argument is now overruled by a product decision rather than answered: the
+ordinary Teema UI does not ask who may see a Matter on any surface, and this
+was the last creation control that did. The window it described is real and is
+the price of the decision; the answer to it is a deliberate act by somebody who
+decides it, not a field every filer meets (docs/adr/0096 §3).
 {% endcomment %}
 
 {% block content %}
@@ -107,28 +111,23 @@ between; that is not "the rest of the record"
       {% include "matters/partials/sender_control.html" with list_id="saabunud-saatja-nimekiri" %}
     </div>
 
-    {# 5 — what whoever picks this up needs to know, and who may read it. #}
-    <div class="createform__row createform__pair">
+    {# 5 — what whoever picks this up needs to know. #}
+    {% comment %}
+      **`Nähtavus` is not asked here any more.**
+
+      This row held the product's last creation-time visibility control, beside
+      the handover note, and the ordinary Teema product no longer asks who may
+      see a Matter on any of its surfaces. Material filed here arrives NORMAL,
+      decided server-side, exactly as a Matter filed through `Uus teema` does —
+      the field is gone from `IncomingIntakeForm`, so a crafted
+      `visibility=RESTRICTED` in this POST binds to nothing (docs/adr/0096 §3).
+    {% endcomment %}
+    <div class="createform__row">
       <label class="field">
         <span class="field__label">{{ form.handover_note.label }}</span>
         {{ form.handover_note }}
         {% if form.handover_note.errors %}
           <span class="field__error">{{ form.handover_note.errors|first }}</span>
-        {% endif %}
-      </label>
-      <label class="field">
-        <span class="field__label">{{ form.visibility.label }}</span>
-        {{ form.visibility }}
-        {% comment %}
-          The help line the control never had. This is where a restricted letter
-          is first filed — the comment at the top of this file says so — and
-          somebody choosing Piiratud for confidential member feedback has to be
-          able to read who that actually shows it to (pilot QA F-01).
-        {% endcomment %}
-        <span class="field__help"
-              id="{{ form.visibility.auto_id }}_helptext">{{ form.visibility.help_text }}</span>
-        {% if form.visibility.errors %}
-          <span class="field__error">{{ form.visibility.errors|first }}</span>
         {% endif %}
       </label>
     </div>

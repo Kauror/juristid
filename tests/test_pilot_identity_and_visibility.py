@@ -71,32 +71,46 @@ def test_the_wording_still_says_where_the_boundary_is():
 @pytest.mark.parametrize(
     "form", [MatterEditForm, IncomingIntakeForm], ids=["muuda-teemat", "saabunud"]
 )
-def test_every_visibility_control_carries_the_shared_wording(form):
-    assert form().fields["visibility"].help_text == RESTRICTED_VISIBILITY_HELP
+def test_no_business_form_asks_about_visibility_at_all(form):
+    """F-01's strongest possible ending: there is no control left to word.
+
+    These two forms carried the explained control. The ordinary Teema product
+    no longer asks who may see a Matter on any surface, and the field is deleted
+    rather than hidden — so there is nothing here to explain and nothing a
+    crafted POST can reach (docs/adr/0096 §3).
+
+    The sentence itself is untouched and is still load-bearing: it is what the
+    restricted *banner* says, which is the surface a reader meets when they open
+    a Matter somebody restricted.
+    """
+    assert "visibility" not in form().fields
 
 
-def test_the_matter_page_explains_restricted_visibility_in_the_shared_words(
-    signed_in, restricted_matter
-):
-    """The banner and the header's Nähtavus menu, on one page, in one sentence."""
+def test_the_matter_page_still_explains_a_restriction_it_is_carrying(signed_in, restricted_matter):
+    """Once, in the banner, rather than twice.
+
+    The second copy was the header's ⋯ menu, under the control that wrote it.
+    Removing the control removed the explanation with it; stating the
+    consequence of a restriction to somebody who is reading one stays.
+    """
     html = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": restricted_matter.pk})
     ).content.decode()
-    assert html.count(RESTRICTED_VISIBILITY_HELP) == 2
+    assert html.count(RESTRICTED_VISIBILITY_HELP) == 1
 
 
-def test_the_edit_page_explains_it_too(signed_in, normal_matter):
-    html = signed_in.get(
-        reverse("matters:matter_edit", kwargs={"pk": normal_matter.pk})
-    ).content.decode()
-    assert RESTRICTED_VISIBILITY_HELP in html
+def test_a_normal_matter_says_nothing_about_restriction(signed_in, normal_matter):
+    """And the edit page says nothing about it either, on any Matter."""
+    for name in ("matters:matter_detail", "matters:matter_edit"):
+        html = signed_in.get(reverse(name, kwargs={"pk": normal_matter.pk})).content.decode()
+        assert RESTRICTED_VISIBILITY_HELP not in html, name
 
 
-def test_the_intake_form_explains_it_where_a_restricted_letter_is_first_filed(signed_in):
-    """It had no explanation at all, on the one page the choice cannot be undone
-    without the record having been department-wide in between."""
+def test_the_intake_form_no_longer_asks_the_question(signed_in):
+    """It was the last creation control that did (docs/adr/0096 §3)."""
     html = signed_in.get(reverse("matters:intake")).content.decode()
-    assert RESTRICTED_VISIBILITY_HELP in html
+    assert RESTRICTED_VISIBILITY_HELP not in html
+    assert 'name="visibility"' not in html
 
 
 #: Sources a hand-written sentence about the restricted audience could hide in.

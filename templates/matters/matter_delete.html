@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Kustuta teema · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The question, on a page of its own.
+
+  Not a `confirm()`. A browser dialog says one line, cannot name what is about
+  to go, is dismissed by the same reflex that dismisses every other dialog, and
+  is not there at all for anybody driving the page without scripting. This page
+  names the Teema, counts what is inside it, states that the act cannot be
+  undone, and offers `Loobu` as the equal alternative to the one red button
+  (docs/adr/0096 §4.3).
+
+  **Reached by GET and acted on by POST**, with a CSRF token. Nothing here
+  writes: the counts come from `plan_matter_deletion`, which walks the ownership
+  graph and reads.
+
+  **A refusal is the page again, with the reason.** Where the deletion cannot
+  proceed — a legal hold, a record outside this Matter standing on something
+  inside it, an entry whose correction history the database keeps permanently —
+  there is no final button at all, and the sentences say which. The POST
+  re-checks independently under the row lock, so a blocker that appears while
+  somebody is reading this page is caught there rather than here.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--create">
+  <nav class="crumbs" aria-label="Asukoht">
+    <a href="{% url 'matters:matter_edit' pk=matter.pk %}">← Muuda teemat</a>
+  </nav>
+
+  <div class="pagehead">
+    <h1 class="pagehead__title">Kustuta teema</h1>
+  </div>
+
+  {% if delete_error %}
+    <p class="formerror" role="alert">{{ delete_error }}</p>
+  {% endif %}
+
+  <div class="dangerzone">
+    {% comment %}
+      A question where there is a decision to take, and a statement where there
+      is not. The blocked page used to ask «Kas kustutada see teema?» and then
+      answer it in the next line, which reads as a control that failed rather
+      than as an answer the reader has been given.
+    {% endcomment %}
+    <h2 class="dangerzone__title">
+      {% if plan.is_blocked %}Seda teemat ei saa kustutada{% else %}Kas kustutada see teema?{% endif %}
+    </h2>
+    {% comment %}
+      The title, said back. A person may have several Teemad open, and the only
+      thing that makes this button safe to press is knowing which record it is
+      about (task §37).
+    {% endcomment %}
+    <p class="dangerzone__subject">{{ matter.title }}</p>
+
+    {% if plan.is_blocked %}
+      <ul class="dangerzone__list">
+        {% for refusal in plan.refusals %}
+          <li>{{ refusal }}</li>
+        {% endfor %}
+      </ul>
+      <div class="dangerzone__actions">
+        <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Tagasi</a>
+      </div>
+    {% else %}
+      <p class="dangerzone__help">
+        Kustutamine eemaldab teema ja kogu selle sisu jäädavalt. Seda ei saa tagasi võtta.
+      </p>
+      {% if summary or evidence_objects %}
+        <ul class="dangerzone__list">
+          {% for label, count in summary %}
+            <li>{{ count }} {{ label }}</li>
+          {% endfor %}
+          {% if evidence_objects %}
+            <li>{{ evidence_objects }} salvestatud faili</li>
+          {% endif %}
+        </ul>
+      {% else %}
+        <p class="dangerzone__help">Teemal ei ole veel sisu.</p>
+      {% endif %}
+      {% comment %}
+        `button--danger-strong`, and the offer on `Muuda teemat` is the ordinary
+        outline `button--danger`.
+
+        The two look alike otherwise, and they must not: pressing the first is
+        a navigation and pressing this one is permanent. A filled button is the
+        page saying which of the two it is (docs/adr/0096 §4.3).
+      {% endcomment %}
+      <form class="dangerzone__actions" method="post"
+            action="{% url 'matters:matter_delete' pk=matter.pk %}">
+        {% csrf_token %}
+        <button class="button button--danger button--danger-strong" type="submit">Kustuta teema</button>
+        <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Loobu</a>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

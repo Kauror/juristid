@@ -23,9 +23,8 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
-    HETKESEIS_MENU,
     MARTIN,
-    VALDKONNAD_MENU,
+    VALDKONNAD_FIELD,
     go_to,
     open_hetkeseis,
     open_valdkond,
@@ -148,17 +147,14 @@ def test_choosing_a_second_value_replaces_the_first(page, base_url, screenshots,
     if options.count() < 3:
         pytest.skip(f"this world offers fewer than two real {field} values")
 
-    # Opened between the two picks, and that is the assertion underneath this
-    # one: `Hetkeseis` holds a single value, so answering it *is* the end of the
-    # question and the menu shuts itself (docs/adr/0094 §2). A second `check()`
-    # without reopening would fail on an invisible radio — which is the right
-    # failure, and not the one this test is about.
+    # Two picks in a row, with nothing opened or dismissed between them. The
+    # control was a menu that shut itself once answered, so this needed a
+    # reopen; drawn at rest it needs nothing, which is what the pair of
+    # `check()` calls below is now saying (docs/adr/0096 §2).
     open_hetkeseis(page)
     options.nth(1).check()
     expect(options.nth(1)).to_be_checked()
-    expect(page.locator(HETKESEIS_MENU)).not_to_have_attribute("open", "")
 
-    open_hetkeseis(page)
     options.nth(2).check()
 
     expect(options.nth(2)).to_be_checked()
@@ -172,8 +168,9 @@ def test_several_policy_areas_can_be_ticked_at_once(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    # Valdkonnad is a disclosure since docs/adr/0088: the controls are in the
-    # document either way, and nobody can click what nobody can see.
+    # Drawn at rest since docs/adr/0096 §2, so this only scrolls the block into
+    # view — and asserts, in every file that files a Teema, that the chips are
+    # reachable without anything being opened.
     open_valdkond(page)
 
     boxes = page.locator('input[type="checkbox"][name="policy_areas"]')
@@ -668,18 +665,16 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     expect(page.locator('input[name="policy_areas"]').first).to_be_checked()
     expect(page.locator(".field__error").first).to_be_visible()
 
-    # «and must not need a click to show them what went wrong» — the half that
-    # docs/adr/0088 had to answer differently. Valdkonnad comes back *shut* on a
-    # refusal it is not about, and says on its trigger that it is still holding
-    # an answer, instead of opening the vocabulary over a person who is being
-    # asked to fix something else.
-    #
-    # A count rather than the name: the trigger is a pill on one line, and three
-    # Estonian policy areas spelled out do not fit on it (docs/adr/0094 §2.2).
-    menu = page.locator(VALDKONNAD_MENU)
-    expect(menu).not_to_have_attribute("open", "")
-    trigger = menu.locator("> summary").inner_text() or ""
-    assert "· 1" in trigger, f"the refused form does not say it still holds one area: {trigger!r}"
+    # «and must not need a click to show them what went wrong» — the half
+    # docs/adr/0088 and docs/adr/0094 each had to answer for their own shape.
+    # With the vocabulary drawn at rest there is nothing left to answer: the
+    # chips come back on the page, the one that was ticked comes back ticked,
+    # and the count beside the label says so without anything being pressed
+    # (docs/adr/0096 §2).
+    block = page.locator(VALDKONNAD_FIELD).first
+    expect(block).to_be_visible()
+    assert block.locator("summary").count() == 0
+    expect(page.locator('[data-chipcount-for="policy_areas"]')).to_contain_text("1")
 
 
 @pytest.mark.parametrize("width", [1024, 420])
