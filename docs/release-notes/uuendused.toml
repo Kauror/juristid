@@ -61,13 +61,51 @@ basis = "deployment"
 # Kumbki punkt ei luba otsingut. Märksõna ei ole otsingusõna — teema enda sildid
 # on otsitavad nagu varem, arvamuse omad ei ole —, ja punkt, mis ütleks «leiad
 # üles», lubaks midagi, mida see väljalase ei too.
-prs = [248, 249, 252, 253, 255]
+#
+# ---------------------------------------------------------------------------
+# Kolmas väljalase, üks ring: «Uus teema» ise.
+#
+# Neli parandust juristide tagasisidest, kõik ühel lehel. Nad on siin ühes
+# kirjes eelmise kahe ringiga, sest kalendripäev on üksus: lugeja kohtab kõiki
+# kolme järgmisel korral, kui rakenduse avab.
+#
+# **Kuues ja seitsmes punkt räägivad sellest, mis vormiga juhtus, mitte sellest,
+# kuidas seda tehti.** Juristid ei palunud «menüüd» — nad palusid, et vorm ei
+# hakkaks valimise ajal nende käe all ümber laduma. Nii et punkt nimetab mõlemad
+# pooled: valimine käib rippmenüüst *ja* ülejäänud vorm seisab paigal. Sellest,
+# et menüü katab all olevad väljad seni, kuni ta lahti on, ei ole punkti — nii
+# käitub iga rippmenüü ja see ei ole uudis.
+#
+# **Kaheksas punkt ütleb, mida enam ei küsita.** Menetluse allikas oli viie
+# nupuga rida, millest üks oli ette valitud; lugeja, kellel on aadress ees, pidi
+# selle enne ära klassifitseerima. Punkt ei luba, et keegi teine selle nüüd ära
+# arvab — rakendus ei arva aadressist midagi — vaid ütleb ainult, et küsimust
+# ei ole. Teema lehel saab allika endiselt ise nimetada ja vanad lingid on
+# puutumata; seda punkt ei korda, sest see ei muutunud.
+#
+# **Üheksas punkt on see, mille pärast see ring üldse tõusis.** Ühte kuupäeva
+# küsiti kahes kohas kahe nime all. Nüüd on üks, vormi lõpus, ja punkt ütleb
+# otse välja, mis sellest saab: teema esimene tegevus. Ilma selle teise pooleta
+# oleks järgmine hommik üllatus — «Minu asjad» näitab uut teemat lausega
+# «Koostan arvamuse», mitte sõnaga «Arvamuse tähtaeg», ja see on täpsalt see,
+# mida see punkt lubab. Tühi lahter ei tekita endiselt midagi.
+#
+# **Kümnes punkt on äravõtmine, ja see väärib punkti.** «Järgmiseks» lahter koos
+# oma kiirvalikutega oli uue teema vormil ja on nüüd ainult teema lehel. Lugeja,
+# kes seda kasutas, ei leia seda enam ülelt — puuduv kontroll on sama uudis kui
+# uus, ja selle vaikimine oleks ainus viis, kuidas see ring saaks kedagi üllatada.
+prs = [248, 249, 252, 253, 255, 257]
 changes = [
   "Juba salvestatud menetluse arengut saab nüüd parandada: „Muuda” avab sündmuse enda, selle kuupäeva ja juristi märkuse ning jätab teema hetkeseisu, järgmise tegevuse ja varem lisatud failid puutumata.",
   "Menetluse arengu juurde saab tõendi lisada ka hiljem — „Lisa tõend” paneb faili selle sammu juurde, mida see tõendab, ja varem lisatud failid jäävad alles.",
   "Pikk katkestusteta tekst, näiteks kopeeritud link, ei venita ega lõika enam teema lehe käiku, järgmist tegevust ega otsingutulemusi.",
   "Koja arvamusele saab nüüd lisada eraldi märksõnad; teema sildid jäävad omaette ega kandu arvamusele üle.",
   "Koja arvamuse saab nüüd siduda sama teema ülevaadete ja uudistega — üks arvamus võib olla seotud mitmega ja üks ülevaade mitme arvamusega.",
+  "Uue teema valdkonnad valitakse nüüd rippmenüüst: mitu valdkonda saab märkida ühe avamisega ja ülejäänud vorm ei nihku valimise ajal enam allapoole.",
+  "Ka hetkeseis valitakse rippmenüüst ja valitud seis on näha nööbil endal, nii et üks kord vastatud küsimus ei võta uue teema vormil enam kahte rida.",
+  "„Menetluse link” on uue teema vormil kohe avatud ja küsib ainult aadressi ning soovi korral nimetuse — menetluse allikat ei pea enam ise valima.",
+  "„Arvamuse tähtaeg” on nüüd ainus kuupäev, mida uue teema loomisel küsitakse, ja see tekitab teemale ka esimese tegevuse „Koostan arvamuse”; tühjaks jäetud lahter ei tekita endiselt midagi.",
+  "„Järgmiseks” lahtrit koos kiirvalikutega uue teema vormil enam ei ole — järgmise tegevuse saab kirja panna teema lehel nagu varemgi.",
 ]
 
 [[day]]
