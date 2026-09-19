@@ -180,11 +180,22 @@ def _submission_values(submission: Submission, now: object) -> dict[str, object]
         # us, so it belongs in the exact-identifier tier rather than the body.
         "identifiers": submission.reference or "",
         "alias_text": " ".join(dict.fromkeys([*recipients, *aliases])),
-        # `notes` is canonical authored text. The final PDF's contents are *not*
-        # copied here — they are indexed through their own DocumentVersion, so
-        # a match can say which file and which page it came from instead of
-        # attributing a whole document to a Submission row (Stage-2B brief 38).
-        "body_text": submission.notes or "",
+        # `summary` and `notes`, both canonical authored text.
+        #
+        # **`summary` is here because the substance moved into it.** Until
+        # docs/adr/0095 §2 the descriptive sentence a lawyer wrote about a sent
+        # opinion went into `title`, which this projection indexes in the
+        # identity tier — so «pakendiseaduse üleminekuaeg» found the opinion
+        # that argued it. That box now asks for a summary instead and `title`
+        # carries the file's name, so indexing only the two old columns would
+        # quietly retire a search that works today. This is the whole reason
+        # `INDEX_VERSION` moves in this release (app/search/models.py).
+        #
+        # The final PDF's contents are still *not* copied here — they are
+        # indexed through their own DocumentVersion, so a match can say which
+        # file and which page it came from instead of attributing a whole
+        # document to a Submission row (Stage-2B brief 38).
+        "body_text": "\n".join(part for part in (submission.summary, submission.notes) if part),
         # As above. `_target_url` builds the anchor from `submission_id`.
         "source_locator": "",
         "index_version": INDEX_VERSION,

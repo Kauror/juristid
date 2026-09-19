@@ -198,6 +198,28 @@ class Submission(VisibilityInheritingModel):
         related_name="sent_submissions",
     )
     notes = models.TextField(blank=True, verbose_name="märkused")
+    #: `Kokkuvõte` — what Koda actually said in this opinion, in the lawyer's own
+    #: words.
+    #:
+    #: **A column of its own rather than a longer `title`.** `title` is this
+    #: record's *identity*: it is what `Submission` has never been allowed to
+    #: leave empty, what the outbound register prints in a cell, what the document
+    #: the bytes live under is called, and what a colleague scans a list of sends
+    #: by. A paragraph summarising an opinion is none of those things, and putting
+    #: one there would make every list of opinions a wall of prose and every
+    #: identifying cell a truncation.
+    #:
+    #: **And a column of its own rather than `notes`.** `notes` is «märkused» —
+    #: bookkeeping beside the record, which is why it is what the body of the
+    #: search projection already reads. This is the substance of the letter, it is
+    #: what `+ Koja arvamus` asks for in place of a headline, and a reader looking
+    #: for what the Chamber argued must not have to guess which of two boxes the
+    #: last person used.
+    #:
+    #: Blank is ordinary and stays ordinary: every Submission recorded before this
+    #: column existed has one, no value is derived for them, and nothing reads a
+    #: headline out of the first sentence of it (docs/adr/0095 §2).
+    summary = models.TextField(blank=True, verbose_name="kokkuvõte")
 
     objects = SubmissionQuerySet.as_manager()
 

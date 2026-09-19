@@ -1130,12 +1130,21 @@ def submission_milestone(submission: Any, addressees: Sequence[str] = ()) -> Chr
     primary, and each row keeps its own date, its own recipients and its own
     evidence (docs/adr/0061, master specification 6.4).
 
-    **The title is not the headline.** A `Submission` is titled after its Matter,
-    so printing it here repeats the `<h1>` a few hundred pixels up the page. What
-    tells two opinions on one file apart is the `Liik` — `Täiendav arvamus`,
-    `Pöördumine Riigikogule` — and who it went to, which is what the sub-line
-    carries. The default `Ametlik arvamus` says nothing the row does not, and is
-    left off for the reason `engagement_milestone` leaves `Muu` off.
+    **The title is not the headline.** A `Submission` is titled after its Matter
+    or after the file that was sent, so printing it here repeats the `<h1>` a few
+    hundred pixels up the page or prints `arvamus_final_v3.docx` into the
+    chronology. What tells two opinions on one file apart is the `Kokkuvõte`,
+    the `Liik` — `Täiendav arvamus`, `Pöördumine Riigikogule` — and who it went
+    to, which is what the sub-line carries. The default `Ametlik arvamus` says
+    nothing the row does not, and is left off for the reason
+    `engagement_milestone` leaves `Muu` off.
+
+    **`Kokkuvõte` first**, as `external_position_milestone` puts `Seisukoht`
+    first and for the same reason: what the letter argued is what a reader came
+    for, and who it went to is the context for it. A row recorded before the
+    column existed has none, prints exactly what it printed before, and gains
+    nothing — no summary is derived from the title, from the file or from
+    anywhere else (docs/adr/0095 §2).
 
     Only `ADDRESSEE` recipients. «Teadmiseks» is a copy, and a row that listed
     both would make «who did Koda actually write to» unanswerable — the
@@ -1144,6 +1153,8 @@ def submission_milestone(submission: Any, addressees: Sequence[str] = ()) -> Chr
     from app.submissions.enums import SubmissionKind
 
     parts: list[str] = []
+    if submission.summary:
+        parts.append(submission.summary)
     if submission.kind != SubmissionKind.FORMAL_OPINION:
         parts.append(str(submission.get_kind_display()))
     if addressees:

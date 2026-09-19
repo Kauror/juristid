@@ -1177,28 +1177,21 @@ def test_a_save_recording_nothing_is_refused_and_keeps_what_was_typed(
 ):
     """All three boxes empty is the only refusal left, and it names all three.
 
-    The organisation, the date and the `Seotud kaasamine` the person had already
-    answered come back in their controls: losing them would cost somebody the
-    record they opened the panel to make (docs/adr/0084 §3, amended
-    2026-09-16).
-    """
-    engagement = add_engagement(
-        matter=normal_matter,
-        kind=EngagementKind.EMAIL_CAMPAIGN,
-        title="liikmed",
-        occurred_on=dt.date(2026, 2, 1),
-        actor=None,
-    )
+    The organisation and the date the person had already answered come back in
+    their controls: losing them would cost somebody the record they opened the
+    panel to make (docs/adr/0084 §3, amended 2026-09-16).
 
+    `Seotud kaasamine` is no longer one of them, because the panel no longer asks
+    it — see the crafted-POST test below, which proves the endpoint does not read
+    one either (docs/adr/0095 §3).
+    """
     response = _post(
         signed_in,
         "add_external_position",
         normal_matter,
         {
             "organisation": str(ministry.pk),
-            "position_precision": "EXACT",
             "stated_on": "14.03.2026",
-            "engagement": str(engagement.pk),
             "summary": "",
             "url": "",
         },
@@ -1215,7 +1208,6 @@ def test_a_save_recording_nothing_is_refused_and_keeps_what_was_typed(
     # (docs/adr/0091 §3.5, `_panel_markup`).
     panel = _panel_markup(body)
     assert 'value="14.03.2026"' in _stated_on_box(body)
-    assert "selected" in _tag_with(panel, f'value="{engagement.pk}"')
     assert "checked" in _tag_with(panel, f'value="{ministry.pk}"')
 
 
@@ -1250,9 +1242,22 @@ def test_a_position_with_no_organisation_is_refused_on_the_page(signed_in, norma
     assert EXTERNAL_POSITION_NEEDS_ORGANISATION in response.content.decode()
 
 
-def test_a_crafted_post_naming_another_matters_engagement_is_refused(
+def test_a_crafted_post_naming_another_matters_engagement_reaches_nothing(
     signed_in, normal_matter, specialist, ministry
 ):
+    """The panel stopped asking, so the endpoint stopped reading — and the save stands.
+
+    Until docs/adr/0095 §3 this POST was *refused*, by a form that declared an
+    `engagement` field and checked the round belonged to this Matter. The field
+    is gone from both creation panels, so there is nothing to clean, nothing to
+    check and nothing to attach: the position is recorded, and it is recorded
+    with `engagement = NULL`.
+
+    That is the stronger outcome rather than a weaker one. A refusal proves the
+    guard ran; a `NULL` proves there is no path to guard. `Muuda` still asks, and
+    `correct_external_position` still refuses another Matter's round there —
+    which is the test directly below this one.
+    """
     elsewhere = factories.MatterFactory(owner=specialist)
     stray = add_engagement(
         matter=elsewhere, kind=EngagementKind.EMAIL_CAMPAIGN, title="mujal", actor=specialist
@@ -1270,8 +1275,13 @@ def test_a_crafted_post_naming_another_matters_engagement_is_refused(
         },
     )
 
-    assert response.status_code == 400
-    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+    assert response.status_code == 200
+    position = MatterExternalPosition.objects.get(matter=normal_matter)
+    assert position.engagement_id is None
+    # And the precision the same POST carried reached nothing either: the four
+    # period fields are not on this form, so the day box is the answer and
+    # `EXACT` is what the record stores.
+    assert position.stated_on_precision == DatePrecision.EXACT.value
 
 
 def test_a_closed_matter_refuses_a_crafted_post(signed_in, closed_matter, ministry):
@@ -1705,14 +1715,23 @@ def test_no_position_exists_without_an_organisation_even_by_crafted_post(signed_
 # ---------------------------------------------------------------------------
 
 
-def test_the_panel_opens_on_today_at_exact_precision(signed_in, normal_matter, ministry):
+def test_the_panel_opens_on_today_and_carries_no_precision_control(
+    signed_in, normal_matter, ministry
+):
+    """One date box, opening on today, and the four chips are `Muuda`'s now.
+
+    The precision *fields* are gone rather than hidden, which is what makes a
+    crafted `position_precision` unreadable rather than merely unrendered
+    (docs/adr/0095 §3).
+    """
     from app.matters.forms import CompactExternalPositionForm
 
     panel = CompactExternalPositionForm(matter=normal_matter, viewer=None)
     today = timezone.localdate()
 
     assert panel["stated_on"].value() == today
-    assert panel["position_precision"].value() == DatePrecision.EXACT.value
+    assert "position_precision" not in panel.fields
+    assert not [name for name in panel.fields if name.startswith("position_")]
     body = _detail(signed_in, normal_matter)
     assert f'value="{_as_typed(today)}"' in _stated_on_box(body)
 

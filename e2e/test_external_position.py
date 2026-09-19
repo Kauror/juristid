@@ -126,7 +126,14 @@ def test_the_choice_records_a_position_without_a_reload(page, base_url):
     expect(chronology(page)).not_to_contain_text("Kuupäev teadmata")
 
 
-def test_the_panel_asks_for_the_seven_things_and_nothing_else(page, base_url):
+def test_the_panel_asks_for_four_things_and_nothing_else(page, base_url):
+    """docs/adr/0095 §3's panel, in a real browser.
+
+    Four controls where there were seven: the institution, the written position,
+    a link, a file — and one date box. Three questions moved to `Muuda`, and
+    what this asserts is that they are *absent from the document*, not merely
+    styled away: a hidden control is still a control a browser posts.
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-valine-seisukoht")
@@ -135,21 +142,50 @@ def test_the_panel_asks_for_the_seven_things_and_nothing_else(page, base_url):
     expect(panel(page).locator("[name=summary]")).to_be_visible()
     expect(panel(page).locator("[name=url]")).to_be_visible()
     expect(panel(page).locator("input[type=file]")).to_have_count(1)
-    expect(panel(page).locator("[name=engagement]")).to_be_visible()
-    # `Juristi märkus` — the seventh, and the one docs/adr/0091 §4 added: this
-    # office's reading of the position, beside it and never inside it.
-    expect(panel(page).locator("[name=lawyer_note]")).to_be_visible()
-    # And **no** `Allikas` here. A discovered position has an author by
-    # definition, and a free text box answering «whose position is this» would be
-    # a ninth way of naming an institution (docs/adr/0091 §3.3).
+    # The three the creation panel stopped asking. Counted at zero rather than
+    # asserted invisible, because the claim is that the form does not carry them.
+    expect(panel(page).locator("[name=engagement]")).to_have_count(0)
+    expect(panel(page).locator("[name=lawyer_note]")).to_have_count(0)
     expect(panel(page).locator("[name=source_label]")).to_have_count(0)
-    # The four precisions, through the one shared control.
+    # And no precision control, by the same measure.
+    expect(panel(page).locator("[name=position_precision]")).to_have_count(0)
     for label in ("Täpne päev", "Kuu", "Kvartal", "Aasta"):
-        expect(panel(page).get_by_text(label, exact=True).first).to_be_visible()
+        expect(panel(page).get_by_text(label, exact=True)).to_have_count(0)
     # The date box opens on today: a visible suggestion somebody reads, changes
-    # or empties, which is what docs/adr/0078 §2 allows and a stamp is not
-    # (docs/adr/0084 §2, amended 2026-09-16).
+    # or empties, which is what docs/adr/0078 §2 allows and a stamp is not.
     expect(panel(page).locator("[name=stated_on]")).not_to_have_value("")
+
+
+def test_the_institution_is_found_through_the_search_rather_than_scrolled_to(page, base_url):
+    """`quiet`: one line and a `+`, and the catalogue arrives when it is asked for.
+
+    The control the owner asked for, measured the way it is actually used — type
+    a fragment, watch one chip appear, click it. A test that only asserted the
+    search box existed would pass on a control that searches nothing
+    (docs/adr/0088, docs/adr/0095 §5).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-valine-seisukoht")
+    picker = panel(page).locator("[data-orgfind]")
+
+    # At rest: the search box, and no institution drawn under it.
+    expect(picker.locator("[data-orgfind-input]")).to_be_visible()
+    expect(picker.locator(".orgfind__chips .chip:visible")).to_have_count(0)
+
+    # Typed one character at a time, and answered from the results listbox —
+    # which is where the script puts the matches and what a person actually
+    # clicks. Ticking the chip directly would assert something nobody does: the
+    # chips are labels whose input is clipped, and an institution outside the
+    # answer set is `hidden` until the search reveals it.
+    box = picker.locator("[data-orgfind-input]")
+    box.click()
+    box.type(MINISTRY[:8], delay=20)
+    picker.locator(".orgfind__results").get_by_role("option", name=MINISTRY, exact=True).click()
+
+    chosen = picker.locator(".orgfind__chips .chip", has_text=MINISTRY)
+    expect(chosen).to_be_visible()
+    expect(chosen.locator("input")).to_be_checked()
 
 
 def test_the_written_position_leads_the_three_sources(page, base_url):
@@ -171,7 +207,11 @@ def test_the_written_position_leads_the_three_sources(page, base_url):
     )
 
     assert order == ["summary", "url"]
-    expect(panel(page)).to_contain_text("vähemalt üks neist on vajalik")
+    # The sentence that explained the rule is gone from the panel; the rule
+    # itself is not, and `test_a_save_recording_nothing_is_refused…` in
+    # `tests/test_external_positions.py` is where it is asserted
+    # (docs/adr/0095 §3).
+    expect(panel(page)).not_to_contain_text("vähemalt üks neist on vajalik")
 
 
 def test_a_written_position_alone_is_a_complete_record(page, base_url):
@@ -366,7 +406,11 @@ def test_every_control_in_the_panel_is_reachable_by_tabbing(page, base_url):
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-valine-seisukoht")
 
-    for name in ("summary", "url", "engagement", "stated_on"):
+    # `engagement` is not among them any more: the panel stopped asking for a
+    # `Kaasamine` and the field is absent from the document, so a tab order
+    # including it would be asserting a control that is not there
+    # (docs/adr/0095 §3).
+    for name in ("summary", "url", "stated_on"):
         control = panel(page).locator(f"[name={name}]")
         control.focus()
         expect(control).to_be_focused()

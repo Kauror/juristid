@@ -32,20 +32,35 @@ There is nothing for a browser to post and nothing a crafted POST can move
 (docs/adr/0091 §3.5).
 
 **Two required answers and three optional ones.** Whose position it is — an
-organisation from the one shared catalogue, or, on received feedback only, the
-`Allikas` naming a collection of answers that has no single author — and
-something recorded, because a position holding nothing is hearsay. **Any one of
-three satisfies the second**: the written `Seisukoht`, a link, or a file. Any
-combination is ordinary — a ministry that publishes a page, sends the paper and
-summarises it in a covering mail has stated one position with three sources — and
-text alone is the case the rule was widened for, because the commonest feedback a
-department receives is two sentences from a member association with no file and no
-published address behind them (docs/adr/0084 §3, amended 2026-09-16).
+organisation from the one shared catalogue — and something recorded, because a
+position holding nothing is hearsay. **Any one of three satisfies the second**:
+the written `Seisukoht`, a link, or a file. Any combination is ordinary — a
+ministry that publishes a page, sends the paper and summarises it in a covering
+mail has stated one position with three sources — and text alone is the case the
+rule was widened for, because the commonest feedback a department receives is two
+sentences from a member association with no file and no published address behind
+them (docs/adr/0084 §3, amended 2026-09-16).
 
-**`Juristi märkus` is not one of the three.** A record whose only content is this
-office's opinion of a position nobody can read is a record of nothing, so the
-source rule does not count it — and it renders under its own label on its own
-line, never appended to what the other organisation said (docs/adr/0091 §4).
+**Four questions this panel used to ask and no longer does** — and every one of
+them is still asked on `Muuda`, still stored, and still rendered on every record
+that carries it (docs/adr/0095 §3, §4, §5):
+
+* the four precision chips, replaced by one date box. Classifying a date before
+  stating it is the right question for a paper remembered as «kevadel 2019» and
+  the wrong one for feedback that arrived on Tuesday;
+* `Juristi märkus`, because one substantive box is what writing up an answer
+  needs and two invited a decision about which half of a thought goes where.
+  `Seisukoht` is the whole of what a record made here says, and it is still never
+  concatenated with a stored note on any surface (docs/adr/0091 §4);
+* `Seotud kaasamine`, never inferred before and not inferred now — simply not a
+  select in front of somebody recording two sentences;
+* `Allikas`, on received feedback, which is why that panel now requires an
+  institution. The aggregate answers docs/adr/0091 §3.3 built the box for keep
+  their labels and are corrected through `Muuda`, which asks per record.
+
+**What replaced `Allikas` on that panel is `Liige`** — a box saying this feedback
+came from a Chamber member. Ticked by the person filing it and derived from
+nothing: not the membership registry, not the CRM, not the organisation's name.
 
 The date box opens on **today**, as `+ Kaasamine`'s does: the default is visible
 in the box before anything is saved, so it is a suggestion somebody accepts rather
@@ -79,43 +94,73 @@ as late (docs/adr/0084 §5).
         (docs/adr/0073).
 
         No «Määramata» chip: that is a real answer to *who was this addressed to*
-        and is not one to *whose position is this*. On received feedback the
-        answer may instead be the `Allikas` below, which is a different thing
-        from «not stated» — it names where the answers came from
-        (docs/adr/0091 §3.3).
+        and is not one to *whose position is this*. A position with no author is
+        an anonymous claim on a professional file, so the refusal names the
+        institution rather than offering a chip (docs/adr/0091 §3.3).
+
+        **`quiet`, so the catalogue is behind the search rather than drawn under
+        the box.** The shortlist is still in the document, still posts the same
+        names and values, and still comes back visible on a refused save; it is
+        simply not painted until it is searched for or answered. What a lawyer
+        meets is one line — «Otsi või lisa asutus…» — and the bodies they have
+        actually chosen (docs/adr/0088, docs/adr/0095 §5).
       {% endcomment %}
-      {% include "matters/partials/organisation_picker.html" with picker_id=picker_id legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clears_group="organisation" only %}
+      {% include "matters/partials/organisation_picker.html" with picker_id=picker_id legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clearable=True clears_group="organisation" quiet=True only %}
       {% if form.organisation.errors %}
         <p class="field__error" id="{{ form.organisation.auto_id }}_error">
           {{ form.organisation.errors|first }}</p>
       {% endif %}
 
       {% comment %}
-        `Allikas` — on the received-feedback panel only, and the whole reason it
-        exists: a survey of 234 industrial companies that produced 58 answers has
-        no single author, and the two things this panel used to force were an
-        invented organisation called «234 ettevõtet» and one arbitrary respondent
-        standing for the rest. `+ Teiste arvamus` does not render it and does not
-        carry the field, because a discovered position has an author by definition
-        (docs/adr/0091 §3.3).
+        `Liige` — this feedback came from a Chamber member, on the panel that
+        asks it and nowhere else.
+
+        One checkbox, ticked by the person who filed the answer, and read by
+        nothing else: no membership registry, no CRM, no address domain, no name
+        matching. It is a fact about *this* record that the lawyer knows, which
+        is why it is a box rather than a join — and it does not move afterwards,
+        because an organisation leaving the Chamber next year does not make last
+        year's feedback stop having come from a member (docs/adr/0095 §4).
+
+        `+ Teiste arvamus` does not render it and does not carry the field: a
+        position Koda found published somewhere was not written to Koda at all,
+        so there is no question for the box to answer. The service and a `CHECK`
+        both refuse a `True` on that provenance, so the box being absent is the
+        outermost of three defences rather than the only one.
       {% endcomment %}
-      {% if form.allows_source_label %}
-        <label class="cx-f" for="{{ form.source_label.id_for_label }}">
-          <span class="cx-f__lab">{{ form.source_label.label }}
-            <span class="cx-f__opt">valikuline</span></span>
-          {{ form.source_label }}
-        </label>
-        {% if form.source_label.errors %}
-          <p class="field__error" id="{{ form.source_label.auto_id }}_error">
-            {{ form.source_label.errors|first }}</p>
+      {% if form.member_mark %}
+        <div class="chiprow">
+          <label class="chip">
+            {{ form.member_mark }}
+            <span class="chip__name">{{ form.member_mark.label }}</span>
+          </label>
+        </div>
+        {% if form.member_mark.errors %}
+          <p class="field__error" id="{{ form.member_mark.auto_id }}_error">
+            {{ form.member_mark.errors|first }}</p>
         {% endif %}
-        <p class="cx-note">
-          Kui tagasiside ei tule ühelt organisatsioonilt — näiteks küsitluse
-          koondvastused — jäta organisatsioon valimata ja kirjuta allikas siia.
-        </p>
       {% endif %}
 
-      {% include "matters/partials/period_composer.html" with chips=form.precision_chips date_field=form.stated_on month_field=form.position_month quarter_field=form.position_quarter year_field=form.position_year only %}
+      {% comment %}
+        `Kuupäev` — one box, opening on today.
+
+        The four precision chips are `Muuda`'s now. Classifying a date before
+        stating it is the right question for a ministry's paper remembered as
+        «kevadel 2019» and the wrong one in front of feedback that arrived this
+        week, which is what these two panels record almost every time
+        (docs/adr/0095 §3).
+
+        Clearing it is still a real answer: `NULL`, and «Kuupäev teadmata» on
+        every surface that reads it.
+      {% endcomment %}
+      <label class="cx-f cx-f--date" for="{{ form.stated_on.id_for_label }}">
+        <span class="cx-f__lab">{{ form.stated_on.label }}</span>
+        {{ form.stated_on }}
+      </label>
+      {% if form.stated_on.errors %}
+        <p class="field__error" id="{{ form.stated_on.auto_id }}_error">
+          {{ form.stated_on.errors|first }}</p>
+      {% endif %}
 
       {% comment %}
         The three sources, and the sentence that explains what «vähemalt üks»
@@ -153,50 +198,7 @@ as late (docs/adr/0084 §5).
           {{ form.url.errors|first }}</p>
       {% endif %}
       {% include "matters/partials/add_files.html" with field=form.attachments %}
-      <p class="cx-note">Kirjuta seisukoht, lisa link või fail — vähemalt üks neist on vajalik.</p>
 
-      {% comment %}
-        `Juristi märkus` — below the three sources and visibly apart from them.
-        Everything above this is what the other organisation said; this is what
-        somebody here thinks about it.
-
-        It satisfies the source rule in neither direction: a save carrying only
-        this is refused exactly as an empty one is. And it is never concatenated
-        into the position on any surface — the chronology prints it under its own
-        label, the audit payload records only that it exists, and the search
-        projection does not read it, so no rendered line can show Koda's words as
-        the other organisation's (docs/adr/0091 §4).
-      {% endcomment %}
-      <label class="cx-f" for="{{ form.lawyer_note.id_for_label }}">
-        <span class="cx-f__lab">{{ form.lawyer_note.label }}
-          <span class="cx-f__opt">valikuline</span></span>
-        {{ form.lawyer_note }}
-      </label>
-      {% if form.lawyer_note.errors %}
-        <p class="field__error" id="{{ form.lawyer_note.auto_id }}_error">
-          {{ form.lawyer_note.errors|first }}</p>
-      {% endif %}
-
-      {% comment %}
-        `Seotud kaasamine`, and it is optional because plenty of what arrives was
-        never asked for — a ministry publishes because it chose to, and a member
-        writes in unprompted. The blank option says that in words rather than with
-        a dash, so an unrelated record does not read as a question somebody forgot
-        to answer.
-
-        **It is never inferred.** Nothing relates a record to a round because
-        their dates or their organisations happen to match; a person says so, or
-        nobody does (docs/adr/0084 §4, docs/adr/0091 §3.6).
-      {% endcomment %}
-      <label class="cx-f" for="{{ form.engagement.id_for_label }}">
-        <span class="cx-f__lab">{{ form.engagement.label }}
-          <span class="cx-f__opt">valikuline</span></span>
-        {{ form.engagement }}
-      </label>
-      {% if form.engagement.errors %}
-        <p class="field__error" id="{{ form.engagement.auto_id }}_error">
-          {{ form.engagement.errors|first }}</p>
-      {% endif %}
       <div class="addform__actions">
         <button class="button button--primary" type="submit">{{ submit_label }}</button>
       </div>

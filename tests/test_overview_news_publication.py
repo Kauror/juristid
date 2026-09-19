@@ -116,11 +116,14 @@ def test_the_panel_reads_in_the_neutral_wording_throughout(signed_in, normal_mat
     panel = _panel(signed_in, normal_matter)
 
     assert ">Lisa ülevaade / uudis<" in panel
-    assert "ülevaade või uudis" in panel
-    assert "Kui ülevaade või uudis on juba avaldatud" in panel
-    assert "Avaldatud ülevaate või uudise link" in panel
-    assert "Avaldamise kuupäev" in panel
     assert "koda.ee" not in panel
+    # The two labels are the questions themselves since docs/adr/0095 §5. The
+    # legend explaining a conditional path, and the two labels that restated the
+    # legend, went with the conditional.
+    assert ">Link<" in panel
+    assert ">Kuupäev<" in panel
+    assert "Kui ülevaade või uudis on juba avaldatud" not in panel
+    assert "Avaldatud ülevaate või uudise link" not in panel
 
 
 def test_the_panel_asks_for_no_kind(signed_in, normal_matter):
@@ -362,22 +365,25 @@ def test_the_same_address_is_still_filed_at_most_once_per_matter(normal_matter, 
 
 
 def test_the_date_box_is_empty_and_no_default_is_offered_anywhere(signed_in, normal_matter):
-    """§3, as docs/adr/0089 §8 replaces it: there is no default left to offer.
+    """The withdrawn island stays withdrawn — and that is not the same as no default.
 
     ADR 0085 §3 wrote today into `data-publication-default` and let an island in
-    `ux.js` put it in the box the moment somebody typed an address. Lawyer
-    testing measured what that produced — a plausible date, already there,
-    accepted without being read — so both halves are withdrawn: the attribute,
-    and the `initial` on the publish form's own box.
+    `ux.js` put it in the box **the moment somebody typed an address**. Lawyer
+    testing measured what that produced: a plausible date appearing under a
+    cursor, accepted without being read. docs/adr/0089 §8 withdrew both halves.
 
-    All three assertions are the same claim from three sides: the box is empty,
-    nothing tells the browser what today is, and nothing pairs the two boxes.
+    docs/adr/0095 §5 restores a default to this box and deliberately not that
+    one. The day is in the box before anything is typed, where somebody reading
+    the form reads it — which is the shape docs/adr/0078 §2 allows — and nothing
+    reacts to a paste. So this test now asserts the difference rather than the
+    absence: today is in the box, and neither attribute exists.
     """
     panel = _panel(signed_in, normal_matter)
     box = panel[panel.index('name="published_on"') :]
     box = box[: box.index(">")]
+    today = timezone.localdate()
 
-    assert 'value=""' in box or "value=" not in box, box
+    assert f'value="{today.day:02d}.{today.month:02d}.{today.year}"' in box, box
     assert "data-publication-default" not in panel
     assert "data-publication-trigger" not in panel
 
@@ -430,15 +436,19 @@ def test_nothing_anywhere_supplies_a_publication_date(signed_in, normal_matter, 
     }
 
 
-def test_an_untouched_form_still_records_a_plan(signed_in, normal_matter):
-    """§3. The empty submit, still reachable and still a complete answer."""
+def test_an_untouched_form_is_refused_rather_than_filing_a_plan(signed_in, normal_matter):
+    """The empty submit is gone, and `Plaanis` is not.
+
+    docs/adr/0083 made it a third answer to this panel; docs/adr/0095 §5 retired
+    it, because a save whose meaning is what somebody did *not* type is reached
+    from a form that looks untouched. `plan_website_overview` still writes a
+    plan and every stored plan still reads — which the tests below this one
+    still prove.
+    """
     response = _add(signed_in, normal_matter)
 
-    assert response.status_code == 200
-    overview = MatterWebsiteOverview.objects.get(matter=normal_matter)
-    assert overview.status == WebsiteOverviewStatus.PLANNED
-    assert overview.url == ""
-    assert overview.published_on is None
+    assert response.status_code == 400
+    assert not MatterWebsiteOverview.objects.filter(matter=normal_matter).exists()
 
 
 @pytest.mark.parametrize(

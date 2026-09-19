@@ -30,6 +30,7 @@ import re
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -40,7 +41,7 @@ from app.matters.process_timeline import (
     FEEDBACK_DEADLINE_LABEL,
     process_steps,
 )
-from app.matters.services import add_engagement
+from app.matters.services import add_engagement, plan_website_overview
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -323,15 +324,18 @@ def _add(client, matter, **fields):
     )
 
 
-def test_an_empty_form_still_records_a_plan(signed_in, normal_matter):
-    """ADR 0083 §2. Both boxes left empty is still a complete answer."""
-    response = _add(signed_in, normal_matter)
-    assert response.status_code == 200
+def test_an_empty_form_is_refused_rather_than_recording_a_plan(signed_in, normal_matter):
+    """ADR 0083 §2's third answer, retired by docs/adr/0095 §5.
 
-    overview = MatterWebsiteOverview.objects.get(matter=normal_matter)
-    assert overview.status == WebsiteOverviewStatus.PLANNED
-    assert overview.url == ""
-    assert overview.published_on is None
+    A save whose meaning is what somebody did *not* type is reached from a form
+    that looks untouched. `Plaanis` remains a status, `plan_website_overview`
+    remains the service that writes one, and the strip below still publishes and
+    cancels — what is gone is the empty submit.
+    """
+    response = _add(signed_in, normal_matter)
+
+    assert response.status_code == 400
+    assert not MatterWebsiteOverview.objects.filter(matter=normal_matter).exists()
 
 
 def test_the_button_says_what_it_does(signed_in, normal_matter):
@@ -343,28 +347,37 @@ def test_the_button_says_what_it_does(signed_in, normal_matter):
     assert ">Lisa ülevaade / uudis<" in panel
     assert "planeeritud" not in panel
     assert ">Salvesta<" not in panel
-    # And the two optional controls are there, labelled, under their own legend.
+    # And the two controls are there, each labelled by the question it asks.
+    # The legend that explained a conditional path went with the conditional
+    # (docs/adr/0095 §5).
     assert 'name="url"' in panel
     assert 'name="published_on"' in panel
-    assert "Avaldatud ülevaate või uudise link" in panel
-    assert "Avaldamise kuupäev" in panel
-    assert "Kui ülevaade või uudis on juba avaldatud" in panel
+    assert ">Link<" in panel
+    assert ">Kuupäev<" in panel
+    assert "Kui ülevaade või uudis on juba avaldatud" not in panel
 
 
-def test_the_date_box_is_not_pre_filled(signed_in, normal_matter):
-    """Load-bearing: a pre-filled date would make «neither filled» unreachable.
+def test_the_date_box_opens_on_today(signed_in, normal_matter):
+    """The reason this box was empty is gone, so the box is not.
 
-    Every plan would then arrive carrying a publication date nobody typed. ADR
-    0085 §3 added a default that arrives when somebody starts typing an address
-    — in the browser, on the person's own action — and this is the assertion
-    that says the *server* still sends an empty box.
+    It was empty because «neither filled» had to stay reachable: a pre-filled
+    date would have made every plan arrive carrying a publication day nobody
+    typed. `Plaanis` is no longer an answer to this panel, so the constraint no
+    longer applies, and the day a write-up is recorded on is today far more
+    often than not (docs/adr/0095 §5).
+
+    Still the *server's* day, still in the box where it can be read and cleared,
+    and still nothing that reacts to a paste — which is the ADR 0085 §3 island
+    docs/adr/0089 §8 withdrew and this round did not bring back.
     """
+    today = timezone.localdate()
     panel = _detail(signed_in, normal_matter)
     panel = panel[panel.index('id="lisa-koduleht"') :]
     box = panel[panel.index('name="published_on"') :]
     box = box[: box.index(">")]
 
-    assert 'value=""' in box or "value=" not in box, box
+    assert f'value="{today.day:02d}.{today.month:02d}.{today.year}"' in box, box
+    assert "data-publication-default" not in panel
 
 
 def test_a_link_and_a_date_record_a_published_overview_in_one_act(signed_in, normal_matter):
@@ -487,8 +500,13 @@ def test_a_closed_matter_refuses_the_published_path_too(signed_in, specialist):
 
 
 def test_a_planned_row_says_what_to_do_next(signed_in, normal_matter):
-    """ADR 0083 §2. `Avalda` named the transition; this names the action."""
-    _add(signed_in, normal_matter)
+    """ADR 0083 §2. `Avalda` named the transition; this names the action.
+
+    The plan comes from its own service rather than from an empty submit, which
+    docs/adr/0095 §5 retired. What this test is about is the strip that reads a
+    stored plan, and that is unchanged.
+    """
+    plan_website_overview(matter=normal_matter, actor=normal_matter.owner)
 
     body = _detail(signed_in, normal_matter)
     strip = body[body.index('id="kodulehe-ulevaated"') :]

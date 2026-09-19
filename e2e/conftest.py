@@ -482,6 +482,7 @@ def create_matter(
     *,
     stage: str | None = None,
     owner: Persona | None = None,
+    sender: str | None = None,
 ) -> str:
     """Create a Matter through the real form and return its detail URL.
 
@@ -496,6 +497,14 @@ def create_matter(
     the form, named by what the page shows: the stage's own label, and the
     owner's short name. Left unset they stay unset, which is what the form
     defaults to and what every existing caller goes on getting.
+
+    `sender` is answered through the picker's own search rather than by ticking
+    a chip, because `Uus teema`'s Saatja control is `quiet`: the catalogue is
+    behind «Otsi või lisa asutus…» and an unchosen institution is `hidden` until
+    the search reveals it, so `check()` would assert something a person never
+    does (docs/adr/0088, `organisation_picker.html`). It exists because
+    `+ Koja arvamus` opens its `Adressaadid` on the Teema's `Saatja`, and a test
+    about that default needs a Teema that has one (docs/adr/0095 §1).
     """
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
@@ -507,6 +516,12 @@ def create_matter(
         page.get_by_role("radio", name=stage, exact=True).check()
     if owner is not None:
         page.get_by_role("radio", name=owner.short_name, exact=True).check()
+    if sender is not None:
+        box = page.locator("#saatja-otsi")
+        box.click()
+        box.fill("")
+        box.type(sender[:8], delay=20)
+        page.locator("#saatja-tulemused").get_by_role("option", name=sender, exact=True).click()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url

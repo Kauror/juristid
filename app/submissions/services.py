@@ -55,6 +55,7 @@ def create_submission(
     channel: str = "",
     reference: str = "",
     notes: str = "",
+    summary: str = "",
     visibility_override: str = "",
 ) -> Submission:
     """Start a submission. It begins as a draft; sending is a separate act."""
@@ -76,6 +77,7 @@ def create_submission(
         channel=channel.strip(),
         reference=reference.strip(),
         notes=notes,
+        summary=summary.strip(),
         created_by=actor,
         visibility_override=visibility_override,
     )
@@ -97,7 +99,12 @@ def create_submission(
         actor=actor,
         obj=submission,
         summary=title[:200],
-        payload={"kind": kind},
+        # **That a summary was written, never what it says.** The audit trail
+        # records identity and the shape of a change; the substance of an
+        # opinion is business content and lives on the record itself, where
+        # visibility filtering applies to it. `Juristi märkus` is carried the
+        # same way and for the same reason (docs/adr/0091 §4, docs/adr/0095 §2).
+        payload={"kind": kind, "summary": bool(summary.strip())},
     )
     return submission
 
@@ -510,6 +517,7 @@ def register_sent_opinion(
     joint_submitters: list[Any] | None = None,
     channel: str = "",
     reference: str = "",
+    summary: str = "",
     sent_at: datetime | None = None,
     sent_at_precision: str = SentAtPrecision.TIMESTAMP,
 ) -> Submission:
@@ -595,6 +603,7 @@ def register_sent_opinion(
         joint_submitters=joint_submitters,
         channel=channel,
         reference=reference,
+        summary=summary,
         # The evidence is a document that already exists and already carries a
         # visibility of its own. `check_evidence_is_usable` refuses evidence
         # less restricted than its submission, so a restriction is inherited
@@ -751,6 +760,7 @@ def register_sent_opinion_on_open_matter(
     joint_submitters: list[Any] | None = None,
     channel: str = "",
     reference: str = "",
+    summary: str = "",
     sent_at: datetime | None = None,
     sent_at_precision: str = SentAtPrecision.TIMESTAMP,
 ) -> Submission:
@@ -788,6 +798,7 @@ def register_sent_opinion_on_open_matter(
         joint_submitters=joint_submitters,
         channel=channel,
         reference=reference,
+        summary=summary,
         sent_at=sent_at,
         sent_at_precision=sent_at_precision,
     )
