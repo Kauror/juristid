@@ -24,7 +24,6 @@ owns the questions and their order.
 from __future__ import annotations
 
 import re
-import uuid
 
 import pytest
 from playwright.sync_api import expect
@@ -36,6 +35,7 @@ from e2e.conftest import (
     open_hetkeseis,
     open_valdkond,
     sign_in,
+    unique_title,
 )
 
 pytestmark = pytest.mark.e2e
@@ -210,7 +210,7 @@ def test_an_ordinary_incoming_draft_files_and_reads_back(page, base_url):
     ).first.click()
     page.locator(f"{INSTRUMENT_FIELD} label.chip", has_text="Seadus").first.click()
 
-    title = f"Tavaline saabunud eelnõu {uuid.uuid4().hex[:8]}"
+    title = unique_title("Liigituse saabunud eelnõu")
     file_it(page, title)
 
     # Scenario F, on the Teema that came back: one obvious answer to «kes selle
@@ -240,7 +240,7 @@ def test_an_eu_matter_needs_no_second_european_question(page, base_url):
     ).first.click()
     page.locator(f"{INSTRUMENT_FIELD} label.chip", has_text="ELi direktiiv").first.click()
 
-    title = f"ELi direktiivi ettepanek {uuid.uuid4().hex[:8]}"
+    title = unique_title("ELi direktiivi ettepanek")
     file_it(page, title)
 
     # The *values* the rail states, not the whole card: the Menetlusliik row is
@@ -270,7 +270,7 @@ def test_joustunud_files_an_open_teema(page, base_url):
         has_text="Jõustunud"
     ).first.click()
 
-    title = f"Jõustunud seadus {uuid.uuid4().hex[:8]}"
+    title = unique_title("Jõustunud seadus")
     file_it(page, title)
 
     expect(page.locator(".metaline")).to_contain_text("Jõustunud")
