@@ -101,13 +101,27 @@ def test_the_us_placeholder_appears_nowhere_on_the_page(page, base_url):
 
 
 def test_the_prefilled_arrival_date_is_written_the_estonian_way(page, base_url):
-    """Saabus defaults to today, which is the one date rendered on load."""
+    """Saabus defaults to today, which is the one date rendered on load.
+
+    `ESTONIAN_DATE` is the whole check, and it is sufficient: it wants a 1- or
+    2-digit day and month around a 4-digit year, separated by dots, so no ISO
+    rendering can reach it — `2026-09-20` has no dots and `2026.09.20` opens
+    with four digits where at most two are allowed.
+
+    A second assertion, `not value.startswith("20")`, used to sit under it. It
+    could never see an ISO date for the reason above, and on the 20th of a
+    month it saw an *Estonian* one and called it ISO. It failed CI for the
+    first time at 00:14 Tallinn on 2026-09-20 and would have failed for ten
+    days a month thereafter. A guard that can only be wrong is not a guard,
+    and the date it is asserting about is not one a test may pin: the pytest
+    process reads the runner's clock in UTC while the page renders today in
+    `Europe/Tallinn`, so the two legitimately disagree for three hours a day.
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
     value = page.locator("#id_received_date").input_value()
     assert ESTONIAN_DATE.match(value), value
-    assert not value.startswith("20"), f"{value} is ISO, not Estonian"
 
 
 # ---------------------------------------------------------------------------
