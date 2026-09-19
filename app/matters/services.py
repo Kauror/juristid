@@ -3717,6 +3717,20 @@ def correct_external_position(
             provenance=provenance if provenance is not None else current.provenance,
             organisation=organisation,
             source_label=source_label,
+            # **The mark this correction is not changing, checked against the
+            # provenance it might.** `source_is_member` is absent from
+            # `proposed` below, so a correction never moves it — but a caller
+            # that moves the *provenance* off `RECEIVED` on a row carrying one
+            # would leave the pair invalid, and the `CHECK` would answer with an
+            # `IntegrityError` from inside a transaction that has already taken
+            # two row locks. Asked here instead, it is an Estonian sentence on
+            # the way in, which is the same reason the authorship rules are
+            # stated in this helper as well as in the database
+            # (docs/adr/0095 §4).
+            #
+            # Unreachable from `Muuda`, which passes `provenance=None` and never
+            # moves it. This is for the import and correction paths that can.
+            source_is_member=current.source_is_member,
         )
     clean_url = normalize_external_position_url(url)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]

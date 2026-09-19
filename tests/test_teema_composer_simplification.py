@@ -429,6 +429,53 @@ def test_the_summary_renders_where_the_opinion_is_read(signed_in, normal_matter,
     assert written in body
 
 
+def test_the_outbound_register_prints_the_summary_under_the_identity(
+    signed_in, normal_matter, ministry
+):
+    """The cross-Matter register is scanned to answer «which letter was that».
+
+    Since the title on this path is the sent file's own name, a row printing
+    only `Koja_arvamus_pakendiseadus.pdf` would be one a reader has to open
+    something to understand — which is the one thing docs/adr/0095 §2 must not
+    cost. The summary goes *under* the identity rather than in place of it: the
+    title is what the register, the document and the evidence all agree this
+    record is called.
+    """
+    written = "Toetame eelnõu, kuid palume kaheaastast üleminekuaega."
+
+    _post(
+        signed_in,
+        "add_koda_opinion",
+        normal_matter,
+        {
+            "upload": _sent_file(),
+            "sent_on": "14.03.2026",
+            "recipients": [str(ministry.pk)],
+            "summary": written,
+        },
+    )
+    body = signed_in.get(reverse("submissions:sent")).content.decode()
+
+    assert "Koja_arvamus_pakendiseadus.pdf" in body
+    assert written in body
+
+
+def test_the_outbound_register_adds_nothing_to_an_opinion_with_no_summary(
+    signed_in, normal_matter, ministry
+):
+    """Blank is ordinary, and an empty column prints no empty line."""
+    _post(
+        signed_in,
+        "add_koda_opinion",
+        normal_matter,
+        {"upload": _sent_file(), "sent_on": "14.03.2026", "recipients": [str(ministry.pk)]},
+    )
+    body = signed_in.get(reverse("submissions:sent")).content.decode()
+
+    assert "Koja_arvamus_pakendiseadus.pdf" in body
+    assert 'class="table__sub"' not in body
+
+
 def test_an_opinion_with_no_summary_reads_exactly_as_it_did(signed_in, normal_matter, ministry):
     """Blank is ordinary, and an empty column adds no punctuation to the row."""
     _post(
@@ -884,6 +931,87 @@ def test_the_database_refuses_a_member_mark_on_a_discovered_position(
 
     with pytest.raises(IntegrityError), transaction.atomic():
         MatterExternalPosition.objects.filter(pk=position.pk).update(source_is_member=True)
+
+
+def test_a_correction_keeps_the_member_mark_it_was_not_asked_about(
+    normal_matter, specialist, member_company
+):
+    """`Muuda` does not render `Liige`, so a correction must not clear one.
+
+    The mark is absent from the correction service's `proposed` set entirely,
+    which is what makes «not asked» mean «not moved» rather than «set to the
+    default» — the failure a field added to a form but forgotten in a
+    correction's field list always has.
+    """
+    from app.matters.services import correct_external_position
+
+    position = record_external_position(
+        matter=normal_matter,
+        organisation=member_company,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+        summary="Toetame eelnõu.",
+        source_is_member=True,
+        actor=specialist,
+    )
+
+    corrected = correct_external_position(
+        position=position,
+        organisation=member_company,
+        url="",
+        stated_on=dt.date(2026, 3, 14),
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetame eelnõu, kuid palume üleminekuaega.",
+        lawyer_note="",
+        source_label="",
+        provenance=None,
+        engagement=None,
+        actor=specialist,
+    )
+
+    assert corrected.source_is_member is True
+    assert corrected.summary == "Toetame eelnõu, kuid palume üleminekuaega."
+
+
+def test_a_correction_moving_provenance_off_received_refuses_a_marked_row(
+    normal_matter, specialist, member_company
+):
+    """An Estonian sentence on the way in, not an `IntegrityError` under two locks.
+
+    Unreachable from `Muuda`, which passes `provenance=None` and never moves it.
+    This is the import and correction path that can — and the reason the rule is
+    stated in `_external_position_authorship` as well as in the database
+    (docs/adr/0095 §4).
+    """
+    from app.matters.services import correct_external_position
+
+    position = record_external_position(
+        matter=normal_matter,
+        organisation=member_company,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+        summary="Toetame eelnõu.",
+        source_is_member=True,
+        actor=specialist,
+    )
+
+    with pytest.raises(DomainError) as refusal:
+        correct_external_position(
+            position=position,
+            organisation=member_company,
+            url="",
+            stated_on=None,
+            stated_on_precision=DatePrecision.EXACT.value,
+            summary="Toetame eelnõu.",
+            lawyer_note="",
+            source_label="",
+            provenance=ExternalPositionProvenance.DISCOVERED.value,
+            engagement=None,
+            actor=specialist,
+        )
+
+    assert str(refusal.value) == EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY
+    position.refresh_from_db()
+    assert position.provenance == ExternalPositionProvenance.RECEIVED.value
+    assert position.source_is_member is True
 
 
 def test_existing_rows_are_not_backfilled(normal_matter, specialist, member_company):
