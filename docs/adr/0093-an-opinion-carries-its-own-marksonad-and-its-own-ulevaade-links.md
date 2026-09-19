@@ -206,10 +206,15 @@ search contract, taken then, with a rebuild planned for it.
 
 ## Consequences
 
-**Two additive tables, and nothing else moves.** One migration in `app.submissions`
-creating `SubmissionTagAssignment` and `SubmissionWebsiteOverviewLink`, each with
-its unique constraint. No column is altered, no data is written, no existing row is
-touched, and the migration is reversible by dropping two empty tables.
+**Two additive tables, and nothing else moves.** `submissions/0007` creates
+`SubmissionTagAssignment` and `SubmissionWebsiteOverviewLink`, each with its
+unique constraint; the two `AddField` beside them are the `ManyToManyField`
+declarations that describe those tables and add no column of their own.
+`audit/0024` is the second and last migration this record needs: one `AlterField`
+over `ChangeEvent.event_type`'s `choices` list, which is Python metadata rather
+than a database object — PostgreSQL has never enforced that vocabulary, and the
+operation reads and writes no row. No column is altered, no data is written, no
+existing row is touched, and the reverse is dropping two empty tables.
 
 **`Tag` deletion stays protected.** `SubmissionTagAssignment.tag` is `PROTECT`,
 like `TagAssignment.tag`: a governed vocabulary row that something is classified by

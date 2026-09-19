@@ -199,7 +199,7 @@ record, not professional chronology (master specification 16.5).
         {% if item.website_overview and item.website_overview.linked_opinions %}
           <span class="uxtl__mssub">
             Seotud arvamused:
-            {% for opinion in item.website_overview.linked_opinions %}{{ opinion.title }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            {% for title in item.website_overview.linked_opinions %}{{ title }}{% if not forloop.last %}, {% endif %}{% endfor %}
           </span>
         {% endif %}
         {% comment %}

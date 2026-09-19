@@ -97,7 +97,7 @@ def linked_website_overviews(submission: Submission, *, viewer: Any) -> list[Any
     )
 
 
-def linked_submissions_by_overview(matter: Any, *, user: Any) -> dict[Any, list[LinkedOpinion]]:
+def linked_submissions_by_overview(matter: Any, *, user: Any) -> dict[Any, list[str]]:
     """For each `Ülevaade / uudis` on this Matter, the opinions this reader may see.
 
     One query for a whole page rather than one per row, because both callers —
@@ -109,40 +109,25 @@ def linked_submissions_by_overview(matter: Any, *, user: Any) -> dict[Any, list[
     entirely, so the surface renders no row for it and no «1 arvamus» count that
     would say it exists (docs/adr/0093 §4).
 
+    **Titles, not records.** What an `Ülevaade / uudis` row needs is «which
+    letters this write-up covers», and handing a template the `Submission`
+    instances would invite a second question — their evidence, their recipients,
+    their status — to be asked from a loop that has not scoped for it. A list of
+    strings cannot grow one by accident.
+
     Keyed by overview identity; an overview with no visible linked opinion is
     simply not a key, which is what lets a template ask `.get` and render nothing.
     """
-    grouped: dict[Any, list[LinkedOpinion]] = {}
+    grouped: dict[Any, list[str]] = {}
     rows = (
         Submission.objects.filter(matter=matter, website_overview_links__isnull=False)
         .visible_to(user)
-        .values_list("website_overview_links__website_overview_id", "pk", "title", "kind")
+        .values_list("website_overview_links__website_overview_id", "title")
         # Newest send first, with a deterministic tie break so two letters sent on
         # one day do not swap places between reads. A draft has no `sent_at` and
         # sorts last, which is the order `Meta.ordering` already gives.
         .order_by("-sent_at", "-created_at", "-id")
     )
-    for overview_id, pk, title, kind in rows:
-        grouped.setdefault(overview_id, []).append(LinkedOpinion(pk=pk, title=title, kind=kind))
+    for overview_id, title in rows:
+        grouped.setdefault(overview_id, []).append(title)
     return grouped
-
-
-class LinkedOpinion:
-    """One linked opinion as a reciprocal list prints it: a title and nothing else.
-
-    Deliberately not the `Submission` instance. What an `Ülevaade / uudis` row
-    needs is «which letters this write-up covers», and handing a template the
-    whole record invites a second question — its evidence, its recipients, its
-    status — to be asked from a loop that has not scoped for it. A value object
-    with three read-only fields cannot grow one by accident.
-    """
-
-    __slots__ = ("kind", "pk", "title")
-
-    def __init__(self, *, pk: Any, title: str, kind: str) -> None:
-        self.pk = pk
-        self.title = title
-        self.kind = kind
-
-    def __repr__(self) -> str:  # pragma: no cover - debugging aid
-        return f"LinkedOpinion({self.title!r})"

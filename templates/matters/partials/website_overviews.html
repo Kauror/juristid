@@ -148,7 +148,7 @@ controls and every write route still refuses it under the row lock
           {% if overview.linked_opinions %}
             <p class="webrow__linked">
               Seotud arvamused:
-              {% for opinion in overview.linked_opinions %}{{ opinion.title }}{% if not forloop.last %}, {% endif %}{% endfor %}
+              {% for title in overview.linked_opinions %}{{ title }}{% if not forloop.last %}, {% endif %}{% endfor %}
             </p>
           {% endif %}
         </li>
