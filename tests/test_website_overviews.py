@@ -34,6 +34,7 @@ from app.matters.enums import WebsiteOverviewStatus
 from app.matters.models import Entry, MatterWebsiteOverview
 from app.matters.my_work import build_my_work
 from app.matters.services import (
+    WEBSITE_OVERVIEW_NEEDS_LINK,
     WebsiteOverviewConflict,
     cancel_website_overview,
     close_matter,
@@ -608,14 +609,23 @@ def _post(client, name, matter, data=None, **kwargs):
     )
 
 
-def test_the_panel_records_a_plan_with_one_button(signed_in, normal_matter):
+def test_an_empty_save_is_refused_rather_than_silently_filing_a_plan(signed_in, normal_matter):
+    """Pressing `Salvesta` on an untouched panel records nothing.
+
+    It used to file a `Plaanis` row — a save whose meaning was what the person
+    had *not* typed, reached from a form that looked as though it had not been
+    filled in. The refusal names the address that is missing, and nothing is
+    written (docs/adr/0095 §5).
+
+    `plan_website_overview` still writes a plan and every stored plan still
+    reads; what is gone is the silent way in from this panel — which is what the
+    two tests below this one prove is still there.
+    """
     response = _post(signed_in, "add_website_overview", normal_matter)
 
-    assert response.status_code == 200
-    overview = MatterWebsiteOverview.objects.get(matter=normal_matter)
-    assert overview.status == WebsiteOverviewStatus.PLANNED
-    assert overview.url == ""
-    assert overview.published_on is None
+    assert response.status_code == 400
+    assert WEBSITE_OVERVIEW_NEEDS_LINK in response.content.decode()
+    assert not MatterWebsiteOverview.objects.filter(matter=normal_matter).exists()
 
 
 def test_a_planned_overview_reads_in_its_own_strip(signed_in, normal_matter, specialist):

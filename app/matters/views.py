@@ -5211,11 +5211,16 @@ def _website_overview_refusal(
 @business_write_required
 @require_http_methods(["POST"])
 def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Ülevaade / uudis` — a plan, or a page that is already published.
+    """`+ Ülevaade / uudis` — a page that is already published.
 
-    The panel's two boxes are optional and are read as a pair: neither is the
-    plan, both record a publication in one act, and one on its own is a refusal
-    the form has already put under the box it belongs to (docs/adr/0083).
+    The panel's two boxes record a publication. The address is required and the
+    day opens on today, so an empty save is a refusal naming the address rather
+    than a plan filed by somebody who thought they had cancelled
+    (docs/adr/0095 §5).
+
+    **Plans are not gone.** `plan_website_overview` still writes one, every
+    stored plan still reads on the file, and `Avalda` and `Tühista` still act on
+    it. What this endpoint no longer does is create one from a blank form.
 
     A refusal comes back through `_workspace_refusal` with the form still bound,
     so an address somebody pasted is still in the box — losing it would cost
@@ -6037,14 +6042,30 @@ def _record_external_position(
                 else None
             ),
             provenance=form_class.provenance,
+            # **The three answers neither panel asks any more**, and each of
+            # them is a `.get` on a field the form does not declare — so this is
+            # not a view choosing to ignore a value, it is a value that has
+            # nowhere to arrive. A POST carrying `source_label`, `lawyer_note`
+            # or `engagement` to either endpoint reaches a form that never
+            # cleaned it, and what reaches the service is the empty answer
+            # below. `Muuda` still asks all three, and every stored row keeps
+            # what it has (docs/adr/0095 §5).
             source_label=form.cleaned_data.get("source_label") or "",
             url=form.cleaned_data.get("url") or "",
-            # The resolved anchor and its precision, not the day box: `Kuu`,
-            # `Kvartal` and `Aasta` leave that box empty on purpose.
+            # The resolved anchor and its precision. On these two panels that is
+            # the day box itself at `EXACT`: the period fields are not on the
+            # form, so a crafted `..._precision=QUARTER` is read by nothing
+            # (`ExternalPositionFieldsMixin.offers_precision`).
             stated_on=form.cleaned_data.get("stated_on_value"),
             stated_on_precision=form.cleaned_data["stated_on_precision"],
             summary=form.cleaned_data.get("summary") or "",
             lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+            # `Liige`, and only from the panel that asks it. `+ Teiste arvamus`
+            # declares no such field, so this is `None` there — and the service
+            # refuses a `True` on that provenance in any case, because the box
+            # being absent and the value being refused are two separate defences
+            # (docs/adr/0095 §4).
+            source_is_member=bool(form.cleaned_data.get("source_is_member")),
             engagement=form.cleaned_data.get("engagement"),
             uploads=form.cleaned_data["attachments"],
         )
@@ -6328,6 +6349,32 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
     return _external_position_row(request, matter, corrected)
 
 
+def _koda_opinion_recipients(form: Any) -> list[Any]:
+    """The addressees this save names: the ones ticked, then the one typed.
+
+    Two intentions, one control. The picker's search box posts nothing at all;
+    `+` moves what was typed into `recipient_name`, and only that says «this is a
+    body you do not have». Which of the two a save means is therefore decidable
+    here rather than guessable, and it is `resolve_addressee` — shared with
+    `Saatja`, `Adressaat` and both feedback panels — that decides what the name
+    means: reuse an exact or alias match, create only a genuinely new body,
+    refuse a spelling that names two (docs/adr/0073).
+
+    **De-duplicated**, because a name that resolves to a body the person also
+    ticked is one addressee rather than two. `set_recipients` would collapse it
+    in any case; doing it here keeps what this function returns honest about how
+    many bodies the letter went to.
+    """
+    chosen = list(form.cleaned_data.get("recipients") or [])
+    typed = (form.cleaned_data.get("recipient_name") or "").strip()
+    if not typed:
+        return chosen
+    named = resolve_addressee(chosen=None, typed_name=typed)
+    if named is not None and not any(row.pk == named.pk for row in chosen):
+        chosen.append(named)
+    return chosen
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -6356,9 +6403,19 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             upload=form.cleaned_data["upload"],
-            recipients=list(form.cleaned_data["recipients"]),
+            # The bodies chosen, plus at most one somebody named through the
+            # picker's `+`. `resolve_addressee` is asked only when there is a
+            # name — the same rule the feedback panels use, and it runs inside
+            # the save's own transaction, so a refused upload leaves no
+            # institution behind (docs/adr/0073, docs/adr/0095 §1).
+            recipients=_koda_opinion_recipients(form),
             sent_on=form.cleaned_data["sent_on"],
-            title=form.cleaned_data.get("title") or "",
+            # **No title from this panel.** `Pealkiri` is not asked any more, so
+            # the blank that `add_matter_koda_opinion` has always answered with
+            # the uploaded file's own name is what it gets — a truthful identity
+            # somebody chose, rather than a headline cut out of the summary
+            # (docs/adr/0095 §2).
+            summary=form.cleaned_data.get("summary") or "",
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(

@@ -8,9 +8,11 @@ The rules this file is here for are the ones only a running page can settle:
   same swap, as a labelled `Ava ülevaade või uudis` that opens in a new tab —
   never as a printed address;
 * that a refused address comes back with what was typed still in the box;
-* that **nothing** fills the publication date — the island ADR 0085 §3 added is
-  gone, an address alone files a publication reading «Kuupäev teadmata», and a
-  form nobody touched still records the plan (docs/adr/0089 §8);
+* that nothing *reacts* to a paste — the island ADR 0085 §3 added is still gone
+  (docs/adr/0089 §8) — while the box itself opens on today, and a cleared box
+  still files a publication reading «Kuupäev teadmata» (docs/adr/0095 §5);
+* that a form nobody touched is **refused** rather than quietly filing a plan,
+  and that a stored plan still publishes and cancels from the strip;
 * that the whole thing is reachable from the keyboard and does not make the page
   scroll sideways at phone width.
 
@@ -18,12 +20,21 @@ The service-level rules — the address rule, the lifecycle, the closed Matter,
 the audit trail — are `tests/test_website_overviews.py` and
 `tests/test_overview_news_publication.py`, which are cheap and run everywhere.
 
-**Everything here happens on a Matter the test creates.** The screenshot suite
-opens `OPEN_TITLE`, and a chronology that grew while these ran would make that
-baseline depend on test order.
+**Almost everything here happens on a Matter the test creates.** The screenshot
+suite opens `OPEN_TITLE`, and a chronology that grew while these ran would make
+that baseline depend on test order.
+
+The planned-row lifecycle still gets a Matter of its own, but its plan is
+written by `plan_website_overview` in a subprocess rather than by clicking —
+docs/adr/0095 §5 retired the control that made one. See `plan_one`.
 """
 
 from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
@@ -61,11 +72,70 @@ PUBLISH_DISCLOSURE = "Lisa link ja avaldamiskuupäev"
 
 
 def plan_one(page, base_url: str) -> None:
-    """`+ Ülevaade / uudis` → the plan, on a Matter that has just been made."""
-    a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-koduleht")
-    page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).click()
+    """A Matter of this test's own, carrying one planned `Ülevaade / uudis`.
+
+    **The plan is written by the service, not by clicking**, because
+    docs/adr/0095 §5 retired the control that made one: `+ Ülevaade / uudis`
+    records a page that exists, and an empty save is refused rather than quietly
+    filing a plan. `Plaanis` and `Tühistatud` are untouched in the domain, every
+    stored row still reads, publishes and cancels — which is exactly what the
+    tests below measure — so the suite still needs a file that has one.
+
+    **A subprocess, and a fresh Matter each time.** The same shape
+    `e2e/test_document_content.py` uses to drain the extraction queue: a
+    separate process, its own connection, the real server's settings. Seeding a
+    shared planned row instead would have been cheaper and wrong twice over —
+    the first test to publish or cancel it would empty the fixture for every
+    later one, and a new row in `seed_e2e_data` moves the register that the
+    screenshot suite photographs.
+    """
+    matter_url = a_new_matter(page, base_url)
+    matter_id = matter_url.rstrip("/").rsplit("/", 1)[-1]
+    _plan_through_the_service(matter_id)
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
     strip(page).wait_for(state="visible")
+
+
+#: `plan_website_overview` on the Matter named by `E2E_PLAN_MATTER`.
+#:
+#: A literal, with the Matter's id carried in the environment rather than
+#: interpolated into it. That is what keeps the `subprocess.run` below a call
+#: with no constructed arguments — the shape `run_worker` already has, and the
+#: one the linter is right to insist on for anything that spawns a process.
+_PLAN_SCRIPT = (
+    "import os;"
+    "from app.accounts.models import User;"
+    "from app.matters.models import Matter;"
+    "from app.matters.services import plan_website_overview;"
+    "m = Matter.objects.get(pk=os.environ['E2E_PLAN_MATTER']);"
+    "plan_website_overview(matter=m, actor=m.owner or User.objects.first())"
+)
+
+
+def _plan_through_the_service(matter_id: str) -> None:
+    """`plan_website_overview` on one Matter, in the server's own environment.
+
+    `DJANGO_SETTINGS_MODULE` is forced for the reason `run_worker` gives at
+    length: pytest sets `config.test_settings` for itself, a child would inherit
+    it, and those settings mint their own storage roots — so the child would
+    write into a world the running server cannot see.
+    """
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "manage.py", "shell", "-c", _PLAN_SCRIPT],
+        cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "config.settings",
+            "E2E_PLAN_MATTER": matter_id,
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    report = "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
+    assert result.returncode == 0, report
 
 
 def open_publish_form(page):
@@ -90,7 +160,8 @@ def test_a_matter_with_nothing_planned_shows_no_strip(page, base_url):
     expect(strip(page)).to_have_count(0)
 
 
-def test_the_eighth_choice_records_a_plan_without_a_reload(page, base_url):
+def test_a_stored_plan_reads_on_the_file(page, base_url):
+    """`Plaanis` is untouched in the domain, and a file that has one says so."""
     sign_in(page, base_url, SANDRA)
     plan_one(page, base_url)
 
@@ -100,9 +171,8 @@ def test_the_eighth_choice_records_a_plan_without_a_reload(page, base_url):
     expect(chronology(page)).not_to_contain_text("Ülevaade / uudis")
 
 
-def test_the_panel_asks_for_no_address_and_no_date(page, base_url):
-    """At the moment somebody decides this, the page does not exist yet — so
-    there is one button and nothing to invent (docs/adr/0081 §1)."""
+def test_the_panel_asks_a_day_and_an_address_and_nothing_else(page, base_url):
+    """Two boxes, and what docs/adr/0081 §2 still refuses: a title, a body, a file."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-koduleht")
@@ -114,7 +184,10 @@ def test_the_panel_asks_for_no_address_and_no_date(page, base_url):
     expect(panel.get_by_role("button", name=PLAN_BUTTON)).to_be_visible()
     expect(panel.locator("[name=url]")).to_be_visible()
     expect(panel.locator("[name=published_on]")).to_be_visible()
-    expect(panel.get_by_text("Kui ülevaade või uudis on juba avaldatud")).to_be_visible()
+    # docs/adr/0095 §5: the legend that explained a conditional path went with
+    # the conditional, and the date box opens on today.
+    expect(panel.get_by_text("Kui ülevaade või uudis on juba avaldatud")).to_have_count(0)
+    expect(panel.locator("[name=published_on]")).not_to_have_value("")
     expect(panel.locator("textarea")).to_have_count(0)
     expect(panel.locator("input[type=file]")).to_have_count(0)
 
@@ -240,9 +313,22 @@ def test_the_chip_and_the_publish_disclosure_work_from_the_keyboard(page, base_u
     expect(page.locator("#lisa-koduleht")).to_be_visible()
     assert page.locator("#lisa-koduleht-valik").is_checked()
 
+    # Filled from the keyboard and submitted from the keyboard. It used to press
+    # Enter on an untouched panel and read the plan that appeared; since
+    # docs/adr/0095 §5 an empty save is refused, so the address is typed — which
+    # is what a keyboard user does anyway, and makes the submit prove it fired
+    # by producing the row rather than an error.
+    page.locator("#lisa-koduleht").locator("[name=url]").focus()
+    page.keyboard.type(KODA_URL)
     page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).focus()
     page.keyboard.press("Enter")
-    strip(page).wait_for(state="visible")
+    chronology(page).get_by_role("link", name="Ava ülevaade või uudis").wait_for()
+
+
+def test_the_publish_disclosure_opens_from_the_keyboard(page, base_url):
+    """A native `<summary>`, operated the way a keyboard user operates one."""
+    sign_in(page, base_url, SANDRA)
+    plan_one(page, base_url)
 
     summary = strip(page).locator("details.webrow__publish summary").first
     summary.focus()
@@ -431,14 +517,19 @@ def test_the_panel_offers_one_activity_and_no_kind_selector(page, base_url):
     expect(panel.locator("input[type=file]")).to_have_count(0)
 
 
-def test_typing_a_link_fills_no_date_at_all(page, base_url):
-    """docs/adr/0089 §8, superseding docs/adr/0085 §3.
+def test_typing_a_link_changes_the_date_box_not_at_all(page, base_url):
+    """docs/adr/0089 §8's island stays gone, and docs/adr/0095 §5's default is not it.
 
-    The island that filled this box with today on the first keystroke is gone,
-    and so is the attribute that carried the day to the browser. Typed one
-    character at a time and then in full, because the old trigger fired on the
-    *transition* out of an empty box and a `fill()` alone would not have proved
-    its absence.
+    The two are easy to confuse and the difference is the whole decision. What
+    ADR 0085 §3 added and ADR 0089 §8 withdrew was a date written into the box
+    **in response to a keystroke** — a plausible day appearing under somebody's
+    cursor, accepted without being read. What this panel has now is a server-side
+    `initial`: the day is in the box before anything is typed, where it is part
+    of the form somebody is reading.
+
+    So the claim is that the value does not *move*. Typed one character at a
+    time and then in full, because the old trigger fired on the transition out
+    of an empty box and a `fill()` alone would not have proved its absence.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -446,15 +537,16 @@ def test_typing_a_link_fills_no_date_at_all(page, base_url):
 
     panel = panel_of(page)
     date_box = panel.locator("[name=published_on]")
+    opened_on = date_box.input_value()
     assert date_box.get_attribute("data-publication-default") is None
     assert panel.locator("[name=url]").get_attribute("data-publication-trigger") is None
-    expect(date_box).to_have_value("")
+    assert opened_on, "the box opens on today since docs/adr/0095 §5"
 
     panel.locator("[name=url]").type("h")
-    expect(date_box).to_have_value("")
+    expect(date_box).to_have_value(opened_on)
 
     panel.locator("[name=url]").fill(KODA_URL)
-    expect(date_box).to_have_value("")
+    expect(date_box).to_have_value(opened_on)
 
 
 def test_an_address_with_no_date_is_filed_as_a_publication(page, base_url):
@@ -470,6 +562,10 @@ def test_an_address_with_no_date_is_filed_as_a_publication(page, base_url):
 
     panel = panel_of(page)
     panel.locator("[name=url]").fill(KODA_URL)
+    # The box opens on today since docs/adr/0095 §5, so «no date» is now
+    # something a person *does* — and clearing it is still a real answer that
+    # stores `NULL` and reads «Kuupäev teadmata» (docs/adr/0078 §2).
+    panel.locator("[name=published_on]").fill("")
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 
@@ -534,16 +630,26 @@ def test_a_recorded_date_can_be_cleared_from_the_row_and_stays_cleared(page, bas
     expect(reopened.locator("[name=published_on]")).to_have_value("")
 
 
-def test_an_untouched_panel_still_records_a_plan(page, base_url):
-    """The property docs/adr/0083 §2 refused an `initial` to protect, still true.
+def test_an_untouched_panel_is_refused_rather_than_filing_a_plan(page, base_url):
+    """docs/adr/0083 §2's third answer, retired — and refused where somebody sees it.
 
-    Nobody touches the link box, so nothing fills the date box, so the submit is
-    two empty fields — and that is the plan.
+    Nobody touches the link box, so the submit is a panel that looks untouched —
+    and a save whose meaning is what was *not* typed is the one shape a composer
+    may not have. The refusal names the missing address and stays in the panel,
+    holding the day the box opened on (docs/adr/0095 §5).
     """
     sign_in(page, base_url, SANDRA)
-    plan_one(page, base_url)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koduleht")
 
-    expect(strip(page)).to_contain_text("Ülevaade või uudis on plaanis, aga veel avaldamata.")
+    panel = panel_of(page)
+    opened_on = panel.locator("[name=published_on]").input_value()
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+
+    reopened = panel_of(page)
+    expect(reopened.locator(".field__error").first).to_be_visible()
+    expect(reopened.locator("[name=published_on]")).to_have_value(opened_on)
+    expect(strip(page)).to_have_count(0)
     expect(chronology(page)).not_to_contain_text("Avaldatud")
 
 

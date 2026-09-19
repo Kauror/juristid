@@ -1817,6 +1817,26 @@ class MatterExternalPosition(VisibilityInheritingModel):
     #: result can show this office's words as the other organisation's
     #: (docs/adr/0091 §4, §9).
     lawyer_note = models.TextField(blank=True, verbose_name="juristi märkus")
+    #: `Liige` — this particular piece of feedback came from a Chamber member.
+    #:
+    #: **Record-level and explicitly entered, never derived.** Nothing infers it
+    #: from the organisation's name, from the CRM, from the membership registry,
+    #: from an address domain, from other feedback on the file or from anything
+    #: else about the Matter: the lawyer who filed the answer ticked a box, or
+    #: nobody did. That is the whole of what this column claims.
+    #:
+    #: **And it does not move afterwards.** A member that leaves the Chamber next
+    #: year does not make last year's feedback stop having come from a member, so
+    #: nothing here is recomputed when membership changes. It is a fact about the
+    #: feedback, not a join onto the organisation.
+    #:
+    #: Meaningful on received feedback alone, which is why the constraint below
+    #: refuses it anywhere else: «this came from a member» is an answer to *who
+    #: wrote to us*, and a position Koda found published somewhere was not written
+    #: to Koda at all. Every row that existed before this column did has `False`,
+    #: and `False` here means «not stated» exactly as it means «not a member» —
+    #: neither is backfilled from anywhere (docs/adr/0095 §4).
+    source_is_member = models.BooleanField(default=False, verbose_name="liikmelt")
     #: `Seotud kaasamine` — the round this position answered, where it answered
     #: one.
     #:
@@ -1916,6 +1936,21 @@ class MatterExternalPosition(VisibilityInheritingModel):
                     | models.Q(provenance=ExternalPositionProvenance.RECEIVED)
                 ),
                 name="matters_external_position_label_is_received",
+            ),
+            # `Liige` is a received-feedback column too, and for the same kind of
+            # reason as `Allikas` one constraint up. «This came from a member» is
+            # an answer to *who wrote to us*; a position Koda found published
+            # somewhere was not written to Koda, and a `LEGACY` row's writer never
+            # had the box. So a `True` on anything but `RECEIVED` is a value that
+            # did not come off a page, and the database says so rather than
+            # trusting that every future caller will remember
+            # (docs/adr/0095 §4).
+            models.CheckConstraint(
+                condition=(
+                    models.Q(source_is_member=False)
+                    | models.Q(provenance=ExternalPositionProvenance.RECEIVED)
+                ),
+                name="matters_external_position_member_is_received",
             ),
         ]
         indexes = [

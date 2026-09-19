@@ -4743,53 +4743,42 @@ class CompactWorkVictoryForm(forms.Form):
 
 
 class CompactWebsiteOverviewForm(forms.Form):
-    """`+ Ülevaade / uudis` — a plan, or a page that is already up.
+    """`+ Ülevaade / uudis` — the day, the address, and a published page.
 
-    docs/adr/0081 §1 shaped this panel as one button and no fields, on the
-    reasoning that at the moment somebody decides a Matter should be written up
-    there is no address and no publication date, so every field would be asking
-    them to invent something the real page contradicts a week later. That
-    reasoning is right about the case it describes and wrong about the one it
-    did not: a lawyer frequently records the write-up **after** the page is
-    already published, and the panel made them file a plan and then publish it
-    from a second control to say so. Worse, what they met first was a panel with
-    no fields at all and a button saying `Salvesta` — which reads as an unusable
-    text box rather than as a complete form (docs/adr/0083).
+    Two boxes, both answered, and one meaning. This panel records an overview or
+    a news item that exists.
 
-    So the two questions are here, **optional and empty**, and the form answers
-    in one of three ways:
+    **What it stopped being, and why.** docs/adr/0081 §1 shaped it as one button
+    and no fields, on the reasoning that at the moment somebody decides a Matter
+    should be written up there is no address and no date. docs/adr/0083 added the
+    two boxes as optional, so that a lawyer recording a page already published
+    did not have to file a plan and then publish it from a second control. What
+    that left was a panel with three answers, one of which — *neither box* — was
+    reached by pressing `Salvesta` on a form that looked untouched.
 
-    * neither filled — the plan, exactly as before;
-    * an address, with or without a day — a page that already exists, recorded
-      in one act;
-    * a day and no address — a refusal naming the address, with what was typed
-      still in the boxes. A date on its own is not a plan with a note attached
-      and it is not a publication: it is a fact about a page nobody can open.
+    A save whose meaning depends on what somebody did *not* type is the one shape
+    a composer may not have. So the address is required, the day opens on today,
+    and a valid save is a publication (docs/adr/0095 §5).
 
-    **The address alone is enough**, and that is docs/adr/0089 §8 replacing
-    docs/adr/0081 §2. Lawyer testing found the commonest real save to be an
-    address pasted out of a search result or a mail, where the page plainly
-    exists and its publication date is not known, not on the page and not worth
-    a hunt. The old rule refused that save, and what people filed instead was
-    today — a date nobody had checked, on the one column that is the person's
-    own statement.
+    **`PLANNED` and `CANCELLED` are untouched.** Every stored plan still reads on
+    the file, still carries `Avalda` and `Tühista`, and `plan_website_overview` is
+    still the service that writes one. What is gone is a *silent* way to create
+    one from this panel.
 
-    **No `initial` on the date and no default written into it by anything.**
-    Not by the form, not by the service, not by the model and — since
-    docs/adr/0089 §8 — not by the browser either: the `data-publication-default`
-    island docs/adr/0085 §3 introduced is withdrawn, because a date that appears
-    in the box the instant somebody pastes a link is a date they accept without
-    reading. An empty box means *unknown*, and unknown is now a thing this
-    record can hold, so the honest default is nothing at all.
+    **The date opens on today, and clearing it is a real answer.** That narrows
+    docs/adr/0089 §8, which refused a default here — but what it refused
+    specifically was the withdrawn `data-publication-default` island: a date
+    appearing in the box the instant somebody pasted a link, which is a date they
+    accept without reading. This one is in the box before anything is typed, is
+    readable and changeable, and an emptied box still stores `NULL` and still
+    reads «kuupäev teadmata», because a page whose publication day nobody knows
+    is a record this column has been able to hold since that decision and still
+    can (docs/adr/0078 §2).
 
-    A pre-filled date would also make «neither filled» unreachable — the
-    property docs/adr/0083 §2 refused an `initial` to protect — so the two
-    reasons now point the same way.
-
-    Still no title, no description and no attachment, and **no kind selector**.
-    The record's content is the address and, when it is known, the day; which of
-    the two kinds of publication it is, is what the address says
-    (docs/adr/0081 §2, docs/adr/0085 §1).
+    Still no title, no description, no attachment and **no kind selector**. The
+    record's content is the address and the day; which of the two kinds of
+    publication it is, is what the address says (docs/adr/0081 §2,
+    docs/adr/0085 §1).
     """
 
     use_required_attribute = False
@@ -4798,8 +4787,13 @@ class CompactWebsiteOverviewForm(forms.Form):
     #: and for the same reason: the rule is `normalize_overview_news_url`'s, and
     #: letting Django's validator answer first would give a refused address a
     #: different sentence depending on which layer caught it.
+    #: `Link`, and required.
+    #:
+    #: The label is the whole question now. «Avaldatud ülevaate või uudise link»
+    #: was a heading explaining a conditional the panel no longer has
+    #: (docs/adr/0095 §5).
     url = forms.CharField(
-        label="Avaldatud ülevaate või uudise link",
+        label="Link",
         required=False,
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
         widget=forms.TextInput(
@@ -4811,14 +4805,30 @@ class CompactWebsiteOverviewForm(forms.Form):
             }
         ),
     )
-    #: Optional, empty, and with no default from anywhere — see the class
-    #: docstring. `None` reaches the service as `None` and is stored as `NULL`,
-    #: which means *the day is unknown* (docs/adr/0089 §8).
+    #: `Kuupäev`, opening on today.
+    #:
+    #: **A reversal of docs/adr/0089 §8 for this box, and for nothing else.**
+    #: That decision refused a default because the commonest save was an address
+    #: pasted with no known publication date, and a date appearing the instant
+    #: somebody pasted a link was one they accepted without reading. What this
+    #: panel now records is an overview or a news item that exists, which a lawyer
+    #: writes up on or near the day it goes up — so the day is usually today and
+    #: is usually known.
+    #:
+    #: The default is **visible in the box** before anything is saved, readable
+    #: and changeable, which is what separates it from the withdrawn
+    #: `data-publication-default` island: that one wrote a date in response to a
+    #: paste, and this one is a suggestion in a form somebody is already reading
+    #: (docs/adr/0078 §2, docs/adr/0095 §5).
+    #:
+    #: **It applies to this box and to no stored row.** Nothing stamps today on a
+    #: record whose date is unknown, no import gains one, and `NULL` remains what
+    #: an unknown publication day is stored as.
     published_on = EstonianDateField(
-        label="Avaldamise kuupäev",
+        label="Kuupäev",
         required=False,
         widget=EstonianDateInput(),
-        help_text="Kui kuupäev ei ole teada, jäta tühjaks.",
+        initial=timezone.localdate,
     )
 
     def clean(self) -> dict[str, Any]:
@@ -4850,12 +4860,20 @@ class CompactWebsiteOverviewForm(forms.Form):
                 self.add_error("url", str(error))
                 return cleaned
 
-        if published_on is not None and not url:
+        # **An address, always.** An empty box used to be a third answer — the
+        # plan — reached by pressing `Salvesta` on a panel that looked like it
+        # had not been filled in. A save with a silent meaning is the one shape a
+        # composer may not have, so the refusal now names the missing address
+        # whether or not a date was given, and `WEBSITE_OVERVIEW_NEEDS_LINK` is
+        # the sentence it has always been (docs/adr/0095 §5).
+        if not url:
             self.add_error("url", WEBSITE_OVERVIEW_NEEDS_LINK)
 
-        # What the view acts on. `None` is the plan; a pair is a publication,
-        # whose second member may itself be `None` — an address recorded without
-        # a known publication date.
+        # What the view acts on: an address and the day, which is a publication.
+        # The second member may still be `None` — somebody who clears the box is
+        # recording a page whose publication day they do not know, which is a
+        # fact this record has been able to hold since docs/adr/0089 §8 and still
+        # can.
         cleaned["publication"] = (url, published_on) if url else None
         return cleaned
 
@@ -5018,7 +5036,11 @@ def _external_position_summary_field() -> forms.CharField:
         widget=forms.Textarea(
             attrs={
                 "class": "field__input field__input--compact",
-                "rows": 3,
+                # Four rather than three. `Seisukoht` is now the only substantive
+                # box on both creation panels — what `Juristi märkus` used to
+                # take a share of is written here — so the box is the height of a
+                # short paragraph rather than of a caption (docs/adr/0095 §3).
+                "rows": 4,
                 "placeholder": "nt toetab eelnõu, kuid soovib pikemat üleminekuaega",
             }
         ),
@@ -5141,6 +5163,20 @@ class ExternalPositionFieldsMixin:
     #: boundary (docs/adr/0091 §3.3).
     allows_source_label: bool = False
 
+    #: Whether this surface asks the date at a precision, or asks for one day.
+    #:
+    #: `Muuda` keeps the four chips, because a record stated as «kevadel 2019» has
+    #: to be correctable back into exactly what it is; the two creation panels
+    #: dropped them, because a lawyer writing up feedback that arrived this week
+    #: is answering a day and was being asked to classify it first
+    #: (docs/adr/0095 §3).
+    #:
+    #: It is read where the period is *resolved*, not only where it is drawn: a
+    #: form that offers no precision control has no precision fields at all, so a
+    #: crafted `..._precision=QUARTER` reaches a form that cannot see it and the
+    #: record stores `EXACT` (docs/adr/0095 §5).
+    offers_precision: bool = True
+
     #: Where the organisation radio group stops being chips and starts being
     #: searchable tail. `None` on a form with no viewer — no usage to rank by
     #: means no shortlist, and everything is a chip.
@@ -5157,6 +5193,17 @@ class ExternalPositionFieldsMixin:
         if self.organisation_split is None:
             return []
         return list(cast(Any, self)["organisation"])[self.organisation_split :]
+
+    @property
+    def member_mark(self) -> Any:
+        """`Liige`'s bound field where the panel has one, and `None` where it does not.
+
+        A property rather than `{% if form.source_is_member %}` in the template,
+        because a declared field is not an attribute on the form — the metaclass
+        moves it into `base_fields` — so that test would be an `AttributeError`
+        silenced into «false» and the checkbox would simply never render.
+        """
+        return cast(Any, self)["source_is_member"] if "source_is_member" in self.fields else None
 
     @property
     def precision_chips(self) -> list[dict[str, Any]]:
@@ -5234,7 +5281,19 @@ class ExternalPositionFieldsMixin:
             self.add_error("summary", EXTERNAL_POSITION_NEEDS_SOURCE)
 
         # The date control's answer, resolved to an anchor and a precision.
-        anchor, precision = external_position_period(cast(Any, self))
+        #
+        # **Or, on a panel with no precision control, the day itself.** The four
+        # period fields are not on such a form, so there is nothing for
+        # `external_position_period` to read and nothing a POST can put there:
+        # a save carrying `..._precision=QUARTER` is answered by a form that
+        # never declared the field, and `EXACT` is what the record stores. An
+        # emptied box is still `None`, still `EXACT`, and still reads «kuupäev
+        # teadmata» — the one thing the simplified control did not give up
+        # (docs/adr/0095 §3, `matters_external_position_undated_is_exact`).
+        if self.offers_precision:
+            anchor, precision = external_position_period(cast(Any, self))
+        else:
+            anchor, precision = cleaned.get("stated_on"), DatePrecision.EXACT.value
         cleaned["stated_on_value"] = anchor
         cleaned["stated_on_precision"] = precision
         return cleaned
@@ -5257,16 +5316,29 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     reasoning `NextActionForm` gives for having no `kind` field, applied to a
     distinction the page genuinely does decide (ADR 0052 §1, docs/adr/0091 §3.5).
 
-    **`Organisatsioon` is required for `Teiste arvamus` and not for received
-    feedback**, and that asymmetry is the only place the authorship rule bends. A
-    survey of 234 industrial companies that produced 58 answers has no single
-    author; `Allikas` names the collection instead, and it is offered on that
-    panel alone (docs/adr/0091 §3.3).
+    **`Organisatsioon` is required on both panels.** docs/adr/0091 §3.3 made it
+    optional on received feedback so that an aggregate answer — a survey of 234
+    companies producing 58 replies — could be filed under an `Allikas` naming the
+    collection instead of under an invented organisation. The case is real and
+    every row filed that way keeps its label, renders it and is corrected through
+    `Muuda`. What a round of use showed is that it is rare, and that «an
+    organisation *or* a source» put a question with two right answers at the top
+    of the panel a department fills in several times a week. So the creation
+    panels name an institution, and the authorship rule is satisfied the way it
+    has always been satisfied rather than relaxed to let an anonymous row through
+    (docs/adr/0095 §4).
 
-    Six controls, of which two are required together and four are not: the
-    institution, a source — a link, a file, or both — and then the date, the
-    explanation and the consultation it answered, each of which a real record
-    frequently does not have.
+    **Four controls, of which two are required together.** The institution, a
+    source — the written `Seisukoht`, a link, a file, or any combination — and
+    the date. `+ Meile saadetud tagasiside` adds a fifth: `Liige`, saying the
+    feedback came from a Chamber member, which is ticked by the person filing it
+    and derived from nothing.
+
+    **Three questions this panel stopped asking**, all of them still asked on
+    `Muuda` and all of them still stored on every row that has them: the four
+    precision chips, `Juristi märkus`, and `Seotud kaasamine`. A form that does
+    not declare a field does not clean one either, so a POST carrying any of them
+    here has nowhere to arrive (docs/adr/0095 §3, §5).
 
     **The date opens on today, and clearing it is a real answer.** This panel
     argued itself out of a default once, on the ground that a position is filed
@@ -5293,13 +5365,30 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
     lawyer_note = _external_position_lawyer_note_field()
     source_label = _external_position_source_label_field()
     engagement = _external_position_engagement_field()
+    #: `Kuupäev` — one box, opening on today, and the only date control on the
+    #: panel.
+    #:
+    #: The four precision chips are gone from here and kept on `Muuda`
+    #: (`offers_precision`). What they cost was a classification question in
+    #: front of the commonest answer there is: feedback that arrived on a day the
+    #: person knows. What they bought is still bought, on the surface that needs
+    #: it — a ministry's paper remembered as «kevadel 2019» is corrected into a
+    #: quarter, and every row already stored as one keeps it (docs/adr/0095 §3).
+    #:
+    #: Still `required=False`, and clearing it is still a real answer: `NULL`,
+    #: `EXACT`, and «Kuupäev teadmata» on every surface. A default in the box is a
+    #: suggestion somebody accepts; a box that cannot be emptied would be this
+    #: form deciding that every position has a known day (docs/adr/0078 §2).
     stated_on = EstonianDateField(
-        label="Seisukoha kuupäev",
+        label="Kuupäev",
         required=False,
         widget=EstonianDateInput(),
         initial=timezone.localdate,
     )
     attachments = workspace_attachments("id_valine_seisukoht_failid")
+
+    #: One day, no precision chips. See `ExternalPositionFieldsMixin.offers_precision`.
+    offers_precision = False
 
     #: Which record this instance writes, decided by the chip rather than posted.
     provenance: str = ExternalPositionProvenance.DISCOVERED.value
@@ -5345,17 +5434,42 @@ class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
             # by definition, and a free text box answering *whose position is
             # this* would be a ninth way of naming an institution beside the one
             # shared catalogue (docs/adr/0073, docs/adr/0091 §3.3).
+            #
+            # **Since docs/adr/0095 §4 that is both of them.** `Allikas` is off
+            # the received-feedback panel too, so the question neither panel asks
+            # is a field neither panel carries — and a crafted `source_label=`
+            # reaches a form with nowhere to put it. `Muuda` still renders the box
+            # for a record that has one, which is what keeps the aggregate rows
+            # docs/adr/0091 §3.3 was written for correctable.
             del self.fields["source_label"]
-        # No `record`: this panel only ever creates. The «Muutmata» chip is a
-        # correction affordance and there is nothing here to keep unchanged.
-        attach_external_position_precision(self)
+        # **The three questions this panel stopped asking**, deleted rather than
+        # hidden.
+        #
+        # `Juristi märkus` — one substantive box is what a lawyer writing up an
+        # answer needs, and two invited a decision about which half of a thought
+        # goes where. `Seisukoht` is now the whole of what a new record says, and
+        # `lawyer_note` stays blank on everything this panel writes. Every row
+        # that already carries one keeps it, renders it under its own label and
+        # is corrected through `Muuda`, which still asks (docs/adr/0095 §3).
+        #
+        # `Seotud kaasamine` — the same, and for the same reason: never inferred,
+        # still stored, still corrected, and no longer a select in front of
+        # somebody recording two sentences from a member association.
+        #
+        # Deleting the fields is what makes the removal a boundary rather than a
+        # stylesheet. `_clean_external_position` reads both through `.get()` and
+        # gets `None`; a POST carrying either reaches a form that does not
+        # declare it, so there is no cleaned value and nothing for the view to
+        # pass on (docs/adr/0095 §5).
+        del self.fields["lawyer_note"]
+        del self.fields["engagement"]
+        # No `record`, and — since docs/adr/0095 §3 — no precision group either:
+        # this panel asks one day. `Muuda` still calls the helper, so a record
+        # stated as a month or a quarter is still correctable into one.
         # The page's one reading where a caller has it — two of these panels
         # render together, and reading the catalogue twice for them is half of
         # what blew the Teema page's query budget (docs/adr/0091 §3.5).
         attach_organisation_picker(self, viewer=viewer, choices=choices)
-        set_external_position_engagements(
-            self, matter=matter, viewer=viewer, engagements=engagements
-        )
 
     def clean(self) -> dict[str, Any]:
         super().clean()
@@ -5368,12 +5482,12 @@ class ReceivedFeedbackForm(CompactExternalPositionForm):
     """`+ Meile saadetud tagasiside` — somebody gave this to Koda.
 
     A member company's e-mail, an association's written answer, a consultation
-    response, the summary of a survey. The same seven controls as its sibling
-    plus `Allikas`, and the one rule that differs: the organisation is optional,
-    because an aggregate answer has no single author and the two things this
-    panel used to force were an invented organisation called «234 ettevõtet» and
-    one arbitrary respondent standing for the rest (lawyer feedback 12,
-    docs/adr/0091 §3.3).
+    response, the summary of a survey. The same four controls as its sibling plus
+    `Liige`, and no rule that differs any more: since docs/adr/0095 §4 both
+    panels require an institution, and `Allikas` — which is what used to make
+    this one's organisation optional — is asked on `Muuda` alone, where a record
+    that has a label can be corrected without every ordinary save being offered
+    the box.
 
     A subclass rather than a flag on the caller, so that *which questions this
     panel asks* and *what it writes* are one decision in one place. The
@@ -5384,8 +5498,48 @@ class ReceivedFeedbackForm(CompactExternalPositionForm):
     """
 
     provenance = ExternalPositionProvenance.RECEIVED.value
-    allows_source_label = True
+    #: **No `Allikas` on this panel any more**, which reverses docs/adr/0091 §3.3
+    #: for *new* records and for nothing else.
+    #:
+    #: What that ADR built the box for is real and is not being denied: a survey
+    #: of 234 companies producing 58 answers has no single author. What a round of
+    #: use showed is that it is rare, that the box was on the screen for every
+    #: ordinary save, and that «organisatsioon *või* allikas» made the commonest
+    #: panel on the page ask a question with two right answers before it asked
+    #: anything else. So this panel names an institution, and every row already
+    #: carrying a label keeps it, renders it and is corrected through `Muuda` —
+    #: which still asks, because `ExternalPositionEditForm` decides per record
+    #: rather than per class (docs/adr/0095 §4).
+    #:
+    #: Setting the flag is what requires the organisation: `_clean_external_position`
+    #: reads it, and with no label to fall back on «vali organisatsioon» is the
+    #: refusal — the database constraint is met the way it has always been met and
+    #: is not weakened to let an anonymous new row through.
+    allows_source_label = False
     panel_slug = "tagasiside"
+
+    #: `Liige` — this feedback came from a Chamber member.
+    #:
+    #: A checkbox on this panel alone, because it is an answer to *who wrote to
+    #: us*: `+ Teiste arvamus` records a position Koda found somewhere, which was
+    #: not written to Koda at all. The service refuses a `True` anywhere else and
+    #: so does the database, so the asymmetry is a rule rather than a rendering
+    #: decision (docs/adr/0095 §4).
+    #:
+    #: **Explicitly ticked and never derived.** Nothing reads the membership
+    #: registry, the CRM, the organisation's name or an address domain to answer
+    #: it, and nothing revisits it when membership changes: it is a fact about
+    #: this feedback that the person filing it knows.
+    source_is_member = forms.BooleanField(
+        label="Liige",
+        required=False,
+        #: A chip toggle, which is the composer's own control for a single
+        #: on/off answer — `Muu` on `Uus teema` is the same shape — and is
+        #: already styled, already keyboard-reachable and already reads as
+        #: «chosen» when it is filled. A bare checkbox here would need a class
+        #: nothing in the stylesheet defines.
+        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
+    )
 
 
 class OtherOpinionForm(CompactExternalPositionForm):
@@ -5590,18 +5744,37 @@ class KodaOpinionForm(forms.Form):
     is, which is why the two are one transaction rather than one act
     (docs/adr/0091 §6.2).
 
-    `Adressaadid` — required, at least one, and **not** defaulted from the
-    Matter's sender. An opinion on the first draft goes to the ministry; one at
-    second reading goes to a Riigikogu committee; one on a revised text may go to
-    a third body. Assuming the original sender would put a false recipient on the
-    canonical outbound record of a professional letter, which is the one thing a
-    recipient column may not do (lawyer feedback 14, docs/adr/0091 §6.3).
+    `Adressaadid` — required, at least one, and **opening on the Matter's
+    `Saatja`.** docs/adr/0091 §6.3 refused a default on the ground that an
+    opinion at second reading goes to a committee rather than to the ministry
+    that sent the draft. That is true, and it is an argument against a default
+    the save applies silently rather than against one somebody can see: what it
+    produced in use was a panel whose commonest answer had to be hunted out of a
+    catalogue every single time. The senders are ticked in the control before
+    anything is saved, where they read as a suggestion that can be removed,
+    replaced and added to (docs/adr/0078 §2, docs/adr/0095 §1).
 
-    `Pealkiri` — optional, and the filename answers it when it is left blank.
-    «Koja arvamus pakendiseaduse eelnõule» is worth typing and
-    «arvamus_final_v3.docx» is not worth retyping, so a person who has already
-    named the file has already answered this. Nothing is derived from the *file's
-    contents* and nothing is generated.
+    **The default never writes anything.** `Matter.source_organisations` is not
+    touched by this save and is not read back from it. `SubmissionRecipient` and
+    `Saatja` are two facts about two different acts, and an opinion sent to three
+    committees leaves the Teema's senders exactly as they were.
+
+    **And it is applied to an unbound form only.** Re-rendering a refused save
+    means showing what somebody posted; reapplying the default there would
+    resurrect a recipient they had just removed.
+
+    `Kokkuvõte` — optional, and **in place of `Pealkiri`.** The box that asked
+    for a name got the file's name, nothing, or a sentence trimmed to fit a
+    heading, while what a colleague opening the file next year wants is what the
+    Chamber argued. So this asks for that instead, and it lands in
+    `Submission.summary` rather than in `title`.
+
+    **The record still has an identity and nothing invents one.**
+    `Submission.title` is the uploaded file's own name — which is where
+    `add_matter_koda_opinion` has taken it from whenever the old title box was
+    left blank, so nothing about the derivation is new. Nothing is read out of
+    the file's *contents*, nothing is generated, and no headline is cut from the
+    first characters of the summary (docs/adr/0095 §2).
 
     **No `Liik` and no `Kanal` here.** `SubmissionKind` keeps every value and
     `Dokumendid` keeps offering them; what this panel writes is
@@ -5633,17 +5806,51 @@ class KodaOpinionForm(forms.Form):
             attrs={"class": "visually-hidden", "id": "id_koja_arvamus_fail"}
         ),
     )
-    title = forms.CharField(
-        label="Pealkiri",
+    #: `Kokkuvõte` — what this opinion says, in the lawyer's own words.
+    #:
+    #: **It replaces `Pealkiri` and it is not a headline.** A lawyer who has just
+    #: sent an opinion knows what the Chamber argued and does not know what to
+    #: call it, and the box that asked for a name was answered with the file's
+    #: name, with nothing, or with a sentence trimmed to fit a heading. A
+    #: colleague opening the file next year wants the first of those least
+    #: (docs/adr/0095 §2).
+    #:
+    #: **The record still has an identity, and it is a fact rather than a guess.**
+    #: `Submission.title` is untouched, still `NOT NULL`, and is the uploaded
+    #: file's own name — `add_matter_koda_opinion` has taken it from there
+    #: whenever this box was left blank since the panel was written, so nothing
+    #: about how the identity is derived is new. Nothing is read out of the
+    #: file's contents, nothing is generated, and no headline is cut from the
+    #: first characters of this box.
+    #:
+    #: Optional, because an opinion that went out is a fact worth recording
+    #: whether or not somebody has time to summarise it, and a required box here
+    #: would be the friction this panel exists to remove.
+    summary = forms.CharField(
+        label="Kokkuvõte",
         required=False,
-        max_length=400,
-        widget=forms.TextInput(
+        max_length=EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
+        widget=forms.Textarea(
             attrs={
                 "class": "field__input field__input--compact",
-                "placeholder": "nt Koja arvamus pakendiseaduse eelnõule",
+                "rows": 4,
+                "placeholder": "nt toetame eelnõu, kuid palume pikemat üleminekuaega",
             }
         ),
     )
+    #: Where the `Adressaadid` shortlist stops and the searchable tail begins.
+    #: `None` on a form with no viewer — no usage to rank by means no shortlist,
+    #: and everything is a chip.
+    recipients_split: int | None = None
+
+    #: `+`'s half of the `Adressaadid` control: a body the catalogue does not
+    #: hold yet, named rather than found.
+    #:
+    #: Same field, same rule and the same resolver as `Saatja` and `Adressaat`
+    #: (`_typed_organisation_field`, `resolve_addressee`): typing is a query, `+`
+    #: is a proposal, and only the save creates — inside its own transaction, so
+    #: a refusal further down leaves no institution behind (docs/adr/0073).
+    recipient_name = _typed_organisation_field("Uus adressaat")
     #: `Adressaadid` — who it was sent to, from the one shared catalogue.
     #:
     #: Checkboxes and a multiple field, because one letter really does go to two
@@ -5704,10 +5911,53 @@ class KodaOpinionForm(forms.Form):
             (organisation.pk, organisation.name) for organisation in self.recipients_offered
         ]
         # The recorded spellings, so «MKM» finds the ministry through an alias
-        # rather than through a similarity score. The panel has no search box of
-        # its own, and the browser's in-page find reads these
+        # rather than through a similarity score — now read by the picker's own
+        # search box rather than only by the browser's in-page find
         # (docs/adr/0073, `OrganisationSpellings`).
         cast(Any, field.widget).alias_terms = reading.alias_terms
+        # Where the shortlist stops and the searchable tail begins, computed here
+        # because a template cannot slice on a primary key. The same two
+        # properties the feedback panels feed the picker with, over a checkbox
+        # group instead of a radio group — which the control never has to be told,
+        # because a checkbox and a radio already behave as «several» and «one».
+        self.recipients_split = len(shortlist) if reading.ranked_for_a_reader else None
+        # **`Adressaadid` opens holding the Teema's `Saatja`**, and only opens
+        # holding it.
+        #
+        # docs/adr/0091 §6.3 refused a default here, on the ground that an opinion
+        # at second reading goes to a committee rather than to the ministry that
+        # sent the draft — which is true, and is an argument against a *silent*
+        # default rather than against a visible one. What it produced in use was a
+        # panel whose commonest answer, by a distance, had to be found in a
+        # catalogue and ticked every single time. The suggestion is now in the
+        # control before anything is saved, where it can be read, removed and
+        # replaced, which is the one shape docs/adr/0078 §2 allows a default to
+        # take (docs/adr/0095 §1).
+        #
+        # **Unbound only.** A bound form is re-rendering what somebody posted,
+        # and reapplying the default there would resurrect a recipient they had
+        # just removed and then watched a refusal take them back to. What was
+        # submitted is what comes back.
+        #
+        # **And it is a form default, never a write.** Nothing here touches
+        # `Matter.source_organisations`; `SubmissionRecipient` and `Saatja`
+        # remain two facts, and saving an opinion to three bodies leaves the
+        # Teema's senders exactly as they were (docs/adr/0095 §1).
+        if not self.is_bound and matter is not None and "recipients" not in self.initial:
+            field.initial = [organisation.pk for organisation in matter.source_organisations.all()]
+
+    @property
+    def recipients_chip_choices(self) -> list[Any]:
+        """The addressees offered on screen without being searched for."""
+        offered = list(cast(Any, self)["recipients"])
+        return offered if self.recipients_split is None else offered[: self.recipients_split]
+
+    @property
+    def recipients_tail_choices(self) -> list[Any]:
+        """Every other institution, reachable through the search rather than drawn."""
+        if self.recipients_split is None:
+            return []
+        return list(cast(Any, self)["recipients"])[self.recipients_split :]
 
     def clean_sent_on(self) -> Any:
         """A send is never in the future. The record says what happened.
@@ -5735,9 +5985,23 @@ class KodaOpinionForm(forms.Form):
             self.add_error("upload", "Lisa fail, mis välja saadeti.")
         if cleaned.get("sent_on") is None and not self.errors.get("sent_on"):
             self.add_error("sent_on", "Märgi, mil kuupäeval arvamus välja saadeti.")
-        if not cleaned.get("recipients"):
+        # At least one addressee, **counting one somebody is naming for the first
+        # time**. `+` writes into `recipient_name` rather than into the checkbox
+        # group, so reading only the group would refuse a save whose single
+        # answer is a body the catalogue does not hold yet — which is the case
+        # the control was added for (docs/adr/0073, docs/adr/0095 §1).
+        if not cleaned.get("recipients") and not (cleaned.get("recipient_name") or "").strip():
             self.add_error("recipients", "Vali vähemalt üks adressaat.")
         return cleaned
+
+    def clean_recipient_name(self) -> str:
+        """Collapse the typed name. Resolve nothing, create nothing.
+
+        `app.matters.services.resolve_addressee` decides what it means, inside
+        the save's own transaction — the same rule `Saatja`, `Adressaat` and both
+        feedback panels use.
+        """
+        return clean_typed_organisation_name(self.cleaned_data.get("recipient_name"))
 
 
 class ProceduralDevelopmentForm(forms.Form):

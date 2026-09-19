@@ -1040,8 +1040,16 @@ def test_the_engine_costs_a_fixed_number_of_queries_however_many_candidates(spec
 
 
 def test_the_projections_are_read_under_their_current_versions():
-    """A new consumer of the projections changes neither recipe (brief §47)."""
-    assert INDEX_VERSION == "AUTH003.1"
+    """A new consumer of the projections changes neither recipe (brief §47).
+
+    **The literal moved in docs/adr/0095 §2 and this test's claim did not.** The
+    pin is a tripwire: it fires on *any* bump, so that a rebuild is always
+    somebody's decision rather than a side effect. Opinion summaries moved out of
+    an indexed identity tier into a column the projection did not read, which is
+    a genuine contract change and the one this number now records — nothing to do
+    with the surface this file is about.
+    """
+    assert INDEX_VERSION == "OPSUM.1"
     assert ARCHIVE_INDEX_VERSION == "1"
 
 

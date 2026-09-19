@@ -151,6 +151,27 @@
                 {% if submission.reference %}
                   <span class="muted">· {{ submission.reference }}</span>
                 {% endif %}
+                {% comment %}
+                  `Kokkuvõte`, on its own line under the identity.
+
+                  This register is scanned to answer «which letter was that»,
+                  and since docs/adr/0095 §2 the link above it is frequently the
+                  sent file's own name — `+ Koja arvamus` stopped asking for a
+                  headline and asks what the opinion said instead. A row that
+                  printed only `Koja_arvamus_pakendiseadus.pdf` would be a row a
+                  reader has to open something to understand, which is the one
+                  thing that decision must not cost.
+
+                  Under the identity rather than in place of it: the title is
+                  what the outbound register, the document and the evidence all
+                  agree this record is called, and a summary is not an identity.
+                  Absent on every opinion recorded before the column existed,
+                  which is what is true of them — nothing is derived from the
+                  title, the file or anywhere else.
+                {% endcomment %}
+                {% if submission.summary %}
+                  <span class="table__sub">{{ submission.summary }}</span>
+                {% endif %}
               </td>
               <td>
                 <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>

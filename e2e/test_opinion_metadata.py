@@ -178,21 +178,35 @@ def test_a_correction_removes_only_what_was_unticked(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_a_planned_write_up_can_be_linked_and_reads_back_under_it(page, base_url):
-    """The whole round trip: plan a write-up, link the opinion, read the strip.
+def _a_write_up(page, matter_url: str) -> None:
+    """Record an `Ülevaade / uudis` on the open Matter, through its own panel.
 
-    This is the case ADR 0091 §8 deferred, and the only place its *effect* is
-    visible: the planned `Ülevaade / uudis` on the Teema page naming the letter
-    it is meant to cover.
+    A **published** row, because that is what the panel writes since
+    docs/adr/0095 §5: the empty save that used to file a plan is refused, and a
+    browser has no way left to create one. It makes no difference to what these
+    two tests are about — `selectable_website_overviews` invents no status
+    restriction, and the chronology prints `Seotud arvamused` under a published
+    row exactly as the planned strip does under a plan (docs/adr/0093 §2).
     """
-    sign_in(page, base_url, SANDRA)
-    matter_url = a_draft_opinion(page, base_url)
-
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
     open_add_panel(page, "lisa-koduleht")
-    page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).click()
-    page.locator("#kodulehe-ulevaated").wait_for(state="visible")
+    panel = page.locator("#lisa-koduleht")
+    panel.locator("[name=url]").fill("https://koda.ee/uudised/e2e-seos")
+    panel.get_by_role("button", name=PLAN_BUTTON).click()
+    page.locator("#ajalugu-loend").wait_for(state="visible")
+
+
+def test_a_write_up_can_be_linked_and_reads_back_under_it(page, base_url):
+    """The whole round trip: record a write-up, link the opinion, read it back.
+
+    This is the case ADR 0091 §8 deferred, and the only place its *effect* is
+    visible: the `Ülevaade / uudis` on the Teema page naming the letter it
+    covers.
+    """
+    sign_in(page, base_url, SANDRA)
+    matter_url = a_draft_opinion(page, base_url)
+    _a_write_up(page, matter_url)
 
     block = open_opinion_block(page, matter_url)
     block.get_by_role("link", name=METADATA_LINK).first.click()
@@ -206,24 +220,18 @@ def test_a_planned_write_up_can_be_linked_and_reads_back_under_it(page, base_url
 
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
-    strip = page.locator("#kodulehe-ulevaated")
-    expect(strip).to_contain_text("Seotud arvamused")
-    expect(strip).to_contain_text("Koja arvamus pakendiseaduse eelnõule")
+    chronology = page.locator("#ajalugu-loend")
+    expect(chronology).to_contain_text("Seotud arvamused")
+    expect(chronology).to_contain_text("Koja arvamus pakendiseaduse eelnõule")
 
 
 def test_a_matter_with_no_link_says_nothing_about_opinions(page, base_url):
-    """No inference, as a reader meets it: an unlinked plan stays silent."""
+    """No inference, as a reader meets it: an unlinked write-up stays silent."""
     sign_in(page, base_url, SANDRA)
     matter_url = a_draft_opinion(page, base_url)
+    _a_write_up(page, matter_url)
 
-    page.goto(matter_url)
-    page.wait_for_load_state("networkidle")
-    open_add_panel(page, "lisa-koduleht")
-    page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).click()
-    strip = page.locator("#kodulehe-ulevaated")
-    strip.wait_for(state="visible")
-
-    expect(strip).not_to_contain_text("Seotud arvamused")
+    expect(page.locator("#ajalugu-loend")).not_to_contain_text("Seotud arvamused")
 
 
 def test_the_page_offers_nothing_that_could_change_the_send(page, base_url):

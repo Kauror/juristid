@@ -351,30 +351,24 @@ row of controls that refuse (brief §30, §31).
       the address the row already carries is what tells a reader which they are
       looking at (docs/adr/0085 §1).
 
-      **Two optional boxes, and an empty form is still a complete answer.**
-      docs/adr/0081 §1 gave this panel one button and no fields, because at the
-      moment somebody decides a Matter should be written up there is no address
-      and no publication date. That is true of the planning case and false of the
-      other one: a write-up is frequently recorded *after* the page is up, and
-      the panel made those people file a plan and then publish it from a second
-      control to state something already true. What they met first was a panel
-      with no fields and a button saying `Salvesta`, which reads as an unusable
-      text box rather than as a finished form (docs/adr/0083).
+      **Two boxes, both answered, and one outcome.** This panel records a page
+      that exists.
 
-      So the button says what it does — `Lisa ülevaade / uudis` — and the two
-      boxes under their own legend say what to do instead when the page already
-      exists. Fill neither and the record is `Plaanis`; fill both and it is
-      recorded as published in one act; fill one and the form refuses, naming
-      the other and keeping what was typed. The button names neither outcome
-      because the one form now reaches both.
+      docs/adr/0081 §1 gave it one button and no fields, because at the moment
+      somebody decides a Matter should be written up there is no address and no
+      date. docs/adr/0083 added the boxes as optional, so a lawyer recording a
+      page already published did not have to file a plan and publish it from a
+      second control. What that left was three answers, one of which — *neither
+      box* — was reached by pressing `Salvesta` on a form that looked untouched.
 
-      **The date fills itself only once somebody starts the published path.**
-      `data-publication-trigger` on the link box points at the date box, which
-      carries today in `data-publication-default` — the server's day, not the
-      browser's. Typing an address is the moment the published path is chosen,
-      and the date appears *visibly* then, where it can be read, changed or
-      cleared. An untouched form still submits two empty boxes, which is what
-      keeps the plan reachable (docs/adr/0085 §3).
+      A save whose meaning depends on what somebody did not type is the one
+      shape a composer may not have. So the address is required, the day opens
+      on today, and a valid save is a publication (docs/adr/0095 §5).
+
+      **`Plaanis` and `Tühistatud` are untouched.** Every stored plan still
+      reads on the file, still carries `Avalda` and `Tühista` in
+      `website_overviews.html`, and `plan_website_overview` still writes one.
+      What is gone is a silent way to create one from this panel.
 
       Still no title, no description and no attachment: the record's content is
       the address and the day (docs/adr/0081 §2). It is not a `+ Märge`, it is
@@ -395,65 +389,50 @@ row of controls that refuse (brief §30, §31).
               hx-post="{% url 'matters:add_website_overview' pk=matter.pk %}"
               hx-target="#teema-vaade" hx-swap="outerHTML">
           {% csrf_token %}
-          <p class="cx-note">
-            Märgib, et sellest teemast peaks tulema ülevaade või uudis.
-          </p>
           {% comment %}
-            The already-published path, behind its own legend so that the empty
-            form still reads as the complete thing it is. A `<fieldset>` rather
-            than a heading because the two controls belong together: filling one
-            without the other is the refusal below.
-          {% endcomment %}
-          <fieldset class="cx-fieldset">
-            <legend class="cx-f__lab">Kui ülevaade või uudis on juba avaldatud
-              <span class="cx-f__opt">valikuline</span></legend>
-            <div class="cx-grid cx-grid--links">
-              <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
-                <span class="cx-f__lab">{{ website_overview_form.url.label }}</span>
-                {{ website_overview_form.url }}
-              </label>
-              <label class="cx-f cx-f--date"
-                     for="{{ website_overview_form.published_on.id_for_label }}">
-                <span class="cx-f__lab">{{ website_overview_form.published_on.label }}</span>
-                {{ website_overview_form.published_on }}
-                {% comment %}
-                  The field's own `help_text`, under the box, carrying the id
-                  Django already points the control's `aria-describedby` at.
+            The day and the address, and nothing else on the panel.
 
-                  It used to be the third sentence of the `cx-note` below —
-                  prose beside the fieldset, not attached to anything — while
-                  the input said `aria-describedby="id_published_on_helptext"`
-                  about an element that did not exist. A screen reader followed
-                  the pointer, found nothing, and read the box with no
-                  description at all; a sighted reader got the sentence. One
-                  source now serves both, and it is the one that lives with the
-                  field (`CompactWebsiteOverviewForm.published_on`).
-                {% endcomment %}
-                <span class="field__help"
-                      id="{{ website_overview_form.published_on.auto_id }}_helptext"
-                      >{{ website_overview_form.published_on.help_text }}</span>
-              </label>
-            </div>
-            {% if website_overview_form.url.errors %}
-              <p class="field__error" id="{{ website_overview_form.url.auto_id }}_error">
-                {{ website_overview_form.url.errors|first }}</p>
-            {% endif %}
-            {% if website_overview_form.published_on.errors %}
-              <p class="field__error" id="{{ website_overview_form.published_on.auto_id }}_error">
-                {{ website_overview_form.published_on.errors|first }}</p>
-            {% endif %}
-            {% comment %}
-              The address rules, and only those. The date's own sentence moved
-              up to the box it is about, where it is the accessible description
-              as well — repeating it here would have one instruction read twice
-              to somebody using a screen reader and written twice to everybody
-              else.
-            {% endcomment %}
-            <p class="cx-note">
-              Lisa link ja ülevaade või uudis salvestatakse kohe avaldatuna.
-              Link peab olema avalik http:// või https:// aadress.
-            </p>
-          </fieldset>
+            **This records a page that exists.** The empty save that used to
+            file a plan is gone: pressing `Salvesta` on a panel that looks
+            untouched is a save whose meaning the person has to know in advance,
+            and what it filed was a row they then had to publish from a second
+            control (docs/adr/0095 §5).
+
+            `PLANNED` and `CANCELLED` are untouched in the domain. Every stored
+            plan still reads, still carries `Avalda` and `Tühista` in
+            `website_overviews.html`, and `plan_website_overview` is still the
+            service that writes one.
+
+            **The date opens on today**, which narrows docs/adr/0089 §8 for this
+            box. That decision refused a default because the commonest save was
+            an address pasted with no known publication day — but what it
+            refused specifically was a date appearing *in response to a paste*,
+            unread. This one is in the box before anything is typed, and
+            clearing it still stores `NULL` and still reads «kuupäev teadmata»
+            (docs/adr/0078 §2).
+
+            The two are one row, as they always were: `cx-grid--links` is the
+            same pairing `+ Koja arvamus` uses for its file and its day.
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f cx-f--date"
+                   for="{{ website_overview_form.published_on.id_for_label }}">
+              <span class="cx-f__lab">{{ website_overview_form.published_on.label }}</span>
+              {{ website_overview_form.published_on }}
+            </label>
+            <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
+              <span class="cx-f__lab">{{ website_overview_form.url.label }}</span>
+              {{ website_overview_form.url }}
+            </label>
+          </div>
+          {% if website_overview_form.published_on.errors %}
+            <p class="field__error" id="{{ website_overview_form.published_on.auto_id }}_error">
+              {{ website_overview_form.published_on.errors|first }}</p>
+          {% endif %}
+          {% if website_overview_form.url.errors %}
+            <p class="field__error" id="{{ website_overview_form.url.auto_id }}_error">
+              {{ website_overview_form.url.errors|first }}</p>
+          {% endif %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
           </div>
@@ -549,10 +528,6 @@ row of controls that refuse (brief §30, §31).
               hx-target="#teema-vaade" hx-swap="outerHTML"
               hx-encoding="multipart/form-data">
           {% csrf_token %}
-          <p class="cx-note">
-            Registreerib, et Koja arvamus on välja saadetud. Fail salvestatakse
-            muutumatu tõendina.
-          </p>
           {% comment %}
             What went out and when, paired on one row: they are the two halves of
             one fact and a lawyer answers them together.
@@ -581,56 +556,69 @@ row of controls that refuse (brief §30, §31).
           {% endif %}
 
           {% comment %}
-            `Adressaadid` — checkboxes, because one letter really does go to two
-            bodies at once, which is what `SubmissionRecipient` has always been
-            able to hold.
+            `Adressaadid` — the shared picker, searchable, and opening on the
+            Teema's own `Saatja`.
 
-            **The plain chip row, not the `organisation_picker` partial.** That
-            control exists to answer «the body I need is not in your catalogue»,
-            and its `+` creates an institution inside the save's transaction. That
-            is right for `Saatja`, for `Adressaat` and for a `Väline seisukoht`,
-            where the record *is* about who an unfamiliar body is. It is wrong
-            here: registering a letter Koda sent is not the moment to invent the
-            institution it was sent to, and a picker that offered to would put a
-            typo into the catalogue under a professional outbound record. A body
-            genuinely missing is added where bodies are added, and then chosen here
-            (docs/adr/0073, docs/adr/0091 §6.3).
+            **This reverses docs/adr/0091 §6.3 twice, deliberately.** That
+            decision drew the whole catalogue as a chip row and refused a
+            default, on two arguments. The first — that registering a letter
+            Koda sent is not the moment to invent the institution it went to —
+            was an argument against a picker whose `+` creates carelessly, and
+            what it produced was a panel where a body genuinely missing had to be
+            added on another page and the person had to come back. The second —
+            that an opinion at second reading goes to a committee rather than to
+            the ministry that sent the draft — is true, and is an argument
+            against a *silent* default rather than against a visible one.
 
-            The frequent addressees first, then the rest — the same usage ranking
-            the shared control applies, scoped by `visible_to` inside
-            `addressees_by_usage`, so no restricted Matter can move a chip.
+            So the control is the one every other institution question on the
+            page uses, `quiet` like `Uus teema`'s `Saatja`: one line reading
+            «Otsi või lisa asutus…» and the bodies actually chosen. The Teema's
+            senders are ticked in it before anything is saved, where they can be
+            read, removed, replaced and added to — a suggestion somebody accepts
+            rather than a recipient applied behind their back
+            (docs/adr/0078 §2, docs/adr/0095 §1).
+
+            **Several, still.** One letter really does go to two bodies at once,
+            which is what `SubmissionRecipient` has always held — and the control
+            never has to be told, because a checkbox already behaves as «several»
+            where a radio behaves as «one».
+
+            **And the default is a form default.** `Matter.source_organisations`
+            is not written by this save, is not read back from it, and a letter
+            sent to three committees leaves the Teema's `Saatja` exactly as it
+            was. Two facts, two columns (docs/adr/0095 §1).
           {% endcomment %}
-          <fieldset class="cx-fieldset">
-            <legend class="cx-f__lab">{{ koda_opinion_form.recipients.label }}</legend>
-            <div class="chiprow">
-              {% for choice in koda_opinion_form.recipients %}
-                <label class="chip">
-                  {{ choice.tag }}
-                  <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-                </label>
-              {% endfor %}
-            </div>
-            {% if koda_opinion_form.recipients.errors %}
-              <p class="field__error" id="{{ koda_opinion_form.recipients.auto_id }}_error">
-                {{ koda_opinion_form.recipients.errors|first }}</p>
-            {% endif %}
-          </fieldset>
+          {% include "matters/partials/organisation_picker.html" with picker_id="koja-adressaat" legend=koda_opinion_form.recipients.label chips=koda_opinion_form.recipients_chip_choices tail=koda_opinion_form.recipients_tail_choices typed_field=koda_opinion_form.recipient_name add_label="Lisa uus adressaat" clearable=True quiet=True only %}
+          {% if koda_opinion_form.recipients.errors %}
+            <p class="field__error" id="{{ koda_opinion_form.recipients.auto_id }}_error">
+              {{ koda_opinion_form.recipients.errors|first }}</p>
+          {% endif %}
 
           {% comment %}
-            `Pealkiri` last and optional: the filename answers it when it is left
-            blank. «Koja arvamus pakendiseaduse eelnõule» is worth typing and
-            «arvamus_final_v3.docx» is not worth retyping, and a person who has
-            already named the file has already answered this. Nothing is read out
-            of the file's contents (docs/adr/0091 §6.1).
+            `Kokkuvõte` last, optional, and a box with room in it.
+
+            **It is not the old `Pealkiri` renamed.** That field asked for a
+            name, and what it got was the file's name, nothing, or a sentence
+            trimmed to fit a heading — while the thing a colleague opening the
+            file next year actually wants is what the Chamber argued. So the
+            question changed, and the answer has its own column: a paragraph in
+            `Submission.summary`, never in `title` (docs/adr/0095 §2).
+
+            **The record still has an identity, and nothing invents one.**
+            `Submission.title` is the uploaded file's own name, which is where
+            `add_matter_koda_opinion` has taken it from whenever this panel's
+            title box was blank since the panel was written. Nothing is read out
+            of the file's contents, nothing is generated, and no headline is cut
+            from the first characters of this box.
           {% endcomment %}
-          <label class="cx-f" for="{{ koda_opinion_form.title.id_for_label }}">
-            <span class="cx-f__lab">{{ koda_opinion_form.title.label }}
+          <label class="cx-f" for="{{ koda_opinion_form.summary.id_for_label }}">
+            <span class="cx-f__lab">{{ koda_opinion_form.summary.label }}
               <span class="cx-f__opt">valikuline</span></span>
-            {{ koda_opinion_form.title }}
+            {{ koda_opinion_form.summary }}
           </label>
-          {% if koda_opinion_form.title.errors %}
-            <p class="field__error" id="{{ koda_opinion_form.title.auto_id }}_error">
-              {{ koda_opinion_form.title.errors|first }}</p>
+          {% if koda_opinion_form.summary.errors %}
+            <p class="field__error" id="{{ koda_opinion_form.summary.auto_id }}_error">
+              {{ koda_opinion_form.summary.errors|first }}</p>
           {% endif %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Registreeri arvamus</button>

@@ -3263,6 +3263,16 @@ EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY = (
     "Allikas käib ainult meile saadetud tagasiside juurde. "
     "Teiste arvamuse puhul vali organisatsioon."
 )
+#: What a caller marking a position as a member's is told when the record is not
+#: feedback somebody sent to Koda.
+#:
+#: «This came from a member» is an answer to *who wrote to us*. A position Koda
+#: found published somewhere was not written to Koda at all, so there is no
+#: question for the box to answer and a `True` arriving on one is a value that did
+#: not come off a page (docs/adr/0095 §4).
+EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY = (
+    "Liikme märget saab teha ainult meile saadetud tagasiside juures."
+)
 #: What a caller naming a provenance nobody may choose is told.
 #:
 #: `LEGACY` is what history says, not an answer a person gives, so it is refused
@@ -3381,7 +3391,7 @@ def _external_position_source(
 
 
 def _external_position_authorship(
-    *, provenance: Any, organisation: Any, source_label: str
+    *, provenance: Any, organisation: Any, source_label: str, source_is_member: bool = False
 ) -> tuple[str, str]:
     """Which provenance this save states, and who it names as the author.
 
@@ -3417,6 +3427,12 @@ def _external_position_authorship(
     if value not in SELECTABLE_EXTERNAL_POSITION_PROVENANCE:
         raise DomainError(EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE)
     label = (source_label or "").strip()[:EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH]
+    # 4. The member marker is a received-feedback answer, exactly as `Allikas`
+    #    is. Refused before the provenance branches below, so that one sentence
+    #    covers `DISCOVERED` and anything else a future caller passes rather than
+    #    only the branch somebody remembered to guard (docs/adr/0095 §4).
+    if source_is_member and value != ExternalPositionProvenance.RECEIVED.value:
+        raise DomainError(EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY)
     if value == ExternalPositionProvenance.DISCOVERED.value:
         if organisation is None:
             raise DomainError(EXTERNAL_POSITION_NEEDS_ORGANISATION)
@@ -3439,6 +3455,7 @@ def record_external_position(
     stated_on_precision: str = DatePrecision.EXACT.value,
     summary: str = "",
     lawyer_note: str = "",
+    source_is_member: bool = False,
     engagement: Any = None,
     attachment_count: int = 0,
     actor: Any = None,
@@ -3497,7 +3514,10 @@ def record_external_position(
     R2-02 states: a page is not a boundary.
     """
     kind, clean_label = _external_position_authorship(
-        provenance=provenance, organisation=organisation, source_label=source_label
+        provenance=provenance,
+        organisation=organisation,
+        source_label=source_label,
+        source_is_member=bool(source_is_member),
     )
     clean_url = normalize_external_position_url(url)
     # Trimmed *before* the source rule reads it, so a `Seisukoht` of three
@@ -3522,6 +3542,7 @@ def record_external_position(
         stated_on_precision=precision,
         summary=clean_summary,
         lawyer_note=clean_note,
+        source_is_member=bool(source_is_member),
         engagement=related,
         created_by=actor,
     )
@@ -3555,6 +3576,12 @@ def record_external_position(
             # is the one place the two could be read back as one statement, which
             # is exactly what the column exists to prevent (docs/adr/0091 §4).
             "has_lawyer_note": bool(position.lawyer_note),
+            # The member marker itself, because unlike the two above it *is* the
+            # whole fact rather than a stand-in for a body of text — there is
+            # nothing substantive to withhold, and «who recorded this as a
+            # member's» is exactly the question an audit trail is asked
+            # (docs/adr/0095 §4).
+            "source_is_member": position.source_is_member,
             "engagement": str(related.pk) if related is not None else None,
         },
     )
@@ -3690,6 +3717,20 @@ def correct_external_position(
             provenance=provenance if provenance is not None else current.provenance,
             organisation=organisation,
             source_label=source_label,
+            # **The mark this correction is not changing, checked against the
+            # provenance it might.** `source_is_member` is absent from
+            # `proposed` below, so a correction never moves it — but a caller
+            # that moves the *provenance* off `RECEIVED` on a row carrying one
+            # would leave the pair invalid, and the `CHECK` would answer with an
+            # `IntegrityError` from inside a transaction that has already taken
+            # two row locks. Asked here instead, it is an Estonian sentence on
+            # the way in, which is the same reason the authorship rules are
+            # stated in this helper as well as in the database
+            # (docs/adr/0095 §4).
+            #
+            # Unreachable from `Muuda`, which passes `provenance=None` and never
+            # moves it. This is for the import and correction paths that can.
+            source_is_member=current.source_is_member,
         )
     clean_url = normalize_external_position_url(url)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]

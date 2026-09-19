@@ -37,7 +37,22 @@ from app.core.models import BaseModel
 #:
 #: That is deliberately fail-closed. Until the one-time rebuild runs, search
 #: returns too little; it never returns something confidential.
-INDEX_VERSION = "AUTH003.1"
+#:
+#: Moved again by docs/adr/0095 §2, and for a different kind of reason: the
+#: projection's *contract* widened rather than a leak being closed. A sent
+#: opinion's substantive description used to be typed into `title` and indexed
+#: in the identity tier; it is now `Submission.summary` and is indexed in the
+#: body, so a row written before this release carries a tsvector that the
+#: current code would not produce for it. Without the bump those rows would stay
+#: eligible and keep answering searches from a projection that no longer
+#: describes them — a Submission whose summary somebody wrote today would be
+#: findable and one written last week would not, with nothing on either to say
+#: why (`app.search.child_indexing._submission_values`).
+#:
+#: The same fail-closed behaviour applies: pre-bump rows are ineligible from the
+#: moment the code is deployed, search returns too little until the one-time
+#: rebuild runs, and nothing confidential is returned in the meantime.
+INDEX_VERSION = "OPSUM.1"
 
 
 class SearchSourceKind(models.TextChoices):

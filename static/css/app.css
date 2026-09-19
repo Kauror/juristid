@@ -1247,6 +1247,22 @@ p.formnote {
   font-size: var(--typography-size-meta);
 }
 
+/* A second line under a row's identity, carrying what the record says rather
+   than what it is called.
+
+   The same shape `.doctable__filename` already uses, under its own name because
+   it is not a filename: the outbound register prints an opinion's `Kokkuvote`
+   here, under the title (docs/adr/0095 §2). `overflow-wrap` for the same reason
+   that one has it -- a pasted address with no spaces in it would widen the cell
+   past the table and take the page sideways with it. */
+.table__sub {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* A value in a row that is also the filter selecting it.
 
    Quiet by design: a register where every cell reads as a hyperlink is a

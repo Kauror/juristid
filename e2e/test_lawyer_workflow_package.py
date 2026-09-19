@@ -215,43 +215,76 @@ def test_the_launcher_offers_both_feedback_chips(page, base_url):
     expect(bar.get_by_text("+ Menetluse areng", exact=True)).to_be_visible()
 
 
-def test_aggregate_feedback_saves_with_no_organisation_at_all(page, base_url):
-    """The case that needed the column widened, proved by filling the form in.
+def test_feedback_with_no_organisation_is_refused_on_the_page(page, base_url):
+    """`Allikas` is off this panel, so the institution is what answers authorship.
 
-    A survey of 234 industrial companies has no single author. Before this the
-    panel refused the save, and what that bought was an invented organisation
-    called «234 ettevõtet» (docs/adr/0091 §3.3).
+    docs/adr/0091 §3.3 widened the column for a survey of 234 companies with no
+    single author, and every row filed that way keeps its label and is corrected
+    through `Muuda`. What it cost was a question with two right answers at the
+    top of the panel a department fills in several times a week, so the creation
+    form names an institution — and the authorship rule is *met* rather than
+    relaxed (docs/adr/0095 §4).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-tagasiside")
 
     form = panel(page, "lisa-tagasiside")
-    form.locator("[name=source_label]").fill("Tööstusettevõtete küsitlus")
     form.locator("[name=summary]").fill("58 vastust 234 küsitletust; enamik toetab.")
     form.get_by_role("button", name="Salvesta tagasiside").click()
 
-    chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
-    expect(chronology(page)).to_contain_text(
-        "Meile saadetud tagasiside: Tööstusettevõtete küsitlus"
+    reopened = panel(page, "lisa-tagasiside")
+    expect(reopened.locator(".field__error").first).to_be_visible()
+    # And what they wrote is still in the box.
+    expect(reopened.locator("[name=summary]")).to_have_value(
+        "58 vastust 234 küsitletust; enamik toetab."
     )
+    expect(chronology(page)).not_to_contain_text("Meile saadetud tagasiside:")
 
 
-def test_the_received_panel_offers_the_source_box_and_the_other_does_not(page, base_url):
-    """`Allikas` is a received-feedback control, and the markup says so.
-
-    A discovered position has an author by definition, and a free text box
-    answering «whose position is this» there would be a ninth way of naming an
-    institution beside the one shared catalogue (docs/adr/0073).
-    """
+def test_neither_feedback_panel_offers_the_source_box_any_more(page, base_url):
+    """`Allikas` is a `Muuda` control now, on both panels (docs/adr/0095 §4)."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
     open_add_panel(page, "lisa-tagasiside")
-    expect(panel(page, "lisa-tagasiside").locator("[name=source_label]")).to_be_visible()
+    expect(panel(page, "lisa-tagasiside").locator("[name=source_label]")).to_have_count(0)
 
     open_add_panel(page, "lisa-valine-seisukoht")
     expect(panel(page, "lisa-valine-seisukoht").locator("[name=source_label]")).to_have_count(0)
+
+
+def test_the_member_mark_is_on_the_received_panel_alone_and_is_recorded(page, base_url):
+    """`Liige` — ticked by the person filing the answer, and nowhere else.
+
+    The asymmetry is a rule rather than a rendering decision: `+ Teiste arvamus`
+    records a position Koda found published somewhere, which was not written to
+    Koda at all, so there is no question for the box to answer
+    (docs/adr/0095 §4).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+
+    open_add_panel(page, "lisa-valine-seisukoht")
+    expect(panel(page, "lisa-valine-seisukoht").locator("[name=source_is_member]")).to_have_count(0)
+
+    open_add_panel(page, "lisa-tagasiside")
+    form = panel(page, "lisa-tagasiside")
+    mark = form.locator("[name=source_is_member]")
+    expect(mark).to_have_count(1)
+    expect(mark).not_to_be_checked()
+
+    choose_organisation(page, "tagasiside")
+    # `.chip__input` is a transparent overlay filling the chip (`inset: 0`,
+    # `opacity: 0`, `z-index: 1`), so it *is* the click target — clicking the
+    # label's text is intercepted by it, by design.
+    mark.check()
+    expect(mark).to_be_checked()
+    form.locator("[name=summary]").fill("Vastasid kirjaga.")
+    form.get_by_role("button", name="Salvesta tagasiside").click()
+
+    chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
+    expect(chronology(page)).to_contain_text(f"Meile saadetud tagasiside: {MINISTRY}")
 
 
 def test_a_named_organisation_reads_under_the_received_heading(page, base_url):
@@ -281,6 +314,12 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
     unlabelled under a headline naming the ministry reads as part of what the
     ministry said, which is the attribution defect with better line spacing
     (docs/adr/0091 §4).
+
+    **Written through `Muuda`**, because docs/adr/0095 §3 took the box off the
+    creation panel and left it on the correction form. That makes this test say
+    rather more than it did: the note is still asked for, still stored, and
+    still rendered apart from the position — and the path a lawyer now takes to
+    add one is the one being exercised.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -289,10 +328,16 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
     form = panel(page, "lisa-valine-seisukoht")
     choose_organisation(page, "valine-seisukoht")
     form.locator("[name=summary]").fill("Toetab varianti B.")
-    form.locator("[name=lawyer_note]").fill("Põhjendus ei arvesta liikmete kulumõjuga.")
     form.get_by_role("button", name="Salvesta arvamus").click()
-
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
+
+    chronology(page).get_by_role("button", name="Muuda").first.click()
+    correction = chronology(page).locator("form[aria-label='Välise seisukoha parandamine']")
+    correction.wait_for(state="visible")
+    correction.locator("[name=lawyer_note]").fill("Põhjendus ei arvesta liikmete kulumõjuga.")
+    correction.get_by_role("button", name="Salvesta").click()
+
+    chronology(page).get_by_text("Juristi märkus").first.wait_for()
     row = chronology(page).locator("article.uxtl__item").first
     expect(row.locator(".uxtl__mssub")).to_have_text("Toetab varianti B.")
     note = row.locator(".uxtl__msnote")
@@ -307,14 +352,20 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def _record_koda_opinion(page, base_url: str, *, sent_on: str) -> None:
+def _record_koda_opinion(page, base_url: str, *, sent_on: str, summary: str = "") -> None:
     open_add_panel(page, "lisa-koja-arvamus")
     form = panel(page, "lisa-koja-arvamus")
     form.locator("input[type=file]").set_input_files(
         {"name": "koja_arvamus.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
     form.locator("[name=sent_on]").fill(sent_on)
-    form.get_by_role("checkbox", name=MINISTRY, exact=True).check()
+    # The addressee through the shared search, not by ticking a chip: since
+    # docs/adr/0095 §1 the catalogue is behind «Otsi või lisa asutus…» and an
+    # institution outside the answer set is `hidden` until the search reveals
+    # it, so `check()` would assert something a person never does.
+    choose_organisation(page, "koja-adressaat")
+    if summary:
+        form.locator("[name=summary]").fill(summary)
     form.get_by_role("button", name="Registreeri arvamus").click()
 
 
@@ -341,16 +392,65 @@ def test_the_koda_opinion_panel_refuses_a_save_with_nothing_in_it(page, base_url
     open_add_panel(page, "lisa-koja-arvamus")
 
     form = panel(page, "lisa-koja-arvamus")
-    form.locator("[name=title]").fill("Koja arvamus eelnõule")
+    form.locator("[name=summary]").fill("Toetame eelnõu.")
     form.locator("[name=sent_on]").fill("")
     form.get_by_role("button", name="Registreeri arvamus").click()
 
     expect(page.locator("#lisa-koja-arvamus")).to_contain_text("Lisa fail, mis välja saadeti.")
     expect(page.locator("#lisa-koja-arvamus")).to_contain_text("Vali vähemalt üks adressaat.")
     # And what they typed is still in its box.
-    expect(page.locator("#lisa-koja-arvamus").locator("[name=title]")).to_have_value(
-        "Koja arvamus eelnõule"
+    expect(page.locator("#lisa-koja-arvamus").locator("[name=summary]")).to_have_value(
+        "Toetame eelnõu."
     )
+
+
+def test_the_koda_opinion_panel_asks_a_summary_and_no_title(page, base_url):
+    """docs/adr/0095 §2, where a lawyer meets it.
+
+    The box that asked for a name is gone from the document — not hidden — and
+    what replaces it is a textarea asking what the opinion said.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "lisa-koja-arvamus")
+
+    form = panel(page, "lisa-koja-arvamus")
+    expect(form.locator("[name=title]")).to_have_count(0)
+    expect(form.locator("textarea[name=summary]")).to_be_visible()
+    expect(form).not_to_contain_text("Registreerib, et Koja arvamus on välja saadetud")
+    # And the addressee control is the shared searchable one, with the catalogue
+    # behind it rather than drawn under it (docs/adr/0095 §1).
+    expect(form.locator("#koja-adressaat-valik [data-orgfind-input]")).to_be_visible()
+
+
+def test_the_opinion_summary_reads_back_on_the_file(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    written = "Toetame eelnõu, kuid palume kaheaastast üleminekuaega."
+    _record_koda_opinion(page, base_url, sent_on=_past(1), summary=written)
+
+    expect(chronology(page)).to_contain_text(written)
+
+
+def test_the_addressee_opens_on_the_teema_sender(page, base_url):
+    """The suggestion docs/adr/0095 §1 put in the control, and it is removable.
+
+    The Teema is filed with `MINISTRY` as `Saatja`, so the panel opens with that
+    body already chosen — visibly, where it can be read and cleared, which is
+    what separates a default from a stamp (docs/adr/0078 §2).
+    """
+    sign_in(page, base_url, SANDRA)
+    create_matter(page, base_url, unique_title("Adressaat"), sender=MINISTRY)
+    open_add_panel(page, "lisa-koja-arvamus")
+
+    chosen = panel(page, "lisa-koja-arvamus").locator(
+        "#koja-adressaat-valik .orgfind__chips .chip", has_text=MINISTRY
+    )
+    expect(chosen).to_be_visible()
+    expect(chosen.locator("input")).to_be_checked()
+
+    chosen.click()
+    expect(chosen.locator("input")).not_to_be_checked()
 
 
 # ---------------------------------------------------------------------------
@@ -471,20 +571,23 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     kaasamine.get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("234 tööstusettevõtet").first.wait_for()
 
-    # What came back, with no organisation to invent.
+    # What came back — named, and marked as a member's. `Allikas` is a `Muuda`
+    # control since docs/adr/0095 §4, so the creation panel names an
+    # institution.
     open_add_panel(page, "lisa-tagasiside")
     tagasiside = panel(page, "lisa-tagasiside")
-    tagasiside.locator("[name=source_label]").fill("Tööstusettevõtete küsitlus")
+    choose_organisation(page, "tagasiside")
+    tagasiside.locator("[name=source_is_member]").check()
     tagasiside.locator("[name=summary]").fill("58 vastust; enamik toetab.")
     tagasiside.get_by_role("button", name="Salvesta tagasiside").click()
     chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
 
-    # What somebody else said, with this office's reading kept apart from it.
+    # What somebody else said. `Juristi märkus` is a `Muuda` control too, so the
+    # one substantive box is `Seisukoht` (docs/adr/0095 §3).
     open_add_panel(page, "lisa-valine-seisukoht")
     valine = panel(page, "lisa-valine-seisukoht")
     choose_organisation(page, "valine-seisukoht")
     valine.locator("[name=summary]").fill("Toetab varianti B.")
-    valine.locator("[name=lawyer_note]").fill("Ei arvesta kulumõjuga.")
     valine.get_by_role("button", name="Salvesta arvamus").click()
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
 

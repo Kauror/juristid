@@ -758,14 +758,20 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     # carries the shared group at all — there is no unused branch to declare,
     # because there is no branch. The column, its values and every surface that
     # renders an approximate engagement are unchanged; what went is the question.
+    #
+    # **`position_half` went the same way, and so did every other `position_*`
+    # period field.** docs/adr/0095 §3 took the four precision chips off the two
+    # feedback panels — one exact date is what feedback that arrived this week is
+    # answered with — so `CompactExternalPositionForm` no longer carries the
+    # shared group either. `ExternalPositionEditForm` still does, which is where
+    # a paper remembered as «kevadel 2019» is corrected, and every stored
+    # `MONTH`/`QUARTER`/`YEAR` row keeps its precision and its rendering. That
+    # form is not a workspace panel, so its fields are not enumerated here.
     derived = {
         "deadline_half",
         "effective_half",
         "victory_half",
         "next_half",
-        # `+ Väline seisukoht` took the same shared precision group, so it
-        # carries the same unused branch for the same reason (docs/adr/0084 §2).
-        "position_half",
         # And `+ Menetluse areng`, which is the seventh surface to take it. A
         # procedural step is routinely remembered as «oktoobris», so the panel
         # offers the four precisions — and `Poolaasta` is not one of the four, so

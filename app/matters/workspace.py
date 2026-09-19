@@ -490,6 +490,7 @@ def add_matter_external_position(
     stated_on_precision: str = DatePrecision.EXACT.value,
     summary: str = "",
     lawyer_note: str = "",
+    source_is_member: bool = False,
     engagement: Any = None,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
@@ -554,6 +555,7 @@ def add_matter_external_position(
             stated_on_precision=stated_on_precision,
             summary=summary,
             lawyer_note=lawyer_note,
+            source_is_member=source_is_member,
             engagement=engagement,
             attachment_count=len(files),
             actor=author,
@@ -580,6 +582,7 @@ def add_matter_koda_opinion(
     recipients: Sequence[Any],
     sent_on: Any,
     title: str = "",
+    summary: str = "",
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -615,11 +618,24 @@ def add_matter_koda_opinion(
     rule R2-01 put there after a blank box became `timezone.now()` and the outbound
     register reported `Arvamus välja <today>` about letters nobody had dated.
 
-    ``recipients`` is who it actually went to, and is **never defaulted from the
-    Matter's sender**. An opinion on the first draft goes to the ministry; one at
-    second reading goes to a Riigikogu committee. Assuming the sender would put a
-    false recipient on the canonical outbound record of a professional letter
-    (docs/adr/0091 §6.3).
+    ``recipients`` is who it actually went to, and this function still defaults
+    nothing: what it writes is exactly the list it was handed. The Teema panel
+    now *offers* the Matter's senders in its control, where they can be read and
+    removed before anything is saved — a form default rather than a service one,
+    which is the distinction docs/adr/0091 §6.3's refusal was really about. An
+    opinion on the first draft goes to the ministry and one at second reading
+    goes to a Riigikogu committee, and neither is assumed here
+    (docs/adr/0078 §2, docs/adr/0095 §1).
+
+    **Nothing in this function reads or writes `Matter.source_organisations`.**
+    `SubmissionRecipient` and `Saatja` are two facts, and recording an opinion
+    leaves the second exactly as it was.
+
+    ``title`` is still optional and the uploaded file's own name is still what a
+    blank means — the Teema panel simply no longer offers the box, so that is
+    what it always passes. ``summary`` is the new `Kokkuvõte`: what the opinion
+    argued, in the lawyer's words, stored on the `Submission` and never read as
+    a headline (docs/adr/0095 §2).
 
     Several per Matter is ordinary. Nothing here is unique on the Matter, nothing
     supersedes an earlier opinion, and no earlier `Submission`, `Document` or
@@ -675,6 +691,7 @@ def add_matter_koda_opinion(
             version=version,
             title=document.title,
             actor=author,
+            summary=summary,
             recipients=list(recipients),
             sent_at=moment,
             sent_at_precision=SentAtPrecision.DATE,
