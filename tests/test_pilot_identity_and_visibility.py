@@ -86,9 +86,7 @@ def test_no_business_form_asks_about_visibility_at_all(form):
     assert "visibility" not in form().fields
 
 
-def test_the_matter_page_still_explains_a_restriction_it_is_carrying(
-    signed_in, restricted_matter
-):
+def test_the_matter_page_still_explains_a_restriction_it_is_carrying(signed_in, restricted_matter):
     """Once, in the banner, rather than twice.
 
     The second copy was the header's ⋯ menu, under the control that wrote it.
