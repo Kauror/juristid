@@ -24,10 +24,20 @@ from e2e.conftest import (
     READER,
     SANDRA,
     open_composer,
+    open_hetkeseis,
     open_next_action_form,
     sign_in,
     sign_out,
 )
+
+#: The step `Uus teema` gives a file, in the department's own words.
+#:
+#: Not typed by the lawyer any more: the walkthrough used to write «Koosta ja
+#: saada koja arvamus» into `Järgmiseks`, and that block is off the creation
+#: page — `Arvamuse tähtaeg` establishes this step instead, from the service's
+#: own constant, so that what a person reads before saving and what lands on
+#: their Minu asjad are one string (`app.workflow.services`, docs/adr/0094 §5).
+FIRST_STEP = "Koostan arvamuse"
 
 pytestmark = pytest.mark.e2e
 
@@ -146,22 +156,20 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     ).click()
     expect(page.get_by_role("checkbox", name="Näidisministeerium")).to_be_checked()
 
-    # Hetkeseis is visible radio chips, not a dropdown: it holds one value and
-    # the control says so (Agent-UI brief 5.1). `Menetlusliik` was the second
-    # such row and is read off `Õigusakt` now, so this walkthrough answers the
-    # question the page asks (docs/adr/0090 §4).
+    # Hetkeseis is a menu holding radio chips, not a dropdown of options and not
+    # a fold: it holds one value, the control says so, and answering it shuts
+    # itself again (docs/adr/0094 §2). `Menetlusliik` was the second such row and
+    # is read off `Õigusakt` now, so this walkthrough answers the question the
+    # page asks (docs/adr/0090 §4).
+    open_hetkeseis(page)
     page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
     page.get_by_role("checkbox", name="Seadus", exact=True).check()
-    page.locator("#id_response_deadline").fill(_future(21))
 
-    page.locator("#id_next-text").fill("Koosta ja saada koja arvamus")
-    # Two questions and no third. There is no kind to pick and no date meaning
-    # to confirm: a step created here is DO / DEADLINE / EXACT, decided by the
-    # form and asked of nobody (ADR 0052 addendum). `Kuupäev…` is opened rather
-    # than a quick span pressed, because this walkthrough needs a date it can
-    # name later.
-    page.locator("#jargmine-tegevus").locator("summary", has_text="Kuupäev…").click()
-    page.locator("#id_next-target_date").fill(_future(14))
+    # One date, and it does both things. `Arvamuse tähtaeg` records what Koda
+    # owes *and* establishes the file's first step — `Koostan arvamuse`, which
+    # the walkthrough names further down. `Järgmiseks` was a second box here and
+    # is off this page (docs/adr/0094 §5, §6).
+    page.locator("#id_response_deadline").fill(_future(21))
     screenshots(page, "02-uus-teema")
 
     page.get_by_role("button", name="Loo teema").click()
@@ -176,7 +184,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(crumbs.get_by_role("link", name="Teemad")).to_be_visible()
     assert not re.search(r"\d{4}_\d+", crumbs.inner_text()), crumbs.inner_text()
 
-    expect(page.locator(".curact__text")).to_have_text("Koosta ja saada koja arvamus")
+    expect(page.locator(".curact__text")).to_have_text(FIRST_STEP)
     # The step and its date, and no word saying which of three categories it
     # is. The classification the composer used to demand went with the composer
     # question that demanded it (ADR 0052 §6).
@@ -196,7 +204,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # step is on the page as its own sentence — and with no classification chip
     # in front of it, on this surface any more than on the Teema (ADR 0054).
     page.locator(".topnav__link", has_text="Minu asjad").click()
-    row = page.locator(".workrow2").filter(has_text="Koosta ja saada koja arvamus")
+    row = page.locator(".workrow2").filter(has_text=FIRST_STEP)
     expect(row).to_have_count(1)
     expect(row.locator(".mode")).to_have_count(0)
     for retired in ("TEEN", "OOTAN", "JÄLGIN"):
@@ -273,7 +281,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
         assert retired not in step, f"the step still says «{retired}»"
     expect(zone).not_to_have_class("curact--overdue")
     # The superseded DO must no longer be presented as the current action.
-    expect(zone.get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
+    expect(zone.get_by_text(FIRST_STEP)).to_have_count(0)
 
     # The chronology is open by default since the v2 rebuild — the first page of
     # it is what a lawyer opens the file for — and it is still below the next

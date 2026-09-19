@@ -17,7 +17,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, open_valdkond, sign_in
+from e2e.conftest import MARTIN, give_first_step, open_valdkond, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -44,8 +44,7 @@ def name_a_next_step(page) -> None:
     expecting the seeded unassigned Teema to be on it. This file files several
     Matters, so it owes each of them a next step (e2e/conftest.py).
     """
-    page.fill("#id_next-text", "Kontrollida, mida fail nõuab")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
 
 
 def create_with_files(page, base_url: str, title: str, paths: list[str]) -> str:

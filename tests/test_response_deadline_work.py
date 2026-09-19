@@ -1020,7 +1020,26 @@ def test_submitting_the_form_untouched_stores_no_deadline(signed_in, specialist,
 
 
 def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specialist):
-    """D and E. Entered deliberately, stored exactly, and immediately work."""
+    """D and E. Entered deliberately, stored exactly, and immediately work.
+
+    **It arrives as the step rather than as the obligation, and that is
+    docs/adr/0050 working.** Since docs/adr/0094 §5 the one date this page asks
+    for does two things: it writes `Matter.response_deadline` and it establishes
+    `Koostan arvamuse` for the same day. An open `NextAction` is the lawyer's
+    current instruction, and the rule this whole file is built on says the
+    surfaces show that instead of the deadline underneath it — so the file is
+    one row, not two rows about the same day.
+
+    Nothing about the *stored* column moved, and the assertions below say so
+    from both sides: the date is exactly what was typed, the Matter is in the
+    same population and on the same register view it was in before, and what
+    changed is only which sentence the row carries.
+
+    `Arvamuse tähtaeg` still surfaces as itself wherever no open step displaces
+    it — a Matter imported from the register, one whose step has been completed,
+    one created before this round. The section directly below owns that rule and
+    is untouched.
+    """
     anchor = _wednesday()
     due = anchor + timedelta(days=2)
     signed_in.post(
@@ -1035,6 +1054,51 @@ def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specia
     matter = Matter.objects.get(title="Sisestatud tähtajaga teema")
     assert matter.response_deadline == due
 
+    # One row for the file, and it is the step the lawyer was shown before they
+    # pressed the button.
+    (item,) = [
+        entry for entry in wi.work_items(specialist, today=anchor) if entry.matter_id == matter.pk
+    ]
+    assert item.source_type == wi.SOURCE_NEXT_ACTION
+    assert item.when == due
+    # The obligation is suppressed rather than discharged: it is not a second
+    # row, and the column still holds the day.
+    assert not [
+        entry
+        for entry in _response_items(wi.work_items(specialist, today=anchor))
+        if entry.matter_id == matter.pk
+    ]
+
+    # E, unchanged: the file is live work on the day it was filed, on the
+    # population and on the register view alike.
+    assert matter.pk in wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
+    assert matter.pk in _register(specialist, anchor, too=wi.WORK_DEADLINE_THIS_WEEK)
+
+
+def test_completing_the_step_hands_the_row_back_to_the_deadline(signed_in, specialist):
+    """The other half of the suppression, and the proof it is not a deletion.
+
+    `Koostan arvamuse` done, and `Arvamuse tähtaeg` is what the file is standing
+    on again — same day, same column, never rewritten. That is what makes the
+    assertion above a statement about *display order* rather than about the
+    record (docs/adr/0050, docs/adr/0094 §5).
+    """
+    from app.workflow.models import NextAction
+    from app.workflow.services import complete_next_action
+
+    anchor = _wednesday()
+    due = anchor + timedelta(days=2)
+    signed_in.post(
+        CREATE_URL,
+        {
+            "title": "Lõpetatud sammuga teema",
+            "owner": specialist.pk,
+            "response_deadline": f"{due.day}.{due.month}.{due.year}",
+        },
+    )
+    matter = Matter.objects.get(title="Lõpetatud sammuga teema")
+    complete_next_action(action=NextAction.objects.get(matter=matter), actor=specialist)
+
     (item,) = [
         entry
         for entry in _response_items(wi.work_items(specialist, today=anchor))
@@ -1042,8 +1106,8 @@ def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specia
     ]
     assert item.meaning == wi.MEANING_RESPONSE
     assert item.when == due
-    assert matter.pk in wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
-    assert matter.pk in _register(specialist, anchor, too=wi.WORK_DEADLINE_THIS_WEEK)
+    matter.refresh_from_db()
+    assert matter.response_deadline == due
 
 
 # ---------------------------------------------------------------------------

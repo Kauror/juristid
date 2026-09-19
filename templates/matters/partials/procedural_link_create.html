@@ -8,110 +8,110 @@ sent. The address is on screen at the moment the file is being opened, and
 making somebody create the Teema and then go and find it again is how it ends up
 in a browser history instead of on the file.
 
-**Folded, and that is not a detail.** The same round of feedback produced
-docs/adr/0088, whose complaint about this page is that too much on it asks for
-attention before a question has been answered — three blocks at once made the
-capture screen read as a survey again. A fourth, permanently expanded, would be
-that complaint answered and then re-created by the very next package. So this
-block takes the exact shape `Valdkond` took when ADR 0088 folded it: one
-`<details class="chipdetails chipdetails--field">`, a summary naming the thing,
-and the address beside the name once there is one — `Valdkond · Energeetika` and
-`Menetluse link · EIS` are the same affordance.
+**Open, and it was folded.** docs/adr/0088 folded it, on the argument that a
+fourth permanently expanded block would re-create the complaint the fold existed
+to answer — too much on the capture screen asking for attention before a question
+had been answered. That argument was about *four* blocks. There are two now: this
+one and `Arvamuse tähtaeg`. What the fold cost instead was a click before the box
+could be typed into, on the one question whose answer is already on the reader's
+screen, and the lawyers asked for it back (docs/adr/0094 §3).
 
-`<details>` rather than anything scripted, so it opens with scripting off. It is
-server-rendered **open** whenever it holds a typed value or a refusal, which is
-what stops a rejected save hiding the box somebody has to correct.
-`data-stay-closed` is read by `bindOpenChosenDetails` and is what keeps the
-pre-selected `EIS` chip from opening the fold on every visit: a chip nobody
-clicked is not a reason to unfold anything (static/js/app.js).
+So no `<details>`, no summary, no `chosen_summary` and no `disclosure_open`. A
+labelled group with two boxes in it, visible on arrival, and a refusal that is
+simply in the page where it happened. Nothing has to be opened before it can be
+read, which was the whole of what those three properties existed to arrange.
 
-**One row, and nothing on it is required.** All three boxes empty is the
-ordinary submit: no row is written, no event is recorded and nothing is
-mentioned anywhere. The second and third addresses turn up later, as the file
-moves, and the Teema page's own `+ Menetluse link` is what records those — a
-repeating control here would put an empty table on a form whose whole design is
-that nothing on it is required (docs/adr/0089 §7).
+**Two questions, and the source is not one of them.** The five sources were a
+chip row above these boxes — `EIS` (pre-selected), `Ministeeriumi
+dokumendiregister`, `ELi menetlus`, `Riigikogu`, `Muu menetluslink`. It is gone:
+filing a Teema, a lawyer has an address in front of them, and classifying where
+that address lives is work the form was making them do before it would accept the
+thing they came to record.
 
-**`EIS` is pre-selected**, unlike the Teema page's panel. Here the commonest
-origin by a wide margin is a draft in EIS, and the chip is inert until somebody
-types an address: `wants_link` reads the *address* box and nothing else, so a
-selected chip on its own records nothing at all.
+What a row is stored under is `ProceduralLinkCreateForm.STORED_KIND` — the enum's
+own `Muu menetluslink`, which is what an unclassified link truthfully is, and a
+value `ProceduralLinkKind` already documents as «a real answer rather than a gap».
+No new enum value, no migration, and **nothing infers the kind from the address**:
+no hostname rule, no fetch, no guess. The other four values are untouched and are
+still offered where a person states the fact deliberately — the Teema page's own
+`+ Menetluse link` panel and `Muuda menetluse linki`. Every historical row keeps
+what it was filed under.
 
-**A `prefix`, not an `auto_id`.** This is the one procedural-link form that
-shares a `<form>` element with another form — `MatterCreateForm` — and
-`NextActionForm` above it already uses `prefix="next"` for exactly that reason:
-the prefix namespaces the POST keys as well as the ids, so neither form can be
-changed in a way that silently collides with a field name in the other
-(docs/adr/0089 §13).
+**One row, and nothing on it is required.** Both boxes empty is the ordinary
+submit: no row is written, no event is recorded and nothing is mentioned
+anywhere. The second and third addresses turn up later, as the file moves, and
+the Teema page's own `+ Menetluse link` is what records those — a repeating
+control here would put an empty table on a form whose whole design is that
+nothing on it is required (docs/adr/0089 §7).
 
-**This partial is the whole of Package B's footprint on this page.** The rest of
-`matter_create.html` is untouched — one `{% include %}` in the form and nothing
-else — because `Uus teema` is worked on by more than one package at a time and a
-broad rewrite here would be a merge conflict rather than a feature.
+**A `prefix`, not an `auto_id`.** This form shares a `<form>` element with
+`MatterCreateForm`, so the prefix namespaces the POST keys as well as the ids and
+neither form can be changed in a way that silently collides with a field name in
+the other (docs/adr/0089 §13).
+
+**This partial is still the whole of this block's footprint on the page.** One
+`{% templatetag openblock %} include {% templatetag closeblock %}` in
+`matter_create.html` and nothing else, because `Uus teema` is worked on by more
+than one package at a time and a broad rewrite there would be a merge conflict
+rather than a feature.
 {% endcomment %}
 <div class="createform__row">
-  <details class="chipdetails chipdetails--field" id="menetluse-link" data-stay-closed
-           {% if procedural_link_form.disclosure_open %}open{% endif %}>
+  {% comment %}
+    A `<fieldset>` and a `<legend>`, which is what two boxes answering one
+    question are. The legend is the block's name and is visible — there is no
+    summary above it any more to say the words a second time.
+  {% endcomment %}
+  <fieldset class="field" id="menetluse-link">
+    <legend class="field__label">Menetluse link</legend>
     {% comment %}
-      The name, and the answer beside it once there is one. The same shape
-      `Valdkond` uses: beside the answer itself, a count or a second label would
-      be the same fact said twice on a page this round exists to quieten.
-      Server-rendered, so nothing is lost with scripting off.
+      The form's own field language — `.createform__pair`, `.field`,
+      `.field__label` — rather than the `cx-*` grid this block used while it was
+      folded away. Those classes are laid out only under `#teema-vaade-wrap`,
+      which is the Teema page: here they resolved to nothing, so the two boxes
+      rendered with their labels inline and a fraction of the width every other
+      field on the page has. Nobody had seen it, because the block was shut
+      (docs/adr/0094 §3).
     {% endcomment %}
-    <summary class="chipdetails__summary">
-      Menetluse link{% if procedural_link_form.chosen_summary %} · {{ procedural_link_form.chosen_summary }}{% endif %}
-    </summary>
-    <div class="chipdetails__body">
+    <div class="createform__pair">
+      <label class="field" for="{{ procedural_link_form.url.id_for_label }}">
+        <span class="field__label">{{ procedural_link_form.url.label }}</span>
+        {{ procedural_link_form.url }}
+      </label>
       {% comment %}
-        The five sources as chips rather than a `<select>`, for the reason
-        `Menetlusliik` and `Hetkeseis` are chip rows: with a vocabulary of five,
-        a select is a click spent finding out what the options even are.
+        `Nimetus`, and the word «valikuline» is not beside it any more.
 
-        A real `<fieldset>` and `<legend>`, because the group is one question
-        and a screen reader announcing five unlabelled radios is a group nobody
-        can answer. The legend is visually hidden: the disclosure's own summary
-        directly above it already names the block, and printing the words twice
-        is what the fold exists to stop.
+        It is still optional — `required=False`, and the mixin refuses nothing
+        about it — which is the point: on a form whose only required field is
+        `Pealkiri`, marking one optional box and not the other eleven says
+        something untrue about the eleven. The label is the label
+        (docs/adr/0094 §3).
       {% endcomment %}
-      <fieldset class="field">
-        <legend class="field__label visually-hidden">{{ procedural_link_form.kind.label }}</legend>
-        <div class="chiprow">
-          {% for choice in procedural_link_form.kind %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        {% if procedural_link_form.kind.errors %}
-          <span class="field__error" id="{{ procedural_link_form.kind.auto_id }}_error">
-            {{ procedural_link_form.kind.errors|first }}</span>
-        {% endif %}
-      </fieldset>
-
-      <div class="cx-grid cx-grid--links">
-        <label class="cx-f" for="{{ procedural_link_form.url.id_for_label }}">
-          <span class="cx-f__lab">{{ procedural_link_form.url.label }}</span>
-          {{ procedural_link_form.url }}
-        </label>
-        <label class="cx-f" for="{{ procedural_link_form.label.id_for_label }}">
-          <span class="cx-f__lab">{{ procedural_link_form.label.label }}
-            <span class="cx-f__opt">valikuline</span></span>
-          {{ procedural_link_form.label }}
-        </label>
-      </div>
-      {% if procedural_link_form.url.errors %}
-        <span class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
-          {{ procedural_link_form.url.errors|first }}</span>
-      {% endif %}
-      {% if procedural_link_form.label.errors %}
-        <span class="field__error" id="{{ procedural_link_form.label.auto_id }}_error">
-          {{ procedural_link_form.label.errors|first }}</span>
-      {% endif %}
-      <p class="cx-note">
-        Avalik http:// või https:// aadress. Link salvestatakse sellisena, nagu ta
-        on — lehte ei avata ega jälgita. Lisada saab ka hiljem teema lehel.
-      </p>
+      <label class="field" for="{{ procedural_link_form.label.id_for_label }}">
+        <span class="field__label">{{ procedural_link_form.label.label }}</span>
+        {{ procedural_link_form.label }}
+      </label>
     </div>
-  </details>
+    {% if procedural_link_form.url.errors %}
+      <span class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
+        {{ procedural_link_form.url.errors|first }}</span>
+    {% endif %}
+    {% if procedural_link_form.label.errors %}
+      <span class="field__error" id="{{ procedural_link_form.label.auto_id }}_error">
+        {{ procedural_link_form.label.errors|first }}</span>
+    {% endif %}
+    {% comment %}
+      The paragraph under the boxes is gone. It said that the address must be
+      public http:// or https://, that the link is stored as it stands and the
+      page is never opened or followed, and that it can be added later on the
+      Teema page. All three are true and none of them is something a lawyer needs
+      told every time they file: the first is what the refusal says when it
+      applies, the second is a property of the system rather than an instruction,
+      and the third is what the note beside «Loo teema» already promises about
+      everything on this form (docs/adr/0094 §3).
+
+      The rule itself is untouched — `normalize_procedural_link_url` in
+      `app.matters.services` is still what accepts or refuses an address, and it
+      still answers in its own words, under this box.
+    {% endcomment %}
+  </fieldset>
 </div>

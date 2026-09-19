@@ -2743,6 +2743,119 @@
     }
   }
 
+  /* ---- Valdkonnad and Hetkeseis: a menu, not a fold ----------------------
+   *
+   * The markup is a `<details>` whose panel is taken out of flow by CSS, so
+   * opening it overlays the rest of the form instead of pushing it down
+   * (`.chipmenu__panel`, docs/adr/0094 §2). Everything a `<details>` already
+   * does is left to it: the trigger is one tab stop, it opens on Enter and on
+   * Space, it reports its own expanded state, and it works with this file not
+   * loaded at all.
+   *
+   * Three things it does not do, and all three are what makes a *menu* a menu
+   * rather than a fold:
+   *
+   *  - **Escape closes it**, and puts the focus back on the trigger. Without
+   *    that a keyboard user who opened the vocabulary by mistake has to tab
+   *    through twenty-two checkboxes to get out of it.
+   *  - **A click outside closes it.** A fold may be left open; a menu left open
+   *    over the fields below it is a menu covering the form.
+   *  - **A single-select menu closes when it is answered.** `Hetkeseis` holds
+   *    one value, so the question is over the moment a radio is picked — and
+   *    leaving the panel up would hide `Õigusakt` behind an answered question.
+   *    A multi-select menu deliberately does **not** close: the whole point of
+   *    `Valdkonnad` is that several may be ticked in one visit (task §1).
+   *
+   * `aria-expanded` is written here rather than in the template, and that is
+   * deliberate. A `<summary>` already exposes its expanded state natively, so a
+   * server-rendered attribute would be a second copy of the same fact — and
+   * with scripting off `<details>` still toggles, so that copy would go stale
+   * and announce the opposite of what the reader sees. Written by the script it
+   * exists only where something is keeping it true.
+   */
+  function bindChipMenus(scope) {
+    (scope || document).querySelectorAll("details.chipmenu").forEach(function (menu) {
+      if (!once(menu, "ChipMenu")) {
+        return;
+      }
+      var trigger = menu.querySelector("summary.chipmenu__trigger");
+      if (!trigger) {
+        return;
+      }
+      var panel = menu.querySelector(".chipmenu__panel");
+      if (panel && panel.id) {
+        /* Native already: a summary owns the details' contents. Stated as well
+           because the panel is one element with one id, and a pointer that can
+           be followed is cheaper for a reader than a container relationship
+           they have to infer. */
+        trigger.setAttribute("aria-controls", panel.id);
+      }
+
+      var syncExpanded = function () {
+        trigger.setAttribute("aria-expanded", menu.open ? "true" : "false");
+      };
+      syncExpanded();
+      menu.addEventListener("toggle", syncExpanded);
+
+      var shut = function (refocus) {
+        if (!menu.open) {
+          return;
+        }
+        menu.open = false;
+        if (refocus) {
+          trigger.focus();
+        }
+      };
+
+      /* On the menu rather than on the document, so Escape inside one panel
+         cannot close another — and so Escape outside every menu keeps whatever
+         meaning the surface gives it elsewhere (`bindStageHelp`, the persona
+         popover). */
+      menu.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") {
+          return;
+        }
+        if (!menu.open) {
+          return;
+        }
+        /* Stopped, because Escape here means «shut this menu» and nothing
+           further up the page should also act on it. */
+        event.preventDefault();
+        event.stopPropagation();
+        shut(true);
+      });
+
+      /* Answered, so the question is over — single-select only. The focus goes
+         back to the trigger, which now carries the answer: leaving it on a
+         radio inside a panel that has just been hidden would strand it on an
+         element nobody can see. */
+      if (menu.hasAttribute("data-chipmenu-single")) {
+        menu.addEventListener("change", function (event) {
+          var target = event.target;
+          if (!target || target.type !== "radio") {
+            return;
+          }
+          shut(true);
+        });
+      }
+
+      /* A click outside. `mousedown` rather than `click`, so the menu is gone
+         before the click lands on whatever was under it — with `click` the
+         panel was still up when a chip below it was pressed, and the press went
+         to the panel.
+         No refocus: the reader has already said where they are going. */
+      document.addEventListener("mousedown", function (event) {
+        if (!menu.open) {
+          return;
+        }
+        if (event.target && menu.contains(event.target)) {
+          return;
+        }
+        shut(false);
+      });
+    });
+  }
+
   /* ---- What is chosen, on the door that hides it --------------------------
    *
    * A disclosure that folds a vocabulary away has to say what the answer is, or
@@ -2787,6 +2900,17 @@
         return text ? text.textContent.trim().replace(/\s*×$/, "") : "";
       };
 
+      /* Names or a number, and which one is the trigger's own decision.
+       *
+       * `Hetkeseis` holds one value, so its name *is* the compact answer:
+       * «Hetkeseis · Riigikogus». `Valdkonnad` holds several, and three
+       * Estonian policy areas spelled out are wider than the field — the
+       * trigger would ellipsise to «Maksujõuetus, Energee…», which says less
+       * than a count does about whether anything has been answered at all. So
+       * the multi-select counts, and `policy_area_chosen` renders exactly this
+       * number server-side (docs/adr/0094 §2.2). */
+      var counting = target.hasAttribute("data-chipsummary-count");
+
       var sync = function () {
         var chosen = [];
         boxes.forEach(function (box) {
@@ -2797,9 +2921,13 @@
             }
           }
         });
+        if (!chosen.length) {
+          target.textContent = "";
+          return;
+        }
         /* textContent, so a vocabulary label containing a bracket or an
            ampersand stays a label. */
-        target.textContent = chosen.length ? " · " + chosen.join(", ") : "";
+        target.textContent = " · " + (counting ? String(chosen.length) : chosen.join(", "));
       };
 
       boxes.forEach(function (box) {
@@ -3547,6 +3675,7 @@
     bindExclusiveName(document);
     bindOrganisationPickers(document);
     bindOpenChosenDetails(document);
+    bindChipMenus(document);
     bindChipCounts(document);
     bindChipSummaries(document);
     bindStageHelp(document);
@@ -3581,6 +3710,7 @@
     bindExclusiveName(event.target.querySelector ? event.target : document);
     bindOrganisationPickers(event.target.querySelector ? event.target : document);
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
+    bindChipMenus(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindChipSummaries(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);

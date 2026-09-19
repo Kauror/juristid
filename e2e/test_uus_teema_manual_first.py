@@ -19,14 +19,14 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, open_valdkond, sign_in
+from e2e.conftest import MARTIN, VALDKONNAD_MENU, open_valdkond, sign_in
 
 pytestmark = pytest.mark.e2e
 
 CREATE_PATH = "/teemad/uus/"
 NARROW = {"width": 420, "height": 900}
 
-VALDKOND = "[data-valdkond-disclosure]"
+VALDKOND = VALDKONNAD_MENU
 SENDER_CHIPS = "#saatja-valik label.chip"
 
 
@@ -146,12 +146,12 @@ def test_the_quiet_sender_field_fits_a_narrow_screen(page, base_url):
 
 
 def test_valdkond_arrives_shut_and_opens_when_asked(page, base_url):
-    """The vocabulary is behind a door, and the door opens."""
+    """The vocabulary is behind a trigger, and the trigger opens a menu."""
     create_form(page, base_url)
 
     disclosure = page.locator(VALDKOND)
     expect(disclosure).to_be_visible()
-    assert not disclosure.evaluate("node => node.open"), "Valdkonnad is unfolded on arrival"
+    assert not disclosure.evaluate("node => node.open"), "Valdkonnad is open on arrival"
     expect(page.locator('label.chip:has(input[name="policy_areas"])').first).to_be_hidden()
 
     open_valdkond(page)
@@ -159,26 +159,46 @@ def test_valdkond_arrives_shut_and_opens_when_asked(page, base_url):
     expect(page.locator('label.chip:has(input[name="policy_areas"])').first).to_be_visible()
 
 
-def test_the_summary_says_what_has_been_chosen(page, base_url):
-    """A shut field that hid the answer would cost a click on every visit."""
+def test_the_trigger_says_how_many_have_been_chosen(page, base_url):
+    """A shut field that hid the answer would cost a click on every visit.
+
+    A count rather than the names since docs/adr/0094 §2.2: the trigger is a pill
+    on one line, and three Estonian policy areas spelled out do not fit on it.
+    What the trigger has to carry is whether the question has been answered, and
+    a number says that better than a truncated list.
+
+    Ticking twice also proves the menu stays open, which is the whole of what
+    makes `Valdkonnad` multi-select rather than a menu answered once.
+    """
     create_form(page, base_url)
     open_valdkond(page)
 
     chips = page.locator('label.chip:has(input[name="policy_areas"])')
-    first = (chips.nth(0).locator(".chip__name").text_content() or "").strip().rstrip("×").strip()
-    second = (chips.nth(1).locator(".chip__name").text_content() or "").strip().rstrip("×").strip()
+    trigger = page.locator(f"{VALDKOND} > summary")
 
     chips.nth(0).click()
-    summary = page.locator(f"{VALDKOND} > summary")
-    assert first in (summary.inner_text() or "")
+    assert "· 1" in (trigger.inner_text() or ""), trigger.inner_text()
+    assert page.locator(VALDKOND).evaluate("node => node.open"), (
+        "ticking one area closed a multi-select menu"
+    )
 
     chips.nth(1).click()
-    text = summary.inner_text() or ""
-    assert first in text and second in text, f"the summary lost one of the two: {text!r}"
+    text = trigger.inner_text() or ""
+    assert "· 2" in text, f"the trigger lost one of the two: {text!r}"
+
+    # And unticking leaves the other one alone.
+    chips.nth(0).click()
+    assert "· 1" in (trigger.inner_text() or ""), trigger.inner_text()
 
 
 def test_the_vocabulary_is_reachable_and_choosable_by_keyboard(page, base_url):
-    """A `<details>` is a button and a region, and Enter is how it opens."""
+    """A `<details>` is a button and a region, and Enter is how it opens.
+
+    Kept as a `<details>` for exactly this: the trigger is one tab stop, it
+    activates on Enter and on Space, it announces its own expanded state, and it
+    works with scripting off — none of which a scripted `<div>` menu gives
+    (docs/adr/0094 §2).
+    """
     create_form(page, base_url)
 
     summary = page.locator(f"{VALDKOND} > summary")
@@ -193,7 +213,12 @@ def test_the_vocabulary_is_reachable_and_choosable_by_keyboard(page, base_url):
 
 
 def test_the_open_vocabulary_fits_a_narrow_screen(page, base_url):
-    """Nineteen labels and `Muu`, at the width nobody has looked at."""
+    """Twenty-one labels and `Muu`, at the width nobody has looked at.
+
+    An overlay makes this claim sharper rather than softer: a panel wider than
+    its row would take the document sideways without lengthening it, so nothing
+    that measures height would notice (docs/adr/0094 §2).
+    """
     create_form(page, base_url, NARROW)
     open_valdkond(page)
 

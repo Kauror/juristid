@@ -15,9 +15,16 @@ What this file pins is the *withdrawal*, and in particular its boundaries:
 * Saatja starts empty and reaches the same catalogue through the same resolver.
   The rules about what a typed name means are `tests/test_sender_free_entry.py`'s
   and are not restated here;
-* Valdkond folds away and keeps every value it had, including the two the same
-  round withdrew from *new* selection. `tests/test_reference_data_foundation.py`
-  owns the vocabulary manifest.
+* Valdkond stops standing permanently open and keeps every value it had,
+  including the two the same round withdrew from *new* selection.
+  `tests/test_reference_data_foundation.py` owns the vocabulary manifest.
+
+The fold itself did not survive. docs/adr/0088 put the vocabulary behind a
+`<details>`, and docs/adr/0094 §2 replaced that with a menu whose panel is out of
+flow — the lawyers' complaint about the fold was not that it hid the vocabulary
+but that *opening* it re-laid out the form underneath them. The withdrawal this
+file is about is unaffected either way, so what changed here is which markup the
+assertions read.
 
 What is deliberately not here: `Hetkeseis`, `Menetlusliik`, `Õigusakt` and the
 Adressaat/Saatja duplication. Those are later packages and this round inspected
@@ -52,8 +59,20 @@ def scripted(page: str) -> str:
 
 
 def valdkond_block(page: str) -> str:
-    start = page.index("data-valdkond-disclosure")
+    """The Valdkonnad menu: its trigger and the panel it opens onto.
+
+    Bounded by the `<details>` that carries both, as it was when that element
+    was a fold rather than a menu. The `Muu` free-text box is deliberately
+    *outside* it now — a box that vanished when the menu shut would be a box
+    somebody could not finish (docs/adr/0094 §2.3).
+    """
+    start = page.index('<details class="chipmenu" data-chipmenu>')
     return page[start : page.index("</details>", start)]
+
+
+def valdkond_trigger(page: str) -> str:
+    block = valdkond_block(page)
+    return block[: block.index("</summary>")]
 
 
 def saatja_block(page: str) -> str:
@@ -201,18 +220,21 @@ def test_choosing_a_sender_still_reuses_the_one_catalogue(signed_in, ministry):
 # ---------------------------------------------------------------------------
 
 
-def test_valdkond_is_folded_away_and_says_so(signed_in):
-    """A door, shut, with the vocabulary behind it rather than under it."""
+def test_valdkond_is_a_shut_menu_and_says_so(signed_in):
+    """A trigger, shut, with the vocabulary behind it rather than under it."""
     page = signed_in.get(CREATE).content.decode()
     block = valdkond_block(page)
 
-    assert block.startswith("data-valdkond-disclosure")
-    assert " open" not in block[: block.index("</summary>")]
+    assert "chipmenu" in block
+    assert " open" not in valdkond_trigger(page)
     assert "Valdkonnad" in block
+    # A menu rather than a fold: the panel is the thing that overlays, and it is
+    # what `e2e/test_uus_teema_menus.py` measures (docs/adr/0094 §2).
+    assert "chipmenu__panel" in block
 
 
-def test_the_whole_vocabulary_is_still_offered_behind_the_door(signed_in):
-    """Folded, not shortened. Nothing was dropped to make the field compact."""
+def test_the_whole_vocabulary_is_still_offered_behind_the_trigger(signed_in):
+    """Behind a menu, not shortened. Nothing was dropped to make it compact."""
     block = valdkond_block(signed_in.get(CREATE).content.decode())
 
     for area in PolicyArea.objects.filter(is_active=True):
@@ -233,36 +255,54 @@ def test_several_areas_can_still_be_chosen(signed_in):
     assert set(matter.policy_areas.all()) == set(areas)
 
 
-def test_a_refused_save_shows_the_chosen_areas_without_unfolding(signed_in):
-    """The summary is what makes the fold affordable.
+def test_a_refused_save_says_how_many_areas_it_holds_without_opening(signed_in):
+    """The trigger's count is what makes the menu affordable.
 
-    A shut field that hid the answer would have to be opened on every visit to
-    find out whether it had been answered, which costs more than the height it
-    saved.
+    A shut field that said nothing about its answer would have to be opened on
+    every visit to find out whether it had been answered, which costs more than
+    the height it saved. A count rather than the names, because the trigger is a
+    pill on one line and three Estonian policy areas do not fit on it
+    (docs/adr/0094 §2.2).
     """
     areas = list(PolicyArea.objects.filter(is_active=True)[:2])
 
     response = signed_in.post(
         CREATE, {"title": "", "policy_areas": [str(area.pk) for area in areas]}
     )
+    page = response.content.decode()
 
-    block = valdkond_block(response.content.decode())
-    summary = block[: block.index("</summary>")]
     assert response.status_code == 400
-    assert " open" not in summary
+    trigger = valdkond_trigger(page)
+    assert " open" not in trigger
+    assert "· 2" in trigger
+    # And the answers themselves are still ticked inside, so nothing was lost.
     for area in areas:
-        assert area.name_et in summary
+        chip = valdkond_block(page)
+        chosen = chip[chip.index(f'value="{area.pk}"') :]
+        assert "checked" in chosen[: chosen.index(">")]
 
 
-def test_a_refusal_inside_the_fold_opens_it(signed_in):
-    """A message nobody can see is a form that refused for no stated reason."""
+def test_the_muu_refusal_is_readable_without_opening_the_menu(signed_in):
+    """A message nobody can see is a form that refused for no stated reason.
+
+    The fold used to render itself open for this, because the box and its
+    refusal were inside it. Both are outside the menu now, so there is nothing
+    to open — which is why the menu stays shut on every render, refused ones
+    included (docs/adr/0094 §2.3).
+    """
     response = signed_in.post(
         CREATE, {"title": "Muu ilma tekstita", "policy_area_other_selected": "on"}
     )
+    page = response.content.decode()
 
-    block = valdkond_block(response.content.decode())
     assert response.status_code == 400
-    assert " open" in block[: block.index("</summary>")]
+    assert "Kirjuta, millise valdkonnaga on tegemist." in page
+    # Outside the menu, and the menu is shut.
+    assert "Kirjuta, millise valdkonnaga on tegemist." not in valdkond_block(page)
+    assert " open" not in valdkond_trigger(page)
+    # The box somebody has to fill in is on the page and not inside the menu.
+    assert 'id="valdkond-muu-tekst"' in page
+    assert 'id="valdkond-muu-tekst"' not in valdkond_block(page)
 
 
 def test_the_two_withdrawn_areas_are_not_offered(signed_in, specialist):

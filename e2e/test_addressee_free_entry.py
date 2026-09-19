@@ -25,7 +25,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, give_first_step, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -101,11 +101,7 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     """
     create_form(page, base_url)
     page.fill("#id_title", title)
-    page.fill("#id_next-text", "Kontrollida, kas adressaat vastas")
-    # `Millal?` is required with the sentence now, and the quick span is how a
-    # date is nearly always chosen (ADR 0052 addendum). The chip carries the day
-    # the server resolved, so nothing here does date arithmetic.
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 

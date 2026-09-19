@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, needs_intake_reading, sign_in
+from e2e.conftest import SANDRA, give_first_step, needs_intake_reading, sign_in
 
 #: Every scenario in this file is about the reading, which `Uus teema` no
 #: longer offers by default. The marker, and the switch that runs them, are
@@ -160,8 +160,7 @@ def name_a_next_step(page) -> None:
     `e2e/test_kpi_navigation.py` reads the first rows of that list
     (e2e/test_uus_teema_files.py).
     """
-    page.fill("#id_next-text", "Lugeda eelnõu ja koostada arvamus")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
 
 
 def register_holds(page, base_url: str, title: str) -> int:

@@ -120,20 +120,46 @@ def test_an_overdue_count_reaches_the_matter_that_is_late(page, base_url):
     expect(page.get_by_role("link", name=OVERDUE_TITLE)).to_be_visible()
 
 
+def _bar_value(page, label: str) -> int:
+    """One bar of the extraction-state chart, by the word on its label."""
+    row = (
+        page.locator("section[aria-labelledby='eraldamine-jaotus-heading'] .barchart__row")
+        .filter(has_text=label)
+        .first
+    )
+    return int(row.locator(".barchart__value").inner_text().strip())
+
+
 def test_a_signed_container_is_never_shown_as_a_failure(page, base_url, screenshots):
     """ASiC-E is valid historical material that nothing will ever open.
 
     `Ei kohaldu` is the successful state for it, and the page has to keep that
     apart from a parse failure — otherwise an operator goes looking for a defect
     that is a deliberate decision (Stage-2E brief 31).
+
+    **Asserted about the containers, not about the world.** This used to require
+    the failure queue to be *empty*, which is a claim about every document any
+    test in the shard had uploaded rather than about ASiC-E. Roughly a dozen
+    browser files attach a stub such as `b"%PDF-1.4 arvamus"`, which no parser
+    opens and which the extraction worker therefore records as a genuine
+    failure — so this scenario passed only while the partition happened to keep
+    it away from all of them, and went red the first time a file was added
+    anywhere in `e2e/` and the shards were recomputed (`ci_sharding.py`,
+    docs/adr/0094). A guard that depends on who it shares a runner with is not
+    reporting on the thing it names.
+
+    What it reports on now is the relation the brief is actually about: every
+    signed container is counted under `Ei kohaldu`, so the bucket is at least as
+    large as the number of them the historical page reports. A container
+    misfiled as a failure would take the bucket below that count and be caught
+    here, whatever else in the world failed for its own reasons.
     """
     sign_in(page, base_url, MARTIN)
     open_statistics(page, base_url, "andmekvaliteet/")
 
     states = page.locator("section[aria-labelledby='eraldamine-jaotus-heading']")
     expect(states).to_contain_text("Ei kohaldu")
-    failures = page.locator(".queuerow").filter(has_text="Teksti eraldamine ebaõnnestus")
-    expect(failures).to_have_count(0)
+    not_applicable = _bar_value(page, "Ei kohaldu")
 
     open_statistics(page, base_url, "ajalooline/")
     signed = page.locator(".metric").filter(has_text="Digiallkirjastatud materjale").first
@@ -143,7 +169,13 @@ def test_a_signed_container_is_never_shown_as_a_failure(page, base_url, screensh
     # failure precisely in order to rule it out, so forbidding the word would
     # forbid the explanation.
     expect(signed).to_contain_text("ei kuulu kunagi eraldamise ebaõnnestumiste hulka")
-    assert int(signed.locator(".metric__value").inner_text().strip()) >= 1
+    signed_count = int(signed.locator(".metric__value").inner_text().strip())
+    assert signed_count >= 1
+    assert not_applicable >= signed_count, (
+        f"the extraction chart counts {not_applicable} under «Ei kohaldu» while the "
+        f"historical page reports {signed_count} signed containers — at least one of "
+        f"them is being counted somewhere else, and the only somewhere else is a failure"
+    )
     screenshots(page, "statistika-allkirjastatud")
 
 

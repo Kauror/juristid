@@ -4519,6 +4519,17 @@ a.barchart__row:hover {
   grid-template-columns: minmax(0, 1fr) 146px 146px;
 }
 
+/* The file row, which is a pair again.
+ *
+ * It was `--trio`: the dropzone, `Saabus` and `Arvamuse tähtaeg`. The deadline
+ * has moved to the bottom of the form, where it is the last question asked and
+ * the only date the lawyer enters — so the row is two tracks, not three with
+ * one standing empty (docs/adr/0094 §4). The dropzone keeps the 146px and the
+ * gap, which is the field on this row with something to do with it. */
+.createform__pair--file {
+  grid-template-columns: minmax(0, 1fr) 146px;
+}
+
 /* `createform__trio--people` was here, and is gone with the field it existed
    for.
 
@@ -4550,6 +4561,7 @@ a.barchart__row:hover {
      A field is compact because of what it holds, never because of what it sits
      beside, so the cap is now named on the fields that want it. */
   .createform__trio .field:has(.dateinput),
+  .createform__pair--file .field:has(.dateinput),
   .createform__field--compact {
     max-width: 18rem;
   }
@@ -5067,6 +5079,17 @@ a.barchart__row:hover {
   max-width: 30rem;
 }
 
+/* One date box standing on a row of its own.
+ *
+ * `Arvamuse tähtaeg` is the last question on the form and it is alone in its
+ * panel, so nothing else caps its width — stretched to the row it reads as the
+ * most important field on the screen, which is the same argument the narrow-
+ * width rule above makes about a stacked date. 146px is the track the file row
+ * gives `Saabus`, so the two dates on this page are the same size. */
+.createform__field--date {
+  max-width: 146px;
+}
+
 /* -- the long tail, shaped like a chip ------------------------------------- */
 
 .chipdetails {
@@ -5142,21 +5165,129 @@ a.barchart__row:hover {
   margin-top: var(--spacing-2);
 }
 
-/* And the same for Valdkonnad, which became a disclosure for the same reason
-   Adressaat is one: a field whose answer is short and whose vocabulary is long
-   should cost one line when it is not being answered. No panel, for the reason
-   above — the chip row inside already draws itself (docs/adr/0091 §3). */
-.createform__valdkond {
-  margin-top: var(--spacing-2);
+/* -- Valdkonnad and Hetkeseis: a menu, not a fold ------------------------- *
+ *
+ * `.chipdetails` above folds a long tail *into the page*: opening it makes the
+ * document taller and pushes everything below it down. That is right for a
+ * catalogue which is part of what you are reading and wrong for a control you
+ * open, answer and shut — the lawyers' complaint about `Valdkonnad` and
+ * `Hetkeseis` was that choosing a value re-laid out the rest of the form under
+ * their hands (docs/adr/0094 §2).
+ *
+ * So the panel is taken out of flow. The measurable promise, and the one the
+ * browser suite asserts, is that the y-position of the field *after* the menu
+ * does not move when the menu opens.
+ *
+ * Still a `<details>`, and deliberately: the trigger is keyboard-reachable,
+ * announces its own expanded state, opens on Enter and Space, and works with
+ * scripting off — none of which a `<div>` with a click handler gives. What the
+ * script adds on top is Escape, click-outside, and closing a single-select menu
+ * once it has been answered (static/js/app.js `bindChipMenus`).
+ *
+ * `position: relative` is the containing block for the panel. Without it the
+ * panel measures from the initial containing block and opens at the top of the
+ * document — the defect `.rail .inlineedit` documents at length. */
+.chipmenu {
+  position: relative;
+  display: block;
+  max-width: 100%;
 }
 
-/* The vocabulary is nineteen labels and `Muu`, which is three wrapped rows at
-   this width. It scrolls inside the open disclosure rather than pushing
-   Hetkeseis and everything under it down the page, exactly as the catalogue
-   inside `.chipdetails__body` does. */
-.createform__valdkond > .chiprow {
+/* The pill, which is `.chipdetails__summary` in every respect a reader can see.
+   A separate class rather than that one because the two components differ in
+   what they *do*, and a shared name would invite a rule written for the fold to
+   land on the menu. */
+.chipmenu__trigger {
+  display: inline-block;
+  padding: 3px 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 13px;
+  font-size: var(--typography-size-meta);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+  /* The trigger carries the answer, and an answer can be long: eleven
+     Hetkeseis labels, and Valdkonnad counts up to twenty-two. It stays one line
+     and cuts, so the caret — the affordance — is never the thing pushed off
+     the row (`.inlineedit__trigger` makes the same argument). */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.chipmenu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.chipmenu__trigger::after {
+  content: " ▾";
+  color: var(--text-muted);
+}
+
+.chipmenu[open] > .chipmenu__trigger::after {
+  content: " ▴";
+}
+
+.chipmenu__trigger:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+}
+
+.chipmenu__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+/* What the trigger opens onto, over the page rather than in it.
+ *
+ * `width: 100%` of `.chipmenu`, which is a block in a full-width row, so the
+ * panel is exactly as wide as the row it belongs to — at 1440 and at 375
+ * alike. That is the whole of the narrow-width answer: a panel which cannot be
+ * wider than its own row cannot put a horizontal scrollbar on the document,
+ * whatever the longest label in it measures (task §9).
+ *
+ * No `overflow` here. The scroll cap belongs on the chip row inside, because a
+ * scroll container clips its absolutely positioned descendants — and the
+ * Hetkeseis chips each carry a `.stagehelp` bubble which has to be able to hang
+ * outside the box it opens from. */
+.chipmenu__panel {
+  position: absolute;
+  top: calc(100% + var(--spacing-1));
+  left: 0;
+  width: 100%;
+  z-index: 20;
+  padding: var(--spacing-3);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+}
+
+/* The vocabulary is twenty-one labels and `Muu`, which is several wrapped rows
+   at every width. It scrolls inside the panel rather than growing it past the
+   bottom of a phone, exactly as the catalogue inside `.chipdetails__body` does.
+   On the chip row and not on the panel, for the reason above.
+
+   A descendant selector and not `>`. The chips are wrapped in the `<fieldset>`
+   that names the group for a screen reader, so the row is the panel's
+   *grandchild* — written as a child selector this rule matched nothing at all
+   and the cap was silently absent. Found by measuring `overflowY` in the
+   browser, which is the only thing that can tell a rule that does not apply
+   from one that applies and has no effect (e2e/test_uus_teema_menus.py). */
+.chipmenu__panel--scroll .chiprow {
   max-height: 190px;
   overflow-y: auto;
+}
+
+/* Ticking `Muu` reveals its box **under the trigger**, not inside the panel.
+   A free-text answer which lived in the menu would vanish the moment the menu
+   was shut, and a refusal about it would be printed somewhere nobody can see
+   (docs/adr/0094 §2.3). */
+.createform__valdkond {
+  margin-top: var(--spacing-2);
 }
 
 .chipdetails__body .chiprow {

@@ -75,7 +75,6 @@ from app.matters.timeline import (
     external_position_milestone,
     matter_timeline,
 )
-from app.matters.views import TWO_FIRST_STEPS_REFUSAL
 from app.matters.workspace import (
     add_matter_external_position,
     add_matter_koda_opinion,
@@ -306,6 +305,15 @@ def test_a_restricted_step_is_not_visible_to_a_reader_who_may_not_see_it(
 # ---------------------------------------------------------------------------
 # §1.3 — the creation page
 # ---------------------------------------------------------------------------
+#
+# The box this section is about is `Arvamuse tähtaeg` now, and it is
+# `MatterCreateForm.response_deadline` rather than a second form under an
+# `arvamus-` prefix. `Uus teema` asked the same date twice under two names —
+# `Arvamuse tähtaeg` beside `Saabus` and `Koostan arvamuse` at the bottom — and
+# the lawyers read them as one question, so it is one box: it records the
+# obligation and establishes this step (docs/adr/0094 §5).
+#
+# Every rule below is the one docs/adr/0091 §1 wrote. Only the key moved.
 
 
 def _create_payload(**extra):
@@ -321,7 +329,7 @@ def test_uus_teema_creates_the_initial_action_from_the_date_box(client, speciali
     client.force_login(specialist)
     response = client.post(
         reverse("matters:matter_create"),
-        _create_payload(**{"owner": str(specialist.pk), "arvamus-prepare_by": "25.09.2026"}),
+        _create_payload(**{"owner": str(specialist.pk), "response_deadline": "25.09.2026"}),
     )
 
     assert response.status_code == 302
@@ -331,14 +339,38 @@ def test_uus_teema_creates_the_initial_action_from_the_date_box(client, speciali
     assert action.responsible_id == specialist.pk
 
 
+def test_the_same_date_also_lands_on_the_matter_as_the_obligation(client, specialist):
+    """One box, two facts, and they cannot disagree.
+
+    `Matter.response_deadline` is what Koda owes and the step is the lawyer's own
+    plan for meeting it. They were two boxes and are one question; what the page
+    stopped asking twice, it still records twice (docs/adr/0094 §5).
+    """
+    from app.matters.models import Matter
+
+    client.force_login(specialist)
+    client.post(
+        reverse("matters:matter_create"),
+        _create_payload(**{"response_deadline": "25.09.2026"}),
+    )
+
+    matter = Matter.objects.get()
+    assert matter.response_deadline == PREPARE_BY
+    assert NextAction.objects.get(matter=matter).target_date == PREPARE_BY
+
+
 def test_uus_teema_creates_nothing_when_the_date_box_is_empty(client, specialist):
+    from app.matters.models import Matter
+
     client.force_login(specialist)
     response = client.post(
-        reverse("matters:matter_create"), _create_payload(**{"arvamus-prepare_by": ""})
+        reverse("matters:matter_create"), _create_payload(**{"response_deadline": ""})
     )
 
     assert response.status_code == 302
     assert not NextAction.objects.exists()
+    # And no date is invented on the Matter either.
+    assert Matter.objects.get().response_deadline is None
 
 
 def test_a_refused_create_leaves_no_step_and_keeps_the_typed_date(client, specialist):
@@ -347,7 +379,7 @@ def test_a_refused_create_leaves_no_step_and_keeps_the_typed_date(client, specia
     response = client.post(
         reverse("matters:matter_create"),
         # No title: the one refusal `MatterCreateForm` makes on its own.
-        {"title": "", "arvamus-prepare_by": "25.09.2026"},
+        {"title": "", "response_deadline": "25.09.2026"},
     )
 
     assert response.status_code == 400
@@ -362,39 +394,50 @@ def test_a_refused_create_leaves_no_step_and_keeps_the_typed_date(client, specia
 
 def test_correcting_the_refusal_and_saving_once_leaves_exactly_one_step(client, specialist):
     client.force_login(specialist)
-    client.post(reverse("matters:matter_create"), {"title": "", "arvamus-prepare_by": "25.09.2026"})
+    client.post(reverse("matters:matter_create"), {"title": "", "response_deadline": "25.09.2026"})
     response = client.post(
-        reverse("matters:matter_create"), _create_payload(**{"arvamus-prepare_by": "25.09.2026"})
+        reverse("matters:matter_create"), _create_payload(**{"response_deadline": "25.09.2026"})
     )
 
     assert response.status_code == 302
     assert NextAction.objects.count() == 1
 
 
-def test_answering_both_first_step_boxes_is_refused_and_writes_nothing(client, specialist):
-    """One open step per Matter, so one of the two may be answered."""
+def test_there_is_no_second_first_step_box_to_collide_with(client, specialist):
+    """`TWO_FIRST_STEPS_REFUSAL` was here, and the collision it arbitrated is gone.
+
+    `Järgmiseks` is off the creation page altogether, so a POST carrying its old
+    keys is stale form state and must not become a step. One date, one step, and
+    the Teema saves (docs/adr/0094 §6).
+    """
+    from app.matters.models import Matter
+
     client.force_login(specialist)
     response = client.post(
         reverse("matters:matter_create"),
         _create_payload(
             **{
-                "arvamus-prepare_by": "25.09.2026",
+                "response_deadline": "25.09.2026",
                 "next-text": "Vaatan eelnõu läbi",
                 "next-target_date": "20.09.2026",
             }
         ),
     )
 
-    assert response.status_code == 400
-    assert TWO_FIRST_STEPS_REFUSAL in response.content.decode()
-    from app.matters.models import Matter
+    assert response.status_code == 302
+    assert Matter.objects.count() == 1
+    action = NextAction.objects.get()
+    assert action.text == OPINION_PREPARATION_TEXT
+    assert action.target_date == PREPARE_BY
 
-    assert not Matter.objects.exists()
-    assert not NextAction.objects.exists()
 
+def test_a_stale_free_text_step_creates_nothing_on_its_own(client, specialist):
+    """The other half: `next-*` alone is not a first step either.
 
-def test_the_free_text_first_step_still_works_on_its_own(client, specialist):
-    """The regression the refusal above must not have caused."""
+    It used to be one — the `Järgmiseks` panel was how a free-text plan was given
+    at creation. The panel is gone, so the keys mean nothing, and a Teema filed
+    with them carries no step at all rather than one nobody asked for.
+    """
     client.force_login(specialist)
     response = client.post(
         reverse("matters:matter_create"),
@@ -402,8 +445,7 @@ def test_the_free_text_first_step_still_works_on_its_own(client, specialist):
     )
 
     assert response.status_code == 302
-    action = NextAction.objects.get()
-    assert action.text == "Vaatan eelnõu läbi"
+    assert not NextAction.objects.exists()
 
 
 def test_the_date_box_is_empty_on_a_fresh_form(client, specialist):
@@ -417,8 +459,8 @@ def test_the_date_box_is_empty_on_a_fresh_form(client, specialist):
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_create")).content.decode()
 
-    assert "Koostan arvamuse" in body
-    assert _rendered_value(body, "arvamus-prepare_by") == ""
+    assert "Arvamuse tähtaeg" in body
+    assert _rendered_value(body, "response_deadline") == ""
     # The `Saabus` box legitimately holds today, which is what makes the line
     # above a real measurement rather than a page with no dates on it at all.
     assert _rendered_value(body, "received_date") == _estonian(timezone.localdate())

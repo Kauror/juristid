@@ -953,10 +953,27 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
     #: keep — the same rule that keeps Vastutaja radios and Valdkonnad
     #: checkboxes (brief 16, Agent-UI brief 5.1).
     #:
-    #: Visible rather than collapsed because eleven stages fit on two lines, and
-    #: for a department of four a select is a click spent finding out what the
-    #: options are. If the vocabulary grows past what reads at a glance, a
-    #: select is the better control again and this should go back to one.
+    #: **Behind a menu, and the radios are what is inside it.** Eleven stages do
+    #: fit on two lines, which is the argument this comment used to make for
+    #: drawing them permanently; what it left out is that a lawyer answers this
+    #: once and then reads past it on every future visit. Two lines of chips
+    #: spent on an answered question, directly above two more for `Õigusakt`, is
+    #: what the lawyers reported as the page being a survey — so the row is one
+    #: pill carrying the answer, and the vocabulary is one click away
+    #: (docs/adr/0094 §2).
+    #:
+    #: A *menu*, emphatically not a `<select>` and not a fold. A select is still a
+    #: click spent finding out what the options are, and the department's own
+    #: explanation per stage has nowhere to live inside one; a fold would push
+    #: `Õigusakt` and everything under it down the page on the way to answering
+    #: this. The panel is taken out of flow and overlays instead
+    #: (`.chipmenu__panel`, `bindChipMenus`).
+    #:
+    #: The field itself is untouched: same queryset, same `blank=True`
+    #: «Määramata», same one value, same `DescribedRadioSelect` pointing each
+    #: chip at its own explanation. `Rohkem ei tegele` is still a disposition and
+    #: not a stage, nothing is inferred and `Matter.track` is not written from
+    #: here (docs/adr/0090 §4).
     stage = forms.ModelChoiceField(
         label="Hetkeseis",
         queryset=StageVocabulary.objects.none(),
@@ -1082,6 +1099,27 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
     #: The edit form and `IncomingIntakeForm` already read it this way
     #: (Teema QA §5.2); this is that decision applied to the one form that had
     #: been missed.
+    #:
+    #: **And it is the one date `Uus teema` asks for.** There were three. Two of
+    #: them asked the same question under two names: this field, beside `Saabus`
+    #: in the file row, and a second box at the bottom of the page labelled
+    #: `Koostan arvamuse` whose job was to establish the opinion-preparation step
+    #: (`InitialOpinionActionForm`, retired). A lawyer filing a consultation has
+    #: one date in front of them and was asked for it twice, in two places, by two
+    #: forms — which is the double entry this product exists to remove, appearing
+    #: inside the product (docs/adr/0094 §5).
+    #:
+    #: So this field moved to the bottom of the form, where it is the last
+    #: question asked, and a date entered here now does both things: it records
+    #: the obligation on `Matter.response_deadline`, as it always did, and it
+    #: establishes the canonical `Koostan arvamuse` step through
+    #: `establish_opinion_preparation_action`, exactly once and with no special
+    #: case anywhere downstream.
+    #:
+    #: **Still no `initial`, and now for two reasons rather than one.** A blank
+    #: box records no obligation *and* creates no step: «saving the Teema
+    #: establishes the next action» is not «invent the date», and an undated
+    #: commitment is not the answer either (docs/adr/0078 §2, docs/adr/0091 §1.2).
     response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg",
         required=False,
@@ -1146,30 +1184,33 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
         return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
     @property
-    def policy_area_summary(self) -> str:
-        """The Valdkonnad this form currently holds, as labels to read.
+    def policy_area_chosen_count(self) -> int:
+        """How many Valdkonnad this form currently holds — the number on the trigger.
 
-        What the collapsed Valdkond disclosure says after the word itself:
-        «Valdkonnad · Ehitus, Keskkond», or «Valdkonnad» when nothing is chosen.
-        The whole argument for folding the vocabulary away is that a shut field
-        is quieter than twenty-two chips; a shut field that also hid *the
-        answer* would be quieter and worse, because then it has to be opened
-        every time to find out (docs/adr/0091 §3).
+        `Valdkonnad · 3`, and `Valdkonnad` when nothing is chosen. A count and
+        not the names, which is the one thing that changed here: the control is a
+        menu now rather than a fold (docs/adr/0094 §2), its trigger is a pill on
+        one line, and three Estonian policy areas spelled out are wider than that
+        line. Ellipsised to «Maksujõuetus, Energee…» the names say less about
+        whether the question has been answered than a number does, and the names
+        themselves are one click away and ticked.
 
         Read off the rendered choices rather than by fetching the rows, for the
         reason `addressee_summary` reads off its own: the catalogue is already
         on the page as `(pk, name)` pairs and a query per render buys nothing.
 
-        `Muu` is included by name when it is ticked, because it *is* an answer
-        here — it is the affordance that reveals the free-text box, and a
-        summary reading «Valdkonnad» over a ticked `Muu` and a sentence of typed
-        text would be wrong about the one state somebody has to come back to.
+        `Muu` counts, because it *is* an answer here — it is the affordance that
+        reveals the free-text box, and a trigger reading «Valdkonnad» over a
+        ticked `Muu` and a sentence of typed text would be wrong about the one
+        state somebody has to come back to.
 
-        Unbound — the ordinary first visit — is empty by construction: nothing
-        is chosen, so there is nothing to say.
+        Unbound — the ordinary first visit — is zero by construction: nothing is
+        chosen, so there is nothing to count. `static/js/app.js`
+        `bindChipSummaries` keeps the same number true while somebody is ticking
+        boxes with the menu open.
         """
         if not self.is_bound:
-            return ""
+            return 0
         # `_raw_value` and not `form.data.getlist`: a `CheckboxSelectMultiple`
         # already knows how to read its own many-valued answer out of a
         # `QueryDict` or an ordinary dict, and asking the widget is what keeps
@@ -1177,34 +1218,37 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
         chosen = {str(value) for value in (_raw_value(self, "policy_areas") or [])}
         # `fields[...]` is typed as the base Field, which has no `choices`. This
         # one is a ModelMultipleChoiceField by construction.
-        names = [
-            str(label)
-            for value, label in cast(Any, self.fields["policy_areas"]).choices
-            if str(value) in chosen
-        ]
+        offered = {str(value) for value, _label in cast(Any, self.fields["policy_areas"]).choices}
+        count = len(chosen & offered)
         if _raw_value(self, "policy_area_other_selected"):
-            names.append(str(self.fields["policy_area_other_selected"].label))
-        return ", ".join(names)
+            count += 1
+        return count
 
     @property
-    def policy_area_disclosure_open(self) -> bool:
-        """Whether the Valdkond disclosure renders open.
+    def stage_summary(self) -> str:
+        """The `Hetkeseis` this form holds, as the word on the trigger.
 
-        Server-decided and server-rendered, so a browser with scripting off gets
-        the same page: a refusal to read, or a `Muu` whose free-text box is
-        inside the fold and has to be reachable.
+        «Hetkeseis · Riigikogus». The name and not a count, because the field
+        holds exactly one value and the name *is* the compact answer — the
+        asymmetry with `policy_area_chosen_count` directly above is the two
+        controls saying what kind of question they are (docs/adr/0094 §2.2).
 
-        Deliberately *not* opened merely by an answer being present. A refused
-        save that comes back with two areas ticked says so in the summary, and
-        unfolding the vocabulary to prove it would undo the whole change on the
-        one path where somebody is already being asked to fix something else
-        (task §11 C).
+        **«Määramata» is a real answer and is named like one.** The field is
+        `blank=True` precisely so that «not decided yet» has a chip of its own,
+        it is the option a fresh form arrives with selected, and a trigger that
+        said nothing about it would be hiding the state most files are actually
+        in behind a word that looks unanswered. Nothing is invented here: this
+        reports the option the form itself has selected, whatever that is.
+
+        Read off the rendered choices for the reason above — the vocabulary is
+        already on the page.
         """
-        if not self.is_bound:
-            return False
-        if self.errors.get("policy_areas") or self.errors.get("policy_area_other"):
-            return True
-        return bool(_raw_value(self, "policy_area_other_selected"))
+        raw = _raw_value(self, "stage") if self.is_bound else self.initial.get("stage")
+        wanted = "" if raw is None else str(raw)
+        for value, label in cast(Any, self.fields["stage"]).choices:
+            if str("" if value is None else value) == wanted:
+                return str(label)
+        return ""
 
     @property
     def data_class(self) -> str:
@@ -2722,65 +2766,22 @@ def attach_organisation_picker(
     cast(Any, field.widget).alias_terms = reading.alias_terms
 
 
-class InitialOpinionActionForm(forms.Form):
-    """`Koostan arvamuse` on `Uus teema` — one date, and the first step it creates.
-
-    **Deliberately its own form, with its own prefix and its own template
-    partial.** The whole of this round's `Uus teema` change is one date box and
-    one small hunk in `matter_create`, because `MatterCreateForm` and
-    `matter_create.html` are being rewritten in parallel by the classification
-    work: a field added to that class and that template would be a merge conflict
-    in the two files most likely to move, over a question neither of them is about
-    (docs/adr/0091 §1.4).
-
-    **One field, because the sentence is not a question.** A normal incoming
-    consultation begins the same way every time — the lawyer will write Koda's
-    opinion by a day they already know — so the only thing this asks is the day.
-    The step's wording is `OPINION_PREPARATION_TEXT`, the department's own words,
-    and asking a lawyer to type them was the double entry lawyer feedback 9 is
-    about (lawyer feedback 9).
-
-    **No `initial`, and that is the rule rather than an omission.** «Saving the
-    Matter automatically creates the next action» does not mean «invent the date».
-    Not today, not seven days out, not the consultation deadline, not the end of
-    the month and not the creation date: `Arvamuse tähtaeg` directly above it on
-    the same page carries no default for exactly this reason, because a commitment
-    nobody stated is a commitment nobody can be held to, and since the field became
-    work it is not even inert — a Matter created and left alone would be due on its
-    creation day and overdue the next morning (docs/adr/0078 §2, ADR 0052 §5).
-
-    A blank box therefore creates nothing. Not an undated step either: `WAIT` and
-    `MONITOR` may be dateless and this is neither, and turning a blank field into
-    an open-ended commitment would be a promise nobody made (docs/adr/0091 §1.2).
-
-    `use_required_attribute` is off for the reason `NextActionForm`'s is: this is
-    optional, and with the HTML attribute present a browser would refuse to submit
-    the whole `Uus teema` form and report nothing, so «Loo teema» would silently do
-    nothing.
-    """
-
-    use_required_attribute = False
-
-    prepare_by = EstonianDateField(
-        label="Koostan arvamuse",
-        required=False,
-        widget=DATE_WIDGET,
-        help_text="Mis kuupäevaks Koja arvamuse koostad. Jäta tühjaks, kui veel ei tea.",
-    )
-
-    @property
-    def action_text(self) -> str:
-        """The sentence the step will carry, for the page to show.
-
-        Read from the service's own constant rather than written into the
-        template, so that the words on the screen and the words in the record are
-        one string. A person who is told «Koostan arvamuse» and finds «Arvamuse
-        koostamine» on their Minu asjad has been shown a different product from the
-        one that saved (`app.workflow.services.OPINION_PREPARATION_TEXT`).
-        """
-        from app.workflow.services import OPINION_PREPARATION_TEXT
-
-        return OPINION_PREPARATION_TEXT
+#: `InitialOpinionActionForm` stood here, and `Arvamuse tähtaeg` is what became
+#: of it.
+#:
+#: It was a second date box at the bottom of `Uus teema` labelled `Koostan
+#: arvamuse`, with its own prefix and its own partial, whose job was to establish
+#: the opinion-preparation step. The page also asked `Arvamuse tähtaeg` —
+#: `MatterCreateForm.response_deadline`, eight rows further up — and the lawyers
+#: read the two as one question asked twice. They are one question now: one box,
+#: named `Arvamuse tähtaeg` because that is what the date is called everywhere
+#: else in the product, and it both records the obligation and establishes the
+#: step (docs/adr/0094 §5).
+#:
+#: `establish_opinion_preparation_action` is untouched and still the only way the
+#: step is written, so what a lawyer reads before saving and what lands on their
+#: Minu asjad are still one string. What is gone is the second box and the two
+#: paragraphs that had to explain which of them was which.
 
 
 class ComposerForm(forms.Form):
@@ -6453,23 +6454,56 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
     table on a form whose whole design is that nothing on it is required
     (docs/adr/0089 §7).
 
-    **Wholly optional, and silent when untouched.** All three boxes empty is the
+    **Two questions, and neither of them is «what kind of link is this».** The
+    lawyer types the address and, where one link is not self-evident, a name for
+    it. The source was a five-chip row above them and is not asked any more — see
+    :attr:`STORED_KIND` for what a row is filed under instead, and why nothing
+    guesses it from the address (docs/adr/0094 §3).
+
+    **Wholly optional, and silent when untouched.** Both boxes empty is the
     ordinary submit and writes nothing at all — no row, no event, no empty
     record. That is the same rule the private `Märkmed` box on this form
     follows: an empty answer creates no record saying somebody wrote nothing.
 
-    **A `prefix`, not an `auto_id`.** This is the one procedural-link form that
-    shares a `<form>` element with something else — `MatterCreateForm` and
-    `NextActionForm` — and `NextActionForm` already uses `prefix="next"` there
-    for exactly that reason. The prefix namespaces the POST keys as well as the
-    ids, so `MatterCreateForm` cannot be changed in a way that silently collides
-    with a field name here — which matters because the two forms are edited by
-    different people at different times (docs/adr/0089 §13).
+    **A `prefix`, not an `auto_id`.** This form shares a `<form>` element with
+    `MatterCreateForm`. The prefix namespaces the POST keys as well as the ids,
+    so `MatterCreateForm` cannot be changed in a way that silently collides with
+    a field name here — which matters because the two are edited by different
+    people at different times (docs/adr/0089 §13). `NextActionForm` used to be
+    the third form on that element under `prefix="next"`; `Järgmiseks` is off
+    this page altogether now (docs/adr/0094 §6).
     """
 
     use_required_attribute = False
 
-    kind = _procedural_link_kind_field(initial=ProceduralLinkKind.EIS.value)
+    #: What the row is stored under, and **not** a question on the form.
+    #:
+    #: The five sources were a chip row here — `EIS`, `Ministeeriumi
+    #: dokumendiregister`, `ELi menetlus`, `Riigikogu`, `Muu menetluslink`, with
+    #: `EIS` pre-selected. The lawyers asked for it to go: filing a Teema, they
+    #: have an address in front of them and classifying where that address lives
+    #: is work the form was making them do before it would accept the thing they
+    #: came to record (docs/adr/0094 §3).
+    #:
+    #: `OTHER` because it is the enum's own honest answer for a link nobody has
+    #: classified — «Muu menetluslink», the value `ProceduralLinkKind` already
+    #: documents as «a real answer rather than a gap». Nothing new was added and
+    #: no migration was needed; the other four values are untouched, still
+    #: offered by `ProceduralLinkForm` and `ProceduralLinkEditForm`, and every
+    #: historical row keeps the kind it was filed under.
+    #:
+    #: **A constant, not a hidden input.** The kind is not the lawyer's statement
+    #: on this surface, so it is not part of the request either: a forged POST
+    #: carrying `menetlus-kind=EIS` is read by nothing, because there is no field
+    #: to bind it to. And nothing infers it from the address — no hostname rule,
+    #: no fetch, no guess. `ProceduralLinkKind` says at length why: a ministry
+    #: runs several registers, an EU file is read on EUR-Lex one month and a
+    #: consultation page the next, and a register that moved domain would
+    #: silently reclassify every row stored under a host rule (docs/adr/0089
+    #: §2). A corrected kind is recorded where a person can state it, on the
+    #: Teema page's own panel.
+    STORED_KIND = ProceduralLinkKind.OTHER.value
+
     url = _procedural_link_url_field()
     label = _procedural_link_label_field()
 
@@ -6509,64 +6543,19 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
         definition of «somebody used this block» has to be, rather than beside
         a second list of field checks that could drift away from it.
 
-        Django's own answer would be `changed_data`, and it is the wrong one
-        here: `kind` arrives with `EIS` selected, so a browser posts
-        `menetlus-kind=EIS` on *every* save from this page while an omitted
-        `menetlus-kind` — what a test client sends — reads as a change *away*
-        from the initial. Both are noise about a chip nobody clicked, and both
-        would put «Menetluse link vajab veebiaadressi.» under an address box
-        nobody had typed in.
+        Django's own answer would be `changed_data`, and it is still the wrong
+        one: `label` on its own is a name for a link that does not exist, and
+        treating it as a request to record something would put «Menetluse link
+        vajab veebiaadressi.» under an address box nobody had typed in.
+
+        It used to be wrong for a second reason as well — `kind` arrived with
+        `EIS` selected, so a browser posted `menetlus-kind=EIS` on every save
+        from this page while an omitted key read as a change *away* from the
+        initial, both of them noise about a chip nobody clicked. The chip is gone
+        (:attr:`STORED_KIND`); the rule it forced is right on its own merits and
+        stays.
         """
         return self.wants_link
-
-    @property
-    def chosen_summary(self) -> str:
-        """What the collapsed disclosure says after the word itself.
-
-        «Menetluse link · EIS», or the kind and the lawyer's own name for it
-        where they wrote one. The same affordance `policy_area_summary` gives
-        `Valdkond`, for the same reason: a shut field is quieter than a row of
-        chips and two boxes, and a shut field that also hid *the answer* would
-        be quieter and worse, because then it has to be opened every time to
-        find out (docs/adr/0088 §3).
-
-        Empty until there is an address. The `EIS` chip arrives selected and
-        means nothing on its own, so a summary reading «· EIS» on an untouched
-        form would state an answer nobody had given — which is the shape of
-        mistake this whole package is about.
-
-        Read off the raw data rather than `cleaned_data`, because a refused save
-        must still say what it is holding, and a refusal may be *why* there is
-        no cleaned value.
-        """
-        if not self.is_bound:
-            return ""
-        url = (self.data.get(self.add_prefix("url")) or "").strip()
-        if not url:
-            return ""
-        kind = (self.data.get(self.add_prefix("kind")) or "").strip()
-        name = dict(ProceduralLinkKind.choices).get(kind, "")
-        label = (self.data.get(self.add_prefix("label")) or "").strip()
-        if name and label:
-            return f"{name}: {label}"
-        return label or str(name)
-
-    @property
-    def disclosure_open(self) -> bool:
-        """Whether the block renders open.
-
-        Server-decided and server-rendered, so a browser with scripting off gets
-        the same page. Open on a refusal this block owns — the box somebody has
-        to correct must be reachable — and closed otherwise, including on a
-        refused save whose problem is somewhere else: the summary already says
-        what is held, and unfolding it to prove that would undo the fold on the
-        one path where somebody is already being asked to fix something else.
-        `policy_area_disclosure_open` takes the same position, and this follows
-        it deliberately (docs/adr/0088 §3).
-        """
-        if not self.is_bound:
-            return False
-        return bool(self.errors)
 
     @property
     def wants_link(self) -> bool:
@@ -6588,17 +6577,13 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
             return False
         return bool((self.data.get(self.add_prefix("url")) or "").strip())
 
-    def clean(self) -> dict[str, Any]:
-        """Require the kind only once there is an address to classify.
-
-        `kind` is `required=False` at field level so that the service's sentence
-        is the one a person reads. This form is only ever validated when
-        :attr:`wants_link` already said there is an address, so a missing kind
-        here is a real omission and is refused on the chip row.
-        """
-        from app.matters.services import PROCEDURAL_LINK_NEEDS_KIND
-
-        cleaned = super().clean() or {}
-        if cleaned.get("url") and not cleaned.get("kind"):
-            self.add_error("kind", PROCEDURAL_LINK_NEEDS_KIND)
-        return cleaned
+    #: No `clean` of its own, and the absence is the change.
+    #:
+    #: It used to refuse a save whose address carried no kind, with
+    #: `PROCEDURAL_LINK_NEEDS_KIND` on the chip row. There is no chip row and no
+    #: kind to omit: every link recorded here is stored under
+    #: :attr:`STORED_KIND`, so the only rule left is the address rule, and that
+    #: one lives in `ProceduralLinkFieldsMixin` where the correction form reads it
+    #: too (docs/adr/0094 §3). `PROCEDURAL_LINK_NEEDS_KIND` itself stays — the
+    #: Teema page's panel and the edit form both still ask the question and both
+    #: still refuse an unanswered one.

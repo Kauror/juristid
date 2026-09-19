@@ -28,7 +28,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, give_first_step, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -139,8 +139,7 @@ def test_a_sender_can_be_named_on_uus_teema(page, base_url):
     # A next step, for the same reason `test_addressee_free_entry` files one:
     # every Teema this suite leaves behind without one is a permanent row in
     # the department's «järgmise tegevuseta» list, which another file reads.
-    page.fill("#id_next-text", "Kontrollida, kas saatja ootab vastust")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
@@ -167,8 +166,7 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
     # files its own, because it needs a record to open `Muuda teemat` on.
     name_a_new_sender(page, TYPED_SENDER)
     page.fill("#id_title", "Sama asutus adressaadina")
-    page.fill("#id_next-text", "Kontrollida vastust")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 

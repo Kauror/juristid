@@ -29,7 +29,13 @@ import uuid
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import (
+    HETKESEIS_MENU,
+    MARTIN,
+    VALDKONNAD_MENU,
+    open_hetkeseis,
+    sign_in,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -71,7 +77,12 @@ INSTRUMENTS = (
 STAGE_FIELD = 'fieldset.field:has(input[name="stage"])'
 INSTRUMENT_FIELD = 'fieldset.field:has(input[name="legal_instruments"])'
 SENDER_FIELD = 'fieldset.field:has(input[name="sender_name"])'
-VALDKOND_FIELD = "fieldset.field:has([data-valdkond-disclosure])"
+#: `Valdkonnad` and `Hetkeseis` answer through a menu since docs/adr/0094 §2,
+#: so the *row* is the trigger and the fieldset lives inside the panel. Order and
+#: overflow are about where the reader looks, so both are measured on the whole
+#: `<details>`; the chip vocabularies are read inside it.
+VALDKOND_FIELD = VALDKONNAD_MENU
+STAGE_ROW = HETKESEIS_MENU
 
 
 def create_form(page, base_url, width: int = 1440) -> None:
@@ -92,11 +103,17 @@ def chip_names(page, field: str) -> list[str]:
 
 
 def file_it(page, title: str) -> None:
-    """Save the form with a next step, because every Teema this suite leaves
-    behind is somebody else's fixture (`e2e/test_addressee_free_entry.py`)."""
+    """Save the form with a first step, because every Teema this suite leaves
+    behind is somebody else's fixture (`e2e/test_addressee_free_entry.py`).
+
+    `Arvamuse tähtaeg` is how a Teema gets its first step now: `Järgmiseks` and
+    its `Millal?` chips are off this page, and the one date establishes
+    `Koostan arvamuse` (docs/adr/0094 §5, §6). Typed rather than picked from a
+    chip, because there is no chip — and a fixed future date keeps this
+    independent of the day the suite runs.
+    """
     page.locator("#id_title").fill(title)
-    page.fill("#id_next-text", "Lugeda eelnõu ja koostada arvamus")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    page.fill("#id_response_deadline", "31.12.2027")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
     complaints = page.locator(".field__error, .formerror").all_inner_texts()
@@ -131,7 +148,7 @@ def test_the_classification_block_reads_in_the_reviewed_order(page, base_url):
     create_form(page, base_url)
 
     tops = []
-    for selector in (SENDER_FIELD, VALDKOND_FIELD, STAGE_FIELD, INSTRUMENT_FIELD):
+    for selector in (SENDER_FIELD, VALDKOND_FIELD, STAGE_ROW, INSTRUMENT_FIELD):
         box = page.locator(selector).first.bounding_box()
         assert box is not None, f"{selector} has no box"
         tops.append(box["y"])
@@ -142,6 +159,8 @@ def test_the_classification_block_reads_in_the_reviewed_order(page, base_url):
 def test_the_reviewed_vocabularies_are_what_the_page_offers(page, base_url):
     create_form(page, base_url)
 
+    # The panel is in the document whether or not the menu is open, so the
+    # vocabulary can be read without clicking anything.
     stages = chip_names(page, STAGE_FIELD)
     # Django's named blank option comes first and is a real answer here.
     assert stages[0] == "Määramata"
@@ -185,6 +204,7 @@ def test_an_ordinary_incoming_draft_files_and_reads_back(page, base_url):
     box.fill("Näidismin")
     page.locator("#saatja-tulemused").get_by_role("option", name=MINISTRY, exact=True).click()
 
+    open_hetkeseis(page)
     page.locator(f"{STAGE_FIELD} label.chip, {STAGE_FIELD} span.chip").filter(
         has_text="Kooskõlastusringil"
     ).first.click()
@@ -214,6 +234,7 @@ def test_an_eu_matter_needs_no_second_european_question(page, base_url):
     """Scenario B. The EU-ness is in the type, and nothing is guessed from it."""
     create_form(page, base_url)
 
+    open_hetkeseis(page)
     page.locator(f"{STAGE_FIELD} label.chip, {STAGE_FIELD} span.chip").filter(
         has_text="ELi menetluses"
     ).first.click()
@@ -244,6 +265,7 @@ def test_joustunud_files_an_open_teema(page, base_url):
     """
     create_form(page, base_url)
 
+    open_hetkeseis(page)
     page.locator(f"{STAGE_FIELD} label.chip, {STAGE_FIELD} span.chip").filter(
         has_text="Jõustunud"
     ).first.click()
@@ -272,11 +294,21 @@ def test_the_classification_rows_never_take_the_page_sideways(page, base_url, wi
     )
     assert overflow <= 1, f"the page scrolls sideways by {overflow}px at {width}"
 
-    for selector in (STAGE_FIELD, INSTRUMENT_FIELD):
+    for selector in (STAGE_ROW, INSTRUMENT_FIELD):
         field = page.locator(selector).first.bounding_box()
         row = page.locator(f".createform__row:has({selector})").first.bounding_box()
         assert field is not None and row is not None
         assert field["width"] <= row["width"] + 2, f"{selector} is wider than its row at {width}px"
+
+    # And with the menus open, which is the state a fold never had: an overlay
+    # that is wider than its row would take the document sideways without
+    # lengthening it, so nothing above would catch it (docs/adr/0094 §2).
+    open_hetkeseis(page)
+    page.locator(VALDKONNAD_MENU).locator("> summary").click()
+    opened = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+    )
+    assert opened <= 1, f"an open menu scrolls the page sideways by {opened}px at {width}"
 
 
 @pytest.mark.parametrize("width", [1440, 420])
@@ -288,6 +320,13 @@ def test_both_vocabularies_are_answerable_from_the_keyboard(page, base_url, widt
     neither needs a mouse.
     """
     create_form(page, base_url, width)
+
+    # The trigger is one tab stop and opens on Space, which is what keeps the
+    # menu reachable without a mouse (docs/adr/0094 §2).
+    trigger = page.locator(HETKESEIS_MENU).locator("> summary")
+    trigger.focus()
+    page.keyboard.press(" ")
+    expect(page.locator(HETKESEIS_MENU)).to_have_attribute("open", "")
 
     stage = page.locator(f'{STAGE_FIELD} input[type="radio"]').nth(2)
     stage.focus()
