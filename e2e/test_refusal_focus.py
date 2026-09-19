@@ -6,6 +6,12 @@ had been refused correctly and said so — eleven blocks down, below the fold,
 where nobody was looking. On a long form a correct refusal that nobody can see
 is indistinguishable from a button that does nothing.
 
+`Järgmiseks` is off that page now and `Arvamuse tähtaeg` is the last question on
+it, so the refusal these scenarios provoke is a date that cannot be read rather
+than a step with no date (docs/adr/0094 §5, §6). The rule is unchanged and so is
+the shape of the case: the control that is wrong is the one nearest the bottom
+of a form taller than the window.
+
 Only a browser can answer this. The server tests prove the refusal happens and
 that the message is rendered beside its field; what is in doubt is whether the
 person ends up looking at it, and that is a question about scroll position,
@@ -24,9 +30,19 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, SANDRA, sign_in
+from e2e.conftest import (
+    MARTIN,
+    SANDRA,
+    sign_in,
+)
 
 pytestmark = pytest.mark.e2e
+
+#: A date `EstonianDateField` cannot read, which is the refusal `Arvamuse
+#: tähtaeg` makes on its own — and it is the last question on the form, so the
+#: message lands at the bottom of a page taller than the window. That is the
+#: shape these scenarios need; which field produces it is incidental.
+BAD_DATE = "32.13.2026"
 
 #: `.topbar` is `position: sticky` and exactly this tall. The stylesheet clears
 #: it with `scroll-margin-top`; this is the number that clearance has to beat.
@@ -77,41 +93,43 @@ def test_a_refusal_below_the_fold_brings_the_person_to_it(page, base_url):
     page.set_viewport_size({"width": 1440, "height": 600})
     create_form(page, base_url)
 
-    page.fill("#id_title", "Kuupäevata samm, mis tuleb ise üles leida")
-    page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
+    page.fill("#id_title", "Loetamatu tähtaeg, mis tuleb ise üles leida")
+    page.fill("#id_response_deadline", BAD_DATE)
     # Proving the field really is out of sight to start with: this is the whole
     # premise, and a window taller than the form would make the test vacuous.
     page.evaluate("() => window.scrollTo(0, 0)")
-    assert page.locator("#id_next-target_date").bounding_box()["y"] > page.viewport_size["height"]
+    assert page.locator("#id_response_deadline").bounding_box()["y"] > page.viewport_size["height"]
 
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#jargmine-tegevus")).to_contain_text("Vali järgmise tegevuse kuupäev.")
-    assert focused_id(page) == "id_next-target_date", focused_id(page)
-    assert_in_view(page, page.locator("#id_next-target_date"), "the refused date box")
+    expect(page.locator("#arvamuse-tahtaeg .field__error")).to_be_visible()
+    assert focused_id(page) == "id_response_deadline", focused_id(page)
+    assert_in_view(page, page.locator("#id_response_deadline"), "the refused date box")
 
 
-def test_the_disclosure_holding_the_refused_control_is_opened(page, base_url):
-    """**B.** A control inside a closed `<details>` has no box and no focus.
-
-    «Kuupäev…» is a real disclosure, so the exact date is reachable with
-    scripting off. Whatever closed it, a refusal about the box inside it has to
-    open it — otherwise the page scrolls to a summary and the explanation is
-    still hidden.
-    """
-    sign_in(page, base_url, MARTIN)
-    create_form(page, base_url)
-
-    page.fill("#id_title", "Suletud paneeli taga peituv viga")
-    page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
-    page.get_by_role("button", name="Loo teema").click()
-    page.wait_for_load_state("networkidle")
-
-    disclosure = page.locator("#jargmine-tegevus details.uxcomp__date")
-    assert disclosure.evaluate("node => node.open"), "the date disclosure came back closed"
-    expect(page.locator("#id_next-target_date")).to_be_visible()
-    assert focused_id(page) == "id_next-target_date"
+# `test_the_disclosure_holding_the_refused_control_is_opened` stood here, and it
+# is retired because its subject is.
+#
+# **B.** A control inside a closed `<details>` has no box and no focus, so a
+# refusal about it has to open the disclosure on the way — otherwise the page
+# scrolls to a summary and the explanation is still hidden. The case it drove was
+# `Järgmiseks` on `Uus teema`: a step typed with no date, refused on a box behind
+# «Kuupäev…».
+#
+# That block is off the creation page (docs/adr/0094 §6), and with it went the
+# last `<details>` in the product holding a control that can be refused. Checked
+# rather than assumed: `templates/matters/partials/composer.html` still has one
+# and is included by nothing; `#lisa-jargmine` reaches its date through the
+# `Täpsus` group rather than a disclosure (e2e/conftest.py
+# `open_next_action_form`); `Muuda teemat` folds nothing; and both `Uus teema`
+# menus deliberately keep every refusal *outside* the panel, precisely so that a
+# shut menu can never hide something that has to be read (docs/adr/0094 §2.3).
+#
+# So there is nothing left to photograph. The rule itself is untouched —
+# `revealAndFocus` still walks every closed ancestor and opens it, outermost
+# first — and the day a surface puts a field behind a disclosure again, this
+# scenario is the one to bring back rather than rewrite.
 
 
 def test_the_cursor_goes_to_the_control_that_is_wrong_not_the_first_one(page, base_url):
@@ -126,7 +144,7 @@ def test_the_cursor_goes_to_the_control_that_is_wrong_not_the_first_one(page, ba
     create_form(page, base_url)
 
     page.fill("#id_title", "Pealkiri on korras")
-    page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
+    page.fill("#id_response_deadline", BAD_DATE)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
@@ -206,9 +224,9 @@ def test_the_refused_control_clears_the_bar_at_every_width(page, base_url, width
     create_form(page, base_url)
 
     page.fill("#id_title", f"Vigane vorm laiusel {width}")
-    page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
+    page.fill("#id_response_deadline", BAD_DATE)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    assert focused_id(page) == "id_next-target_date", focused_id(page)
-    assert_in_view(page, page.locator("#id_next-target_date"), f"the refused box at {width}px")
+    assert focused_id(page) == "id_response_deadline", focused_id(page)
+    assert_in_view(page, page.locator("#id_response_deadline"), f"the refused box at {width}px")

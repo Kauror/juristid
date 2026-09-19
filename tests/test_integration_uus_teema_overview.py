@@ -88,8 +88,10 @@ def created(signed_in, specialist, stage):
             "policy_areas": [area.pk],
             "stage": stage.pk,
             "files": upload("kaaskiri.pdf", b"%PDF-1.4 integratsioon", "application/pdf"),
-            "next-text": "Loen eelnou labi",
-            "next-target_date": tomorrow.strftime("%d.%m.%Y"),
+            # The first step comes from `Arvamuse tähtaeg` — one box, which both
+            # records the obligation and establishes `Koostan arvamuse`.
+            # `Järgmiseks` is off this page (docs/adr/0094 §5, §6).
+            "response_deadline": tomorrow.strftime("%d.%m.%Y"),
         },
     )
     assert response.status_code in (302, 303), response.status_code

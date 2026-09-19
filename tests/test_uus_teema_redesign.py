@@ -24,6 +24,7 @@ from app.accounts.enums import UserRole
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
+from app.matters.enums import ProceduralLinkKind
 from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
@@ -86,11 +87,9 @@ def test_the_whole_field_set_the_new_page_posts_is_accepted(signed_in, evidence_
     prefilled, and every optional select and text box arrives empty. A test
     that posts only a title exercises a POST no browser makes.
 
-    The next-action half is now two blank boxes. The mode chip that started on
-    TEEN, the meaning chip that started on Tähtaeg and the date that started on
-    today are all gone: a lawyer who wrote nothing about a next step posts
-    nothing about one, and the block is silent rather than pre-answered
-    (ADR 0052 addendum).
+    The next-step half is no longer posted at all: `Järgmiseks` is off this page
+    and `Arvamuse tähtaeg` is the one date it asks (docs/adr/0094 §5, §6). Left
+    empty here, so this stays a test about the *empties* a browser sends.
     """
     from django.utils import timezone as tz
 
@@ -103,23 +102,23 @@ def test_the_whole_field_set_the_new_page_posts_is_accepted(signed_in, evidence_
             "notes": "",
             "owner": "",
             "received_date": today,
-            "response_deadline": today,
+            "response_deadline": "",
             "policy_area_other": "",
             "stage": "",
             "track": "",
             "addressee_organisation": "",
-            "next-text": "",
-            "next-target_date": "",
+            "menetlus-url": "",
+            "menetlus-label": "",
             "files": upload("kaaskiri.txt", "Näidiskaaskiri.".encode(), "text/plain"),
         },
     )
 
     matter = Matter.objects.get(title="Nagu brauser saadab")
     assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
-    # The next-action block was on screen and untouched. Nothing was written,
-    # and — the part the old prefilled date used to hide — nothing needed to be
-    # refused either.
+    # Every optional box was on screen and empty. Nothing was written, and
+    # nothing needed to be refused either.
     assert not NextAction.objects.filter(matter=matter).exists()
+    assert matter.response_deadline is None
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +150,9 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
             # that carries whether the file is domestic or European.
             "legal_instruments": [seadus.pk],
             "files": upload("eelnou.pdf", corpus.government_pdf()),
-            "next-text": "Loen eelnõu läbi ja koostan liikmete küsitluse",
-            "next-target_date": "5.9.2026",
+            # No `next-*` keys: `Järgmiseks` is off this page, and the first step
+            # comes from `Arvamuse tähtaeg` above (docs/adr/0094 §5, §6).
+            "menetlus-url": "https://eelnoud.valitsus.ee/main/mount/docList/abc",
         },
     )
 
@@ -180,6 +180,12 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     version = DocumentVersion.objects.get(document__matter=matter)
     assert version.original_filename == "eelnou.pdf"
 
+    # One address, filed under the neutral kind nobody was asked to choose
+    # (docs/adr/0094 §3).
+    link = matter.procedural_links.get()
+    assert link.url == "https://eelnoud.valitsus.ee/main/mount/docList/abc"
+    assert link.kind == ProceduralLinkKind.OTHER
+
     action = NextAction.objects.get(matter=matter)
     # Nobody chose these three. A step created natively is DO / DEADLINE /
     # EXACT, because on this surface the date is the day the work gets done
@@ -187,7 +193,10 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     assert action.kind == ActionKind.DO
     assert action.date_semantics == DateSemantics.DEADLINE
     assert action.date_precision == DatePrecision.EXACT
-    assert action.target_date == date(2026, 9, 5)
+    # The step is `Koostan arvamuse` and its day is `Arvamuse tähtaeg` — the
+    # same date the Matter carries, from the one box that asked for it.
+    assert action.text == "Koostan arvamuse"
+    assert action.target_date == date(2026, 9, 18)
     # No responsible control on the page; the step inherits the Matter's owner.
     assert action.responsible == specialist
 
@@ -312,7 +321,10 @@ def test_the_withdrawn_labels_are_not_offered_anywhere_on_the_page(
     assert withdrawn not in offered
 
     body = signed_in.get(CREATE).content.decode()
-    start = body.index("data-valdkond-disclosure")
+    # Scoped to the Valdkonnad menu's own panel, which is where the row lives
+    # since docs/adr/0094 §2 — the fold and its `data-valdkond-disclosure` hook
+    # are gone, the panel has an id, and the reason for scoping is unchanged.
+    start = body.index('id="valdkonnad-menuu"')
     assert withdrawn not in body[start : body.index("</details>", start)]
 
 

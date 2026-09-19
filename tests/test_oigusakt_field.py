@@ -594,7 +594,7 @@ def test_the_rendered_page_puts_oigusakt_last_in_the_classification_block(signed
     """
     body = signed_in.get(CREATE).content.decode()
 
-    valdkond = body.index("data-valdkond-disclosure")
+    valdkond = body.index('id="valdkonnad-menuu"')
     stage = body.index('name="stage"')
     oigusakt = body.index('name="legal_instruments"')
     assert valdkond < stage < oigusakt

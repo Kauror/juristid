@@ -34,7 +34,14 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_title
+from e2e.conftest import (
+    SANDRA,
+    create_matter,
+    open_add_panel,
+    open_hetkeseis,
+    sign_in,
+    unique_title,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -90,6 +97,8 @@ def _matter_with_instrument(page, base_url: str, instrument: str, *, stage: str 
     page.fill("#id_title", unique_title("Menetluse kulg"))
     page.get_by_role("checkbox", name=instrument, exact=True).check()
     if stage is not None:
+        # Behind a menu since docs/adr/0094 §2; it shuts itself once answered.
+        open_hetkeseis(page)
         page.get_by_role("radio", name=stage, exact=True).check()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))

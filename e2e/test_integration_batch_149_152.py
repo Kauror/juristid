@@ -35,7 +35,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, open_add_panel, sign_in
+from e2e.conftest import SANDRA, give_first_step, open_add_panel, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -97,8 +97,7 @@ def create_with_a_staged_file(page, base_url: str, title: str, pdf: Path) -> str
     expect(page.locator("#intake-failid .dropzone__file")).to_have_count(1, timeout=30_000)
 
     page.fill("#id_title", title)
-    page.fill("#id_next-text", "Lugeda eelnõu ja koostada arvamus")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url

@@ -83,8 +83,15 @@ def test_a_refused_save_and_the_back_that_follows_it(page, base_url):
 
     assert "/teemad/uus/" in page.url, "the blank-title save was not refused"
     assert LINK_REFUSAL not in page.content(), "an untouched procedural link block was refused"
-    assert page.locator("#menetluse-link[open]").count() == 0, (
-        "the untouched block was opened by a refusal it does not own"
+    # The block is open by default now, so what it must not do is carry a
+    # refusal it does not own — the same rule the fold served, reached from the
+    # other side. A visible block reporting errors nobody caused is a
+    # permanently mandatory-looking panel (docs/adr/0094 §3).
+    assert page.locator("#menetluse-link .field__error").count() == 0, (
+        "the untouched block shows a refusal it does not own"
+    )
+    assert page.locator("#menetluse-link").is_visible(), (
+        "the block a lawyer is meant to type into on arrival is not on screen"
     )
 
     # Fix the real problem and file the Teema.

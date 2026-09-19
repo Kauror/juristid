@@ -121,7 +121,10 @@ def test_the_classification_rows_are_in_the_reviewed_order(signed_in):
     page = signed_in.get(CREATE).content.decode()
     positions = [
         page.index('id="saatja-valik"'),
-        page.index("data-valdkond-disclosure"),
+        # The Valdkonnad menu's trigger. It was `data-valdkond-disclosure` on a
+        # `<details>` fold; the control is a menu now and the row is where it
+        # was (docs/adr/0094 §2).
+        page.index('id="valdkonnad-menuu"'),
         page.index('name="stage"'),
         page.index('name="legal_instruments"'),
     ]

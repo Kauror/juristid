@@ -62,7 +62,7 @@ import uuid
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, give_first_step, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -239,8 +239,7 @@ def file_the_teema(page, title: str) -> None:
     (`e2e/test_addressee_free_entry.py`).
     """
     page.locator("#id_title").fill(title)
-    page.fill("#id_next-text", "Kontrollida, kas saatja ootab vastust")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("domcontentloaded")
     complaints = page.locator(".field__error, .formerror").all_inner_texts()

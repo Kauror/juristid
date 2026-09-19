@@ -346,11 +346,6 @@ def test_the_whole_field_set_a_browser_sends_is_accepted(signed_in, evidence_roo
             "track": "",
             "addressee_organisation": "",
             "response_deadline": "",
-            "next-text": "",
-            "next-kind": "DO",
-            "next-date_semantics": "DEADLINE",
-            "next-target_date": "",
-            "next-responsible": "",
             "files": upload("kaaskiri.txt", "Näidiskaaskiri.".encode(), "text/plain"),
         },
     )
@@ -359,36 +354,45 @@ def test_the_whole_field_set_a_browser_sends_is_accepted(signed_in, evidence_roo
     assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
 
 
-def test_the_optional_next_action_block_does_not_block_the_browser(signed_in):
+def test_no_optional_control_on_the_page_blocks_the_browser(signed_in):
     """The defect a browser found and no server-side test could.
 
-    `Järgmiseks` is optional, but its text field was rendered `required` inside
-    a closed `<details>`. Chrome will not submit a form holding an invalid
-    control it cannot focus, and says nothing — so the button did nothing.
+    `Järgmiseks` was optional and its text field was rendered `required` inside a
+    closed `<details>`. Chrome will not submit a form holding an invalid control
+    it cannot focus, and says nothing — so the button did nothing.
+
+    That block is off the page (docs/adr/0094 §6), and the rule it taught is
+    what is asserted instead: nothing on this form but the title may carry the
+    attribute, because nothing on it but the title is required. Swept over every
+    rendered control rather than named one at a time — a guard that names the
+    field that once had the bug stops covering the next field somebody adds.
     """
-    body = signed_in.get(CREATE).content.decode()
     import re
 
-    field = re.search(r'<[^>]*id="id_next-text"[^>]*>', body)
-    assert field, "the next-action field is not rendered"
-    assert "required" not in field.group(0), field.group(0)
+    body = signed_in.get(CREATE).content.decode()
+    offenders = [
+        tag
+        for tag in re.findall(r"<(?:input|textarea|select)\b[^>]*>", body)
+        if re.search(r"\brequired\b", tag) and 'id="id_title"' not in tag
+    ]
+
+    assert offenders == [], offenders
 
 
-def test_a_next_action_is_still_validated_when_somebody_writes_one(signed_in):
-    """Optional in the browser, not optional once used."""
+def test_the_deadline_is_still_validated_when_somebody_writes_one(signed_in):
+    """Optional in the browser, not optional once used.
+
+    `Arvamuse tähtaeg` is the box `Järgmiseks` used to stand beside, and an
+    unparseable date is refused on it rather than dropped — which matters more
+    now that the same box establishes the first step.
+    """
     response = signed_in.post(
         CREATE,
-        {
-            "title": "Poolik järgmiseks",
-            "next-text": "Koosta arvamus",
-            "next-kind": "DO",
-            "next-date_semantics": "DEADLINE",
-            "next-target_date": "",
-        },
+        {"title": "Poolik tähtaeg", "response_deadline": "32.13.2026"},
     )
 
     assert response.status_code == 400
-    assert not Matter.objects.filter(title="Poolik järgmiseks").exists()
+    assert not Matter.objects.filter(title="Poolik tähtaeg").exists()
 
 
 def test_a_storage_failure_leaves_no_reachable_matter_behind(signed_in, evidence_root, monkeypatch):

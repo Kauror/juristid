@@ -42,7 +42,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, needs_intake_reading, sign_in
+from e2e.conftest import MARTIN, give_first_step, needs_intake_reading, sign_in
 from e2e.test_uus_teema_reading import (
     LETTER,
     REPOSITORY_ROOT,
@@ -204,8 +204,7 @@ def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_u
     expect(page.locator("#saatja-valik [data-orgfind-provisional]")).to_be_visible()
 
     page.locator("#id_title").fill(title)
-    page.fill("#id_next-text", "Lugeda eelnõu ja koostada arvamus")
-    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+    give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("domcontentloaded")
 

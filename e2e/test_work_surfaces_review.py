@@ -371,12 +371,13 @@ def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):
     # (e2e/test_next_step_arrival.py). The title avoids «Tavaline» and
     # «Näidis», which neighbouring files search the register for by exact count.
     page.get_by_role("radio", name=MARTIN.short_name, exact=True).check()
-    page.fill("#id_next-text", "Kontrollida, kas ministeerium vastas")
-    # `Kuupäev…` opened rather than a quick span pressed: the spans this form
-    # offers are a week or less, which is the band above the one under test
-    # (`e2e/test_lawyer_workflow.py` reaches the exact box the same way).
-    page.locator("#jargmine-tegevus").locator("summary", has_text="Kuupäev…").click()
-    page.locator("#id_next-target_date").fill(_future(14))
+    # The one date the form asks for, which establishes the file's first step.
+    # It was `Järgmiseks` and its `Kuupäev…` disclosure; both are off this page
+    # (docs/adr/0094 §5, §6). Typed rather than picked from a quick chip for the
+    # reason that disclosure was opened here — the band under test is a
+    # fortnight out, and the chips this form offered were a week or less. There
+    # are no chips now, so it is simply typed.
+    page.locator("#id_response_deadline").fill(_future(14))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 

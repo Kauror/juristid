@@ -16,6 +16,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -343,22 +344,76 @@ needs_intake_reading = pytest.mark.skipif(
 )
 
 
-def open_valdkond(page) -> None:
-    """Unfold Valdkonnad on `Uus teema`, which arrives shut.
+#: The two `Uus teema` vocabularies that answer through a menu. `Valdkonnad`
+#: holds several and stays open while they are ticked; `Hetkeseis` holds one and
+#: shuts itself once it has been answered (docs/adr/0094 §2).
+VALDKONNAD_MENU = "details.chipmenu:not([data-chipmenu-single])"
+HETKESEIS_MENU = "details.chipmenu[data-chipmenu-single]"
 
-    The vocabulary moved behind a disclosure when the lawyers' first feedback
-    round asked for the creation form to stop sitting permanently open
-    (docs/adr/0088 §3). A closed `<details>` keeps its contents in the document
-    — every `to_be_attached` and every `evaluate` over the chips still works
-    through it — but nobody can *click* what nobody can see, so a test that
-    ticks an area opens the field first. That is also what the person does.
 
-    Idempotent, so a test may call it without knowing whether an earlier
-    refusal already rendered the disclosure open.
+def _open_chipmenu(page, selector: str) -> None:
+    """Open one menu on `Uus teema`, if it is not open already.
+
+    A shut `<details>` keeps its contents in the document — every
+    `to_be_attached` and every `evaluate` over the chips still works through it
+    — but nobody can *click* what nobody can see, so a test that ticks a chip
+    opens the menu first. That is also what the person does.
+
+    Idempotent, so a caller may use it without knowing what an earlier step left
+    behind.
     """
-    disclosure = page.locator("[data-valdkond-disclosure]")
-    if disclosure.count() and not disclosure.evaluate("node => node.open"):
-        disclosure.locator("> summary").click()
+    menu = page.locator(selector)
+    if menu.count() and not menu.evaluate("node => node.open"):
+        menu.locator("> summary").click()
+
+
+def open_valdkond(page) -> None:
+    """Open Valdkonnad on `Uus teema`, which arrives shut.
+
+    The vocabulary went behind a disclosure when the lawyers' first feedback
+    round asked for the creation form to stop sitting permanently open
+    (docs/adr/0088 §3), and behind a *menu* when the next round said that
+    opening the disclosure re-laid out the form underneath them
+    (docs/adr/0094 §2). Shut is still the resting state either way; what changed
+    is that the panel overlays instead of lengthening the page.
+    """
+    _open_chipmenu(page, VALDKONNAD_MENU)
+
+
+def open_hetkeseis(page) -> None:
+    """Open Hetkeseis on `Uus teema`, which arrives shut.
+
+    It was a permanently drawn row of eleven chips. A lawyer answers it once and
+    reads past it for the rest of a file's life, so it is a pill carrying the
+    answer and a menu behind it (docs/adr/0094 §2).
+
+    Anything that *checks* a stage radio has to call this first: a radio inside a
+    shut `<details>` is in the document and not on the screen, and Playwright
+    refuses to click what it cannot see — correctly, because neither can a
+    person. The menu closes itself again as soon as the radio is picked.
+    """
+    _open_chipmenu(page, HETKESEIS_MENU)
+
+
+def give_first_step(page, *, days: int = 7) -> None:
+    """Fill `Arvamuse tähtaeg` on an open `Uus teema`, which gives the Teema a step.
+
+    Every Teema this suite leaves behind without an open step is a permanent row
+    in the department's «järgmise tegevuseta» list, which other files read — so a
+    file that creates Matters owes each of them one.
+
+    It used to be four lines per caller: type a sentence into `Järgmiseks` and
+    press the `+1 nädal` chip. Neither control is on this page any more. The one
+    date the form asks for establishes the canonical `Koostan arvamuse` step, so
+    this is the whole of it (docs/adr/0094 §5, §6).
+
+    Relative to today rather than a fixed future date: a constant eventually
+    becomes a date in the past, and then every Teema this suite files is overdue
+    on the surfaces that count lateness — which is a whole shard going red for
+    the calendar rather than for the code.
+    """
+    when = date.today() + timedelta(days=days)
+    page.fill("#id_response_deadline", f"{when.day}.{when.month}.{when.year}")
 
 
 def open_composer(page) -> None:
@@ -446,6 +501,9 @@ def create_matter(
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", title)
     if stage is not None:
+        # Behind a menu since docs/adr/0094 §2, and it shuts itself again once
+        # the radio is picked.
+        open_hetkeseis(page)
         page.get_by_role("radio", name=stage, exact=True).check()
     if owner is not None:
         page.get_by_role("radio", name=owner.short_name, exact=True).check()

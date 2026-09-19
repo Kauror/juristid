@@ -106,7 +106,6 @@ from app.matters.forms import (
     EntryEditForm,
     ExternalPositionEditForm,
     IncomingIntakeForm,
-    InitialOpinionActionForm,
     KodaOpinionForm,
     MatterCreateForm,
     MatterEditForm,
@@ -242,20 +241,21 @@ from app.workflow.services import (
     set_next_action_for_new_work,
 )
 
-#: Refused when `Uus teema` is answered with both a free-text first step and a
-#: `Koostan arvamuse` date.
+#: `TWO_FIRST_STEPS_REFUSAL` stood here, and is retired with the question that
+#: needed it.
 #:
-#: A Matter has one open `NextAction` —
-#: `workflow_one_open_action_per_matter` — so only one of the two boxes can
-#: become it. Dropping either silently would leave a person who answered both
-#: with one of their two facts missing and nothing said about it, so the save is
-#: refused and names the choice (docs/adr/0091 §1.3).
+#: `Uus teema` used to offer two ways to give a Matter its first step — a
+#: free-text `Järgmiseks` panel and a `Koostan arvamuse` date — and a Matter has
+#: one open `NextAction`, so only one of the two could become it. Dropping either
+#: silently would have left somebody who answered both with one of their two
+#: facts missing and nothing said about it, so the save was refused and named the
+#: choice (docs/adr/0091 §1.3).
 #:
-#: Named here because the view raises it and a test asserts on it.
-TWO_FIRST_STEPS_REFUSAL = (
-    "Teemal saab olla üks pooleli tegevus. "
-    "Täida kas «Järgmiseks» või «Koostan arvamuse», mitte mõlemad."
-)
+#: `Järgmiseks` is off the creation page altogether and `Arvamuse tähtaeg` is the
+#: one date it asks, so there is no second answer left to collide with and
+#: nothing for the sentence to say (docs/adr/0094 §5, §6). The rule underneath is
+#: untouched and still enforced where it always was, in the database:
+#: `workflow_one_open_action_per_matter`.
 
 #: How many register rows a page holds, and the sizes a reader may choose
 #: instead. Twelve by default: the v2 design puts the Arvamused section under
@@ -1743,42 +1743,30 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     behaves exactly as it did before.
     """
     form = MatterCreateForm(request.POST or None, viewer=request.user)
-    # Bound only when somebody actually asked for a next action. Bound
-    # unconditionally, a refused save — a missing title, a rejected file —
-    # re-rendered the optional Järgmine tegevus block with "See lahter on
-    # nõutav." under fields nobody had touched, and opened the disclosure to
-    # show them. That reads as "this is mandatory after all", which is the one
-    # thing the block must not say (specification 3.8, Agent-UI brief 9.6).
+    # **No second form for the first step, and no second date.**
     #
-    # **Either half counts.** Reading `next-text` alone was right while the date
-    # arrived pre-filled with today, because then a date was never evidence of
-    # anything. It is blank now (ADR 0052 §5), so somebody who pressed `Homme`
-    # and forgot to write the sentence has plainly asked for a next step — and
-    # under the old signal their date would have been silently dropped and the
-    # Teema created without it. The form refuses it instead, on the box that is
-    # empty.
+    # Two blocks used to be bound conditionally here: a free-text `Järgmiseks`
+    # panel and a `Koostan arvamuse` date box, each with its own prefix, each
+    # bound only when somebody had answered it — because an unconditionally bound
+    # optional form prints "See lahter on nõutav." under controls nobody touched,
+    # which reads as "this is mandatory after all" (specification 3.8).
     #
-    # It stays one definition, used both to bind the form and to decide below
-    # whether to call the service.
-    wants_action = any(
-        (request.POST.get(key) or "").strip() for key in ("next-text", "next-target_date")
-    )
-    action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
-    # `Koostan arvamuse` — bound only when somebody typed a date, for exactly the
-    # reason the block above is bound conditionally: an unconditionally bound
-    # optional form prints refusals under a control nobody touched, and this one is
-    # a single box whose refusal would be the only red thing on a page that failed
-    # for another reason entirely (lawyer feedback 9, docs/adr/0091 §1).
-    wants_opinion_action = bool((request.POST.get("arvamus-prepare_by") or "").strip())
-    opinion_action_form = InitialOpinionActionForm(
-        request.POST if wants_opinion_action else None, prefix="arvamus"
-    )
-    # `Menetluse link`, bound *and* empty-permitted, which is the same rule
-    # `wants_action` states above reached from the other side. The block must
-    # come back holding what was typed when the save is refused elsewhere, so it
-    # stays bound; and the chip row arrives with `EIS` pre-selected, so a bound
-    # form that also validated would refuse every save that had not used this
-    # block, with «Menetluse link vajab veebiaadressi.» under a box nobody had
+    # Neither is on the page. `Järgmiseks` is answered where a lawyer changes a
+    # plan, in the Teema composer, and the first step now comes from
+    # `Arvamuse tähtaeg` — `MatterCreateForm.response_deadline`, a field on the
+    # form above, so there is nothing extra to bind and nothing that can refuse
+    # on its own (docs/adr/0094 §5, §6).
+    #
+    # Which also closes the collision the two blocks had with each other: a
+    # Matter has one open step, so answering both had to be a refusal. One
+    # question cannot disagree with itself.
+    # `Menetluse link`, bound *and* empty-permitted. Bound, because the block has
+    # to come back holding what was typed into it when the save is refused for a
+    # reason somewhere else — and it is on screen from the first render now, so
+    # there is more of it to lose (docs/adr/0094 §3). Empty-permitted, because a
+    # bound form validates and this one has nothing to validate until somebody
+    # types an address: without it every save that had not used the block came
+    # back with «Menetluse link vajab veebiaadressi.» under a box nobody had
     # touched. `ProceduralLinkCreateForm.has_changed` is where that is settled,
     # off the same `wants_link` this line reads (docs/adr/0089 §13, QA-01).
     procedural_form = ProceduralLinkCreateForm(request.POST or None, prefix="menetlus")
@@ -1813,31 +1801,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         uploads = [*resumed, *chosen]
 
         refused = bool(upload_refusals) or not form.is_valid()
-        if wants_action and not action_form.is_valid():
-            refused = True
-        if wants_opinion_action and not opinion_action_form.is_valid():
-            refused = True
+        # `Arvamuse tähtaeg` is a field on `form`, so a badly typed date is
+        # already counted above and comes back in its own box. There is no
+        # separate next-step form left to validate (docs/adr/0094 §5).
+        #
         # Validated *before* anything is written, like every other half of this
         # save: a refused address must not leave a Teema behind carrying the
         # rest. What was typed comes back in the box, because the form travels
         # bound into `_create_context` (docs/adr/0089 §13).
         if wants_procedural_link and not procedural_form.is_valid():
-            refused = True
-        # **One open step per Matter, so one of the two may be answered.**
-        #
-        # `Järgmiseks` and `Koostan arvamuse` both want the Matter's single open
-        # `NextAction`, and `workflow_one_open_action_per_matter` means only one can
-        # have it. Silently dropping either would be the worse answer by a long way
-        # — a lawyer who wrote a sentence *and* a preparation date would find one of
-        # the two facts missing with nothing said about it — so both come back with
-        # what was typed, and the refusal names the choice rather than a field
-        # (docs/adr/0091 §1.3).
-        #
-        # It is a rare collision: a person who has a preparation date does not
-        # usually also write a free-text first step. That is why it is a refusal
-        # rather than a redesign of the page.
-        if wants_action and wants_opinion_action:
-            form.add_error(None, TWO_FIRST_STEPS_REFUSAL)
             refused = True
 
         if refused:
@@ -1858,8 +1830,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 _create_context(
                     request,
                     form,
-                    action_form,
-                    opinion_action_form=opinion_action_form,
                     procedural_form=procedural_form,
                     held_keys=held_keys,
                     intake_session=intake_session,
@@ -1971,39 +1941,49 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     link = procedural_form.cleaned_data
                     record_procedural_link(
                         matter=matter,
-                        kind=link.get("kind"),
+                        # Not asked, and not guessed either. `Uus teema` takes an
+                        # address and an optional name for it; what the row is
+                        # filed under is the enum's own value for a link nobody
+                        # has classified, and the reasoning is on the constant
+                        # (`ProceduralLinkCreateForm.STORED_KIND`,
+                        # docs/adr/0094 §3).
+                        kind=ProceduralLinkCreateForm.STORED_KIND,
                         url=link.get("url"),
                         label=link.get("label") or "",
                         actor=request.user,
                     )
 
-                if wants_action:
-                    # The owner is chosen on this same form, so the Matter does not
-                    # exist yet when the action form is read and the service's own
-                    # fallback to `matter.owner` has nothing to fall back to. Handed
-                    # in explicitly, and only as a default: an explicit choice in
-                    # the action form still wins (app/matters/forms.py).
-                    set_next_action_for_new_work(
-                        matter=matter,
-                        actor=request.user,
-                        **action_form.as_service_kwargs(default_responsible=data.get("owner")),
-                    )
-
-                # `Koostan arvamuse` — **inside this transaction**, which is the
-                # whole of docs/adr/0091 §1.3. A Teema that saved while its first
-                # step did not would be a file the lawyer believes has a plan and
-                # every work surface says has none; a step that saved while the
-                # Teema did not would be an instruction attached to nothing. Either
-                # way the person is not told. One transaction, so a refusal leaves
-                # neither and the entered date comes back on the form.
+                # The Teema's first step, from the one date the page asks for.
+                #
+                # `Arvamuse tähtaeg` does two things and this is the second: the
+                # obligation is on the Matter, written by `create_matter` above from
+                # the same `response_deadline`, and the step a lawyer will actually
+                # see on their Minu asjad is established here. One box, one date,
+                # both facts — which is what stopped this page asking the same
+                # question twice under two names (docs/adr/0094 §5).
+                #
+                # There was a `Järgmiseks` call directly above this one, writing a
+                # free-text first step through `set_next_action_for_new_work`. It is
+                # gone with the panel: a first step is `Koostan arvamuse` on the
+                # capture path, and a different plan is stated in the composer,
+                # where changing one is an act with its own audit row
+                # (docs/adr/0094 §6).
+                #
+                # **Inside this transaction**, which is the whole of docs/adr/0091
+                # §1.3. A Teema that saved while its first step did not would be a
+                # file the lawyer believes has a plan and every work surface says
+                # has none; a step that saved while the Teema did not would be an
+                # instruction attached to nothing. Either way the person is not
+                # told. One transaction, so a refusal leaves neither and the
+                # entered date comes back on the form.
                 #
                 # The service is idempotent against an equivalent open step, so a
                 # retried POST cannot produce a second one (§1.3, Scenario H).
-                prepare_by = (
-                    opinion_action_form.cleaned_data.get("prepare_by")
-                    if wants_opinion_action
-                    else None
-                )
+                #
+                # `None` when the box was left empty, and that creates nothing: not
+                # today, not the arrival date, not an undated commitment
+                # (docs/adr/0078 §2, docs/adr/0091 §1.2).
+                prepare_by = data.get("response_deadline")
                 if prepare_by is not None:
                     establish_opinion_preparation_action(
                         matter=matter,
@@ -2033,8 +2013,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 _create_context(
                     request,
                     form,
-                    action_form,
-                    opinion_action_form=opinion_action_form,
                     procedural_form=procedural_form,
                     held_keys=[*held_keys, *(item.key for item in newly_held)],
                     intake_session=intake_session,
@@ -2075,9 +2053,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         _create_context(
             request,
             form,
-            action_form,
             procedural_form=procedural_form,
-            opinion_action_form=opinion_action_form,
         ),
         status=200,
     )
@@ -2086,30 +2062,30 @@ def matter_create(request: HttpRequest) -> HttpResponse:
 def _create_context(
     request: HttpRequest,
     form: Any,
-    action_form: Any,
     *,
-    # **Keyword-only, both of them, and that is the point.**
+    # **Keyword-only, all of them, and that is the point.**
     #
     # `Uus teema` grew two optional blocks in one round — `Koostan arvamuse` from
     # docs/adr/0091 and `Menetluse link` from docs/adr/0089 — and while they were
     # positional the merge that brought them together handed each block the
-    # other's form. Both are `Any`, so nothing complained; what a person saw was a
-    # refused save with everything they had typed gone from the page.
+    # other's form. Both were `Any`, so nothing complained; what a person saw was
+    # a refused save with everything they had typed gone from the page. One of
+    # those two forms is left and it is still keyword-only, because the reason was
+    # never the count.
     procedural_form: Any = None,
-    opinion_action_form: Any = None,
     held_keys: list[str] | None = None,
     intake_session: Any = None,
 ) -> dict[str, Any]:
     return {
-        # `Menetluse link`. Bound on a refusal and unbound on a GET, exactly
-        # like the two forms above it, so an address somebody pasted survives a
-        # rejected file or a mistyped valdkond — the property the whole refusal
-        # path on this page exists to keep (docs/adr/0089 §13).
+        # `Menetluse link`. Bound on a refusal and unbound on a GET, like the
+        # main form itself, so an address somebody pasted survives a rejected file
+        # or a mistyped valdkond — the property the whole refusal path on this
+        # page exists to keep (docs/adr/0089 §13).
         #
         # The partial reads it under the same name the Teema page's launcher
         # panel reads its own form by, because the two are the same block asking
-        # the same three questions and a second spelling would be a second place
-        # for the template to drift.
+        # the same question and a second spelling would be a second place for the
+        # template to drift.
         "procedural_link_form": procedural_form,
         # The form's own answers, so a refused save's redisplay does not propose
         # a sender over one the person has already given. On a GET the form is
@@ -2123,14 +2099,11 @@ def _create_context(
         # never offers somebody an attachment they abandoned an hour ago
         # (app/documents/pending.py).
         "held_files": pending_uploads.describe(request.session, held_keys or []),
-        "action_form": action_form,
-        # `Koostan arvamuse` — one date box, its own form, its own partial.
-        #
-        # Defaulted to a fresh unbound form rather than being required, so the
-        # other callers of this helper keep working unchanged. The page renders the
-        # partial either way; an unbound form is an empty box, which is what a
-        # fresh `Uus teema` should show (docs/adr/0091 §1.4).
-        "opinion_action_form": opinion_action_form or InitialOpinionActionForm(prefix="arvamus"),
+        # `action_form` and `opinion_action_form` were here, and both are gone with
+        # the blocks they drew. `Järgmiseks` is not a question `Uus teema` asks any
+        # more, and `Arvamuse tähtaeg` is a field on `form` — so the page has one
+        # form for the Teema and one for the link, and nothing on it can be handed
+        # somebody else's (docs/adr/0094 §5, §6).
         "frequent_senders": getattr(form, "frequent_senders", []),
         # `secondary_fields` is gone with the disclosure it fed. The template
         # named the primary fields and looped this tuple for the rest, which was
@@ -2140,12 +2113,11 @@ def _create_context(
         # deliberately rather than appearing in a panel nobody opened
         # (Uus teema redesign §3).
         "today": timezone.localdate(),
-        # `Millal?`, resolved on the server in Europe/Tallinn — the same list
-        # and the same helper the Teema composer's chips are built from. Doing
-        # the arithmetic in the browser instead would answer in the reader's
-        # own timezone, and doing it twice would let the two surfaces drift
-        # (`quick_date_choices`, ADR 0052 §4).
-        "quick_dates": quick_date_choices(timezone.localdate()),
+        # `quick_dates` was here, for the `Millal?` chip row inside `Järgmiseks`.
+        # There is no such row on this page: the one date it asks is typed, and
+        # `Täna` / `Homme` / `+1 nädal` / `+2 nädalat` belong to the composer,
+        # which still gets them from `quick_date_choices` in Europe/Tallinn
+        # (docs/adr/0094 §6, ADR 0052 §4).
         # Which offered suggestions the person had explicitly chosen, handed
         # back untouched so a save refused for some *other* reason does not also
         # forget their decisions.
