@@ -38,7 +38,15 @@
   {% endif %}
 
   <div class="dangerzone">
-    <h2 class="dangerzone__title">Kas kustutada see teema?</h2>
+    {% comment %}
+      A question where there is a decision to take, and a statement where there
+      is not. The blocked page used to ask «Kas kustutada see teema?» and then
+      answer it in the next line, which reads as a control that failed rather
+      than as an answer the reader has been given.
+    {% endcomment %}
+    <h2 class="dangerzone__title">
+      {% if plan.is_blocked %}Seda teemat ei saa kustutada{% else %}Kas kustutada see teema?{% endif %}
+    </h2>
     {% comment %}
       The title, said back. A person may have several Teemad open, and the only
       thing that makes this button safe to press is knowing which record it is
@@ -47,9 +55,6 @@
     <p class="dangerzone__subject">{{ matter.title }}</p>
 
     {% if plan.is_blocked %}
-      <p class="dangerzone__help">
-        Seda teemat ei saa praegu kustutada.
-      </p>
       <ul class="dangerzone__list">
         {% for refusal in plan.refusals %}
           <li>{{ refusal }}</li>

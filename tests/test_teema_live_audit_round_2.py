@@ -717,7 +717,7 @@ def test_a_blocked_matter_is_offered_no_final_button(signed_in, rich_matter, spe
 
     page = signed_in.get(delete_url(rich_matter)).content.decode()
 
-    assert "Seda teemat ei saa praegu kustutada." in page
+    assert "Seda teemat ei saa kustutada" in page
     assert "säilitamiskohustus" in page
     assert "button--danger" not in page
 
