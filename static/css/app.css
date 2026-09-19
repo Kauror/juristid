@@ -2470,6 +2470,23 @@ fieldset.field > legend {
   background: none;
 }
 
+/* The one button in the product that cannot be undone.
+ *
+ * The offer at the foot of `Muuda teemat` and the final button on the
+ * confirmation page are otherwise the same control wearing the same words, and
+ * pressing one is a navigation while pressing the other is permanent. Filled
+ * rather than outlined is the page saying which is which. */
+.button--danger-strong {
+  background: var(--status-danger);
+  border-color: var(--status-danger);
+  color: var(--surface-base);
+  font-weight: var(--typography-weight-bold);
+}
+
+.button--danger-strong:hover {
+  filter: brightness(1.1);
+}
+
 .button--tiny {
   min-height: 22px;
   padding: 1px var(--spacing-2);

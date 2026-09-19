@@ -72,12 +72,20 @@
           {% endif %}
         </ul>
       {% else %}
-        <p class="dangerzone__list">Teemal ei ole veel sisu.</p>
+        <p class="dangerzone__help">Teemal ei ole veel sisu.</p>
       {% endif %}
+      {% comment %}
+        `button--danger-strong`, and the offer on `Muuda teemat` is the ordinary
+        outline `button--danger`.
+
+        The two look alike otherwise, and they must not: pressing the first is
+        a navigation and pressing this one is permanent. A filled button is the
+        page saying which of the two it is (docs/adr/0096 §4.3).
+      {% endcomment %}
       <form class="dangerzone__actions" method="post"
             action="{% url 'matters:matter_delete' pk=matter.pk %}">
         {% csrf_token %}
-        <button class="button button--danger" type="submit">Kustuta teema</button>
+        <button class="button button--danger button--danger-strong" type="submit">Kustuta teema</button>
         <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Loobu</a>
       </form>
     {% endif %}

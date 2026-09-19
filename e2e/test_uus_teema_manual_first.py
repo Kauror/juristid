@@ -19,14 +19,14 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, VALDKONNAD_MENU, open_valdkond, sign_in
+from e2e.conftest import MARTIN, VALDKONNAD_FIELD, open_valdkond, sign_in
 
 pytestmark = pytest.mark.e2e
 
 CREATE_PATH = "/teemad/uus/"
 NARROW = {"width": 420, "height": 900}
 
-VALDKOND = VALDKONNAD_MENU
+VALDKOND = VALDKONNAD_FIELD
 SENDER_CHIPS = "#saatja-valik label.chip"
 
 
