@@ -958,3 +958,57 @@ def test_closing_a_matter_still_cancels_its_planned_overviews(
 
     assert planned.status == WebsiteOverviewStatus.CANCELLED
     assert [row.pk for row in opinion.website_overviews.all()] == [planned.pk]
+
+
+def test_withdrawing_an_opinion_changes_nothing_about_its_metadata(
+    normal_matter, specialist, published, tags, pdf_bytes, capture_evidence
+):
+    """A withdrawal is a fact about the act, never about the classification.
+
+    The one history this round could plausibly have disturbed. `Võta tagasi`
+    sits in the same `⋯` menu as `Märksõnad ja seosed`, and both are metadata
+    corrections on a record that already exists — so the test proves they do not
+    reach each other: the withdrawal moves `status`, keeps `sent_at` and the
+    immutable evidence exactly as `historically_sent` requires, and leaves every
+    keyword and every linked write-up standing.
+
+    Stated positively rather than as «nothing broke», because the reason the
+    metadata must survive is not incidental: the letter was sent and was written
+    up, and withdrawing the opinion afterwards does not unsay either
+    (docs/adr/0092 §3, docs/adr/0093 §3).
+    """
+    from app.submissions.services import (
+        attach_final_evidence,
+        mark_submission_sent,
+        withdraw_submission,
+    )
+
+    submission = factories.SubmissionFactory(matter=normal_matter, title="Tagasi võetav arvamus")
+    attach_final_evidence(
+        submission=submission,
+        content=pdf_bytes,
+        original_filename="arvamus.pdf",
+        mime_type="application/pdf",
+        actor=specialist,
+    )
+    mark_submission_sent(submission=submission, actor=specialist, channel="EIS")
+    set_submission_tags(submission=submission, tags=[tags[0]], actor=specialist)
+    set_submission_website_overviews(submission=submission, overviews=[published], actor=specialist)
+    submission.refresh_from_db()
+    sent_at, evidence = submission.sent_at, submission.final_version_id
+
+    withdraw_submission(submission=submission, actor=specialist, reason="Uus versioon tuleb.")
+    submission.refresh_from_db()
+
+    assert submission.status == SubmissionStatus.WITHDRAWN
+    assert submission.sent_at == sent_at
+    assert submission.final_version_id == evidence
+    assert [tag.pk for tag in submission.tags.all()] == [tags[0].pk]
+    assert [row.pk for row in submission.website_overviews.all()] == [published.pk]
+    # And it is still in the file's own history, which is what `historically_sent`
+    # exists to answer — the population the chronology reads.
+    assert submission.pk in set(
+        Submission.objects.filter(matter=normal_matter)
+        .historically_sent()
+        .values_list("pk", flat=True)
+    )
