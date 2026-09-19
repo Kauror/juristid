@@ -41,15 +41,21 @@ rather than read.
     <a href="{% url 'matters:matter_list' %}">Teemad</a>
 
     {% comment %}
-      The one secondary-action slot the header has. Everything a lawyer does
-      daily is somewhere it can be read; what lands here is the rest — today,
-      who may see this file.
+      **`Nähtavus` is not here any more, and nothing replaced it.**
 
-      `Nähtavus` had a service, an endpoint and a form field and no control at
-      all, so a Matter could only be restricted from the Django admin. It is
-      here rather than in the rail because it is not a fact somebody looks up:
-      it is a decision about the record, and it belongs beside the chip that
-      announces it (Teema redesign §4, §5.1).
+      This slot used to hold the product's one Matter-visibility control — a
+      `<select>` posting to `matters:update_field`, with the restricted-access
+      sentence under it. The ordinary lawyer-facing Teema product no longer
+      asks who may see a Matter anywhere: not here, not on `Muuda teemat`, not
+      on `Uus teema` and not on `Saabunud`. The field is gone from
+      `MatterFieldForm` and `visibility` is gone from `FIELD_SERVICES`, so the
+      endpoint answers 404 rather than accepting a crafted value through a
+      control that is no longer drawn (docs/adr/0096 §3).
+
+      Stored visibility, the badge that announces a restricted Matter, child
+      inheritance, restricted documents and every authorization filter are
+      untouched. What is gone is the business UI's way of writing it
+      (app/matters/services.py `set_matter_visibility`).
     {% endcomment %}
     {% comment %}
       `Muuda teemat`, visible rather than in the ⋯ menu.
@@ -63,37 +69,28 @@ rather than read.
     {% if can_write %}
       <a class="button button--quiet button--tiny matterhead__edit"
          href="{% url 'matters:matter_edit' pk=matter.pk %}">Muuda teemat</a>
-      <details class="headmenu">
-        <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
-        <div class="headmenu__panel">
-          <span class="headmenu__label">Nähtavus</span>
-          <form class="inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='visibility' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <select class="field__input field__input--compact" name="visibility"
-                    aria-label="Nähtavus" data-autosubmit>
-              {% for value, label in visibilities %}
-                <option value="{{ value }}" {% if matter.visibility == value %}selected{% endif %}>
-                  {{ label }}
-                </option>
-              {% endfor %}
-            </select>
-            <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
-          </form>
-          <p class="field__help">{% restricted_visibility_help %}</p>
-          {% comment %}
-            The assisted review, for a Matter that has files. In the menu
-            rather than beside «Muuda teemat»: the edit page itself offers it
-            prominently, and this is the second way in for somebody already on
-            the Teema page (app/matters/intake_suggestions).
-          {% endcomment %}
-          {% if document_count %}
+      {% comment %}
+        The ⋯ menu, for a Matter that has files.
+
+        It holds one link now that `Nähtavus` has gone, and it is rendered only
+        where that link has something to point at — a menu whose panel would
+        open on nothing is a control that promises there is more here.
+      {% endcomment %}
+      {% if document_count %}
+        <details class="headmenu">
+          <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
+          <div class="headmenu__panel">
+            {% comment %}
+              The assisted review. In the menu rather than beside «Muuda
+              teemat»: the edit page itself offers it prominently, and this is
+              the second way in for somebody already on the Teema page
+              (app/matters/intake_suggestions).
+            {% endcomment %}
             <a class="headmenu__link"
                href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
-          {% endif %}
-        </div>
-      </details>
+          </div>
+        </details>
+      {% endif %}
     {% endif %}
   </div>
 

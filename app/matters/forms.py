@@ -22,10 +22,8 @@ from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
-from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
-from app.core.visibility_help import RESTRICTED_VISIBILITY_HELP
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
@@ -405,6 +403,97 @@ def clean_legal_instrument_answer(form: forms.Form, cleaned: dict[str, Any]) -> 
         cleaned["legal_instrument_other"] = ""
     elif not cleaned["legal_instrument_other"]:
         form.add_error("legal_instrument_other", "Kirjuta, millise õigusaktiga on tegemist.")
+
+
+def policy_areas_field() -> forms.ModelMultipleChoiceField:
+    """The `Valdkonnad` control, defined once for the two forms that carry it.
+
+    Checkboxes because a Matter really can belong to several areas, and a
+    multi-select hides that behind a modifier key nobody uses (brief 19).
+
+    The queryset is empty here and filled per form, exactly as
+    `legal_instruments_field` is: `Uus teema` offers the active vocabulary,
+    `Muuda teemat` validates against all of it so a Matter filed under a
+    since-retired area does not lose it to an unrelated correction.
+    """
+    return forms.ModelMultipleChoiceField(
+        label="Valdkonnad",
+        queryset=PolicyArea.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+    )
+
+
+def policy_area_other_selected_field() -> forms.BooleanField:
+    """`Muu`, the chip that reveals the free-text box beside the vocabulary."""
+    return forms.BooleanField(
+        label="Muu",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
+    )
+
+
+def policy_area_other_field() -> forms.CharField:
+    """The box `Muu` reveals, with the master's own placeholder."""
+    return forms.CharField(
+        label="Muu valdkond",
+        max_length=400,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "Millisesse valdkonda see kuulub?"}
+        ),
+    )
+
+
+def clean_policy_area_answer(form: forms.Form, cleaned: dict[str, Any]) -> None:
+    """Settle `Valdkonnad · Muu` and the text beside it, for whichever form asks.
+
+    One implementation, for the reason `clean_legal_instrument_answer` above is
+    one: `Uus teema` and `Muuda teemat` must agree about what `Muu` means, and a
+    rule that is true on the page somebody files from and false on the page they
+    correct from is a rule people have to learn twice (docs/adr/0096 §2).
+
+    Free text belongs to the chip that reveals it — unticking `Muu` and leaving
+    the box full must not quietly save the text — and `Muu` without the text is
+    refused on the box that is empty, because `Muu` alone records less than the
+    blank field it replaced.
+    """
+    if not cleaned.get("policy_area_other_selected"):
+        cleaned["policy_area_other"] = ""
+    cleaned["policy_area_other"] = (cleaned.get("policy_area_other") or "").strip()
+    if cleaned.get("policy_area_other_selected") and not cleaned["policy_area_other"]:
+        form.add_error("policy_area_other", "Kirjuta, millise valdkonnaga on tegemist.")
+
+
+class PolicyAreaChoicesMixin:
+    """What the `Valdkonnad` partial needs, on both forms that draw it.
+
+    The block is one shared partial now, so what it reads has to exist on both
+    forms rather than on whichever page happened to grow the property first
+    (docs/adr/0096 §1).
+
+    `retired_area_ids` and `retired_stage_ids` default to empty and are replaced
+    by `MatterEditForm`, which is the only form that can hold a withdrawn
+    vocabulary row: a Matter being created cannot already carry one.
+    """
+
+    #: Withdrawn rows this form is offering back, marked «kasutusest väljas».
+    retired_area_ids: set[Any] = set()
+    retired_stage_ids: set[Any] = set()
+
+    @property
+    def policy_area_other_open(self) -> bool:
+        """Whether the free-text box renders visible without any scripting.
+
+        True when `Muu` is ticked in whatever this form is about to render — the
+        POST on a refused save, the Matter's own values on an unbound edit.
+        `BoundField.value()` answers both without the caller having to know
+        which it is looking at, which is what makes a refusal legible with
+        scripting off and what makes a stored `Muu valdkond` visible the moment
+        `Muuda teemat` opens (`other_instrument_open` does the same job for
+        Õigusakt).
+        """
+        return bool(cast(Any, self)["policy_area_other_selected"].value())
 
 
 class LegalInstrumentChoicesMixin:
@@ -867,7 +956,9 @@ def _raw_value(form: Any, name: str) -> Any:
     return field.widget.value_from_datadict(form.data, form.files, form.add_prefix(name))
 
 
-class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form):
+class MatterCreateForm(
+    PolicyAreaChoicesMixin, LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form
+):
     """Creating a Teema requires a title and nothing else.
 
     Everything else is optional and disclosed under a details panel. Demanding
@@ -1125,27 +1216,14 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
         required=False,
         widget=DATE_WIDGET,
     )
-    policy_areas = forms.ModelMultipleChoiceField(
-        label="Valdkonnad",
-        queryset=PolicyArea.objects.none(),
-        required=False,
-        # Checkboxes because a Matter really can belong to several areas, and a
-        # multi-select hides that behind a modifier key nobody uses (brief 19).
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
-    )
-    policy_area_other_selected = forms.BooleanField(
-        label="Muu",
-        required=False,
-        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
-    )
-    policy_area_other = forms.CharField(
-        label="Muu valdkond",
-        max_length=400,
-        required=False,
-        widget=forms.TextInput(
-            attrs={"class": "field__input", "placeholder": "Millisesse valdkonda see kuulub?"}
-        ),
-    )
+    #: The three controls the `Valdkonnad` block is made of, defined once for
+    #: both forms that draw it — the shape `Õigusakt` already had. What made
+    #: them one definition is that the block is one shared partial now, and two
+    #: declarations of one control are what let the two pages drift apart in the
+    #: first place (docs/adr/0096 §1).
+    policy_areas = policy_areas_field()
+    policy_area_other_selected = policy_area_other_selected_field()
+    policy_area_other = policy_area_other_field()
     #: `Nähtavus` is deliberately absent from this form.
     #:
     #: Restricting a Matter is a rare, deliberate act, and putting it on the
@@ -1167,88 +1245,13 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
                 senders.setdefault(organisation.pk, organisation)
         cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
 
-        # Free text belongs to the checkbox that reveals it. Unticking "Muu"
-        # and leaving the box full must not quietly save the text.
-        if not cleaned.get("policy_area_other_selected"):
-            cleaned["policy_area_other"] = ""
-        cleaned["policy_area_other"] = (cleaned.get("policy_area_other") or "").strip()
-
-        if cleaned.get("policy_area_other_selected") and not cleaned["policy_area_other"]:
-            self.add_error("policy_area_other", "Kirjuta, millise valdkonnaga on tegemist.")
-
+        clean_policy_area_answer(self, cleaned)
         clean_legal_instrument_answer(self, cleaned)
 
         return cleaned
 
     def clean_sender_name(self) -> str:
         return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
-
-    @property
-    def policy_area_chosen_count(self) -> int:
-        """How many Valdkonnad this form currently holds — the number on the trigger.
-
-        `Valdkonnad · 3`, and `Valdkonnad` when nothing is chosen. A count and
-        not the names, which is the one thing that changed here: the control is a
-        menu now rather than a fold (docs/adr/0094 §2), its trigger is a pill on
-        one line, and three Estonian policy areas spelled out are wider than that
-        line. Ellipsised to «Maksujõuetus, Energee…» the names say less about
-        whether the question has been answered than a number does, and the names
-        themselves are one click away and ticked.
-
-        Read off the rendered choices rather than by fetching the rows, for the
-        reason `addressee_summary` reads off its own: the catalogue is already
-        on the page as `(pk, name)` pairs and a query per render buys nothing.
-
-        `Muu` counts, because it *is* an answer here — it is the affordance that
-        reveals the free-text box, and a trigger reading «Valdkonnad» over a
-        ticked `Muu` and a sentence of typed text would be wrong about the one
-        state somebody has to come back to.
-
-        Unbound — the ordinary first visit — is zero by construction: nothing is
-        chosen, so there is nothing to count. `static/js/app.js`
-        `bindChipSummaries` keeps the same number true while somebody is ticking
-        boxes with the menu open.
-        """
-        if not self.is_bound:
-            return 0
-        # `_raw_value` and not `form.data.getlist`: a `CheckboxSelectMultiple`
-        # already knows how to read its own many-valued answer out of a
-        # `QueryDict` or an ordinary dict, and asking the widget is what keeps
-        # this working on a form a caller constructed by hand.
-        chosen = {str(value) for value in (_raw_value(self, "policy_areas") or [])}
-        # `fields[...]` is typed as the base Field, which has no `choices`. This
-        # one is a ModelMultipleChoiceField by construction.
-        offered = {str(value) for value, _label in cast(Any, self.fields["policy_areas"]).choices}
-        count = len(chosen & offered)
-        if _raw_value(self, "policy_area_other_selected"):
-            count += 1
-        return count
-
-    @property
-    def stage_summary(self) -> str:
-        """The `Hetkeseis` this form holds, as the word on the trigger.
-
-        «Hetkeseis · Riigikogus». The name and not a count, because the field
-        holds exactly one value and the name *is* the compact answer — the
-        asymmetry with `policy_area_chosen_count` directly above is the two
-        controls saying what kind of question they are (docs/adr/0094 §2.2).
-
-        **«Määramata» is a real answer and is named like one.** The field is
-        `blank=True` precisely so that «not decided yet» has a chip of its own,
-        it is the option a fresh form arrives with selected, and a trigger that
-        said nothing about it would be hiding the state most files are actually
-        in behind a word that looks unanswered. Nothing is invented here: this
-        reports the option the form itself has selected, whatever that is.
-
-        Read off the rendered choices for the reason above — the vocabulary is
-        already on the page.
-        """
-        raw = _raw_value(self, "stage") if self.is_bound else self.initial.get("stage")
-        wanted = "" if raw is None else str(raw)
-        for value, label in cast(Any, self.fields["stage"]).choices:
-            if str("" if value is None else value) == wanted:
-                return str(label)
-        return ""
 
     @property
     def data_class(self) -> str:
@@ -1370,7 +1373,9 @@ class MatterCreateForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMix
             self.sender_tail_count = 0
 
 
-class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form):
+class MatterEditForm(
+    PolicyAreaChoicesMixin, LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin, forms.Form
+):
     """`Muuda teemat` — the whole record on one page.
 
     The redesign replaced the edit page with inline controls in the header and
@@ -1404,11 +1409,24 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
         max_length=1000,
         widget=forms.TextInput(attrs={"class": "field__input field__input--prominent"}),
     )
+    #: The master's own question, in the master's own words.
+    #:
+    #: One column, `Matter.brief_summary`, had two labels and two explanations:
+    #: `Uus teema` asked «Millest teema räägib» with «Mida see eelnõu muudab ja
+    #: keda puudutab?» in the box, and this page asked «Lühikokkuvõte» with a
+    #: help line about what a teema means for affected companies. A person who
+    #: learns one of them finds the other on the next screen and has to work out
+    #: that they are the same box (docs/adr/0096 §1).
     brief_summary = forms.CharField(
-        label="Lühikokkuvõte",
+        label="Millest teema räägib",
         required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
-        help_text="Mida see teema puudutatud ettevõtete jaoks tähendab.",
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input field__input--prose",
+                "rows": "3",
+                "placeholder": "Mida see eelnõu muudab ja keda puudutab?",
+            }
+        ),
     )
     #: Chips, not selects — the same controls `Uus teema` uses, because the two
     #: pages are one job seen twice and were drifting apart as two designs
@@ -1446,18 +1464,20 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
     #: correct — and the two pages are one job seen twice (task §18).
     legal_instruments = legal_instruments_field()
     legal_instrument_other = legal_instrument_other_field()
-    policy_areas = forms.ModelMultipleChoiceField(
-        label="Valdkonnad",
-        queryset=PolicyArea.objects.none(),
-        required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
-    )
-    policy_area_other = forms.CharField(
-        label="Muu valdkond",
-        max_length=400,
-        required=False,
-        widget=TEXT_WIDGET,
-    )
+    #: The same three controls `Uus teema` carries, from the same definitions —
+    #: including `Muu`, which this page did not have.
+    #:
+    #: It answered `Muu valdkond` with an always-visible box instead, on the
+    #: argument that a value hidden behind a chip is a value a reader cannot
+    #: check. That argument was about a *menu*: while the vocabulary was folded
+    #: away, the chip that reveals the box was folded away with it. The
+    #: vocabulary is drawn at rest again on both pages, the chip renders ticked
+    #: when this Matter holds a `Muu valdkond`, and the box renders open beside
+    #: it — server-side, so it is visible with scripting off — so nothing is
+    #: hidden and the two pages ask one question one way (docs/adr/0096 §2).
+    policy_areas = policy_areas_field()
+    policy_area_other_selected = policy_area_other_selected_field()
+    policy_area_other = policy_area_other_field()
     #: `OrganisationCheckboxSelect`, not a plain one: the widget is what writes
     #: each institution's recorded spellings onto its own control, and without
     #: them «MKM» finds nothing on this page while finding the ministry on `Uus
@@ -1512,17 +1532,23 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
-    visibility = forms.ChoiceField(
-        label="Nähtavus",
-        choices=Visibility.choices,
-        required=False,
-        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
-        # The one explanation, shared with the Teema header and the banner.
-        # This line used to say "ainult vastutaja ja osalejad", which promised a
-        # narrower audience than the application has given since docs/adr/0042
-        # (pilot QA F-01, app/core/visibility_help.py).
-        help_text=RESTRICTED_VISIBILITY_HELP,
-    )
+    #: `Nähtavus` is deliberately absent from this form, as it is from
+    #: `MatterCreateForm` and from `IncomingIntakeForm`.
+    #:
+    #: The ordinary lawyer-facing Teema product does not ask who may see a
+    #: Matter. It is a rare, deliberate act that kept reappearing as a chip row
+    #: beside `Sildid`, where the only thing it could do was be answered by
+    #: mistake — and answering it wrongly is the one mistake on this page that
+    #: takes a file away from a colleague rather than mis-describing it
+    #: (docs/adr/0096 §3).
+    #:
+    #: **The field is gone, not hidden.** There is no control, no hidden input
+    #: and no `clean_visibility`, so a crafted `visibility=RESTRICTED` in a POST
+    #: to `matters:matter_edit` binds to nothing: the form never cleans it and
+    #: the view has nothing to pass on. `Matter.visibility`, the enum, every
+    #: stored restricted record, the child-visibility rules, the authorization
+    #: filtering and `set_matter_visibility` itself are all untouched — what is
+    #: gone is the business UI's way of writing it.
 
     def __init__(
         self,
@@ -1695,9 +1721,10 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
             for organisation in cleaned.get(source) or []:
                 senders.setdefault(organisation.pk, organisation)
         cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
-        # One rule about what `Muu` means, shared with `Uus teema`. A rule that
-        # is true on the page somebody files from and false on the page they
-        # correct from is a rule people have to learn twice.
+        # One rule about what `Muu` means, shared with `Uus teema`, on both
+        # classifications. A rule that is true on the page somebody files from
+        # and false on the page they correct from is a rule people learn twice.
+        clean_policy_area_answer(self, cleaned)
         clean_legal_instrument_answer(self, cleaned)
         return cleaned
 
@@ -1713,14 +1740,6 @@ class MatterEditForm(LegalInstrumentChoicesMixin, OrganisationPickerChoicesMixin
             raise forms.ValidationError("Teemal peab olema pealkiri.")
         return value
 
-    def clean_visibility(self) -> str:
-        # Blank is not a value here. An unrecognised POST must not quietly
-        # un-restrict a Matter somebody deliberately restricted.
-        value = self.cleaned_data.get("visibility") or ""
-        if not value and self.matter is not None:
-            return self.matter.visibility
-        return value or Visibility.NORMAL
-
 
 def edit_initial(matter: Matter) -> dict[str, Any]:
     """The Matter's current values, in the shape `MatterEditForm` reads."""
@@ -1731,6 +1750,11 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "stage": matter.stage_id,
         "track": matter.track,
         "policy_areas": [area.pk for area in matter.policy_areas.all()],
+        # The chip renders ticked whenever this Matter holds a free-text area,
+        # which is what makes the box beside it render open on arrival. Derived
+        # from the text rather than stored: `Muu` is not a column, it is the
+        # statement that `policy_area_other` is answered (docs/adr/0096 §2).
+        "policy_area_other_selected": bool(matter.policy_area_other),
         "policy_area_other": matter.policy_area_other,
         "legal_instruments": [item.pk for item in matter.legal_instruments.all()],
         "legal_instrument_other": matter.legal_instrument_other,
@@ -1741,7 +1765,6 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "received_date": matter.received_date,
         "response_deadline": matter.response_deadline,
         "tags": [tag.pk for tag in matter.tags.all()],
-        "visibility": matter.visibility,
     }
 
 
@@ -3536,7 +3559,10 @@ class MatterFieldForm(forms.Form):
     # posts it breaks (app/core/dates.py).
     received_date = EstonianDateField(required=False)
     response_deadline = EstonianDateField(required=False)
-    visibility = forms.ChoiceField(choices=Visibility.choices, required=False)
+    #: `visibility` is deliberately absent, as it is from every other form the
+    #: ordinary Teema product renders. It was the one field on this form with
+    #: no control anywhere on the page it serves — the header's ⋯ menu carried
+    #: the only one, and that went with it (docs/adr/0096 §3).
     # Editable after creation like every other fact on the record. Blank is a
     # legitimate value here — it is how somebody clears a note that turned out
     # to belong under a real PolicyArea after all (Stage-2E.1 brief 20).
@@ -4056,17 +4082,17 @@ class IncomingIntakeForm(forms.Form):
         blank=True,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
-    visibility = forms.ChoiceField(
-        label="Nähtavus",
-        choices=Visibility.choices,
-        initial=Visibility.NORMAL,
-        widget=SELECT_WIDGET,
-        # Intake is where a restricted letter is *first* filed — the template
-        # says as much — and it was the one visibility control on the product
-        # that explained nothing at all. Same sentence as everywhere else
-        # (pilot QA F-01).
-        help_text=RESTRICTED_VISIBILITY_HELP,
-    )
+    #: `Nähtavus` is deliberately absent, as it is from `MatterCreateForm` and
+    #: from `MatterEditForm`.
+    #:
+    #: This was the last creation control that asked it, on the argument that
+    #: intake is where a restricted letter is *first* filed. That argument
+    #: survives the removal — a letter that has to be restricted still can be,
+    #: by somebody who decides it deliberately rather than by everybody who
+    #: files anything — but not here, because the ordinary business UI no longer
+    #: asks the question anywhere. Material filed through intake arrives NORMAL,
+    #: decided server-side, exactly as a Matter filed through `Uus teema` does
+    #: (docs/adr/0096 §3).
 
     def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

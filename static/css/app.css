@@ -5181,129 +5181,77 @@ a.barchart__row:hover {
   margin-top: var(--spacing-2);
 }
 
-/* -- Valdkonnad and Hetkeseis: a menu, not a fold ------------------------- *
+/* -- what only an existing record is asked --------------------------------- *
  *
- * `.chipdetails` above folds a long tail *into the page*: opening it makes the
- * document taller and pushes everything below it down. That is right for a
- * catalogue which is part of what you are reading and wrong for a control you
- * open, answer and shut — the lawyers' complaint about `Valdkonnad` and
- * `Hetkeseis` was that choosing a value re-laid out the rest of the form under
- * their hands (docs/adr/0094 §2).
+ * `Muuda teemat` follows `Uus teema` for every fact the two pages share, and
+ * carries three the master deliberately does not ask — Menetlusliik, Kellele,
+ * Sildid. They stand below the master's own questions under this heading, so
+ * that a reader comparing the two screens reads the difference as a rule
+ * rather than as an inconsistency (docs/adr/0096 §1).
  *
- * So the panel is taken out of flow. The measurable promise, and the one the
- * browser suite asserts, is that the y-position of the field *after* the menu
- * does not move when the menu opens.
- *
- * Still a `<details>`, and deliberately: the trigger is keyboard-reachable,
- * announces its own expanded state, opens on Enter and Space, and works with
- * scripting off — none of which a `<div>` with a click handler gives. What the
- * script adds on top is Escape, click-outside, and closing a single-select menu
- * once it has been answered (static/js/app.js `bindChipMenus`).
- *
- * `position: relative` is the containing block for the panel. Without it the
- * panel measures from the initial containing block and opens at the top of the
- * document — the defect `.rail .inlineedit` documents at length. */
-.chipmenu {
-  position: relative;
-  display: block;
-  max-width: 100%;
-}
-
-/* The pill, which is `.chipdetails__summary` in every respect a reader can see.
-   A separate class rather than that one because the two components differ in
-   what they *do*, and a shared name would invite a rule written for the fold to
-   land on the menu. */
-.chipmenu__trigger {
-  display: inline-block;
-  padding: 3px 11px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 13px;
+ * A `<p>` and not an `<h2>`: this is a label over a group of fields inside a
+ * form, and inserting a heading level between the page title and nothing would
+ * put a rung in the document outline that leads nowhere. */
+.createform__section {
+  margin: var(--spacing-6) 0 0;
   font-size: var(--typography-size-meta);
-  line-height: 1.5;
-  color: var(--text-secondary);
-  cursor: pointer;
-  list-style: none;
-  /* The trigger carries the answer, and an answer can be long: eleven
-     Hetkeseis labels, and Valdkonnad counts up to twenty-two. It stays one line
-     and cuts, so the caret — the affordance — is never the thing pushed off
-     the row (`.inlineedit__trigger` makes the same argument). */
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
-
-.chipmenu__trigger::-webkit-details-marker {
-  display: none;
-}
-
-.chipmenu__trigger::after {
-  content: " ▾";
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.chipmenu[open] > .chipmenu__trigger::after {
-  content: " ▴";
-}
-
-.chipmenu__trigger:hover {
-  color: var(--text-primary);
-  border-color: var(--accent-border);
-}
-
-.chipmenu__trigger:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset-width);
-}
-
-/* What the trigger opens onto, over the page rather than in it.
+/* -- deleting a Teema ------------------------------------------------------ *
  *
- * `width: 100%` of `.chipmenu`, which is a block in a full-width row, so the
- * panel is exactly as wide as the row it belongs to — at 1440 and at 375
- * alike. That is the whole of the narrow-width answer: a panel which cannot be
- * wider than its own row cannot put a horizontal scrollbar on the document,
- * whatever the longest label in it measures (task §9).
+ * Below the form, below a rule, and never in the row that holds `Salvesta`.
+ * The distance is the design: the button that ends a record must not be
+ * reachable by the muscle memory that saves one (docs/adr/0096 §4).
  *
- * No `overflow` here. The scroll cap belongs on the chip row inside, because a
- * scroll container clips its absolutely positioned descendants — and the
- * Hetkeseis chips each carry a `.stagehelp` bubble which has to be able to hang
- * outside the box it opens from. */
-.chipmenu__panel {
-  position: absolute;
-  top: calc(100% + var(--spacing-1));
-  left: 0;
-  width: 100%;
-  z-index: 20;
-  padding: var(--spacing-3);
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-default);
+ * Used twice — the offer at the foot of `Muuda teemat` and the confirmation
+ * page's own final button — so a reader meets the same red box in both places
+ * and the second one is recognisably the first one's consequence. */
+.dangerzone {
+  margin-top: var(--spacing-8);
+  padding: var(--spacing-4);
+  border: 1px solid var(--status-danger-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-menu);
+  background: var(--status-danger-soft);
 }
 
-/* The vocabulary is twenty-one labels and `Muu`, which is several wrapped rows
-   at every width. It scrolls inside the panel rather than growing it past the
-   bottom of a phone, exactly as the catalogue inside `.chipdetails__body` does.
-   On the chip row and not on the panel, for the reason above.
-
-   A descendant selector and not `>`. The chips are wrapped in the `<fieldset>`
-   that names the group for a screen reader, so the row is the panel's
-   *grandchild* — written as a child selector this rule matched nothing at all
-   and the cap was silently absent. Found by measuring `overflowY` in the
-   browser, which is the only thing that can tell a rule that does not apply
-   from one that applies and has no effect (e2e/test_uus_teema_menus.py). */
-.chipmenu__panel--scroll .chiprow {
-  max-height: 190px;
-  overflow-y: auto;
+.dangerzone__title {
+  margin: 0;
+  font-size: var(--typography-size-base);
+  font-weight: 600;
+  color: var(--status-danger);
 }
 
-/* Ticking `Muu` reveals its box **under the trigger**, not inside the panel.
-   A free-text answer which lived in the menu would vanish the moment the menu
-   was shut, and a refusal about it would be printed somewhere nobody can see
-   (docs/adr/0094 §2.3). */
-.createform__valdkond {
-  margin-top: var(--spacing-2);
+.dangerzone__help {
+  margin: var(--spacing-2) 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+/* The record this is about, named on the confirmation page, so that pressing
+   the final button is an answer about *this* Teema and not about whichever one
+   the reader believes they opened. */
+.dangerzone__subject {
+  margin: 0 0 var(--spacing-3);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dangerzone__list {
+  margin: 0 0 var(--spacing-3);
+  padding-left: var(--spacing-5);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.dangerzone__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: center;
 }
 
 .chipdetails__body .chiprow {
@@ -7804,14 +7752,6 @@ button.accordion__action:focus-visible {
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-menu);
   padding: var(--spacing-3);
-}
-
-.headmenu__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 /* The extraction state, under a document's name rather than in a column. */

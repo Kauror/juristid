@@ -81,6 +81,11 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "stage": initial["stage"] or "",
         "track": initial["track"] or "",
         "policy_areas": [str(pk) for pk in initial["policy_areas"]],
+        # `Muu valdkond` belongs to the chip that reveals it on both pages now, so
+        # a payload that carried the text without the chip would be a save that
+        # cleared it — which is the trap this helper exists to avoid
+        # (docs/adr/0096 §2).
+        "policy_area_other_selected": "on" if initial["policy_area_other_selected"] else "",
         "policy_area_other": initial["policy_area_other"] or "",
         "legal_instruments": [str(pk) for pk in initial["legal_instruments"]],
         "legal_instrument_other": initial["legal_instrument_other"] or "",
@@ -91,7 +96,6 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "received_date": "",
         "response_deadline": "",
         "tags": [str(pk) for pk in initial["tags"]],
-        "visibility": initial["visibility"],
     }
     payload.update(overrides)
     return payload
@@ -248,13 +252,18 @@ def test_changing_muu_on_the_edit_form_changes_what_the_teema_reads(signed_in, s
 
 
 def test_clearing_muu_leaves_no_orphaned_text(signed_in, specialist):
-    """And the page goes back to saying `Määramata`, which is then true."""
+    """And the page goes back to saying `Määramata`, which is then true.
+
+    Unticking the chip is how `Muu` is cleared now, and the text going with it
+    is the rule `clean_policy_area_answer` states for both pages: free text
+    belongs to the chip that reveals it (docs/adr/0096 §2).
+    """
     matter = factories.MatterFactory(owner=specialist)
     set_policy_area_other(matter=matter, value="Ringmajandus", actor=specialist)
 
     signed_in.post(
         reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
-        edit_payload(matter, policy_area_other=""),
+        edit_payload(matter, policy_area_other_selected="", policy_area_other=""),
     )
 
     matter.refresh_from_db()
@@ -264,14 +273,23 @@ def test_clearing_muu_leaves_no_orphaned_text(signed_in, specialist):
     assert "Määramata" in body
 
 
-def test_the_edit_form_needs_no_invisible_boolean_to_keep_muu():
-    """`policy_area_other_selected` is `Uus teema`'s reveal and is not here.
+def test_the_edit_form_asks_muu_the_way_the_master_asks_it():
+    """One question, one control, on both pages — and nothing is hidden by it.
 
-    On the edit page the box is the answer: it is always visible, it holds what
-    the record holds, and emptying it is how `Muu` is cleared. Nobody has to
-    know about a checkbox that is not on the page (§4).
+    This assertion used to say the opposite: `policy_area_other_selected` was
+    `Uus teema`'s reveal and deliberately absent here, because while the
+    vocabulary was folded into a menu the chip that reveals the box was folded
+    away with it, and a value a reader cannot see on an edit page is a value
+    they cannot check (post-QA R2-07).
+
+    The vocabulary is drawn at rest on both pages again, so the objection is
+    answered rather than overruled: the chip renders **ticked** and the box
+    renders **open** whenever this Matter holds a `Muu valdkond`, server-side,
+    with no scripting involved. What is gained is that the two pages ask one
+    question one way (docs/adr/0096 §2, superseding post-QA R2-07 on this
+    point).
     """
-    assert "policy_area_other_selected" not in MatterEditForm().fields
+    assert "policy_area_other_selected" in MatterEditForm().fields
     assert "policy_area_other" in MatterEditForm().fields
 
 
