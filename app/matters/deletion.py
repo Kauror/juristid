@@ -206,7 +206,6 @@ def _collect_owned(matter: Matter) -> _Owned:
     owned.models[label] = Matter
 
     queue: list[tuple[type[models.Model], list[Any]]] = [(Matter, [matter.pk])]
-    depth = 0
     while queue:
         model, ids = queue.pop(0)
         if not ids:
@@ -229,7 +228,6 @@ def _collect_owned(matter: Matter) -> _Owned:
             known.update(found)
             if fresh:
                 queue.append((child, sorted(fresh, key=str)))
-        depth += 1
     return owned
 
 

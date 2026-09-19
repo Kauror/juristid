@@ -4431,9 +4431,12 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
     (app/core/authorization.py).
     """
     matter = get_visible_matter(request, pk)
-    plan = plan_matter_deletion(matter)
 
     if request.method == "POST":
+        # **No plan is built before the POST.** `delete_matter` builds its own
+        # under the row lock, which is the only one that decides anything — one
+        # taken out here would be a second walk of the same graph whose answer
+        # nothing may act on.
         try:
             delete_matter(matter=matter, actor=request.user)
         except DomainError as error:
@@ -4452,7 +4455,9 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
         # failure (docs/adr/0096 §4.5).
         return redirect("matters:matter_list")
 
-    return render(request, "matters/matter_delete.html", _delete_context(matter, plan))
+    return render(
+        request, "matters/matter_delete.html", _delete_context(matter, plan_matter_deletion(matter))
+    )
 
 
 def _delete_context(matter: Matter, plan: Any, error: str = "") -> dict[str, Any]:
