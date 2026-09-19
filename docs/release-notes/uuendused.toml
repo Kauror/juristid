@@ -94,7 +94,39 @@ basis = "deployment"
 # oma kiirvalikutega oli uue teema vormil ja on nüüd ainult teema lehel. Lugeja,
 # kes seda kasutas, ei leia seda enam ülelt — puuduv kontroll on sama uudis kui
 # uus, ja selle vaikimine oleks ainus viis, kuidas see ring saaks kedagi üllatada.
-prs = [248, 249, 252, 253, 255, 257]
+#
+# ---------------------------------------------------------------------------
+# Neljas väljalase, üks ring: „Lisa teemale” neli paneeli.
+#
+# Kõik neli olid tehtud ühe harva juhtumi jaoks, mis on päris, ja neid
+# kasutatakse iga päev hoopis tavalise juhtumi jaoks. Küsimused, mis harva
+# vastust vajavad, on nüüd „Muuda” all; salvestatud kirjetest ei kadunud midagi.
+#
+# **Üheteistkümnes punkt nimetab mõlemad pooled.** Adressaat on nüüd ette
+# pakutud *ja* seda saab ära võtta — ainult esimesest poolest jääks mulje, et
+# rakendus otsustab, kellele kiri läks. Viimane lause on seal, sest lugeja, kes
+# adressaadi ära vahetab, peab teadma, et teema saatja ei liigu kaasa: need on
+# kaks eri fakti ja see punkt on ainus koht, kus lugeja seda kuuleb.
+#
+# **Kaheteistkümnes punkt on asendus, mitte ümbernimetamine.** „Pealkiri” küsis
+# nime; „Kokkuvõte” küsib sisu. Punkt ütleb ka, kus kokkuvõte näha on, sest
+# muidu oleks see lahter, mille täitmist keegi kunagi ei kohta.
+#
+# **Neljateistkümnes punkt on äravõtmine ja väärib punkti.** Neli küsimust
+# kadus kahelt paneelilt ja lugeja, kes neid kasutas, ei leia neid enam sealt.
+# Punkt ütleb, kuhu nad läksid ja et vanad kirjed on puutumata — vaikimine
+# oleks ainus viis, kuidas see ring saaks kedagi üllatada (docs/release-notes/README.md).
+#
+# **Kuueteistkümnes punkt ütleb ka selle, mida enam ei saa.** Tühjalt
+# salvestamine tekitas varem plaanis oleva ülevaate; nüüd küsib vorm lingi.
+# Juba plaanis olevad read on alles ja neid saab avaldada ning tühistada nagu
+# varem, ja punkt ütleb selle välja, sest lugeja, kes seda võtet kasutas,
+# märkaks muidu ainult kadu.
+#
+# Otsingust punkti ei ole. Kokkuvõte on otsitav nagu arvamuse pealkiri varem —
+# see ei ole uus võimalus, vaid sama võimalus uues lahtris, ja punkt, mis
+# lubaks „nüüd leiad üles”, lubaks midagi, mida see väljalase ei too.
+prs = [248, 249, 252, 253, 255, 257, 259]
 changes = [
   "Juba salvestatud menetluse arengut saab nüüd parandada: „Muuda” avab sündmuse enda, selle kuupäeva ja juristi märkuse ning jätab teema hetkeseisu, järgmise tegevuse ja varem lisatud failid puutumata.",
   "Menetluse arengu juurde saab tõendi lisada ka hiljem — „Lisa tõend” paneb faili selle sammu juurde, mida see tõendab, ja varem lisatud failid jäävad alles.",
@@ -106,6 +138,12 @@ changes = [
   "„Menetluse link” on uue teema vormil kohe avatud ja küsib ainult aadressi ning soovi korral nimetuse — menetluse allikat ei pea enam ise valima.",
   "„Arvamuse tähtaeg” on nüüd ainus kuupäev, mida uue teema loomisel küsitakse, ja see tekitab teemale ka esimese tegevuse „Koostan arvamuse”; tühjaks jäetud lahter ei tekita endiselt midagi.",
   "„Järgmiseks” lahtrit koos kiirvalikutega uue teema vormil enam ei ole — järgmise tegevuse saab kirja panna teema lehel nagu varemgi.",
+  "Koja arvamust lisades on adressaadiks juba pakutud teema saatja: asutusi otsitakse ühelt realt, neid saab juurde võtta, ära võtta ja vahetada, ning teema enda saatja sellest ei muutu.",
+  "Koja arvamusele kirjutatakse pealkirja asemel kokkuvõte sellest, mida arvamuses öeldi — kokkuvõte on näha nii teema käigus kui väljasaadetud arvamuste nimekirjas.",
+  "Teiste arvamust ja meile saadetud tagasisidet lisades valitakse asutus otsinguga, kuupäevaks pakutakse tänast ja sisu kirjutatakse ühte seisukoha lahtrisse.",
+  "Juristi märkuse, seotud kaasamise, allika ja kuupäeva täpsuse saab lisada „Muuda” all — varem salvestatud märkused, seosed, allikad ja ligikaudsed kuupäevad on puutumata.",
+  "Meile saadetud tagasiside juures saab märkida, et tagasiside tuli liikmelt.",
+  "Ülevaate või uudise lisamiseks piisab kuupäevast ja lingist; tühjalt salvestades plaanis olevat ülevaadet enam ei teki, kuid juba plaanis olevad ülevaated ja uudised on alles ning neid saab avaldada ja tühistada nagu varem.",
 ]
 
 [[day]]
