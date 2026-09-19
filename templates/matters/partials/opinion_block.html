@@ -82,6 +82,22 @@ Matter's row lock — hiding them is courtesy, not the boundary
       <div class="draftrow" id="arvamus-{{ draft.pk }}">
         <span class="draftrow__title">{{ draft.title }}</span>
         <span class="muted">· {{ draft.get_kind_display }}</span>
+        {% comment %}
+          A draft is a `Submission`, so it may carry `Märksõnad` and be linked to
+          this file's write-ups exactly as a sent letter may (docs/adr/0093 §1).
+          Its only door is here: a draft with no file has no row in the table
+          above and therefore no `⋯` menu of its own.
+
+          `can_write` rather than `can_add_content`, matching `Võta tagasi` in
+          that menu and matching `Muuda teemat`'s own `Sildid`: classifying a
+          record that already exists is a metadata correction, not new canonical
+          content, and a closed teema does not forbid one (docs/adr/0075 §12).
+          The other two controls on this row stay `can_add_content`, because
+          adding a file and asserting a send are exactly that new content.
+        {% endcomment %}
+        {% if can_write %}
+          <a class="quietlink" href="{% url 'submissions:metadata' pk=draft.pk %}">Märksõnad ja seosed</a>
+        {% endif %}
         {% if can_add_content %}
           {% if draft.final_version_id %}
             <form class="draftrow__form" method="post"

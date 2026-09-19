@@ -50,6 +50,7 @@ from app.matters.models import (
     MatterWebsiteOverview,
 )
 from app.submissions.enums import RecipientRole
+from app.submissions.links import linked_submissions_by_overview
 from app.submissions.models import Submission, SubmissionRecipient
 from app.workflow.dates import format_at_precision
 
@@ -1395,7 +1396,14 @@ def projected_milestones(
     # reads in its own strip above, where it can be acted on. Projecting it here
     # would put an intention in a list that means «what has already occurred»
     # (docs/adr/0081 §4).
+    # Which `Koja arvamused` each write-up covers, read once for the whole page
+    # and scoped on the `Submission` side: a restricted opinion contributes no
+    # name and no count to an overview row a reader may see (docs/adr/0093 §4).
+    # Attached to the record the row already carries, so the chronology template
+    # reads it off `item.website_overview` without a second context key.
+    linked_opinions = linked_submissions_by_overview(matter, user=user)
     for overview in MatterWebsiteOverview.objects.filter(matter=matter).visible_to(user):
+        overview.linked_opinions = linked_opinions.get(overview.pk, [])
         if overview.is_published:
             published_on = overview.published_on
             if published_on is not None and published_on > day:

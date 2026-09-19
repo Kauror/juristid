@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Arvamuse märksõnad ja seosed · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+`Arvamuse märksõnad ja seosed` — two facts about one letter, and nothing else.
+
+**Why a page of its own.** `Submission` had no edit surface: every other route in
+`app/submissions` performs one act on a letter and lands back on `Dokumendid`.
+Adding these two questions to `+ Koja arvamus` would put two optional
+classification controls in front of the four required answers that panel exists
+to keep short, and adding them to the send would make classifying a letter a
+thing you can only do while asserting it went out. So this is one small screen
+that can change exactly two things and is structurally unable to change a title,
+a recipient, a date, a status or a file (docs/adr/0093, ADR 0061 §13).
+
+**The two controls are the ones `Muuda teemat` already uses**, chip checkboxes in
+a `chiprow`, because a person who has learned one classification control in this
+product has learned this one. What is deliberately *not* shared is the meaning:
+`Sildid` on that page say what the file is about, `Märksõnad` here say what this
+letter argued, and neither is copied into the other.
+
+**Nothing is pre-ticked from anywhere but this Submission's own assignments.** The
+Matter's tags are not offered as though they belonged to the letter, and no
+overview is selected because its address resembles the title or its date sits near
+the send. A blank form on a Matter full of tags and write-ups is the correct
+rendering and is what every existing opinion opens to (docs/adr/0093 §1, §2).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--create">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Arvamuse märksõnad ja seosed</h1>
+    {% comment %}
+      Which letter, and which file it is on. The opinion's own title rather than
+      the Matter's, because a Matter routinely carries several opinions and this
+      page edits one of them.
+    {% endcomment %}
+    <span class="pagehead__context">{{ submission.title }}</span>
+  </div>
+
+  <form class="form createform" method="post"
+        action="{% url 'submissions:metadata' pk=submission.pk %}">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
+    {% endif %}
+
+    {# 1 — Märksõnad. #}
+    <div class="createform__row">
+      <fieldset class="field">
+        <legend class="field__label">
+          {{ form.tags.label }}
+          <span class="field__count" data-chipcount-for="tags"></span>
+        </legend>
+        <div class="chiprow">
+          {% for choice in form.tags %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+            </label>
+          {% empty %}
+            {% comment %}
+              No governed vocabulary yet. Stated rather than left blank, and
+              deliberately not an invitation to type one: tags are curated
+              elsewhere and this form never creates taxonomy.
+            {% endcomment %}
+            <p class="field__help">Märksõnu ei ole veel loodud.</p>
+          {% endfor %}
+        </div>
+        <span class="field__help"
+              id="{{ form.tags.auto_id }}_helptext">{{ form.tags.help_text }}</span>
+        {% if form.tags.errors %}<span class="field__error">{{ form.tags.errors|first }}</span>{% endif %}
+      </fieldset>
+    </div>
+
+    {# 2 — Seotud ülevaated / uudised. #}
+    <div class="createform__row">
+      <fieldset class="field">
+        <legend class="field__label">
+          {{ form.website_overviews.label }}
+          <span class="field__count" data-chipcount-for="website_overviews"></span>
+        </legend>
+        <div class="chiprow">
+          {% for choice in form.website_overviews %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+            </label>
+          {% empty %}
+            {% comment %}
+              This file has recorded no write-up yet — or none this reader may
+              see. The sentence says the first without asserting the second: a
+              reader is never told that something exists which they may not
+              open, which is the rule the whole relation answers to
+              (docs/adr/0093 §4).
+            {% endcomment %}
+            <p class="field__help">
+              Sellel teemal ei ole ülevaateid ega uudiseid, mida siduda. Lisa need
+              teema lehel.
+            </p>
+          {% endfor %}
+        </div>
+        <span class="field__help"
+              id="{{ form.website_overviews.auto_id }}_helptext">{{ form.website_overviews.help_text }}</span>
+        {% if form.website_overviews.errors %}
+          <span class="field__error">{{ form.website_overviews.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
+
+    <div class="createform__actions">
+      <button class="button button--primary" type="submit">Salvesta</button>
+      <a class="button button--quiet" href="{{ back_url }}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

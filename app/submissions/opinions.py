@@ -130,10 +130,40 @@ def sent_submission_by_document(matter: Any, *, viewer: Any) -> dict[Any, Submis
     rest kept for the send's own details behind it (`app/submissions/models.py`).
     """
     rows = sent_opinion_submissions(matter, viewer=viewer).prefetch_related(
-        "recipient_rows__organisation", "joint_submitter_rows__organisation"
+        "recipient_rows__organisation", "joint_submitter_rows__organisation", "tags"
     )
+    # The linked write-ups, scoped on the *overview* side and read once for the
+    # whole page rather than per row. A `prefetch_related("website_overviews")`
+    # would be shorter and wrong: it would follow the relation without asking
+    # `visible_to`, and a restricted overview would arrive on a row a reader may
+    # see (docs/adr/0093 §4). `tags` above carries no visibility of its own — a
+    # governed vocabulary row is reference data — so the plain prefetch is right
+    # there and only there.
+    from app.matters.models import MatterWebsiteOverview
+    from app.submissions.models import SubmissionWebsiteOverviewLink
+
+    overviews_by_submission: dict[Any, list[Any]] = {}
+    visible_overviews = MatterWebsiteOverview.objects.filter(matter=matter).visible_to(viewer)
+    for link in (
+        SubmissionWebsiteOverviewLink.objects.filter(
+            submission__matter=matter, website_overview__in=visible_overviews
+        )
+        .select_related("website_overview")
+        # Read off the link table rather than off the overviews with a join back,
+        # so an overview covering two letters arrives once per letter instead of
+        # twice per letter. Oldest first, the ordering the strip and the picker
+        # both use, so one file's three answers cannot appear in three orders.
+        .order_by("website_overview__created_at", "website_overview__id")
+    ):
+        overviews_by_submission.setdefault(link.submission_id, []).append(link.website_overview)
+
     by_document: dict[Any, Submission] = {}
     for submission in rows.order_by("sent_at", "created_at"):
+        # Named apart from the model's own `tags` / `website_overviews` so a
+        # template reading them cannot silently fall through to an unscoped
+        # relation when this decoration is not the one that ran.
+        submission.metadata_tags = list(submission.tags.all())
+        submission.metadata_overviews = overviews_by_submission.get(submission.pk, [])
         recipient_rows = list(submission.recipient_rows.all())
         submission.addressee_list = [
             row.organisation for row in recipient_rows if row.role == RecipientRole.ADDRESSEE

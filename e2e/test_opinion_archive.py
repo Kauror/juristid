@@ -379,10 +379,20 @@ def test_the_opinion_tab_does_not_undo_a_live_teemad_search(page, base_url):
     go_to(page, "Teemad")
 
     page.locator("#teemad-otsing").fill("pakendiseaduse")
-    page.wait_for_timeout(600)
-    page.wait_for_load_state("networkidle")
-    narrowed = page.locator("#teemad-tulemused tbody tr").count()
+    # **Waited for, never timed.** The register's live search is
+    # `input changed delay:250ms`, so for a quarter of a second after `fill`
+    # the page is genuinely idle — and `wait_for_load_state("networkidle")`
+    # resolves *immediately* on an idle page, before the request it was meant
+    # to wait for has even been fired. A bare `.count()` after it therefore
+    # reads the list as it was before the swap, and on a loaded runner that is
+    # the whole unfiltered register rather than the answer.
+    #
+    # `.registercount` is inside the swapped fragment and names the term it
+    # answered for (`matters/partials/register_results.html`), so an
+    # auto-retrying assertion on it is the one wait here that cannot pass
+    # early. It goes *before* the count, which is the half that was missing.
     expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
+    narrowed = page.locator("#teemad-tulemused tbody tr").count()
 
     page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiivikirjad")).click()
     page.wait_for_load_state("networkidle")
@@ -549,8 +559,19 @@ def test_the_register_search_is_not_disturbed_by_the_opinion_push(page, base_url
     go_to(page, "Teemad")
 
     page.locator("#teemad-otsing").fill("pakendiseaduse")
-    page.wait_for_timeout(600)
-    page.wait_for_load_state("networkidle")
+    # **Waited for, never timed.** The register's live search is
+    # `input changed delay:250ms`, so for a quarter of a second after `fill`
+    # the page is genuinely idle — and `wait_for_load_state("networkidle")`
+    # resolves *immediately* on an idle page, before the request it was meant
+    # to wait for has even been fired. A bare `.count()` after it therefore
+    # reads the list as it was before the swap, and on a loaded runner that is
+    # the whole unfiltered register rather than the answer.
+    #
+    # `.registercount` is inside the swapped fragment and names the term it
+    # answered for (`matters/partials/register_results.html`), so an
+    # auto-retrying assertion on it is the one wait here that cannot pass
+    # early. It goes *before* the count, which is the half that was missing.
+    expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
     narrowed = page.locator("#teemad-tulemused tbody tr").count()
 
     opinion_search(page, "ministeeriumile")
@@ -558,5 +579,8 @@ def test_the_register_search_is_not_disturbed_by_the_opinion_push(page, base_url
     parameters = parse_qs(urlparse(page.url).query)
     assert parameters.get("q") == ["pakendiseaduse"], page.url
     assert parameters.get("arvamus_q") == ["ministeeriumile"], page.url
-    # And the register's own rows never moved.
-    assert page.locator("#teemad-tulemused tbody tr").count() == narrowed
+    # And the register's own rows never moved. `to_have_count` rather than a
+    # bare `.count()`, for the reason the wait above states: an opinion search
+    # swaps its own section, and an assertion that reads the register during
+    # that swap should retry rather than decide.
+    expect(page.locator("#teemad-tulemused tbody tr")).to_have_count(narrowed)

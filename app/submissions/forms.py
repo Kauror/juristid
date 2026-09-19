@@ -5,11 +5,15 @@ from typing import Any, cast
 
 from django import forms
 from django.utils import timezone
+from django.utils.formats import date_format
 
 from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.matters.forms import set_choices
+from app.matters.models import MatterWebsiteOverview
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind
+from app.submissions.links import selectable_tags, selectable_website_overviews
+from app.taxonomy.models import Tag
 
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
 
@@ -216,3 +220,104 @@ def _document_label(document: Any) -> str:
     """
     version = document.current_version
     return version.original_filename if version is not None else document.title
+
+
+class WebsiteOverviewChoiceField(forms.ModelMultipleChoiceField):
+    """`Ülevaade / uudis` as a chip a person can actually tell apart.
+
+    The model has **no title** — deliberately, since a plan does not have one yet
+    and inventing one would put a name nobody chose beside the real page
+    (docs/adr/0081 §1). So `__str__` is `«Avaldatud: <matter id>»`, which is right
+    for a log line and useless in a list where several rows differ only in which
+    page they point at.
+
+    The label is therefore built from the facts the row really carries: its state,
+    the day it states, and — for a published row — its address. Nothing is
+    invented: a plan reads `Plaanis`, with the day it was **recorded** named as
+    such rather than printed where a publication date would be, which is the one
+    thing docs/adr/0089 §10 forbids.
+
+    The address is plain text in a label and not an anchor. ADR 0085 §2 keeps a
+    raw URL out of a *link's* text because a look-alike address in link position
+    is believed; here it is the only thing that distinguishes two published
+    write-ups on one file, and it is not offered as something to click.
+    """
+
+    def label_from_instance(self, obj: Any) -> str:
+        from app.matters.enums import WebsiteOverviewStatus
+
+        state = str(obj.get_status_display())
+        if obj.status == WebsiteOverviewStatus.PUBLISHED:
+            parts = [state, obj.chronology_date]
+            if obj.url:
+                parts.append(obj.url if len(obj.url) <= 70 else obj.url[:69] + "…")
+            return " · ".join(parts)
+        # `lisatud`, named for what it is. A `Plaanis` row carries neither an
+        # address nor a date, and three plans on one file must still be told
+        # apart — so the day somebody recorded the plan is printed under its own
+        # word rather than in the position a publication date occupies.
+        recorded = date_format(timezone.localtime(obj.created_at), "j.n.Y")
+        return f"{state} · lisatud {recorded}"
+
+
+class SubmissionMetadataForm(forms.Form):
+    """`Arvamuse märksõnad ja seosed` — the two facts docs/adr/0093 decided.
+
+    **It edits exactly these two and nothing else.** No title, no `Liik`, no
+    recipient, no date, no status and no file: a metadata surface that could also
+    re-address a sent letter would be a second opinion editor, which is what
+    ADR 0061 retired. The send workflow is untouched and this form cannot reach it.
+
+    **Neither field is required.** Zero keywords and zero linked write-ups is the
+    ordinary state of every opinion in the register and stays the ordinary state
+    after this ships — nothing is backfilled and nothing is proposed.
+
+    **Neither field is ever pre-ticked from somewhere else.** The Matter's own
+    `Sildid` are not offered here as though they belonged to the letter, no
+    overview is selected because its address resembles the title or its date sits
+    near the send, and the `initial` this form is opened with is read from the
+    Submission's own assignments and from nothing else (docs/adr/0093 §1, §2).
+
+    Both are chip checkbox groups, the control `Muuda teemat` already uses for
+    `Sildid` and `Valdkonnad`, so a person who has learned one classification
+    control has learned this one.
+    """
+
+    use_required_attribute = False
+
+    tags = forms.ModelMultipleChoiceField(
+        label="Märksõnad",
+        # Replaced in `__init__` with `selectable_tags`, and empty here for the
+        # reason every other picker in this product is: a field-level queryset is
+        # evaluated at import time and would be the wrong answer by the time
+        # anybody opened the form.
+        queryset=Tag.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        help_text="Mida see kiri käsitles. Teema sildid on eraldi ja neid siit ei muudeta.",
+    )
+    website_overviews = WebsiteOverviewChoiceField(
+        label="Seotud ülevaated / uudised",
+        queryset=MatterWebsiteOverview.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        help_text="Sama teema ülevaated ja uudised, mis seda arvamust kajastavad.",
+    )
+
+    def __init__(
+        self,
+        *args: Any,
+        submission: Any,
+        viewer: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.submission = submission
+        # Both querysets come from `app.submissions.links`, which is also what the
+        # service resolves a POST against. One definition of «what may be chosen»,
+        # so a candidate the page never offered cannot be accepted and one it did
+        # offer cannot be refused (docs/adr/0093 §4).
+        cast(Any, self.fields["tags"]).queryset = selectable_tags(submission)
+        cast(Any, self.fields["website_overviews"]).queryset = selectable_website_overviews(
+            submission, viewer=viewer
+        )
