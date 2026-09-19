@@ -14,12 +14,16 @@ from __future__ import annotations
 import os
 import re
 import time
-import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+# Re-exported: every browser file already says `from e2e.conftest import
+# unique_title`, and the function moved out only so that a test with no browser
+# can hold it to its own rule (`e2e/titles.py`).
+from e2e.titles import RESERVED_REGISTER_WORDS, unique_title  # noqa: F401
 
 BASE_URL = os.environ.get("E2E_BASE_URL", "")
 SCREENSHOT_DIR = os.environ.get("E2E_SCREENSHOT_DIR", "artifacts/screenshots")
@@ -456,23 +460,6 @@ def go_to(page, name: str) -> None:
         page.locator(".topnav__trigger").click()
     link.click()
     page.wait_for_load_state("networkidle")
-
-
-def unique_title(prefix: str) -> str:
-    """A title no other row in this world can be carrying.
-
-    The browser suite runs against **one seeded database per shard**, shared by
-    every file the shard was given and never reset between them
-    (`ci_sharding.py`, .github/workflows/ci.yml). So a fixed title is not an
-    identity: a file that runs twice against the same world — a rerun, a local
-    loop — files a second Matter under the same name, and every locator that
-    asks for it by name then resolves to two and raises in strict mode.
-
-    A test that has to find its own row afterwards asks for one of these instead
-    of writing a constant. Short on purpose: the register's title column clips,
-    and the token has to survive being read back out of a cell.
-    """
-    return f"{prefix} {uuid.uuid4().hex[:8]}"
 
 
 def create_matter(

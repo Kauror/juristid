@@ -372,7 +372,7 @@ def test_ordinary_prose_in_a_development_still_occupies_one_line(page, base_url:
     do if `anywhere` has begun splitting ordinary Estonian mid-word.
     """
     sign_in(page, base_url, MARTIN)
-    url = create_matter(page, base_url, unique_title("Tavaline lause"))
+    url = create_matter(page, base_url, unique_title("Harilik lause"))
     _file_a_development(
         page,
         url,

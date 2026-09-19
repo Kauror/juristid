@@ -40,7 +40,10 @@ def _matter_on_sandras_desk(page, base_url: str, title: str) -> str:
     register when the next file runs — and `e2e/test_register_search.py` types
     `Tavaline` and asserts exactly one row. A Matter called «Tavaline teema»
     made that two. Anything created here keeps the `UX-003` prefix and avoids
-    the words the neighbouring files search for.
+    the words the neighbouring files search for. Those words are listed in
+    `e2e/titles.py`, which refuses them outright for a title built through
+    `unique_title` — this helper fills `#id_title` itself, so here the rule is
+    prose and the prose is the whole of it.
     """
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
