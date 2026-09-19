@@ -674,7 +674,7 @@ def test_deleting_a_teema_removes_it_from_the_register(page, base_url):
     page.get_by_role("button", name="Kustuta teema").click()
     page.wait_for_url(re.compile(r"/teemad/$"))
 
-    expect(page.locator(".messages, .toast, body")).to_contain_text("Teema kustutati.")
+    expect(page.locator(".messages")).to_contain_text("Teema kustutati.")
 
     # Gone from the register's own search, at once.
     page.goto(f"{base_url}/teemad/?otsing={title.split()[-1]}")

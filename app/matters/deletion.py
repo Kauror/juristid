@@ -58,8 +58,7 @@ from app.core.models import AppendOnlyModel
 from app.documents.references import EVIDENCE_REFERENCES
 from app.matters.models import Matter
 from app.matters.purge import CHUNK, OWNING_BEHAVIOURS, _behaviour_name, _reverse_relations
-from app.search.indexing import suspend_indexing
-from app.search.models import SearchDocument
+from app.search.indexing import forget_matter, suspend_indexing
 
 logger = logging.getLogger(__name__)
 
@@ -649,11 +648,17 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
                 for chunk in _chunked(ids):
                     model._base_manager.filter(pk__in=chunk).delete()
 
-        # The projection, once more and unconditionally. The two guards above
-        # make this a no-op, and it is here because «a deleted Teema disappears
-        # from search at once» is a promise to a reader rather than a property
-        # of whichever signal handlers happen to exist next year.
-        SearchDocument.objects.filter(matter_id=locked.pk).delete()
+        # The projection, once more and unconditionally, through the search
+        # app's own door. The two guards above make this a no-op, and it is here
+        # because «a deleted Teema disappears from search at once» is a promise
+        # to a reader rather than a property of whichever signal handlers happen
+        # to exist next year.
+        #
+        # `forget_matter` rather than a `SearchDocument` query: no module
+        # outside `app.search` may name that table, which is the rule that keeps
+        # business state from depending on derived data
+        # (tests/test_search_reliability.py).
+        forget_matter(locked.pk)
 
         # The audit row points at the tombstone and is the thing that keeps it
         # from ever being removed — which is the architecture stating its own

@@ -450,12 +450,22 @@ def test_tightening_a_matter_is_never_blocked(normal_matter, specialist):
     assert normal_matter.visibility == Visibility.RESTRICTED
 
 
-def test_the_edit_form_refuses_the_change_without_saving_the_rest_of_it(
-    client, restricted_matter, specialist
-):
-    """A refused visibility leaves nothing else from the same edit behind."""
+def test_the_edit_form_cannot_relax_a_matter_at_all_any_more(client, restricted_matter, specialist):
+    """The refusal this used to assert can no longer be reached from the page.
+
+    It asserted that a refused *visibility* left nothing else from the same edit
+    behind: the save came back 400 with the service's sentence on it, the title
+    unchanged. `Nähtavus` is gone from `Muuda teemat` and the field is gone from
+    `MatterEditForm`, so the crafted value binds to nothing, there is no refusal
+    to provoke, and the rest of the edit saves normally (docs/adr/0096 §3).
+
+    What the round did not change is the rule underneath, which still refuses
+    the same relaxation through `set_matter_visibility` — asserted directly
+    above in `test_relaxing_a_matter_that_a_sent_submission_relies_on_is_refused`.
+    So this keeps the half that is still reachable: the crafted value moves
+    nothing, and the evidence that stood on the restriction still stands on it.
+    """
     _submission, _version = _stranded_pair(restricted_matter, specialist)
-    original_title = restricted_matter.title
 
     client.force_login(specialist)
     response = client.post(
@@ -467,13 +477,10 @@ def test_the_edit_form_refuses_the_change_without_saving_the_rest_of_it(
         },
     )
 
-    # 400 from the refusal itself, not from form validation: the sentence the
-    # service raised is on the page.
-    assert response.status_code == 400
-    assert "vähem piiratuks" in response.content.decode()
+    assert response.status_code == 302
     restricted_matter.refresh_from_db()
     assert restricted_matter.visibility == Visibility.RESTRICTED
-    assert restricted_matter.title == original_title
+    assert restricted_matter.title == "Uus pealkiri"
 
 
 def _relax_past_the_backstop(matter):

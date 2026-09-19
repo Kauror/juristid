@@ -19,6 +19,7 @@ from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.matters.intake import register_incoming, role_for, title_from_filename, validate_uploads
 from app.matters.models import Matter
+from app.matters.services import set_matter_visibility
 from app.organisations.models import Organisation, OrganisationType
 from app.search.services import search_matters
 from tests import factories
@@ -177,7 +178,17 @@ def test_the_received_date_defaults_to_today(client, specialist) -> None:
     assert Matter.objects.get(title="Täna saabunud").received_date == timezone.localdate()
 
 
-def test_a_restricted_intake_stays_restricted(client, specialist, reader) -> None:
+def test_intake_files_material_as_normal_and_refuses_to_be_told_otherwise(
+    client, specialist, reader
+) -> None:
+    """`Nähtavus` is gone from this form, and a crafted value reaches nothing.
+
+    The form used to ask, on the argument that intake is where a restricted
+    letter is *first* filed. The ordinary Teema product no longer asks who may
+    see a Matter anywhere, so the field is deleted rather than hidden — and a
+    POST carrying `visibility=RESTRICTED` binds to a form that never cleans it
+    (docs/adr/0096 §3).
+    """
     client.force_login(specialist)
     _post(
         client,
@@ -187,8 +198,8 @@ def test_a_restricted_intake_stays_restricted(client, specialist, reader) -> Non
     )
 
     matter = Matter.objects.get(title="Piiratud saadetis")
-    assert matter.visibility == Visibility.RESTRICTED
-    assert not Matter.objects.visible_to(reader).filter(pk=matter.pk).exists()
+    assert matter.visibility == Visibility.NORMAL
+    assert Matter.objects.visible_to(reader).filter(pk=matter.pk).exists()
 
 
 def test_incoming_evidence_downloads_only_for_the_authorized(client, specialist, reader) -> None:
@@ -196,12 +207,21 @@ def test_incoming_evidence_downloads_only_for_the_authorized(client, specialist,
     # An owner, deliberately. A RESTRICTED Matter with nobody on it is invisible
     # even to whoever filed it, because restricted access follows participation
     # rather than authorship — correct, and worth not tripping over here.
+    #
+    # Restricted through the service afterwards rather than through the form,
+    # which no longer asks: what is being tested is that a restricted Matter's
+    # evidence is unreachable to an outsider, and that rule is untouched by the
+    # control having gone (docs/adr/0096 §3).
     _post(
         client,
         [_file("salajane.pdf", PDF)],
         title="Piiratud saadetis",
-        visibility=Visibility.RESTRICTED,
         owner=specialist.pk,
+    )
+    set_matter_visibility(
+        matter=Matter.objects.get(title="Piiratud saadetis"),
+        visibility=Visibility.RESTRICTED,
+        actor=specialist,
     )
     version = DocumentVersion.objects.get()
 

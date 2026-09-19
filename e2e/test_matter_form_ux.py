@@ -665,18 +665,16 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     expect(page.locator('input[name="policy_areas"]').first).to_be_checked()
     expect(page.locator(".field__error").first).to_be_visible()
 
-    # «and must not need a click to show them what went wrong» — the half that
-    # docs/adr/0088 had to answer differently. Valdkonnad comes back *shut* on a
-    # refusal it is not about, and says on its trigger that it is still holding
-    # an answer, instead of opening the vocabulary over a person who is being
-    # asked to fix something else.
-    #
-    # A count rather than the name: the trigger is a pill on one line, and three
-    # Estonian policy areas spelled out do not fit on it (docs/adr/0094 §2.2).
-    menu = page.locator(VALDKONNAD_FIELD)
-    expect(menu).not_to_have_attribute("open", "")
-    trigger = menu.locator("> summary").inner_text() or ""
-    assert "· 1" in trigger, f"the refused form does not say it still holds one area: {trigger!r}"
+    # «and must not need a click to show them what went wrong» — the half
+    # docs/adr/0088 and docs/adr/0094 each had to answer for their own shape.
+    # With the vocabulary drawn at rest there is nothing left to answer: the
+    # chips come back on the page, the one that was ticked comes back ticked,
+    # and the count beside the label says so without anything being pressed
+    # (docs/adr/0096 §2).
+    block = page.locator(VALDKONNAD_FIELD).first
+    expect(block).to_be_visible()
+    assert block.locator("summary").count() == 0
+    expect(page.locator('[data-chipcount-for="policy_areas"]')).to_contain_text("1")
 
 
 @pytest.mark.parametrize("width", [1024, 420])

@@ -805,3 +805,70 @@ def test_nothing_in_the_product_calls_a_bare_matter_delete():
             if shortcut.search(line):
                 offenders.append(f"{path}:{number}")
     assert not offenders, offenders
+
+
+def test_a_deletion_leaves_no_integrity_finding_worse_than_an_unreferenced_object(
+    rich_matter, specialist, evidence_root
+):
+    """What the store may say afterwards, and what it may not.
+
+    **May**: `orphan-object`, once per evidence key the deletion released. Being
+    unreferenced is the whole point — the row that claimed the bytes is gone —
+    and it is the state `prune_orphaned_evidence` exists to collect. Deleting
+    the bytes inside the transaction would be the unsafe direction, because a
+    rollback would then claim evidence that no longer exists.
+
+    Under a test transaction `transaction.on_commit` never fires, so what this
+    measures is the state *before* the best-effort cleanup and before the
+    pruner: the worst case, deliberately.
+
+    **May not**: anything else. A `missing-object` would mean a surviving row
+    pointing at bytes this deletion took; a link or version finding would mean
+    a half-removed graph. Both are the failures the topological order exists to
+    prevent, and neither appears.
+    """
+    from app.documents.integrity import check_evidence
+
+    plan = plan_matter_deletion(rich_matter)
+    released = set(plan.evidence_keys)
+    assert released
+
+    delete_matter(matter=rich_matter, actor=specialist)
+
+    report = check_evidence(verify_sha=True, scan_storage=True)
+    for finding in report.findings:
+        assert finding.kind == "orphan-object", finding
+        assert finding.subject in released, finding
+    assert {finding.subject for finding in report.findings} == released
+
+
+def test_the_search_projection_still_counts_what_the_register_counts(rich_matter, specialist):
+    """The comparison `check_search_integrity` makes, after a deletion.
+
+    Both halves read `Matter.objects`, so a tombstone that had kept its search
+    row would show up here as the two numbers disagreeing — which is exactly
+    how «a deleted Teema disappears from search at once» would fail quietly.
+    """
+    delete_matter(matter=rich_matter, actor=specialist)
+
+    projected = SearchDocument.objects.filter(source_kind="MATTER").count()
+    assert projected == Matter.objects.count()
+
+
+def test_the_admin_can_still_see_a_tombstone(rich_matter, specialist, client, superuser):
+    """The one place a deleted Matter stays reachable, and it is read-only.
+
+    `Matter.objects` closes every business surface; administration is where
+    somebody asks what happened to a record the audit trail names, and a row
+    the admin could not open would be a dead end (docs/adr/0096 §4.2).
+    """
+    from django.contrib.admin.sites import site
+
+    from app.core.admin import MatterAdmin
+
+    delete_matter(matter=rich_matter, actor=specialist)
+
+    admin = MatterAdmin(Matter, site)
+    assert admin.get_queryset(None).filter(pk=rich_matter.pk).exists()
+    for name in ("deleted_at", "deleted_by"):
+        assert name in admin.readonly_fields
