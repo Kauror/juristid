@@ -10,13 +10,20 @@
 [[day]]
 date = 2026-09-19
 basis = "deployment"
-# Üks väljalase, kolm ühendust: menetluse arengu parandamine, tõendi hilisem
-# lisamine sama sammu juurde, ja pikkade katkestusteta tekstide taltsutamine
-# neil tööpindadel, kuhu 18. septembri ring ei ulatunud.
+# Kaks väljalaset, viis ühendust. Hommikul: menetluse arengu parandamine,
+# tõendi hilisem lisamine sama sammu juurde, ja pikkade katkestusteta tekstide
+# taltsutamine neil tööpindadel, kuhu 18. septembri ring ei ulatunud. Pärastlõunal:
+# Koja arvamuse enda märksõnad ja arvamuse sidumine sama teema ülevaadete ja
+# uudistega.
 #
-# Kolm punkti, mitte neli. Neljas ühendus on katsestiku enda sisemine parandus —
-# see ei muuda midagi, mida lugeja rakenduses kohtab, ja selline töö ei saa
-# README järgi punkti. Number seisab `prs` real, nagu iga teinegi.
+# Üks kirje, mitte kaks. Kalendripäev on siin üksus, mitte väljalase: lugeja
+# kohtab mõlemat ringi järgmisel korral, kui rakenduse avab, ja see, kumb pilt
+# kumba kandis, ei ole tema küsimus (docs/release-notes/README.md).
+#
+# Hommikuse ringi kolm punkti, mitte neli. Selle neljas ühendus on katsestiku
+# enda sisemine parandus — see ei muuda midagi, mida lugeja rakenduses kohtab,
+# ja selline töö ei saa README järgi punkti. Number seisab `prs` real, nagu iga
+# teinegi.
 #
 # **Esimene punkt on see, mida eile veel ei saanud.** 18. septembri
 # üheteistkümnes punkt ütles, mida menetluse arenguna salvestada *ei* saa; siin
@@ -37,11 +44,30 @@ basis = "deployment"
 # teema lehe käik, järgmine tegevus ja otsingutulemused. Lugeja, kes eile luges,
 # et pikk link enam märget ei venita, ja kohtas sama viga otsingutulemuses, peab
 # teada saama, et nüüd on ka see kord.
-prs = [248, 249, 252, 253]
+#
+# **Neljas punkt nimetab mõlemad sõnad.** Teemal on `Sildid` ja arvamusel on nüüd
+# `Märksõnad`, ja kaks klassifikatsiooni ühe faili ümber on täpselt see koht, kus
+# lugeja eeldab ülekandumist — nii et punkt ütleb otse välja, et ei kandu. See on
+# ka see, mida rakendus teeb: ükski varasem arvamus ei saanud selle
+# väljalaskega ühtegi märksõna, ja teema siltide lisamine ei lisa neid arvamusele
+# kunagi hiljemgi.
+#
+# **Viies punkt ütleb, et seos käib mõlemat pidi.** «Siduda saab» üksi jätaks
+# lahtiseks, kas ühe arvamuse kohta käib üks ülevaade; tegelikkuses kirjutatakse
+# pikk menetlus mitu korda üles ja üks ülevaade katab sageli nii esialgse kui ka
+# täiendava arvamuse. Punkt nimetab mõlemad suunad, sest ainult siis teab lugeja,
+# et tal ei ole vaja valida.
+#
+# Kumbki punkt ei luba otsingut. Märksõna ei ole otsingusõna — teema enda sildid
+# on otsitavad nagu varem, arvamuse omad ei ole —, ja punkt, mis ütleks «leiad
+# üles», lubaks midagi, mida see väljalase ei too.
+prs = [248, 249, 252, 253, 255]
 changes = [
   "Juba salvestatud menetluse arengut saab nüüd parandada: „Muuda” avab sündmuse enda, selle kuupäeva ja juristi märkuse ning jätab teema hetkeseisu, järgmise tegevuse ja varem lisatud failid puutumata.",
   "Menetluse arengu juurde saab tõendi lisada ka hiljem — „Lisa tõend” paneb faili selle sammu juurde, mida see tõendab, ja varem lisatud failid jäävad alles.",
   "Pikk katkestusteta tekst, näiteks kopeeritud link, ei venita ega lõika enam teema lehe käiku, järgmist tegevust ega otsingutulemusi.",
+  "Koja arvamusele saab nüüd lisada eraldi märksõnad; teema sildid jäävad omaette ega kandu arvamusele üle.",
+  "Koja arvamuse saab nüüd siduda sama teema ülevaadete ja uudistega — üks arvamus võib olla seotud mitmega ja üks ülevaade mitme arvamusega.",
 ]
 
 [[day]]
