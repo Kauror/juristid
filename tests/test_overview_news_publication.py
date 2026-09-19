@@ -383,7 +383,10 @@ def test_the_date_box_is_empty_and_no_default_is_offered_anywhere(signed_in, nor
     box = box[: box.index(">")]
     today = timezone.localdate()
 
-    assert f'value="{today.day:02d}.{today.month:02d}.{today.year}"' in box, box
+    # `j.n.Y`, with no leading zeros: that is how `EstonianDateInput` writes a
+    # day into an **unbound** box, and not the `dd.mm.yyyy` a person types
+    # (`app.core.widgets`).
+    assert f'value="{today.day}.{today.month}.{today.year}"' in box, box
     assert "data-publication-default" not in panel
     assert "data-publication-trigger" not in panel
 

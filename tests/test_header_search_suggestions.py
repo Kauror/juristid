@@ -333,8 +333,15 @@ def test_the_index_contract_is_untouched() -> None:
     A changed `INDEX_VERSION` would mean every deployment needs a rebuild
     before search works again — an expensive consequence for a dropdown, and
     the reason it is asserted rather than assumed (docs/adr/0038).
+
+    **The literal moved in docs/adr/0095 §2 and this test's claim did not.** The
+    pin is a tripwire: it fires on *any* bump, so that a rebuild is always
+    somebody's decision rather than a side effect. Opinion summaries moved out of
+    an indexed identity tier into a column the projection did not read, which is
+    a genuine contract change and the one this number now records — nothing to do
+    with the surface this file is about.
     """
-    assert INDEX_VERSION == "AUTH003.1"
+    assert INDEX_VERSION == "OPSUM.1"
 
 
 def test_a_refused_query_produces_no_results_rather_than_an_error(

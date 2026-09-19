@@ -123,7 +123,11 @@ def _record_koda_opinion(page, *, sent_on: str, filename: str) -> None:
         {"name": filename, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
     form.locator("[name=sent_on]").fill(sent_on)
-    form.get_by_role("checkbox", name=MINISTRY, exact=True).check()
+    # Through the picker's own search since docs/adr/0095 §1: the catalogue is
+    # behind the search box and an institution outside the answer set is
+    # `hidden` until it is found, so ticking the control directly would assert
+    # an interaction nobody has.
+    choose_organisation(page, "koja-adressaat")
     form.get_by_role("button", name="Registreeri arvamus").click()
     page.wait_for_load_state("networkidle")
 
@@ -299,7 +303,11 @@ def test_received_and_discovered_feedback_are_visibly_different_things(page, bas
 
     open_add_panel(page, "lisa-tagasiside")
     received = panel(page, "lisa-tagasiside")
-    received.locator("[name=source_label]").fill("Tööstusettevõtete küsitlus")
+    # Both panels name an institution since docs/adr/0095 §4 — `Allikas` is a
+    # `Muuda` control, and the aggregate rows it was built for keep their labels.
+    # What tells these two records apart is the chip that was opened, which is
+    # the whole point of this test.
+    choose_organisation(page, "tagasiside")
     received.locator("[name=summary]").fill("58 vastust; enamik vastu.")
     received.get_by_role("button", name="Salvesta tagasiside").click()
     history(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
@@ -308,14 +316,26 @@ def test_received_and_discovered_feedback_are_visibly_different_things(page, bas
     discovered = panel(page, "lisa-valine-seisukoht")
     choose_organisation(page, "valine-seisukoht")
     discovered.locator("[name=summary]").fill("Toetab varianti B.")
-    discovered.locator("[name=lawyer_note]").fill("Ei arvesta liikmete kulumõjuga.")
     discovered.get_by_role("button", name="Salvesta arvamus").click()
     history(page).get_by_text("Teiste arvamus:").first.wait_for()
 
-    expect(history(page)).to_contain_text("Meile saadetud tagasiside: Tööstusettevõtete küsitlus")
+    # One organisation, two records, two headings: the provenance is the
+    # difference and nothing else is.
+    expect(history(page)).to_contain_text(f"Meile saadetud tagasiside: {MINISTRY}")
     expect(history(page)).to_contain_text(f"Teiste arvamus: {MINISTRY}")
 
     # The lawyer's reading is its own labelled line, never part of the source's.
+    # Written through `Muuda`, which is where the box lives now — so this proves
+    # the correction path still asks for it and the row still renders it apart
+    # from the position (docs/adr/0091 §4, docs/adr/0095 §3).
+    row = history(page).locator("article.uxtl__item").filter(has_text="Teiste arvamus:")
+    row.get_by_role("button", name="Muuda").first.click()
+    correction = row.locator("form[aria-label='Välise seisukoha parandamine']")
+    correction.wait_for(state="visible")
+    correction.locator("[name=lawyer_note]").fill("Ei arvesta liikmete kulumõjuga.")
+    correction.get_by_role("button", name="Salvesta").click()
+    history(page).get_by_text("Juristi märkus").first.wait_for()
+
     row = history(page).locator("article.uxtl__item").filter(has_text="Teiste arvamus:")
     expect(row.locator(".uxtl__msnote")).to_contain_text("Juristi märkus")
     expect(row.locator(".uxtl__msnote")).to_contain_text("kulumõjuga")

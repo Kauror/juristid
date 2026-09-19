@@ -29,6 +29,7 @@ import re
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from app.matters.services import plan_website_overview
 
@@ -125,73 +126,71 @@ def test_the_planned_rows_publish_form_describes_nothing_it_does_not_render(
 # ===========================================================================
 
 
-def test_the_publication_date_is_described_by_its_own_help_text(signed_in, normal_matter):
-    """The reported defect, as the four facts that make it a defect.
+def test_the_composer_date_box_claims_no_description_it_does_not_have(signed_in, normal_matter):
+    """The reported defect's control, after the sentence it pointed at was retired.
 
-    The control exists, it says it is described, the description is there, and
-    it is there once. Asserted separately from the scan above so that a failure
-    reads as what it is rather than as "some id on the Matter page".
+    The defect was a box saying `aria-describedby="id_published_on_helptext"`
+    about an element that did not exist: a screen reader followed the pointer,
+    found nothing, and read the control with no description at all while a
+    sighted reader got the sentence.
+
+    docs/adr/0095 §5 removes the sentence, because the panel no longer has a
+    conditional to explain. That closes the defect the other way round — there is
+    nothing to point at and nothing claiming to — and this is the assertion that
+    says so, on the one control the defect was reported on. The page-wide
+    invariant above covers every other control on it.
     """
     response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
     html = response.content.decode()
 
     control = re.search(r"<input[^>]*\bid=\"id_published_on\"[^>]*>", html)
     assert control, "the Ülevaade / uudis panel renders no #id_published_on"
-    assert "id_published_on_helptext" in described_ids(control.group(0)), (
-        "the publication date box no longer says it is described by its help text"
+    assert "id_published_on_helptext" not in described_ids(control.group(0)), (
+        "the composer's date box points at a help text the panel no longer renders"
     )
-    assert html.count('id="id_published_on_helptext"') == 1, (
-        "the description the box points at is missing, or rendered twice"
-    )
+    assert 'id="id_published_on_helptext"' not in html, "the retired help text is back on the page"
 
 
-def test_the_description_says_an_unknown_date_may_be_left_empty(signed_in, normal_matter):
-    """*What* it says, not only that something is there.
-
-    The meaning is the rule docs/adr/0089 §8 settled — an empty box is a valid
-    answer and means the day is unknown — and it is the one sentence somebody
-    filling this in has to be able to read. Matched on the phrase rather than on
-    the whole string, so rewording the sentence does not fail this while
-    removing the meaning does.
-    """
-    response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
-    html = response.content.decode()
-    described = re.search(r'id="id_published_on_helptext"[^>]*>(.*?)</span>', html, re.S)
-    assert described, "no element carries id_published_on_helptext"
-    assert "kuupäev ei ole teada" in described.group(1), (
-        f"the accessible description no longer carries the meaning: {described.group(1)!r}"
-    )
-
-
-def test_the_panel_does_not_say_the_same_thing_twice(signed_in, normal_matter):
-    """One instruction, one place.
+def test_the_composer_panel_carries_no_date_instruction_at_all(signed_in, normal_matter):
+    """One instruction, one place — and here, no instruction.
 
     The sentence used to be prose beside the fieldset while the box pointed at
-    nothing. Moving it to the field is only an improvement if the prose goes:
-    otherwise a screen reader reads the instruction once as the box's
-    description and again as the paragraph under it.
+    nothing; the fix moved it onto the field; docs/adr/0095 §5 retires it along
+    with the conditional it explained. What must not come back is either copy.
+
+    The *publish* form on a stored planned row keeps its own help text and its
+    own empty box: publishing a plan is a different act and docs/adr/0089 §8
+    still governs it. That form is asserted separately above, which is why this
+    test reads a Matter with nothing planned.
     """
     response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
     html = response.content.decode()
-    assert html.count("jäta tühjaks") == 1, (
-        "the publication date's instruction is on the panel more than once"
+
+    assert "jäta tühjaks" not in html, (
+        "the retired publication-date instruction is back on the composer panel"
     )
     assert "Avaldamise kuupäev on valikuline" not in html, (
-        "the duplicated panel sentence is back beside the field-level help text"
+        "the duplicated panel sentence is back beside the field"
     )
 
 
-def test_the_publication_date_is_still_optional_and_still_empty(signed_in, normal_matter):
-    """The fix is an association, and changes nothing about the control.
+def test_the_composer_date_box_is_optional_and_opens_on_today(signed_in, normal_matter):
+    """The two properties most easily broken while changing a description.
 
-    Named because the two things most easily broken while attaching a
-    description are the two docs/adr/0089 §8 settled: the box is not required,
-    and nothing pre-fills it with today.
+    docs/adr/0089 §8 settled that the box is not required and that nothing
+    *reacts* to a paste by filling it. docs/adr/0095 §5 adds a server-side
+    `initial` and changes neither: the day is in the box before anything is
+    typed, where it can be read and cleared, and an emptied box still stores
+    `NULL`.
     """
+    today = timezone.localdate()
     response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
-    control = re.search(r"<input[^>]*\bid=\"id_published_on\"[^>]*>", response.content.decode())
+    html = response.content.decode()
+    control = re.search(r"<input[^>]*\bid=\"id_published_on\"[^>]*>", html)
+
     assert control
     assert "required" not in control.group(0), "the publication date became required"
-    assert not re.search(r'\bvalue="[^"]+"', control.group(0)), (
-        "the publication date box opens with a value in it"
+    assert f'value="{today.day}.{today.month}.{today.year}"' in control.group(0), (
+        f"the composer's date box does not open on today: {control.group(0)!r}"
     )
+    assert "data-publication-default" not in html, "the withdrawn paste-triggered island is back"

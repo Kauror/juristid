@@ -1073,10 +1073,17 @@ def test_the_search_index_version_is_untouched() -> None:
     Pinned by value rather than merely asserted to exist: a UI consolidation
     that moved `INDEX_VERSION` would silently require a search rebuild on
     deployment, which is exactly the cost this change should not have.
+
+    **The literal moved in docs/adr/0095 §2 and this test's claim did not.** The
+    pin is a tripwire: it fires on *any* bump, so that a rebuild is always
+    somebody's decision rather than a side effect. Opinion summaries moved out of
+    an indexed identity tier into a column the projection did not read, which is
+    a genuine contract change and the one this number now records — nothing to do
+    with the surface this file is about.
     """
     from app.search.models import INDEX_VERSION
 
-    assert INDEX_VERSION == "AUTH003.1"
+    assert INDEX_VERSION == "OPSUM.1"
 
 
 def test_no_migration_is_outstanding() -> None:

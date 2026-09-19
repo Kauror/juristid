@@ -376,7 +376,10 @@ def test_the_date_box_opens_on_today(signed_in, normal_matter):
     box = panel[panel.index('name="published_on"') :]
     box = box[: box.index(">")]
 
-    assert f'value="{today.day:02d}.{today.month:02d}.{today.year}"' in box, box
+    # `j.n.Y`, with no leading zeros: that is how `EstonianDateInput` writes a
+    # day into an **unbound** box, and not the `dd.mm.yyyy` a person types
+    # (`app.core.widgets`).
+    assert f'value="{today.day}.{today.month}.{today.year}"' in box, box
     assert "data-publication-default" not in panel
 
 

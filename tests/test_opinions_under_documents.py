@@ -1167,11 +1167,18 @@ def test_neither_search_index_version_moves():
     Asserted against the two constants rather than described in a commit
     message: the whole cost of getting this wrong is a rebuild nobody
     authorised, and a rebuild is decided by these two strings.
+
+    **The literal moved in docs/adr/0095 §2 and this test's claim did not.** The
+    pin is a tripwire: it fires on *any* bump, so that a rebuild is always
+    somebody's decision rather than a side effect. Opinion summaries moved out of
+    an indexed identity tier into a column the projection did not read, which is
+    a genuine contract change and the one this number now records — nothing to do
+    with the surface this file is about.
     """
     from app.legacy_import.opinion_search_models import ARCHIVE_INDEX_VERSION
     from app.search.models import INDEX_VERSION
 
-    assert INDEX_VERSION == "AUTH003.1"
+    assert INDEX_VERSION == "OPSUM.1"
     assert ARCHIVE_INDEX_VERSION == "1"
 
 
