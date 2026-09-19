@@ -6800,6 +6800,21 @@ button.accordion__action:focus-visible {
   margin-top: var(--spacing-2);
 }
 
+/* Which `Koja arvamused` this planned write-up is meant to cover.
+
+   Its own full-width line under the state, like `.webrow__form` and for a
+   related reason: the row is a flex line whose other items are controls, and a
+   sentence of *data* dropped between them reads as a label on the button beside
+   it. It is last in the markup so the controls keep their own line above it;
+   `flex-basis: 100%` then gives it a line of its own under them. */
+.webrow__linked {
+  /* `1 0 100%`, not `1 1 100%`: a shrinkable 100% basis simply squeezes back
+     onto the control line, which is what this rule exists to stop. */
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
 .webrow__cancel {
   margin: 0;
 }

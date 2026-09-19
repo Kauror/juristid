@@ -67,9 +67,7 @@ def a_draft_opinion(page, base_url: str) -> str:
     """
     matter_url = a_new_matter(page, base_url)
     block = open_opinion_block(page, matter_url)
-    block.locator("details.disclosure").filter(has_text="+ Uus arvamus").locator(
-        "summary"
-    ).click()
+    block.locator("details.disclosure").filter(has_text="+ Uus arvamus").locator("summary").click()
     form = block.locator("form[action*='/arvamused/teema/']")
     form.locator("[name='arvamus-title']").fill("Koja arvamus pakendiseaduse eelnõule")
     form.get_by_role("button", name="Loo arvamus").click()

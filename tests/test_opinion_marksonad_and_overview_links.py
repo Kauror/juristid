@@ -291,9 +291,7 @@ def test_the_same_pair_cannot_be_linked_twice(opinion, published):
 
     SubmissionWebsiteOverviewLink.objects.create(submission=opinion, website_overview=published)
     with pytest.raises(IntegrityError):
-        SubmissionWebsiteOverviewLink.objects.create(
-            submission=opinion, website_overview=published
-        )
+        SubmissionWebsiteOverviewLink.objects.create(submission=opinion, website_overview=published)
 
 
 def test_an_overview_on_another_matter_is_refused(opinion, specialist, published):
@@ -307,9 +305,7 @@ def test_an_overview_on_another_matter_is_refused(opinion, specialist, published
     )
 
     with pytest.raises(DomainError):
-        set_submission_website_overviews(
-            submission=opinion, overviews=[foreign], actor=specialist
-        )
+        set_submission_website_overviews(submission=opinion, overviews=[foreign], actor=specialist)
 
     assert list(opinion.website_overviews.all()) == []
 
@@ -378,9 +374,7 @@ def test_nothing_is_inferred_from_a_shared_tag(normal_matter, opinion, tags, spe
 def test_unlinking_deletes_neither_endpoint(opinion, published, specialist):
     from app.matters.models import MatterWebsiteOverview
 
-    set_submission_website_overviews(
-        submission=opinion, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=opinion, overviews=[published], actor=specialist)
     set_submission_website_overviews(submission=opinion, overviews=[], actor=specialist)
 
     assert Submission.objects.filter(pk=opinion.pk).exists()
@@ -409,9 +403,7 @@ def test_a_cancelled_overview_can_still_participate(opinion, normal_matter, spec
         overview=plan_website_overview(matter=normal_matter, actor=specialist), actor=specialist
     )
 
-    set_submission_website_overviews(
-        submission=opinion, overviews=[cancelled], actor=specialist
-    )
+    set_submission_website_overviews(submission=opinion, overviews=[cancelled], actor=specialist)
 
     assert [row.pk for row in opinion.website_overviews.all()] == [cancelled.pk]
 
@@ -444,9 +436,7 @@ def test_editing_the_relation_leaves_the_submission_untouched(
         {row.organisation_id for row in submission.recipient_rows.all()},
     )
 
-    set_submission_website_overviews(
-        submission=submission, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=submission, overviews=[published], actor=specialist)
     set_submission_website_overviews(submission=submission, overviews=[], actor=specialist)
     submission.refresh_from_db()
 
@@ -461,9 +451,7 @@ def test_editing_the_relation_leaves_the_submission_untouched(
 def test_editing_the_relation_leaves_the_overview_untouched(opinion, published, specialist):
     before = (published.status, published.url, published.published_on, published.published_at)
 
-    set_submission_website_overviews(
-        submission=opinion, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=opinion, overviews=[published], actor=specialist)
     set_submission_website_overviews(submission=opinion, overviews=[], actor=specialist)
     published.refresh_from_db()
 
@@ -503,9 +491,7 @@ def test_linking_and_unlinking_an_overview_is_audited(opinion, planned, publishe
     set_submission_website_overviews(
         submission=opinion, overviews=[planned, published], actor=specialist
     )
-    set_submission_website_overviews(
-        submission=opinion, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=opinion, overviews=[published], actor=specialist)
 
     assert _events(opinion, ChangeEventType.SUBMISSION_OVERVIEW_LINKED).count() == 2
     unlinked = _events(opinion, ChangeEventType.SUBMISSION_OVERVIEW_UNLINKED)
@@ -516,37 +502,29 @@ def test_linking_and_unlinking_an_overview_is_audited(opinion, planned, publishe
 def test_a_save_that_changes_nothing_writes_no_event(opinion, tags, published, specialist):
     """«Somebody opened this» must not read the same as «somebody changed this»."""
     set_submission_tags(submission=opinion, tags=[tags[0]], actor=specialist)
-    set_submission_website_overviews(
-        submission=opinion, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=opinion, overviews=[published], actor=specialist)
     before = ChangeEvent.objects.count()
 
     set_submission_tags(submission=opinion, tags=[tags[0]], actor=specialist)
-    set_submission_website_overviews(
-        submission=opinion, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=opinion, overviews=[published], actor=specialist)
 
     assert ChangeEvent.objects.count() == before
 
 
-def test_no_audit_payload_carries_the_letters_own_text(
-    normal_matter, tags, published, specialist
-):
+def test_no_audit_payload_carries_the_letters_own_text(normal_matter, tags, published, specialist):
     """Identities and vocabulary names, never content.
 
     `notes` is this office's professional working text and the sent file's bytes
     are evidence; neither belongs in an audit payload, which is the record a
     later reader reconstructs events from (docs/adr/0093 §3).
     """
-    secret = "Ministeeriumi põhjendus ei arvesta liikmete kulumõjuga."
+    private_note = "Ministeeriumi põhjendus ei arvesta liikmete kulumõjuga."
     submission = factories.SubmissionFactory(
-        matter=normal_matter, title="Koja arvamus", notes=secret
+        matter=normal_matter, title="Koja arvamus", notes=private_note
     )
 
     set_submission_tags(submission=submission, tags=[tags[0]], actor=specialist)
-    set_submission_website_overviews(
-        submission=submission, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=submission, overviews=[published], actor=specialist)
 
     rows = _events(
         submission,
@@ -555,8 +533,8 @@ def test_no_audit_payload_carries_the_letters_own_text(
     )
     assert rows.count() == 2
     for event in rows:
-        assert secret not in str(event.payload)
-        assert secret not in event.summary
+        assert private_note not in str(event.payload)
+        assert private_note not in event.summary
 
 
 def test_the_new_events_stay_out_of_the_professional_chronology():
@@ -598,9 +576,7 @@ def test_a_restricted_overview_is_not_offered_to_a_reader_who_may_not_see_it(
     opinion, restricted_overview, published, reader
 ):
     """Not offered, not counted, not named."""
-    offered = set(
-        selectable_website_overviews(opinion, viewer=reader).values_list("pk", flat=True)
-    )
+    offered = set(selectable_website_overviews(opinion, viewer=reader).values_list("pk", flat=True))
 
     assert restricted_overview.pk not in offered
     assert published.pk in offered
@@ -677,9 +653,7 @@ def test_a_department_head_who_can_see_the_overview_may_link_it(
     assert SubmissionWebsiteOverviewLink.objects.count() == 1
 
 
-def test_a_cross_matter_identifier_is_refused_through_the_form(
-    signed_in, specialist, opinion
-):
+def test_a_cross_matter_identifier_is_refused_through_the_form(signed_in, specialist, opinion):
     """The candidate queryset is scoped to the Matter, so this never validates."""
     other_matter = factories.MatterFactory(owner=specialist)
     foreign = plan_website_overview(matter=other_matter, actor=specialist)
@@ -764,9 +738,7 @@ def test_several_keywords_can_be_saved_and_then_corrected(signed_in, opinion, ta
     assert {tag.pk for tag in opinion.tags.all()} == {tags[2].pk}
 
 
-def test_several_overviews_can_be_saved_through_the_form(
-    signed_in, opinion, planned, published
-):
+def test_several_overviews_can_be_saved_through_the_form(signed_in, opinion, planned, published):
     signed_in.post(
         _metadata_url(opinion),
         {"tags": [], "website_overviews": [str(planned.pk), str(published.pk)]},
@@ -791,13 +763,9 @@ def test_a_saved_relation_renders_on_the_opinions_own_row(
     )
     mark_submission_sent(submission=submission, actor=specialist, channel="EIS")
     set_submission_tags(submission=submission, tags=[tags[0]], actor=specialist)
-    set_submission_website_overviews(
-        submission=submission, overviews=[published], actor=specialist
-    )
+    set_submission_website_overviews(submission=submission, overviews=[published], actor=specialist)
 
-    response = signed_in.get(
-        reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk})
-    )
+    response = signed_in.get(reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk}))
     body = response.content.decode()
 
     assert tags[0].name_et in body
@@ -884,9 +852,7 @@ def test_the_metadata_surface_cannot_change_anything_else(signed_in, opinion, ta
     assert (opinion.title, opinion.status, opinion.kind, opinion.channel) == before
 
 
-def test_a_closed_matter_still_accepts_a_metadata_correction(
-    signed_in, specialist, tags
-):
+def test_a_closed_matter_still_accepts_a_metadata_correction(signed_in, specialist, tags):
     """The existing contract, not an exception invented for this surface.
 
     `Muuda teemat` writes a Matter's own `Sildid` on a closed file and `Võta
@@ -957,9 +923,7 @@ def test_the_overview_lifecycle_is_unchanged(normal_matter, specialist, opinion)
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
     assert overview.status == WebsiteOverviewStatus.PLANNED
 
-    set_submission_website_overviews(
-        submission=opinion, overviews=[overview], actor=specialist
-    )
+    set_submission_website_overviews(submission=opinion, overviews=[overview], actor=specialist)
 
     publish_website_overview(
         overview=overview,

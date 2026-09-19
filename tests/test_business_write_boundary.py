@@ -760,8 +760,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             {"tags": [str(w["tag"].pk)], "website_overviews": [str(w["planned_overview"].pk)]},
         ),
         probe=lambda w: (
-            w["submission"].tag_assignments.count()
-            + w["submission"].website_overview_links.count()
+            w["submission"].tag_assignments.count() + w["submission"].website_overview_links.count()
         ),
         events=(
             ChangeEventType.SUBMISSION_TAG_ASSIGNED,
