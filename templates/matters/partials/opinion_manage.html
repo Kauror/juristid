@@ -47,6 +47,63 @@ what somebody managing an opinion is asking about (§12, §28, §29).
         {% if document.opinion_send.reference %}
           <div><dt>Viide</dt><dd>{{ document.opinion_send.reference }}</dd></div>
         {% endif %}
+        {% comment %}
+          `Märksõnad` and `Seotud ülevaated / uudised` — what this letter argued
+          about, and where it was written up (docs/adr/0093).
+
+          Read-only here and editable one link below, which is the same split
+          `Saatmise andmed` already keeps: this menu states what the send says,
+          and the acts that change it are named.
+
+          **Each renders only when it has something**, like `Teadmiseks` and
+          `Kaasesitajad` above. Nothing is backfilled and nothing is inherited
+          from the Matter, so an opinion carrying neither is the ordinary case
+          and a permanently visible «ei ole» pair would be two empty rows on
+          every letter in the register.
+
+          The Matter's own `Sildid` are deliberately absent. Printing them here
+          would state, under a heading that belongs to the letter, a
+          classification somebody made about the file — which is exactly the
+          inheritance docs/adr/0093 §1 refuses, arriving through a template.
+        {% endcomment %}
+        {% if document.opinion_send.metadata_tags %}
+          <div>
+            <dt>Märksõnad</dt>
+            <dd>{% for tag in document.opinion_send.metadata_tags %}{{ tag.name_et }}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+          </div>
+        {% endif %}
+        {% if document.opinion_send.metadata_overviews %}
+          {% comment %}
+            The write-ups this letter is linked to, scoped on the overview's own
+            `visible_to` before the page was assembled: a restricted one
+            contributes no row and no count here, so a reader who may see the
+            opinion has not been told what else is on the file (docs/adr/0093 §4).
+
+            The state and the address, never an invented title — the model has
+            none, and a name nobody chose beside a real page is what
+            docs/adr/0081 §1 refuses. A published row's address is a real link,
+            with the same `target`, `rel` and hidden «avaneb uues aknas» every
+            other outbound link in this product carries.
+          {% endcomment %}
+          <div>
+            <dt>Seotud ülevaated / uudised</dt>
+            <dd>
+              {% for overview in document.opinion_send.metadata_overviews %}
+                <span class="opinionmenu__overview">
+                  {{ overview.get_status_display }}
+                  {% if overview.is_published %}
+                    · {{ overview.chronology_date }}
+                    {% if overview.url %}
+                      · <a class="quietlink" href="{{ overview.url }}"
+                           target="_blank" rel="noopener noreferrer">Ava ülevaade või uudis<span
+                           class="visually-hidden"> — avaneb uues aknas</span></a>
+                    {% endif %}
+                  {% endif %}
+                </span>
+              {% endfor %}
+            </dd>
+          </div>
+        {% endif %}
         {% if document.opinion_send.joint_rows %}
           {% comment %}
             A joint letter is only joint once the co-signatory agrees, so the
@@ -64,6 +121,24 @@ what somebody managing an opinion is asking about (§12, §28, §29).
         {% endif %}
       </dl>
       {% if can_write %}
+        {% comment %}
+          `Märksõnad ja seosed` — the one surface that edits the two metadata
+          facts above, on its own page (docs/adr/0093).
+
+          An ordinary link and a GET, unlike `Võta tagasi` below it: opening a
+          form changes nothing, and a POST to reach a screen would be a control
+          that has to be defended against a prefetcher for no reason. The route
+          it opens is `@business_write_required` in its own right, so this being
+          behind `can_write` is courtesy rather than the boundary.
+
+          Above `Võta tagasi` and visually quieter by position only: correcting a
+          classification is the ordinary act and withdrawing a formal submission
+          is not, which is why the destructive one keeps the bottom of a menu
+          nobody opens by accident (§13).
+        {% endcomment %}
+        <a class="quietlink" href="{% url 'submissions:metadata' pk=document.opinion_send.pk %}">
+          Märksõnad ja seosed
+        </a>
         {% comment %}
           A POST with its own form and its own explicit label. Never a GET and
           never a link: a withdrawal that a prefetcher or a crawler could

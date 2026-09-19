@@ -7141,6 +7141,15 @@ button.accordion__action:focus-visible {
   margin: 0;
 }
 
+/* One linked `Ülevaade / uudis` in the send's own details: a state, a date and
+   an address, which is more than fits a comma-separated line at this width.
+   `block` rather than a flex row because the third part is a link that may wrap,
+   and a wrapped link inside a flex item keeps its own line. */
+.opinionmenu__overview {
+  display: block;
+  padding: 1px 0;
+}
+
 /* The opinion management block: the same quiet head Töödokumendid has, because
    it is the same kind of thing — secondary to the file table above it, and open
    only when somebody owes it work. */

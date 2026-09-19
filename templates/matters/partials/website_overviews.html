@@ -39,6 +39,32 @@ controls and every write route still refuses it under the row lock
             <span class="webrow__badge">{{ overview.get_status_display }}</span>
             <span class="webrow__says">Ülevaade või uudis on plaanis, aga veel avaldamata.</span>
           </p>
+          {% comment %}
+            Which `Koja arvamused` this write-up is meant to cover — read-only,
+            and only where a link exists (docs/adr/0093 §2).
+
+            **Read-only here on purpose.** The relation is edited from the
+            opinion, on `Arvamuse märksõnad ja seosed`, and a second editor here
+            purely for symmetry would be two controls for one fact and two places
+            a save can land. What this row owes a reader is the answer, not
+            another form.
+
+            The list is scoped on the `Submission` side before the page is
+            assembled, so a restricted opinion contributes no name and no count:
+            seeing that a write-up is owed is not authority to learn which
+            letters are on the file (`app.submissions.links`, docs/adr/0093 §4).
+
+            Nothing at all when there is no link, which is every planned row in
+            the register today and most of them afterwards — no empty label, no
+            «ei ole seotud», in a strip whose whole rule is that it renders only
+            what the file actually owes.
+          {% endcomment %}
+          {% if overview.linked_opinions %}
+            <p class="webrow__says">
+              Seotud arvamused:
+              {% for opinion in overview.linked_opinions %}{{ opinion.title }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </p>
+          {% endif %}
           {% if can_write and matter.is_open %}
             {% comment %}
               A native disclosure rather than a launcher radio: it is alone on

@@ -39,6 +39,11 @@ urlpatterns = [
     # creates one, binds the exact file and marks it sent, in one transaction
     # over the existing services (docs/adr/0061).
     path("teema/<uuid:matter_id>/saadetud/", views.register_sent, name="register_sent"),
+    # `Arvamuse märksõnad ja seosed` — the one surface that edits what a letter
+    # argued about and which write-ups cover it. A route of its own rather than a
+    # second panel on the send, because it changes neither the send nor the file
+    # and must not be reachable from the act that does (docs/adr/0093).
+    path("<uuid:pk>/andmed/", views.metadata, name="metadata"),
     path("<uuid:pk>/toend/", views.attach_evidence, name="attach_evidence"),
     path("<uuid:pk>/saada/", views.mark_sent, name="mark_sent"),
     path("<uuid:pk>/tagasi/", views.withdraw, name="withdraw"),

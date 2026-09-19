@@ -321,13 +321,26 @@ def planned_website_overviews(matter: Matter, user: Any) -> list[Any]:
     date and is the right order for records that have one.
     """
     from app.matters.models import MatterWebsiteOverview
+    from app.submissions.links import linked_submissions_by_overview
 
-    return list(
+    rows = list(
         MatterWebsiteOverview.objects.filter(matter=matter)
         .visible_to(user)
         .planned()
         .order_by("created_at", "id")
     )
+    # Which `Koja arvamused` this write-up is meant to cover, read once for the
+    # whole strip and scoped on the `Submission` side — a restricted opinion
+    # contributes no name and no count here, so a reader who may see the plan has
+    # not been told which letters they may not (docs/adr/0093 §4).
+    #
+    # Attached to the record rather than returned beside it, because the strip
+    # already hands the template `(record, form)` pairs and a third element would
+    # have to be threaded through both callers.
+    linked = linked_submissions_by_overview(matter, user=user) if rows else {}
+    for record in rows:
+        record.linked_opinions = linked.get(record.pk, [])
+    return rows
 
 
 def procedural_links(matter: Matter, user: Any) -> list[Any]:

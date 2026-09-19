@@ -33,9 +33,12 @@ from app.submissions.enums import (
     SubmissionStatus,
 )
 from app.submissions.models import (
+    CROSS_MATTER_OVERVIEW_LINK,
     Submission,
     SubmissionJointSubmitter,
     SubmissionRecipient,
+    SubmissionTagAssignment,
+    SubmissionWebsiteOverviewLink,
 )
 
 
@@ -788,3 +791,218 @@ def register_sent_opinion_on_open_matter(
         sent_at=sent_at,
         sent_at_precision=sent_at_precision,
     )
+
+
+# ---------------------------------------------------------------------------
+# `Märksõnad` and `Seotud ülevaated / uudised` — docs/adr/0093
+# ---------------------------------------------------------------------------
+
+#: What a keyword selection says when the chosen tag is not one that may be used
+#: today and is not one this Submission already carries.
+INACTIVE_TAG_REFUSED = "Märksõna „{name}“ ei ole enam kasutusel. Vali kehtiv märksõna."
+
+
+@transaction.atomic
+def set_submission_tags(
+    *,
+    submission: Submission,
+    tags: Any,
+    actor: Any = None,
+) -> Submission:
+    """Replace this opinion's `Märksõnad` with the chosen set.
+
+    Whole-set replacement rather than a diff supplied by the caller, because that
+    is what a checkbox list posts: an unticked box is simply absent. What is
+    *written* is the difference, which is a separate thing and is the point of
+    the two loops below.
+
+    **Nothing here looks at the Matter.** Not its tags, not its policy areas, not
+    its title. An opinion's keywords are the opinion's own and are never inherited,
+    proposed or completed from the file it hangs off (docs/adr/0093 §1).
+
+    **Nothing here creates a `Tag`.** The vocabulary is governed elsewhere and a
+    metadata form is not where new taxonomy gets invented — the same sentence
+    `app.matters.services.set_tags` has always carried.
+
+    **A merged spelling resolves; a retired one is refused; an assignment that is
+    already here survives both.** A tag chosen for the first time is followed
+    through `Tag.canonical()` so the assignment lands on the row that carries
+    assignments today, and is refused if what it resolves to is not active. A tag
+    **already assigned to this Submission** passes through untouched however the
+    vocabulary has moved since — a historical classification must not disappear
+    from a record because somebody deprecated a word, and the form offers it back
+    as a ticked chip for exactly that reason.
+
+    **A no-op writes nothing.** Re-saving the same selection deletes no row,
+    creates no row and records no event: an audit trail in which "somebody opened
+    this" reads the same as "somebody changed this" answers neither question.
+    """
+    existing = {
+        assignment.tag_id: assignment
+        for assignment in SubmissionTagAssignment.objects.filter(
+            submission=submission
+        ).select_related("tag")
+    }
+
+    chosen: dict[Any, Any] = {}
+    for tag in tags:
+        if tag is None:
+            continue
+        if tag.pk in existing:
+            # Already on this record. It stays exactly as it is — same row, same
+            # actor, same day — and is deliberately *not* re-resolved through
+            # `canonical()`: a merge that happened after the assignment was made
+            # must not silently move somebody's stated classification.
+            chosen[tag.pk] = tag
+            continue
+        canonical = tag.canonical()
+        if not canonical.is_active:
+            raise DomainError(INACTIVE_TAG_REFUSED.format(name=canonical.name_et))
+        chosen[canonical.pk] = canonical
+
+    now = timezone.now()
+
+    for tag_id, assignment in existing.items():
+        if tag_id in chosen:
+            continue
+        name = assignment.tag.name_et
+        key = assignment.tag.key
+        assignment.delete()
+        record_change_event(
+            event_type=ChangeEventType.SUBMISSION_TAG_REMOVED,
+            matter=submission.matter,
+            actor=actor,
+            obj=submission,
+            summary=name[:200],
+            # The identity and the key, never the letter's own text. What a later
+            # reader needs is which keyword moved and on which opinion, and the
+            # opinion is `obj` (docs/adr/0093 §3).
+            payload={"tag": str(tag_id), "tag_key": key, "submission": str(submission.pk)},
+        )
+
+    for tag_id, tag in chosen.items():
+        if tag_id in existing:
+            continue
+        SubmissionTagAssignment.objects.create(
+            submission=submission,
+            tag=tag,
+            # A real account or nothing. `matters.services.set_tags` asks only
+            # `is_authenticated`, which the `DepartmentViewer` sentinel also
+            # answers true to while having no primary key at all — and a
+            # sentinel reaching a foreign key is a crash in a service rather
+            # than a refusal a reader can read (`app.core.authorization`).
+            assigned_by=actor if getattr(actor, "pk", None) is not None else None,
+            assigned_at=now,
+        )
+        record_change_event(
+            event_type=ChangeEventType.SUBMISSION_TAG_ASSIGNED,
+            matter=submission.matter,
+            actor=actor,
+            obj=submission,
+            summary=tag.name_et[:200],
+            payload={"tag": str(tag_id), "tag_key": tag.key, "submission": str(submission.pk)},
+        )
+    return submission
+
+
+@transaction.atomic
+def set_submission_website_overviews(
+    *,
+    submission: Submission,
+    overviews: Any,
+    actor: Any = None,
+) -> Submission:
+    """Replace this opinion's `Seotud ülevaated / uudised` with the chosen set.
+
+    Zero, one or many, in both directions: one write-up may cover two letters and
+    one letter may be written up twice. Nothing is unique on either side alone and
+    nothing elects a primary (docs/adr/0093 §2).
+
+    **Same Matter, or nothing at all.** Every chosen overview must belong to
+    `submission.matter`, and one that does not refuses the whole operation — the
+    rollback takes the additions that had already been written with it, so a save
+    naming three overviews of which one is foreign leaves the record exactly as it
+    was. Checked here, under the transaction, rather than only in a form: a browser
+    posts whatever it likes and this is the boundary that decides.
+
+    **Removals are scoped to what the actor can see, and that is a rule.** A
+    restricted overview is never offered to a reader who may not see it, so its
+    link cannot appear in `overviews` — and diffing against *every* stored link
+    would then read its absence as a decision to unlink, destroying a relation
+    nobody was shown. So the set this operation may remove from is the links whose
+    overview is visible to the actor; everything else is left exactly where it is
+    (docs/adr/0093 §4). An unauthenticated actor sees nothing and therefore removes
+    nothing, which is the safe direction for the same reason.
+
+    **It changes neither endpoint.** No `Submission` status, `sent_at`, recipient
+    or final evidence is touched, and no `MatterWebsiteOverview` is published,
+    cancelled, re-addressed or deleted. Unlinking removes the join row and that is
+    the whole of it.
+
+    **A no-op writes nothing**, exactly as `set_submission_tags` above.
+    """
+    from app.matters.models import MatterWebsiteOverview
+
+    chosen: dict[Any, Any] = {}
+    for overview in overviews:
+        if overview is None:
+            continue
+        if overview.matter_id != submission.matter_id:
+            raise DomainError(CROSS_MATTER_OVERVIEW_LINK)
+        chosen[overview.pk] = overview
+
+    existing = {
+        link.website_overview_id: link
+        for link in SubmissionWebsiteOverviewLink.objects.filter(
+            submission=submission
+        ).select_related("website_overview")
+    }
+    # Which of the stored links this actor is in a position to have decided about.
+    # Read once, as a set of identities, so the loop below asks no question of the
+    # database per row.
+    removable = set(
+        MatterWebsiteOverview.objects.filter(pk__in=list(existing))
+        .visible_to(actor)
+        .values_list("pk", flat=True)
+    )
+
+    now = timezone.now()
+
+    for overview_id, link in existing.items():
+        if overview_id in chosen or overview_id not in removable:
+            continue
+        status = link.website_overview.status
+        link.delete()
+        record_change_event(
+            event_type=ChangeEventType.SUBMISSION_OVERVIEW_UNLINKED,
+            matter=submission.matter,
+            actor=actor,
+            obj=submission,
+            payload={
+                "overview": str(overview_id),
+                "status": status,
+                "submission": str(submission.pk),
+            },
+        )
+
+    for overview_id, overview in chosen.items():
+        if overview_id in existing:
+            continue
+        SubmissionWebsiteOverviewLink.objects.create(
+            submission=submission,
+            website_overview=overview,
+            linked_by=actor if getattr(actor, "pk", None) is not None else None,
+            linked_at=now,
+        )
+        record_change_event(
+            event_type=ChangeEventType.SUBMISSION_OVERVIEW_LINKED,
+            matter=submission.matter,
+            actor=actor,
+            obj=submission,
+            payload={
+                "overview": str(overview_id),
+                "status": overview.status,
+                "submission": str(submission.pk),
+            },
+        )
+    return submission

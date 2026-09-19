@@ -29,7 +29,7 @@ from app.matters.models import Matter
 from app.matters.services import add_engagement, add_entry, close_matter, create_matter
 from app.matters.work_items import start_of_iso_week
 from app.organisations.models import AliasType, Organisation, OrganisationType
-from app.taxonomy.models import PolicyArea
+from app.taxonomy.models import PolicyArea, Tag
 from app.workflow.enums import ActionKind, DateSemantics, Disposition, Track
 from app.workflow.models import StageVocabulary
 from app.workflow.services import set_next_action
@@ -262,6 +262,26 @@ class Command(BaseCommand):
         # Nine real areas are also a better test of a multi-select than two.
         area = PolicyArea.objects.get(key="keskkond")
         stage = StageVocabulary.objects.get(key="consultation")
+
+        # Two governed `Märksõnad`, because the vocabulary is empty otherwise and
+        # a browser cannot tick a chip that is not there.
+        #
+        # Created here rather than read, unlike the Valdkonnad above: `Tag` is a
+        # curated vocabulary the department builds as it files, and no migration
+        # seeds one — so a world with none is a world in which `Märksõnad` on an
+        # opinion and `Sildid` on `Muuda teemat` both render «ei ole veel
+        # loodud» and prove nothing (docs/adr/0093 §1).
+        #
+        # **Assigned to nothing.** Existence is what these are for; a seeded
+        # assignment would put a classification in the world that nobody made,
+        # which is the inheritance the whole decision refuses. Two rather than
+        # one, so «several keywords» is a state a browser can reach.
+        #
+        # They move no visual baseline: `Sildid` left the Teema page in
+        # ADR 0052 §10, `Uus teema` has no such control, and `Muuda teemat` is
+        # not a photographed scenario (e2e/test_ui_regression.py).
+        for key, name in (("e2e-pakendid", "Pakendid"), ("e2e-aktsiis", "Aktsiis")):
+            Tag.objects.get_or_create(key=key, defaults={"name_et": name})
 
         if Matter.objects.filter(title=RESTRICTED_TITLE).exists():
             self.stdout.write("E2E world already present.")

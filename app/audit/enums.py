@@ -79,6 +79,32 @@ class ChangeEventType(models.TextChoices):
     SUBMISSION_WITHDRAWN = "SUBMISSION_WITHDRAWN", "Arvamus tagasi võetud"
     SUBMISSION_SUPERSEDED = "SUBMISSION_SUPERSEDED", "Arvamus asendatud"
     SUBMISSION_RECIPIENTS_CHANGED = "SUBMISSION_RECIPIENTS_CHANGED", "Arvamuse saajad muudetud"
+    # -- docs/adr/0093: what one letter argued about, and where it was written up
+    #
+    # Four types rather than two, and separate from `TAG_ASSIGNED` / `TAG_REMOVED`
+    # directly below. Those two say a *Matter* was classified; these say a
+    # *Submission* was, and a history that could not tell the file's subject from
+    # one letter's subject would be a history nobody can answer a question with —
+    # the reasoning every field-level type in this enum already follows.
+    #
+    # One per fact that moved: adding two keywords and removing one is three rows,
+    # exactly as `set_tags` has always written three for a Matter. A save that
+    # changed nothing writes none of them.
+    #
+    # All four are deliberately absent from `matters.timeline.TIMELINE_EVENT_TYPES`,
+    # beside `TAG_ASSIGNED` and for the same reason: classifying a letter is data
+    # management rather than authored chronology, and echoing it into the
+    # professional narrative would bury what actually happened to the file.
+    SUBMISSION_TAG_ASSIGNED = "SUBMISSION_TAG_ASSIGNED", "Arvamuse märksõna lisatud"
+    SUBMISSION_TAG_REMOVED = "SUBMISSION_TAG_REMOVED", "Arvamuse märksõna eemaldatud"
+    SUBMISSION_OVERVIEW_LINKED = (
+        "SUBMISSION_OVERVIEW_LINKED",
+        "Arvamus seotud ülevaate või uudisega",
+    )
+    SUBMISSION_OVERVIEW_UNLINKED = (
+        "SUBMISSION_OVERVIEW_UNLINKED",
+        "Arvamuse seos ülevaate või uudisega eemaldatud",
+    )
     DOCUMENT_CREATED = "DOCUMENT_CREATED", "Dokument loodud"
     EVIDENCE_VERSION_ADDED = "EVIDENCE_VERSION_ADDED", "Tõendiversioon lisatud"
     TAG_ASSIGNED = "TAG_ASSIGNED", "Silt lisatud"

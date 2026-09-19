@@ -749,6 +749,26 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
     ),
     WriteRoute(
+        name="submissions:metadata",
+        label="Arvamuse märksõnad ja seosed",
+        # A `Tag` built here rather than taken from the world, because the
+        # fixture carries none and a payload naming nothing would leave this
+        # route unable to write even for an allowed actor — which is the one
+        # thing this matrix must not accept as a refusal.
+        request=lambda w: (
+            {"pk": w["submission"].pk},
+            {"tags": [str(w["tag"].pk)], "website_overviews": [str(w["planned_overview"].pk)]},
+        ),
+        probe=lambda w: (
+            w["submission"].tag_assignments.count()
+            + w["submission"].website_overview_links.count()
+        ),
+        events=(
+            ChangeEventType.SUBMISSION_TAG_ASSIGNED,
+            ChangeEventType.SUBMISSION_OVERVIEW_LINKED,
+        ),
+    ),
+    WriteRoute(
         name="submissions:withdraw",
         label="Arvamuse tagasivõtmine",
         request=lambda w: ({"pk": w["sent_submission"].pk}, {"reason": "Loata"}),
@@ -1024,6 +1044,10 @@ def world(db):
         "sent_submission": sent_submission,
         "organisation": organisation,
         "stage": factories.StageFactory(),
+        # A governed keyword for `submissions:metadata`. The route classifies an
+        # opinion rather than creating taxonomy, so a world with no `Tag` would
+        # have nothing for it to write and its refusal would prove nothing.
+        "tag": factories.TagFactory(),
     }
 
 

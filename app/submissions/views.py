@@ -20,8 +20,9 @@ from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
@@ -38,7 +39,9 @@ from app.submissions.forms import (
     MarkSentForm,
     RegisterSentOpinionForm,
     SubmissionCreateForm,
+    SubmissionMetadataForm,
 )
+from app.submissions.links import linked_website_overviews
 from app.submissions.models import Submission
 from app.submissions.opinions import unregistered_opinion_documents
 from app.submissions.services import (
@@ -47,6 +50,8 @@ from app.submissions.services import (
     mark_submission_sent_on_open_matter,
     register_sent_opinion_on_open_matter,
     select_final_evidence_on_open_matter,
+    set_submission_tags,
+    set_submission_website_overviews,
     withdraw_submission,
 )
 
@@ -323,3 +328,102 @@ def withdraw(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as error:
         messages.error(request, str(error))
     return _back(submission)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def metadata(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Arvamuse märksõnad ja seosed` — the two facts docs/adr/0093 decided.
+
+    **A page rather than a panel, and a small one.** `Submission` had no edit
+    surface at all: every route in this module is a POST that performs one act on
+    a letter and lands back on `Dokumendid`. Reopening the send to ask for
+    metadata would put two optional classification controls in front of the four
+    required answers `+ Koja arvamus` exists to keep short, and a second editor
+    beside the one ADR 0061 retired is exactly what that record refused. So this
+    is one screen that can change two things and cannot change anything else.
+
+    **`GET` is behind the same door as `POST`, deliberately.** This is an edit
+    form; a reader who may not author business content is answered 404 by
+    `business_write_required` rather than shown a page whose every control would
+    refuse them. What a reader sees instead is the read-only list on the opinion's
+    own row, which is on a page they may already read.
+
+    **No open-Matter lock**, and that is the existing contract rather than an
+    exception invented here. `MatterEditForm` writes a Matter's own `Sildid`
+    through `set_tags` on a closed file, and `withdraw` corrects a recorded send
+    on one: classifying a record that already exists is a correction of metadata,
+    not new canonical business content, and `can_add_content` is the gate for the
+    second (docs/adr/0093 §3, docs/adr/0075 §12).
+
+    Both writes happen in one transaction. A cross-Matter overview refuses the
+    whole save, so a person who mis-selected one does not find their keywords
+    written and their links not.
+    """
+    submission = _visible_submission(request, pk)
+
+    if request.method == "GET":
+        form = SubmissionMetadataForm(
+            submission=submission,
+            viewer=request.user,
+            initial={
+                # Read off this Submission's own assignments and off nothing else.
+                # The Matter's tags are deliberately not consulted: a box ticked
+                # because the file carries the word would be the inheritance
+                # docs/adr/0093 §1 refuses, arriving through a default.
+                "tags": list(submission.tags.all()),
+                "website_overviews": linked_website_overviews(submission, viewer=request.user),
+            },
+        )
+        return render(request, "submissions/metadata.html", _metadata_context(submission, form))
+
+    form = SubmissionMetadataForm(request.POST, submission=submission, viewer=request.user)
+    if not form.is_valid():
+        return render(
+            request,
+            "submissions/metadata.html",
+            _metadata_context(submission, form),
+            status=400,
+        )
+
+    try:
+        with transaction.atomic():
+            set_submission_tags(
+                submission=submission,
+                tags=list(form.cleaned_data["tags"]),
+                actor=request.user,
+            )
+            set_submission_website_overviews(
+                submission=submission,
+                overviews=list(form.cleaned_data["website_overviews"]),
+                actor=request.user,
+            )
+    except DomainError as error:
+        form.add_error(None, str(error))
+        return render(
+            request,
+            "submissions/metadata.html",
+            _metadata_context(submission, form),
+            status=400,
+        )
+
+    messages.success(request, "Arvamuse märksõnad ja seosed on salvestatud.")
+    return _back(submission)
+
+
+def _metadata_context(submission: Submission, form: SubmissionMetadataForm) -> dict[str, Any]:
+    """What the metadata page renders, resolved once.
+
+    `back_url` is the opinion-filtered file list this page was opened from, so
+    `Loobu` lands where `Salvesta` does. It is `opinions_url` rather than
+    `_back`'s per-row anchor because a cancelled edit has changed nothing and has
+    no row to point at.
+    """
+    return {
+        "submission": submission,
+        "matter": submission.matter,
+        "form": form,
+        "nav_active": "teemad",
+        "back_url": opinions_url(submission.matter),
+    }
