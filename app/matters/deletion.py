@@ -45,7 +45,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, cast
 
 from django.db import models, transaction
@@ -145,10 +144,6 @@ class DeletionPlan:
     @property
     def is_blocked(self) -> bool:
         return bool(self.blockers)
-
-    @property
-    def total_rows(self) -> int:
-        return sum(group.count for group in self.owned)
 
     @property
     def refusals(self) -> tuple[str, ...]:
@@ -678,10 +673,3 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
         keys = (*plan.evidence_keys, *plan.derivative_keys)
         transaction.on_commit(lambda: _forget_storage(keys))
     return plan
-
-
-def deleted_at_of(matter_id: Any) -> datetime | None:
-    """When this Matter was deleted, or None. For tests and integrity checks."""
-    return (
-        Matter.all_objects.filter(pk=matter_id).values_list("deleted_at", flat=True).first() or None
-    )

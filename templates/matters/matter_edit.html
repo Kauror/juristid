@@ -314,20 +314,22 @@
     `matters:matter_delete`, which asks the question on a page of its own and
     takes the answer as a POST with its own token (docs/adr/0096 §4).
 
-    Rendered only where deletion is actually possible for this reader and this
-    record. `can_delete` is the view's answer and not the template's guess, and
-    it is not the gate either: the delete route re-authorises and re-checks
-    every blocker, so a hidden control is presentation and the refusal is the
+    **Unconditional, and that is the decision rather than an oversight.**
+    Reaching this page is the permission: everybody `business_write_required`
+    and `get_visible_matter` let edit a Teema may delete it, which is what the
+    product asked for. A `{% templatetag openblock %} if {% templatetag closeblock %}`
+    over a flag the view always sets true would read as a gate and be none.
+
+    The gate is the route. `matters:matter_delete` re-authorises and re-checks
+    every blocker, so what is drawn here is an offer and the refusal is the
     security (app/matters/views.py `matter_delete`).
   {% endcomment %}
-  {% if can_delete %}
-    <div class="dangerzone">
-      <h2 class="dangerzone__title">Teema kustutamine</h2>
-      <p class="dangerzone__help">
-        Kustutamine eemaldab teema ja kogu selle sisu jäädavalt. Seda ei saa tagasi võtta.
-      </p>
-      <a class="button button--danger" href="{% url 'matters:matter_delete' pk=matter.pk %}">Kustuta teema</a>
-    </div>
-  {% endif %}
+  <div class="dangerzone">
+    <h2 class="dangerzone__title">Teema kustutamine</h2>
+    <p class="dangerzone__help">
+      Kustutamine eemaldab teema ja kogu selle sisu jäädavalt. Seda ei saa tagasi võtta.
+    </p>
+    <a class="button button--danger" href="{% url 'matters:matter_delete' pk=matter.pk %}">Kustuta teema</a>
+  </div>
 </div>
 {% endblock %}

@@ -4505,15 +4505,16 @@ def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, 
         # with material to read has anything to be read. The count is the
         # same scoped read the header makes for the Dokumendid tab.
         "has_documents": Document.objects.filter(matter=matter).visible_to(request.user).exists(),
-        # Whether to draw `Kustuta teema` at the foot of the page.
+        # **No `can_delete` here, deliberately.** Reaching this page *is* the
+        # permission: `business_write_required` plus `get_visible_matter` is the
+        # cohort that may delete, and it is the same cohort that may edit — which
+        # is the answer the product asked for, because deletion is not an
+        # administrator's privilege but what somebody does about a Teema that
+        # should not exist (docs/adr/0096 §4.2).
         #
-        # True for everybody this page already lets edit the record, which is
-        # the answer the product asked for: deletion is not an administrator's
-        # privilege, it is what somebody does about a Teema that should not
-        # exist. `business_write_required` plus `get_visible_matter` is the
-        # cohort, and the delete route applies both again — this flag decides
-        # what is drawn and never what is permitted (docs/adr/0096 §4.2).
-        "can_delete": True,
+        # A flag that is always true is a decision point that is not one, and
+        # somebody would eventually read it as the gate. The gate is the delete
+        # route, which re-authorises and re-checks every blocker.
     }
 
 
