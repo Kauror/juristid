@@ -219,11 +219,17 @@ def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, syntheti
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/?olek=koik&q={quote(RESTRICTED_TITLE)}")
     page.wait_for_load_state("networkidle")
-    page.get_by_role("link", name=RESTRICTED_TITLE).first.click()
-    page.wait_for_load_state("networkidle")
-    matter_url = page.url
+    # Followed by href rather than clicked, which is what
+    # `e2e/test_ui_regression.py::signed_in_matter` does and for the same
+    # reason: the register's table head is `position: sticky`, so a browser
+    # that scrolls the first row to the top of the viewport puts it under the
+    # header and the click lands on the header instead. The result is a
+    # navigation that silently did not happen.
+    href = page.locator(".table--register").get_by_role("link", name=RESTRICTED_TITLE)
+    matter_path = href.first.get_attribute("href")
+    assert matter_path, f"the register does not hold {RESTRICTED_TITLE!r}"
 
-    page.goto(f"{matter_url}dokumendid/")
+    page.goto(f"{base_url}{matter_path}dokumendid/")
     page.wait_for_load_state("networkidle")
     page.locator('[data-reveals="lae-dokument"]').first.click()
     page.locator("#lae-dokument select[name=role]").first.wait_for(state="visible")
