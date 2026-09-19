@@ -55,6 +55,7 @@ WIDTHS = [375, 420, 768, 1440]
 AREAS = 'input[name="policy_areas"]'
 STAGES = 'input[name="stage"]'
 INSTRUMENTS = 'input[name="legal_instruments"]'
+OIGUSAKT_FIELD = 'fieldset:has(> .chiprow input[name="legal_instruments"])'
 
 
 def create_form(page, base_url, width: int = 1440) -> None:
@@ -175,14 +176,17 @@ def test_picking_a_stage_does_not_move_oigusakt(page, base_url):
     if radios.count() < 3:
         pytest.skip("this world offers fewer than two real stages")
 
-    instruments = page.locator(INSTRUMENTS)
-    if not instruments.count():
+    if not page.locator(INSTRUMENTS).count():
         pytest.skip("this world has no legal instrument vocabulary")
 
-    before = document_top(page, f"{INSTRUMENTS} >> nth=0")
+    # `document_top` runs `querySelector`, which is CSS and not Playwright's
+    # selector language — `>> nth=0` is a syntax error there rather than a
+    # miss. The fieldset is a plain CSS `:has()` and is the thing that would
+    # move anyway.
+    before = document_top(page, OIGUSAKT_FIELD)
     radios.nth(2).click()
     page.wait_for_timeout(120)
-    after = document_top(page, f"{INSTRUMENTS} >> nth=0")
+    after = document_top(page, OIGUSAKT_FIELD)
 
     expect(radios.nth(2)).to_be_checked()
     assert abs(after - before) <= 1
