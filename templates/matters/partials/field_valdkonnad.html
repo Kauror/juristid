@@ -59,8 +59,8 @@ Django template, so the branch is simply never taken there (Teema redesign
 §7.2).
 {% endcomment %}
 <div class="createform__row">
-  <details class="chipdetails chipdetails--field" open>
-    <summary class="chipdetails__summary">
+  <details class="chipfold" open>
+    <summary class="chipfold__trigger">
       {{ form.policy_areas.label }}<span
         data-chipsummary-for="policy_areas"
         data-chipsummary-count>{% if form.policy_area_chosen_count %} · {{ form.policy_area_chosen_count }}{% endif %}</span>
@@ -72,7 +72,7 @@ Django template, so the branch is simply never taken there (Teema redesign
       the word, and printing it twice is noise in the one place it cannot be
       skimmed past.
     {% endcomment %}
-    <fieldset class="field chipdetails__field">
+    <fieldset class="field chipfold__body">
       <legend class="field__label visually-hidden">{{ form.policy_areas.label }}</legend>
       <div class="chiprow">
         {% for choice in form.policy_areas %}

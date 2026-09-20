@@ -98,7 +98,7 @@ def test_each_vocabulary_is_a_fold_that_arrives_open(signed_in, which):
     assert '<summary class="chipfold__trigger">' in fold
     assert "chipfold__body" in fold
     # Open on arrival, every time.
-    assert fold.startswith('<details class="chipfold" data-chipfold open>')
+    assert fold.startswith('<details class="chipfold" open>')
 
 
 @pytest.mark.parametrize("which", list(FOLDS), ids=list(FOLDS))
@@ -125,7 +125,7 @@ def test_a_fold_is_open_on_a_refused_render_too(signed_in, which):
 
     assert response.status_code == 400
     fold = _fold(response.content.decode(), which)
-    assert fold.startswith('<details class="chipfold" data-chipfold open>')
+    assert fold.startswith('<details class="chipfold" open>')
 
 
 def test_the_muu_box_and_both_refusals_are_outside_the_valdkonnad_fold(signed_in):
@@ -246,7 +246,7 @@ def test_nothing_on_the_page_is_a_chipmenu_any_more(signed_in):
     page = _page(signed_in)
 
     assert "chipmenu" not in page
-    assert page.count('<details class="chipfold" data-chipfold open>') == 2
+    assert page.count('<details class="chipfold" open>') == 2
 
 
 # ---------------------------------------------------------------------------
@@ -294,14 +294,22 @@ def test_each_fold_is_a_named_group_for_a_screen_reader(signed_in):
 
     The legend is visually hidden because the trigger directly above already says
     the word, and printing it twice is what the trigger exists to stop.
+
+    **The `<fieldset>` *is* the fold's body**, rather than sitting inside a
+    `<div>` that carries the class. `.chipfold__body` is one margin rule, and a
+    wrapper existing only to hold it would put an anonymous box between the
+    disclosure and the group it names — so the assertion below is that the
+    element carrying the class is the fieldset itself, which is the stronger
+    claim and the one that stays true if the rule ever grows.
     """
     factories.StageFactory(label_et="Kooskõlastusringil")
     page = _page(signed_in)
 
     for which, label in (("valdkonnad", "Valdkonnad"), ("hetkeseis", "Hetkeseis")):
-        body = _fold(page, which)
-        body = body[body.index("chipfold__body") :]
-        assert "<fieldset" in body
+        fold = _fold(page, which)
+        opening = fold[fold.index("<fieldset") : fold.index(">", fold.index("<fieldset")) + 1]
+        assert "chipfold__body" in opening
+        body = fold[fold.index("<fieldset") :]
         legend = re.search(r"<legend[^>]*>([^<]*)</legend>", body)
         assert legend is not None
         assert legend.group(1).strip() == label

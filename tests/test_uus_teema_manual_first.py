@@ -45,6 +45,7 @@ from app.matters.forms import MatterCreateForm, MatterEditForm
 from app.matters.models import Matter
 from app.organisations.models import Organisation, OrganisationType
 from app.taxonomy.models import PolicyArea
+from app.workflow.enums import Track
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -239,7 +240,7 @@ def test_valdkond_is_an_open_fold_and_says_so(signed_in):
     block = valdkond_block(page)
 
     assert "chipfold" in block
-    assert block.startswith('<details class="chipfold" data-chipfold open>')
+    assert block.startswith('<details class="chipfold" open>')
     assert "Valdkonnad" in block
     # In flow under the trigger, which is what `e2e/test_uus_teema_valikud.py`
     # measures — a class name is not a visible chip.
@@ -330,25 +331,40 @@ def test_the_two_withdrawn_areas_are_not_offered(signed_in, specialist):
     assert PolicyArea.objects.filter(key__in=WITHDRAWN).count() == 2
 
 
-def test_menetlusliik_still_offers_the_words_the_area_gave_up(signed_in, specialist):
-    """The reason the area went, stated as an assertion.
+def test_the_withdrawn_area_is_absent_from_both_teema_forms(signed_in, specialist):
+    """The withdrawn Valdkond is offered by neither page, and `Track` still holds it.
 
-    «ELi õiguse ülevõtmine» is not gone from the product: it is `Menetlusliik`'s
-    answer and always was. The withdrawal removed the *second* place the same
-    four words were asked for (docs/adr/0088 §3).
+    This test used to be called «Menetlusliik still offers the words the area
+    gave up», and it asserted «ELi õiguse ülevõtmine» *on* `Muuda teemat`: the
+    four words were not gone from the product, they were `Menetlusliik`'s
+    answer and always had been, and docs/adr/0088 §3 removed only the second
+    place the same question was asked (docs/adr/0090 §4 then took
+    `Menetlusliik` off the create form, leaving the edit page the last surface
+    that offered it).
 
-    Asserted on `Muuda teemat` rather than here, because the round after this
-    one took `Menetlusliik` off the create form as well — derived from `Õigusakt`
-    instead, and never as a transposition (docs/adr/0090 §4). The withdrawn
-    Valdkond is still absent from both, which is what this test is for.
+    docs/adr/0096 §5 takes it off that page too, and off the Teema rail with
+    it — a question asked on one of two pages that are supposed to be one job
+    seen twice is drift rather than a decision. So the old assertion is not
+    merely stale, it asserts the defect.
+
+    What survives unchanged is what this test was always *for*: the retired
+    area is offered by neither Teema form. And what replaces the other half is
+    the claim docs/adr/0096 §5 actually makes — `Track` is withdrawn from the
+    ordinary interface, not from the product. The enum still carries the words,
+    the column still stores them, and the importers still write them; see
+    `test_teema_ux_consolidation.py` for the Matters that keep a stored track
+    through a save of the simplified form.
     """
     matter = factories.MatterFactory(owner=specialist)
     create = signed_in.get(CREATE).content.decode()
     edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
 
-    assert "ELi õiguse ülevõtmine" in edit
     assert "ELi õiguse ülevõtmine" not in valdkond_block(create)
     assert "ELi õiguse ülevõtmine" not in create
+    assert "ELi õiguse ülevõtmine" not in edit
+    # Not gone from the product — gone from the two forms. The vocabulary that
+    # holds the words is untouched and is what the register still reads.
+    assert "ELi õiguse ülevõtmine" in dict(Track.choices).values()
 
 
 @pytest.mark.parametrize("key", WITHDRAWN)

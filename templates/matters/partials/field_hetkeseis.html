@@ -41,12 +41,12 @@ the next unrelated correction (app/workflow/selectors.py, docs/adr/0032
 §Amendment).
 {% endcomment %}
 <div class="createform__row">
-  <details class="chipdetails chipdetails--field" open>
-    <summary class="chipdetails__summary">
+  <details class="chipfold" open>
+    <summary class="chipfold__trigger">
       {{ form.stage.label }}<span
         data-chipsummary-for="stage">{% if form.stage_summary %} · {{ form.stage_summary }}{% endif %}</span>
     </summary>
-    <fieldset class="field chipdetails__field">
+    <fieldset class="field chipfold__body">
       <legend class="field__label visually-hidden">{{ form.stage.label }}</legend>
       {% comment %}
         The one control on these pages whose options need explaining: whether a
