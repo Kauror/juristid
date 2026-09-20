@@ -31,7 +31,7 @@ from app.documents.models import Document
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, MatterWorkVictory
 from app.matters import workspace
-from app.matters.models import Entry, MatterEngagement
+from app.matters.models import Entry, MatterEngagement, MatterProceduralDevelopment
 from app.matters.services import close_matter, compose_update
 from app.matters.timeline import matter_timeline
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
@@ -65,13 +65,16 @@ def _action(matter, actor, *, text: str = "Vaata uus eelnõu versioon üle", day
 def _victory(change: str = "Üleminekuaeg pikendati") -> dict[str, str]:
     """A `+ Töövõit` payload that would save.
 
-    The period is not incidental. A new win states when it belongs — nothing is
-    defaulted to today or to this year — so a payload without one is refused,
-    and every test here that is about something else (the files, the lock, the
-    audit trail, the panel that reopens) needs a saveable one
-    (docs/adr/0079 §10).
+    The date is not incidental. A new win states when it was won — nothing is
+    defaulted and an empty box is refused — so every test here that is about
+    something else (the files, the lock, the audit trail, the panel that
+    reopens) needs a saveable one.
+
+    One day, and no `Täpsus`: a töövõit is something Koda achieved and the
+    organisation should be able to say when it happened, so the four-way
+    precision group is off this panel (docs/adr/0079 §10, docs/adr/0097 §7).
     """
-    return {"victory_change": change, "victory_precision": "YEAR", "victory_year": "2026"}
+    return {"victory_change": change, "victory_date": "19.09.2026"}
 
 
 def _pdf(name: str = "koond.pdf", body: bytes = b"%PDF-1.4 sisu") -> SimpleUploadedFile:
@@ -183,7 +186,11 @@ def test_the_completed_action_is_no_longer_the_current_one_after_a_refresh(
 
     assert "Järgmine samm on määramata" in body
     assert "Mida tegid?" not in body
-    assert "+ Järgmine tegevus" in body
+    # `+ Järgmine tegevus` was the launcher's second chip and is gone: there is
+    # one ordinary way to set a next step and it is the optional box inside
+    # `+ Märge`, beside the thing that prompted it (docs/adr/0097 §8.2).
+    assert "+ Järgmine tegevus" not in body
+    assert 'name="next_text"' in body
     # The result is in the chronology.
     assert "Vaatasin versiooni üle." in body
 
@@ -361,13 +368,18 @@ def test_with_no_current_action_there_is_no_completion_form(signed_in, normal_ma
     assert "Järgmine samm on määramata" in body
     assert "Mida tegid?" not in body
     assert 'name="action_id"' not in body
-    assert "+ Järgmine tegevus" in body
+    assert "+ Järgmine tegevus" not in body
 
 
 def test_while_a_step_is_open_the_launcher_offers_muuda_instead(
     signed_in, normal_matter, specialist
 ):
-    """At most one open `NextAction`, and therefore one control for it."""
+    """At most one open `NextAction`, and therefore one control for it.
+
+    `Muuda` beside the task, which is the only shape this control takes now:
+    the launcher's chip is gone whether or not a step is open
+    (docs/adr/0097 §8.2).
+    """
     _action(normal_matter, specialist)
 
     body = _detail(signed_in, normal_matter)
@@ -398,58 +410,78 @@ def test_muuda_supersedes_rather_than_completes(signed_in, normal_matter, specia
 
 
 # ===========================================================================
-# LISA TEEMALE — twelve intentions, twelve saves
+# LISA TEEMALE — four families, and one save per intention
 # ===========================================================================
 
 
 def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, normal_matter):
-    body = _detail(signed_in, normal_matter)
-    zone = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
+    """Four peers, and the distinctions asked second inside the one chosen.
 
-    for chip in (
-        "+ Märge",
-        "+ Järgmine tegevus",
-        "+ Kaasamine",
-        "+ Oluline tähtaeg",
-        "+ Jõustumine",
-        "+ Töövõit",
-        "+ Ülevaade / uudis",
+    It was thirteen chips in this row. Every one of them was a truthful
+    distinction and the row was still wrong, because the lawyer in front of it
+    does not have a record type in mind (docs/adr/0097 §8). What is asserted
+    here is the shape after that: the four top-level chips carry a `+`, the
+    sub-choices inside two of them do not, and nothing is open until somebody
+    chooses.
+    """
+    body = _detail(signed_in, normal_matter)
+    zone = body[body.index('id="lisa-teemale"') : body.index('id="teema-toimingud"')]
+
+    for chip in ("+ Märge", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
+        assert chip in zone, chip
+    for choice in (
+        "Tavaline",
+        "Oluline tähtaeg",
+        "Jõustumine",
+        "Töövõit",
         # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
         # and one panel partial, named by how what it holds reached the file.
-        "+ Meile saadetud tagasiside",
-        "+ Teiste arvamus",
-        "+ Koja arvamus",
-        "+ Menetluse areng",
-        "+ Menetluse link",
-        "+ Lõpeta teema",
+        # Both are choices inside `+ Arvamus / tagasiside` now.
+        "Meile saadetud tagasiside",
+        "Teiste arvamus",
+        "Koja arvamus",
     ):
-        assert chip in zone, chip
+        assert f">{choice}<" in zone, choice
+
+    # Not peers of the four, and not in this zone at all.
+    for gone in ("+ Järgmine tegevus", "+ Menetluse areng", "+ Menetluse link", "+ Lõpeta teema"):
+        assert gone not in zone, gone
+
     assert 'cx-panel" open' not in zone
-    # Thirteen operations, thirteen saves. There is no shared one left.
+    # Nine operations in the launcher, nine saves. There is no shared one left,
+    # and `Lõpeta teema` is not counted because it is not in this zone.
     #
     # The organisation picker inside each feedback panel contributes no
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 13
+    assert zone.count('type="submit"') == 9
     assert "composer__actions" not in zone
 
 
 def test_a_marge_writes_an_entry_and_leaves_the_current_step_alone(
     signed_in, normal_matter, specialist
 ):
-    """«Ministeerium helistas» while the task that is open stays open."""
+    """«Ministeerium helistas» while the task that is open stays open.
+
+    The record is a `MatterProceduralDevelopment` rather than an `Entry` since
+    docs/adr/0097 §6: one visible control, one record type, and the record type
+    is the structured one because a projection needs a title it did not have to
+    parse. What this test is about — that writing a note touches the open step
+    not at all — is unchanged.
+    """
     action = _action(normal_matter, specialist)
 
     response = _post(
         signed_in,
         "matters:add_note",
         normal_matter,
-        {"body": "<p>Ministeerium helistas.</p>"},
+        {"title": "Ministeerium helistas.", "occurred_on": "19.09.2026"},
     )
 
     assert response.status_code == 200
-    assert Entry.objects.filter(matter=normal_matter).count() == 1
+    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).count() == 1
+    assert not Entry.objects.filter(matter=normal_matter).exists()
     action.refresh_from_db()
     assert action.status == ActionStatus.OPEN
     assert NextAction.objects.filter(matter=normal_matter).count() == 1
@@ -684,12 +716,12 @@ def test_a_marge_carries_its_own_files(signed_in, normal_matter):
         signed_in,
         "matters:add_note",
         normal_matter,
-        {"body": "<p>Ministeerium helistas.</p>"},
+        {"title": "Ministeerium helistas.", "occurred_on": "19.09.2026"},
         files=[_pdf("teade.pdf")],
     )
 
-    entry = Entry.objects.get(matter=normal_matter)
-    assert _names(_links_for(entry=entry)) == ["teade.pdf"]
+    record = MatterProceduralDevelopment.objects.get(matter=normal_matter)
+    assert _names(_links_for(procedural_development=record)) == ["teade.pdf"]
 
 
 def test_an_engagement_carries_its_replies(signed_in, normal_matter):
@@ -791,12 +823,12 @@ def test_two_files_with_the_same_name_on_one_fact_are_two_documents(signed_in, n
         signed_in,
         "matters:add_note",
         normal_matter,
-        {"body": "<p>Kaks faili.</p>"},
+        {"title": "Kaks faili.", "occurred_on": "19.09.2026"},
         files=[_pdf("sama.pdf", b"%PDF-1.4 a"), _pdf("sama.pdf", b"%PDF-1.4 b")],
     )
 
-    entry = Entry.objects.get(matter=normal_matter)
-    links = _links_for(entry=entry)
+    record = MatterProceduralDevelopment.objects.get(matter=normal_matter)
+    links = _links_for(procedural_development=record)
     assert len(links) == 2
     assert len({link.document_id for link in links}) == 2
 

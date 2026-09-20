@@ -62,6 +62,11 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
     Built from `edit_initial`, because a partial POST to that page is a POST no
     browser makes: every control on it posts, and a test that omitted the ones
     it was not interested in would be asserting against a clearing save.
+
+    `track`, `addressee_organisation`, `addressee_name` and `tags` were in it
+    and are not fields any more. Sending them would make this helper a worse
+    model of the browser rather than a more thorough one — they are not
+    controls (docs/adr/0097 §2–§4).
     """
     initial = edit_initial(matter)
     payload: dict[str, object] = {
@@ -69,7 +74,6 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "brief_summary": initial["brief_summary"] or "",
         "owner": initial["owner"] or "",
         "stage": initial["stage"] or "",
-        "track": initial["track"] or "",
         "policy_areas": [str(pk) for pk in initial["policy_areas"]],
         # `Muu valdkond` belongs to the chip that reveals it on both pages now, so
         # a payload that carried the text without the chip would be a save that
@@ -81,12 +85,10 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "legal_instrument_other": initial["legal_instrument_other"] or "",
         "source_organisations": [str(pk) for pk in initial["source_organisations"]],
         "sender_name": "",
-        "addressee_organisation": initial["addressee_organisation"] or "",
-        "addressee_name": "",
         "received_date": "",
         "response_deadline": "",
-        "tags": [str(pk) for pk in initial["tags"]],
     }
+
     payload.update(overrides)
     return payload
 

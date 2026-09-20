@@ -226,32 +226,45 @@ def test_a_refused_save_leaves_no_stray_sender_organisation(signed_in, specialis
 # ---------------------------------------------------------------------------
 
 
-def _answer_addressee(signed_in, matter, name: str) -> None:
-    """Name an addressee on `Muuda teemat`, which is the form that asks.
+def _answer_addressee(matter, name: str):
+    """Put an addressee on a Matter, through the resolver that writes that column.
 
-    `Uus teema` stopped asking who Koda answers (docs/adr/0090 §5). The
-    catalogue is still one catalogue and these three tests are about exactly
-    that, so they reach the addressee control where it lives.
+    **Not through a form.** `Uus teema` never asked who Koda answers
+    (docs/adr/0090 §5) and `Muuda teemat` stopped on 2026-09-20
+    (docs/adr/0097 §4), so a Matter carrying an addressee is one the importers,
+    the register refresh or the cutover made — and `resolve_addressee` is what
+    they resolve the name through.
+
+    The claim these three tests make is untouched by that: the catalogue is one
+    catalogue, whichever relation names a body first.
     """
-    signed_in.post(
-        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
-        {
-            "title": matter.title,
-            "brief_summary": matter.brief_summary,
-            "visibility": matter.visibility,
-            "addressee_name": name,
-        },
-    )
+    from app.matters.services import resolve_addressee
+
+    organisation = resolve_addressee(chosen=None, typed_name=name)
+    assert organisation is not None
+    matter.addressee_organisation = organisation
+    matter.save(update_fields=["addressee_organisation"])
+    return organisation
 
 
-def test_an_organisation_created_as_a_sender_is_offered_as_an_addressee(signed_in, specialist):
-    """CASE A. The department's own words: one place containing organisations."""
+def test_an_organisation_created_as_a_sender_is_a_row_like_any_other(signed_in, specialist):
+    """CASE A. The department's own words: one place containing organisations.
+
+    It read the edit form's addressee choices, which no longer exist. What it
+    was really saying is that a body typed into `Saatja` joins the catalogue
+    rather than a sender-only list — so that is what it says now, against the
+    catalogue and against the other surface that offers it.
+    """
     signed_in.post(CREATE, {"title": "Saatja kaudu", "sender_name": "Eesti Näidisliit"})
     created = Organisation.objects.get(name="Eesti Näidisliit")
 
+    assert created in Organisation.objects.all()
     form = MatterEditForm(matter=Matter.objects.get(title="Saatja kaudu"), viewer=specialist)
-    offered = {value for value, _label in form.fields["addressee_organisation"].choices}
-
+    offered = {
+        value
+        for field in ("source_organisations", "source_organisations_other")
+        for value, _label in form.fields[field].choices
+    }
     assert created.pk in offered
 
 
@@ -259,7 +272,7 @@ def test_an_organisation_created_as_an_addressee_is_offered_as_a_sender(signed_i
     """CASE B, and the direction that used to be impossible to reach at all."""
     signed_in.post(CREATE, {"title": "Adressaadi kaudu"})
     matter = Matter.objects.get(title="Adressaadi kaudu")
-    _answer_addressee(signed_in, matter, "Eesti Näidisliit")
+    _answer_addressee(matter, "Eesti Näidisliit")
     created = Organisation.objects.get(name="Eesti Näidisliit")
 
     form = MatterCreateForm(viewer=specialist)
@@ -277,7 +290,7 @@ def test_the_same_row_is_reused_whichever_field_names_it_second(signed_in, speci
     signed_in.post(CREATE, {"title": "Esimene", "sender_name": "Eesti Näidisliit"})
     signed_in.post(CREATE, {"title": "Teine"})
     second = Matter.objects.get(title="Teine")
-    _answer_addressee(signed_in, second, "Eesti Näidisliit")
+    _answer_addressee(second, "Eesti Näidisliit")
     second.refresh_from_db()
 
     assert Organisation.objects.filter(name="Eesti Näidisliit").count() == 1

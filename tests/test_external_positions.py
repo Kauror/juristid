@@ -1113,7 +1113,12 @@ def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matte
     # The chip is named by how the record reached the file. It was
     # `+ Väline seisukoht`; docs/adr/0091 §3 split it in two, and this panel is
     # the half that records what Koda found somewhere.
-    assert "+ Teiste arvamus" in body
+    #
+    # `Teiste arvamus` without the `+`: it is a choice *inside*
+    # `+ Arvamus / tagasiside` rather than a peer of it, and the `+` is what the
+    # launcher's four top-level chips carry (docs/adr/0097 §8).
+    assert ">Teiste arvamus<" in body
+    assert "+ Arvamus / tagasiside" in body
     assert "Rahandusministeerium" in body
 
 
@@ -1505,7 +1510,10 @@ def test_the_panel_validates_against_the_whole_shared_catalogue(catalogue, speci
     pool = {organisation.pk for organisation in Organisation.objects.all()}
     assert {row.pk for row in panel.fields["organisation"].queryset} == pool
     assert {row.pk for row in uus_teema.fields["source_organisations"].queryset} == pool
-    assert {row.pk for row in muuda.fields["addressee_organisation"].queryset} == pool
+    # `Muuda teemat` validates its one counterparty question against the whole
+    # catalogue, the same as the other two. It had a second until
+    # docs/adr/0097 §4.
+    assert {row.pk for row in muuda.fields["source_organisations"].queryset} == pool
     assert len(pool) == len(catalogue)
 
 

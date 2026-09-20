@@ -62,10 +62,16 @@ def test_the_single_value_fields_stay_single_value(specialist):
     assert widget.allow_multiple_selected is False
 
 
-def test_the_edit_form_still_renders_menetlusliik_as_a_single_value_control(specialist):
-    widget = MatterEditForm(matter=factories.MatterFactory(owner=specialist)).fields["track"].widget
-    assert isinstance(widget, forms.RadioSelect)
-    assert widget.allow_multiple_selected is False
+def test_neither_form_renders_menetlusliik(specialist):
+    """It was the edit page's own control; the page stopped asking.
+
+    This asserted the widget was a single-value `RadioSelect`, which was the
+    right claim while `Muuda teemat` drew it. `Matter.track` is still one value
+    and still stored; what is gone is any form that binds it (docs/adr/0097
+    §3).
+    """
+    assert "track" not in MatterEditForm(matter=factories.MatterFactory(owner=specialist)).fields
+    assert "track" not in MatterCreateForm(viewer=specialist).fields
 
 
 @pytest.mark.parametrize(
@@ -96,9 +102,10 @@ def test_the_chip_rows_are_rendered_as_radios(signed_in, specialist):
     # `Menetlusliik` is not on this page at all (docs/adr/0090 §4).
     assert 'name="track"' not in body
 
+    # Nor on the edit page any more, in either shape (docs/adr/0097 §3).
     edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
-    assert 'type="radio" name="track"' in edit
-    assert '<select name="track"' not in edit
+    assert 'name="track"' not in edit
+    assert 'type="radio" name="stage"' in edit
 
 
 # ---------------------------------------------------------------------------

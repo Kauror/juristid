@@ -72,6 +72,11 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
     Built from `edit_initial`, because a partial POST to that page is a POST no
     browser makes: every control on it posts, and a test that omitted the ones
     it was not interested in would be asserting against a clearing save.
+
+    `track`, `addressee_organisation`, `addressee_name` and `tags` were in it
+    and are not fields any more. Sending them would make this helper a worse
+    model of the browser rather than a more thorough one — they are not
+    controls (docs/adr/0097 §2–§4).
     """
     initial = edit_initial(matter)
     payload: dict[str, object] = {
@@ -79,7 +84,6 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "brief_summary": initial["brief_summary"] or "",
         "owner": initial["owner"] or "",
         "stage": initial["stage"] or "",
-        "track": initial["track"] or "",
         "policy_areas": [str(pk) for pk in initial["policy_areas"]],
         # `Muu valdkond` belongs to the chip that reveals it on both pages now, so
         # a payload that carried the text without the chip would be a save that
@@ -91,12 +95,10 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "legal_instrument_other": initial["legal_instrument_other"] or "",
         "source_organisations": [str(pk) for pk in initial["source_organisations"]],
         "sender_name": "",
-        "addressee_organisation": initial["addressee_organisation"] or "",
-        "addressee_name": "",
         "received_date": "",
         "response_deadline": "",
-        "tags": [str(pk) for pk in initial["tags"]],
     }
+
     payload.update(overrides)
     return payload
 
@@ -441,13 +443,19 @@ def test_saving_the_editor_blank_leaves_the_matter_without_a_deadline(signed_in,
 # ---------------------------------------------------------------------------
 
 
-def test_the_edit_page_renders_the_unified_picker_for_both_fields(signed_in, specialist):
+def test_the_edit_page_renders_the_unified_picker_for_the_one_it_asks(signed_in, specialist):
+    """`Saatja`, and that is the whole list.
+
+    It was both counterparty questions until docs/adr/0097 §4 withdrew the
+    Matter-level `Kellele` — which makes this page's picker count the same as
+    `Uus teema`'s, which is what §1 wanted all along.
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     body = edit_page(signed_in, matter)
 
     assert 'id="muuda-saatja-valik"' in body
-    assert 'id="muuda-adressaat-valik"' in body
+    assert 'id="muuda-adressaat-valik"' not in body
     assert "Otsi või lisa asutus…" in body
 
 
@@ -495,8 +503,11 @@ def test_the_edit_picker_prepopulates_the_current_selections(signed_in, speciali
 def test_sender_and_addressee_stay_independent_on_the_edit_page(signed_in, specialist):
     """§11. On `Uus teema` a sender may default the addressee; here it may not.
 
-    Both are established business facts by the time this page opens, so adding a
-    second sender must leave the recorded addressee exactly where it was.
+    The addressee is an established business fact by the time this page opens,
+    so adding a second sender must leave it exactly where it was. The rule is
+    stronger than it was: the page has no Adressaat control at all since
+    docs/adr/0097 §4, so what keeps the value is `set_organisations`' `_UNSET`
+    default rather than a control that was simply not touched.
     """
     first = factories.OrganisationFactory(name="Rahandusministeerium")
     second = factories.OrganisationFactory(name="Justiitsministeerium")
@@ -544,20 +555,27 @@ def test_editing_the_sender_alone_leaves_the_addressee(signed_in, specialist):
     assert [item.pk for item in matter.source_organisations.all()] == [second.pk]
 
 
-def test_editing_the_addressee_alone_leaves_the_senders(signed_in, specialist):
+def test_a_crafted_addressee_on_the_edit_page_moves_nothing(signed_in, specialist):
+    """This asserted the opposite until docs/adr/0097 §4.
+
+    It drove the Adressaat control and checked that using it left the senders
+    alone. The control is gone, so what has to hold now is the other half of
+    that independence: the senders still save, and a POST naming an addressee
+    changes neither the addressee nor anything else.
+    """
     sender = factories.OrganisationFactory(name="Rahandusministeerium")
     was = factories.OrganisationFactory(name="Kliimaministeerium")
-    now = factories.OrganisationFactory(name="Sotsiaalministeerium")
+    crafted = factories.OrganisationFactory(name="Sotsiaalministeerium")
     matter = factories.MatterFactory(owner=specialist, addressee_organisation=was)
     matter.source_organisations.set([sender])
 
     signed_in.post(
         reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
-        edit_payload(matter, addressee_organisation=str(now.pk)),
+        edit_payload(matter, addressee_organisation=str(crafted.pk)),
     )
 
     matter.refresh_from_db()
-    assert matter.addressee_organisation_id == now.pk
+    assert matter.addressee_organisation_id == was.pk
     assert [item.pk for item in matter.source_organisations.all()] == [sender.pk]
 
 

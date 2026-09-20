@@ -22,7 +22,7 @@ browser has to answer.
 
 **The boundary that must survive this redesign.** Typing is not creating. The
 search box has no `name` and posts nothing; `+` writes the typed spelling into
-`sender_name` / `addressee_name`, which are the fields that have always carried
+`sender_name`, which is the field that has always carried
 a body the catalogue does not hold; and what that spelling *means* is still
 `app.organisations.services.resolve_organisation_name` inside the save's own
 transaction — reuse an exact or alias match, create only a genuinely new body,
@@ -64,10 +64,16 @@ def edit_url(specialist) -> str:
 
 
 def both_teema_pages(signed_in, specialist) -> list[tuple[str, int]]:
-    """Each Teema form, with how many organisation pickers it draws."""
+    """Each Teema form, with how many organisation pickers it draws.
+
+    One each. `Muuda teemat` drew two until docs/adr/0097 §4 withdrew the
+    Matter-level `Kellele`, and the count is still written out per page rather
+    than assumed equal — a page that grew a second picker is exactly what this
+    number is here to catch.
+    """
     return [
         (scripted(signed_in.get(CREATE).content.decode()), 1),
-        (scripted(signed_in.get(edit_url(specialist)).content.decode()), 2),
+        (scripted(signed_in.get(edit_url(specialist)).content.decode()), 1),
     ]
 
 
@@ -140,22 +146,21 @@ def crowded(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_both_fields_offer_the_same_search_and_add_control(signed_in, specialist, crowded):
-    """Saatja and Adressaat are two questions about one catalogue (task §13).
+def test_both_teema_forms_offer_the_same_search_and_add_control(signed_in, specialist, crowded):
+    """One question about one catalogue, drawn the same way on both pages.
 
-    Two questions, two pages: `Uus teema` asks who sent the file and `Muuda
-    teemat` asks both, so the control is asserted on each page for the questions
-    that page asks (docs/adr/0090 §5).
+    It was two questions: `Uus teema` asked who sent the file and `Muuda
+    teemat` asked that and who Koda answers. The second went with the
+    Matter-level `Kellele` (docs/adr/0097 §4), which leaves the two pages
+    drawing one identical control — the sameness §1 of docs/adr/0096 was for.
     """
-    create = scripted(signed_in.get(CREATE).content.decode())
-    assert create.count(PLACEHOLDER) == 1
-    assert "Lisa uus saatja" in create
-    assert "Lisa uus adressaat" not in create
-
-    edit = scripted(signed_in.get(edit_url(specialist)).content.decode())
-    assert edit.count(PLACEHOLDER) == 2
-    assert "Lisa uus saatja" in edit
-    assert "Lisa uus adressaat" in edit
+    for page in (
+        scripted(signed_in.get(CREATE).content.decode()),
+        scripted(signed_in.get(edit_url(specialist)).content.decode()),
+    ):
+        assert page.count(PLACEHOLDER) == 1
+        assert "Lisa uus saatja" in page
+        assert "Lisa uus adressaat" not in page
 
 
 def test_the_add_button_arrives_disabled(signed_in, specialist, crowded):
@@ -199,12 +204,12 @@ def test_the_typed_field_still_posts_behind_the_button(signed_in, specialist, cr
     """
     page = scripted(signed_in.get(edit_url(specialist)).content.decode())
 
-    for name in ("sender_name", "addressee_name"):
-        tags = [tag for tag in re.findall(r"<input[^>]*>", page) if f'name="{name}"' in tag]
-        assert len(tags) == 1, f"{name} should post exactly once with scripting on"
-        assert 'type="hidden"' in tags[0]
+    tags = [tag for tag in re.findall(r"<input[^>]*>", page) if 'name="sender_name"' in tag]
+    assert len(tags) == 1, "sender_name should post exactly once with scripting on"
+    assert 'type="hidden"' in tags[0]
+    assert 'name="addressee_name"' not in page
 
-    # And `Uus teema`, which asks the sender question alone.
+    # And `Uus teema`, which asks the same one question.
     create = scripted(signed_in.get(CREATE).content.decode())
     sender = [tag for tag in re.findall(r"<input[^>]*>", create) if 'name="sender_name"' in tag]
     assert len(sender) == 1
@@ -224,11 +229,10 @@ def test_the_fallback_box_is_written_after_the_carrier(signed_in, specialist, cr
     """
     page = signed_in.get(edit_url(specialist)).content.decode()
 
-    for name in ("sender_name", "addressee_name"):
-        tags = [tag for tag in re.findall(r"<input[^>]*>", page) if f'name="{name}"' in tag]
-        assert len(tags) == 2, f"{name} should have a carrier and a fallback"
-        assert 'type="hidden"' in tags[0], "the carrier is not first"
-        assert 'type="hidden"' not in tags[1], "the fallback box is not second"
+    tags = [tag for tag in re.findall(r"<input[^>]*>", page) if 'name="sender_name"' in tag]
+    assert len(tags) == 2, "sender_name should have a carrier and a fallback"
+    assert 'type="hidden"' in tags[0], "the carrier is not first"
+    assert 'type="hidden"' not in tags[1], "the fallback box is not second"
 
     create = signed_in.get(CREATE).content.decode()
     sender = [tag for tag in re.findall(r"<input[^>]*>", create) if 'name="sender_name"' in tag]
@@ -257,10 +261,8 @@ def test_every_institution_is_a_real_control_in_both_fields(
     senders = set(chip_tags(page, "source_organisations")) | set(
         chip_tags(page, "source_organisations_other")
     )
-    addressees = set(chip_tags(page, "addressee_organisation")) - {""}
 
     assert senders == everything
-    assert addressees == everything
 
     create = scripted(signed_in.get(CREATE).content.decode())
     assert (
@@ -328,17 +330,16 @@ def test_a_recorded_alias_reaches_the_control_it_belongs_to(signed_in, specialis
     stored, so nothing on the page re-implements `normalize_for_matching`
     (task §6, §21).
 
-    Asserted on the sender control on `Uus teema` and on both controls on
-    `Muuda teemat`, because one alias table feeds every picker
-    (docs/adr/0073, docs/adr/0090 §5).
+    Asserted on the sender control on both Teema forms, because one alias
+    table feeds every picker (docs/adr/0073, docs/adr/0097 §4).
     """
     ministry.aliases.create(alias="KLIM")
 
-    create = scripted(signed_in.get(CREATE).content.decode())
-    assert 'data-aliases="klim"' in chip_tags(create, "source_organisations")[str(ministry.pk)]
-
-    edit = scripted(signed_in.get(edit_url(specialist)).content.decode())
-    assert 'data-aliases="klim"' in chip_tags(edit, "addressee_organisation")[str(ministry.pk)]
+    for page in (
+        scripted(signed_in.get(CREATE).content.decode()),
+        scripted(signed_in.get(edit_url(specialist)).content.decode()),
+    ):
+        assert 'data-aliases="klim"' in chip_tags(page, "source_organisations")[str(ministry.pk)]
 
 
 def test_reading_the_page_creates_no_institution(signed_in, crowded):
@@ -386,14 +387,16 @@ def test_a_refused_save_brings_a_non_shortlist_sender_back_in_sight(signed_in, c
     assert "hidden" not in label, "the chosen sender came back out of sight"
 
 
-def test_a_refused_save_brings_a_non_shortlist_addressee_back_in_sight(
+def test_a_refused_save_brings_a_non_shortlist_sender_back_in_sight_on_the_edit_page(
     signed_in, specialist, crowded
 ):
-    """The same claim for the field that holds one value.
+    """The same claim on the page that corrects a record.
 
-    Adressaat's own shortlist is `addressees_by_usage`, and a body chosen
-    through the search is no more likely to be in it. On `Muuda teemat`, which
-    is where the question is asked now (docs/adr/0090 §5).
+    It made this claim about Adressaat, which `Muuda teemat` no longer asks
+    (docs/adr/0097 §4). The risk it was guarding is the shortlist's, not the
+    field's: `organisations_by_usage` fills eight chips and a body chosen
+    through the search is no more likely to be among them, so a refusal that
+    re-rendered only the shortlist would hide the answer the person gave.
     """
     outside = Organisation.objects.order_by("name").last()
     assert outside is not None
@@ -401,17 +404,13 @@ def test_a_refused_save_brings_a_non_shortlist_addressee_back_in_sight(
 
     response = signed_in.post(
         reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
-        {
-            "title": "",
-            "visibility": matter.visibility,
-            "addressee_organisation": str(outside.pk),
-        },
+        {"title": "", "source_organisations": [str(outside.pk)]},
     )
     page = scripted(response.content.decode())
-    tag = chip_tags(page, "addressee_organisation")[str(outside.pk)]
+    tag = chip_tags(page, "source_organisations")[str(outside.pk)]
 
     assert "checked" in tag
-    assert "hidden" not in chip_label(page, "addressee_organisation", str(outside.pk))
+    assert "hidden" not in chip_label(page, "source_organisations", str(outside.pk))
 
 
 def test_a_refused_save_keeps_the_typed_name_and_shows_it_as_a_chip(signed_in):

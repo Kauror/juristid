@@ -304,22 +304,35 @@ def test_a_forged_menetlusliik_is_still_not_part_of_the_request(signed_in):
     assert Matter.objects.get(title="Seadus ja võltsitud menetlusliik").track == ""
 
 
-def test_menetlusliik_is_answered_where_it_is_known(signed_in, specialist):
-    """And it is not lost: the whole vocabulary is still offered on the surfaces
-    a person corrects a record from, including the one value no rule may infer.
+def test_menetlusliik_is_stored_and_no_longer_asked(signed_in, specialist):
+    """The column keeps every value; the ordinary Teema UI stopped asking.
+
+    This drove `update_field` on `track` and then read the vocabulary back off
+    `MatterEditForm`. Neither exists now: `Menetlusliik` left the Teema forms
+    and the rail with `Sildid` and the Matter-level `Kellele`, and the endpoint
+    went with the control rather than being left reachable behind no button
+    (docs/adr/0097 §3).
+
+    What has to stay true is that the *data* is untouched — the importers, the
+    register refresh and the cutover all still write it — and that the
+    withdrawal is a withdrawal rather than a hidden write path.
     """
-    matter = factories.MatterFactory(title="Ülevõtmine, seadus", owner=specialist)
+    matter = factories.MatterFactory(
+        title="Ülevõtmine, seadus", owner=specialist, track=Track.NATIONAL_TRANSPOSITION
+    )
     matter.legal_instruments.set([instrument("seadus")])
 
     url = reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "track"})
-    signed_in.post(url, {"track": Track.NATIONAL_TRANSPOSITION})
+    response = signed_in.post(url, {"track": Track.EU_INITIATIVE})
 
+    assert response.status_code == 404
     matter.refresh_from_db()
     assert matter.track == Track.NATIONAL_TRANSPOSITION
     assert [item.key for item in matter.legal_instruments.all()] == ["seadus"]
-
-    offered = {value for value, _label in MatterEditForm(matter=matter).fields["track"].choices}
-    assert set(Track.values) <= offered
+    assert "track" not in MatterEditForm(matter=matter).fields
+    # The vocabulary itself is untouched, which is what the register still
+    # filters on and what the importers still write.
+    assert set(Track.values)
 
 
 # ---------------------------------------------------------------------------
@@ -383,11 +396,22 @@ def test_changing_the_oigusakt_on_an_edit_does_not_rederive_the_track(signed_in,
     assert historical.track == Track.NATIONAL_TRANSPOSITION
 
 
-def test_the_edit_form_still_offers_menetlusliik_and_adressaat(historical):
+def test_a_historical_matter_keeps_its_menetlusliik_and_its_adressaat(historical):
+    """The form stopped offering them; the record did not stop holding them.
+
+    This asserted that `Muuda teemat` offered all three, which was the whole
+    argument for keeping them on that page (docs/adr/0090 §4, §5). The owner
+    withdrew it, so what is asserted now is the consequence that actually
+    matters for a Matter filed under version 1.0: nothing was cleared, and a
+    save of this page does not clear it either (docs/adr/0097 §3, §4).
+    """
     fields = MatterEditForm(matter=historical).fields
-    assert "track" in fields
-    assert "addressee_organisation" in fields
-    assert "addressee_name" in fields
+    assert "track" not in fields
+    assert "addressee_organisation" not in fields
+    assert "addressee_name" not in fields
+
+    assert historical.track
+    assert historical.addressee_organisation is not None
 
 
 def test_the_edit_form_offers_back_the_retired_stage_and_the_retired_instrument(historical):
@@ -496,8 +520,9 @@ def test_the_teema_rail_answers_the_sender_question_once(signed_in, specialist, 
     # The fact itself, and the control that edits it, are untouched.
     assert ministry.name in rail
     assert "field='source_organisations'" in rail or "source_organisations" in rail
-    # And `Kellele` is still its own row: the two are never merged.
-    assert ">Kellele<" in rail
+    # And `Kellele` is not a row at all any more — which is the strongest form
+    # of «the two are never merged» this rail can take (docs/adr/0097 §4).
+    assert ">Kellele<" not in rail
 
 
 def test_the_edit_form_calls_the_sender_saatja():
