@@ -591,9 +591,7 @@ def _phase_headings(page) -> list[str]:
     """
     return [
         (text or "").strip()
-        for text in history(page)
-        .locator("h3.uxtl__phase .uxtl__phasename")
-        .all_text_contents()
+        for text in history(page).locator("h3.uxtl__phase .uxtl__phasename").all_text_contents()
     ]
 
 
@@ -764,6 +762,7 @@ def test_an_unplaced_row_stays_visible_and_says_it_is_not_a_defect(page, base_ur
         occurred_on=_past(30),
         phase="Kooskõlastusring",
     )
+
     # A bare stage edit, through the header's own inline control: proof that a
     # value was recorded, dated by nothing but this application's clock. It
     # contradicts the open interval — the file left `Kooskõlastusring` and

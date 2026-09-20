@@ -444,9 +444,7 @@ def legal_process_rail(
     # where the file's `Hetkeseis` sits today says nothing about whether it did.
     # A recorded *stage* is a column having been moved, which is the thing a
     # person can get wrong and correct — see the demotion below.
-    step_indexes = {
-        index for index, node in enumerate(nodes) if node.phase_key in recorded_phases
-    }
+    step_indexes = {index for index, node in enumerate(nodes) if node.phase_key in recorded_phases}
     stage_indexes = {
         index
         for index, node in enumerate(nodes)

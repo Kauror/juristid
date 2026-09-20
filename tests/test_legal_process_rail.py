@@ -35,9 +35,6 @@ from app.matters.process_phases import (
     PATTERN_DIRECTIVE,
     PATTERN_DOMESTIC,
     PATTERN_EU,
-    PATTERN_EU_REGULATION,
-    PATTERN_MAARUS,
-    PATTERN_VTK,
     pattern_for,
 )
 from app.matters.services import change_stage, close_matter

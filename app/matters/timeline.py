@@ -1507,7 +1507,7 @@ def projected_milestones(
     return rows
 
 
-class TimelinePage(list):  # type: ignore[type-arg]
+class TimelinePage(list):
     """One page of chronology rows, plus how they are grouped into phases.
 
     **A list, so that every existing reader is unaffected.** `matter_timeline`

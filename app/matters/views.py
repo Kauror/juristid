@@ -2602,9 +2602,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `LISA TEEMALE` takes the rest; a refused save replaces exactly one of
         # them with its bound self and opens that panel alone
         # (docs/adr/0075 §2, `workspace_forms`).
-        **workspace_forms(
-            current_action, matter=matter, viewer=request.user, phases=phases
-        ),
+        **workspace_forms(current_action, matter=matter, viewer=request.user, phases=phases),
         # The superseded composer, still built for the endpoint that still
         # accepts it. Nothing on this page renders it any more
         # (docs/adr/0075 §11).
