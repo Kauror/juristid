@@ -1,38 +1,34 @@
-"""`Menetluse kulg` — where the external legal procedure stands, and nothing else.
+"""`Menetluse kulg` — where the external legal procedure stands, and what may
+come next.
 
 Two questions were being answered by one list, and the lawyers' second feedback
-round named both of them separately:
+round named both separately:
 
 * `Teema käik` — **what actually happened on this file**. Evidence and history:
   the ministry sent a draft, the Chamber asked its members, feedback came back,
-  Koda's opinion went out. That is the chronology, and it is projected from
-  canonical records by `app/matters/timeline.py`.
+  Koda's opinion went out. That is the chronology, projected from canonical
+  records by `app/matters/timeline.py` and grouped into phases by
+  `app/matters/phase_history.py`.
 * `Menetluse kulg` — **where the procedure is now**, which stages are actually
-  recorded, what may come later, and which earlier parts nobody knows about.
+  recorded, what may plausibly come later, and which earlier parts nobody knows
+  about.
 
 This module answers the second, and it is deliberately the smaller of the two.
 
 What it is
 ----------
-A **deterministic read-only projection** over facts the domain already holds:
-the Matter's own `Hetkeseis`, the explicit `MATTER_STAGE_CHANGED` history, and —
-for choosing which of two generic rails to draw — `Menetlusliik` or the reviewed
+A **deterministic read-only projection** over facts the domain already holds: the
+Matter's own `Hetkeseis`, the explicit `MATTER_STAGE_CHANGED` history, and — to
+choose which procedure to read the file against — `Menetlusliik` or the reviewed
 `Õigusakt` grouping. Nothing here is stored, nothing is editable, nothing is
-written and no migration accompanies it.
+written, and drawing it writes nothing at all.
 
 What it is deliberately not
 ---------------------------
 **No workflow engine.** No `WorkflowStep` table, no state machine, no transition
 rules, no configurable nodes, no drag-and-drop and no BPM graph. AGENTS.md lists
 a generic workflow engine among the things this repository does not introduce,
-and a rail that answered «which of five generic steps» does not need one.
-
-**No instrument-specific process.** V1 draws two rails — a domestic one and a
-European one — and no more. A separate government-regulation flow beside a
-minister-regulation flow was the first draft and it cannot be built from what
-the file records: the reviewed `Õigusakt` value is `Määrus`, which does not say
-whose. Adding a subtype for the sake of a prettier rail would be inventing a
-classification nobody chose (docs/adr/0090 §4, docs/adr/0092 §14).
+and a rail answering «which of six phases» does not need one.
 
 **Nothing is inferred.** Not from a title, not from a filename, not from an
 organisation's name, not from a `Menetluse link`'s kind or hostname, not from
@@ -42,11 +38,11 @@ because a stage was explicitly recorded and for no other reason
 
 **A current stage proves the current stage.** It does not prove that everything
 to its left happened. A Matter first created when the bill was already in the
-Riigikogu genuinely does not know whether Koda saw the consultation round, and
-a rail that marked the first three nodes complete because the fourth is current
-would be manufacturing three milestones out of one. That is
-:data:`STATE_UNKNOWN`, and it is the whole reason this component has four states
-rather than the usual two (docs/adr/0092 §13).
+Riigikogu genuinely does not know whether Koda saw the consultation round, and a
+rail marking the first three nodes complete because the fourth is current would
+be manufacturing three milestones out of one. That is :data:`STATE_UNKNOWN`, and
+it is the whole reason this component has four states rather than the usual two
+(docs/adr/0092 §13).
 
 **`Rohkem ei tegele` is not a node.** It is `Disposition.MONITORING_STOPPED` —
 *Koda* stopped watching — and the external procedure carries on wherever it was.
@@ -54,11 +50,32 @@ The rail says where the procedure stands and a separate sentence says what Koda
 is doing about it, which is the separation ADR 0032 made and this does not
 reopen.
 
-**No dates.** A node carries a label and a state. `MATTER_STAGE_CHANGED` proves
-that a stage was recorded and its `occurred_at` is the moment somebody typed it
-in — so printing that beside `Kooskõlastus` would date a step of somebody else's
-procedure to a day in this application's own life, which is exactly the
-substitution docs/adr/0092 §4 refuses on the chronology (docs/adr/0092 §13).
+**No dates on a node.** A node carries a label and a state.
+`MATTER_STAGE_CHANGED` proves a stage was recorded and its `occurred_at` is the
+moment somebody typed it in — so printing that beside `Kooskõlastusring` would
+date a step of somebody else's procedure to a day in this application's own life.
+The dates that *are* real read beside the rail under `Kirjas olevad kuupäevad`,
+off the records that own them (docs/adr/0092 §4, §13).
+
+Amended: instrument-aware patterns, and a road ahead
+----------------------------------------------------
+V1 drew two generic rails, one domestic and one European, and deferred anything
+instrument-specific until lawyers had used them (docs/adr/0092 §14, §17). They
+have, and the second round asked for two things the two generic rails cannot give:
+
+* a **road ahead** — the lawyer should be reminded of the route without having to
+  memorise it, so the rail now names the next one to three phases in words and
+  says in words that they are possible rather than promised;
+* **patterns that do not lie about the instrument** — the single European rail
+  ended every file on `Ülevõtmine / jõustumine`, which on an `EL määrus` asserted
+  a transposition obligation that by definition does not exist. A regulation
+  applies directly. That is not a harmless extra node; it is the rail inventing
+  law.
+
+The patterns themselves live in `app/matters/process_phases.py`, beside the phase
+vocabulary the grouped history reads, because one vocabulary used twice is the
+point: a section headed `Kooskõlastusring` under a node called `Kooskõlastus`
+would leave a reader working out whether those are the same thing.
 """
 
 from __future__ import annotations
@@ -70,20 +87,17 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.matters.models import Matter
-from app.taxonomy.legal_instruments import (
-    DOMESTIC_LEGAL_INSTRUMENT_KEYS,
-    EU_LEGAL_INSTRUMENT_KEYS,
-)
-from app.workflow.enums import Disposition, Track
+from app.matters.process_phases import ProcessPattern, pattern_for
+from app.workflow.enums import Disposition
 
 # ---------------------------------------------------------------------------
 # The four states
 # ---------------------------------------------------------------------------
 #
-# Four, because there are four honest answers and the usual two would force a
-# lie for two of them. `done`/`todo` cannot say «this may have happened and
-# nobody recorded it», which is the ordinary state of every node to the left of
-# where an archive Matter was first filed.
+# Four, because there are four honest answers and the usual two would force a lie
+# for two of them. `done`/`todo` cannot say «this may have happened and nobody
+# recorded it», which is the ordinary state of every node to the left of where an
+# archive Matter was first filed.
 
 #: Where the file stands now. The Matter's own `Hetkeseis`, mapped to a node.
 STATE_CURRENT = "current"
@@ -92,16 +106,16 @@ STATE_RECORDED = "recorded"
 #: This node may be in the past and there is **no evidence** that it happened.
 #: Never «completed»: a later current stage is not proof of an earlier one.
 STATE_UNKNOWN = "unknown"
-#: A generic later step that may follow and has not been recorded.
+#: A later step that may follow and has not been recorded.
 STATE_POSSIBLE = "possible"
 
 #: What each state is called, in words a reader sees.
 #:
 #: **Words, not colour.** A rail whose four states were four hues would say
-#: nothing at all with the stylesheet off, to a screen reader, or on a printout
-#: — and «this may have happened, we do not know» is precisely the state that
-#: cannot survive being a shade of grey. Each node prints its state, and the
-#: stylesheet decorates what the text already says.
+#: nothing at all with the stylesheet off, to a screen reader, or on a printout —
+#: and «this may have happened, we do not know» is precisely the state that cannot
+#: survive being a shade of grey. Each node prints its state, and the stylesheet
+#: decorates what the text already says.
 STATE_LABELS: dict[str, str] = {
     STATE_CURRENT: "Praegu",
     STATE_RECORDED: "Kirjas",
@@ -109,92 +123,21 @@ STATE_LABELS: dict[str, str] = {
     STATE_POSSIBLE: "Võimalik",
 }
 
-
-# ---------------------------------------------------------------------------
-# The two V1 templates
-# ---------------------------------------------------------------------------
-
-TEMPLATE_DOMESTIC = "domestic"
-TEMPLATE_EU = "eu"
-
-
-@dataclass(frozen=True)
-class ProcessTemplateNode:
-    """One node of a rail: a stable key, a label, and which stages reach it."""
-
-    key: str
-    label: str
-    #: The reviewed `StageVocabulary` keys that map here. Keys, never labels:
-    #: version 2.0 reworded three labels without moving a row, and a mapping
-    #: written against the words would have silently stopped matching.
-    stage_keys: frozenset[str]
-
-
-#: The domestic rail. Five nodes, and the vocabulary is the procedure's own.
+#: What a node says when the pattern marks it as one that **may not apply at
+#: all**, as opposed to one that simply has not happened yet.
 #:
-#: `Jõustumine` takes both `awaiting_entry` and `in_force`, which are the same
-#: point of the procedure read from two sides — waiting for it and past it. A
-#: sixth node is still the wrong answer, but the node's *state* is not the right
-#: one either: `Praegu` is identical for both, and a reader cannot tell a file
-#: waiting for commencement from one already in force. The explicit `Hetkeseis`
-#: rides on the current node instead — `ProcessNode.stage_label` — which keeps
-#: the rail generic and still says which side of it the file is on.
-DOMESTIC_TEMPLATE: tuple[ProcessTemplateNode, ...] = (
-    ProcessTemplateNode("algus", "Algus", frozenset({"idea"})),
-    ProcessTemplateNode("kooskolastus", "Kooskõlastus", frozenset({"consultation"})),
-    ProcessTemplateNode("valitsus", "Valitsus", frozenset({"government"})),
-    ProcessTemplateNode("riigikogu", "Riigikogu", frozenset({"parliament"})),
-    ProcessTemplateNode("joustumine", "Jõustumine", frozenset({"awaiting_entry", "in_force"})),
-)
+#: A VTK does not have to become a law; a `Määrus` may be a minister's and never
+#: reach the Government; a Koja ettepanek may be answered and go no further. Those
+#: are not «next steps», and a reader has to be able to tell them from one. The
+#: word is on the node, not in the stylesheet, for the reason the four states are.
+CONDITIONAL_LABEL = "kui menetlus jätkub"
 
-#: The European rail.
+#: How many phases the road ahead names before it asks to be expanded.
 #:
-#: `Vastu võetud` maps **no stage key**, and that is deliberate rather than an
-#: omission: the reviewed `Hetkeseis` vocabulary has no value for «the EU
-#: institutions adopted it», so the node can honestly only ever read `Teadmata`
-#: or `Võimalik`. Inventing a stage to fill it, or quietly dropping the step
-#: from the rail, would both be this module deciding something the department
-#: has not (docs/adr/0092 §14).
-#:
-#: `awaiting_entry` and `in_force` join `awaiting_transposition` on the last
-#: node: a directive that has been transposed and the act that transposed it
-#: coming into force are the same end of this rail. Three stages on one node is
-#: the strongest case for `ProcessNode.stage_label` — `Praegu` alone would read
-#: identically for a file awaiting transposition, one awaiting commencement and
-#: one already in force, which are three different answers.
-EU_TEMPLATE: tuple[ProcessTemplateNode, ...] = (
-    ProcessTemplateNode("algus", "Algus / konsultatsioon", frozenset({"idea", "consultation"})),
-    ProcessTemplateNode("eesti-seisukoht", "Eesti seisukoht", frozenset({"estonian_eu_position"})),
-    ProcessTemplateNode("el-menetlus", "EL menetlus", frozenset({"eu_procedure"})),
-    ProcessTemplateNode("vastu-voetud", "Vastu võetud", frozenset()),
-    ProcessTemplateNode(
-        "ulevotmine",
-        "Ülevõtmine / jõustumine",
-        frozenset({"awaiting_transposition", "awaiting_entry", "in_force"}),
-    ),
-)
-
-TEMPLATES: dict[str, tuple[ProcessTemplateNode, ...]] = {
-    TEMPLATE_DOMESTIC: DOMESTIC_TEMPLATE,
-    TEMPLATE_EU: EU_TEMPLATE,
-}
-
-#: What each rail is called above itself.
-TEMPLATE_LABELS: dict[str, str] = {
-    TEMPLATE_DOMESTIC: "Riigisisene menetlus",
-    TEMPLATE_EU: "ELi menetlus",
-}
-
-#: `other` — «Muu» — maps to no node on either rail, and must not be forced onto
-#: one.
-#:
-#: It is a real answer somebody gave: this proceeding is not one of the nine
-#: shapes the vocabulary names. Placing it on `Algus` because it sorts first, or
-#: on the current node because something has to be current, would both be the
-#: rail asserting a position in a procedure that the person explicitly declined
-#: to give. It reads as :attr:`LegalProcessRail.unplaced_stage` instead — beside
-#: the rail, in its own words (docs/adr/0092 §13).
-UNPLACEABLE_STAGE_KEYS: frozenset[str] = frozenset({"other"})
+#: «Normally the next one to three relevant phases» — a horizon, not a plan. A
+#: rail that listed six speculative steps would read as a schedule, and the whole
+#: property this section has to keep is that none of it is promised.
+AHEAD_HORIZON = 3
 
 #: What the rail says beside itself when Koda has stopped following the file.
 #:
@@ -216,28 +159,31 @@ class ProcessNode:
     current node only — which `Hetkeseis` the file actually holds.
 
     ``stage_label`` exists because a node is deliberately broader than a stage.
-    `Jõustumine` takes both `awaiting_entry` and `in_force`; the European
-    `Ülevõtmine / jõustumine` takes three. Those are the same *point of the
-    procedure* read from different sides, which is why they share a node — but
-    «waiting for the act to come into force» and «it is in force» are not the
-    same answer to «where is this», and a rail that printed `Jõustumine · Praegu`
-    for both destroyed the distinction the header had already made.
+    `Jõustumine` takes both `awaiting_entry` and `in_force`; those are the same
+    *point of the procedure* read from different sides, which is why they share a
+    node — but «waiting for the act to come into force» and «it is in force» are
+    not the same answer to «where is this», and a rail printing `Jõustumine ·
+    Praegu` for both destroyed a distinction the vocabulary had already made.
 
-    So the broad node stays broad and the explicit canonical label rides on it,
+    So the broad node stays broad and the canonical stage label rides on it,
     naming which side of that node the file occupies. **No new node and no new
     `StageVocabulary` value**: the label is the reviewed stage's own words, read
-    from the same snapshot the rail was built from, and nothing here invents a
-    vocabulary entry (docs/adr/0092 §13, amended).
+    from the same snapshot the rail was built from (docs/adr/0092 §13, amended).
 
     It is empty on every other node, and empty on the current node when the
-    stage's words and the node's are the same — `Kooskõlastus · Praegu ·
-    Kooskõlastus` states one thing twice and tells a reader nothing.
+    stage's words and the node's are the same — `Kooskõlastusring · Praegu ·
+    Kooskõlastusringil` states one thing twice and tells a reader nothing.
+
+    ``conditional`` marks a node the pattern says **may not apply to this file at
+    all**. It is a different claim from `Võimalik`, which means «not yet», and the
+    two are separated because a reader planning work needs to know which.
     """
 
     key: str
     label: str
     state: str
     stage_label: str = ""
+    conditional: bool = False
 
     @property
     def state_label(self) -> str:
@@ -248,11 +194,23 @@ class ProcessNode:
 class LegalProcessRail:
     """One Matter's `Menetluse kulg`, or nothing at all.
 
+    ``ahead`` is the road ahead: the next few phases of the pattern, in the
+    lawyers' own words, every one of them undated and labelled possible. It is a
+    **reminder of the route, never a plan** — it creates no `NextAction`, sets no
+    deadline, assigns nobody, makes nothing late and is not written anywhere. What
+    *this office* does next is `PRAEGUNE TEGEVUS`, which is a different question
+    about a different actor and stays where it is (§5 of the brief).
+
+    ``ahead_rest`` is the remainder of the pattern behind a disclosure, so a
+    lawyer who wants the whole route can see it without the section turning into
+    a six-step schedule for everybody else.
+
     ``unplaced_stage`` is the current `Hetkeseis` when it cannot honestly be
-    placed on the chosen rail — `Muu`, or a European stage on a domestic file.
-    It reads beside the rail rather than being forced onto a node, because a
-    node is a claim about which step of a known procedure the file is on and
-    that is exactly what those values decline to say.
+    placed on the chosen pattern — `Muu`, or `ELi õiguse ülevõtmise ootel` on a
+    file about a directly-applicable EU regulation. It reads beside the rail
+    rather than being forced onto a node, because a node is a claim about which
+    step of a known procedure the file is on and that is exactly what those values
+    decline to say.
 
     ``koda_stopped`` is `Disposition.MONITORING_STOPPED` and says nothing about
     the procedure. It travels here rather than being looked up by the template,
@@ -260,74 +218,85 @@ class LegalProcessRail:
     a second surface rendering this rail must not be able to render it without.
     """
 
-    template: str
+    pattern: ProcessPattern
     nodes: tuple[ProcessNode, ...]
+    ahead: tuple[ProcessNode, ...] = ()
+    ahead_rest: tuple[ProcessNode, ...] = ()
+    current_label: str = ""
     unplaced_stage: str = ""
     koda_stopped: bool = False
 
     @property
     def label(self) -> str:
-        return TEMPLATE_LABELS[self.template]
+        return self.pattern.label
 
 
-# ---------------------------------------------------------------------------
-# Choosing a rail — a reading of stored facts, and never a writer
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class PhaseContext:
+    """What both the rail and the grouped history read, resolved once.
 
-#: The two `Menetlusliik` values that safely choose a presentation, and the only
-#: two.
-#:
-#: `Matter.track` is canonical **where it is known** and it is optional; an empty
-#: value means nobody has said, and nothing here backfills, infers or writes one.
-#:
-#: The other five are deliberately absent. `NATIONAL_TRANSPOSITION` — «ELi õiguse
-#: ülevõtmine» — is the clearest case: a `Seadus` transposing a directive runs
-#: through kooskõlastus, valitsus and Riigikogu like any other domestic bill,
-#: *and* the file is about a European instrument, so the track alone does not
-#: choose between the two rails. It falls through to the instrument grouping
-#: below, which answers from what the Matter actually holds.
-#: `STRATEGY`, `KODA_INITIATIVE`, `IMPLEMENTATION` and `OTHER` say nothing about
-#: either procedure.
-TRACK_TEMPLATES: dict[str, str] = {
-    Track.DOMESTIC.value: TEMPLATE_DOMESTIC,
-    Track.EU_INITIATIVE.value: TEMPLATE_EU,
-}
+    The Matter page draws `Menetluse kulg` and `Teema käik` from one request, and
+    they must not resolve the file's pattern and stage separately: two reads is
+    two chances to disagree, and the pair sits inches apart on the page.
 
-
-def template_for(*, track: str, instrument_keys: frozenset[str]) -> str:
-    """Which rail to draw, or ``""`` for none. **A projection, never a write.**
-
-    Order of preference, and it stops at the first safe answer:
-
-    1. `Matter.track`, for the two values whose semantics choose a rail;
-    2. the reviewed `Õigusakt` grouping — `DOMESTIC_LEGAL_INSTRUMENT_KEYS` and
-       `EU_LEGAL_INSTRUMENT_KEYS`, which is how the siseriiklik/ELiga-seotud
-       distinction stays answerable from stored data since docs/adr/0090 §4;
-    3. nothing, which is the honest answer for a file that says neither.
-
-    **Using `Õigusakt` to choose a coarse display template is a projection, and
-    it must never write `Matter.track`.** That column has seven values, it is
-    answered by a person, and no instrument type entails one — a `Seadus`
-    transposing a directive is a domestic instrument on a
-    `NATIONAL_TRANSPOSITION` track, which is precisely the file a rule writing
-    `DOMESTIC` from `seadus` would be wrong about. Nothing in this module has a
-    write path (app/taxonomy/legal_instruments.py, docs/adr/0092 §12).
-
-    **A mixed file draws nothing.** A Matter carrying both `seadus` and
-    `direktiiv` is a real and ordinary combination, and there is no reading of it
-    that picks one rail over the other — so it gets neither, and `Hetkeseis` in
-    the header goes on answering «where is this» as it always has.
+    **Read as they stand, in one query, rather than off the instance handed in.**
+    The Matter page's own save path is the case that proves the instance cannot
+    answer it: `+ Märge` moves the stage through `change_stage` on a row it locked
+    for itself, then re-renders the column from the `Matter` the request fetched
+    **before** the POST — which still holds the stage the file was on when the page
+    was drawn. A rail built from that says the ministry sent a new version and the
+    file is still on the round it just left, one line apart, which is the
+    contradiction an HTMX swap exists to avoid (docs/adr/0092 §12).
     """
-    chosen = TRACK_TEMPLATES.get(track)
-    if chosen is not None:
-        return chosen
-    if not instrument_keys:
-        return ""
-    if instrument_keys <= DOMESTIC_LEGAL_INSTRUMENT_KEYS:
-        return TEMPLATE_DOMESTIC
-    if instrument_keys <= EU_LEGAL_INSTRUMENT_KEYS:
-        return TEMPLATE_EU
-    return ""
+
+    pattern: ProcessPattern | None = None
+    stage_key: str = ""
+    stage_label: str = ""
+    track: str = ""
+    disposition: str = ""
+
+    @property
+    def current_phase(self) -> str:
+        """Which phase of the chosen pattern the file's `Hetkeseis` places it on."""
+        if self.pattern is None:
+            return ""
+        return self.pattern.phase_for_stage(self.stage_key)
+
+
+def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = None) -> PhaseContext:
+    """Resolve one Matter's pattern and current stage. **A read, never a write.**
+
+    Choosing a pattern from `Õigusakt` is a *presentation* decision and must never
+    write `Matter.track`: that column has seven values, it is answered by a
+    person, and no instrument entails one — a `Seadus` transposing a directive is
+    a domestic instrument on a `NATIONAL_TRANSPOSITION` track, which is precisely
+    the file a rule writing `DOMESTIC` from `seadus` would be wrong about. Nothing
+    in this module has a write path (docs/adr/0092 §12).
+
+    ``instrument_keys`` is passed in by a caller that has already read them, so
+    the page does not ask twice.
+    """
+    snapshot = (
+        Matter.objects.filter(pk=matter.pk)
+        .values_list("stage__key", "stage__label_et", "track", "disposition")
+        .first()
+    )
+    if snapshot is None:  # pragma: no cover - the caller holds a saved Matter
+        return PhaseContext()
+    stage_key, stage_label, track, disposition = snapshot
+    track = track or ""
+    # `Õigusakt` is a many-to-many and therefore a query of its own. It is read
+    # only when it can still change the answer.
+    keys = instrument_keys
+    if keys is None:
+        keys = frozenset(matter.legal_instruments.values_list("key", flat=True))
+    return PhaseContext(
+        pattern=pattern_for(track=track, instrument_keys=keys),
+        stage_key=stage_key or "",
+        stage_label=stage_label or "",
+        track=track,
+        disposition=disposition or "",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -338,8 +307,8 @@ def template_for(*, track: str, instrument_keys: frozenset[str]) -> str:
 def _label_to_key(labels: set[str]) -> dict[str, str]:
     """Which reviewed stage each historical label names.
 
-    Needed only for `MATTER_STAGE_CHANGED` rows written before the payload
-    carried `to_key`. The live vocabulary answers for every label in use, and
+    Needed only for `MATTER_STAGE_CHANGED` rows written before the payload carried
+    `to_key`. The live vocabulary answers for every label in use, and
     `REFERENCE_STAGES_V1` answers for the three the lawyers reworded in version
     2.0 — which together is every label this product has ever written
     (app/workflow/reference_stages.py).
@@ -365,14 +334,14 @@ def recorded_stage_keys(*, matter: Matter, user: Any) -> set[str]:
 
     **Explicit canonical evidence only.** The `MATTER_STAGE_CHANGED` history and
     nothing else: not a title, not a filename, not an organisation, not a
-    `Menetluse link`'s kind, not a URL host, not the current date and not a
-    node's position in the list (docs/adr/0092 §13).
+    `Menetluse link`'s kind, not a URL host, not the current date and not a node's
+    position in the list (docs/adr/0092 §13).
 
-    Read through `scope_change_events` like every other audit read on this page.
-    A stage change is genuinely a fact about the Matter rather than about a
-    child, so the scope changes nothing here today — which is the point of
-    calling it anyway: the day this reads a second event family, the filter is
-    already where it belongs (AUTH-003).
+    Read through `scope_change_events` like every other audit read on this page. A
+    stage change is genuinely a fact about the Matter rather than about a child, so
+    the scope changes nothing here today — which is the point of calling it
+    anyway: the day this reads a second event family, the filter is already where
+    it belongs (AUTH-003).
     """
     events = list(
         scope_change_events(
@@ -400,94 +369,118 @@ def recorded_stage_keys(*, matter: Matter, user: Any) -> set[str]:
     return keys
 
 
+def recorded_phase_keys(*, matter: Matter, user: Any) -> set[str]:
+    """Every phase this file explicitly recorded a step in.
+
+    **The second explicit canonical source, and the more direct of the two.** A
+    `MATTER_STAGE_CHANGED` row says somebody moved a column; a
+    `MatterProceduralDevelopment` carrying a phase says somebody recorded a step
+    and stated which part of the procedure it belonged to. Both are explicit
+    statements by a person, and neither is inferred from a title, a filename, an
+    organisation or a date.
+
+    Without this, `VTK` and `Koja ettepanek` could never read `Kirjas` at all:
+    they map **no stage key** on purpose — a file sits on `Idee` with no
+    väljatöötamiskavatsus in existence — so the stage history has nothing to say
+    about them. The page showed the result plainly: a `VTK` section in the
+    history with two rows under it, and a rail reading `VTK · Teadmata` three
+    inches above. One screen cannot say both.
+
+    Scoped like every other read on this page, so a step a reader may not see
+    marks no node for them (AUTH-003).
+    """
+    from app.matters.models import MatterProceduralDevelopment
+
+    return {
+        phase
+        for phase in MatterProceduralDevelopment.objects.filter(matter=matter)
+        .visible_to(user)
+        .values_list("process_phase", flat=True)
+        .distinct()
+        if phase
+    }
+
+
 def legal_process_rail(
-    *, matter: Matter, user: Any, instrument_keys: frozenset[str] | None = None
+    *,
+    matter: Matter,
+    user: Any,
+    instrument_keys: frozenset[str] | None = None,
+    context: PhaseContext | None = None,
 ) -> LegalProcessRail | None:
     """One Matter's `Menetluse kulg`, or ``None`` when nothing can be said.
 
-    ``None`` — and therefore no section at all — where no rail can be chosen, or
-    where a rail can be chosen and the file records nothing that places it on
-    one. Five nodes all reading `Teadmata` is a heading spent announcing that
-    the application knows nothing, which is the standing empty section the
-    approved target removed from this page everywhere else (docs/adr/0074 §15).
+    ``None`` — and therefore no section at all — where no pattern can be chosen,
+    or where one can be chosen and the file records nothing that places it on one.
+    Six nodes all reading `Teadmata` is a heading spent announcing that the
+    application knows nothing, which is the standing empty section the approved
+    target removed from this page everywhere else (docs/adr/0074 §15).
 
-    ``instrument_keys`` is the reviewed `Õigusakt` keys, passed in by a caller
-    that has already read them so this does not ask a second time.
-
-    **`Hetkeseis`, `Menetlusliik` and the disposition are read as they stand, in
-    one query, rather than off the instance handed in.** The rail's whole claim
-    is *where the procedure is now*, and the Matter page's own save path is the
-    case that proves the instance cannot answer it: `+ Menetluse areng` moves the
-    stage through `change_stage` on a row it locked for itself, then re-renders
-    the column from the `Matter` the request fetched **before** the POST — which
-    still holds the stage the file was on when the page was drawn. A rail built
-    from that says the ministry sent a new version and the file is still on the
-    round it just left, one line apart, which is the contradiction an HTMX swap
-    exists to avoid. Caught by the browser lane rather than reasoned about
-    (docs/adr/0092 §12).
-
-    Nothing here writes to the instance either: a projection that refreshed its
-    caller's object would be a read with a side effect, and the header band on
-    the same page deliberately does *not* re-render on this save.
+    ``context`` is the resolved pattern and stage, passed in by the Matter page so
+    the rail and the grouped history below it cannot disagree about one file.
     """
-    snapshot = (
-        Matter.objects.filter(pk=matter.pk)
-        .values_list("stage__key", "stage__label_et", "track", "disposition")
-        .first()
+    facts = (
+        context
+        if context is not None
+        else phase_context(matter=matter, instrument_keys=instrument_keys)
     )
-    if snapshot is None:  # pragma: no cover - the caller holds a saved Matter
+    pattern = facts.pattern
+    if pattern is None:
         return None
-    stage_key, stage_label, track, disposition = snapshot
-    stage_key = stage_key or ""
-
-    # `Õigusakt` is read **only when the track does not decide**, because it is a
-    # many-to-many and therefore a query of its own. A file that states its
-    # `Menetlusliik` costs nothing to place.
-    template = TRACK_TEMPLATES.get(track or "", "")
-    if not template:
-        keys = instrument_keys
-        if keys is None:
-            keys = frozenset(matter.legal_instruments.values_list("key", flat=True))
-        template = template_for(track=track or "", instrument_keys=keys)
-    if not template:
-        return None
-    nodes = TEMPLATES[template]
+    nodes = pattern.nodes
+    stage_key = facts.stage_key
 
     recorded = recorded_stage_keys(matter=matter, user=user)
+    recorded_phases = recorded_phase_keys(matter=matter, user=user)
     # The stage the file is standing on is evidence for its own node and for no
-    # other. It is removed from `recorded` so that the current node reads
-    # `Praegu` rather than `Kirjas` — one node, one state, and the strongest
-    # true one.
+    # other. It is removed from `recorded` so the current node reads `Praegu`
+    # rather than `Kirjas` — one node, one state, and the strongest true one.
     current_index = next(
         (index for index, node in enumerate(nodes) if stage_key in node.stage_keys), None
     )
-    recorded_indexes = {
+    # **Two kinds of evidence, and only one of them can be an artefact.**
+    #
+    # A recorded *step* is an act somebody filed under a phase: it happened, and
+    # where the file's `Hetkeseis` sits today says nothing about whether it did.
+    # A recorded *stage* is a column having been moved, which is the thing a
+    # person can get wrong and correct — see the demotion below.
+    step_indexes = {index for index, node in enumerate(nodes) if node.phase_key in recorded_phases}
+    stage_indexes = {
         index
         for index, node in enumerate(nodes)
-        if node.stage_keys & recorded and index != current_index
+        if node.stage_keys & recorded and index not in step_indexes
     }
+    step_indexes.discard(current_index)
+    stage_indexes.discard(current_index)
     if current_index is not None:
         # **`Kirjas` means evidence on the way *here*, not evidence anywhere.**
         #
         # A stage recorded and then corrected — somebody picked `Jõustunud` by
-        # mistake and moved the file back to `Kooskõlastus`, or the procedure
+        # mistake and moved the file back to `Kooskõlastusring`, or the procedure
         # genuinely went backwards — leaves a `MATTER_STAGE_CHANGED` row for a
-        # node to the right of where the file now stands. Read literally, that
-        # row drew `Algus · Kirjas … Kooskõlastus · Praegu … Jõustumine · Kirjas`,
+        # node to the right of where the file now stands. Read literally, that row
+        # drew `Algus · Kirjas … Kooskõlastusring · Praegu … Jõustumine · Kirjas`,
         # which tells a reader the act is both in force and out for consultation.
         #
         # On a rail this broad the honest reading of a node ahead of the current
         # one is `Võimalik`: it may still be coming. The event is not deleted, not
-        # rewritten and not hidden — `Teema käik` renders the stage change from
-        # the audit record exactly as before, and the *detailed* history is where
-        # a correction belongs. This is a projection rule for the overview and
-        # nothing more (docs/adr/0092 §13, amended).
-        recorded_indexes = {index for index in recorded_indexes if index < current_index}
+        # rewritten and not hidden — the detailed history is where a correction
+        # belongs. This is a projection rule for the overview and nothing more
+        # (docs/adr/0092 §13, amended).
+        #
+        # **It demotes stage evidence only.** A step filed under `VTK` on a file
+        # whose `Hetkeseis` is still `Idee` is an ordinary, correct file — the
+        # väljatöötamiskavatsus went out and the column has not moved — and
+        # reading it as `Võimalik` would put `VTK · Võimalik` directly above a
+        # `VTK` section of the history holding the step. One screen cannot say
+        # both, and it is the act rather than the column that is the fact.
+        stage_indexes = {index for index in stage_indexes if index < current_index}
 
     # Where «earlier» stops and «later» begins. The current node when there is
     # one; otherwise the furthest node the file can prove it reached. Without
     # either there is nothing to position anything against, and the rail is not
     # drawn at all.
+    recorded_indexes = step_indexes | stage_indexes
     anchor = current_index if current_index is not None else max(recorded_indexes, default=None)
     if anchor is None:
         return None
@@ -505,46 +498,64 @@ def legal_process_rail(
             state = STATE_UNKNOWN
         else:
             state = STATE_POSSIBLE
-        # The explicit `Hetkeseis` rides on the current node and nowhere else,
-        # and only when it adds a word the node has not already said. Read from
-        # the snapshot above rather than fetched again: the rail already paid for
-        # this column.
+        # The explicit `Hetkeseis` rides on the current node and nowhere else, and
+        # only when it adds a word the node has not already said. Read from the
+        # snapshot the context already holds rather than fetched again.
         on_node = ""
-        if state == STATE_CURRENT and stage_label and stage_label != node.label:
-            on_node = stage_label
-        drawn.append(ProcessNode(key=node.key, label=node.label, state=state, stage_label=on_node))
+        if state == STATE_CURRENT and facts.stage_label and facts.stage_label != node.label:
+            on_node = facts.stage_label
+        drawn.append(
+            ProcessNode(
+                key=node.phase_key,
+                label=node.label,
+                state=state,
+                stage_label=on_node,
+                conditional=node.conditional,
+            )
+        )
 
-    # A `Hetkeseis` the chosen rail cannot honestly hold — `Muu`, or a European
-    # stage on a domestic file — reads beside the rail in its own words rather
-    # than being pushed onto the nearest node.
+    # **The road ahead: what is past the anchor and not already recorded.**
+    #
+    # Drawn from the same nodes rather than from a second list, so a phase cannot
+    # be `Võimalik` on the rail and absent from the horizon, or the other way
+    # round — and a node the file can prove it reached is not offered as
+    # something that «may be ahead», however it sorts.
+    ahead = tuple(node for node in drawn[anchor + 1 :] if node.state == STATE_POSSIBLE)
+
+    # A `Hetkeseis` the chosen pattern cannot honestly hold — `Muu`, or a European
+    # stage on a file the pattern says is never transposed — reads beside the rail
+    # in its own words rather than being pushed onto the nearest node.
     unplaced = ""
-    if stage_label and current_index is None:
-        unplaced = stage_label
+    if facts.stage_label and current_index is None:
+        unplaced = facts.stage_label
 
     return LegalProcessRail(
-        template=template,
+        pattern=pattern,
         nodes=tuple(drawn),
+        ahead=ahead[:AHEAD_HORIZON],
+        ahead_rest=ahead[AHEAD_HORIZON:],
+        current_label=(drawn[current_index].label if current_index is not None else ""),
         unplaced_stage=unplaced,
-        koda_stopped=disposition == Disposition.MONITORING_STOPPED,
+        koda_stopped=facts.disposition == Disposition.MONITORING_STOPPED,
     )
 
 
 #: Kept out of the query above on purpose: this module reads and never filters a
 #: population, so it has no `Q` of its own to export.
 __all__ = [
-    "DOMESTIC_TEMPLATE",
-    "EU_TEMPLATE",
+    "AHEAD_HORIZON",
+    "CONDITIONAL_LABEL",
     "KODA_STOPPED_LABEL",
     "STATE_CURRENT",
     "STATE_LABELS",
     "STATE_POSSIBLE",
     "STATE_RECORDED",
     "STATE_UNKNOWN",
-    "TEMPLATE_DOMESTIC",
-    "TEMPLATE_EU",
     "LegalProcessRail",
+    "PhaseContext",
     "ProcessNode",
     "legal_process_rail",
+    "phase_context",
+    "recorded_phase_keys",
     "recorded_stage_keys",
-    "template_for",
 ]

@@ -43,6 +43,34 @@ and what still offers it (`Muuda` on the record, which decides per row).
           {{ progress_form.occurred_on.errors|first }}</p>
       {% endif %}
     </label>
+    {% if progress_form.process_phase %}
+      {% comment %}
+        `Etapp`, **beside the date box and not below the form**.
+
+        It arrives pre-selected on the phase the file's own `Hetkeseis` already
+        places it on, so the ordinary save — writing up this morning on a file
+        that is where it says it is — needs no answer. Its position is the whole
+        reason it is honest: somebody filing a step from 2019 is looking at the
+        word «Kooskõlastusring» while they type the year, which is a proposal on
+        screen rather than an invisible guess about a backdated record. «Etapp
+        määramata» is one click away and is an ordinary answer.
+
+        Rendered only when this file's `Õigusakt` or `Menetlusliik` chooses a
+        procedure. Without one there is no vocabulary to answer from and the
+        field does not exist on the form at all — a generic list of eleven
+        phases would invite somebody to record one the procedure never had
+        (`app/matters/process_phases.py`).
+      {% endcomment %}
+      <label class="cx-f" for="{{ progress_form.process_phase.id_for_label }}">
+        <span class="cx-f__lab">{{ progress_form.process_phase.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ progress_form.process_phase }}
+        {% if progress_form.process_phase.errors %}
+          <p class="field__error" id="{{ progress_form.process_phase.auto_id }}_error">
+            {{ progress_form.process_phase.errors|first }}</p>
+        {% endif %}
+      </label>
+    {% endif %}
   </div>
   <label class="cx-f" for="{{ progress_form.title.id_for_label }}">
     <span class="cx-f__lab">{{ progress_form.title.label }}</span>

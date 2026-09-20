@@ -38,7 +38,7 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.dates import format_estonian_date
-from app.matters import selectors
+from app.matters import legal_process, phase_history, selectors
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind
 from app.matters.models import (
@@ -49,6 +49,7 @@ from app.matters.models import (
     MatterProceduralDevelopment,
     MatterWebsiteOverview,
 )
+from app.matters.process_phases import PHASE_KEYS
 from app.submissions.enums import RecipientRole
 from app.submissions.links import linked_submissions_by_overview
 from app.submissions.models import Submission, SubmissionRecipient
@@ -410,6 +411,25 @@ class TimelineItem:
     #: what this row happened to do to it. Empty on every row whose operation
     #: moved no stage, which is nearly all of them (docs/adr/0092 §6).
     stage_effect: str = ""
+    #: Which phase occurrence this row was grouped into, once it has been.
+    #:
+    #: Attached by `app.matters.phase_history` after the whole list is built and
+    #: before it is paginated, so a phase opened by a development on page three
+    #: still places the rows on page one. `None` on every row of a file that
+    #: supports no phases, which is when the chronology renders flat exactly as
+    #: it always has.
+    phase: Any = None
+    #: Whether this row is the first of its occurrence *on this page*, and
+    #: therefore the row the section heading is drawn above.
+    #:
+    #: Page-relative on purpose. A section longer than one page continues after
+    #: «Näita varasemaid», and the continuation has to carry its own heading or
+    #: the rows below the fold would sit under whatever heading happened to be
+    #: last — which on a grouped history is a different phase.
+    opens_phase: bool = False
+    #: Whether the heading this row opens is a *continuation* of a section that
+    #: began on an earlier page, rather than the start of a new one.
+    phase_continues: bool = False
 
     @property
     def is_milestone(self) -> bool:
@@ -1487,6 +1507,26 @@ def projected_milestones(
     return rows
 
 
+class TimelinePage(list):
+    """One page of chronology rows, plus how they are grouped into phases.
+
+    **A list, so that every existing reader is unaffected.** `matter_timeline`
+    has returned ``(rows, has_more)`` since it was written and fifty call sites
+    unpack exactly that; widening the tuple would have rewritten all of them to
+    say nothing new. The grouping is a property *of the page* — which occurrence
+    each row is in, and which section headings the page needs — so it travels
+    with the page rather than beside it.
+
+    ``history`` is empty rather than absent on a file that supports no phases,
+    and :attr:`PhaseHistory.grouped` is then false: the chronology renders flat,
+    exactly as it always has.
+    """
+
+    def __init__(self, rows: Any, *, history: phase_history.PhaseHistory) -> None:
+        super().__init__(rows)
+        self.history = history
+
+
 #: Sentinel for "this caller has not answered the question", so that `None` can
 #: keep meaning «this Matter has no open step» rather than «nobody said».
 _UNREAD = object()
@@ -1502,8 +1542,9 @@ def matter_timeline(
     intelligence: Any = None,
     today: date | None = None,
     current_action: Any = _UNREAD,
-) -> tuple[list[TimelineItem], bool]:
-    """Return one page of the timeline, newest first.
+    phases: Any = None,
+) -> tuple[TimelinePage, bool]:
+    """Return one page of the timeline, grouped into phases, newest first.
 
     Entries are filtered through their own visibility so a restricted entry
     inside an otherwise visible Matter stays hidden. The change-event stream is
@@ -1524,8 +1565,19 @@ def matter_timeline(
     copy first. The row comes back the moment the step is finished or
     superseded, because then it is history (docs/adr/0092 §8).
 
-    Returns the page and whether more items exist.
+    ``phases`` is the file's `Menetluse kulg` context — the pattern its `Õigusakt`
+    and `Menetlusliik` place it on, and the `Hetkeseis` key it currently holds —
+    passed in by the Matter page so the rail and the history cannot read two
+    differently-resolved answers about one file. It is resolved here for callers
+    that have none, which costs the one small `values_list` the rail already pays
+    for (`app.matters.legal_process.phase_context`).
+
+    Returns the page and whether more items exist. The page also carries
+    :attr:`TimelinePage.history` — how it is grouped — so that adding the grouping
+    did not change what fifty existing call sites unpack.
     """
+    if phases is None:
+        phases = legal_process.phase_context(matter=matter)
     # Fetch one extra of each so "is there more" needs no second count query.
     window = offset + limit + 1
 
@@ -1776,9 +1828,44 @@ def matter_timeline(
 
     items.sort(key=lambda item: (item.occurred_at, item.created_at, item.sort_key), reverse=True)
 
+    # **Grouped before it is paginated, and never after.** A phase is opened by a
+    # development that may itself be forty rows down; grouping one page at a time
+    # would place the same opinion differently depending on which page it landed
+    # on. `phase_history.build` reads the whole scoped list, assigns every row its
+    # occurrence and hands back the same rows in reading order — no query, no
+    # second projection and no row gained or lost (app/matters/phase_history.py).
+    items, history = phase_history.build(
+        items,
+        pattern=phases.pattern,
+        stage_key=phases.stage_key,
+        phase_keys=frozenset(PHASE_KEYS),
+        local_day=_local_day,
+    )
+
     page = items[offset : offset + limit]
     has_more = len(items) > offset + limit
-    return _with_linked_files(_with_files(_with_next_steps(page, user), user), user), has_more
+    # A section that runs past the fold carries its own heading on the next page,
+    # marked as a continuation: «Kooskõlastusring · jätkub». Without it the rows
+    # below would read under whichever heading happened to be last on the page
+    # above, which on a grouped history is a different phase.
+    if page and history.grouped:
+        carried = items[offset - 1].phase if offset else None
+        first = page[0]
+        page = [
+            replace(
+                first,
+                opens_phase=True,
+                phase_continues=carried is not None and carried is first.phase,
+            ),
+            *page[1:],
+        ]
+    return (
+        TimelinePage(
+            _with_linked_files(_with_files(_with_next_steps(page, user), user), user),
+            history=history,
+        ),
+        has_more,
+    )
 
 
 def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:

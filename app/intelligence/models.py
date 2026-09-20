@@ -45,7 +45,12 @@ from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, scope_for_user
 from app.core.enums import Visibility
 from app.core.models import VisibilityInheritingModel
-from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
+from app.intelligence.enums import (
+    EffectiveDateKind,
+    FactStatus,
+    ImportantDateKind,
+    WorkVictoryStatus,
+)
 from app.workflow.dates import format_at_precision, is_approximate, period_bounds
 from app.workflow.enums import DatePrecision
 
@@ -140,6 +145,21 @@ class MatterImportantDate(MatterFact):
         verbose_name="teema",
     )
     title = models.TextField(verbose_name="tähtaeg")
+    #: Which milestone this is, where one surface has to recognise it.
+    #:
+    #: `Muu tähtaeg` for almost every row, and the column exists for the one
+    #: exception: `Menetluse kulg` places an `ELi õiguse ülevõtmise tähtaeg`
+    #: beside the `Ülevõtmine` phase it belongs to, and it must not find it by
+    #: reading the title. Optional at capture, never asked twice, and never
+    #: inferred — a row nobody classified is `OTHER`, which is what «nobody said»
+    #: means (`app.intelligence.enums.ImportantDateKind`).
+    kind = models.CharField(
+        max_length=32,
+        choices=ImportantDateKind.choices,
+        default=ImportantDateKind.OTHER,
+        db_index=True,
+        verbose_name="tähtaja liik",
+    )
     date_value = models.DateField(db_index=True, verbose_name="kuupäev või periood")
     period_end = models.DateField(verbose_name="perioodi lõpp")
     date_precision = models.CharField(
@@ -191,6 +211,10 @@ class MatterImportantDate(MatterFact):
             models.CheckConstraint(
                 condition=models.Q(date_precision__in=DatePrecision.values),
                 name="intelligence_important_date_precision_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=ImportantDateKind.values),
+                name="intelligence_important_date_kind_vocabulary",
             ),
             models.CheckConstraint(
                 condition=models.Q(visibility_override__in=VISIBILITY_OVERRIDE_VALUES),

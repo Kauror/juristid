@@ -30,7 +30,12 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
 from app.core.errors import DomainError
-from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
+from app.intelligence.enums import (
+    EffectiveDateKind,
+    FactStatus,
+    ImportantDateKind,
+    WorkVictoryStatus,
+)
 from app.intelligence.models import (
     MatterEffectiveDate,
     MatterImportantDate,
@@ -90,6 +95,7 @@ def add_important_date(
     date_value: date,
     period_end: date,
     date_precision: str = DatePrecision.EXACT,
+    kind: str = ImportantDateKind.OTHER,
     note: str = "",
     actor: Any = None,
     source_text: str = "",
@@ -119,6 +125,12 @@ def add_important_date(
         date_value=date_value,
         period_end=period_end,
         date_precision=date_precision,
+        # **Never read off the title.** `Menetluse kulg` places an
+        # `ELi õiguse ülevõtmise tähtaeg` beside the `Ülevõtmine` phase, and it
+        # finds it by this column and by nothing else: matching «ülevõtmine» in
+        # the text would miss «direktiivi rakendamise kuupäev» and wrongly claim
+        # «ülevõtmise arutelu» (`ImportantDateKind`).
+        kind=kind if kind in ImportantDateKind.values else ImportantDateKind.OTHER,
         note=note.strip(),
         created_by=actor,
         source_text=source_text,
@@ -134,6 +146,7 @@ def add_important_date(
             "date": _iso(date_value),
             "period_end": _iso(period_end),
             "precision": date_precision,
+            "kind": record.kind,
         },
     )
     return record

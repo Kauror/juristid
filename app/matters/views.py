@@ -79,6 +79,7 @@ from app.matters import (
     activity,
     department_dashboard,
     intake_staging,
+    legal_process,
     register_dates,
     register_filters,
     selectors,
@@ -140,7 +141,11 @@ from app.matters.intake_suggestions import (
     prefill_controls,
     prefill_initial,
 )
-from app.matters.legal_process import KODA_STOPPED_LABEL, legal_process_rail
+from app.matters.legal_process import (
+    CONDITIONAL_LABEL,
+    KODA_STOPPED_LABEL,
+    legal_process_rail,
+)
 from app.matters.models import (
     Entry,
     Matter,
@@ -2504,6 +2509,14 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # differently scoped answers to that on one page would be a row appearing or
     # vanishing for reasons a reader could not see (docs/adr/0092 §8).
     current_action = selectors.current_action_of(matter, request.user)
+    # The file's pattern and current stage, resolved **once** for both surfaces.
+    #
+    # `Menetluse kulg` and the phase headings inside `Teema käik` are the same
+    # vocabulary answering the same question about one file, and they sit inches
+    # apart. Two reads is two chances to disagree — and the disagreement would be
+    # a rail saying `Riigikogus` above a history whose newest section says
+    # `Kooskõlastusring` (app/matters/legal_process.py `PhaseContext`).
+    phases = legal_process.phase_context(matter=matter)
     items, has_more = matter_timeline(
         matter=matter,
         user=request.user,
@@ -2511,6 +2524,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         only=timeline_only,
         intelligence=intelligence,
         current_action=current_action,
+        phases=phases,
     )
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
@@ -2530,15 +2544,21 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # `process_steps` twice would be two reads of the same scoped question.
     steps = process_steps(matter=matter, user=request.user, intelligence=intelligence)
     return {
-        # `Menetluse kulg` — where the external procedure stands, as one of two
-        # generic V1 rails with four honest node states. A deterministic
-        # read-only projection over `Hetkeseis`, the explicit stage history and
-        # — to choose between the two rails — `Menetlusliik` or the reviewed
-        # `Õigusakt` grouping. `None` where no rail can be chosen or where the
-        # file records nothing that places it on one, and the section is then
-        # not rendered at all (app/matters/legal_process.py, docs/adr/0092 §13).
-        "legal_process": legal_process_rail(matter=matter, user=request.user),
+        # `Menetluse kulg` — where the external procedure stands, which one to
+        # three phases may follow, and the dated points the file actually holds.
+        # A deterministic read-only projection over `Hetkeseis`, the explicit
+        # stage history and — to choose the pattern — `Menetlusliik` or the
+        # reviewed `Õigusakt` grouping. `None` where no pattern can be chosen or
+        # where the file records nothing that places it on one, and the section
+        # is then not rendered at all (app/matters/legal_process.py).
+        "legal_process": legal_process_rail(matter=matter, user=request.user, context=phases),
         "legal_process_stopped_label": KODA_STOPPED_LABEL,
+        "legal_process_conditional_label": CONDITIONAL_LABEL,
+        # How `Teema käik` below is grouped: which phase occurrences it draws
+        # headings for, and the current phase when the file records nothing in it
+        # yet. Carried on the page itself, because which occurrence a row belongs
+        # to is a property of that row (app/matters/phase_history.py).
+        "timeline_phases": items.history,
         "matter": matter,
         "current_action": current_action,
         "source_instruction": source_instruction,
@@ -2582,7 +2602,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `LISA TEEMALE` takes the rest; a refused save replaces exactly one of
         # them with its bound self and opens that panel alone
         # (docs/adr/0075 §2, `workspace_forms`).
-        **workspace_forms(current_action, matter=matter, viewer=request.user),
+        **workspace_forms(current_action, matter=matter, viewer=request.user, phases=phases),
         # The superseded composer, still built for the endpoint that still
         # accepts it. Nothing on this page renders it any more
         # (docs/adr/0075 §11).
@@ -5057,6 +5077,11 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
             "timeline_only": only,
+            # The phase headings travel on the rows, so an older page carries its
+            # own — and a section that runs past the fold says «jätkub» rather than
+            # letting its rows read under whichever heading was last on the page
+            # above (app/matters/timeline.py `TimelineItem.phase_continues`).
+            "timeline_phases": items.history,
         },
     )
 
@@ -5797,7 +5822,11 @@ def _workspace_choices(open_choice: str) -> dict[str, str]:
 
 
 def workspace_forms(
-    current_action: Any = None, *, matter: Any = None, viewer: Any = None
+    current_action: Any = None,
+    *,
+    matter: Any = None,
+    viewer: Any = None,
+    phases: Any = None,
 ) -> dict[str, Any]:
     """One unbound form per write intention, for an ordinary render.
 
@@ -5837,7 +5866,7 @@ def workspace_forms(
         # chips asking the same question with different amounts of ceremony, and
         # `MatterProgressForm` says at length why the survivor writes the
         # structured record rather than the prose one (docs/adr/0097 §6).
-        "progress_form": MatterProgressForm(),
+        "progress_form": MatterProgressForm(phases=phases),
         # The period travels with the text. Reopening the editor on `Täpne
         # päev` / `01.10.2026` for a step recorded as *oktoober 2026* would
         # invite somebody to save the invented day back, which is the whole
@@ -6134,7 +6163,14 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
     `Menetluse link`.
     """
     matter = get_visible_matter(request, pk)
-    form = MatterProgressForm(request.POST, request.FILES)
+    # The same pattern the panel was drawn from, so the select's options on the
+    # way in and the values accepted on the way back are one decision. A Matter
+    # whose `Õigusakt` chooses no procedure has no field at all, and a crafted
+    # `process_phase` on one reaches a form that never cleaned it
+    # (`app.matters.forms.attach_phase_choices`).
+    form = MatterProgressForm(
+        request.POST, request.FILES, phases=legal_process.phase_context(matter=matter)
+    )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="progress_form", form=form)
     try:
@@ -6154,6 +6190,13 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
             # `ProceduralDevelopmentEditForm` still offers the box on a record
             # that has one (docs/adr/0097 §6.2).
             note="",
+            # `Etapp` — which part of the procedure this step belongs to, as the
+            # person left it in the select. Pre-selected from the file's own
+            # `Hetkeseis` and visible beside the date box, so a step being filed
+            # from 2019 is not silently taking today's phase; empty is an ordinary
+            # answer and the row reads under `Etapiga sidumata`
+            # (app/matters/phase_history.py).
+            process_phase=form.cleaned_data.get("process_phase") or "",
             stage=form.cleaned_data.get("stage"),
             next_text=form.cleaned_data.get("next_text") or "",
             next_date=form.cleaned_data.get("next_date"),
@@ -6836,12 +6879,23 @@ def _development_edit_form(
     to re-save (docs/adr/0079 §2, `development_period_initial`).
     """
     auto_id = f"id_menetluse_areng_{development.pk}_%s"
+    # The Matter's own pattern, so `Etapp` offers this file's procedure and not a
+    # generic list — and so the record's stored phase survives a reclassification
+    # that took it out of the pattern (`attach_phase_choices`).
+    phases = legal_process.phase_context(matter=development.matter)
     if data is not None:
-        return ProceduralDevelopmentEditForm(data, auto_id=auto_id, record=development)
+        return ProceduralDevelopmentEditForm(
+            data, auto_id=auto_id, record=development, phases=phases
+        )
     return ProceduralDevelopmentEditForm(
         initial={
             "title": development.title,
             "note": development.note,
+            # The phase the record actually holds, never the file's current one:
+            # this is a correction form, and reopening a step filed under `VTK` on
+            # today's `Riigikogus` would be one `Salvesta` away from re-filing it
+            # (the rule the day box above keeps, for the same reason).
+            "process_phase": development.process_phase,
             # Explicit, and not merely absent. `development_period_initial`
             # returns `{}` for a row with no date at all, so a bare `**` would
             # leave the day box to whatever default it could find — which is the
@@ -6855,6 +6909,7 @@ def _development_edit_form(
         },
         auto_id=auto_id,
         record=development,
+        phases=phases,
     )
 
 
@@ -6970,6 +7025,14 @@ def update_development_view(request: HttpRequest, pk: Any, development_id: Any) 
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             note=form.cleaned_data.get("note") or "",
+            # `None` where this Matter's procedure offers no phases at all, so a
+            # title correction on such a record leaves the column alone rather
+            # than silently clearing it (`correct_procedural_development`).
+            process_phase=(
+                form.cleaned_data.get("process_phase") or ""
+                if "process_phase" in form.fields
+                else None
+            ),
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
         )

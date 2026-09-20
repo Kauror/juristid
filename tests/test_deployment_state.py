@@ -558,7 +558,11 @@ SETTLED_LEAVES = {
     # state, and the next release carries it into a database that already has
     # 0006, so CI steps the app back and applies it forwards from exactly that
     # state (docs/adr/0072).
-    "intelligence": "0001_initial",
+    # `intelligence` is not here any more: 0002 adds `MatterImportantDate.kind`
+    # so that `Menetluse kulg` can recognise an `ELi õiguse ülevõtmise tähtaeg`
+    # rather than read one out of a free-text title, and the next release
+    # carries it into a database that already has 0001 — so CI steps the app
+    # back and applies it forwards from exactly that state (docs/adr/0098 §9).
     # `matters` is not here any more: 0012 adds `PersonalScratchpad` and the
     # next release carries it into a database that already has 0011, so CI
     # steps the app back and applies it forwards from exactly that state.

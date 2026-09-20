@@ -426,13 +426,22 @@ def test_a_domestic_rail_names_its_states_in_words(page, base_url):
 
 
 def test_an_eu_rail_makes_no_domestic_claim(page, base_url):
-    """Scenario C. The European template, chosen from `Õigusakt` alone."""
+    """Scenario C. The European pattern, chosen from `Õigusakt` alone.
+
+    **`Jõustumine` and `Ülevõtmine` are two nodes since docs/adr/0098 §6.** They
+    shared one — `Ülevõtmine / jõustumine` — and a reader could not tell an act
+    that is in force from a directive somebody still has to transpose. An EU act
+    being in force does not mean Estonia has transposed it.
+    """
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "ELi direktiiv", stage="Eesti seisukoht koostamisel")
 
+    expect(rail(page)).to_contain_text("Direktiivi menetlus")
     expect(rail(page)).to_contain_text("ELi menetlus")
     expect(rail(page)).to_contain_text("Eesti seisukoht")
-    expect(rail(page)).to_contain_text("Ülevõtmine / jõustumine")
+    expect(rail(page)).to_contain_text("Ülevõtmine")
+    expect(rail(page)).to_contain_text("Jõustumine")
+    expect(rail(page)).not_to_contain_text("Ülevõtmine / jõustumine")
     expect(rail(page)).not_to_contain_text("Riigikogu")
     expect(rail(page)).not_to_contain_text("Valitsus")
 
@@ -495,11 +504,20 @@ def test_koda_stopping_reads_beside_the_rail_and_not_on_it(page, base_url):
 
 
 def test_a_matter_with_nothing_to_place_draws_no_rail(page, base_url):
-    """Absent, not empty. A heading over five «Teadmata» says nothing."""
+    """Absent, not empty. A heading over six «Teadmata» nodes says nothing.
+
+    **The three blocks of the section are independent since docs/adr/0098 §8.**
+    A file read against no procedure draws no nodes and is promised no next
+    steps; its `Alustatud` is a date it recorded rather than a claim about a
+    procedure, and it goes on reading under `Kirjas olevad kuupäevad`.
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    expect(rail(page)).to_have_count(0)
+    expect(rail(page).locator(".lprail__node")).to_have_count(0)
+    expect(rail(page).locator(".lpahead")).to_have_count(0)
+    expect(rail(page)).not_to_contain_text("Ees võib olla")
+    expect(rail(page)).to_contain_text("Alustatud")
     expect(page.locator("#ajajoon")).not_to_contain_text("Menetluse kulg")
 
 
@@ -557,3 +575,383 @@ def test_nothing_overflows_sideways_at_narrow_widths(page, base_url, width):
     assert overflow <= 1, f"the document scrolls sideways by {overflow}px at {width}px"
     # Every node is still drawn, rather than dropped to fit.
     expect(rail(page).locator(".lprail__node")).to_have_count(5)
+
+
+# ---------------------------------------------------------------------------
+# Phase-grouped history, and the road ahead (docs/adr/0098)
+# ---------------------------------------------------------------------------
+
+
+def _phase_headings(page) -> list[str]:
+    """The phase names, as written rather than as `text-transform` renders them.
+
+    `inner_text()` reports the *rendered* casing, and these headings are
+    uppercased by the stylesheet — so asserting on it would be asserting on the
+    stylesheet. What this suite is about is which phases are drawn, in what order.
+    """
+    return [
+        (text or "").strip()
+        for text in history(page).locator("h3.uxtl__phase .uxtl__phasename").all_text_contents()
+    ]
+
+
+def _record_phase_development(
+    page, *, title: str, occurred_on: str, phase: str, stage: str | None = None
+) -> None:
+    """One step, filed under a phase, through the panel a lawyer actually uses."""
+    open_add_panel(page, "marge-tavaline")
+    form = panel(page, "marge-tavaline")
+    form.locator("[name=title]").fill(title)
+    form.locator("[name=occurred_on]").fill(occurred_on)
+    form.locator("[name=process_phase]").select_option(label=phase)
+    if stage is not None:
+        form.locator("[name=stage]").select_option(label=stage)
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    # **Wait for the row, not for the network.** `networkidle` returns while the
+    # HTMX swap of `#teema-vaade` is still being applied, so a plain `assert`
+    # immediately afterwards reads the DOM the save is about to replace — and
+    # comes back exactly one save behind, forever. `expect` retries; the bare
+    # assertions these tests make about ordering do not, so they wait here
+    # instead (e2e/conftest.py `open_add_panel`).
+    expect(history(page)).to_contain_text(title)
+
+
+def test_the_history_reads_in_phases_in_the_lawyers_own_words(page, base_url):
+    """Scenario A, in a browser, filed the way a lawyer files it.
+
+    Two consultation rounds a year apart are two sections. Grouping by phase key
+    would have put the bill's round inside the VTK's, which is the defect that
+    makes «which round did we answer» unanswerable on exactly the busy files.
+    """
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "VTK", stage=None)
+    _record_phase_development(
+        page, title="VTK saadeti kooskõlastusringile", occurred_on="10.02.2025", phase="VTK"
+    )
+    _record_phase_development(
+        page,
+        title="Eelnõu saadeti kooskõlastusringile",
+        occurred_on="01.09.2025",
+        phase="Kooskõlastusring",
+    )
+    _record_phase_development(
+        page,
+        title="Riigikogu võttis seaduse vastu",
+        occurred_on="02.04.2026",
+        phase="Riigikogus",
+        stage="Riigikogus",
+    )
+
+    assert _phase_headings(page) == ["Riigikogus", "Kooskõlastusring", "VTK"]
+    # Newest phase first, and the current one says so in a word rather than in a
+    # colour.
+    expect(history(page).locator("h3.uxtl__phase").first).to_contain_text("Praegu")
+
+
+def test_a_phase_heading_carries_the_day_the_phase_began_and_never_today(page, base_url):
+    """The business date of the step that opened it. Never a `created_at`."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage=None)
+    _record_phase_development(
+        page,
+        title="Eelnõu saadeti kooskõlastusringile",
+        occurred_on="09.01.2026",
+        phase="Kooskõlastusring",
+    )
+
+    heading = history(page).locator("h3.uxtl__phase").first
+    expect(heading).to_contain_text("alates 09.01.2026")
+    expect(heading).not_to_contain_text(_estonian(date.today()))
+
+
+def test_a_late_entry_draws_no_earlier_sections_at_all(page, base_url):
+    """Scenario C. Absent, not empty — and certainly not ticked."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage=None)
+    _record_phase_development(
+        page,
+        title="Eelnõu jõudis Riigikokku",
+        occurred_on=_past(10),
+        phase="Riigikogus",
+        stage="Riigikogus",
+    )
+
+    assert _phase_headings(page) == ["Riigikogus"]
+    expect(history(page)).not_to_contain_text("Kooskõlastusring")
+    expect(history(page)).not_to_contain_text("Valitsuses")
+
+
+def test_the_road_ahead_says_it_is_possible_in_words(page, base_url):
+    """§10. No percentages, no checkmarks, no dates, and never colour alone."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
+
+    ahead = page.locator(".lpahead")
+    expect(ahead).to_be_visible()
+    expect(ahead).to_contain_text("Ees võib olla")
+    expect(ahead).to_contain_text("Valitsuses")
+    # A horizon, not a plan: at most three steps on screen.
+    assert ahead.locator(".lpahead__steps").first.locator(".lpahead__step").count() <= 3
+    # And nothing in it is dated or scored.
+    assert not re.search(r"\d{1,2}\.\d{1,2}\.\d{4}", ahead.inner_text())
+    assert "%" not in ahead.inner_text()
+
+
+def test_a_regulation_is_never_offered_the_riigikogu(page, base_url):
+    """§10. A `Määrus` is not adopted by Parliament, so it is not a next step."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Määrus", stage="Kooskõlastusringil")
+
+    expect(rail(page)).to_contain_text("Määruse menetlus")
+    expect(rail(page)).not_to_contain_text("Riigikogus")
+    # `Valitsuses` is offered as a step that may not apply, in words.
+    expect(rail(page).locator(".lpahead")).to_contain_text("kui menetlus jätkub")
+
+
+def test_an_eu_regulation_is_never_offered_a_transposition(page, base_url):
+    """Test 6. A regulation applies directly, and the rail may not say otherwise."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "ELi määrus", stage="ELi menetluses")
+
+    expect(rail(page)).to_contain_text("ELi määruse menetlus")
+    expect(rail(page)).not_to_contain_text("Ülevõtmine")
+
+
+def test_the_dated_points_read_inside_menetluse_kulg_and_not_in_the_history(page, base_url):
+    """§4. The strip answers «where is this going», so it moved to that section."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+
+    expect(rail(page).locator(".lpdates")).to_contain_text("Kirjas olevad kuupäevad")
+    expect(rail(page).locator(".tl-strip")).to_be_visible()
+    expect(history(page).locator(".tl-strip")).to_have_count(0)
+
+
+def test_one_save_updates_the_rail_the_headings_and_the_dates_together(page, base_url):
+    """§12. No stale pre-save snapshot, anywhere on the page.
+
+    The panel moves `Hetkeseis` through its own locked row and then re-renders a
+    column the request read *before* the POST. A rail built from that says the
+    ministry sent a new version and the file is still on the round it just left,
+    one line apart.
+    """
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
+    _record_phase_development(
+        page,
+        title="Eelnõu jõudis Riigikokku",
+        occurred_on=_past(5),
+        phase="Riigikogus",
+        stage="Riigikogus",
+    )
+
+    # One swap, no reload: the rail, the heading and the sentence all moved.
+    expect(rail(page).locator(".lprail__nowvalue")).to_have_text("Riigikogus")
+    assert _phase_headings(page)[0] == "Riigikogus"
+    expect(history(page).locator("h3.uxtl__phase").first).to_contain_text("Praegu")
+
+
+def test_an_unplaced_row_stays_visible_and_says_it_is_not_a_defect(page, base_url):
+    """Test 13. `Etapiga sidumata` is a heading, never a queue of work."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
+    _record_phase_development(
+        page,
+        title="Eelnõu saadeti kooskõlastusringile",
+        occurred_on=_past(30),
+        phase="Kooskõlastusring",
+    )
+
+    # A bare stage edit, through the header's own inline control: proof that a
+    # value was recorded, dated by nothing but this application's clock. It
+    # contradicts the open interval — the file left `Kooskõlastusring` and
+    # nothing says when — so everything after that step becomes unplaceable.
+    def stage_control(page):
+        """The header's own `Hetkeseis` disclosure, and only that one.
+
+        Five controls in the band share `.inlineedit__trigger`, so the selector
+        has to name the one holding the stage select — and the assertion has to
+        read the *trigger* rather than the disclosure, because the disclosure
+        holds the whole `<option>` list and «contains Riigikogus» is true of it
+        before the save as well as after.
+        """
+        return page.locator('#teema-pais details:has(select[aria-label="Hetkeseis"])')
+
+    control = stage_control(page)
+    # Look first, and click only a disclosure just seen closed — a `<summary>`
+    # closes its own `<details>`, so a fixed click is a coin-toss on parity. The
+    # idiom `open_add_panel` uses, for the same reason (e2e/conftest.py).
+    if not control.evaluate("el => el.open"):
+        control.locator(".inlineedit__trigger").click()
+    expect(control.locator('select[aria-label="Hetkeseis"]')).to_be_visible()
+    # **The select submits itself** — `data-autosubmit` — and the response swaps
+    # `#teema-pais` wholesale. So there is no `Salvesta` left to press: reaching
+    # for it races the swap that detaches it, which is a click that times out on
+    # a save that already happened.
+    control.locator('select[aria-label="Hetkeseis"]').select_option(label="Riigikogus")
+    page.wait_for_load_state("networkidle")
+    expect(stage_control(page).locator(".inlineedit__trigger")).to_contain_text("Riigikogus")
+    # An opinion sent afterwards: it could belong to either phase, so it belongs
+    # to neither until the step that moved the file is written down.
+    _record_koda_opinion(page, sent_on=_past(2), filename="arvamus.pdf")
+
+    # `expect`, because it retries: `networkidle` returns while the swap of
+    # `#teema-vaade` is still being applied.
+    expect(history(page).locator(".uxtl__phase--unplaced")).to_have_count(1)
+    assert "Etapiga sidumata" in _phase_headings(page)
+    note = history(page).locator(".uxtl__phasenote").last
+    expect(note).to_contain_text("Etapp selgub")
+    # Not red, not a count, not an icon.
+    expect(history(page).locator(".uxtl__phase--unplaced")).not_to_contain_text("!")
+
+
+def test_the_phase_control_is_beside_the_date_box_and_optional(page, base_url):
+    """§7. A proposal on screen, never an invisible guess."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
+    open_add_panel(page, "marge-tavaline")
+
+    form = panel(page, "marge-tavaline")
+    select = form.locator("[name=process_phase]")
+    expect(select).to_be_visible()
+    expect(form.locator("label[for$=process_phase]")).to_contain_text("valikuline")
+    # Pre-selected on the phase the file's own `Hetkeseis` places it on …
+    assert select.input_value() == "kooskolastus"
+    # … and clearable, in one click, to an ordinary answer.
+    select.select_option(value="")
+    assert select.input_value() == ""
+
+
+def test_the_phase_headings_are_reachable_by_keyboard(page, base_url):
+    """§14. Headings are real headings, under the section's own `h2`."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "Seadus", stage=None)
+    _record_phase_development(
+        page,
+        title="Eelnõu saadeti kooskõlastusringile",
+        occurred_on=_past(20),
+        phase="Kooskõlastusring",
+    )
+
+    heading = history(page).locator("h3.uxtl__phase").first
+    expect(heading).to_be_visible()
+    assert heading.evaluate("el => el.tagName") == "H3"
+    # And its id is stable, so a phase can be linked to.
+    assert heading.get_attribute("id").startswith("etapp-")
+    # No duplicate ids anywhere on the page this section added to.
+    duplicates = page.evaluate(
+        "() => { const seen = {}; const dupes = [];"
+        " for (const el of document.querySelectorAll('[id]')) {"
+        "  if (seen[el.id]) { dupes.push(el.id); } seen[el.id] = true; }"
+        " return dupes; }"
+    )
+    assert duplicates == []
+
+
+@pytest.mark.parametrize("width", [375, 420, 768, 1440])
+def test_the_grouped_history_never_overflows_sideways(page, base_url, width):
+    """§14. The rail scrolls itself; the document never scrolls sideways."""
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "VTK", stage="Kooskõlastusringil")
+    _record_phase_development(
+        page, title="VTK saadeti kooskõlastusringile", occurred_on="10.02.2025", phase="VTK"
+    )
+    _record_phase_development(
+        page,
+        title="Eelnõu saadeti kooskõlastusringile",
+        occurred_on="01.09.2025",
+        phase="Kooskõlastusring",
+    )
+    page.set_viewport_size({"width": width, "height": 900})
+    page.wait_for_timeout(120)
+
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+    )
+    assert overflow <= 0, f"the document scrolls sideways by {overflow}px at {width}px"
+    # The history reads vertically: every heading starts at the same x.
+    lefts = page.evaluate(
+        "() => [...document.querySelectorAll('#ajalugu-loend h3.uxtl__phase')]"
+        ".map(el => Math.round(el.getBoundingClientRect().left))"
+    )
+    assert len(set(lefts)) <= 1, lefts
+
+
+def test_an_older_phase_collapses_and_reopens_from_the_keyboard(page, base_url):
+    """§6 and §14. A three-year file's older rounds get out of the way.
+
+    The control is a real button in the tab order, `aria-expanded` says the
+    state, and the heading stays at full legibility when the section is shut —
+    what collapses is the content, not the answer to «which phase is this».
+    """
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "VTK", stage=None)
+    _record_phase_development(
+        page, title="VTK saadeti kooskõlastusringile", occurred_on="10.02.2025", phase="VTK"
+    )
+    _record_phase_development(
+        page,
+        title="Eelnõu saadeti kooskõlastusringile",
+        occurred_on="01.09.2025",
+        phase="Kooskõlastusring",
+    )
+
+    older = history(page).locator("h3.uxtl__phase").filter(has_text="VTK")
+    toggle = older.locator(".uxtl__phasetoggle")
+    row = history(page).locator("article.uxtl__item").filter(has_text="VTK saadeti")
+
+    # The server sent it open, and the script showed a control that works.
+    expect(toggle).to_be_visible()
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    expect(row).to_be_visible()
+
+    # Shut from the keyboard: focus it and press Enter.
+    toggle.focus()
+    page.keyboard.press("Enter")
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    expect(row).to_be_hidden()
+    # The heading itself stays — a closed section still says which phase it is.
+    expect(older).to_be_visible()
+    expect(older).to_contain_text("VTK")
+    # And the phase above it is untouched.
+    expect(
+        history(page).locator("article.uxtl__item").filter(has_text="Eelnõu saadeti")
+    ).to_be_visible()
+
+    page.keyboard.press("Enter")
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    expect(row).to_be_visible()
+
+
+def test_every_phase_reads_with_no_script_at_all(page, base_url, browser):
+    """The history is complete before `ux.js` runs, and the control admits it.
+
+    A button that did nothing without JavaScript would be worse than no button,
+    so the server sends it `hidden` and the script shows it. What the server
+    sends is every row, expanded.
+    """
+    sign_in(page, base_url, SANDRA)
+    url = _matter_with_instrument(page, base_url, "VTK", stage=None)
+    _record_phase_development(
+        page, title="VTK saadeti kooskõlastusringile", occurred_on="10.02.2025", phase="VTK"
+    )
+
+    context = browser.new_context(java_script_enabled=False)
+    try:
+        quiet = context.new_page()
+        # The dev sign-in is an ordinary form post, so it works without script.
+        quiet.goto(f"{base_url}/konto/arendus-sisselogimine/")
+        quiet.get_by_label(SANDRA.display_name, exact=False).check()
+        quiet.get_by_role("button", name="Logi sisse").click()
+        quiet.goto(url)
+
+        assert quiet.locator("#ajalugu-loend article.uxtl__item").count() >= 1
+        expect(
+            quiet.locator("#ajalugu-loend article.uxtl__item").filter(has_text="VTK saadeti")
+        ).to_be_visible()
+        expect(quiet.locator("#ajalugu-loend h3.uxtl__phase").first).to_be_visible()
+        # The control is there in the markup and deliberately not shown.
+        expect(quiet.locator(".uxtl__phasetoggle").first).to_be_hidden()
+    finally:
+        context.close()
