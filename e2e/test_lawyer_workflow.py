@@ -244,12 +244,15 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # Opening one panel closes whichever was open (docs/adr/0075 §2).
     page.locator('label[for="marge-tahtaeg-valik"]').click()
     expect(page.locator("#marge-tahtaeg")).to_be_visible()
-    expect(page.locator("#lisa-marge")).not_to_be_visible()
+    # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
+    # family, so `+ Märge` staying visible is the nesting working rather
+    # than a panel that failed to close (docs/adr/0097 §8).
+    expect(page.locator("#marge-tavaline")).not_to_be_visible()
     expect(page.locator("#teema-lopeta")).not_to_be_visible()
     open_composer(page)
     page.locator("#id_marge_title").fill("Ministeerium lubas uue sõnastuse")
     screenshots(page, "04-marge")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator(".uxtl__body .richtext").first).to_contain_text(

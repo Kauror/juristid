@@ -221,12 +221,12 @@ def test_an_ordinary_incoming_draft_files_and_reads_back(page, base_url):
     values = rail.locator(".railcard__value")
     expect(values.filter(has_text=MINISTRY)).to_have_count(1)
     expect(values.filter(has_text="Seadus")).to_have_count(1)
-    # `Menetlusliik` is a row here and it is *unanswered*: the page asked
-    # nothing about it and nothing was inferred from `Seadus` (docs/adr/0090
-    # §4). The rail renders an unanswered editable fact as «+ Lisa».
-    menetlusliik = rail.locator(".railcard__row").filter(has_text="Menetlusliik")
-    expect(menetlusliik).to_have_count(1)
-    expect(menetlusliik).to_contain_text("+ Lisa")
+    # `Menetlusliik` is not a row here at all, and nothing was inferred from
+    # `Seadus` — which is the claim this test was always making. It was a row
+    # rendering «+ Lisa» until docs/adr/0097 §3: the two Teema forms stopped
+    # asking, and a read-only rail row is the easiest place for a withdrawn
+    # question to survive its own removal. `Matter.track` is untouched.
+    expect(rail.locator(".railcard__row").filter(has_text="Menetlusliik")).to_have_count(0)
     expect(page.locator(".metaline")).to_contain_text("Kooskõlastusringil")
 
 

@@ -102,7 +102,7 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
 
     open_composer(page)
     page.locator("#id_marge_title").fill("Ministeerium helistas reedel.")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(chronology(page)).to_contain_text("Ministeerium helistas reedel")

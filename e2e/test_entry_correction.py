@@ -22,6 +22,7 @@ a row other files read and `e2e/test_ui_regression.py` photographs.
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import expect
@@ -30,9 +31,10 @@ from e2e.conftest import (
     MARTIN,
     READER,
     create_matter,
+    finish_current_action,
     open_add_panel,
-    open_composer,
     open_matter,
+    set_next_step,
     sign_in,
     unique_title,
 )
@@ -52,11 +54,17 @@ CORRECTED = "Ministeerium lubas uue sõnastuse esmaspäevaks."
 
 
 def _file_an_entry(page, text: str) -> None:
-    """Write one note through the real composer, the way a lawyer would."""
-    open_composer(page)
-    page.locator("#id_marge_title").fill(text)
-    page.locator("#lisa-marge button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    """Write one `Entry`, through the surface that writes one.
+
+    `Mida tegid?` in `PRAEGUNE TEGEVUS`, not `+ Märge`. The launcher's
+    ordinary note files a `MatterProceduralDevelopment` since
+    docs/adr/0097 §6 — one stated line, a structured record, and its own
+    correction surface. `Entry` is what completing a step records, which is
+    where most of them come from and is what this file corrects.
+    """
+    when = date.today() + timedelta(days=7)
+    set_next_step(page, "Järgmine samm", f"{when.day}.{when.month}.{when.year}")
+    finish_current_action(page, text)
 
 
 def _entry_row(page):

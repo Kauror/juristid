@@ -196,7 +196,7 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
 
     open_composer(page)
     page.locator("#id_marge_title").fill("Küsisin liikmetelt tagasisidet.")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     open_panel(page)
@@ -261,7 +261,10 @@ def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, bas
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
     # With the count still in it, and no other panel opened on its behalf.
     expect(panel(page).locator("[name=response_count]")).to_have_value("3")
-    expect(page.locator("#lisa-marge")).not_to_be_visible()
+    # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
+    # family, so `+ Märge` staying visible is the nesting working rather
+    # than a panel that failed to close (docs/adr/0097 §8).
+    expect(page.locator("#marge-tavaline")).not_to_be_visible()
 
 
 def test_an_uncounted_engagement_says_nothing_about_responses(page, base_url):

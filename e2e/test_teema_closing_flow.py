@@ -100,7 +100,7 @@ def test_one_save_closes_the_file_and_leaves_a_readable_past(page, base_url):
     # borrows a body from another operation (docs/adr/0075 §9).
     open_composer(page)
     page.locator("#id_marge_title").fill("Menetlus lõppes ministeeriumis.")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     panel = open_closing_panel(page)
@@ -132,6 +132,9 @@ def test_a_refused_closure_comes_back_in_an_open_panel(page, base_url):
     expect(page.locator("#teema-lopeta")).to_be_visible()
     expect(page.locator("#teema-lopeta")).to_contain_text("Vali, kuidas teema lõppes")
     # Its own panel and no other: a refusal answers itself (docs/adr/0075 §2).
-    expect(page.locator("#lisa-marge")).not_to_be_visible()
+    # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
+    # family, so `+ Märge` staying visible is the nesting working rather
+    # than a panel that failed to close (docs/adr/0097 §8).
+    expect(page.locator("#marge-tavaline")).not_to_be_visible()
     expect(page.locator("#teema-lopeta [name=closing_words]")).to_have_value("Midagi juhtus.")
     expect(page.locator(".badge--state")).to_contain_text("Avatud")

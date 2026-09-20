@@ -112,7 +112,7 @@ def _record_development(page, *, title: str, occurred_on: str | None, **extra) -
     form.locator("[name=occurred_on]").fill(occurred_on or "")
     for name, value in extra.items():
         form.locator(f"[name={name}]").fill(value)
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
 
@@ -210,7 +210,7 @@ def test_one_development_save_reads_as_one_act_carrying_its_stage_and_step(page,
     form.locator("[name=stage]").select_option(label="Kooskõlastusringil")
     form.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
     form.locator("[name=next_date]").fill(_future(4))
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     row = (
@@ -282,7 +282,7 @@ def test_an_approximate_act_prints_its_period_and_not_a_day(page, base_url):
     form.locator("label.precision__chip", has_text="Kuu").first.click()
     form.locator("[name=areng_month]").select_option(label="Märts")
     form.locator("[name=areng_year]").fill("2026")
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     row = (
@@ -354,7 +354,7 @@ def test_a_documents_row_is_under_the_act_it_evidences(page, base_url):
     form.locator("input[type=file]").set_input_files(
         {"name": "eelnou-v2.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 eelnou"}
     )
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     row = (
@@ -449,7 +449,7 @@ def test_an_explicitly_recorded_earlier_stage_reads_kirjas(page, base_url):
     form.locator("[name=title]").fill("Riigikogu võttis menetlusse")
     form.locator("[name=occurred_on]").fill(_past(1))
     form.locator("[name=stage]").select_option(label="Riigikogus")
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     recorded = rail(page).locator(".lprail__node--recorded")

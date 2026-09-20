@@ -472,7 +472,7 @@ def test_a_development_records_the_step_the_stage_and_the_next_action(page, base
     form.locator("[name=occurred_on]").fill(_past(2))
     form.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
     form.locator("[name=next_date]").fill(_future(4))
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni").first.wait_for()
     current = page.locator("#praegune-tegevus")
@@ -488,7 +488,7 @@ def test_a_half_filled_next_step_is_refused_on_the_empty_control(page, base_url)
     form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
     form.locator("[name=next_text]").fill("Vaatan uue teksti läbi")
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     expect(page.locator("#marge-tavaline")).to_contain_text("Vali järgmise tegevuse kuupäev.")
     # Nothing was written: the whole save is one transaction.
@@ -529,7 +529,7 @@ def test_the_continuation_is_absent_while_a_step_is_open(page, base_url):
     form.locator("[name=occurred_on]").fill(_past(1))
     form.locator("[name=next_text]").fill("Vaatan läbi")
     form.locator("[name=next_date]").fill(_future(3))
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     current = page.locator("#praegune-tegevus")
     current.get_by_text("Vaatan läbi").first.wait_for()
@@ -600,7 +600,7 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     areng.locator("[name=occurred_on]").fill(_past(1))
     areng.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
     areng.locator("[name=next_date]").fill(_future(4))
-    areng.get_by_role("button", name="Salvesta areng").click()
+    areng.get_by_role("button", name="Salvesta", exact=True).click()
 
     chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni").first.wait_for()
     expect(page.locator("#praegune-tegevus")).to_contain_text("Vaatan uue versiooni läbi")
@@ -629,10 +629,24 @@ def test_a_developments_lawyer_note_reads_on_the_row_under_its_own_label(page, b
     form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Ministeerium saatis parandatud eelnõu")
     form.locator("[name=occurred_on]").fill(_past(3))
-    form.locator("[name=note]").fill("Muudatused ei arvesta Koja ettepanekut.")
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     chronology(page).get_by_text("Ministeerium saatis parandatud eelnõu").first.wait_for()
+
+    # `Juristi märkus` through `Muuda`, because `+ Märge` does not ask for one:
+    # two text areas on the control a lawyer uses every day, where the second
+    # is empty on nearly every save, is a form asking somebody to classify
+    # their own sentence before it will take it (docs/adr/0097 §6.2). The
+    # editor offers the box on a stored row, and the row renders a note the
+    # same whichever surface added it — which is what this test measures.
+    row = chronology(page).locator(".uxtl__ms-body").first
+    row.get_by_role("button", name="Muuda", exact=True).click()
+    editor = page.locator(".uxtl__editform")
+    editor.locator("textarea[name=note]").wait_for()
+    editor.locator("textarea[name=note]").fill("Muudatused ei arvesta Koja ettepanekut.")
+    editor.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+
     page.reload()
     page.wait_for_load_state("networkidle")
 
@@ -659,7 +673,7 @@ def test_a_development_with_no_note_gains_no_empty_note_block(page, base_url):
     form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
     form.locator("[name=occurred_on]").fill(_past(2))
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     chronology(page).get_by_text("Eelnõu jõudis Riigikokku").first.wait_for()
     item = chronology(page).locator(
@@ -688,7 +702,7 @@ def test_a_future_development_is_refused_and_moves_no_stage(page, base_url):
     form.locator("[name=title]").fill("Riigikogu esimene lugemine")
     form.locator("[name=occurred_on]").fill(_future(12))
     form.locator("[name=stage]").select_option(label="Riigikogus")
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     panel_after = panel(page, "marge-tavaline")
@@ -724,7 +738,7 @@ def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
         form.locator("label.precision__chip", has_text=precision).click()
         fill(form)
         form.locator("[name=areng_year]").fill(str(next_year))
-        form.get_by_role("button", name="Salvesta areng").click()
+        form.get_by_role("button", name="Salvesta", exact=True).click()
         page.wait_for_load_state("networkidle")
 
         expect(panel(page, "marge-tavaline")).to_contain_text(
@@ -753,7 +767,7 @@ def test_a_current_month_is_accepted_and_prints_its_period(page, base_url):
     form.locator("label.precision__chip", has_text="Kuu").click()
     form.locator("[name=areng_month]").select_option(value=str(today.month))
     form.locator("[name=areng_year]").fill(str(today.year))
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     item = chronology(page).locator(

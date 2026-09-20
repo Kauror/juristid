@@ -54,7 +54,7 @@ def _file_a_development(page, base_url: str) -> str:
     form.locator("[name=title]").fill(HEADLINE)
     form.locator("[name=occurred_on]").fill(_estonian(date.today() - timedelta(days=3)))
     form.locator("input[type=file]").set_input_files(_pdf(FIRST_FILE))
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     # The record, not the network: the save swaps the whole view, and an idle
     # that lands before the replacement would let the next step act on the page

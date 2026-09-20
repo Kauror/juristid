@@ -251,11 +251,16 @@ def test_a_reference_can_be_recorded_while_the_teema_is_created(page, base_url):
 
 
 def test_creating_a_teema_without_touching_the_block_records_nothing(page, base_url):
-    """Two empty boxes on screen, and an ordinary submit writes no row."""
+    """Two empty boxes on screen, and an ordinary submit writes no row.
+
+    The card renders — it holds the `+ Lisa` line now — so «no row» is read
+    off the rows rather than off the card's presence (docs/adr/0097 §5).
+    """
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Menetluse linkideta"))
 
-    expect(card(page)).to_have_count(0)
+    expect(card(page).get_by_role("link", name="+ Lisa menetluse link")).to_be_visible()
+    expect(card(page).locator(".proclink")).to_have_count(0)
 
 
 def test_a_refused_create_keeps_the_typed_address(page, base_url):

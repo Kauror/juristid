@@ -163,7 +163,7 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
         page.goto(url)
         open_composer(page)
         page.locator("#id_marge_title").fill(f"Sissekanne number {index} sünteetilises maailmas.")
-        page.locator("#lisa-marge button[type=submit]").click()
+        page.locator("#marge-tavaline button[type=submit]").click()
         page.wait_for_load_state("networkidle")
 
     page.goto(url)
@@ -207,7 +207,7 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     # from another operation (docs/adr/0075 §9).
     open_composer(page)
     page.locator("#id_marge_title").fill("Menetlus lõppes; töö on tehtud.")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     # Closing is a `LISA TEEMALE` panel, not a box in the rail.
@@ -435,7 +435,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     box = drop.bounding_box()
     others = [
         page.locator("#id_marge_title").bounding_box(),
-        page.locator("#lisa-marge button[type=submit]").bounding_box(),
+        page.locator("#marge-tavaline button[type=submit]").bounding_box(),
     ]
     assert all(not _overlap(box, other) for other in others), (
         "at 1440px the drop area is painted over another control in its own form"
@@ -540,7 +540,7 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     page.goto(url)
     open_composer(page)
     expect(page.locator(".composer__hint")).to_have_count(0)
-    expect(page.locator("#lisa-marge button[type=submit]")).to_be_visible()
+    expect(page.locator("#marge-tavaline button[type=submit]")).to_be_visible()
 
 
 def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, base_url):

@@ -181,6 +181,7 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     open_add_panel(page, "lisa-kaasamine")
     expect(page.locator("#lisa-kaasamine")).to_be_visible()
     expect(page.locator("#lisa-marge")).not_to_be_visible()
+    expect(page.locator("#marge-tahtaeg")).not_to_be_visible()
 
 
 # =========================================================================

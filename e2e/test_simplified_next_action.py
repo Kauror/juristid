@@ -147,7 +147,7 @@ def test_a_marge_records_what_happened_and_leaves_the_step_open(page, base_url):
 
     open_composer(page)
     page.locator("#id_marge_title").fill("Ministeerium helistas vahepeal.")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#ajalugu-loend")).to_contain_text("Ministeerium helistas vahepeal")
