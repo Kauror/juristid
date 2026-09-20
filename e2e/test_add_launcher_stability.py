@@ -113,8 +113,22 @@ def assert_unchanged(before, after, what: str) -> None:
 
 
 def open_panel(page, panel_id: str):
-    page.locator(f'label[for="{panel_id}-valik"]').click()
-    page.wait_for_timeout(80)
+    """Open one choice, and never close it by pressing it again.
+
+    **A chip is a toggle.** `ux.js` un-checks a radio that is already chosen,
+    so a blind click on a chip that arrives *checked* shuts its panel. That
+    never mattered while every chip arrived unchecked; two of them arrive
+    chosen now, because a family panel that opened on more chips and no form
+    would be an extra click on every visit — `Tavaline` and
+    `Meile saadetud tagasiside` (docs/adr/0097 §8).
+
+    So this looks before it clicks, which is what `e2e/conftest.py`'s own
+    `open_add_panel` has always done.
+    """
+    radio = page.locator(f"#{panel_id}-valik")
+    if not radio.is_checked():
+        page.locator(f'label[for="{panel_id}-valik"]').click()
+        page.wait_for_timeout(80)
     return page.locator(f"#{panel_id}")
 
 
@@ -234,13 +248,13 @@ def test_the_form_opens_below_the_whole_row_and_only_one_does(page, base_url):
         "the form does not open below the last row of chips"
     )
 
-    for panel_id in PANEL_IDS:
+    # One family open, and the rest shut. `marge-tavaline` is inside the open
+    # one and is visible with it — that is the nesting, not a second open form
+    # (docs/adr/0097 §8).
+    shown = {"lisa-marge", "marge-tavaline"}
+    for panel_id in PANEL_IDS + [choice for _, choice in SUBCHOICES]:
         expectation = expect(page.locator(f"#{panel_id}"))
-        (
-            expectation.to_be_visible()
-            if panel_id == "lisa-marge"
-            else expectation.not_to_be_visible()
-        )
+        (expectation.to_be_visible() if panel_id in shown else expectation.not_to_be_visible())
 
 
 def test_choosing_a_second_operation_replaces_the_form_and_moves_nothing(page, base_url):

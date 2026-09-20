@@ -22,7 +22,7 @@ from e2e.conftest import (
     finish_current_action,
     open_add_panel,
     open_composer,
-    open_next_action_form,
+    set_next_step,
     sign_in,
 )
 
@@ -43,11 +43,13 @@ def _pdf(tmp_path, name: str, marker: bytes = b"") -> str:
 
 
 def set_step(page, text: str, days: int = 7) -> None:
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill(text)
-    page.locator("#id_target_date").fill(_future(days))
-    page.locator("#lisa-jargmine button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    """Give this Matter a next step, through whichever control it offers.
+
+    `set_next_step` decides which that is: `Muuda` beside an open task, or the
+    optional box inside `+ Märge` when there is none, because
+    `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
+    """
+    set_next_step(page, text, _future(days))
     expect(page.locator(".curact__text")).to_have_text(text)
 
 
@@ -80,10 +82,12 @@ def test_the_current_action_loop_from_task_to_result_to_the_next_one(page, base_
     expect(chronology(page)).to_contain_text("Vaatasin versiooni üle")
     expect(chronology(page).locator("a.uxtl__file", has_text="markused.pdf")).to_have_count(1)
 
-    # `+ Järgmine tegevus` is now available, and nothing opened it for anybody.
-    launcher = page.locator("#lisa-jargmine")
-    expect(launcher).to_have_count(1)
-    assert not add_panel_is_open(page, "lisa-jargmine")
+    # And no control offers to set a new step on the completing save's behalf:
+    # `Muuda` is drawn beside a task and there is none, and the launcher has no
+    # chip for it. The next step is a separate deliberate act, through the
+    # optional box inside `+ Märge` (docs/adr/0075 §5, docs/adr/0097 §8.2).
+    expect(page.locator("#lisa-jargmine")).to_have_count(0)
+    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
 
     set_step(page, "Saata arvamus ministeeriumile", 10)
 
@@ -115,13 +119,21 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
 # ---------------------------------------------------------------------------
 
 
+#: One panel per operation this zone offers, families and sub-choices alike.
+#:
+#: `teema-lopeta` is included and is **not** in `LISA TEEMALE`: it renders in
+#: `TEEMA TOIMINGUD`, which is a radio group of its own, so opening it does not
+#: close a capture panel. The tests below that are about one-at-a-time say so
+#: where they need it (docs/adr/0097 §8, §9).
 PANELS = (
-    "lisa-marge",
-    "lisa-kaasamine",
+    "marge-tavaline",
     "marge-tahtaeg",
     "marge-joustumine",
     "marge-toovoit",
-    "teema-lopeta",
+    "lisa-kaasamine",
+    "arvamus-tagasiside",
+    "arvamus-teiste",
+    "lisa-koduleht",
 )
 
 
@@ -129,13 +141,22 @@ def test_opening_one_panel_closes_whichever_was_open(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: üks korraga")
 
-    previous = ""
-    for panel_id in PANELS:
-        open_add_panel(page, panel_id)
-        assert add_panel_is_open(page, panel_id), panel_id
-        if previous:
-            assert not add_panel_is_open(page, previous), previous
-        previous = panel_id
+    # Within one group. `+ Märge`'s four are one group and
+    # `+ Arvamus / tagasiside`'s two are another, and opening one of a family's
+    # choices must not close the family it lives in — which is what the nesting
+    # is for (docs/adr/0097 §8).
+    for group in (
+        ("marge-tavaline", "marge-tahtaeg", "marge-joustumine", "marge-toovoit"),
+        ("arvamus-tagasiside", "arvamus-teiste"),
+        ("lisa-kaasamine", "lisa-koduleht"),
+    ):
+        previous = ""
+        for panel_id in group:
+            open_add_panel(page, panel_id)
+            assert add_panel_is_open(page, panel_id), panel_id
+            if previous:
+                assert not add_panel_is_open(page, previous), previous
+            previous = panel_id
 
 
 def test_each_panel_saves_its_own_record_and_nothing_else(page, base_url, tmp_path):
@@ -145,11 +166,9 @@ def test_each_panel_saves_its_own_record_and_nothing_else(page, base_url, tmp_pa
 
     open_add_panel(page, "marge-toovoit")
     page.locator("#marge-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
-    # The period a win belongs to. Nothing is defaulted, so a save without one
-    # is refused — and this test is about the files, not the refusal
-    # (docs/adr/0079 §10).
-    page.locator("#marge-toovoit label.precision__chip", has_text="Aasta").click()
-    page.locator("#marge-toovoit [name=victory_year]").fill("2026")
+    # The day a win was achieved. The box arrives holding today and this test
+    # is about the files rather than the date, so it takes what is there
+    # (docs/adr/0097 §7).
     page.locator("#marge-toovoit input[type=file]").set_input_files(
         [_pdf(tmp_path, "toend.pdf"), _pdf(tmp_path, "lisatoend.pdf", b"kaks")]
     )
@@ -220,7 +239,10 @@ def test_a_refused_panel_reopens_itself_and_no_other(page, base_url):
 
     expect(page.locator("#marge-toovoit")).to_be_visible()
     expect(page.locator("#marge-toovoit")).to_contain_text("Kirjuta, mis muutus")
-    for other in ("lisa-marge", "lisa-kaasamine", "marge-tahtaeg", "teema-lopeta"):
+    # `lisa-marge` stays open: `Töövõit` is a choice *inside* it, so the family
+    # holding its refused child open is the nesting working (docs/adr/0097 §8).
+    assert add_panel_is_open(page, "lisa-marge")
+    for other in ("marge-tavaline", "lisa-kaasamine", "marge-tahtaeg", "teema-lopeta"):
         assert not add_panel_is_open(page, other), other
 
 
@@ -296,7 +318,11 @@ def test_the_workspace_is_operable_at_every_width(page, base_url, width):
 
     zone = page.locator("#praegune-tegevus")
     expect(zone.locator(".curact__text")).to_be_visible()
-    for control in (".composer__body", ".cx-drop", ".curact__form button[type=submit]"):
+    for control in (
+        ".composer__body",
+        ".curact__form .cx-drop",
+        ".curact__form button[type=submit]",
+    ):
         box = zone.locator(control).bounding_box()
         assert box is not None and box["width"] > 0, control
         assert box["x"] + box["width"] <= width + 1, control

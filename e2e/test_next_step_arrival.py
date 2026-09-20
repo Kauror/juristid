@@ -63,42 +63,52 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
-    cta = page.locator(f'a.quietrow__cta[href="{matter_path}#lisa-jargmine"]')
+    # `#lisa-marge`, not `#lisa-jargmine`. These rows are Matters with **no**
+    # open step, and `PRAEGUNE TEGEVUS` draws its `Muuda` disclosure only
+    # beside a task — so once `+ Järgmine tegevus` left the launcher the old
+    # target did not exist on exactly the rows this block lists, and a browser
+    # answers a missing fragment by scrolling nowhere. The one ordinary way to
+    # set a first step is the optional `Järgmine tegevus` inside `+ Märge`
+    # (docs/adr/0097 §8.2).
+    cta = page.locator(f'a.quietrow__cta[href="{matter_path}#lisa-marge"]')
     assert cta.count(), "Minu asjad does not offer Määra for a Matter with no next step"
     cta.first.click()
     page.wait_for_url(re.compile(re.escape(matter_path)))
 
-    # The field is only visible once the disclosure is open, so waiting for it
-    # is what makes this free of a race with `DOMContentLoaded` — the assertion
-    # below then reports the state rather than the timing.
-    page.locator("#lisa-jargmine [name='text']").wait_for(state="visible")
+    # The field is only visible once the panel is open, so waiting for it is
+    # what makes this free of a race with `load` — the assertion below then
+    # reports the state rather than the timing.
+    page.locator("#lisa-marge [name='next_text']").wait_for(state="visible")
 
-    panel = page.locator("#lisa-jargmine")
+    panel = page.locator("#lisa-marge")
     # Open because somebody asked for it by following a control that says so —
     # not because the page opens it for everybody. `LISA TEEMALE` is a choice
     # until one is made (docs/adr/0075 §2).
     #
     # Asked as "is it showing" rather than "does it carry `open`": the panels
-    # stopped being `<details>` on 2026-09-14, and what the arrival handler now
+    # stopped being `<details>` on 2026-09-14, and what the arrival handler
     # does is choose the radio that reveals this one.
     expect(panel).to_be_visible()
-    assert page.locator("#lisa-jargmine-valik").is_checked()
+    assert page.locator("#lisa-marge-valik").is_checked()
 
-    # And the caret is in the box, so the next thing typed is the next step.
+    # And the caret is in `Mis juhtus?` rather than in the date box above it,
+    # which arrives already filled. Same rule as the `L` shortcut: the
+    # attribute names the box a person is meant to type in.
     assert page.evaluate(
-        "() => { const c = document.getElementById('lisa-jargmine');"
-        " return !!c && c.contains(document.activeElement); }"
-    ), "arrival left focus outside the next-step form"
+        "() => { const c = document.getElementById('lisa-marge');"
+        " return !!c && c.contains(document.activeElement)"
+        " && document.activeElement.hasAttribute('data-composer-focus'); }"
+    ), "arrival left the caret outside the box it promised"
 
 
 def test_an_ordinary_matter_visit_opens_no_panel(page, base_url):
     """The invariant the fix must not cost, in the direction ADR 0075 sets it.
 
-    Same page, no fragment. `LISA TEEMALE` is a *choice* of seven operations
-    and nothing is a form until one is chosen, so an ordinary visit must open
-    none of them — and an arrival by fragment must open exactly the one the
-    link named. What this test guards is that the two agree: the fix must not
-    make either of them special (docs/adr/0075 §2).
+    Same page, no fragment. `LISA TEEMALE` is a *choice* of four families and
+    nothing is a form until one is chosen, so an ordinary visit must open none
+    of them — and an arrival by fragment must open exactly the one the link
+    named. What this test guards is that the two agree: the fix must not make
+    either of them special (docs/adr/0075 §2).
     """
     sign_in(page, base_url, SANDRA)
     matter_url = _matter_on_sandras_desk(page, base_url, "UX-003 pärisvaate kontroll")
@@ -106,10 +116,10 @@ def test_an_ordinary_matter_visit_opens_no_panel(page, base_url):
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
 
-    panel = page.locator("#lisa-jargmine")
+    panel = page.locator("#lisa-marge")
     panel.wait_for(state="attached")
 
     expect(panel).not_to_be_visible()
     # And it opens from its own chip, which is what makes it a choice.
-    page.locator('label[for="lisa-jargmine-valik"]').click()
+    page.locator('label[for="lisa-marge-valik"]').click()
     expect(panel).to_be_visible()

@@ -27,7 +27,7 @@ from e2e.conftest import (
     open_add_panel,
     open_composer,
     open_matter,
-    open_next_action_form,
+    set_next_step,
     sign_in,
 )
 
@@ -196,11 +196,7 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     url = create_matter(page, base_url, "Lõpetatav teema brauserikatsest")
 
     # A next step first, so the closure has something to end.
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill("Esitada arvamus ministeeriumile")
-    page.locator("#id_target_date").fill(_future(5))
-    page.locator("#lisa-jargmine button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    set_next_step(page, "Esitada arvamus ministeeriumile", _future(5))
     expect(page.locator(".curact__text")).to_have_text("Esitada arvamus ministeeriumile")
 
     # The narrative is its own save now: the closure no longer borrows a body
@@ -388,8 +384,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     page.set_viewport_size({"width": 420, "height": 900})
     open_matter(page, base_url, OPEN_TITLE)
 
-    open_next_action_form(page)
-    page.locator('label[for="lisa-marge-valik"]').click()
+    open_add_panel(page, "marge-tavaline")
     drop = page.locator("#lisa-marge .cx-drop")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
@@ -425,8 +420,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     # overlapping nothing.
     page.set_viewport_size({"width": 1440, "height": 900})
     page.wait_for_timeout(120)
-    open_next_action_form(page)
-    page.locator('label[for="lisa-marge-valik"]').click()
+    open_add_panel(page, "marge-tavaline")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 1440px the drop area is absolutely positioned inside a narrow panel "
@@ -546,27 +540,26 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
 def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, base_url):
     """One open step, one control for it.
 
-    On a Matter with no step the launcher offers `+ Järgmine tegevus`; once one
-    exists that chip is gone and `Muuda` beside the task is the way to change
-    it, prefilled with what is there. Two controls both offering to set "the
-    next action" is how a lawyer ends up believing they have two
-    (docs/adr/0075 §10).
+    There is no launcher chip for the next step at all since docs/adr/0097
+    §8.2: two controls both offering to set «the next action» is how a lawyer
+    ends up believing they have two, so the *only* ordinary way to set the
+    first one is the optional box inside `+ Märge`, and once a step exists
+    `Muuda` beside the task is the way to change it, prefilled with what is
+    there (docs/adr/0075 §10).
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Fookuse brauserikatse")
 
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
     expect(page.get_by_role("button", name="Määra allpool ↓")).to_have_count(0)
-    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(1)
+    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
+    # And no editor either, because there is no task for one to sit beside.
+    expect(page.locator("#lisa-jargmine")).to_have_count(0)
 
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill("Koostada arvamuse mustand")
-    page.locator("#id_target_date").fill(_future(4))
-    page.locator("#lisa-jargmine button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    set_next_step(page, "Koostada arvamuse mustand", _future(4))
 
-    # Now there is a step. The launcher chip is gone and `Muuda` is beside the
-    # task, carrying what is already recorded.
+    # Now there is a step. `Muuda` is beside the task, carrying what is already
+    # recorded, and the launcher still offers no second way to set one.
     expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
     # A native `<summary>`, not a button: the disclosure has to work with
     # scripting off (brief §33).

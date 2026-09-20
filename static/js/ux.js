@@ -103,16 +103,25 @@
    * silently undid the focus this sets: measured in Chromium, the composer
    * opened correctly and the caret was on the body. Running last is the only
    * order in which the focus survives. */
-  var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine"];
+  /* The three ids a link from another page may name, and every one of them is
+     an element some render of the Teema page really has.
+
+     `lisa-marge` joined them on 2026-09-20 with the `Määra` link on Minu asjad.
+     That link is offered on Matters with **no** open step, and `#lisa-jargmine`
+     is drawn beside a task and nowhere else since `+ Järgmine tegevus` left the
+     launcher — so on exactly the rows that block lists, the old target did not
+     exist and arrival did nothing at all: no reveal, no scroll, no caret. The
+     one ordinary way to set a first step is the optional `Järgmine tegevus`
+     inside `+ Märge` (docs/adr/0097 §8.2). */
+  var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine", "lisa-marge"];
 
   /* Open whatever kind of disclosure this destination is, and say whether it
    * was one.
    *
-   * `#lisa-jargmine` is **two different elements** depending on the Matter, and
-   * a link from another page cannot know which it will land on: with a task
-   * open it is `Muuda`, a lone `<details>` in PRAEGUNE TEGEVUS; with none it is
-   * the `+ Järgmine tegevus` panel in LISA TEEMALE, which since 2026-09-14 is a
-   * plain element revealed by its own radio. Both have to be opened before the
+   * Two shapes, because the destinations are two kinds of control:
+   * `#lisa-jargmine` is `Muuda` in PRAEGUNE TEGEVUS, a lone `<details>`;
+   * `#lisa-marge` is a `LISA TEEMALE` panel, which since 2026-09-14 is a plain
+   * element revealed by its own radio. Both have to be opened before the
    * scroll, or the browser centres a box of the wrong height and the field
    * inside it is not focusable at all. */
   function revealDisclosure(target) {
@@ -153,9 +162,16 @@
       /* Opened before scrolling, so the box is its real height when it is
          centred, and so the field inside it is focusable at all. */
       target.scrollIntoView({ block: "center", behavior: "auto" });
-      /* The same query app.js uses for `[data-focus]`. Not `input` in general:
-         every form here opens with a hidden CSRF token. */
-      var box = target.querySelector("textarea, select, input:not([type=hidden])");
+      /* `[data-composer-focus]` first, then the same query app.js uses for
+         `[data-focus]`. Not `input` in general: every form here opens with a
+         hidden CSRF token.
+
+         The attribute matters on `+ Märge`, whose first control is a date box
+         that arrives already filled — the caret belongs in `Mis juhtus?`, which
+         is where the `L` shortcut puts it too. */
+      var box =
+        target.querySelector("[data-composer-focus]") ||
+        target.querySelector("textarea, select, input:not([type=hidden])");
       if (box) {
         box.focus();
       }
