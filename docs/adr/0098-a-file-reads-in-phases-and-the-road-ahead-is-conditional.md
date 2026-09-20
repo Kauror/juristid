@@ -23,7 +23,7 @@ MENETLUSE KULG      Praegu · Ees võib olla · Kirjas olevad kuupäevad
 TEEMA KÄIK          VTK · Kooskõlastusring · Valitsuses · Riigikogus · …
 ```
 
-Eight decisions:
+Nine decisions:
 
 1. **One phase vocabulary, used by the rail and by the history.**
 2. **A phase is a presentation concept and never a `Hetkeseis`.**
@@ -33,6 +33,7 @@ Eight decisions:
 6. **Eight instrument-aware patterns, none of which invents an obligation.**
 7. **The road ahead is a reminder, and it writes nothing.**
 8. **The dated strip moves into `Menetluse kulg` and keeps every decision.**
+9. **A phase collapses, and expanded is the state the server sends.**
 
 **Two additive migrations, no backfill.**
 `matters/0033_development_process_phase` adds one optional `CharField` with a
@@ -292,7 +293,28 @@ claim «ülevõtmise arutelu». `Oluline tähtaeg` stays free text by design and
 is not the start of a taxonomy. Nothing is backfilled: a row written before the
 column says `OTHER` because nobody has said otherwise.
 
-## 10 — Permission, and what a heading may not leak
+## 10 — A phase collapses, and expanded is what the server sends
+
+A three-year file is long, and the question is frequently what happened in the
+Riigikogu while the answer sits under nine months of consultation round. So each
+phase heading carries a collapse control.
+
+**It hides the rows between one heading and the next**, because the headings are
+siblings of the rows rather than wrappers around them — §Alternatives says why.
+A closed section keeps its heading at full legibility: what collapses is the
+content, not the answer to «which phase is this». «Näita varasemaid» is never
+hidden, because it is how the next page is asked for.
+
+**Expanded is the state the server sends, and the control arrives `hidden`.**
+Nothing about what a reader sees on arrival depends on script: every row is on
+the page and every phase is open, and `static/js/ux.js` then shows a button that
+works. A button that did nothing without JavaScript would be worse than no
+button. `aria-expanded` carries the state, the caret is drawn rather than typed
+so it is not read out beside the button's own name, and the control is an
+ordinary element in the tab order — the standing rule that every keyboard move
+has a visible control that does the same thing.
+
+## 11 — Permission, and what a heading may not leak
 
 Every source is scoped **before** phase selection, grouping, counting, sorting
 and ordering — `phase_history.build` reads the list `matter_timeline` has already
@@ -334,12 +356,13 @@ begins `Kooskõlastusring`, and both are transitions.
 disagrees.** Rejected — see §4. It would file a 2026 opinion under a 2025 round
 on exactly the neglected files where a reader is least able to notice.
 
-**`<details>` per phase section.** Rejected. «Näita varasemaid» swaps its own
-button for the next batch *in place*, so a section longer than one page would
-have to be opened on one page and closed on the next, and the spine down the left
-of the list would break into one element per section. The headings are siblings
-of the rows, and a section that runs past the fold carries its own heading again
-marked «jätkub».
+**`<details>` per phase section.** Rejected as the *mechanism*, not as the
+feature — see §11. «Näita varasemaid» swaps its own button for the next batch
+*in place*, so a section longer than one page would have to be opened on one page
+and closed on the next, and the spine down the left of the list would break into
+one element per section. The headings are siblings of the rows, a section that
+runs past the fold carries its own heading again marked «jätkub», and collapsing
+hides the rows between one heading and the next.
 
 **Separate government-regulation and minister-regulation patterns.** Rejected
 again, on 0092 §14's reasoning unchanged: the data does not say whose.

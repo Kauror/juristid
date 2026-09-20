@@ -868,3 +868,82 @@ def test_the_grouped_history_never_overflows_sideways(page, base_url, width):
         ".map(el => Math.round(el.getBoundingClientRect().left))"
     )
     assert len(set(lefts)) <= 1, lefts
+
+
+def test_an_older_phase_collapses_and_reopens_from_the_keyboard(page, base_url):
+    """§6 and §14. A three-year file's older rounds get out of the way.
+
+    The control is a real button in the tab order, `aria-expanded` says the
+    state, and the heading stays at full legibility when the section is shut —
+    what collapses is the content, not the answer to «which phase is this».
+    """
+    sign_in(page, base_url, SANDRA)
+    _matter_with_instrument(page, base_url, "VTK", stage=None)
+    _record_phase_development(
+        page, title="VTK saadeti kooskõlastusringile", occurred_on="10.02.2025", phase="VTK"
+    )
+    _record_phase_development(
+        page,
+        title="Eelnõu saadeti kooskõlastusringile",
+        occurred_on="01.09.2025",
+        phase="Kooskõlastusring",
+    )
+
+    older = history(page).locator("h3.uxtl__phase").filter(has_text="VTK")
+    toggle = older.locator(".uxtl__phasetoggle")
+    row = history(page).locator("article.uxtl__item").filter(has_text="VTK saadeti")
+
+    # The server sent it open, and the script showed a control that works.
+    expect(toggle).to_be_visible()
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    expect(row).to_be_visible()
+
+    # Shut from the keyboard: focus it and press Enter.
+    toggle.focus()
+    page.keyboard.press("Enter")
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    expect(row).to_be_hidden()
+    # The heading itself stays — a closed section still says which phase it is.
+    expect(older).to_be_visible()
+    expect(older).to_contain_text("VTK")
+    # And the phase above it is untouched.
+    expect(
+        history(page).locator("article.uxtl__item").filter(has_text="Eelnõu saadeti")
+    ).to_be_visible()
+
+    page.keyboard.press("Enter")
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    expect(row).to_be_visible()
+
+
+def test_every_phase_reads_with_no_script_at_all(page, base_url, browser):
+    """The history is complete before `ux.js` runs, and the control admits it.
+
+    A button that did nothing without JavaScript would be worse than no button,
+    so the server sends it `hidden` and the script shows it. What the server
+    sends is every row, expanded.
+    """
+    sign_in(page, base_url, SANDRA)
+    url = _matter_with_instrument(page, base_url, "VTK", stage=None)
+    _record_phase_development(
+        page, title="VTK saadeti kooskõlastusringile", occurred_on="10.02.2025", phase="VTK"
+    )
+
+    context = browser.new_context(java_script_enabled=False)
+    try:
+        quiet = context.new_page()
+        # The dev sign-in is an ordinary form post, so it works without script.
+        quiet.goto(f"{base_url}/konto/arendus-sisselogimine/")
+        quiet.get_by_label(SANDRA.display_name, exact=False).check()
+        quiet.get_by_role("button", name="Logi sisse").click()
+        quiet.goto(url)
+
+        assert quiet.locator("#ajalugu-loend article.uxtl__item").count() >= 1
+        expect(
+            quiet.locator("#ajalugu-loend article.uxtl__item").filter(has_text="VTK saadeti")
+        ).to_be_visible()
+        expect(quiet.locator("#ajalugu-loend h3.uxtl__phase").first).to_be_visible()
+        # The control is there in the markup and deliberately not shown.
+        expect(quiet.locator(".uxtl__phasetoggle").first).to_be_hidden()
+    finally:
+        context.close()

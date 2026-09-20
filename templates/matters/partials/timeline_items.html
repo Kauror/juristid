@@ -72,6 +72,23 @@ record, not professional chronology (master specification 16.5).
         {% endcomment %}
         <span class="uxtl__phasemore">jätkub</span>
       {% endif %}
+      {% comment %}
+        Collapse this phase — for the three-year file, where the question is
+        what happened in the Riigikogu and the answer is under nine months of
+        consultation round.
+
+        **Rendered `hidden`, and shown by the script that makes it work.** A
+        button that did nothing without JavaScript would be worse than no button:
+        the whole history reads with script off, because every row is on the page
+        and expanded is the state the server sends. `aria-expanded` is the state,
+        and there is nothing here that is not reachable from the keyboard — it
+        is an ordinary button element in the tab order (static/js/ux.js).
+      {% endcomment %}
+      <button type="button" class="uxtl__phasetoggle" hidden
+              aria-expanded="true">
+        <span class="uxtl__phasecaret" aria-hidden="true"></span>
+        <span class="visually-hidden">Ava või sulge etapp {{ item.phase.label }}</span>
+      </button>
     </h3>
     {% if item.phase.is_unplaced %}
       {% comment %}

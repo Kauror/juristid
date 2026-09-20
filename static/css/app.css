@@ -11557,6 +11557,58 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
+/* The collapse control, at the end of its heading.
+ *
+ * Quiet, small, and a real `<button>` — every keyboard move in this repository
+ * has a visible control that does the same thing, and this is that control.
+ * It arrives `hidden` from the server and `static/js/ux.js` shows it, so a page
+ * with script off has no dead affordance and every row still reads. */
+#teema-vaade-wrap .uxtl__phasetoggle {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+#teema-vaade-wrap .uxtl__phasetoggle:hover {
+  color: var(--text-body);
+  background: var(--surface-raised);
+}
+
+#teema-vaade-wrap .uxtl__phasetoggle:focus-visible {
+  outline: 2px solid var(--accent-link);
+  outline-offset: 2px;
+}
+
+/* The caret, drawn rather than typed: a character here would be read out by a
+ * screen reader beside the button's own name. It points down on an open
+ * section and right on a closed one, which is the direction every other
+ * disclosure in the application points. */
+#teema-vaade-wrap .uxtl__phasecaret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentcolor;
+  transition: transform 120ms ease;
+}
+
+#teema-vaade-wrap .uxtl__phase--collapsed .uxtl__phasecaret {
+  transform: rotate(-90deg);
+}
+
+/* A closed section keeps its heading and loses its rows. The heading stays
+ * exactly as legible as an open one's: what is collapsed is the content, not
+ * the answer to «which phase is this». */
+#teema-vaade-wrap .uxtl__phase--collapsed {
+  margin-bottom: 0;
+}
+
 #teema-vaade-wrap .uxtl__phasenote {
   grid-column: 1 / -1;
   margin: 0 0 var(--spacing-2);
