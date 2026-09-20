@@ -1152,20 +1152,41 @@ def test_matter_opinions(page, base_url):
 def test_matter_add_to_matter_zone(page, base_url):
     """`LISA TEEMALE` with one operation open.
 
-    The one state a screenshot is genuinely better at than an assertion: a chip
-    row of seven choices with exactly one of them expanded into a form beneath
-    it. An open panel claims the full row while the chips keep their line, and
-    «the layout does not break» is exactly the claim a baseline can hold and an
-    assertion cannot (docs/adr/0075 §2).
+    The one state a screenshot is genuinely better at than an assertion: a row
+    of four choices with one of them expanded, and the family's own second
+    question inside it. An open panel claims the full row while the chips keep
+    their line, and «the layout does not break» is exactly the claim a baseline
+    can hold and an assertion cannot (docs/adr/0075 §2, docs/adr/0097 §8).
 
-    **One open, not seven.** Opening one closes the others, which is the
-    behaviour this zone is defined by — a capture of seven expanded panels would
-    photograph a state the page does not have.
+    **One open, not four.** Opening one closes the others, which is the
+    behaviour this zone is defined by — a capture of four expanded panels would
+    photograph a state the page does not have. The sub-choice makes the nesting
+    legible: `Oluline tähtaeg` is chosen inside `+ Märge`, so the capture holds
+    both levels at once.
+
+    **`#lisa-teemale`, not `.addzone`.** `TEEMA TOIMINGUD` carries that class
+    too since docs/adr/0097 §9, and a selector matching two elements is a
+    strict-mode violation rather than a wider photograph — the id is what names
+    this section alone.
     """
     signed_in_matter(page, base_url, OPEN_TITLE)
     open_add_panel(page, "marge-tahtaeg")
     _at_rest(page)
-    compare("teema-lisa", capture(page, "teema-lisa", clip_to=".addzone"))
+    compare("teema-lisa", capture(page, "teema-lisa", clip_to="#lisa-teemale"))
+
+
+def test_matter_operations_zone(page, base_url):
+    """`TEEMA TOIMINGUD` — what happens *to* the Matter, apart from the capture row.
+
+    A baseline because the claim is visual and is the whole point of the
+    section: `Lõpeta teema` and `Kustuta teema` have to read as a different
+    kind of thing from the four chips above them, and the destructive one has to
+    read as the most consequential control on the page without shouting at
+    somebody who is not about to press it (docs/adr/0097 §9).
+    """
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    _at_rest(page)
+    compare("teema-toimingud", capture(page, "teema-toimingud", clip_to="#teema-toimingud"))
 
 
 def test_matter_current_action_zone(page, base_url):
