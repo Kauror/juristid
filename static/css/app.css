@@ -11342,6 +11342,18 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin: 0;
 }
 
+/* One column on a phone. The 160px date box leaves the phase name about 119px
+ * at 375, which fits and reads badly — `Kooskõlastusring` on two lines beside a
+ * box is a row a thumb has to parse. Stacked, each row is a name and then its
+ * date, which is the order the question is asked in anyway. */
+@media (max-width: 520px) {
+  #teema-vaade-wrap .kulgform__row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 2px;
+  }
+}
+
 /* -- Phases on the strip ---------------------------------------------------
  *
  * `Menetluse kulg` draws phases and dated points in one row, so the phases take

@@ -91,16 +91,22 @@ recorded, not claims about a procedure.
             <span class="tl-step__date">{{ step.display_date }}</span>
           {% endif %}
           {% comment %}
-            The canonical `Hetkeseis`, on the current phase and nowhere else.
+            The canonical `Hetkeseis`, on the current phase and **only where it
+            adds a word the node has not already said**.
 
-            The one state still written, because it is the one thing the drawing
-            cannot say: a solid dot could be the phase the file is on or a phase
-            it has passed, and the node is deliberately broader than a stage —
-            `Jõustumine` alone cannot tell «ootel» from «jõustunud»
-            (app/matters/legal_process.py `ProcessNode`).
+            A node is deliberately broader than a stage: `Jõustumine` holds both
+            «ootel» and «jõustunud», and a reader cannot tell those apart from
+            the node's own name. So the stage rides on it — but `Riigikogus`
+            under a node called `Riigikogus` states one thing twice and tells a
+            reader nothing, which is exactly the noise this round removes.
+            `ProcessNode.stage_label` is already empty in that case.
+
+            Which node is *current* is carried by `aria-current="step"`, the
+            filled and ringed dot and the heavier name — three signals, none of
+            them colour alone (app/matters/legal_process.py `ProcessNode`).
           {% endcomment %}
-          {% if step.state == "current" %}
-            <span class="tl-step__stage">{{ step.stage_label|default:step.label }}</span>
+          {% if step.stage_label %}
+            <span class="tl-step__stage">{{ step.stage_label }}</span>
           {% endif %}
         </span>
       {% endfor %}
