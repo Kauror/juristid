@@ -868,16 +868,28 @@ def test_the_composer_starts_as_one_row(page, base_url):
     field = page.locator("#id_marge_title")
     expect(field).to_be_visible()
     working = field.bounding_box()["height"]
-    # **One line, and that is the change.** The box measured three rows of an
-    # Estonian sentence while `+ Märge` wrote an `Entry`, whose `body` is prose.
-    # It writes a `MatterProceduralDevelopment` now, and `title` is a stated
-    # line rather than a paragraph — the same one-line control `Muuda` has
-    # always offered for the same column, which is the point: one field, one
-    # shape, on both surfaces (docs/adr/0097 §6).
+    # **One line, and the same line as everything beside it.**
     #
-    # Still a real target rather than a hairline: a control under 32px is one
-    # somebody misses.
-    assert 32 <= working <= 52, f"the opened box gives {working}px to write in"
+    # The box measured three rows of an Estonian sentence while `+ Märge` wrote
+    # an `Entry`, whose `body` is prose. It writes a
+    # `MatterProceduralDevelopment` now and `title` is a stated line — the same
+    # one-line control `Muuda` has always drawn for the same column, which is
+    # the point: one field, one shape, on both surfaces (docs/adr/0097 §6).
+    #
+    # Asserted against the date box in the same panel rather than against a
+    # number. A number here would be this file's own opinion about a shared
+    # `field__input--compact`, and it would fail on the day somebody changes
+    # the type scale for a reason that has nothing to do with this claim. What
+    # must not happen is this one control drifting away from the row it sits
+    # in — either by growing back into a paragraph or by shrinking below its
+    # neighbours.
+    beside = page.locator("#marge-tavaline [name=occurred_on]").bounding_box()["height"]
+    assert abs(working - beside) <= 2, (
+        f"the sentence box is {working}px beside a {beside}px date box"
+    )
+    # And it is one line, not a paragraph: two rows of this text would be past
+    # 40px before any padding.
+    assert working <= 40, f"the opened box gives {working}px to write in"
 
     # And it does not reflow when focus moves to a control beside it. This is
     # the claim the number above serves: a chip taking the focus must not move
