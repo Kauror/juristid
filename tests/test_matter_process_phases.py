@@ -1331,3 +1331,112 @@ def test_a_crafted_phase_outside_the_vocabulary_stores_nothing(specialist):
 
     assert development.pk is not None
     assert development.process_phase == ""
+
+
+# ---------------------------------------------------------------------------
+# §6 and §12 — nothing is lost, and a phase correction corrects one thing
+# ---------------------------------------------------------------------------
+
+
+def test_grouping_reorders_the_history_and_never_loses_a_row(specialist, organisation):
+    """§6. Every kind of chronology content survives being grouped.
+
+    Grouping lifts the flat list one level; it adds nothing, drops nothing and
+    de-duplicates nothing. A grouping that lost a row would be a history that
+    lost a fact — so the grouped page is asserted to be a **permutation** of the
+    ungrouped one, over a Matter carrying one of everything the chronology draws.
+    """
+    from app.matters.workspace import add_matter_engagement, add_matter_external_position
+
+    matter = _matter(specialist, instruments=("seadus",))
+    _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
+    _opinion(matter, specialist, organisation, date(2026, 2, 14))
+    add_matter_engagement(
+        matter=matter,
+        author=specialist,
+        audience="Liikmed",
+        occurred_on=date(2026, 1, 20),
+    )
+    add_matter_external_position(
+        matter=matter,
+        author=specialist,
+        organisation=organisation,
+        summary="Ministeerium ei nõustu",
+        stated_on=date(2026, 2, 1),
+    )
+    gone = timezone.localdate() - timedelta(days=5)
+    add_important_date(
+        matter=matter, title="Komisjoni istung", date_value=gone, period_end=gone, actor=specialist
+    )
+    add_effective_date(
+        matter=matter, date_value=gone, period_end=gone, description="Põhiosa", actor=specialist
+    )
+
+    grouped, _more = matter_timeline(matter=matter, user=specialist, limit=200)
+
+    # The same Matter with its one explicit phase cleared, which is the state
+    # every file in the register is in on the day this ships — and therefore the
+    # flat list this has to be a permutation of. The same Matter rather than a
+    # second one, because `sort_key` is the record's own primary key.
+    matter.procedural_developments.update(process_phase="")
+    ungrouped, _more = matter_timeline(matter=matter, user=specialist, limit=200)
+
+    assert grouped.history.grouped is True
+    assert ungrouped.history.grouped is False
+
+    def identity(page):
+        return sorted((item.item_type, item.sort_key) for item in page)
+
+    assert identity(grouped) == identity(ungrouped)
+    assert len(grouped) == len(ungrouped)
+
+
+def test_correcting_a_phase_changes_the_phase_and_nothing_else(specialist, organisation):
+    """§12. A correction may not silently move anything it was not asked to.
+
+    Not the Matter's `Hetkeseis`, not the record's own business date, not the
+    opinion that was sent, not the open step, and not the evidence attached to
+    the row.
+    """
+    from app.matters.services import correct_procedural_development
+    from app.workflow.models import NextAction
+
+    matter = _matter(specialist, instruments=("vtk", "seadus"))
+    step = _step(
+        matter,
+        specialist,
+        "VTK saadeti kooskõlastusringile",
+        date(2025, 2, 10),
+        PHASE_VTK,
+        stage="consultation",
+    )
+    opinion = _opinion(matter, specialist, organisation, date(2025, 3, 5))
+    matter.refresh_from_db()
+    before = (matter.stage_id, matter.disposition, matter.closed_at)
+    actions = list(NextAction.objects.filter(matter=matter).values_list("pk", "status"))
+
+    corrected = correct_procedural_development(
+        development=step,
+        title=step.title,
+        occurred_on=step.occurred_on,
+        occurred_on_precision=step.occurred_on_precision,
+        note=step.note,
+        process_phase=PHASE_KOOSKOLASTUS,
+        actor=specialist,
+        expected_revision=step.revision_token,
+    )
+
+    assert corrected.process_phase == PHASE_KOOSKOLASTUS
+    # The record's own business date is untouched …
+    assert corrected.occurred_on == date(2025, 2, 10)
+    # … the Matter is where it was …
+    matter.refresh_from_db()
+    assert (matter.stage_id, matter.disposition, matter.closed_at) == before
+    # … the opinion was not resent, withdrawn or moved …
+    opinion.refresh_from_db()
+    assert opinion.sent_at is not None
+    # … and no step was created, completed or superseded.
+    assert list(NextAction.objects.filter(matter=matter).values_list("pk", "status")) == actions
+
+    # And the history moved, which is the one thing the correction was for.
+    assert _phase_of(matter, specialist, step) == PHASE_KOOSKOLASTUS
