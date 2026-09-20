@@ -256,6 +256,42 @@ def test_a_milestone_is_slotted_by_its_date_among_the_phases(specialist):
     assert labels.index("Kooskõlastusring") < labels.index("Alustatud")
 
 
+def test_dated_points_do_not_all_bunch_ahead_of_an_undated_pattern(specialist):
+    """The ordinary file dates **no** phase, and that is what broke the order.
+
+    Reconciling the two orderings by date alone put every dated point ahead of
+    every phase, because an undated phase compares as earlier than anything: the
+    rail opened with commencement in 2027 and reached `Algus` five columns later.
+    Found by looking at the rendering, not by an assertion — the phases were in
+    the pattern's order and the dates were in date order, each half correct.
+
+    So an undated phase constrains nothing, and the phase the file is *on* is
+    what a dated point is placed against: what has happened reads up to it, what
+    is expected reads past it.
+    """
+    matter = _matter(
+        specialist,
+        instruments=("seadus",),
+        response_deadline=timezone.localdate() + timedelta(days=400),
+    )
+    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+
+    steps = _rail(matter, specialist)
+    labels = [step.label for step in steps]
+    current = next(index for index, step in enumerate(steps) if step.state == "current")
+
+    # Nothing dated in the past is drawn before the first phase …
+    assert labels.index("Alustatud") > labels.index("Algus")
+    assert labels.index("Alustatud") <= current + 1
+    # … and what is still expected is past the phase the file is on, not in
+    # front of the whole pattern.
+    assert labels.index("Arvamuse tähtaeg") > current
+    assert labels[-1] == "Arvamuse tähtaeg"
+    # The pattern keeps its own order throughout.
+    phases = [step.label for step in steps if step.kind == KIND_PHASE]
+    assert phases == ["Algus", "Kooskõlastusring", "Valitsuses", "Riigikogus", "Jõustumine"]
+
+
 # ---------------------------------------------------------------------------
 # F + G — the editor
 # ---------------------------------------------------------------------------

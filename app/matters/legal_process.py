@@ -84,6 +84,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from django.utils import timezone
+
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
@@ -627,12 +629,22 @@ def matter_rail(
     scoped — handed in rather than read again, so the seven dated points stay
     defined in exactly one module.
 
-    **Ordering is the pattern's, with each milestone slotted by its date.** A
-    phase list has an order that is not chronological (a phase with no date sits
-    where the procedure puts it), and a milestone has a date and no place in a
-    pattern. So the phases hold the frame, and each milestone is inserted after
-    the last *dated* phase it is not earlier than. Deterministic, and it reads
-    the way a lawyer reads the file.
+    **The phases hold the frame and the current node divides it.** A phase list
+    has an order that is not chronological — a phase with no date sits where the
+    procedure puts it — and a dated point has a date and no place in a pattern.
+    Reconciling them by date alone does not work, because *the ordinary file
+    dates none of its phases*: every dated point then sorts ahead of every
+    phase, and a rail opens with commencement in 2027 and reaches `Algus` five
+    columns later.
+
+    So the one place both kinds agree on does the work: the phase the file is on
+    now. A dated point that has **already happened** is looked for among the
+    phases up to and including it, and one still **ahead** among the phases past
+    it — the same reading of today the strip's own `--tl-reach` grammar makes
+    (docs/adr/0074 §12.2). Inside that window a point still sorts against any
+    phase that *is* dated, so a recorded `Kooskõlastusring` in January and a file
+    opened in September read in the order they happened rather than in the order
+    the pattern lists them.
 
     **Hidden steps are gone from the result, not marked.** A row a person removed
     from this file's rail is not a row drawn in grey — that would be the clutter
@@ -675,8 +687,8 @@ def matter_rail(
                 )
             )
 
-    # The dated points, slotted into the frame the phases hold.
-    for milestone in milestones:
+    today = timezone.localdate()
+    for milestone in sorted(milestones, key=lambda one: one.sort_on):
         step = RailStep(
             key=f"milestone:{milestone.label}:{milestone.sort_on.isoformat()}",
             label=milestone.label,
@@ -688,15 +700,39 @@ def matter_rail(
             reach=milestone.reach,
             detail=milestone.detail,
         )
-        position = len(steps)
-        for index in range(len(steps) - 1, -1, -1):
-            placed = steps[index]
-            if placed.sort_on is not None and placed.sort_on <= milestone.sort_on:
-                position = index + 1
-                break
-            position = index
-        steps.insert(position, step)
+        # Recomputed rather than carried, because placing a dated point that has
+        # already happened moves the current node one to the right.
+        current = next(
+            (index for index, placed in enumerate(steps) if placed.state == STATE_CURRENT),
+            len(steps),
+        )
+        if milestone.sort_on <= today:
+            window, default = (0, min(current + 1, len(steps))), current
+        else:
+            window, default = (current, len(steps)), len(steps)
+        steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
     return steps
+
+
+def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], default: int) -> int:
+    """Where a dated point sits among steps that mostly have no date.
+
+    An undated step does not constrain it: a phase with no date makes no claim
+    about what preceded it, and on the ordinary file *no phase has one*. So the
+    scan runs backwards over the dated steps in the window only — after the last
+    one that is not later, before the first one that is — and a window holding no
+    dated step at all falls back to ``default``, which is the current phase.
+    """
+    low, high = window
+    position = default
+    for index in range(high - 1, low - 1, -1):
+        placed = steps[index]
+        if placed.sort_on is None:
+            continue
+        if placed.sort_on <= when:
+            return index + 1
+        position = index
+    return position
 
 
 #: Kept out of the query above on purpose: this module reads and never filters a

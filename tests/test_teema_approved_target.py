@@ -356,11 +356,13 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     zone's *shape* — a choice of operations, none of them open — and it is
     unchanged by the number of them."""
     body = _detail(signed_in, normal_matter)
-    # Sliced on the section that follows the launcher. `#teema-toimingud` used
-    # to be it; that section is gone and both of its controls moved — `Lõpeta
-    # teema` back into this row, `Kustuta` up beside `Muuda teemat` — so the
-    # launcher now runs to `Menetluse kulg` (docs/adr/0097 §9, amended).
-    panels = body[body.index('id="lisa-teemale"') : body.index('id="menetluse-kulg-heading"')]
+    # The launcher's own section, opening tag to closing tag. It sliced on
+    # `#teema-toimingud` while that section existed; it is gone and both of its
+    # controls moved — `Lõpeta teema` back into this row, `Kustuta` up beside
+    # `Muuda teemat` — so the zone is bounded by the launcher itself rather
+    # than by whatever renders next (docs/adr/0099 §5).
+    start = body.index('id="lisa-teemale"')
+    panels = body[start : body.index("</section>", start)]
 
     expected = [
         "+ Märge",

@@ -167,19 +167,21 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
         )
     expect(page.locator("#marge-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
-    # `Lõpeta teema` is under `TEEMA TOIMINGUD` now, in a radio group of its
-    # own — so opening it does **not** close a capture panel, and that is the
-    # point of the separation rather than a regression in it: finishing a file
-    # and writing down what happened are not alternatives to each other
-    # (docs/adr/0097 §9).
+    # `Lõpeta teema` is a peer chip in the launcher again and shares its radio
+    # group, so opening it closes whatever was open — one form at a time across
+    # the whole row, closure included. It had a group of its own while it was a
+    # section of its own, which let it stand open beside a capture panel; back
+    # in the row that would mean two open forms in one choice
+    # (docs/adr/0099 §5, amending docs/adr/0097 §9).
     open_add_panel(page, "teema-lopeta")
     expect(page.locator("#teema-lopeta")).to_be_visible()
     expect(page.locator("#teema-lopeta [name=closing_words]")).to_be_visible()
-    expect(page.locator("#marge-tahtaeg")).to_be_visible()
+    expect(page.locator("#marge-tahtaeg")).not_to_be_visible()
 
-    # Inside the launcher the rule still holds: one open form at a time.
+    # And the rule holds in the other direction too.
     open_add_panel(page, "lisa-kaasamine")
     expect(page.locator("#lisa-kaasamine")).to_be_visible()
+    expect(page.locator("#teema-lopeta")).not_to_be_visible()
     expect(page.locator("#lisa-marge")).not_to_be_visible()
     expect(page.locator("#marge-tahtaeg")).not_to_be_visible()
 

@@ -64,10 +64,23 @@ is deleted and `process_timeline.process_steps` is untouched — it is still the
 one place the seven dated points are read from, now handed to `matter_rail`
 rather than rendered directly.
 
-**Ordering** is the pattern's, with each milestone inserted after the last dated
-phase it is not earlier than. A phase list has an order that is not
-chronological; a date has no place in a pattern. This reconciles them
-deterministically.
+**Ordering** is the pattern's, and the phase the file is *on* is what a dated
+point is placed against. A phase list has an order that is not chronological; a
+date has no place in a pattern.
+
+The first attempt reconciled them by date alone — each milestone after the last
+dated phase it is not earlier than — and it was wrong for the ordinary file,
+which dates **no** phase at all: an undated phase then compares as earlier than
+anything, so every dated point sorted to the head and the rail opened with
+commencement in 2027 and reached `Algus` five columns later. Each half was
+correct and the result was not, which is why it took a rendering to see.
+
+The rule now: an undated phase constrains nothing, and the current node divides
+the row. What has already happened is placed among the phases up to and
+including it; what is still expected, among the phases past it. Inside that
+window a point still sorts against any phase that *is* dated, so a recorded
+`Kooskõlastusring` in January and a file opened in September read in the order
+they happened rather than in the order the pattern lists them.
 
 ## 2 — The words go, and nothing becomes colour-only
 
