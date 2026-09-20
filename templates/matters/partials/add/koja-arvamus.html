@@ -1,0 +1,140 @@
+  {% comment %}
+    `+ Koja arvamus` — the Chamber's own opinion went out, recorded where the
+    work is.
+
+    The step the whole file is about, and until now the one a lawyer could not
+    take from this page: Koda's opinion is a `Submission`, and the surface that
+    manages submissions is the `Dokumendid` tab, behind a collapsed block, in
+    two acts — upload the file, then find it again in a select and register the
+    send. A lawyer working the Teema saw no sign of it (lawyer feedback 13,
+    docs/adr/0091 §6).
+
+    **One panel, one save, and the same service underneath.** This posts to
+    `register_sent_opinion_on_open_matter`, which is exactly what the
+    `Dokumendid` form posts to, so there is no second `KodaOpinion` record, no
+    second statistic and no second withdrawal path. The `Dokumendid` surface
+    keeps everything it has — drafts, `+ Uus arvamus`, `Võta tagasi`, the
+    channel and reference fields — and stays the place an opinion is *managed*
+    (docs/adr/0061).
+
+    **Four questions, and each is a fact a send really has.** What went out,
+    when, to whom, and — optionally — what to call it. Uploading a file here is
+    not what asserts the send: pressing the button is, which is why the bytes
+    and the `Submission` land in one transaction rather than as one act
+    (docs/adr/0091 §6.2).
+
+    **`Adressaadid` is not defaulted from `Saatja`.** An opinion on the first
+    draft goes to the ministry; one at second reading goes to a Riigikogu
+    committee; one on a revised text may go to a third body. Assuming the
+    original sender would put a false recipient on the canonical outbound
+    record of a professional letter (docs/adr/0091 §6.3).
+
+    **Several per Matter is the ordinary case.** An opinion on the VTK, one on
+    the draft, one during Riigikogu proceedings and one on the revised text are
+    four sends and four Submissions. Nothing here is unique, nothing supersedes
+    an earlier opinion, and no earlier file is overwritten (docs/adr/0091 §6.4).
+  {% endcomment %}
+      {% if open_choice == "arvamus-koja" and workspace_error %}
+        <p class="formerror" role="alert">{{ workspace_error }}</p>
+      {% endif %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_koda_opinion' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        {% comment %}
+          What went out and when, paired on one row: they are the two halves of
+          one fact and a lawyer answers them together.
+
+          The date opens on today, visibly, because an opinion is written up on
+          the day it goes out far more often than not — and a cleared box is a
+          refusal naming the missing day rather than a stamp. `Registreeri
+          saatmine` learned that the hard way: a blank meant `now`, and the
+          outbound register reported `Arvamus välja <today>` about letters
+          nobody had dated (R2-01).
+        {% endcomment %}
+        <div class="cx-grid cx-grid--links">
+          <div class="cx-f">
+            <span class="cx-f__lab">{{ koda_opinion_form.upload.label }}</span>
+            {% include "matters/partials/add_files.html" with field=koda_opinion_form.upload drop_text="Lohista fail siia või " %}
+          </div>
+          <label class="cx-f cx-f--date"
+                 for="{{ koda_opinion_form.sent_on.id_for_label }}">
+            <span class="cx-f__lab">{{ koda_opinion_form.sent_on.label }}</span>
+            {{ koda_opinion_form.sent_on }}
+          </label>
+        </div>
+        {% if koda_opinion_form.sent_on.errors %}
+          <p class="field__error" id="{{ koda_opinion_form.sent_on.auto_id }}_error">
+            {{ koda_opinion_form.sent_on.errors|first }}</p>
+        {% endif %}
+
+        {% comment %}
+          `Adressaadid` — the shared picker, searchable, and opening on the
+          Teema's own `Saatja`.
+
+          **This reverses docs/adr/0091 §6.3 twice, deliberately.** That
+          decision drew the whole catalogue as a chip row and refused a
+          default, on two arguments. The first — that registering a letter
+          Koda sent is not the moment to invent the institution it went to —
+          was an argument against a picker whose `+` creates carelessly, and
+          what it produced was a panel where a body genuinely missing had to be
+          added on another page and the person had to come back. The second —
+          that an opinion at second reading goes to a committee rather than to
+          the ministry that sent the draft — is true, and is an argument
+          against a *silent* default rather than against a visible one.
+
+          So the control is the one every other institution question on the
+          page uses, `quiet` like `Uus teema`'s `Saatja`: one line reading
+          «Otsi või lisa asutus…» and the bodies actually chosen. The Teema's
+          senders are ticked in it before anything is saved, where they can be
+          read, removed, replaced and added to — a suggestion somebody accepts
+          rather than a recipient applied behind their back
+          (docs/adr/0078 §2, docs/adr/0095 §1).
+
+          **Several, still.** One letter really does go to two bodies at once,
+          which is what `SubmissionRecipient` has always held — and the control
+          never has to be told, because a checkbox already behaves as «several»
+          where a radio behaves as «one».
+
+          **And the default is a form default.** `Matter.source_organisations`
+          is not written by this save, is not read back from it, and a letter
+          sent to three committees leaves the Teema's `Saatja` exactly as it
+          was. Two facts, two columns (docs/adr/0095 §1).
+        {% endcomment %}
+        {% include "matters/partials/organisation_picker.html" with picker_id="koja-adressaat" legend=koda_opinion_form.recipients.label chips=koda_opinion_form.recipients_chip_choices tail=koda_opinion_form.recipients_tail_choices typed_field=koda_opinion_form.recipient_name add_label="Lisa uus adressaat" clearable=True quiet=True only %}
+        {% if koda_opinion_form.recipients.errors %}
+          <p class="field__error" id="{{ koda_opinion_form.recipients.auto_id }}_error">
+            {{ koda_opinion_form.recipients.errors|first }}</p>
+        {% endif %}
+
+        {% comment %}
+          `Kokkuvõte` last, optional, and a box with room in it.
+
+          **It is not the old `Pealkiri` renamed.** That field asked for a
+          name, and what it got was the file's name, nothing, or a sentence
+          trimmed to fit a heading — while the thing a colleague opening the
+          file next year actually wants is what the Chamber argued. So the
+          question changed, and the answer has its own column: a paragraph in
+          `Submission.summary`, never in `title` (docs/adr/0095 §2).
+
+          **The record still has an identity, and nothing invents one.**
+          `Submission.title` is the uploaded file's own name, which is where
+          `add_matter_koda_opinion` has taken it from whenever this panel's
+          title box was blank since the panel was written. Nothing is read out
+          of the file's contents, nothing is generated, and no headline is cut
+          from the first characters of this box.
+        {% endcomment %}
+        <label class="cx-f" for="{{ koda_opinion_form.summary.id_for_label }}">
+          <span class="cx-f__lab">{{ koda_opinion_form.summary.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {{ koda_opinion_form.summary }}
+        </label>
+        {% if koda_opinion_form.summary.errors %}
+          <p class="field__error" id="{{ koda_opinion_form.summary.auto_id }}_error">
+            {{ koda_opinion_form.summary.errors|first }}</p>
+        {% endif %}
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Registreeri arvamus</button>
+        </div>
+      </form>

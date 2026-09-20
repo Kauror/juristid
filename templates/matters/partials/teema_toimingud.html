@@ -1,0 +1,56 @@
+{% comment %}
+`TEEMA TOIMINGUD` — things that happen **to** this Matter.
+
+Two controls, and neither of them adds content:
+
+    Lõpeta teema      Kustuta teema
+
+Both were in `LISA TEEMALE` — `+ Lõpeta teema` as a chip at the end of the row,
+`Kustuta teema` nowhere at all — and closure sitting among the capture controls
+was a category error a person could act on by mistake. `+ Märge`, `+ Kaasamine`
+and `+ Lõpeta teema` are not the same kind of thing: the first two say
+*something happened, write it down*, and the third says *this file is finished*.
+A chip row that mixes them is a row where the most consequential control looks
+exactly like the most routine one (docs/adr/0096 §9).
+
+So they are a section of their own, under the launcher and visually separate,
+with the destructive one last and marked as destructive.
+
+**The section renders only for a writer.** A reader gets nothing here rather
+than two controls that refuse. `Lõpeta teema` additionally renders only while
+the Matter is open — closing a closed file is not an operation — and
+`Kustuta teema` renders on both, because a Matter closed by mistake is exactly
+one of the cases deletion exists for.
+
+`disclosure-chip--last` is kept on `Lõpeta teema`: it is what puts space
+between an ordinary control and a consequential one, and it does the same job
+here as it did at the end of the launcher row.
+{% endcomment %}
+<section class="addzone addzone--ops" id="teema-toimingud" aria-labelledby="toimingud-pealkiri">
+  <h2 class="rowlabel" id="toimingud-pealkiri">Teema toimingud</h2>
+
+  <div class="cx-panels">
+    {% if matter.is_open %}
+      {% include "matters/partials/add/lopeta.html" %}
+    {% endif %}
+
+    {% comment %}
+      `Kustuta teema` is a link to a confirmation page, not a panel with a
+      button in it.
+
+      Every other control on this page is an inline form that saves where it
+      stands, and this one deliberately is not. A deletion has to be read
+      before it is agreed to — which Matter, what goes with it, what cannot be
+      undone — and a two-line panel between `Lõpeta teema` and the chronology
+      is not somewhere anybody reads. The confirmation is its own page, it
+      names the Matter in full, and the POST that performs the deletion is
+      raised from there and nowhere else.
+
+      **No `confirm()`**, and no `hx-confirm` either: a browser dialog is one
+      keystroke from dismissed, says nothing about what is being deleted, and
+      is not something the server can require (docs/adr/0096 §10).
+    {% endcomment %}
+    <a class="button button--quiet button--tiny addzone__danger"
+       href="{% url 'matters:matter_delete' pk=matter.pk %}">Kustuta teema</a>
+  </div>
+</section>

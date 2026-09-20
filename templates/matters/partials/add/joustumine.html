@@ -1,0 +1,21 @@
+      {% if open_choice == "marge-joustumine" and workspace_error %}
+        <p class="formerror" role="alert">{{ workspace_error }}</p>
+      {% endif %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_effective_date' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Mis jõustub</span>
+          {{ effective_date_form.effective_title }}
+        </label>
+        {% if effective_date_form.effective_title.errors %}
+          <p class="field__error">{{ effective_date_form.effective_title.errors|first }}</p>
+        {% endif %}
+        {% include "matters/partials/period_composer.html" with chips=effective_date_form.precision_chips date_field=effective_date_form.effective_on month_field=effective_date_form.effective_month quarter_field=effective_date_form.effective_quarter year_field=effective_date_form.effective_year only %}
+        {% include "matters/partials/add_files.html" with field=effective_date_form.attachments %}
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Salvesta</button>
+        </div>
+      </form>

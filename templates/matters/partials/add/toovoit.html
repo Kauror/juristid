@@ -1,0 +1,26 @@
+  {% comment %}
+    `+ Töövõit`. A win is recorded when it happens, not when the file closes,
+    and it neither closes the Matter nor completes the current step
+    (brief §19).
+  {% endcomment %}
+      {% if open_choice == "marge-toovoit" and workspace_error %}
+        <p class="formerror" role="alert">{{ workspace_error }}</p>
+      {% endif %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_work_victory' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Mis muutus</span>
+          {{ work_victory_form.victory_change }}
+        </label>
+        {% if work_victory_form.victory_change.errors %}
+          <p class="field__error">{{ work_victory_form.victory_change.errors|first }}</p>
+        {% endif %}
+        {% include "matters/partials/period_composer.html" with chips=work_victory_form.precision_chips date_field=work_victory_form.victory_date month_field=work_victory_form.victory_month quarter_field=work_victory_form.victory_quarter year_field=work_victory_form.victory_year only %}
+        {% include "matters/partials/add_files.html" with field=work_victory_form.attachments %}
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Salvesta</button>
+        </div>
+      </form>

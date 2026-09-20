@@ -1,0 +1,28 @@
+  {% comment %}
+    `+ Oluline tähtaeg`. A milestone somebody else announced is often known
+    only to a month, a quarter or a year, so the panel asks at which of those
+    four precisions it is known and takes the answer that precision needs.
+    It creates no `NextAction` — a date the file has to live with is not an
+    instruction to a person (brief §17, docs/adr/0079 §1).
+  {% endcomment %}
+      {% if open_choice == "marge-tahtaeg" and workspace_error %}
+        <p class="formerror" role="alert">{{ workspace_error }}</p>
+      {% endif %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_important_date' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Mis tähtaeg</span>
+          {{ important_date_form.deadline_title }}
+        </label>
+        {% if important_date_form.deadline_title.errors %}
+          <p class="field__error">{{ important_date_form.deadline_title.errors|first }}</p>
+        {% endif %}
+        {% include "matters/partials/period_composer.html" with chips=important_date_form.precision_chips date_field=important_date_form.deadline_date month_field=important_date_form.deadline_month quarter_field=important_date_form.deadline_quarter year_field=important_date_form.deadline_year only %}
+        {% include "matters/partials/add_files.html" with field=important_date_form.attachments %}
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Salvesta</button>
+        </div>
+      </form>

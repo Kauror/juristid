@@ -1,0 +1,126 @@
+    {% comment %}
+      `+ Kaasamine` — the three questions a consultation round actually has.
+
+      **Who was engaged, when it happened, and what came back.** The panel used
+      to open on a row of `Liik` chips and a
+      four-way `Täpsus` control, so the first two decisions a lawyer made were
+      a classification nothing ever read back and a precision an as-it-happens
+      round never needs. Both are gone: every row written here is `Muu` and an
+      exact day, historical rows keep whatever they were given, and correcting
+      one is `Muuda` on its chronology row (docs/adr/0086 §1).
+
+      **`Kaasamise kuupäev` starts filled with today and clears.** Recording
+      something that just happened is the usual case, and the default is visible
+      in the box where it can be read, changed and emptied — which is the one
+      shape docs/adr/0078 §2 allows a date default to take.
+
+      **`Tagasisidet ootame kuni` is not asked here at all, which is where
+      docs/adr/0086 §2 finally lands.** That record put the box on this panel
+      opening on today + 7, on an argument that was right about its own subject:
+      a week is what a round asks for when nobody says otherwise. The first
+      lawyer test showed the *consequence* was out of proportion to a default —
+      recording «19.09 — kaasati 234 tööstusettevõtet» is a completed act, and
+      under a pre-filled deadline it also opened a managed wait, drew a work
+      item, appeared on somebody's Minu asjad and then needed a second
+      deliberate act to get off the page.
+
+      Emptying the default was the first answer and it was not enough: an empty
+      box is still a box that has to be read, understood and skipped, every
+      time, and it was still the panel that opened the wait. So the question
+      moved out of the capture panel altogether (lawyer feedback 11,
+      docs/adr/0091 §2).
+
+      **The wait itself is unchanged and is not withdrawn.** It is
+      `Ootan tagasisidet` on the round's own chronology row now — one named act,
+      taken by somebody who has decided this file is waiting on an answer. The
+      column, the single `WorkItem`, `PRAEGUNE TEGEVUS`, the overdue wording and
+      `Lõpeta kaasamine` are all exactly as docs/adr/0086 §3 and §6 built them;
+      it still creates no `Järgmiseks`, still is not `Arvamuse tähtaeg`, and
+      still counts towards no deadline statistic. Every round already waiting
+      goes on waiting (matters/partials/engagement_row.html).
+    {% endcomment %}
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-kaasamine-valik"
+           data-addpick aria-controls="lisa-kaasamine"
+           {% if open_panel == "lisa-kaasamine" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-kaasamine-valik">+ Kaasamine</label>
+    <div class="cx-panel" id="lisa-kaasamine" data-addpanel>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-kaasamine" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_engagement_compact' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
+          {% csrf_token %}
+          <div class="cx-grid">
+            <label class="cx-f">
+              <span class="cx-f__lab">Keda kaasati</span>
+              {{ add_engagement_form.audience }}
+            </label>
+            <label class="cx-f cx-f--num">
+              <span class="cx-f__lab">Vastuseid
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ add_engagement_form.response_count }}
+            </label>
+          </div>
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f cx-f--date">
+              <span class="cx-f__lab">Kaasamise kuupäev
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ add_engagement_form.occurred_on }}
+            </label>
+          </div>
+          <label class="cx-f" for="{{ add_engagement_form.feedback_received.id_for_label }}">
+            <span class="cx-f__lab">Saadud tagasiside / arvamused
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ add_engagement_form.feedback_received }}
+          </label>
+          {% comment %}
+            Where this round's material lives. Both optional, both inert: the
+            form validates the scheme and nothing else, no request is made to
+            either provider, and neither link makes a `Kaasamine` valid on its
+            own — `Keda kaasati` is still what identifies the record, so a panel
+            holding two addresses and no audience is refused rather than
+            silently discarded (docs/adr/0027, amended 2026-09-12).
+
+            The `_error` ids are what Django's own `aria-describedby` on a
+            refused control already points at; without them the pointer dangles.
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f">
+              <span class="cx-f__lab">Smaily link</span>
+              {{ add_engagement_form.smaily_url }}
+            </label>
+            <label class="cx-f">
+              <span class="cx-f__lab">Alchemer link</span>
+              {{ add_engagement_form.alchemer_url }}
+            </label>
+          </div>
+          {% if add_engagement_form.audience.errors %}
+            <p class="field__error" id="{{ add_engagement_form.audience.auto_id }}_error">
+              {{ add_engagement_form.audience.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.response_count.errors %}
+            <p class="field__error" id="{{ add_engagement_form.response_count.auto_id }}_error">
+              {{ add_engagement_form.response_count.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.occurred_on.errors %}
+            <p class="field__error" id="{{ add_engagement_form.occurred_on.auto_id }}_error">
+              {{ add_engagement_form.occurred_on.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.smaily_url.errors %}
+            <p class="field__error" id="{{ add_engagement_form.smaily_url.auto_id }}_error">
+              {{ add_engagement_form.smaily_url.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.alchemer_url.errors %}
+            <p class="field__error" id="{{ add_engagement_form.alchemer_url.auto_id }}_error">
+              {{ add_engagement_form.alchemer_url.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/add_files.html" with field=add_engagement_form.attachments %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </div>

@@ -1,0 +1,104 @@
+{% comment %}
+`Märke liik · Tavaline` — something happened on this file, and this says what.
+
+The default choice inside `+ Märge`, and the control a lawyer reaches for most.
+It is the merge of two chips that used to stand side by side in the launcher:
+`+ Märge`, which took one sentence and wrote an `Entry`, and
+`+ Menetluse areng`, which took a classified date, two sentences, a stage and a
+next step and wrote a `MatterProceduralDevelopment`.
+
+**They were one question asked twice.** «Ministeerium saatis uue eelnõu
+versiooni» is a *menetluse areng*; «Rääkisin Justiitsministeeriumiga» is a
+*märge*; and a lawyer who has just done one of them is not thinking about which
+of the two words the application wants. `Menetluse areng` was never a phrase
+anybody asked for — it is an implementation abstraction that reached the screen
+— so it is gone from the screen, and what is left is the question:
+**mis juhtus?** (docs/adr/0096 §7).
+
+**One record type underneath, and it is the structured one.**
+`MatterProgressForm` carries the argument at length; the short version is that
+`MatterProceduralDevelopment` exists because a projection needs a title it did
+not have to parse, and that reason is untouched by anything in this round.
+`title` is «what happened», stated. `Entry.body` is prose.
+
+**Five controls, of which two are usually all anybody touches.** The date opens
+on today and clears; the sentence is required; the files, the stage and the
+next step are optional and, left alone, write nothing at all.
+
+**`Täpsus` is not here**, and neither is `Juristi märkus`. Both are deleted from
+this form rather than hidden — see `MatterProgressForm` for what each one cost
+and what still offers it (`Muuda` on the record, which decides per row).
+{% endcomment %}
+<form class="addform" data-addform
+      hx-post="{% url 'matters:add_note' pk=matter.pk %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML"
+      hx-encoding="multipart/form-data">
+  {% csrf_token %}
+  <div class="cx-grid cx-grid--links">
+    <label class="cx-f cx-f--date" for="{{ progress_form.occurred_on.id_for_label }}">
+      <span class="cx-f__lab">{{ progress_form.occurred_on.label }}</span>
+      {{ progress_form.occurred_on }}
+      {% if progress_form.occurred_on.errors %}
+        <p class="field__error" id="{{ progress_form.occurred_on.auto_id }}_error">
+          {{ progress_form.occurred_on.errors|first }}</p>
+      {% endif %}
+    </label>
+  </div>
+  <label class="cx-f" for="{{ progress_form.title.id_for_label }}">
+    <span class="cx-f__lab">{{ progress_form.title.label }}</span>
+    {{ progress_form.title }}
+    {% if progress_form.title.errors %}
+      <p class="field__error" id="{{ progress_form.title.auto_id }}_error">
+        {{ progress_form.title.errors|first }}</p>
+    {% endif %}
+  </label>
+  {% include "matters/partials/add_files.html" with field=progress_form.attachments %}
+  {% comment %}
+    The two optional halves, on one row and under the sentence they belong to.
+
+    **`Uus hetkeseis` moves the file in the same transaction as the note.**
+    «Eelnõu saadeti Riigikokku» and `Hetkeseis → Riigikogus` are one act, and
+    two saves would be two facts that can disagree. Left on «Jätan muutmata»
+    nothing moves — no stage is inferred from the sentence, ever
+    (docs/adr/0096 §7.1).
+
+    **`Järgmine tegevus` goes through the canonical `NextAction` service**, the
+    same one `PRAEGUNE TEGEVUS` uses, so a Matter cannot end up with two ideas
+    of what happens next. Left empty it creates nothing and supersedes nothing:
+    a record of something that happened is not an instruction to a person
+    (docs/adr/0078 §3, docs/adr/0084 §1).
+  {% endcomment %}
+  <div class="cx-grid">
+    <label class="cx-f" for="{{ progress_form.stage.id_for_label }}">
+      <span class="cx-f__lab">{{ progress_form.stage.label }}
+        <span class="cx-f__opt">valikuline</span></span>
+      {{ progress_form.stage }}
+      {% if progress_form.stage.errors %}
+        <p class="field__error" id="{{ progress_form.stage.auto_id }}_error">
+          {{ progress_form.stage.errors|first }}</p>
+      {% endif %}
+    </label>
+  </div>
+  <div class="cx-grid cx-grid--links">
+    <label class="cx-f" for="{{ progress_form.next_text.id_for_label }}">
+      <span class="cx-f__lab">{{ progress_form.next_text.label }}
+        <span class="cx-f__opt">valikuline</span></span>
+      {{ progress_form.next_text }}
+      {% if progress_form.next_text.errors %}
+        <p class="field__error" id="{{ progress_form.next_text.auto_id }}_error">
+          {{ progress_form.next_text.errors|first }}</p>
+      {% endif %}
+    </label>
+    <label class="cx-f cx-f--date" for="{{ progress_form.next_date.id_for_label }}">
+      <span class="cx-f__lab">{{ progress_form.next_date.label }}</span>
+      {{ progress_form.next_date }}
+      {% if progress_form.next_date.errors %}
+        <p class="field__error" id="{{ progress_form.next_date.auto_id }}_error">
+          {{ progress_form.next_date.errors|first }}</p>
+      {% endif %}
+    </label>
+  </div>
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">Salvesta</button>
+  </div>
+</form>

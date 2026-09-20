@@ -95,6 +95,24 @@ class MatterReferenceSequence(models.Model):
         return f"{self.year}: {self.last_number}"
 
 
+class MatterManager(models.Manager.from_queryset(MatterQuerySet)):
+    """The default manager, and it hides deleted Matters.
+
+    `Kustuta teema` leaves an audit tombstone behind — see `Matter.deleted_at`
+    for why the row cannot simply go — and a tombstone must not behave as a
+    Matter anywhere. This is the one place that is enforced, because the
+    alternative is every caller remembering to exclude them.
+
+    `Matter.all_objects` is the unfiltered manager, and `Meta.base_manager_name`
+    names it so that related lookups still resolve. Anything that genuinely
+    needs to see a tombstone — the audit trail, the deletion planner — asks for
+    it by name (docs/adr/0096 §10).
+    """
+
+    def get_queryset(self) -> MatterQuerySet:
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
 class Matter(BaseModel):
     # -- human identity ----------------------------------------------------
     reference_year = models.PositiveSmallIntegerField(
@@ -364,9 +382,58 @@ class Matter(BaseModel):
         verbose_name="nähtavus",
     )
 
-    objects = MatterQuerySet.as_manager()
+    # -- deletion ----------------------------------------------------------
+    #
+    # `Kustuta teema` removes a Matter's business content and leaves this row
+    # behind as an audit tombstone. Both columns are additive, both are NULL on
+    # every existing row, and nothing was backfilled (docs/adr/0096 §10).
+    #
+    # **Why a tombstone rather than a deleted row.** `ChangeEvent.matter` is
+    # `PROTECT`, and `ChangeEvent` is append-only *in the database* — a
+    # `BEFORE UPDATE OR DELETE` trigger on `audit_changeevent` raises
+    # `restrict_violation`. Every Matter has change events from the moment it
+    # is created, so `matter.delete()` is refused by Django's own collector,
+    # and nulling the pointer first is refused by PostgreSQL. Removing the row
+    # would therefore mean either dropping an audit guarantee or destroying the
+    # audit trail of a record somebody deleted — and the trail of a deletion is
+    # the one part of it nobody may lose.
+    #
+    # `app/matters/purge.py` says the same thing about development data and
+    # refuses to decide it inside a utility command. docs/adr/0096 §10 is where
+    # it is decided.
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="kustutatud",
+    )
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="deleted_matters",
+        verbose_name="kustutaja",
+    )
+
+    #: **Live Matters only.** Every ordinary read goes through this.
+    #:
+    #: A tombstone is not a Matter: it has no business content left, it must
+    #: not appear in the register, on `Minu asjad`, on a department page, in a
+    #: statistic or in search, and its detail URL must answer 404. Filtering
+    #: here rather than at each of those sites is what makes that true by
+    #: construction — a list of fifty read sites is a list that is wrong the
+    #: first time somebody adds the fifty-first.
+    objects = MatterManager()
+
+    #: Every row, tombstones included. `Meta.base_manager_name` points at this,
+    #: so related descriptors (`entry.matter`, `event.matter`) resolve a
+    #: tombstone rather than raising — an audit row whose Matter had become
+    #: unreachable would be an audit row nobody can read.
+    all_objects = MatterQuerySet.as_manager()
 
     class Meta:
+        base_manager_name = "all_objects"
         verbose_name = "teema"
         verbose_name_plural = "teemad"
         ordering = ["-reference_year", "-reference_number", "-created_at"]

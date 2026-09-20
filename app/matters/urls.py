@@ -110,6 +110,14 @@ urlpatterns = [
     # record in one transaction, so a partial swap would be describing something
     # the save does not do (app/matters/views.py, `matter_edit`).
     path("teemad/<uuid:pk>/muuda/", views.matter_edit, name="matter_edit"),
+    # `Kustuta teema` — one address, two methods. GET describes the deletion
+    # and POST performs it, so following a link can never remove a Matter and
+    # the CSRF token is what stands between the two (docs/adr/0096 §10).
+    #
+    # Under the Matter rather than behind a `haldus/` prefix: it is an ordinary
+    # operation a lawyer performs on their own file, reached from
+    # `TEEMA TOIMINGUD` on the Teema page.
+    path("teemad/<uuid:pk>/kustuta/", views.matter_delete, name="matter_delete"),
     # The same edit page with what the documents say beside it. Its own route
     # and GET-only: it computes and shows, and the form on it posts to
     # `matter_edit` like the plain one, so there is one write path

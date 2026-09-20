@@ -142,8 +142,15 @@ because what the file recorded and who recorded it is part of the file
     a second implementation of one question, which is the whole failure
     docs/adr/0096 exists to close. The anchor lands the reader on the block
     (`id="menetluse-link"` in `procedural_link_create.html`).
+
+    **The card's id lives on the wrapper above rather than on either branch.**
+    Two branches of one `{% templatetag openblock %} if {% templatetag closeblock %}` can never both render, so a literal id in
+    each is valid HTML — and `tests/test_templates.py` reads the source rather
+    than a render and cannot know that. It is right to: an id written twice in
+    one file is one edit away from being written twice in one document, and
+    the check that would tell the two cases apart does not exist.
   {% endcomment %}
-  <div class="railcard" id="menetluse-lingid">
+  <div class="railcard">
     <span class="railcard__label">Menetluse lingid</span>
     <div class="railcard__row">
       <a class="railcard__add" href="{% url 'matters:matter_edit' pk=matter.pk %}#menetluse-link">+ Lisa menetluse link</a>

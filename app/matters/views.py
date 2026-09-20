@@ -86,6 +86,11 @@ from app.matters import (
     workspace,
 )
 from app.matters import person_work as person_workspace
+from app.matters.deletion import (
+    MatterDeletionBlocked,
+    build_deletion_plan,
+    delete_matter,
+)
 from app.matters.department_dashboard import SeisFigure
 from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
@@ -5611,6 +5616,49 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
 }
 
 
+#: Which sub-choice each family falls back to when no refusal names one of its
+#: own. Both are the ordinary case rather than the first alphabetically: a
+#: `Märge` is usually just a note, and most of what reaches a department is
+#: somebody answering it.
+WORKSPACE_DEFAULT_CHOICES: dict[str, str] = {
+    "marge_choice": "marge-tavaline",
+    "arvamus_choice": "arvamus-tagasiside",
+}
+
+#: Which family each sub-choice belongs to, so a refusal can be routed to the
+#: one variable that owns it.
+WORKSPACE_CHOICE_FAMILY: dict[str, str] = {
+    "marge-tavaline": "marge_choice",
+    "marge-tahtaeg": "marge_choice",
+    "marge-joustumine": "marge_choice",
+    "marge-toovoit": "marge_choice",
+    "arvamus-tagasiside": "arvamus_choice",
+    "arvamus-teiste": "arvamus_choice",
+    "arvamus-koja": "arvamus_choice",
+}
+
+
+def _workspace_choices(open_choice: str) -> dict[str, str]:
+    """One variable per sub-choice group, each naming one of that group's own ids.
+
+    The template cannot do this with `open_choice` alone, and the failure is
+    quiet rather than loud. `open_choice` is global to the page: when a refusal
+    comes from `+ Arvamus / tagasiside` it names one of *that* family's
+    children, so every `{% if open_choice == "marge-…" %}` in the `+ Märge`
+    group is false at once and that group renders with **no radio checked**.
+    Opening `+ Märge` afterwards then shows four chips and no form — nothing
+    errors, nothing logs, and the page is simply missing a control.
+
+    So each group is told which of *its* ids is chosen, and the answer is
+    always one of them (docs/adr/0096 §8.4).
+    """
+    choices = dict(WORKSPACE_DEFAULT_CHOICES)
+    family = WORKSPACE_CHOICE_FAMILY.get(open_choice)
+    if family is not None:
+        choices[family] = open_choice
+    return choices
+
+
 def workspace_forms(
     current_action: Any = None, *, matter: Any = None, viewer: Any = None
 ) -> dict[str, Any]:
@@ -5729,6 +5777,7 @@ def workspace_forms(
         "closure_form": CompactClosureForm(),
         "open_panel": "",
         "open_choice": "",
+        **_workspace_choices(""),
         "workspace_error": "",
     }
 
@@ -5824,6 +5873,7 @@ def _workspace_refusal(
         context["workspace_error"] = ""
         context["open_panel"] = ""
         context["open_choice"] = ""
+        context.update(_workspace_choices(""))
     else:
         context["workspace_error"] = error
         # Both halves, and the template checks each against its own radio: the
@@ -5833,6 +5883,7 @@ def _workspace_refusal(
         family, choice = WORKSPACE_PANELS.get(key, ("", ""))
         context["open_panel"] = family
         context["open_choice"] = choice
+        context.update(_workspace_choices(choice))
     if not panel_is_rendered:
         # The panel that held their words is not on the fresh column, so the
         # words come back beside the refusal instead — read-only, and labelled
@@ -6900,3 +6951,63 @@ def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
 
     matter.refresh_from_db()
     return _render_overview(request, matter, header_out_of_band=not matter.is_open)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Kustuta teema` — read what goes, then agree to it.
+
+    **GET shows, POST deletes, and nothing else does either.** A deletion
+    reachable by following a link is a deletion a crawler, a prefetch or a
+    mistyped address can perform, so the page that *describes* the operation
+    and the request that *performs* it are different HTTP methods behind one
+    address — and `require_http_methods` is what makes the distinction the
+    server's rather than the template's.
+
+    **The confirmation names the Matter in full**, and says what would go with
+    it. «Kas oled kindel?» over a button is a question nobody can answer: the
+    person needs the title they are about to remove, the count of records that
+    go with it, and the sentence that says it cannot be undone. That is also
+    why this is a page rather than a panel in the launcher — see
+    `teema_toimingud.html`.
+
+    **There is no `confirm()` and no `hx-confirm`.** A browser dialog is one
+    keystroke from dismissed, says nothing about what is being deleted, and is
+    not something a server can require. The CSRF token on the form is
+    (docs/adr/0096 §10).
+
+    **A refusal is shown on this page rather than raised.** A Matter that
+    cannot be deleted — a legal hold, a record outside it depending on it, an
+    append-only row under it — is a fact the person has to read, and the plan
+    says which of those applies in the words of the thing that applies. The
+    button is not rendered at all in that state, so the only way to reach the
+    POST is to craft one, and the service refuses that too: the plan is rebuilt
+    under the Matter's row lock inside the transaction, so what is checked is
+    what is deleted (`app.matters.deletion`).
+    """
+    matter = get_visible_matter(request, pk)
+    plan = build_deletion_plan(matter)
+
+    if request.method == "GET":
+        return render(
+            request,
+            "matters/matter_delete.html",
+            {"matter": matter, "plan": plan, "refusal": plan.refusal},
+        )
+
+    try:
+        delete_matter(matter=matter, actor=request.user)
+    except MatterDeletionBlocked as blocked:
+        return render(
+            request,
+            "matters/matter_delete.html",
+            {"matter": matter, "plan": blocked.plan, "refusal": blocked.plan.refusal},
+            status=409,
+        )
+
+    # To the register, because the Matter this person was looking at no longer
+    # exists to go back to. Its own detail URL answers 404 from here on.
+    messages.success(request, f"Teema „{matter.title}” on kustutatud.")
+    return redirect("matters:matter_list")

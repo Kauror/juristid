@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Kustuta teema · {{ application_name }}{% endblock %}
+
+{% comment %}
+`KUSTUTA TEEMA` — the page somebody reads before agreeing to a deletion.
+
+A page, and not a panel on the Teema page. Every other control in `LISA
+TEEMALE` and `TEEMA TOIMINGUD` saves where it stands, because every other
+control records something that can be corrected afterwards. This one cannot, so
+the person gets the three things a decision needs and nothing competing for
+their attention: **which** Matter, **what goes with it**, and **that it cannot
+be undone**.
+
+**The title is printed in full.** «Kas oled kindel?» over a button is a
+question nobody can answer — a lawyer with four tabs open has no way to tell
+which file the dialog belongs to. The Matter's own title is the answer, and it
+is the largest thing on the page.
+
+**The counts are the plan's, not a guess.** What is listed is what
+`build_deletion_plan` walked: the actual rows this deletion would remove, read
+off the ownership graph at the moment the page was rendered. It is rebuilt
+again under the Matter's row lock when the POST arrives, so what somebody
+agreed to is what happens — and a Matter that became undeletable in between is
+refused rather than half-deleted (`app.matters.deletion`).
+
+**A blocked Matter renders no button at all.** The refusal is the page. The
+form is simply absent, so there is nothing to press and nothing to be talked
+past; a crafted POST reaches the same refusal from the service, because the
+plan the service trusts is the one it builds itself.
+
+**`Loobu` is a link back to the Matter**, first in the source order and
+ordinary in appearance, because leaving is the safe answer and the safe answer
+should never be the harder one to hit.
+
+What this page deliberately does not do: no `confirm()`, no `hx-confirm`, no
+"type the title to continue". The first two are dismissible with a keystroke
+and say nothing; the third is ceremony that trains people to copy text without
+reading it (docs/adr/0096 §10).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Kustuta teema</h1>
+  </div>
+
+  <div class="dangercard">
+    <p class="dangercard__subject">{{ matter.title }}</p>
+    {% if matter.display_reference %}
+      <p class="dangercard__meta">{{ matter.display_reference }}</p>
+    {% endif %}
+
+    {% if refusal %}
+      {% comment %}
+        Blocked. The sentence says which of the four reasons applied, in the
+        words that reason actually means — `BLOCKER_MESSAGES`. No button
+        follows.
+      {% endcomment %}
+      <p class="formerror" role="alert">{{ refusal }}</p>
+      <p class="dangercard__note">
+        Teemat ei kustutatud. Midagi ei muudetud.
+      </p>
+      <div class="createform__actions">
+        <a class="button button--primary"
+           href="{% url 'matters:matter_detail' pk=matter.pk %}">Tagasi teema juurde</a>
+      </div>
+    {% else %}
+      <p class="dangercard__note">
+        Kustutamine eemaldab teema sisu jäädavalt. Seda ei saa tagasi võtta.
+      </p>
+
+      {% comment %}
+        What goes, and what stays. Both halves, because a person deciding this
+        needs to know that deleting a Teema does not delete the institutions or
+        the valdkonnad it referred to — that is the fear that otherwise stops
+        somebody removing a duplicate they filed by mistake.
+      {% endcomment %}
+      <dl class="dangercard__facts">
+        <dt>Kustutatakse</dt>
+        <dd>
+          {{ plan.business_rows }} kirjet — märkmed, kaasamised, arvamused,
+          dokumendid ja otsingukirjed.
+        </dd>
+        {% if plan.evidence %}
+          <dt>Failid</dt>
+          <dd>
+            {% for item in plan.evidence %}
+              {{ item.label }}: {{ item.objects }}{% if not forloop.last %}; {% endif %}
+            {% endfor %}
+          </dd>
+        {% endif %}
+        <dt>Jääb alles</dt>
+        <dd>
+          Asutused, valdkonnad, sildid ja arhiiv — need ei kuulu teemale.
+          Alles jääb ka kanne selle kohta, et teema kustutati, ja kes seda tegi.
+        </dd>
+      </dl>
+
+      <form method="post" action="{% url 'matters:matter_delete' pk=matter.pk %}">
+        {% csrf_token %}
+        <div class="createform__actions">
+          <a class="button button--quiet"
+             href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
+          <button class="button button--danger" type="submit">Kustuta teema jäädavalt</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

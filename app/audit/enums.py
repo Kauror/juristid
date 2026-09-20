@@ -11,6 +11,19 @@ class ChangeEventType(models.TextChoices):
     """
 
     MATTER_CREATED = "MATTER_CREATED", "Teema loodud"
+    #: `Kustuta teema`. The Matter's business content is gone and the row that
+    #: carried it is an audit tombstone.
+    #:
+    #: This event is the point of the tombstone. A deletion whose only trace
+    #: was the absence of a record would be a deletion nobody could ask about;
+    #: this says the Matter existed, who removed it and when — and it is
+    #: written *before* anything is removed, so a refusal rolls it back with
+    #: everything else (`app.matters.deletion`, docs/adr/0096 §10).
+    #:
+    #: Its payload carries counts and never content. What the Matter said is
+    #: what the deletion removed, and copying it in here would be keeping the
+    #: business data under another name.
+    MATTER_DELETED = "MATTER_DELETED", "Teema kustutatud"
     MATTER_ASSIGNED = "MATTER_ASSIGNED", "Teema määratud"
     # The Matter's own name. Its own event rather than a reused one, for the
     # reason every other field here has its own: the title is what everybody
