@@ -56,7 +56,7 @@ because what the file recorded and who recorded it is part of the file
   <div class="railcard" id="menetluse-lingid">
     <span class="railcard__label">Menetluse lingid</span>
     {% if procedural_links %}
-    {% for link, edit_form in procedural_links %}
+      {% for link, edit_form in procedural_links %}
       <div class="proclink" id="menetluse-link-{{ link.pk }}">
         <div class="railcard__row">
           <span class="railcard__key">{{ link.get_kind_display }}</span>
@@ -124,16 +124,15 @@ because what the file recorded and who recorded it is part of the file
           </details>
         {% endif %}
       </div>
-    {% endfor %}
-    {% comment %}
-      A refusal that belongs to no open disclosure — a conflict that arrived
-      after the card was re-read. Printed once, under the rows, rather than
-      nowhere at all (`_procedural_link_refusal`).
-    {% endcomment %}
-    {% if procedural_link_error and not procedural_link_open %}
-      <p class="formerror" role="alert">{{ procedural_link_error }}</p>
-    {% endif %}
-  </div>
+      {% endfor %}
+      {% comment %}
+        A refusal that belongs to no open disclosure — a conflict that arrived
+        after the card was re-read. Printed once, under the rows, rather than
+        nowhere at all (`_procedural_link_refusal`).
+      {% endcomment %}
+      {% if procedural_link_error and not procedural_link_open %}
+        <p class="formerror" role="alert">{{ procedural_link_error }}</p>
+      {% endif %}
     {% else %}
       {% comment %}
         A link to the page that asks the question, not a panel that asks it
@@ -145,13 +144,17 @@ because what the file recorded and who recorded it is part of the file
         failure docs/adr/0097 exists to close. The anchor lands the reader on
         the block (`id="menetluse-link"` in `procedural_link_create.html`).
 
-        **The empty state is inside the card rather than beside it**, so
-        `id="menetluse-lingid"` is written once and a reader looking for the
-        card finds it whether or not the Matter has a link. It was two sibling
-        branches for one commit of this branch's life, each drawing its own
-        `.railcard` and only the populated one carrying the id — so every test
-        and every anchor that names the card found nothing on exactly the
-        Matters the empty state exists for.
+        **The empty state is inside the card rather than beside it**, so the
+        card's id is written once and a reader looking for it finds it whether
+        or not the Matter has a link. It was two sibling branches for one
+        commit of this branch's life, each drawing its own `.railcard` and only
+        the populated one carrying the id — so every test and every anchor that
+        names the card found nothing on exactly the Matters the empty state
+        exists for.
+
+        The id is not repeated in this sentence on purpose:
+        `tests/test_templates.py` reads the source rather than a render, so a
+        literal `id=` in prose counts as a second declaration.
       {% endcomment %}
       <div class="railcard__row">
         <a class="railcard__add" href="{% url 'matters:matter_edit' pk=matter.pk %}#menetluse-link">+ Lisa menetluse link</a>

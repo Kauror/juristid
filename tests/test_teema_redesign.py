@@ -526,6 +526,16 @@ def test_what_happened_and_what_happens_next_are_two_separate_saves(signed_in, n
     the refusal below is what still holds: neither is derived from the other,
     and there is no third control mediating them.
     """
+    # An open step, because `Muuda` — the next-step form — is drawn beside a
+    # task and is its only host since `+ Järgmine tegevus` left the launcher
+    # (docs/adr/0097 §8.2). The claim is that the two questions are two saves,
+    # which is what this world lets it assert.
+    set_next_action(
+        matter=normal_matter,
+        text="Koosta arvamus",
+        target_date=timezone.localdate() + timedelta(days=7),
+        actor=normal_matter.owner,
+    )
     body = _detail(signed_in, normal_matter)
 
     assert 'id="lisa-marge"' in body

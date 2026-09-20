@@ -297,8 +297,16 @@ def test_the_next_step_is_asked_for_in_its_own_words(signed_in, normal_matter):
     happened* and *what happens next* are two intentions and two saves now. What
     survives unchanged is the vocabulary — a next step is a sentence and a day
     (docs/adr/0075 §2, ADR 0052)."""
+    # `Muuda` beside an open step, because that is the one host this form has
+    # since `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
+    set_next_action(
+        matter=normal_matter,
+        text="Koosta arvamus",
+        target_date=timezone.localdate() + timedelta(days=7),
+        actor=normal_matter.owner,
+    )
     body = _detail(signed_in, normal_matter)
-    panel = body[body.index('id="lisa-jargmine"') : body.index('id="lisa-kaasamine"')]
+    panel = body[body.index('id="lisa-jargmine"') : body.index('id="lisa-teemale"')]
 
     assert panel.index("Mida on vaja teha?") < panel.index("Millal?")
     # `Kuupäev…` is gone, and it is gone because the box it disclosed is no
@@ -677,8 +685,11 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     `Vastuseid` — are unchanged, and the old five-field form is still gone.
     """
     body = _detail(signed_in, normal_matter)
-    panel = body[body.index('id="lisa-kaasamine"') :]
-    panel = panel[: panel.index('id="marge-tahtaeg"')]
+    # To `+ Arvamus / tagasiside`, the family after `+ Kaasamine`.
+    # `marge-tahtaeg` is a sub-choice inside `+ Märge` and stands earlier in
+    # the document now (docs/adr/0097 §8).
+    start = body.index('id="lisa-kaasamine"')
+    panel = body[start : body.index('id="lisa-arvamus"', start)]
 
     assert 'name="kind"' not in panel
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
@@ -2428,14 +2439,28 @@ def test_the_rail_holds_the_four_target_blocks_in_order(signed_in, normal_matter
     assert "Seotud teemasid ega taustmaterjali ei ole valitud." in rail
 
 
-def test_teema_andmed_holds_the_four_target_rows(signed_in, normal_matter):
+def test_teema_andmed_holds_the_target_rows_that_are_still_asked(signed_in, normal_matter):
+    """Two of the target's four rows went with the questions that fed them.
+
+    `Menetlusliik` and `Kellele` were rows here and are not: the two Teema
+    forms stopped asking about either, and a read-only rail row is the easiest
+    place for a withdrawn question to survive its own removal. The columns and
+    every stored value are untouched (docs/adr/0097 §3, §4).
+    """
     body = _detail(signed_in, normal_matter)
     card = body[body.index('id="teema-andmed"') :]
     card = card[: card.index('id="koja-arvamus"')]
 
-    for row in ("Teemaviide", "Menetlusliik", "Saatja", "Kellele"):
+    for row in ("Teemaviide", "Saatja"):
         assert row in card
-    for gone in ("Saabus", "Muu valdkond", "Andmeklass", "Märgi testandmeteks"):
+    for gone in (
+        "Saabus",
+        "Muu valdkond",
+        "Andmeklass",
+        "Märgi testandmeteks",
+        "Menetlusliik",
+        "Kellele",
+    ):
         assert gone not in card
 
 

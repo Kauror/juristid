@@ -1564,10 +1564,15 @@ def test_the_posted_value_wins_over_every_suggestion(
         event_type__in=(
             ChangeEventType.MATTER_TITLE_CHANGED,
             ChangeEventType.MATTER_DATE_CHANGED,
-            ChangeEventType.MATTER_TRACK_CHANGED,
         ),
     )
-    assert saved.count() == 3
+    assert saved.count() == 2
+    # And no `MATTER_TRACK_CHANGED`, because this page writes no track: the
+    # field is gone from the form and the service is never called
+    # (docs/adr/0097 §3).
+    assert not ChangeEvent.objects.filter(
+        matter=intake_matter, event_type=ChangeEventType.MATTER_TRACK_CHANGED
+    ).exists()
     assert all(event.actor_id == specialist.pk for event in saved)
     assert not ChangeEvent.objects.filter(
         matter=intake_matter, event_type=ChangeEventType.MATTER_POLICY_AREAS_CHANGED

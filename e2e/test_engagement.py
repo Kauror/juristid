@@ -229,10 +229,13 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
             ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="Kaasamine: liikmed")
         )
     ).not_to_contain_text("Ootame tagasisidet kuni")
-    # The note, as a work row of its own.
-    expect(chronology(page).locator(".richtext").first).to_contain_text(
-        "Küsisin liikmetelt tagasisidet"
-    )
+    # The note, as a row of its own. `.uxtl__mswhat` rather than `.richtext`: a
+    # `Märge` writes a `MatterProceduralDevelopment` since docs/adr/0097 §6 and
+    # the chronology renders its stated line as a milestone headline. The claim
+    # — two saves, two rows — is unchanged.
+    expect(
+        chronology(page).locator(".uxtl__mswhat", has_text="Küsisin liikmetelt tagasisidet")
+    ).to_have_count(1)
     # One act, one line: the audit event does not also print a clause.
     expect(chronology(page)).not_to_contain_text("lisas kaasamise")
 

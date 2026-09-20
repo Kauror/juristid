@@ -166,7 +166,14 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page,
     page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.get_by_text("ei ole enam aktiivne osakonna töötaja")).to_be_visible()
+    # Scoped to the panel the save came from. The page also carries a standing
+    # notice about the departed owner, so an unscoped match is two elements and
+    # Playwright answers that with a strict-mode violation — and what this test
+    # is about is the *refusal*, which has to be beside the control that was
+    # pressed rather than somewhere on the page.
+    expect(page.locator("#marge-tavaline .formerror")).to_contain_text(
+        "ei ole enam aktiivne osakonna töötaja"
+    )
 
 
 def test_the_register_filter_offers_the_department_and_not_the_administrator(page, base_url):

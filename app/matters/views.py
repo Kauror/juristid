@@ -3874,22 +3874,22 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         current=selectors.current_action_of(matter, request.user),
     )
 
+    # Both refusals through `_workspace_refusal`, which is where every other
+    # workspace save's already went. This view hand-rolled its own render, and
+    # the difference stopped being cosmetic when `+ Järgmine tegevus` left the
+    # launcher: `#lisa-jargmine` is now drawn **beside an open task and nowhere
+    # else**, so a refusal on a Matter with no open step named a panel the page
+    # does not render and the sentence — or the field error — was printed
+    # inside nothing. The shared helper falls back to the workspace-level slot
+    # for exactly that case, and brings a closed Matter's header with it
+    # (docs/adr/0097 §8.2).
     if not form.is_valid():
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["action_form"] = form
-        context["open_panel"] = WORKSPACE_PANELS["action_form"][0]
-        return render(request, "matters/partials/overview.html", context, status=400)
+        return _workspace_refusal(request, matter, key="action_form", form=form)
 
     try:
         set_next_action_for_new_work(matter=matter, actor=request.user, **form.as_service_kwargs())
     except DomainError as error:
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["action_form"] = form
-        context["workspace_error"] = str(error)
-        context["open_panel"] = WORKSPACE_PANELS["action_form"][0]
-        return render(request, "matters/partials/overview.html", context, status=400)
+        return _workspace_refusal(request, matter, key="action_form", form=form, error=str(error))
 
     return _render_overview(request, matter)
 
@@ -6016,6 +6016,29 @@ def _workspace_refusal(
     panel_is_rendered = matter.is_open and (
         key not in needs_current_action or context["current_action"] is not None
     )
+    if not error and not panel_is_rendered:
+        # A *validation* refusal whose panel is not on the fresh column.
+        #
+        # `error` is a service's sentence and has always had this fallback; a
+        # form error had none, because until docs/adr/0097 §8.2 every form
+        # whose panel could vanish was refused by a service rather than by
+        # itself. `Muuda` is now the only host of the next-step form, so a
+        # stale tab posting it on a Matter whose step somebody else finished
+        # arrives here with `form.errors` and nothing to print them in — a 400
+        # that looks exactly like somebody else's successful save.
+        #
+        # The first sentence, because these forms refuse one thing at a time
+        # and a list of every message would be a paragraph about a form the
+        # reader cannot see. What they typed comes back below it either way.
+        error = next(
+            (
+                str(message)
+                for messages in form.errors.values()
+                for message in messages
+                if str(message).strip()
+            ),
+            "",
+        )
     if error and not panel_is_rendered:
         context["composer_error"] = error
         context["workspace_error"] = ""

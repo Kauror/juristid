@@ -1206,10 +1206,15 @@ def test_a_reopened_matter_accepts_writes_again(signed_in, specialist, normal_ma
     reopen_matter(matter=normal_matter, actor=specialist, reason="Töö jätkub")
     normal_matter.refresh_from_db()
 
-    response = _post(signed_in, "matters:add_note", normal_matter, {"body": "<p>Jätkame.</p>"})
+    response = _post(
+        signed_in,
+        "matters:add_note",
+        normal_matter,
+        {"title": "Jätkame.", "occurred_on": "19.09.2026"},
+    )
 
     assert response.status_code == 200, response.status_code
-    assert Entry.objects.filter(matter=normal_matter).count() == 1
+    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).count() == 1
 
 
 def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_matter):

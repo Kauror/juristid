@@ -649,9 +649,20 @@ def _panel_is_open(body: str, panel_id: str) -> bool:
     stopped being `<details>` on 2026-09-14 — a chip that grows when you click
     it is a chip that moves, so the control and the form are two elements now
     (templates/matters/partials/add_to_matter.html).
+
+    **`lisa-jargmine` is the exception and is now the only one.** It is `Muuda`
+    inside `PRAEGUNE TEGEVUS`: one disclosure, alone on its line, with no
+    siblings to displace and nothing to be chosen instead of — so a native
+    `<details>` is still the honest markup for it. It had a launcher chip too
+    until docs/adr/0097 §8.2, which is why this helper could once assume a
+    radio for every panel.
     """
-    tag = body.split(f'id="{panel_id}-valik"')[1].split(">")[0]
-    return "checked" in tag
+    radio = f'id="{panel_id}-valik"'
+    if radio in body:
+        return "checked" in body.split(radio)[1].split(">")[0]
+    marker = f'id="{panel_id}"'
+    assert marker in body, f"{panel_id} is not on the page at all"
+    return " open" in body.split(marker)[1].split(">")[0]
 
 
 @pytest.mark.django_db
