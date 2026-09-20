@@ -29,9 +29,9 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
-    HETKESEIS_MENU,
+    HETKESEIS_FOLD,
     MARTIN,
-    VALDKONNAD_MENU,
+    VALDKONNAD_FOLD,
     open_hetkeseis,
     sign_in,
     unique_title,
@@ -81,8 +81,8 @@ SENDER_FIELD = 'fieldset.field:has(input[name="sender_name"])'
 #: so the *row* is the trigger and the fieldset lives inside the panel. Order and
 #: overflow are about where the reader looks, so both are measured on the whole
 #: `<details>`; the chip vocabularies are read inside it.
-VALDKOND_FIELD = VALDKONNAD_MENU
-STAGE_ROW = HETKESEIS_MENU
+VALDKOND_FIELD = VALDKONNAD_FOLD
+STAGE_ROW = HETKESEIS_FOLD
 
 
 def create_form(page, base_url, width: int = 1440) -> None:
@@ -304,7 +304,7 @@ def test_the_classification_rows_never_take_the_page_sideways(page, base_url, wi
     # that is wider than its row would take the document sideways without
     # lengthening it, so nothing above would catch it (docs/adr/0094 §2).
     open_hetkeseis(page)
-    page.locator(VALDKONNAD_MENU).locator("> summary").click()
+    page.locator(VALDKONNAD_FOLD).locator("> summary").click()
     opened = page.evaluate(
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
     )
@@ -323,10 +323,10 @@ def test_both_vocabularies_are_answerable_from_the_keyboard(page, base_url, widt
 
     # The trigger is one tab stop and opens on Space, which is what keeps the
     # menu reachable without a mouse (docs/adr/0094 §2).
-    trigger = page.locator(HETKESEIS_MENU).locator("> summary")
+    trigger = page.locator(HETKESEIS_FOLD).locator("> summary")
     trigger.focus()
     page.keyboard.press(" ")
-    expect(page.locator(HETKESEIS_MENU)).to_have_attribute("open", "")
+    expect(page.locator(HETKESEIS_FOLD)).to_have_attribute("open", "")
 
     stage = page.locator(f'{STAGE_FIELD} input[type="radio"]').nth(2)
     stage.focus()

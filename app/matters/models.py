@@ -10,7 +10,7 @@ so that archive rows never have to invent a stage, an owner or a date
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
@@ -95,7 +95,14 @@ class MatterReferenceSequence(models.Model):
         return f"{self.year}: {self.last_number}"
 
 
-class MatterManager(models.Manager.from_queryset(MatterQuerySet)):
+#: `Manager.from_queryset` builds a class at run time, which mypy cannot follow
+#: — so the base is named once here and the manager below is an ordinary
+#: subclass of it. `type: ignore` on the class statement itself would suppress
+#: the same message and would also suppress anything else wrong with it.
+_MatterManagerBase = models.Manager.from_queryset(MatterQuerySet)
+
+
+class MatterManager(_MatterManagerBase):
     """The default manager, and it hides deleted Matters.
 
     `Kustuta teema` leaves an audit tombstone behind — see `Matter.deleted_at`
@@ -110,7 +117,13 @@ class MatterManager(models.Manager.from_queryset(MatterQuerySet)):
     """
 
     def get_queryset(self) -> MatterQuerySet:
-        return super().get_queryset().filter(deleted_at__isnull=True)
+        # `cast` rather than a looser return type: every caller of
+        # `Matter.objects` relies on `MatterQuerySet`'s own methods —
+        # `visible_to`, `real_data`, `active` — and a manager typed as
+        # returning a plain `QuerySet` would take that away from all of them.
+        # `from_queryset` really does return one; mypy cannot see through the
+        # class it built at run time to know that.
+        return cast(MatterQuerySet, super().get_queryset().filter(deleted_at__isnull=True))
 
 
 class Matter(BaseModel):

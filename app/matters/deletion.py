@@ -59,7 +59,7 @@ None of the four is worked around and none is reported as a partial success.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -282,7 +282,12 @@ def delete_matter(*, matter: Matter, actor: Any) -> DeletionPlan:
         related = relation.related_model
         if related is None or related._meta.label in TOMBSTONE_KEEPS:
             continue
-        related._base_manager.filter(**{relation.field.name: locked.pk}).delete()
+        # Narrowed for the type checker: `get_fields` is typed as the union
+        # with concrete fields, and the two guards above have already excluded
+        # those — only a reverse relation reaches here, and a reverse relation
+        # has a `field`.
+        column = cast(Any, relation).field.name
+        related._base_manager.filter(**{column: locked.pk}).delete()
 
     # Many-to-many rows the Matter owns the *link* to but not the target:
     # `policy_areas`, `legal_instruments`, `source_organisations`,

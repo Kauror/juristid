@@ -348,55 +348,49 @@ needs_intake_reading = pytest.mark.skipif(
 )
 
 
-#: The two `Uus teema` vocabularies that answer through a menu. `Valdkonnad`
-#: holds several and stays open while they are ticked; `Hetkeseis` holds one and
-#: shuts itself once it has been answered (docs/adr/0094 §2).
-VALDKONNAD_MENU = "details.chipmenu:not([data-chipmenu-single])"
-HETKESEIS_MENU = "details.chipmenu[data-chipmenu-single]"
-
-
-def _open_chipmenu(page, selector: str) -> None:
-    """Open one menu on `Uus teema`, if it is not open already.
-
-    A shut `<details>` keeps its contents in the document — every
-    `to_be_attached` and every `evaluate` over the chips still works through it
-    — but nobody can *click* what nobody can see, so a test that ticks a chip
-    opens the menu first. That is also what the person does.
-
-    Idempotent, so a caller may use it without knowing what an earlier step left
-    behind.
-    """
-    menu = page.locator(selector)
-    if menu.count() and not menu.evaluate("node => node.open"):
-        menu.locator("> summary").click()
+#: The two `Uus teema` vocabularies that are drawn rather than hidden.
+#:
+#: Both are `<details class="chipfold" open>` sections in ordinary flow since
+#: docs/adr/0096 §3, so the chips are on the screen when the page arrives.
+#: Told apart by the summary each carries, because the two tags are otherwise
+#: identical — the menu era could tell them apart by `data-chipmenu-single`,
+#: and there is no such attribute now because nothing is scripted on them.
+VALDKONNAD_FOLD = 'details.chipfold:has([data-chipsummary-for="policy_areas"])'
+HETKESEIS_FOLD = 'details.chipfold:has([data-chipsummary-for="stage"])'
 
 
 def open_valdkond(page) -> None:
-    """Open Valdkonnad on `Uus teema`, which arrives shut.
+    """Make sure Valdkonnad is open. It arrives open, so this is nearly always a no-op.
 
-    The vocabulary went behind a disclosure when the lawyers' first feedback
-    round asked for the creation form to stop sitting permanently open
-    (docs/adr/0088 §3), and behind a *menu* when the next round said that
-    opening the disclosure re-laid out the form underneath them
-    (docs/adr/0094 §2). Shut is still the resting state either way; what changed
-    is that the panel overlays instead of lengthening the page.
+    **Kept, and deliberately not deleted.** The chips are visible on arrival
+    now (docs/adr/0096 §3), so almost every caller of this needs nothing done —
+    but a scenario that collapsed the section earlier, or one that will, still
+    needs one place that says «have the chips on screen». Deleting the helper
+    would put that knowledge into a dozen tests instead.
+
+    Idempotent, so a caller may use it without knowing what an earlier step
+    left behind.
     """
-    _open_chipmenu(page, VALDKONNAD_MENU)
+    _open_fold(page, VALDKONNAD_FOLD)
 
 
 def open_hetkeseis(page) -> None:
-    """Open Hetkeseis on `Uus teema`, which arrives shut.
+    """Make sure Hetkeseis is open, for `open_valdkond`'s reason.
 
-    It was a permanently drawn row of eleven chips. A lawyer answers it once and
-    reads past it for the rest of a file's life, so it is a pill carrying the
-    answer and a menu behind it (docs/adr/0094 §2).
-
-    Anything that *checks* a stage radio has to call this first: a radio inside a
-    shut `<details>` is in the document and not on the screen, and Playwright
-    refuses to click what it cannot see — correctly, because neither can a
-    person. The menu closes itself again as soon as the radio is picked.
+    Anything that *checks* a stage radio still calls this: a radio inside a
+    collapsed `<details>` is in the document and not on the screen, and
+    Playwright refuses to click what it cannot see — correctly, because neither
+    can a person. What changed is that the section no longer closes itself once
+    answered, so a second chip in the same group needs no second call.
     """
-    _open_chipmenu(page, HETKESEIS_MENU)
+    _open_fold(page, HETKESEIS_FOLD)
+
+
+def _open_fold(page, selector: str) -> None:
+    """Open one `chipfold`, if something has collapsed it."""
+    fold = page.locator(selector)
+    if fold.count() and not fold.evaluate("node => node.open"):
+        fold.locator("> summary").click()
 
 
 def give_first_step(page, *, days: int = 7) -> None:

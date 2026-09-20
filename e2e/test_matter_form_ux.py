@@ -23,9 +23,9 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
-    HETKESEIS_MENU,
+    HETKESEIS_FOLD,
     MARTIN,
-    VALDKONNAD_MENU,
+    VALDKONNAD_FOLD,
     go_to,
     open_hetkeseis,
     open_valdkond,
@@ -156,7 +156,7 @@ def test_choosing_a_second_value_replaces_the_first(page, base_url, screenshots,
     open_hetkeseis(page)
     options.nth(1).check()
     expect(options.nth(1)).to_be_checked()
-    expect(page.locator(HETKESEIS_MENU)).not_to_have_attribute("open", "")
+    expect(page.locator(HETKESEIS_FOLD)).not_to_have_attribute("open", "")
 
     open_hetkeseis(page)
     options.nth(2).check()
@@ -676,7 +676,7 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     #
     # A count rather than the name: the trigger is a pill on one line, and three
     # Estonian policy areas spelled out do not fit on it (docs/adr/0094 §2.2).
-    menu = page.locator(VALDKONNAD_MENU)
+    menu = page.locator(VALDKONNAD_FOLD)
     expect(menu).not_to_have_attribute("open", "")
     trigger = menu.locator("> summary").inner_text() or ""
     assert "· 1" in trigger, f"the refused form does not say it still holds one area: {trigger!r}"

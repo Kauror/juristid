@@ -12,9 +12,9 @@ stop matching the service's refusal (docs/adr/0091 §3).
 
 What the caller passes is exactly what differs:
 
-* `panel_id` — `lisa-tagasiside` or `lisa-valine-seisukoht`, which is the radio's
-  `aria-controls`, the element `open_panel` names and the anchor the page links
-  to;
+* `panel_id` — `arvamus-tagasiside` or `arvamus-teiste`, which is the radio's
+  `aria-controls`, the element `open_value` is compared against and the anchor
+  the page links to;
 * `chip_label` — `+ Meile saadetud tagasiside` or `+ Teiste arvamus`;
 * `post_url` — the endpoint, one per chip, so a refusal comes back into the panel
   it was posted from;
