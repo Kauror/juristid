@@ -593,27 +593,39 @@ def test_the_rail_renders_on_the_matter_page_without_its_state_words(signed_in, 
     assert "Teema käik" in body
 
 
-def test_the_current_nodes_stage_label_reaches_the_page(signed_in, specialist):
+def test_the_stage_is_stated_in_the_header_and_not_on_the_rail(signed_in, specialist):
+    """`Hetkeseis` has one home, and the merged rail is not it.
+
+    docs/adr/0092 §13's amendment put the canonical stage on the current node,
+    because `Jõustumine · Praegu` read identically for a file waiting for
+    commencement and one already in force. Merging the phases onto the dated
+    strip made that a duplicate on every ordinary file — `Kooskõlastusringil`
+    under a node called `Kooskõlastusring`, one letter apart — which is exactly
+    what docs/adr/0074 §12.1 took off this row in the first place.
+
+    The reason for the amendment is weaker now: the `Praegu` it disambiguated is
+    gone from the rail too. So the rail draws the phase and the header states
+    the stage, once. The projection still carries the label — the assertions
+    above are over `ProcessNode.stage_label` and are unchanged — and what moved
+    is only that the page stopped printing it twice.
+    """
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("awaiting_entry"), actor=specialist)
 
-    def rail_of(body: str) -> str:
-        """The section, sliced on what follows it rather than on a byte count.
-
-        It was the first 2000 characters, which fitted while the rail drew five
-        short nodes and stopped fitting the moment the dated points joined them
-        on the same row — `Jõustumine` is last, so a fixed window cut off exactly
-        the node this test is about.
-        """
-        return body[body.index('class="lprail"') : body.index('id="ajajoon"')]
+    def split(body: str) -> tuple[str, str]:
+        """Everything before the section, and the section itself."""
+        start = body.index('class="lprail"')
+        return body[:start], body[start : body.index('id="ajajoon"')]
 
     url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
-    assert "Jõustumise ootel" in rail_of(signed_in.get(url).content.decode())
+    head, rail = split(signed_in.get(url).content.decode())
+    assert "Jõustumise ootel" not in rail
+    assert "Jõustumise ootel" in head
 
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
-    rail = rail_of(signed_in.get(url).content.decode())
-    assert "Jõustunud" in rail
-    assert "Jõustumise ootel" not in rail
+    head, rail = split(signed_in.get(url).content.decode())
+    assert "Jõustunud" not in rail
+    assert "Jõustunud" in head
 
 
 # ---------------------------------------------------------------------------

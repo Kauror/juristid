@@ -125,22 +125,6 @@ STATE_LABELS: dict[str, str] = {
     STATE_POSSIBLE: "Võimalik",
 }
 
-#: What a node says when the pattern marks it as one that **may not apply at
-#: all**, as opposed to one that simply has not happened yet.
-#:
-#: A VTK does not have to become a law; a `Määrus` may be a minister's and never
-#: reach the Government; a Koja ettepanek may be answered and go no further. Those
-#: are not «next steps», and a reader has to be able to tell them from one. The
-#: word is on the node, not in the stylesheet, for the reason the four states are.
-CONDITIONAL_LABEL = "kui menetlus jätkub"
-
-#: How many phases the road ahead names before it asks to be expanded.
-#:
-#: «Normally the next one to three relevant phases» — a horizon, not a plan. A
-#: rail that listed six speculative steps would read as a schedule, and the whole
-#: property this section has to keep is that none of it is promised.
-AHEAD_HORIZON = 3
-
 #: What the rail says beside itself when Koda has stopped following the file.
 #:
 #: `Disposition.MONITORING_STOPPED`'s own words on `Lõpeta teema`. It is not a
@@ -196,16 +180,11 @@ class ProcessNode:
 class LegalProcessRail:
     """One Matter's `Menetluse kulg`, or nothing at all.
 
-    ``ahead`` is the road ahead: the next few phases of the pattern, in the
-    lawyers' own words, every one of them undated and labelled possible. It is a
-    **reminder of the route, never a plan** — it creates no `NextAction`, sets no
-    deadline, assigns nobody, makes nothing late and is not written anywhere. What
-    *this office* does next is `PRAEGUNE TEGEVUS`, which is a different question
-    about a different actor and stays where it is (§5 of the brief).
-
-    ``ahead_rest`` is the remainder of the pattern behind a disclosure, so a
-    lawyer who wants the whole route can see it without the section turning into
-    a six-step schedule for everybody else.
+    **There is no separate «road ahead» list.** There was one — `Ees võib olla`,
+    with the rest of the pattern behind a disclosure — and it said what the rail
+    beside it was already drawing: a phase nobody has reached is muted, carries no
+    date and says «Tulevikus». Two renderings of one fact is one of them too many,
+    and the second was the wordier (docs/adr/0099).
 
     ``unplaced_stage`` is the current `Hetkeseis` when it cannot honestly be
     placed on the chosen pattern — `Muu`, or `ELi õiguse ülevõtmise ootel` on a
@@ -222,8 +201,6 @@ class LegalProcessRail:
 
     pattern: ProcessPattern
     nodes: tuple[ProcessNode, ...]
-    ahead: tuple[ProcessNode, ...] = ()
-    ahead_rest: tuple[ProcessNode, ...] = ()
     current_label: str = ""
     unplaced_stage: str = ""
     koda_stopped: bool = False
@@ -516,14 +493,6 @@ def legal_process_rail(
             )
         )
 
-    # **The road ahead: what is past the anchor and not already recorded.**
-    #
-    # Drawn from the same nodes rather than from a second list, so a phase cannot
-    # be `Võimalik` on the rail and absent from the horizon, or the other way
-    # round — and a node the file can prove it reached is not offered as
-    # something that «may be ahead», however it sorts.
-    ahead = tuple(node for node in drawn[anchor + 1 :] if node.state == STATE_POSSIBLE)
-
     # A `Hetkeseis` the chosen pattern cannot honestly hold — `Muu`, or a European
     # stage on a file the pattern says is never transposed — reads beside the rail
     # in its own words rather than being pushed onto the nearest node.
@@ -534,8 +503,6 @@ def legal_process_rail(
     return LegalProcessRail(
         pattern=pattern,
         nodes=tuple(drawn),
-        ahead=ahead[:AHEAD_HORIZON],
-        ahead_rest=ahead[AHEAD_HORIZON:],
         current_label=(drawn[current_index].label if current_index is not None else ""),
         unplaced_stage=unplaced,
         koda_stopped=facts.disposition == Disposition.MONITORING_STOPPED,
@@ -580,8 +547,6 @@ class RailStep:
     state: str
     display_date: str = ""
     sort_on: date | None = None
-    conditional: bool = False
-    stage_label: str = ""
     #: Secondary information, read as the item's `title`: a closure's
     #: `Disposition`, a commencement's «mis jõustub». It is what tells two
     #: `Jõustumine` columns apart, and it is not a second visible line because
@@ -701,8 +666,6 @@ def matter_rail(
                     state=node.state,
                     display_date=display,
                     sort_on=when,
-                    conditional=node.conditional,
-                    stage_label=node.stage_label,
                     # A phase the file has reached joins the solid rail; one it
                     # has not does not. `Teadmata` — an earlier phase with no
                     # evidence — draws no solid connector either, because a
@@ -739,8 +702,6 @@ def matter_rail(
 #: Kept out of the query above on purpose: this module reads and never filters a
 #: population, so it has no `Q` of its own to export.
 __all__ = [
-    "AHEAD_HORIZON",
-    "CONDITIONAL_LABEL",
     "KIND_MILESTONE",
     "KIND_PHASE",
     "KODA_STOPPED_LABEL",

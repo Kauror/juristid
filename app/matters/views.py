@@ -143,7 +143,6 @@ from app.matters.intake_suggestions import (
     prefill_initial,
 )
 from app.matters.legal_process import (
-    CONDITIONAL_LABEL,
     KODA_STOPPED_LABEL,
     legal_process_rail,
     matter_rail,
@@ -2559,7 +2558,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # is then not rendered at all (app/matters/legal_process.py).
         "legal_process": rail,
         "legal_process_stopped_label": KODA_STOPPED_LABEL,
-        "legal_process_conditional_label": CONDITIONAL_LABEL,
         # **The one rail.** Phases and the dated points the file holds, in one
         # ordered list — the second strip is gone and its content is here, still
         # read by `process_timeline.process_steps` and handed over rather than

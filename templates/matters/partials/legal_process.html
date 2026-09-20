@@ -91,23 +91,27 @@ recorded, not claims about a procedure.
             <span class="tl-step__date">{{ step.display_date }}</span>
           {% endif %}
           {% comment %}
-            The canonical `Hetkeseis`, on the current phase and **only where it
-            adds a word the node has not already said**.
+            **`Hetkeseis` is not on this rail, and that is docs/adr/0074 §12.1
+            kept rather than a thing this round forgot.**
 
-            A node is deliberately broader than a stage: `Jõustumine` holds both
-            «ootel» and «jõustunud», and a reader cannot tell those apart from
-            the node's own name. So the stage rides on it — but `Riigikogus`
-            under a node called `Riigikogus` states one thing twice and tells a
-            reader nothing, which is exactly the noise this round removes.
-            `ProcessNode.stage_label` is already empty in that case.
+            §12.1 took the current `StageVocabulary` off the strip precisely
+            because it left «the header's `Hetkeseis` pinned in the middle of
+            it», and merging the phases back onto the same row put it there
+            again: `Kooskõlastusringil` under a node called `Kooskõlastusring`,
+            on every ordinary file, one letter apart.
 
-            Which node is *current* is carried by `aria-current="step"`, the
-            filled and ringed dot and the heavier name — three signals, none of
-            them colour alone (app/matters/legal_process.py `ProcessNode`).
+            docs/adr/0092 §13's amendment put it on the node for a real reason —
+            `Jõustumine` holds both «ootel» and «jõustunud», and `Jõustumine ·
+            Praegu` read identically for both. That reason is weaker now: the
+            `Praegu` it was disambiguating is gone from the rail too, and the
+            header states the stage in full, once, where it has always been
+            stated. One glance for the rare question beats a duplicated line on
+            the common one.
+
+            Which node is *current* is still said three ways, none of them
+            colour: `aria-current="step"`, the filled and ringed dot, and the
+            heavier name.
           {% endcomment %}
-          {% if step.stage_label %}
-            <span class="tl-step__stage">{{ step.stage_label }}</span>
-          {% endif %}
         </span>
       {% endfor %}
     </div>
