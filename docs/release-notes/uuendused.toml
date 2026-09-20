@@ -36,13 +36,35 @@ basis = "deployment"
 # rakenduses, nii et lugeja peab teadma nii seda, et see on olemas, kui ka
 # seda, et see võib keelduda. Keeldumise põhjuseid punkt ei loetle — rakendus
 # ütleb need ise, siis kui need kehtivad.
-prs = [263]
+#
+# **Teine väljalase samal päeval, ja see võtab tagasi kahe eelmise punkti
+# erandi.** Ülemine loetelu kirjeldab hommikust ringi, nagu see sel hetkel
+# tõesti oli; vanu punkte ei kustutata ega parandata, täpselt nagu 19. septembri
+# omi ei parandatud (docs/release-notes/README.md). Kuues punkt ütleb, mis
+# päeva lõpuks kehtib — teine punkt lubas kolme lisaküsimust muutmise vaates ja
+# omanik võttis erandi tagasi, nii et loetelu tuleb lugeda järjekorras.
+#
+# **Ülejäänud punktid on teema lehe enda ring.** Kaks neist nimetavad ka seda,
+# mis ei muutu — vanad menetluse arengud ja varem kuu või kvartali täpsusega
+# salvestatud töövõidud —, sest kirje, mis ütleb ainult uut reeglit, jätab
+# mulje, et vana sisu kirjutati üle.
+#
+# Ükski punkt ei nimeta kirjeliike ega ekraaniosade sisemisi nimesid: lugeja
+# kohtab neid nuppudena, mitte mõistetena.
+prs = [263, 265]
 changes = [
   "Uue teema lisamisel on valdkonnad ja hetkeseis taas kohe nähtavate valikutena — rippmenüüsid enam ei ole ja kõik valikud on lehel lahti.",
   "Teema muutmise vaade järgib nüüd uue teema lisamise vaadet: samad küsimused samas järjekorras ja samade valikutega, lisaks menetlusliik, kellele ja sildid, mida uut teemat luues ei küsita.",
   "Teema muutmise vaatest ja saabunud materjali registreerimisest eemaldati nähtavuse valik; juba piiratud nähtavusega teemad jäävad piiratuks.",
   "Teema saab nüüd muutmise vaatest kustutada: kustutamine eemaldab teema ja kogu selle sisu jäädavalt ning seda küsitakse eraldi lehel üle.",
   "Kui teemat kustutada ei saa, ütleb rakendus seda enne kustutamist ja põhjendab, miks.",
+  "Päeva teise uuendusega võeti see erand tagasi: menetlusliiki, kellele ja silte teema muutmise vaates enam ei küsita ning uus teema ja teema muutmine küsivad nüüd täpselt samu asju. Varem sisestatud väärtused jäävad alles.",
+  "Menetluse link käib nüüd teema andmete juurde: seda küsitakse nii uut teemat luues kui ka teemat muutes, ja teema lehel on lingid koos ülejäänud teema andmetega.",
+  "Teemale lisamise rida on nüüd neli valikut — märge, kaasamine, arvamus või tagasiside ja ülevaade või uudis — ning täpsem liik valitakse teise sammuna.",
+  "Märget ja menetluse arengut ei lisata enam eraldi: mõlemad on üks märge, mis küsib kuupäeva ja seda, mis juhtus. Varem lisatud kirjed jäävad muutmata ja neid saab endiselt parandada.",
+  "Sama märke juurde saab kohe valida uue hetkeseisu ja järgmise tegevuse, nii et eraldi järgmise tegevuse valikut lisamise real enam ei ole.",
+  "Töövõidu lisamisel küsitakse nüüd täpset kuupäeva; varem kuu, kvartali või aasta täpsusega salvestatud töövõidud jäävad nii, nagu need on.",
+  "Teema sulgemine ja kustutamine on teema lehel omaette plokis «Teema toimingud», eraldi sellest, mida teemale juurde lisatakse.",
 ]
 
 [[day]]
