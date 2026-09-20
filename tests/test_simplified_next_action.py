@@ -621,6 +621,15 @@ def test_the_next_action_text_is_stored_exactly_as_typed(signed_in, normal_matte
 
 
 def test_the_workspace_asks_its_questions_and_no_classification(signed_in, normal_matter):
+    # An open step, because `Muuda` — the next-step form — is drawn beside a
+    # task and is its only host since `+ Järgmine tegevus` left the launcher
+    # (docs/adr/0097 §8.2).
+    set_next_action(
+        matter=normal_matter,
+        text="Koosta arvamus",
+        target_date=timezone.localdate() + timedelta(days=7),
+        actor=normal_matter.owner,
+    )
     body = _detail(signed_in, normal_matter)
     flat = " ".join(body.split())
 
@@ -638,6 +647,15 @@ def test_the_workspace_asks_its_questions_and_no_classification(signed_in, norma
 
 
 def test_the_questions_stopped_asking_for_both_at_once(signed_in, normal_matter):
+    # An open step, because `Muuda` — the next-step form — is drawn beside a
+    # task and is its only host since `+ Järgmine tegevus` left the launcher
+    # (docs/adr/0097 §8.2).
+    set_next_action(
+        matter=normal_matter,
+        text="Koosta arvamus",
+        target_date=timezone.localdate() + timedelta(days=7),
+        actor=normal_matter.owner,
+    )
     body = _detail(signed_in, normal_matter)
     assert "Kirjelda, mis tegid ja mida teed edasi" not in body
     # What happened and what happens next are two panels and two saves now, so

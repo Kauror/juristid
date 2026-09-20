@@ -402,15 +402,25 @@ def test_a_refused_save_brings_a_non_shortlist_sender_back_in_sight_on_the_edit_
     assert outside is not None
     matter = factories.MatterFactory(owner=specialist)
 
+    # Posted through the *tail* field, which is where a body outside the
+    # shortlist lives — Saatja is one set split across two fields, because a
+    # checkbox group cannot be rendered in two places without becoming two, and
+    # `clean` unions them back. Which of the two carries a given body on the
+    # re-render is the form's decision, so the answer is looked for in both.
     response = signed_in.post(
         reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
-        {"title": "", "source_organisations": [str(outside.pk)]},
+        {"title": "", "source_organisations_other": [str(outside.pk)]},
     )
     page = scripted(response.content.decode())
-    tag = chip_tags(page, "source_organisations")[str(outside.pk)]
+    field = next(
+        name
+        for name in ("source_organisations", "source_organisations_other")
+        if str(outside.pk) in chip_tags(page, name)
+    )
+    tag = chip_tags(page, field)[str(outside.pk)]
 
     assert "checked" in tag
-    assert "hidden" not in chip_label(page, "source_organisations", str(outside.pk))
+    assert "hidden" not in chip_label(page, field, str(outside.pk))
 
 
 def test_a_refused_save_keeps_the_typed_name_and_shows_it_as_a_chip(signed_in):
