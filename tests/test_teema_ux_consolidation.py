@@ -1,28 +1,31 @@
-"""The consolidated Teema model: andmed, lisamine, toimingud (docs/adr/0096).
+"""The consolidated Teema model: andmed, lisamine, toimingud (docs/adr/0097).
 
 This file owns the claims the round makes that no existing file already owns,
 and deliberately stops where another file starts:
 
+* `tests/test_teema_live_audit_round_2.py` owns docs/adr/0096 in full — that
+  the two forms ask the same questions with the same controls and from the same
+  partials, that `Nähtavus` is absent from the ordinary interface, and every
+  claim about `Kustuta teema`: the confirmation page, the tombstone, the audit
+  proof and each refusal. This round changes none of it. What is asserted here
+  is only that the deletion control lives under `TEEMA TOIMINGUD` rather than in
+  the content launcher, which is the part that is new;
 * `tests/test_uus_teema_ux_corrections.py` owns how `Valdkonnad` and
-  `Hetkeseis` are drawn on `Uus teema` — the `chipfold`, its `open` attribute
-  on a first and a refused render, and what each summary says. What is asserted
-  here is only that `Muuda teemat` draws the *same* controls, which is the part
-  that is new;
+  `Hetkeseis` are drawn;
 * `tests/test_uus_teema_manual_first.py` owns the Valdkond vocabulary and its
   withdrawals;
 * `tests/test_procedural_links_on_uus_teema.py` owns the link's create path;
-* `e2e/test_uus_teema_valikud.py` owns what only a browser can say — that the
-  options are visible without a click and that collapsing is the reader's act.
+* `tests/test_lawyer_workflow_package.py` owns what a
+  `MatterProceduralDevelopment` means once it is stored, and the correction
+  surface that still offers the whole precision control on one.
 
-Four groups, in the order docs/adr/0096 decides them:
+Three groups, in the order docs/adr/0097 decides them:
 
-1. the two forms ask the same questions with the same controls (§1–§3);
+1. `Menetluse link` is a Matter fact and is answered on both Teema forms (§5);
 2. four questions left the ordinary interface and took their write paths with
-   them, and no stored value moved (§4–§5);
-3. `LISA TEEMALE` is four families and `TEEMA TOIMINGUD` is not one of them
-   (§6–§9);
-4. `Kustuta teema` removes the content, leaves a tombstone, and refuses by name
-   (§10).
+   them, and no stored value moved (§2–§5);
+3. `LISA TEEMALE` is four families, `+ Märge` is one of them and
+   `TEEMA TOIMINGUD` is not (§6–§9).
 
 **The crafted-POST tests are the load-bearing half of group 2.** A control
 removed from a template is a control removed from one render; a question is
@@ -38,24 +41,16 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from app.audit.enums import ChangeEventType
-from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.matters.deletion import (
-    BLOCKED_BY_APPEND_ONLY,
-    build_deletion_plan,
-    delete_matter,
-)
 from app.matters.enums import ProceduralLinkKind
 from app.matters.forms import MatterEditForm
 from app.matters.models import (
-    EntryRevision,
     Matter,
     MatterProceduralDevelopment,
     MatterProceduralLink,
 )
 from app.organisations.models import Organisation
-from app.taxonomy.models import PolicyArea, Tag
+from app.taxonomy.models import Tag
 from app.workflow.enums import ActionStatus, Track
 from app.workflow.models import NextAction
 from tests import factories
@@ -79,68 +74,14 @@ def page_of(client, url: str) -> str:
     return response.content.decode()
 
 
-def fold(page: str, field: str) -> str:
-    """One `chipfold`, from its opening tag to its close.
-
-    `rindex` back from the summary that names the field, because both folds on
-    a page open with an identical tag and order-based slicing would silently
-    read the wrong one.
-    """
-    anchor = page.index(f'data-chipsummary-for="{field}"')
-    start = page.rindex('<details class="chipfold"', 0, anchor)
-    return page[start : page.index("</details>", start)]
-
-
 # ---------------------------------------------------------------------------
-# 1 — one question, one control, on both pages (§1–§3)
+# 1 — `Menetluse link` is a Matter fact (§5)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("field", ["policy_areas", "stage"])
-def test_muuda_teemat_draws_the_same_open_fold_as_uus_teema(signed_in, specialist, stage, field):
-    """The classification controls are one partial included twice.
-
-    Asserted as sameness rather than as shape: the shape is
-    `test_uus_teema_ux_corrections.py`'s claim, and restating it here would be
-    two places for it to drift — which is the defect this round exists to
-    close.
-    """
-    matter = factories.MatterFactory(owner=specialist)
-    create = fold(page_of(signed_in, CREATE), field)
-    edit = fold(page_of(signed_in, edit_url(matter)), field)
-
-    for markup in (create, edit):
-        assert markup.startswith('<details class="chipfold" open>')
-        assert '<summary class="chipfold__trigger">' in markup
-        assert "chipfold__body" in markup
-
-
-def test_no_teema_form_renders_a_floating_menu(signed_in, specialist):
-    """The overlay is gone from both pages, not merely from the one that had it.
-
-    `chipmenu` was `Uus teema`'s alone; this is the assertion that nothing
-    reintroduced it on the page that followed it (docs/adr/0096 §3).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-
-    for url in (CREATE, edit_url(matter)):
-        page = page_of(signed_in, url)
-        assert "chipmenu" not in page
-        assert "data-chipmenu" not in page
-
-
-def test_muu_valdkond_is_a_chip_on_the_edit_page_too(signed_in, specialist):
-    """`Muu` reveals its box on both pages, instead of a chip on one and a box on the other."""
-    matter = factories.MatterFactory(owner=specialist, policy_area_other="Kosmoseõigus")
-
-    page = page_of(signed_in, edit_url(matter))
-
-    assert 'id="valdkond-muu"' in fold(page, "policy_areas")
-    # Ticked from the stored text, so the box renders open with the value in it
-    # and nothing depends on scripting having run (docs/adr/0096 §2).
-    assert 'id="valdkond-muu-tekst"' in page
-    box = page[page.index('id="valdkond-muu-tekst"') :][:200]
-    assert "hidden" not in box
+#
+# How `Valdkonnad` and `Hetkeseis` are drawn, and that both pages draw one
+# partial, is `tests/test_teema_live_audit_round_2.py` §1. This round changes
+# neither, so nothing about either is restated here — two places for one claim
+# is the drift this whole round exists to close.
 
 
 def test_the_edit_page_offers_menetluse_link(signed_in, specialist):
@@ -185,7 +126,7 @@ def test_an_existing_menetluse_link_is_editable_from_muuda_teemat(signed_in, spe
     assert link.url == "https://eelnoud.ee/uus"
     # And the kind it was filed under is not rewritten by an address
     # correction: only the Teema page's own `Paranda` offers that vocabulary
-    # (docs/adr/0096 §6).
+    # (docs/adr/0097 §5).
     assert link.kind == ProceduralLinkKind.EIS
 
 
@@ -199,7 +140,7 @@ def test_menetluse_link_is_not_in_the_launcher(signed_in, specialist, stage):
 
 
 # ---------------------------------------------------------------------------
-# 2 — four questions left, and nothing stored moved (§4–§5)
+# 2 — four questions left, and nothing stored moved (§2–§4)
 # ---------------------------------------------------------------------------
 
 
@@ -611,147 +552,3 @@ def test_historical_developments_still_read_and_correct(signed_in, specialist, s
 
     assert "Vana samm" in page
     assert str(record.pk) in page
-
-
-# ---------------------------------------------------------------------------
-# 5 — `Kustuta teema` (§10)
-# ---------------------------------------------------------------------------
-
-
-def delete_url(matter: Matter) -> str:
-    return reverse("matters:matter_delete", kwargs={"pk": matter.pk})
-
-
-def test_get_shows_the_confirmation_and_deletes_nothing(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist, title="Kustutatav teema")
-
-    page = page_of(signed_in, delete_url(matter))
-
-    assert "Kustutatav teema" in page
-    assert "Loobu" in page
-    matter.refresh_from_db()
-    assert matter.deleted_at is None
-
-
-def test_the_confirmation_requires_csrf(client, specialist):
-    """No CSRF token, no deletion — the form's token is the confirmation."""
-    matter = factories.MatterFactory(owner=specialist)
-    client.force_login(specialist)
-    client.handler.enforce_csrf_checks = True
-
-    response = client.post(delete_url(matter))
-
-    assert response.status_code == 403
-    matter.refresh_from_db()
-    assert matter.deleted_at is None
-
-
-def test_a_successful_deletion_removes_the_matter_from_every_surface(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    pk = matter.pk
-
-    response = signed_in.post(delete_url(matter))
-
-    assert response.status_code == 302
-    assert not Matter.objects.filter(pk=pk).exists()
-    assert Matter.all_objects.filter(pk=pk).exists()
-    assert signed_in.get(teema_url(matter)).status_code == 404
-    assert pk not in {row.pk for row in Matter.objects.visible_to(specialist)}
-
-
-def test_deletion_leaves_audit_proof(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    signed_in.post(delete_url(matter))
-
-    event = ChangeEvent.objects.get(matter_id=matter.pk, event_type=ChangeEventType.MATTER_DELETED)
-    assert event.actor_id == specialist.pk
-    # Counts, never content.
-    assert "rows" in event.payload
-    assert matter.title not in str(event.payload)
-
-
-def test_deletion_keeps_shared_vocabulary(signed_in, specialist):
-    """An Organisation the Matter pointed at is not owned by it."""
-    body = Organisation.objects.create(name="Kliimaministeerium")
-    area = PolicyArea.objects.filter(is_active=True).first()
-    matter = factories.MatterFactory(owner=specialist)
-    matter.source_organisations.set([body])
-    if area is not None:
-        matter.policy_areas.set([area])
-
-    signed_in.post(delete_url(matter))
-
-    assert Organisation.objects.filter(pk=body.pk).exists()
-    if area is not None:
-        assert PolicyArea.objects.filter(pk=area.pk).exists()
-
-
-def test_deletion_removes_owned_business_data(signed_in, specialist, stage):
-    matter = factories.MatterFactory(owner=specialist)
-    signed_in.post(
-        add_note_url(matter),
-        {"title": "Midagi juhtus", "occurred_on": "19.09.2026"},
-    )
-    assert MatterProceduralDevelopment.objects.filter(matter=matter).exists()
-
-    signed_in.post(delete_url(matter))
-
-    assert not MatterProceduralDevelopment.objects.filter(matter_id=matter.pk).exists()
-
-
-def test_a_second_deletion_is_a_no_op(signed_in, specialist):
-    """Two tabs, two clicks, one deletion."""
-    matter = factories.MatterFactory(owner=specialist)
-    signed_in.post(delete_url(matter))
-    first = Matter.all_objects.get(pk=matter.pk).deleted_at
-
-    delete_matter(matter=Matter.all_objects.get(pk=matter.pk), actor=specialist)
-
-    assert Matter.all_objects.get(pk=matter.pk).deleted_at == first
-
-
-def test_a_legal_hold_refuses_the_whole_deletion(signed_in, specialist):
-    """A legal hold outlives anybody's wish to tidy up."""
-    matter = factories.MatterFactory(owner=specialist)
-    document = factories.DocumentFactory(matter=matter)
-    document.legal_hold = True
-    document.legal_hold_reason = "Kohtuvaidlus"
-    document.save(update_fields=["legal_hold", "legal_hold_reason"])
-
-    plan = build_deletion_plan(matter)
-
-    assert plan.is_blocked
-    assert "säilituskohustus" in plan.refusal
-    response = signed_in.post(delete_url(matter))
-    assert response.status_code == 409
-    matter.refresh_from_db()
-    assert matter.deleted_at is None
-
-
-def test_an_append_only_child_refuses_by_name(signed_in, specialist, stage):
-    """The `EntryRevision` case: a corrected entry's previous wording is evidence."""
-    matter = factories.MatterFactory(owner=specialist)
-    entry = factories.EntryFactory(matter=matter, body="Teine sõnastus")
-    EntryRevision.objects.create(
-        entry=entry, revision_number=1, body="Esimene sõnastus", edited_by=specialist
-    )
-
-    plan = build_deletion_plan(matter)
-
-    assert plan.is_blocked
-    assert any(blocker.category == BLOCKED_BY_APPEND_ONLY for blocker in plan.blockers)
-    assert "muutumatuid" in plan.refusal
-    matter.refresh_from_db()
-    assert matter.deleted_at is None
-
-
-def test_a_reader_cannot_reach_the_deletion(client, reader, specialist):
-    """`business_write_required`, like every other write on this product."""
-    matter = factories.MatterFactory(owner=specialist)
-    client.force_login(reader)
-
-    assert client.get(delete_url(matter)).status_code in (403, 404)
-    assert client.post(delete_url(matter)).status_code in (403, 404)
-    matter.refresh_from_db()
-    assert matter.deleted_at is None
