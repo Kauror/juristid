@@ -167,7 +167,7 @@ def test_the_edit_form_does_not_bind_the_withdrawn_fields(field):
     A form that still declared these would still clean them, and the view would
     still have a value to hand to a service. `MatterEditForm` has no such field,
     so the parameter is not part of the request as far as this form is
-    concerned (docs/adr/0095's rule, applied in docs/adr/0096 §4).
+    concerned (docs/adr/0095's rule, applied in docs/adr/0097 §2–§4).
     """
     assert field not in MatterEditForm().fields
 
@@ -231,7 +231,7 @@ def test_an_ordinary_save_clears_no_unrelated_field(signed_in, specialist):
     A field removed from a form is a value the view stops sending. What it must
     never become is a value the view sends as *empty* — `set_organisations`
     takes `_UNSET` for «leave this alone», and passing `None` instead would
-    clear a fact nobody was offered the chance to state (docs/adr/0096 §5).
+    clear a fact nobody was offered the chance to state (docs/adr/0097 §4).
     """
     body = Organisation.objects.create(name="Justiitsministeerium")
     tag = Tag.objects.create(key="maksud", name_et="Maksud", is_active=True)
@@ -260,7 +260,7 @@ def test_the_inline_field_route_no_longer_exists(signed_in, specialist, field):
 
     `update_field` 404s on a field `FIELD_SERVICES` does not name, so these
     three are not addresses at all rather than addresses nothing links to
-    (docs/adr/0096 §4).
+    (docs/adr/0096 §3, docs/adr/0097 §3, §4).
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -403,7 +403,7 @@ def test_teema_toimingud_is_a_separate_section(signed_in, specialist, stage):
 
 
 # ---------------------------------------------------------------------------
-# 4 — `+ Märge` writes the structured record (§7)
+# 3b — `+ Märge` writes the structured record (§6)
 # ---------------------------------------------------------------------------
 
 
@@ -412,7 +412,7 @@ def add_note_url(matter: Matter) -> str:
 
 
 def test_the_marge_panel_offers_no_precision_control(signed_in, specialist, stage):
-    """One date box, and `Täpsus` is not asked (§7.1)."""
+    """One date box, and `Täpsus` is not asked (§6.1)."""
     matter = factories.MatterFactory(owner=specialist)
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
@@ -438,7 +438,7 @@ def test_the_marge_date_defaults_to_today(signed_in, specialist, stage):
 
 
 def test_a_marge_writes_a_procedural_development(signed_in, specialist, stage):
-    """One visible control, and the record underneath is the structured one (§7)."""
+    """One visible control, and the record underneath is the structured one (§6)."""
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
@@ -454,7 +454,7 @@ def test_a_marge_writes_a_procedural_development(signed_in, specialist, stage):
 
 
 def test_a_marge_can_move_the_stage_in_the_same_save(signed_in, specialist, stage):
-    """«Eelnõu saadeti Riigikokku» and the stage are one act (§7.1)."""
+    """«Eelnõu saadeti Riigikokku» and the stage are one act (§6.1)."""
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
@@ -537,7 +537,7 @@ def test_the_retired_routes_are_gone(signed_in, specialist):
 
 
 def test_historical_developments_still_read_and_correct(signed_in, specialist, stage):
-    """The record type survives; only the word left the screen (§7)."""
+    """The record type survives; only the word left the screen (§6)."""
     matter = factories.MatterFactory(owner=specialist)
     record = MatterProceduralDevelopment.objects.create(
         matter=matter,
@@ -552,3 +552,114 @@ def test_historical_developments_still_read_and_correct(signed_in, specialist, s
 
     assert "Vana samm" in page
     assert str(record.pk) in page
+
+
+# ---------------------------------------------------------------------------
+# 4 — `Töövõit` is an exact date (§7)
+# ---------------------------------------------------------------------------
+
+
+def victory_url(matter: Matter) -> str:
+    return reverse("matters:add_work_victory", kwargs={"pk": matter.pk})
+
+
+def test_the_toovoit_panel_asks_for_a_day_and_offers_no_precision(signed_in, specialist, stage):
+    """A win is something Koda achieved, and the organisation should know when.
+
+    One date box holding today, and the four-way `Täpsus` group is not on this
+    panel — `Kuu`, `Kvartal` and `Aasta` are what it offered and what it no
+    longer does (docs/adr/0097 §7).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    zone = launcher(page_of(signed_in, teema_url(matter)))
+    panel = zone[zone.index('id="marge-toovoit"') :]
+    # To the end of the `+ Märge` family: `Töövõit` is its last sub-choice,
+    # and the next chip in the document is the family after it.
+    panel = panel[: panel.index('id="lisa-kaasamine"')]
+
+    assert 'name="victory_date"' in panel
+    assert "Täpsus" not in panel
+    for label in ("Kvartal", "Poolaasta"):
+        assert label not in panel
+    today = timezone.localdate()
+    assert f"{today.day}.{today.month}.{today.year}" in panel
+
+
+def test_a_toovoit_is_stored_as_the_single_day_it_was_won_on(signed_in, specialist, stage):
+    """`period_date` and `period_end` are the same day, and the precision is EXACT."""
+    from app.intelligence.models import MatterWorkVictory
+
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        victory_url(matter),
+        {"victory_change": "Üleminekuaega pikendati", "victory_date": "19.09.2026"},
+    )
+
+    assert response.status_code == 200
+    victory = MatterWorkVictory.objects.get(matter=matter)
+    assert victory.period_date.isoformat() == "2026-09-19"
+    assert victory.period_end.isoformat() == "2026-09-19"
+    assert victory.date_precision == "EXACT"
+
+
+def test_a_crafted_precision_on_a_toovoit_reaches_nothing(signed_in, specialist, stage):
+    """No `victory_precision` field, so a forged one binds to nothing (§7)."""
+    from app.intelligence.models import MatterWorkVictory
+
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        victory_url(matter),
+        {
+            "victory_change": "Üleminekuaega pikendati",
+            "victory_date": "19.09.2026",
+            "victory_precision": "YEAR",
+            "victory_year": "2024",
+        },
+    )
+
+    assert response.status_code == 200
+    victory = MatterWorkVictory.objects.get(matter=matter)
+    assert victory.date_precision == "EXACT"
+    assert victory.period_date.isoformat() == "2026-09-19"
+
+
+def test_an_undated_toovoit_is_refused_rather_than_stored_with_no_period(
+    signed_in, specialist, stage
+):
+    """The gap Stage-2G closed stays closed: an empty box is not `NULL`."""
+    from app.intelligence.models import MatterWorkVictory
+
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = signed_in.post(
+        victory_url(matter), {"victory_change": "Üleminekuaega pikendati", "victory_date": ""}
+    )
+
+    assert response.status_code == 400
+    assert "Märgi, millal see töövõit saavutati." in response.content.decode()
+    assert not MatterWorkVictory.objects.filter(matter=matter).exists()
+
+
+def test_a_historical_approximate_toovoit_keeps_its_period(specialist):
+    """Nothing is backfilled, clamped or rewritten (docs/adr/0097 §7)."""
+    import datetime as dt
+
+    from app.intelligence.models import MatterWorkVictory
+
+    matter = factories.MatterFactory(owner=specialist)
+    victory = MatterWorkVictory.objects.create(
+        matter=matter,
+        title="Vana võit",
+        period_date=dt.date(2024, 1, 1),
+        period_end=dt.date(2024, 12, 31),
+        date_precision="YEAR",
+        created_by=specialist,
+    )
+
+    victory.refresh_from_db()
+    assert victory.date_precision == "YEAR"
+    assert victory.period_date.isoformat() == "2024-01-01"
+    assert victory.period_end.isoformat() == "2024-12-31"

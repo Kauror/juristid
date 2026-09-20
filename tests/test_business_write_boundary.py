@@ -286,11 +286,37 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             w["action"].__class__.objects.values_list("status", flat=True).get(pk=w["action"].pk),
         ),
     ),
+    # `+ Märge` — one dated `MatterProceduralDevelopment`, and up to three other
+    # canonical writes riding with it: the files, the `Hetkeseis` and the next
+    # step. The payload names all of them on purpose, because what must not
+    # happen is not «a note appears» but «a forbidden actor moves the file's
+    # stage and assigns somebody work» (docs/adr/0091 §5).
+    #
+    # This entry absorbed `matters:add_development`, which was the same three
+    # writes behind a second chip and is not a route any more: `+ Menetluse
+    # areng` is retired as a user-facing concept and its ordinary function is
+    # this one (docs/adr/0097 §6).
+    #
+    # The probe is the triple, so a refusal that let *any* of the three through
+    # fails rather than passing on the one it happened to check.
     WriteRoute(
         name="matters:add_note",
         label="Märkme lisamine",
-        request=lambda w: ({"pk": w["matter"].pk}, {"body": "<p>Loata märge.</p>"}),
-        probe=lambda w: w["matter"].entries.count(),
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "title": "Loata salvestatud märge.",
+                "occurred_on": format_estonian_date(timezone.localdate()),
+                "stage": str(w["stage"].pk),
+                "next_text": "Loata määratud järgmine tegevus",
+                "next_date": format_estonian_date(timezone.localdate() + timedelta(days=4)),
+            },
+        ),
+        probe=lambda w: (
+            w["matter"].procedural_developments.count(),
+            w["matter"].__class__.objects.values_list("stage_id", flat=True).get(pk=w["matter"].pk),
+            w["matter"].next_actions.count(),
+        ),
     ),
     # Correcting an entry that is already filed. In the matrix and not in
     # `CLASSIFIED_ELSEWHERE`, because it is an ordinary business write on
@@ -381,13 +407,13 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         label="Töövõidu lisamine",
         request=lambda w: (
             {"pk": w["matter"].pk},
-            # A period, because a new win now needs one. The route is what this
-            # suite is about; the payload only has to be a save that would
-            # otherwise succeed (docs/adr/0079 §10).
+            # A day, because a new win needs one and the panel offers no
+            # precision. The route is what this suite is about; the payload
+            # only has to be a save that would otherwise succeed
+            # (docs/adr/0079 §10, docs/adr/0097 §7).
             {
                 "victory_change": "Loata töövõit",
-                "victory_precision": "YEAR",
-                "victory_year": "2026",
+                "victory_date": format_estonian_date(timezone.localdate()),
             },
         ),
         probe=lambda w: w["matter"].work_victories.count(),
@@ -475,40 +501,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         files=lambda: {"upload": _pdf("loata-arvamus.pdf")},
         probe=lambda w: w["matter"].submissions.count(),
     ),
-    # `Menetluse areng` — one dated `Entry` of its own kind, and up to three
-    # other canonical writes riding with it: the files, the `Hetkeseis` and the
-    # next step. The payload names all of them on purpose, because what must not
-    # happen is not «an entry appears» but «a forbidden actor moves the file's
-    # stage and assigns somebody work» (docs/adr/0091 §5).
-    #
-    # The probe is the triple, so a refusal that let *any* of the three through
-    # fails rather than passing on the one it happened to check.
-    WriteRoute(
-        name="matters:add_development",
-        label="Menetluse arengu lisamine",
-        request=lambda w: (
-            {"pk": w["matter"].pk},
-            {
-                "body": "Loata salvestatud menetluse areng.",
-                "occurred_on": format_estonian_date(timezone.localdate()),
-                "stage": str(w["stage"].pk),
-                "next_text": "Loata määratud järgmine tegevus",
-                "next_date": format_estonian_date(timezone.localdate() + timedelta(days=4)),
-            },
-        ),
-        probe=lambda w: (
-            w["matter"].entries.count(),
-            Matter.objects.values_list("stage_id", flat=True).get(pk=w["matter"].pk),
-            w["matter"].next_actions.count(),
-        ),
-    ),
-    # `Väline seisukoht`, in both of its write routes: the record, and the
-    # correction to one. Both are ordinary new business content on an open
-    # Matter — unlike the overview's link correction above, a position
-    # correction is refused on a closed file (docs/adr/0084 §8).
-    #
-    # The chip is `+ Teiste arvamus` since docs/adr/0091 §3; the route keeps its
-    # name, and so does this row.
     WriteRoute(
         name="matters:add_external_position",
         label="Välise seisukoha lisamine",
@@ -583,15 +575,11 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     # file as well, exactly like the overview's link correction below and for
     # the same reason — closure has never meant that an address recorded
     # wrongly must stay wrong (docs/adr/0089 §6).
-    WriteRoute(
-        name="matters:add_procedural_link",
-        label="Menetluse lingi lisamine",
-        request=lambda w: (
-            {"pk": w["matter"].pk},
-            {"kind": "EIS", "url": "https://eelnoud.valitsus.ee/loata-toimik"},
-        ),
-        probe=lambda w: w["matter"].procedural_links.count(),
-    ),
+    # There is deliberately no `matters:add_procedural_link` entry. The route
+    # is gone with the launcher chip it served: `Menetluse link` is a fact about
+    # the Matter and is recorded through `matters:matter_edit`, which is in this
+    # matrix a few entries above (docs/adr/0097 §5). Correcting one is still its
+    # own route and is below.
     WriteRoute(
         name="matters:correct_procedural_link",
         label="Menetluse lingi parandamine",
