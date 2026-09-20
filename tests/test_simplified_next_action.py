@@ -624,7 +624,7 @@ def test_the_workspace_asks_its_questions_and_no_classification(signed_in, norma
     body = _detail(signed_in, normal_matter)
     flat = " ".join(body.split())
 
-    assert "Mis juhtus või mida tegid?" in flat
+    assert "Mis juhtus?" in flat
     assert "Mida on vaja teha?" in flat
     assert "Millal?" in flat
     assert 'name="text"' in body
@@ -642,7 +642,7 @@ def test_the_questions_stopped_asking_for_both_at_once(signed_in, normal_matter)
     assert "Kirjelda, mis tegid ja mida teed edasi" not in body
     # What happened and what happens next are two panels and two saves now, so
     # neither box has to carry both (docs/adr/0075 §2).
-    assert "Mis juhtus või mida tegid?" in body
+    assert "Mis juhtus?" in body
     assert "Mida on vaja teha?" in body
 
 
@@ -729,14 +729,20 @@ def test_reading_the_page_does_not_touch_stored_tags(signed_in, normal_matter):
 def test_muu_valdkond_left_the_teema_rail_without_leaving_the_record(signed_in, normal_matter):
     """UI retirement, not a data change.
 
-    The approved target's `Teema andmed` is four rows — `Teemaviide`,
-    `Menetlusliik`, `Saatja`, `Kellele` — and every one of them answers a
+    The approved target's `Teema andmed` was four rows — `Teemaviide`,
+    `Menetlusliik`, `Saatja`, `Kellele` — and every one of them answered a
     question somebody asks mid-sentence. `Muu valdkond` is a correction to how
     the file was classified, which is `Muuda teemat` work
     (TEEMA_TARGET_SPEC §G.1, docs/adr/0074 §17).
 
-    The column, the value, the endpoint and the audit row are all untouched; the
-    test below still edits it in place.
+    Two of the four have since gone, for a different reason than `Muu
+    valdkond`: the two Teema forms stopped asking about `Menetlusliik` and the
+    Matter-level `Kellele`, and a read-only rail row is the easiest place for a
+    withdrawn question to survive its own removal (docs/adr/0097 §3, §4).
+
+    The columns, the values and the audit rows are all untouched — which is
+    what this test is about, and is as true of the two that left as of the one
+    it was written for.
     """
     normal_matter.policy_area_other = "Riigihanked ja ehitus"
     normal_matter.save(update_fields=["policy_area_other"])
@@ -749,8 +755,13 @@ def test_muu_valdkond_left_the_teema_rail_without_leaving_the_record(signed_in, 
     assert "Andmeklass" not in rail
     assert "Märgi testandmeteks" not in rail
     assert "Saabus" not in rail
-    for kept in ("Teemaviide", "Menetlusliik", "Saatja", "Kellele"):
+    for kept in ("Teemaviide", "Saatja"):
         assert kept in rail
+    for gone in ("Menetlusliik", "Kellele"):
+        assert gone not in rail
+    # Stored, and unchanged by any of that.
+    normal_matter.refresh_from_db()
+    assert normal_matter.policy_area_other == "Riigihanked ja ehitus"
 
     normal_matter.refresh_from_db()
     assert normal_matter.policy_area_other == "Riigihanked ja ehitus"

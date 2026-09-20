@@ -5975,13 +5975,18 @@ def _workspace_refusal(
     that shows why.
 
     **Unless that panel is not on the page any more.** The column is re-rendered
-    from the Matter as it is *now*, and two stale-tab refusals arrive at a page
-    that no longer holds the form they came from: `PRAEGUNE TEGEVUS` →
+    from the Matter as it is *now*, and three stale-tab refusals arrive at a
+    page that no longer holds the form they came from: `PRAEGUNE TEGEVUS` →
     `Salvesta` after a colleague finished the step and set no new one — the
     fresh column has no open step, so no completion form and no paragraph to
-    print the sentence in — and any `LISA TEEMALE` save, `+ Lõpeta teema`
-    included, after the Matter was closed elsewhere, where `overview.html`
-    renders no launcher at all. Put the sentence in the panel and the browser
+    print the sentence in; `Muuda` beside that step, for the same reason and as
+    of docs/adr/0097 §8.2 — the next-step editor is drawn *beside a task* and
+    the launcher chip that used to draw it without one is gone, so a Matter
+    with no open step now renders no `#lisa-jargmine` at all; and any
+    `LISA TEEMALE` save, `+ Lõpeta teema` included, after the Matter was closed
+    elsewhere, where `overview.html` renders no launcher at all.
+
+    Put the sentence in the panel and the browser
     swaps in a 400 that looks exactly like somebody else's successful save,
     with what the person typed gone and not a word about why. So the refusal
     goes to the workspace-level slot `overview.html` already keeps for «a
@@ -6002,8 +6007,14 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # Both of the forms that live beside the current task, not just the
+    # completion box. `action_form` joined it when `+ Järgmine tegevus` left the
+    # launcher: its panel is `Muuda` inside `PRAEGUNE TEGEVUS`, which
+    # `current_action.html` draws only under `{% elif current_action %}`
+    # (docs/adr/0097 §8.2).
+    needs_current_action = {"current_action_form", "action_form"}
     panel_is_rendered = matter.is_open and (
-        key != "current_action_form" or context["current_action"] is not None
+        key not in needs_current_action or context["current_action"] is not None
     )
     if error and not panel_is_rendered:
         context["composer_error"] = error

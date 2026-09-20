@@ -529,7 +529,7 @@ def test_what_happened_and_what_happens_next_are_two_separate_saves(signed_in, n
     body = _detail(signed_in, normal_matter)
 
     assert 'id="lisa-marge"' in body
-    assert "Mis juhtus või mida tegid?" in body
+    assert "Mis juhtus?" in body
     assert 'id="lisa-jargmine"' in body
     assert 'name="text"' in body
     # The things that must never come back.

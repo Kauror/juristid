@@ -163,7 +163,13 @@ def test_setting_a_next_step_sends_the_reader_to_the_form_that_writes_one(
     marker = body.index("quietrow__cta")
     cta = body[marker : marker + 200]
 
-    assert "#lisa-jargmine" in cta
+    # `#lisa-marge`, not `#lisa-jargmine`. These rows are Matters with **no**
+    # open step, and `PRAEGUNE TEGEVUS` renders its `Muuda` disclosure only
+    # beside a task — so once the launcher's `+ Järgmine tegevus` chip went
+    # (docs/adr/0097 §8.2) this link pointed at an id the page does not render,
+    # and a browser answers that by scrolling nowhere. The next step is set
+    # inside `+ Märge`, beside the thing that prompted it.
+    assert "#lisa-marge" in cta
     assert ">Määra<" in cta
 
 

@@ -153,12 +153,17 @@ def prefill_initial(
             initial["response_deadline"] = date.fromisoformat(chosen.value)
             prefilled[SuggestedField.RESPONSE_DEADLINE] = (chosen.value,)
 
-    track = analysis.fields.get(SuggestedField.TRACK)
-    if track is not None and not current.track:
-        chosen = track.prefill_candidate
-        if chosen is not None:
-            initial["track"] = chosen.value
-            prefilled[SuggestedField.TRACK] = (chosen.value,)
+    # **`Menetlusliik` is not prefilled, and that is not an omission.**
+    # `MatterEditForm` has no `track` field since docs/adr/0097 §3, so an
+    # `initial["track"]` would reach a form that never declares it and a
+    # `prefilled` entry would put «vormil eeltäidetud» beside a control the
+    # page does not draw — a review telling somebody it filled in a box they
+    # cannot see.
+    #
+    # The analysis still *produces* the suggestion: `SuggestedField.TRACK` has
+    # its rules, its thresholds and its conflict handling, and the extraction's
+    # own evaluation harness still scores it. What is withdrawn is this
+    # function's claim that the edit form can take it.
 
     # Õigusakt is multi-valued like Valdkonnad and is filled by the same rule —
     # every HIGH candidate, and nothing at all when they conflict. In practice

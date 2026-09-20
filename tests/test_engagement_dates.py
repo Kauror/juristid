@@ -49,7 +49,11 @@ def _post(client, matter, **fields):
 def _panel(body: str) -> str:
     """The `+ Kaasamine` panel's own markup, from its id to the next panel's."""
     start = body.index('id="lisa-kaasamine"')
-    return body[start : body.index('id="marge-tahtaeg"', start)]
+    # To the family after it. `marge-tahtaeg` used to be the next chip in the
+    # document and is now a sub-choice *inside* `+ Märge`, which stands before
+    # `+ Kaasamine` — so slicing to it reaches backwards and finds nothing
+    # (docs/adr/0097 §8).
+    return body[start : body.index('id="lisa-arvamus"', start)]
 
 
 def _workspace(client, matter) -> str:

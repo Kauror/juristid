@@ -562,7 +562,11 @@ def test_the_composer_panel_asks_for_one_date(signed_in, specialist):
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
-    panel = body[body.index('id="lisa-kaasamine"') : body.index('id="marge-tahtaeg"')]
+    # To `+ Arvamus / tagasiside`, which is the family after `+ Kaasamine`.
+    # `marge-tahtaeg` is a sub-choice inside `+ Märge` and stands earlier in
+    # the document now (docs/adr/0097 §8).
+    start = body.index('id="lisa-kaasamine"')
+    panel = body[start : body.index('id="lisa-arvamus"', start)]
 
     assert 'name="audience"' in panel
     assert 'name="response_count"' in panel

@@ -3836,7 +3836,14 @@ def correct_external_position(
 
 
 #: What a development with nothing said about it is told.
-DEVELOPMENT_NEEDS_TITLE = "Kirjuta, mis menetluses juhtus."
+#:
+#: «Kirjuta, mis juhtus.» rather than «mis menetluses juhtus», because the one
+#: control that writes these asks `Mis juhtus?` and is no longer only about the
+#: procedure: `+ Märge` absorbed `+ Menetluse areng` on 2026-09-20, and
+#: «Rääkisin Justiitsministeeriumiga» is a sentence it accepts. A refusal that
+#: named a narrower question than the box above it would be telling somebody
+#: they answered the wrong thing (docs/adr/0097 §6).
+DEVELOPMENT_NEEDS_TITLE = "Kirjuta, mis juhtus."
 #: What somebody filing next month's committee sitting as a development is told.
 #:
 #: `Menetluse areng` records something that **has happened** (docs/adr/0092 §3,

@@ -470,29 +470,32 @@ def test_an_approximate_commencement_is_never_stored_as_a_single_day(signed_in, 
 # ===========================================================================
 
 
-@pytest.mark.parametrize(
-    ("precision", "answers", "anchor", "end", "reads"), PERIODS, ids=PERIOD_IDS
-)
-def test_a_work_victory_records_the_period_it_belongs_to(
-    signed_in, normal_matter, precision, answers, anchor, end, reads
-):
-    """§21. The period is the reporting period, stated by the person."""
+def test_a_work_victory_records_the_day_it_was_won_on(signed_in, normal_matter):
+    """§21, narrowed by the owner. The period is one day, stated by the person.
+
+    This was parametrised over all four precisions, and the panel offered all
+    four. A töövõit is something Koda *achieved* and the organisation should be
+    able to say when it happened, so the group went and `Millal` is one
+    clearable box holding today (docs/adr/0097 §7).
+
+    The *record* is unchanged: a day is stored as the period it is —
+    `period_date` and `period_end` the same date under `EXACT` — and the
+    reporting still reads periods. What narrowed is what this panel can
+    produce, and the four-precision contract lives on where it is still
+    offered, which is `Muuda` on a stored row.
+    """
     response = _post(
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {
-            "victory_change": "Üleminekuaeg pikendati",
-            "victory_precision": precision,
-            **_fields("victory", answers),
-        },
+        {"victory_change": "Üleminekuaeg pikendati", "victory_date": "19.09.2026"},
     )
     assert response.status_code == 200, response.content.decode()[:2000]
 
     record = MatterWorkVictory.objects.get(matter=normal_matter)
-    assert (record.period_date, record.period_end) == (anchor, end)
-    assert record.date_precision == precision
-    assert record.display_period == reads
+    won = datetime.date(2026, 9, 19)
+    assert (record.period_date, record.period_end) == (won, won)
+    assert record.date_precision == DatePrecision.EXACT
     assert record.status == WorkVictoryStatus.CONFIRMED
 
 
@@ -508,22 +511,31 @@ def test_a_new_work_victory_without_a_period_is_refused(signed_in, normal_matter
         signed_in,
         "matters:add_work_victory",
         normal_matter,
-        {"victory_change": "Üleminekuaeg pikendati"},
+        {"victory_change": "Üleminekuaeg pikendati", "victory_date": ""},
     )
 
     assert response.status_code == 400
     assert not MatterWorkVictory.objects.filter(matter=normal_matter).exists()
 
 
-def test_the_work_victory_date_box_is_not_prefilled_with_today(signed_in, normal_matter):
-    """§21, §27. `Täpne päev` is the first chip; today is not the first answer."""
+def test_the_work_victory_date_box_is_prefilled_with_today(signed_in, normal_matter):
+    """This reverses §21, §27, and the owner gave the reason.
+
+    The box stayed blank because `Täpne päev` was merely the first of four
+    chips, and a pre-filled today underneath a precision nobody had chosen
+    would have been a claim nobody made. There is no precision to choose now:
+    the panel asks for the day a win was achieved, which is nearly always the
+    day it is written up, and the default is visible in the box where it can be
+    read, changed and emptied — the one shape docs/adr/0078 §2 allows a date
+    default to take (docs/adr/0097 §7).
+    """
     body = _detail(signed_in, normal_matter)
     today = datetime.date.today()
 
     panel = _panel(body, "marge-toovoit")
 
-    assert f'value="{today.strftime("%d.%m.%Y")}"' not in panel
-    assert f'value="{today.year}"' not in panel
+    assert f'value="{today.day}.{today.month}.{today.year}"' in panel
+    assert 'name="victory_precision"' not in panel
 
 
 def test_an_existing_undated_work_victory_is_left_exactly_as_it_is(
@@ -668,10 +680,12 @@ def test_the_precision_control_is_a_real_radio_group_on_every_panel(signed_in, n
     """
     body = _detail(signed_in, normal_matter)
 
+    # `marge-toovoit` is not among them since docs/adr/0097 §7: that panel asks
+    # for a day. The shared partial's contract is what this asserts, and it is
+    # asserted on the panels that draw it.
     for panel, field in (
         ("marge-tahtaeg", "deadline_precision"),
         ("marge-joustumine", "effective_precision"),
-        ("marge-toovoit", "victory_precision"),
     ):
         section = _panel(body, panel)
         pattern = rf'<input[^>]*type="radio"[^>]*name="{field}"[^>]*>'
@@ -755,14 +769,20 @@ def test_an_impossible_period_is_refused_rather_than_normalised(
 def test_one_partial_serves_every_panel(signed_in, normal_matter):
     """§5. One period composer, not four that drift.
 
-    A structural assertion rather than a visual one: four panels rendering the
-    same `data-precision` fieldset is what makes «a quarter is a quarter» true
-    by construction instead of by four people remembering.
+    A structural assertion rather than a visual one: every panel that asks for
+    a period rendering the same `data-precision` fieldset is what makes «a
+    quarter is a quarter» true by construction instead of by several people
+    remembering.
+
+    Two panels draw it now — `Oluline tähtaeg` and `Jõustumine`. `Töövõit`
+    stopped asking for a period and asks for a day (docs/adr/0097 §7), and the
+    external-position panels stopped asking before that (docs/adr/0095). The
+    claim is unchanged; the number is what the product has.
     """
     body = _detail(signed_in, normal_matter)
 
-    assert body.count("data-precision") >= 3
-    assert body.count('data-precision-for="quarter"') >= 3
+    assert body.count("data-precision") >= 2
+    assert body.count('data-precision-for="quarter"') >= 2
 
 
 def test_uus_teema_keeps_the_narrower_contract_it_had(signed_in):

@@ -2037,7 +2037,11 @@ def test_a_sent_opinion_with_no_open_step_offers_the_continuation(
     ).content.decode()
 
     assert "Menetlus võib jätkuda" in body
-    assert "#marge-tavaline" in body
+    # `#lisa-marge`, which is the family. The sentence used to offer two links
+    # — «lisa menetluse areng või järgmine tegevus» — pointing at two launcher
+    # chips; there is one chip now and the next action is a box inside it
+    # (docs/adr/0097 §6, §8.2).
+    assert "#lisa-marge" in body
 
 
 def test_a_matter_with_no_sent_opinion_offers_nothing_of_the_kind(
@@ -2166,8 +2170,12 @@ def test_the_koda_opinion_and_development_routes_refuse_a_reader(
     client, normal_matter, reader, ministry
 ):
     client.force_login(reader)
-    for route in ("matters:add_koda_opinion", "matters:add_development"):
+    # `matters:add_development` is not a route any more: `+ Menetluse areng` is
+    # retired and its ordinary function is `+ Märge`, which posts to
+    # `matters:add_note` (docs/adr/0097 §6). The same record, the same refusal.
+    for route in ("matters:add_koda_opinion", "matters:add_note"):
         response = client.post(reverse(route, kwargs={"pk": normal_matter.pk}), {})
         assert response.status_code == 404, route
     assert not Submission.objects.exists()
     assert not Entry.objects.exists()
+    assert not MatterProceduralDevelopment.objects.exists()

@@ -330,18 +330,24 @@ def test_menetlusliik_still_offers_the_words_the_area_gave_up(signed_in, special
     answer and always was. The withdrawal removed the *second* place the same
     four words were asked for (docs/adr/0088 §3).
 
-    Asserted on `Muuda teemat` rather than here, because the round after this
-    one took `Menetlusliik` off the create form as well — derived from `Õigusakt`
-    instead, and never as a transposition (docs/adr/0090 §4). The withdrawn
-    Valdkond is still absent from both, which is what this test is for.
+    Asserted against the vocabulary rather than against a page. docs/adr/0090
+    §4 took `Menetlusliik` off the create form and docs/adr/0097 §3 took it off
+    the correction form too, so neither screen prints those four words now —
+    but `Track` still holds them, the register still filters on them and the
+    importers still write them, which is the whole of what «not gone from the
+    product» means here. The withdrawn Valdkond is still absent from both
+    screens, which is what this test is for.
     """
+    from app.workflow.enums import Track
+
     matter = factories.MatterFactory(owner=specialist)
     create = signed_in.get(CREATE).content.decode()
     edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
 
-    assert "ELi õiguse ülevõtmine" in edit
+    assert "ELi õiguse ülevõtmine" in dict(Track.choices).values()
     assert "ELi õiguse ülevõtmine" not in valdkond_block(create)
     assert "ELi õiguse ülevõtmine" not in create
+    assert "ELi õiguse ülevõtmine" not in edit
 
 
 @pytest.mark.parametrize("key", WITHDRAWN)
