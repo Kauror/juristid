@@ -302,12 +302,23 @@ def open_add_panel(page, panel_id: str) -> None:
     had rendered perfectly (e2e/test_panel_reopen_after_save.py).
     """
     family = PANEL_FAMILY.get(panel_id)
-    if family is not None and not add_panel_is_open(page, family):
-        open_add_panel(page, family)
-
     deadline = time.monotonic() + PANEL_TIMEOUT_MS / 1000
     while True:
         try:
+            # **Inside the loop, with everything else.** This read the family
+            # once, before the loop, and that is one read of the page taken
+            # outside the discipline the rest of this helper keeps.
+            #
+            # What it cost: a save's swap still on the wire, the family chip
+            # checked on the page about to be thrown away, so the check passed
+            # and the step was skipped — and the replacement then arrived with
+            # the family shut. The sub-choice's own chip lives *inside* that
+            # panel, so it was `display: none`; Playwright will not click a
+            # hidden control, every pass burned its click timeout, and the
+            # helper reported «did not open (open=False)» about a page whose
+            # family it had never opened.
+            if family is not None and not add_panel_is_open(page, family):
+                open_add_panel(page, family)
             if _open_add_panel_once(page, panel_id):
                 return
         except PlaywrightTimeoutError:
@@ -317,7 +328,9 @@ def open_add_panel(page, panel_id: str) -> None:
         if time.monotonic() >= deadline:
             raise AssertionError(
                 f"#{panel_id} did not open within {PANEL_TIMEOUT_MS}ms "
-                f"(open={add_panel_is_open(page, panel_id)})"
+                f"(open={add_panel_is_open(page, panel_id)}"
+                + (f", {family}={add_panel_is_open(page, family)}" if family else "")
+                + ")"
             )
 
 
