@@ -68,7 +68,6 @@ from app.workflow.enums import (
     DatePrecision,
     DateSemantics,
     Disposition,
-    Track,
 )
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
@@ -580,17 +579,23 @@ class LegalInstrumentChoicesMixin:
 class OrganisationPickerChoicesMixin:
     """What `organisation_picker.html` needs, on both forms that draw it.
 
-    `organisation_picker.html` renders one control for both counterparty
-    questions, and each of them offers the same two things: a handful of
+    `organisation_picker.html` renders one control wherever a counterparty is
+    asked for, and it offers the same two things every time: a handful of
     institutions as visible chips, and the rest of the catalogue as entries the
-    search can reach. The split differs underneath — Saatja is two checkbox
-    *fields* because one group cannot be rendered in two places without becoming
-    two, Adressaat is one radio group sliced at `addressee_split` because it
-    holds one value — and neither difference belongs in a template that is
-    supposed to be the same control twice.
+    search can reach. Saatja is two checkbox *fields* underneath, because one
+    group cannot be rendered in two places without becoming two, and that
+    difference does not belong in a template that is supposed to be the same
+    control everywhere.
 
     So the slicing is done here, in Python, and the partial receives two plain
-    lists of subwidgets either way (task §23, docs/adr/0073).
+    lists of subwidgets (task §23, docs/adr/0073).
+
+    **The Adressaat half is gone**, with the Matter-level `Kellele` question it
+    fed. `addressee_split`, `addressee_chip_choices` and `addressee_tail_choices`
+    sliced a radio group that no form on the ordinary Teema product declares any
+    more, and three properties reaching for a field that does not exist are how
+    a withdrawn question survives its own removal. `Koja arvamus` keeps its
+    recipients and asks them with its own control (docs/adr/0097 §4).
 
     **Shared rather than copied, and that is the point of R2-12.** These four
     properties were `MatterCreateForm`'s alone while `Muuda teemat` rendered the
@@ -609,11 +614,6 @@ class OrganisationPickerChoicesMixin:
 
     fields: dict[str, forms.Field]
 
-    #: Where the Adressaat radio group stops being chips and starts being tail.
-    #: `None` on a form with no viewer — no usage to rank by means no shortlist,
-    #: and everything is a chip.
-    addressee_split: int | None = None
-
     @property
     def sender_chip_choices(self) -> list[Any]:
         """The senders offered without being asked."""
@@ -623,18 +623,6 @@ class OrganisationPickerChoicesMixin:
     def sender_tail_choices(self) -> list[Any]:
         """Every other institution, searchable rather than on screen."""
         return list(cast(Any, self)["source_organisations_other"])
-
-    @property
-    def addressee_chip_choices(self) -> list[Any]:
-        """«Määramata», the chosen senders, and the bodies most often answered."""
-        offered = list(cast(Any, self)["addressee_organisation"])
-        return offered if self.addressee_split is None else offered[: self.addressee_split]
-
-    @property
-    def addressee_tail_choices(self) -> list[Any]:
-        if self.addressee_split is None:
-            return []
-        return list(cast(Any, self)["addressee_organisation"])[self.addressee_split :]
 
 
 def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
@@ -700,34 +688,6 @@ def sender_name_field() -> forms.CharField:
     name means, inside the save's own transaction.
     """
     return _typed_organisation_field("Uus saatja", hook="data-sender-name")
-
-
-def addressee_name_field() -> forms.CharField:
-    """`Adressaat`'s typed half, on both Teema forms.
-
-    Written once and built twice, because `Uus teema` and `Muuda teemat` must
-    offer the same control: a person filing a Teema and a person correcting one
-    are answering the same question, and two spellings of one field is two
-    workflows to learn (§7).
-
-    Its own field, deliberately, rather than a `name` attribute bolted onto the
-    search box. That box is a *filter* over the catalogue: somebody who types
-    «Kliima», watches the list narrow to `Kliimaministeerium` and chooses it has
-    answered the question, and a control that also posted the four letters left
-    in the box would file the Teema against a new institution called «Kliima».
-    One field per intention — found a body, or named one that is not here — is
-    what makes the difference between them decidable on the server (§10).
-
-    On `Uus teema` the two intentions are now expressed through one visible
-    control: the search box, and the `+` attached to it that moves what was
-    typed into this field. Two *fields*, one *control* — see
-    `sender_name_field` and docs/adr/0073.
-
-    Nothing is created here. `clean_typed_organisation_name` trims and
-    length-caps the text; `app.matters.services.resolve_addressee` decides what
-    it means, and does so inside the save's own transaction (§5, §6).
-    """
-    return _typed_organisation_field("Uus adressaat", hook="data-addressee-name")
 
 
 def clean_typed_organisation_name(value: str | None) -> str:
@@ -845,33 +805,6 @@ def organisations_by_usage(
             ]
         )
     return shortlist
-
-
-def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
-    """The bodies this department actually answers to, most frequent first.
-
-    The addressee counterpart of `organisations_by_usage`, and separate from it
-    on purpose: who *sends* Koda a file and who Koda *answers* are two different
-    facts, and one list standing for both would put the Riigikogu committee that
-    never sends anything behind ten ministries that never receive anything.
-
-    `scoped_count` for the same reason the sender list uses it: the visibility
-    join fans out over collaborators, and `Count("id")` inside a `GROUP BY`
-    would count join rows (app/core/authorization.py).
-
-    Unlike the sender shortlist, this one is not topped up from the other
-    direction — and it does not need to be. Adressaat renders the *whole*
-    catalogue as one radio group, shortlist first and the rest behind it, so a
-    short shortlist moves a body down the page rather than off it. The sender
-    row had no such guarantee, which is why the layering lives there.
-    """
-    ranking = {
-        pk: index for index, pk in enumerate(_usage_order(viewer, "addressee_organisation", limit))
-    }
-    if not ranking:
-        return list(Organisation.objects.order_by("name")[:limit])
-    found = Organisation.objects.filter(pk__in=ranking)
-    return sorted(found, key=lambda organisation: ranking[organisation.pk])
 
 
 class OrganisationSpellings:
@@ -1453,12 +1386,21 @@ class MatterEditForm(
         blank=True,
         widget=DescribedRadioSelect(attrs={"class": "chip__input"}),
     )
-    track = forms.ChoiceField(
-        label="Menetlusliik",
-        choices=[("", "Määramata"), *Track.choices],
-        required=False,
-        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
-    )
+    #: `Menetlusliik` is deliberately absent, as it is from `MatterCreateForm`.
+    #:
+    #: `Uus teema` is the master and `Uus teema` never asked it, so this page
+    #: asking it was the drift itself: a lawyer files a Teema without ever
+    #: meeting the question and then finds it waiting on the correction screen,
+    #: where the only thing it can be is answered by somebody guessing. The
+    #: distinction it draws — which procedural track a file runs on — is one the
+    #: register's own importers state from the source, not one a person
+    #: reconstructs from memory months later (docs/adr/0097 §3).
+    #:
+    #: **The field is gone, not hidden**, so a crafted `track=` in a POST to
+    #: `matters:matter_edit` binds to nothing. `Matter.track`, `Track`,
+    #: `change_track` and `MATTER_TRACK_CHANGED` are untouched and every stored
+    #: value survives every save of this form: the view does not pass the
+    #: field, so the service is never called and the column is never written.
     #: The same control `Uus teema` carries, because a canonical Matter fact
     #: that could only be answered at creation time would be a fact nobody could
     #: correct — and the two pages are one job seen twice (task §18).
@@ -1507,15 +1449,23 @@ class MatterEditForm(
     #: does. A person who learns one sender workflow must not find a different
     #: one on the next screen (§2E).
     sender_name = sender_name_field()
-    addressee_organisation = forms.ModelChoiceField(
-        label="Kellele",
-        queryset=Organisation.objects.none(),
-        required=False,
-        empty_label="Määramata",
-        blank=True,
-        widget=OrganisationRadioSelect(attrs={"class": "chip__input"}),
-    )
-    addressee_name = addressee_name_field()
+    #: `Kellele` is deliberately absent, for `Menetlusliik`'s reason and one of
+    #: its own.
+    #:
+    #: `Uus teema` does not ask it either, and the Matter-level addressee had
+    #: become the more confusing of the two: `Saatja` is who sent this file to
+    #: Koda, and a lawyer reading `Kellele` beside it reasonably takes it to
+    #: mean who Koda's opinion went to — which is a different fact, held on the
+    #: `Submission`, and the one that actually matters when an opinion is sent
+    #: (docs/adr/0097 §4).
+    #:
+    #: **This is about the ordinary Matter UI and nothing else.** `Koja
+    #: arvamus` keeps its recipients: still first-class, still several, still
+    #: defaulted from the Matter's `Saatja` and still saved without touching it.
+    #: `Matter.addressee_organisation` keeps every stored value — the view
+    #: passes no `addressee_organisation` to `set_organisations` at all, and
+    #: that parameter's `_UNSET` default means «leave this alone» where `None`
+    #: would have cleared a fact nobody was asked about.
     #: No `initial=timezone.localdate` on either date, unlike every other date
     #: box in the product. This form is always opened on a Matter that already
     #: exists and its `initial` dict carries that Matter's real values, so a
@@ -1526,12 +1476,21 @@ class MatterEditForm(
     response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
     )
-    tags = forms.ModelMultipleChoiceField(
-        label="Sildid",
-        queryset=Tag.objects.none(),
-        required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
-    )
+    #: `Sildid` is deliberately absent, and this is the field whose removal
+    #: most needs saying out loud, because none of the data is going anywhere.
+    #:
+    #: It was edit-only metadata: `Uus teema` never asked for a tag, so the only
+    #: way to put one on a Matter was to open the correction screen of a file
+    #: that was already right. A vocabulary nobody is offered while filing is a
+    #: vocabulary used by whoever happens to open the edit page, which is how a
+    #: governed taxonomy turns into personal shorthand (docs/adr/0097 §2).
+    #:
+    #: **Nothing about tags is deleted.** `Tag`, `MatterTag`, `set_tags`,
+    #: `TagAssignmentForm`, the audit event and every stored assignment are
+    #: untouched. What is gone is this page's claim to have an answer: the field
+    #: does not exist, so a crafted `tags=` POST binds to nothing, the view
+    #: calls no service, and a Matter carrying historical tags keeps every one
+    #: of them through every save here.
     #: `Nähtavus` is deliberately absent from this form, as it is from
     #: `MatterCreateForm` and from `IncomingIntakeForm`.
     #:
@@ -1599,8 +1558,6 @@ class MatterEditForm(
         organisations = Organisation.objects.order_by("name")
         set_choices(self, "source_organisations", organisations)
         set_choices(self, "source_organisations_other", organisations)
-        set_choices(self, "addressee_organisation", organisations)
-        set_choices(self, "tags", Tag.objects.filter(is_active=True).order_by("name_et"))
 
         # The frequent bodies as chips and the rest behind «Vali nimekirjast»,
         # the same split `Uus teema` uses — plus, always, whatever this Matter
@@ -1626,31 +1583,6 @@ class MatterEditForm(
         rest.choices = [(item.pk, item.name) for item in tail]
         self.sender_tail_count = len(tail)
 
-        # Adressaat is one radio group rendered in two places. One group and one
-        # name, because it holds one value — the senders need two *fields* only
-        # because a checkbox group cannot be split without splitting the field.
-        shortlist = list(addressees_by_usage(viewer)) if viewer is not None else []
-        chosen = matter.addressee_organisation if matter else None
-        offered_ids = {item.pk for item in shortlist}
-        if chosen is not None and chosen.pk not in offered_ids:
-            shortlist.append(chosen)
-            offered_ids.add(chosen.pk)
-        addressee_tail = [item for item in organisations if item.pk not in offered_ids]
-        self.addressee_offered = [*shortlist, *addressee_tail]
-        # Counting the named blank option Django puts first, which the template
-        # slices on rather than comparing primary keys.
-        self.addressee_split = 1 + len(shortlist)
-        self.addressee_tail_count = len(addressee_tail)
-        addressees = cast(Any, self.fields["addressee_organisation"])
-        # Assigning `choices` replaces Django's iterator, and the iterator is
-        # what would otherwise have put `empty_label` in front — so «Määramata»
-        # has to be written here or an addressee chosen by mistake could not be
-        # unchosen.
-        addressees.choices = [
-            ("", addressees.empty_label),
-            *((item.pk, item.name) for item in self.addressee_offered),
-        ]
-
         # The recorded spellings, onto the controls that carry them.
         #
         # Read once for the whole catalogue and handed to all three choice
@@ -1659,11 +1591,7 @@ class MatterEditForm(
         # ministry whichever of them is being answered — and on whichever of the
         # two pages is asking (docs/adr/0073 task §13, post-QA R2-12).
         spellings = organisation_alias_terms()
-        for field_name in (
-            "source_organisations",
-            "source_organisations_other",
-            "addressee_organisation",
-        ):
+        for field_name in ("source_organisations", "source_organisations_other"):
             cast(Any, self.fields[field_name].widget).alias_terms = spellings
 
         # Validation accepts the whole vocabulary; only the *offered* list is
@@ -1728,9 +1656,6 @@ class MatterEditForm(
         clean_legal_instrument_answer(self, cleaned)
         return cleaned
 
-    def clean_addressee_name(self) -> str:
-        return clean_typed_organisation_name(self.cleaned_data.get("addressee_name"))
-
     def clean_sender_name(self) -> str:
         return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
@@ -1748,7 +1673,6 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "brief_summary": matter.brief_summary,
         "owner": matter.owner_id,
         "stage": matter.stage_id,
-        "track": matter.track,
         "policy_areas": [area.pk for area in matter.policy_areas.all()],
         # The chip renders ticked whenever this Matter holds a free-text area,
         # which is what makes the box beside it render open on arrival. Derived
@@ -1761,10 +1685,8 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "source_organisations": [
             organisation.pk for organisation in matter.source_organisations.all()
         ],
-        "addressee_organisation": matter.addressee_organisation_id,
         "received_date": matter.received_date,
         "response_deadline": matter.response_deadline,
-        "tags": [tag.pk for tag in matter.tags.all()],
     }
 
 
@@ -2277,7 +2199,7 @@ def _precision_controls(prefix: str, exact_name: str) -> dict[str, str]:
     So that a refusal lands on the box the person actually typed into: ADR 0052
     §5's rule, and the reason «vali kuupäev» pinned to a sentence box points at
     the wrong field. `_period_anchor` reports a half-stated period through this
-    map, and `ProceduralDevelopmentForm` reports a future one through the same
+    map, and `MatterProgressForm` reports a future one through the same
     one — two refusals about one control, aimed the same way.
     """
     return {
@@ -3538,7 +3460,6 @@ class MatterFieldForm(forms.Form):
 
     owner = UserChoiceField(queryset=User.objects.none(), required=False)
     stage = forms.ModelChoiceField(queryset=StageVocabulary.objects.none(), required=False)
-    track = forms.ChoiceField(choices=[("", "—"), *Track.choices], required=False)
     # Plural, and a multiple field even though the surface it posts from is a
     # checkbox list: an inline edit of the sender set replaces the whole set, so
     # an empty POST is how somebody clears it rather than a validation error
@@ -3546,9 +3467,12 @@ class MatterFieldForm(forms.Form):
     source_organisations = forms.ModelMultipleChoiceField(
         queryset=Organisation.objects.none(), required=False
     )
-    addressee_organisation = forms.ModelChoiceField(
-        queryset=Organisation.objects.none(), required=False
-    )
+    #: `track` and `addressee_organisation` are deliberately absent beside
+    #: `visibility`, one step further on for the same reason: the rail rows that
+    #: posted to them are gone with the questions, so a field left here would be
+    #: an accepted POST parameter behind a control nobody draws. `update_field`
+    #: no longer names either, so neither address is a route at all
+    #: (docs/adr/0097 §3, §4).
     #: Saatja's typed half on the rail's own editor, so the fourth place a
     #: sender can be set is not the one place a body cannot be named
     #: (docs/adr/0063, `resolve_source_organisations`).
@@ -3597,7 +3521,6 @@ class MatterFieldForm(forms.Form):
         # (app/workflow/selectors.py, docs/adr/0032 §Amendment).
         set_choices(self, "stage", stages_including_held(matter))
         set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
-        set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
         # The offered vocabulary *plus* whatever this Matter already carries.
         # Validation would otherwise refuse a save that merely left a retired
         # area ticked, which would make correcting one field on an old Matter
@@ -4296,36 +4219,6 @@ class CompleteCurrentActionForm(forms.Form):
         return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mida tegid.")
 
 
-class MatterNoteForm(forms.Form):
-    """`+ Märge` — something happened, and it is not the current task finishing.
-
-    One box and its files. Deliberately no `Järgmiseks` beside it: recording
-    that the ministry rang must not silently complete, replace or create a step,
-    and the surest way to guarantee that is a form with no field that could
-    (brief §13).
-    """
-
-    use_required_attribute = False
-
-    body = forms.CharField(
-        label="Mis juhtus või mida tegid?",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "class": "composer__body",
-                "rows": "3",
-                "placeholder": "Näiteks: ministeerium helistas, uus versioon tuleb reedel.",
-                "data-richtext": "true",
-                "id": "id_marge_body",
-            }
-        ),
-    )
-    attachments = workspace_attachments("id_marge_failid")
-
-    def clean_body(self) -> str:
-        return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mis juhtus.")
-
-
 class CompactEngagementForm(forms.Form):
     """`+ Kaasamine` — who was engaged, when, by when answers were asked for.
 
@@ -4710,16 +4603,28 @@ class CompactWorkVictoryForm(forms.Form):
     from an imported row whose period genuinely is unknown. The obvious repairs
     are both worse than the gap: today's date files a 2019 win in the year
     somebody typed it up, and the current year does the same thing less
-    visibly. So the person says when, at whatever precision they have — most
-    often `Aasta` (docs/adr/0079 §10, Stage-2G brief 22).
+    visibly. So the person says when (docs/adr/0079 §10, Stage-2G brief 22).
 
-    The date box stays **blank**. `Täpne päev` is the chip that is selected
-    first because it is the commonest answer elsewhere, and a pre-filled today
-    underneath it would be a claim nobody made.
+    **One day, and no `Täpsus` control — this panel only.**
 
-    Rows that already have no period keep none. There is no backfill and no
-    migration: a win whose period was never recorded does not acquire one
-    because this form learned to ask.
+    The four-way precision group was here on the reading that a win might be
+    remembered as «kevad 2024». The owner decided otherwise, and gave the
+    reason: a töövõit is something Koda *achieved*, and the organisation should
+    be able to say when it happened. A win somebody cannot date to a day is a
+    win somebody has not finished establishing (docs/adr/0097 §7).
+
+    So `Millal` is one clearable box holding today, which is the ordinary
+    answer — a win is written up when it lands — and which reads, changes and
+    empties in place (docs/adr/0078 §2). It is still **required**: an empty box
+    is refused rather than stored as `NULL`, which is the gap this panel was
+    fixed to close.
+
+    **Historical rows are untouched.** `MONTH`, `QUARTER` and `YEAR` work
+    victories keep the precision they were filed under, the column still stores
+    all four values, `?toovoit=<aasta>` still reads periods rather than days,
+    and `DatePrecision` loses nothing — the Kaasamine, Jõustumine and
+    Oluline-tähtaeg panels beside this one are unchanged. What went is this one
+    form's question, not the domain's ability to answer it.
     """
 
     use_required_attribute = False
@@ -4735,35 +4640,40 @@ class CompactWorkVictoryForm(forms.Form):
             }
         ),
     )
+    #: The day it was won. Filled with today, clearable, and the only date
+    #: question this panel asks — see the class docstring for why the precision
+    #: group went.
+    victory_date = EstonianDateField(
+        label="Millal",
+        required=False,
+        widget=EstonianDateInput(),
+        initial=timezone.localdate,
+    )
     attachments = workspace_attachments("id_toovoit_failid")
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.precision_choices = precision_choices()
-        self.fields.update(_precision_fields("victory", date_label="Millal"))
-
-    @property
-    def precision_chips(self) -> list[dict[str, Any]]:
-        return _precision_chips(self, "victory_precision")
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         change = (cleaned.get("victory_change") or "").strip()
         if not change:
             self.add_error("victory_change", "Kirjuta, mis muutus.")
-        anchor, end, precision = _period_anchor(self, "victory")
-        if anchor is None or end is None:
-            if not self.errors:
-                self.add_error(
-                    _precision_answer_field("victory", precision),
-                    "Märgi, millal see töövõit saavutati.",
-                )
+        won_on = cleaned.get("victory_date")
+        if won_on is None:
+            # `required=False` on the field and refused here, so an emptied box
+            # is answered in this panel's own words rather than by Django's
+            # generic «This field is required.» — and so a badly formatted date
+            # keeps its own more useful message instead of this one.
+            if not self.has_error("victory_date"):
+                self.add_error("victory_date", "Märgi, millal see töövõit saavutati.")
             return cleaned
+        # A single day, stated as the period it is: `period_date` and
+        # `period_end` are the same date and the precision is `EXACT`. The
+        # reporting reads periods and goes on reading periods; what narrowed is
+        # what this form can produce, not what the column can hold.
         cleaned["work_victory_kwargs"] = {
             "title": change[:2000],
-            "period_date": anchor,
-            "period_end": end,
-            "date_precision": precision,
+            "period_date": won_on,
+            "period_end": won_on,
+            "date_precision": DatePrecision.EXACT.value,
         }
         return cleaned
 
@@ -6030,224 +5940,6 @@ class KodaOpinionForm(forms.Form):
         return clean_typed_organisation_name(self.cleaned_data.get("recipient_name"))
 
 
-class ProceduralDevelopmentForm(forms.Form):
-    """`+ Menetluse areng` — the procedure moved, and this is what it did.
-
-    «12.10.2026 — Ministeerium saatis uue eelnõu versiooni», with the draft
-    attached, the `Hetkeseis` it puts the file in, and the next thing the lawyer
-    will do about it. One panel, one save, one transaction.
-
-    **It writes a `MatterProceduralDevelopment`**, which is the canonical record
-    docs/adr/0091 §5 settled on — beside `MatterEngagement` and
-    `MatterExternalPosition`, through `workspace.add_procedural_development`.
-
-    This docstring said «it writes an `Entry`, not a new model» for one round,
-    and that was true for exactly that round. The Package D discovery retired the
-    design: an incoming development cannot be projected truthfully from an
-    `Entry`, because `Entry.occurred_at` is `NOT NULL` and a step learned about
-    months later frequently has no day anybody could defend, because the lawyer's
-    note has nowhere to go that is not the ministry's own sentence, and because a
-    projection would have to parse a title out of prose. The sentence outlived
-    the design it described, which on the feature whose renderer and whose date
-    rule are both being corrected here is the wrong thing to leave standing
-    (docs/adr/0091 §5.1, §5.2, docs/adr/0092 §3).
-
-    **A development is something that has already happened.** A future date is
-    refused — `clean` states the rule and `record_procedural_development`
-    enforces it — because the product's forward-looking facts are `Järgmiseks`
-    and `+ Oluline tähtaeg`, each with its own date, its own lateness and its own
-    place on the page.
-
-    **Three optional halves, and each of them is somebody's decision.**
-
-    `Hetkeseis` is offered and never derived. Nothing reads the sentence and
-    concludes that a file has reached the Riigikogu; a person chooses the stage
-    or leaves it, and leaving it changes nothing. The vocabulary is
-    `active_stages()` read through the canonical service, so a Package-A
-    revision of the stage list arrives here without this form knowing about it
-    (docs/adr/0091 §5.3, §8).
-
-    `Järgmiseks` and `Millal?` are the same two questions `NextActionForm` asks,
-    asked here because «the ministry sent a new draft» and «I will read it by
-    Friday» are one thought — and requiring two saves for them is the friction
-    that left files at a dead end after an opinion went out. Both or neither: a
-    step with no date and a date with no step are each refused on the empty half,
-    which is `NextActionForm`'s own rule and deliberately its own wording.
-
-    **The date is optional and defaults visibly to today.** A development is
-    written up when it is learned about, which is usually the day it happened, so
-    the box opens holding today — in the box, readable, changeable and clearable,
-    which is the one shape docs/adr/0078 §2 allows a date default to take. An
-    emptied box stores `NULL` and the record reads «Kuupäev teadmata».
-
-    That optionality is the whole reason `MatterProceduralDevelopment` exists
-    rather than an `Entry`: `Entry.occurred_at` has been `NOT NULL` since the
-    foundational schema, and a development learned about from a third party months
-    later frequently has no day anybody could defend. An undated development is a
-    development, recorded as one — not a `+ Märge`, which stamps the moment
-    somebody typed it and claims nothing about when anything happened
-    (docs/adr/0091 §5.1, §5.2).
-    """
-
-    use_required_attribute = False
-
-    title = forms.CharField(
-        label="Mis menetluses juhtus",
-        required=False,
-        max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "placeholder": "nt Ministeerium saatis uue eelnõu versiooni",
-            }
-        ),
-    )
-    #: `Juristi märkus` — what this office makes of the step, beside it and never
-    #: inside it.
-    #:
-    #: «Uus versioon ei arvesta meie ettepanekut» is a professional judgement and
-    #: «Ministeerium saatis uue versiooni» is a fact about the world. One box
-    #: carrying both is a box whose meaning depends on who wrote the sentence —
-    #: the same separation `+ Teiste arvamus` keeps (docs/adr/0091 §4, §5).
-    note = forms.CharField(
-        label="Juristi märkus",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "class": "field__input field__input--compact",
-                "rows": "2",
-                "placeholder": "nt uus versioon ei arvesta meie ettepanekut",
-            }
-        ),
-    )
-    #: The day it happened, **optional**, at the precision it is known to.
-    #:
-    #: This is the field that retired the `Entry`-based design: `occurred_at` is
-    #: `NOT NULL`, and a development learned about from a third party months later
-    #: frequently has no day anybody could defend. The box opens on today because
-    #: the common case is writing up something just learned, visibly and
-    #: clearably — the one shape docs/adr/0078 §2 allows — and an emptied box
-    #: stores `NULL`, which reads «Kuupäev teadmata» (docs/adr/0091 §5.2).
-    occurred_on = EstonianDateField(
-        label="Kuupäev",
-        required=False,
-        widget=EstonianDateInput(),
-        initial=timezone.localdate,
-    )
-    #: `Hetkeseis`, optional, as a select rather than the create form's chip row.
-    #:
-    #: Eleven stages as chips is two lines of controls inside a panel that already
-    #: holds five, and the chips exist on `Uus teema` because that page is built
-    #: around them. Here the stage is the third question of five and most saves
-    #: leave it alone, so it is the compact control — the same reasoning
-    #: `+ Väline seisukoht` applies to `Seotud kaasamine`.
-    stage = forms.ModelChoiceField(
-        label="Uus hetkeseis",
-        queryset=StageVocabulary.objects.none(),
-        required=False,
-        empty_label="Jätan muutmata",
-        blank=True,
-        widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
-    )
-    next_text = forms.CharField(
-        label="Järgmiseks",
-        required=False,
-        max_length=2000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "placeholder": "nt Vaatan uue versiooni läbi",
-            }
-        ),
-    )
-    next_date = EstonianDateField(
-        label="Millal?",
-        required=False,
-        widget=EstonianDateInput(),
-    )
-    attachments = workspace_attachments("id_menetluse_areng_failid")
-
-    def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
-        kwargs.setdefault("auto_id", "id_menetluse_areng_%s")
-        #: The record being corrected, when this form is an editor.
-        #:
-        #: Read for one thing: whether it carries a precision the day box cannot
-        #: show, so that correcting the sentence of a development recorded as
-        #: *oktoober 2026* does not rewrite it into a day (docs/adr/0079 §9).
-        self.record = record
-        super().__init__(*args, **kwargs)
-        attach_development_precision(self, record=record)
-        # The active vocabulary, in the department's reviewed order, read through
-        # the canonical selector rather than from a list in this module. Package A
-        # may revise what is active; this form inherits that without being edited
-        # (`app/workflow/selectors.py`, docs/adr/0091 §8).
-        set_choices(self, "stage", active_stages())
-
-    @property
-    def precision_chips(self) -> list[dict[str, Any]]:
-        """The `Täpsus` radios, as the template renders every other chip row."""
-        return _precision_chips(self, f"{DEVELOPMENT_PREFIX}_precision")
-
-    def clean_title(self) -> str:
-        from app.matters.services import DEVELOPMENT_NEEDS_TITLE
-
-        title = (self.cleaned_data.get("title") or "").strip()
-        if not title:
-            raise forms.ValidationError(DEVELOPMENT_NEEDS_TITLE)
-        return title
-
-    def clean(self) -> dict[str, Any]:
-        """The period, its refusal, and the next step's two halves together or not at all.
-
-        **The date is not required**, unlike the round this panel shipped in: an
-        emptied box stores `NULL` and reads «Kuupäev teadmata», which is a fact
-        the file has to be able to hold about a step somebody learned of late
-        (docs/adr/0091 §5.2).
-
-        **And it may not be in the future.** A `Menetluse areng` records
-        something that has happened; «Riigikogu esimene lugemine toimub 30.09» is
-        a plan, and the product's forward-looking facts are `Järgmiseks` and
-        `+ Oluline tähtaeg`. The refusal is the service's — one invariant, one
-        sentence, and `record_procedural_development` is what actually enforces
-        it — and it is repeated here so a person sees it beside the control they
-        typed into rather than as a panel-level banner.
-
-        **A period is refused only when the whole of it is still ahead.** The
-        anchor of *september 2026* is 1 September, and rejecting it on 18
-        September would refuse a step the lawyer is plainly describing as past —
-        so the comparison is `period_starts_after`, and an approximate date is
-        never resolved to a day to make the question easier (docs/adr/0079 §2).
-
-        The refusal for a half-filled next step lands on the **empty** control,
-        which is ADR 0052 §5's rule and its wording: «vali kuupäev» pinned to the
-        sentence box points at the wrong field. The future-date refusal lands on
-        the control the chosen precision is answered in, through the same map.
-        """
-        from app.matters.services import DEVELOPMENT_CANNOT_BE_FUTURE
-
-        cleaned = super().clean() or {}
-        anchor, precision = development_period(cast(Any, self))
-        if period_starts_after(anchor, precision, day=timezone.localdate()):
-            self.add_error(
-                _precision_controls(DEVELOPMENT_PREFIX, "occurred_on").get(
-                    precision, "occurred_on"
-                ),
-                DEVELOPMENT_CANNOT_BE_FUTURE,
-            )
-            anchor = None
-        cleaned["occurred_on_value"] = anchor
-        cleaned["occurred_on_precision"] = precision
-
-        text = (cleaned.get("next_text") or "").strip()
-        cleaned["next_text"] = text
-        when = cleaned.get("next_date")
-        if text and when is None:
-            self.add_error("next_date", "Vali järgmise tegevuse kuupäev.")
-        elif when is not None and not text:
-            self.add_error("next_text", "Kirjuta järgmine tegevus.")
-        return cleaned
-
-
 class ProceduralDevelopmentEditForm(forms.Form):
     """`Muuda` on a recorded `Menetluse areng`. What the record says, and nothing else.
 
@@ -6256,7 +5948,7 @@ class ProceduralDevelopmentEditForm(forms.Form):
     `MatterProceduralDevelopment` stores that a person may correct, and exactly
     what `correct_procedural_development` accepts.
 
-    **Deliberately not `ProceduralDevelopmentForm` reopened.** That panel asks
+    **Deliberately not `MatterProgressForm` reopened.** That panel asks
     three further questions — `Uus hetkeseis`, `Järgmiseks` / `Millal?` and the
     attachments — and every one of them writes something that is *not* this row.
     A save through it moves `Matter.stage`, supersedes a `NextAction` and
@@ -6647,41 +6339,6 @@ class ProceduralLinkFieldsMixin:
             raise forms.ValidationError(str(error)) from error
 
 
-class ProceduralLinkForm(ProceduralLinkFieldsMixin, forms.Form):
-    """`+ Menetluse link` — where the official proceeding on this Matter lives.
-
-    Three boxes, of which two are required and one is not: which kind of
-    official source this is, the address, and optionally a few words naming the
-    proceeding.
-
-    **There is no date here and there is no status.** This record is not
-    something that happened on a day — it is *where the file is happening* — so
-    a date would be a column with nothing honest to put in it and a status would
-    be a lifecycle nobody maintains (docs/adr/0089 §5, §11).
-
-    **And there is nothing about fetching.** No «loe leht sisse», no «jälgi
-    muudatusi», no preview: the lawyer gives the address and the application
-    records the address (docs/adr/0089 §4).
-    """
-
-    use_required_attribute = False
-
-    kind = _procedural_link_kind_field()
-    url = _procedural_link_url_field()
-    label = _procedural_link_label_field()
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # **Its own `auto_id`, and the field names are untouched.** Ten forms
-        # render on one Teema page and `+ Ülevaade / uudis` and `+ Väline
-        # seisukoht` both call a field `url`, so Django's default `id_%s` would
-        # put `id_url` in the document three times — invalid HTML, a
-        # `<label for>` reaching the wrong box and `getElementById` answering
-        # whichever came first. Prefixing the *ids* fixes exactly that while
-        # leaving the POST keys alone (docs/adr/0065).
-        kwargs.setdefault("auto_id", "id_menetluse_link_%s")
-        super().__init__(*args, **kwargs)
-
-
 class ProceduralLinkEditForm(ProceduralLinkFieldsMixin, forms.Form):
     """`Paranda` — the kind, the name or the address on a recorded link was wrong.
 
@@ -6817,7 +6474,7 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
         `full_clean` return with no errors and no `cleaned_data` on precisely
         the attempts where :attr:`wants_link` is false.
 
-        The mixin's rules are untouched, which is the point: `ProceduralLinkForm`
+        The mixin's rules are untouched, which is the point: `ProceduralLinkEditForm`
         behind `+ Menetluse link` on a Teema page was opened deliberately, so an
         empty address there is an unfinished answer and stays refused. Only
         *this* form — the optional block nobody has to use — is a no-op when
@@ -6877,3 +6534,288 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
     #: too (docs/adr/0094 §3). `PROCEDURAL_LINK_NEEDS_KIND` itself stays — the
     #: Teema page's panel and the edit form both still ask the question and both
     #: still refuse an unanswered one.
+
+
+class MatterLinkForm(ProceduralLinkCreateForm):
+    """`Menetluse link` on `Muuda teemat` — the same two boxes, on a record.
+
+    `Menetluse link` is a fact about the Matter and not something that happened
+    to it, which is docs/adr/0097 §5: it says *where the proceeding this file is
+    about is happening*, it is normally known at the moment the Teema is filed,
+    and it was being asked for under `LISA TEEMALE` beside notes, consultations
+    and opinions — which is a list of events. So it moved to where the Matter's
+    other facts are answered, and that means both pages that answer them.
+
+    **The same two questions `Uus teema` asks**, from the same class, so `Link`
+    and `Nimetus` cannot drift apart between the page somebody files from and
+    the page they correct from. Nothing here classifies the address: every row
+    this form writes is filed under
+    :attr:`~ProceduralLinkCreateForm.STORED_KIND`, exactly as creation does, and
+    no hostname is inspected.
+
+    **Bound to the Matter's first link, when it has one.** A Matter usually has
+    one proceeding behind it, so the ordinary case is one address in a box that
+    can be corrected. A Matter carrying several keeps every one of them: the
+    rest are listed and corrected on the Teema page's own `Menetluse lingid`
+    card, which already holds a `Paranda` for each row and is where a second and
+    third address were always managed (`procedural_links.html`).
+
+    **There is still no deletion**, on this page or anywhere else: a mistaken
+    row is corrected, because what the file recorded and who recorded it is part
+    of the file (docs/adr/0084 §8). Emptying the address of a link that exists
+    is therefore refused rather than silently ignored — ignoring it would leave
+    the page saying the link was gone while the record still held it.
+    """
+
+    #: The copy of the row this form was filled from, so a correction cannot
+    #: overwrite a newer one. `required=False` for `EntryEditForm`'s reason: an
+    #: absent token must reach the service as an empty string and be refused
+    #: there against a real row, rather than answered by a field error that says
+    #: nothing about what actually went wrong.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def __init__(self, *args: Any, link: Any = None, **kwargs: Any) -> None:
+        """One optional block, which is a correction when the Matter has a link."""
+        self.link = link
+        if link is not None:
+            kwargs.setdefault(
+                "initial",
+                {"url": link.url, "label": link.label, "revision": link.revision_token},
+            )
+        super().__init__(*args, **kwargs)
+
+    def has_changed(self) -> bool:
+        """`empty_permitted` is for the *add* case only.
+
+        With no link on the Matter this block is exactly what it is on
+        `Uus teema` — optional, and a no-op when nobody answered it. With a link
+        it is a correction of a real row, so the form validates on every submit
+        and an emptied address is refused by :meth:`clean` below rather than
+        skipped as «nobody used this block».
+        """
+        if self.link is not None:
+            return True
+        return super().has_changed()
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if self.link is not None and not (cleaned.get("url") or "").strip():
+            self.add_error(
+                "url",
+                "Menetluse lingi aadressi ei saa tühjaks jätta. Paranda aadress "
+                "või jäta väli muutmata.",
+            )
+        return cleaned
+
+
+class MatterProgressForm(forms.Form):
+    """`+ Märge · Tavaline` — something happened on this file, and this says what.
+
+    The ordinary note, and the one control a lawyer reaches for most. It asks
+    what happened, on what day, optionally moves `Hetkeseis`, optionally sets
+    the next step, and takes files — six controls for what is nearly always
+    three.
+
+    Why this is a `MatterProceduralDevelopment` and not an `Entry`
+    -------------------------------------------------------------
+    This form replaces two launcher chips: `+ Märge`, which wrote an `Entry`,
+    and `+ Menetluse areng`, which wrote a `MatterProceduralDevelopment`. One
+    visible control now writes one record type, and the record type it writes is
+    the structured one (docs/adr/0097 §6).
+
+    That is the opposite of the obvious reading — `Menetluse areng` is the term
+    the owner asked to retire, so retiring the record with it looks like the
+    tidy answer. It is not, and `MatterProceduralDevelopment`'s own class
+    docstring is why. That record exists because an `Entry` could not hold three
+    things the fact needs, and only two of the three were about the control:
+
+    * the date had to be allowed to be unknown — `Entry.occurred_at` is
+      `NOT NULL`. This form defaults the box to today and lets it be cleared, so
+      «kuupäev teadmata» is still sayable;
+    * the lawyer's own note had to be a second field. This form drops `Juristi
+      märkus` on the owner's instruction, so that need is withdrawn rather than
+      unmet;
+    * **a projection needs a title it did not have to parse.** That one is
+      untouched by anything in this round. `title` is «what happened», stated;
+      `Entry.body` is prose, and deriving «what happened» from its first
+      sentence is exactly the guessing this repository refuses everywhere else.
+
+    So the toolbar loses a concept and the database keeps a record. That is the
+    round's own rule — one visible family, truthful backend types underneath,
+    and no structured model replaced merely to shorten a row of chips.
+
+    **What widens, stated rather than discovered.** «Rääkisin
+    Justiitsministeeriumiga» is now filed as a `MatterProceduralDevelopment`,
+    and under the old reading of that record — *one step the external procedure
+    took* — a phone call is not one. The category is wider than it was: it is
+    now «what happened on this file», which is what the one visible control asks
+    and what the chronology has always rendered it as. Nobody sees the word
+    «areng» anywhere; it is not on this panel, not on the timeline row and not
+    in the audit summary a reader sees.
+
+    **What retires with it.** There is no UI path left that creates a bare
+    `Entry` from the launcher. Entries are still written — `PRAEGUNE TEGEVUS`
+    writes one on every completed step, which is the majority of them — still
+    read, still corrected through `Muuda` and still carry their append-only
+    `EntryRevision` history. Nothing was migrated and no historical row moved
+    between tables.
+    """
+
+    use_required_attribute = False
+
+    #: The day it happened. Exact, and **the only precision this panel offers**.
+    #:
+    #: `+ Menetluse areng` asked `Täpsus` first — `Täpne päev`, `Kuu`,
+    #: `Kvartal`, `Aasta` — because a step learned of from a third party months
+    #: later frequently has no day anybody could defend. That is true, and it is
+    #: the wrong first question to put in front of somebody writing up what
+    #: happened this morning, which is what nearly every save here is
+    #: (docs/adr/0097 §6.1).
+    #:
+    #: So the group is **deleted from this form**, not hidden: there is no
+    #: `areng_precision` field to bind, so a crafted `areng_precision=QUARTER`
+    #: reaches a form that never cleaned it and the service is called with
+    #: `EXACT`. The column still stores all four values, every historical row
+    #: keeps the precision it was filed under, and `ProceduralDevelopmentEditForm`
+    #: still offers the whole control when one of those rows is being corrected
+    #: — it decides per *record*, which is where a statement about how well a
+    #: date is known belongs.
+    #:
+    #: Clearable, and an emptied box stores `NULL` and reads «Kuupäev teadmata».
+    #: The default is visible in the box where it can be read, changed and
+    #: emptied, which is the one shape docs/adr/0078 §2 allows a date default to
+    #: take.
+    occurred_on = EstonianDateField(
+        label="Kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+        initial=timezone.localdate,
+    )
+    #: **One box, and it is the only text this panel asks for.**
+    #:
+    #: `+ Menetluse areng` had two — `Mis menetluses juhtus` and `Juristi
+    #: märkus` — on the argument that «Ministeerium saatis uue versiooni» is a
+    #: fact about the world and «uus versioon ei arvesta meie ettepanekut» is a
+    #: professional judgement, and one box carrying both is a box whose meaning
+    #: depends on who wrote the sentence (docs/adr/0091 §4, §5).
+    #:
+    #: The distinction is real and the owner withdrew the question anyway: two
+    #: text areas on the control a lawyer uses every day, where the second is
+    #: left empty on nearly every save, is a form asking somebody to classify
+    #: their own sentence before it will take it. `note` is deleted from this
+    #: form; `MatterProceduralDevelopment.note` keeps every stored value and
+    #: `ProceduralDevelopmentEditForm` still offers the box on a record that has
+    #: one (docs/adr/0097 §6.2).
+    #:
+    #: The label is `Mis juhtus?` rather than `Mis menetluses juhtus` — this
+    #: panel is no longer only about the procedure, and the narrower wording
+    #: would now be refusing sentences it accepts.
+    title = forms.CharField(
+        label="Mis juhtus?",
+        required=False,
+        max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt Ministeerium saatis uue eelnõu versiooni",
+            }
+        ),
+    )
+    #: `Hetkeseis`, optional, and moved in the **same transaction** as the note.
+    #:
+    #: «Eelnõu saadeti Riigikokku» and `Hetkeseis → Riigikogus` are one act, and
+    #: a product that made them two saves would be a product where the stage and
+    #: the sentence explaining it can disagree. A select rather than the create
+    #: form's chip row: eleven stages as chips is two lines inside a panel that
+    #: already holds five controls, and most saves leave it alone.
+    #:
+    #: **Nothing is inferred.** An empty answer changes no stage. No text is
+    #: read, no keyword is matched, and there is no model anywhere near this —
+    #: «Riigikogu võttis seaduse vastu» moves nothing unless somebody says so.
+    stage = forms.ModelChoiceField(
+        label="Uus hetkeseis",
+        queryset=StageVocabulary.objects.none(),
+        required=False,
+        empty_label="Jätan muutmata",
+        blank=True,
+        widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
+    )
+    #: The next step, optional, through the canonical `NextAction` service.
+    #:
+    #: A progress note frequently ends in one — «Ministeerium saatis uue
+    #: versiooni» / «Vaatan uue versiooni üle, 25.09» — and making that a second
+    #: visit to a second control is how a file ends up with a note and no plan.
+    #:
+    #: **Never invented.** A `Märge` saved with these empty creates no
+    #: `NextAction` and supersedes none: a record of something that happened is
+    #: not an instruction to a person, which is the rule docs/adr/0078 §3 and
+    #: docs/adr/0084 §1 both keep.
+    next_text = forms.CharField(
+        label="Järgmine tegevus",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt Vaatan uue versiooni läbi",
+            }
+        ),
+    )
+    next_date = EstonianDateField(
+        label="Millal?",
+        required=False,
+        widget=EstonianDateInput(),
+    )
+    attachments = workspace_attachments("id_marge_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_marge_%s")
+        super().__init__(*args, **kwargs)
+        # The active vocabulary, in the department's reviewed order, read
+        # through the canonical selector rather than from a list in this module
+        # (`app/workflow/selectors.py`, docs/adr/0091 §8).
+        set_choices(self, "stage", active_stages())
+
+    def clean_title(self) -> str:
+        from app.matters.services import DEVELOPMENT_NEEDS_TITLE
+
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise forms.ValidationError(DEVELOPMENT_NEEDS_TITLE)
+        return title
+
+    def clean(self) -> dict[str, Any]:
+        """The day may not be ahead, and the next step is answered whole or not at all.
+
+        **The future-date refusal is the service's**, repeated here so a person
+        sees it beside the control they typed into rather than as a panel-level
+        banner. `record_procedural_development` is what actually enforces it,
+        and this panel cannot reach the approximate-period case the service also
+        guards — every date here is a day or nothing, so the comparison is the
+        plain one rather than `period_starts_after`.
+
+        **The half-filled next step is refused on the *empty* control**, which
+        is ADR 0052 §5's rule and its wording: «vali kuupäev» pinned to the
+        sentence box points at the wrong field.
+        """
+        from app.matters.services import DEVELOPMENT_CANNOT_BE_FUTURE
+
+        cleaned = super().clean() or {}
+
+        when = cleaned.get("occurred_on")
+        if when is not None and when > timezone.localdate():
+            self.add_error("occurred_on", DEVELOPMENT_CANNOT_BE_FUTURE)
+            when = None
+        # Named as the service names them, so the view hands the cleaned data
+        # straight on rather than translating between two vocabularies.
+        cleaned["occurred_on_value"] = when
+        cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
+
+        text = (cleaned.get("next_text") or "").strip()
+        cleaned["next_text"] = text
+        next_when = cleaned.get("next_date")
+        if text and next_when is None:
+            self.add_error("next_date", "Vali järgmise tegevuse kuupäev.")
+        elif next_when is not None and not text:
+            self.add_error("next_text", "Kirjuta järgmine tegevus.")
+        return cleaned

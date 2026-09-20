@@ -5,7 +5,7 @@
 
     + Märge   + Kaasamine   + Arvamus / tagasiside   + Ülevaade / uudis
 
-and nothing else is a peer of those four (docs/adr/0096 §8).
+and nothing else is a peer of those four (docs/adr/0097 §8).
 
 There were twelve. Twelve chips on one row, each of which was a *record type*
 this application happens to keep: `Märge`, `Järgmine tegevus`, `Kaasamine`,
@@ -31,26 +31,26 @@ three different records through three different endpoints, and
 `Oluline tähtaeg`, `Jõustumine` and `Töövõit` keep their own models, their own
 services and their own reporting. One visible family, truthful backend types
 underneath — a structured model is never replaced to shorten a row of chips
-(docs/adr/0096 §8.2).
+(docs/adr/0097 §8.1).
 
 **Three things left this launcher and did not go into a sub-choice**, because
 they are not content at all:
 
 * `Lõpeta teema` and `Kustuta teema` are operations on the Matter, not things
   added to it, and they render under `TEEMA TOIMINGUD` in their own section
-  (`teema_toimingud.html`, docs/adr/0096 §9);
+  (`teema_toimingud.html`, docs/adr/0097 §9);
 * `Menetluse link` is a fact *about* the Matter — where the proceeding is
   happening — and is asked on `Uus teema`, corrected on `Muuda teemat` and read
-  on the rail (docs/adr/0096 §6);
+  on the rail (docs/adr/0097 §5);
 * `Menetluse areng` is gone as a word. Its ordinary function is `+ Märge ·
-  Tavaline`, which writes the same record (docs/adr/0096 §7).
+  Tavaline`, which writes the same record (docs/adr/0097 §6).
 
 `+ Järgmine tegevus` is gone from the row too. There is at most one open
 `NextAction` and there is now exactly one *ordinary* way to set one: while a
 task is current, `Muuda` in `PRAEGUNE TEGEVUS`; otherwise the optional
 `Järgmine tegevus` inside `+ Märge`, beside the thing that prompted it. Two
 controls both offering to set "the next action" is how a lawyer ends up
-believing they have two (docs/adr/0096 §8.3).
+believing they have two (docs/adr/0097 §8.2).
 
 **Ten choices, not ten forms — and that still holds.** The launcher is a row of
 quiet chips and nothing else until somebody picks one; picking one opens that
@@ -108,7 +108,7 @@ row of controls that refuse (brief §30, §31).
           reporting — and lose only their standing chips. A lawyer recording a
           win should not have to know that it becomes a special reporting
           object; they should have to know that they are recording a win
-          (docs/adr/0096 §8.2).
+          (docs/adr/0097 §8.1).
         {% endcomment %}
         <span class="cx-f__lab cx-sublab">Märke liik</span>
         <div class="cx-panels cx-panels--sub">
@@ -125,7 +125,7 @@ row of controls that refuse (brief §30, §31).
             would find four chips and no form. One variable per family, each
             guaranteed to name one of its own, removes the whole class of
             mistake rather than asking four `{% templatetag openblock %} if {% templatetag closeblock %}`s to agree
-            (`_workspace_choices`, docs/adr/0096 §8.4).
+            (`_workspace_choices`, docs/adr/0097 §8.3).
           {% endcomment %}
           <input class="addpick" type="radio" name="marke-liik" id="marge-tavaline-valik"
                  data-addpick aria-controls="marge-tavaline"
@@ -188,7 +188,7 @@ row of controls that refuse (brief §30, §31).
       `Teiste arvamus` are two provenances of one `MatterExternalPosition`;
       `Koja arvamus` is a `Submission` and is not that record at all. Nothing
       here writes across those lines and no field was made to serve two of them
-      (docs/adr/0091 §3, §6, docs/adr/0096 §8.2).
+      (docs/adr/0091 §3, §6, docs/adr/0097 §8.1).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-arvamus-valik"
            data-addpick aria-controls="lisa-arvamus"

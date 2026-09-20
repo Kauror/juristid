@@ -25,12 +25,16 @@
   - **values arrive pre-filled**, including vocabulary rows the department has
     since withdrawn, which are offered back and marked «kasutusest väljas» so
     that correcting a title cannot silently drop a filing;
-  - **three facts are answered here and nowhere else.** `Menetlusliik` and
-    `Kellele` are deliberately absent from creation — one classification
-    question per dimension, one counterparty question while filing
-    (docs/adr/0090 §4, §5) — and `Sildid` are a working classification applied
-    to a record that exists. They stand below the master's own questions, under
-    a heading that says so;
+  - **nothing is answered here that creation does not ask.** There used to be
+    three: `Menetlusliik`, `Kellele` and `Sildid`, standing under a heading that
+    said «ainult olemasoleva teema kohta». All three are gone from the ordinary
+    Teema UI, and the heading with them. A question a lawyer never meets while
+    filing, waiting on the screen they open to correct a mistake, is a question
+    only ever answered by somebody guessing — and the page that is supposed to
+    be the master's mirror had grown a section the master has no counterpart
+    for. `Matter.track`, `Matter.addressee_organisation` and every stored `Tag`
+    are untouched; what is gone is this page's claim to have an answer for them
+    (docs/adr/0097 §2, §3, §4);
   - **`Märkmed` is not here.** The private scratch pad is written where the
     half-formed thought occurs — on `Uus teema` and on the Teema page's rail —
     and is `MatterPersonalNote`, scoped by author. It is not a Matter field and
@@ -42,6 +46,14 @@
   POST to this route cannot move `Matter.visibility` either. Everything
   underneath it — stored visibility, child inheritance, restricted documents,
   authorization filtering — is untouched (docs/adr/0096 §3).
+
+  **`Menetluse link` is here, from the same partial `Uus teema` draws.** It
+  says where the proceeding this file is about is happening — a fact about the
+  Matter in the same way its `Saatja` and its `Õigusakt` are — and it used to be
+  asked under `LISA TEEMALE` on the Teema page, in a list of things that
+  *happened*. It moved to where the Matter's other facts are answered, which
+  means both pages that answer them, and the launcher chip and its route are
+  gone rather than left reachable (docs/adr/0097 §5).
 
   And `Kustuta teema` stands at the bottom, apart from `Salvesta`, because the
   page a person opens to say «this record is wrong» is the page they open to
@@ -140,14 +152,15 @@
         reuse an exact or alias match, create only a genuinely new body, refuse a
         spelling that names two (post-QA R2-12, docs/adr/0073).
 
-        **`sender_row` is deliberately not passed.** It is what marks the row
-        `bindAddresseeDefault` reads, and on `Uus teema` ticking a sender answers
-        Adressaat because a file that arrived from X is normally answered to X.
-        On an established Matter both are recorded business facts: adding a
-        second sender to a Matter that already names its addressee must not
-        silently rewrite the addressee. Without the attribute the script returns
-        before binding anything, so the rule is absent here rather than
-        suppressed (static/js/app.js, docs/adr/0069).
+        **`sender_row` is deliberately not passed**, and now for a second
+        reason. It is what marks the row `bindAddresseeDefault` reads, and on
+        `Uus teema` ticking a sender answers Adressaat because a file that
+        arrived from X is normally answered to X. That was already wrong here —
+        adding a second sender to an established Matter must not silently
+        rewrite a recorded addressee — and this page has no Adressaat control
+        at all since docs/adr/0097 §4, so there is nothing left for the script
+        to write even if it bound. The attribute's absence is what stops it
+        binding (static/js/app.js, docs/adr/0069).
 
         Prepopulation is the form's, not the template's: `edit_initial` carries
         this Matter's senders and `__init__` puts each of them among the offered
@@ -210,75 +223,24 @@
       </label>
     </div>
 
-    {# 9 — What only an existing record is asked. #}
+    {# 9 — Menetluse link: where the proceeding this file is about lives. #}
     {% comment %}
-      Named, and below the master's questions rather than mixed into them.
+      The same block `Uus teema` draws, from the same partial and the same form
+      family, which is what stops `Link` and `Nimetus` drifting apart between
+      the page somebody files from and the page they correct from.
 
-      `Menetlusliik` and `Kellele` are absent from `Uus teema` by decision —
-      one classification question per dimension while filing, one counterparty
-      question while filing — and they are canonical Matter facts, so the page
-      that corrects a record is where they are answered (docs/adr/0090 §4, §5).
-      `Sildid` are the department's own working classification, applied to a
-      record that exists. None of the three is legacy drift; all three are
-      stated as edit-only rather than left to look like an inconsistency.
+      It renders holding this Matter's first link when it has one, and empty
+      when it does not — so one control both records an address and corrects
+      one, and `MatterLinkForm` decides which by whether there is a row. The
+      hidden `revision` inside the partial is what makes a correction refuse a
+      stale copy rather than overwrite a newer one.
+
+      **A Matter carrying several links keeps every one of them.** The rest are
+      read and corrected on the Teema page's `Menetluse lingid` card, which has
+      held a `Paranda` per row since docs/adr/0089 §6. There is no deletion,
+      here or there.
     {% endcomment %}
-    <p class="createform__section">Ainult olemasoleva teema kohta</p>
-
-    <div class="createform__row createform__pair">
-      <fieldset class="field">
-        <legend class="field__label">{{ form.track.label }}</legend>
-        <div class="chiprow">
-          {% for choice in form.track %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        {% if form.track.errors %}<span class="field__error" id="{{ form.track.auto_id }}_error">{{ form.track.errors|first }}</span>{% endif %}
-      </fieldset>
-
-      {% comment %}
-        Adressaat, through the same control and for the same reason as Saatja.
-
-        **The cardinality is unchanged.** `Matter` holds one addressee, so this
-        is one radio group and the picker is given `single`; Saatja is
-        checkboxes because a Matter really can arrive from several bodies.
-
-        `clears_group` is what empties the typed carrier when a canonical body
-        is chosen, so answering from the catalogue after typing cannot leave
-        both halves of the question answered (static/js/app.js
-        `bindExclusiveName`). `resolve_addressee` decides what a typed name
-        means, with the same reuse-or-create-or-refuse rules as Saatja.
-      {% endcomment %}
-      <fieldset class="field">
-        <legend class="field__label">{{ form.addressee_organisation.label }}</legend>
-        {% include "matters/partials/organisation_picker.html" with picker_id="muuda-adressaat" legend=form.addressee_organisation.label chips=form.addressee_chip_choices tail=form.addressee_tail_choices typed_field=form.addressee_name add_label="Lisa uus adressaat" single=True clears_group="addressee_organisation" typed_hook="addressee" %}
-        {% if form.addressee_organisation.errors %}
-          <span class="field__error" id="{{ form.addressee_organisation.auto_id }}_error">{{ form.addressee_organisation.errors|first }}</span>
-        {% endif %}
-      </fieldset>
-    </div>
-
-    <div class="createform__row">
-      <fieldset class="field createform__field--compact">
-        <legend class="field__label">
-          {{ form.tags.label }}
-          <span class="field__count" data-chipcount-for="tags"></span>
-        </legend>
-        <div class="chiprow">
-          {% for choice in form.tags %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-            </label>
-          {% empty %}
-            <p class="field__help">Sildivalikut ei ole veel loodud.</p>
-          {% endfor %}
-        </div>
-        {% if form.tags.errors %}<span class="field__error" id="{{ form.tags.auto_id }}_error">{{ form.tags.errors|first }}</span>{% endif %}
-      </fieldset>
-    </div>
+    {% include "matters/partials/procedural_link_create.html" %}
 
     {% comment %}
       Stated, not hidden, and one line rather than a card. These are facts about

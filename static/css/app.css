@@ -12114,3 +12114,55 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex: 1 1 100%;
   margin: 0;
 }
+
+/* -- LISA TEEMALE: a family's own choices ---------------------------------
+ *
+ * The sub-choice row inside `+ Märge` and `+ Arvamus / tagasiside`. It is the
+ * launcher's own construction one level in — radio, chip, panel — so it needs
+ * no rules of its own beyond these two: every `.cx-panels` rule above is
+ * written `.cx-panels > …` rather than against a depth, and therefore reaches a
+ * nested group unchanged (docs/adr/0097 §8).
+ *
+ * What it does need is to not look like a second toolbar. The outer row is the
+ * page's offer; this is a question *inside* an answer, so it sits under a small
+ * label and closer to the form it chooses. */
+#teema-vaade-wrap .cx-panels--sub {
+  margin-top: var(--spacing-1);
+}
+
+/* The label above a sub-choice row — `Märke liik`, `Kelle arvamus`.
+ *
+ * `.cx-f__lab` already draws a field label in this zone; this adds only the one
+ * thing a group label needs that a field label does not, which is to be a block
+ * so the chips start on the line below it rather than beside it. */
+#teema-vaade-wrap .cx-sublab {
+  display: block;
+}
+
+/* `Kustuta teema`, which is a link rather than a form control and is the one
+ * destructive thing on this page.
+ *
+ * Quiet by default and never red at rest: a control nobody is about to press
+ * should not be shouting, and colour is what this design reserves for state
+ * rather than for danger. The warning belongs on the confirmation page, where
+ * somebody is actually deciding. What it does get here is the danger colour on
+ * hover and on focus, so the intent is unmistakable at the moment of pressing
+ * it (docs/adr/0096 §4). */
+#teema-vaade-wrap .addzone__danger {
+  margin-left: auto;
+}
+
+#teema-vaade-wrap .addzone__danger:hover,
+#teema-vaade-wrap .addzone__danger:focus-visible {
+  color: var(--status-danger);
+  border-color: var(--status-danger);
+}
+
+/* `TEEMA TOIMINGUD` — separated from the launcher above it by more than a
+ * heading, because the whole point of the section is that it is not the
+ * launcher (docs/adr/0097 §9). */
+.addzone--ops {
+  margin-top: var(--spacing-4);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--border-subtle);
+}

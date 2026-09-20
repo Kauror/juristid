@@ -13,7 +13,7 @@ versiooni» is a *menetluse areng*; «Rääkisin Justiitsministeeriumiga» is a
 of the two words the application wants. `Menetluse areng` was never a phrase
 anybody asked for — it is an implementation abstraction that reached the screen
 — so it is gone from the screen, and what is left is the question:
-**mis juhtus?** (docs/adr/0096 §7).
+**mis juhtus?** (docs/adr/0097 §6).
 
 **One record type underneath, and it is the structured one.**
 `MatterProgressForm` carries the argument at length; the short version is that
@@ -60,7 +60,7 @@ and what still offers it (`Muuda` on the record, which decides per row).
     «Eelnõu saadeti Riigikokku» and `Hetkeseis → Riigikogus` are one act, and
     two saves would be two facts that can disagree. Left on «Jätan muutmata»
     nothing moves — no stage is inferred from the sentence, ever
-    (docs/adr/0096 §7.1).
+    (docs/adr/0097 §6.1).
 
     **`Järgmine tegevus` goes through the canonical `NextAction` service**, the
     same one `PRAEGUNE TEGEVUS` uses, so a Matter cannot end up with two ideas
