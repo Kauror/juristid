@@ -62,6 +62,11 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
     Built from `edit_initial`, because a partial POST to that page is a POST no
     browser makes: every control on it posts, and a test that omitted the ones
     it was not interested in would be asserting against a clearing save.
+
+    `track`, `addressee_organisation`, `addressee_name` and `tags` were in it
+    and are not fields any more. Sending them would make this helper a worse
+    model of the browser rather than a more thorough one — they are not
+    controls (docs/adr/0097 §2–§4).
     """
     initial = edit_initial(matter)
     payload: dict[str, object] = {
@@ -69,7 +74,6 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "brief_summary": initial["brief_summary"] or "",
         "owner": initial["owner"] or "",
         "stage": initial["stage"] or "",
-        "track": initial["track"] or "",
         "policy_areas": [str(pk) for pk in initial["policy_areas"]],
         # `Muu valdkond` belongs to the chip that reveals it on both pages now, so
         # a payload that carried the text without the chip would be a save that
@@ -81,12 +85,10 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "legal_instrument_other": initial["legal_instrument_other"] or "",
         "source_organisations": [str(pk) for pk in initial["source_organisations"]],
         "sender_name": "",
-        "addressee_organisation": initial["addressee_organisation"] or "",
-        "addressee_name": "",
         "received_date": "",
         "response_deadline": "",
-        "tags": [str(pk) for pk in initial["tags"]],
     }
+
     payload.update(overrides)
     return payload
 
@@ -270,18 +272,20 @@ def test_a_javascript_free_post_works(signed_in):
 def test_a_matter_holds_a_track_and_an_instrument_at_once(signed_in, specialist):
     """The example the brief names, asserted as a record (docs/adr/0070 §1).
 
-    Still true, and now recorded through `Muuda teemat` rather than `Uus teema`:
-    the create form stopped asking `Menetlusliik` and derives only the
-    domestic/EU distinction, which `NATIONAL_TRANSPOSITION` deliberately is not
-    (docs/adr/0090 §4). That a *Matter* can carry both answers at once is the
-    property this test is about, and it is unchanged.
+    Still true, and recorded on the model rather than through a form: the
+    create screen stopped asking `Menetlusliik` (docs/adr/0090 §4) and the
+    correction screen stopped on 2026-09-20 (docs/adr/0097 §3), so the column
+    is written by the importers, the register refresh and the cutover. That a
+    *Matter* can carry both answers at once is the property this test is about,
+    and it is unchanged — as is the fact that an ordinary save of the Teema
+    form disturbs neither.
     """
-    matter = factories.MatterFactory(title="Ülevõtmine, seadus", owner=specialist)
+    matter = factories.MatterFactory(
+        title="Ülevõtmine, seadus", owner=specialist, track=Track.NATIONAL_TRANSPOSITION
+    )
     matter.legal_instruments.set([instrument("seadus")])
 
-    response = signed_in.post(
-        edit_url(matter), edit_payload(matter, track=Track.NATIONAL_TRANSPOSITION)
-    )
+    response = signed_in.post(edit_url(matter), edit_payload(matter))
     assert response.status_code in (302, 200), response.status_code
 
     matter.refresh_from_db()
@@ -317,17 +321,18 @@ def test_changing_one_leaves_the_other_alone(signed_in, specialist):
         legal_instruments=[instrument("el-maarus")],
     )
 
-    signed_in.post(edit_url(matter), edit_payload(matter, track=Track.DOMESTIC))
-    matter.refresh_from_db()
-    assert matter.track == Track.DOMESTIC
-    assert [item.key for item in matter.legal_instruments.all()] == ["el-maarus"]
-
+    # `Õigusakt` changes; `Menetlusliik` does not, because nothing on this page
+    # asks about it and a crafted value reaches no field (docs/adr/0097 §3).
     signed_in.post(
         edit_url(matter),
-        edit_payload(matter, legal_instruments=[str(instrument("maarus").pk)]),
+        edit_payload(
+            matter,
+            track=Track.DOMESTIC,
+            legal_instruments=[str(instrument("maarus").pk)],
+        ),
     )
     matter.refresh_from_db()
-    assert matter.track == Track.DOMESTIC
+    assert matter.track == Track.EU_INITIATIVE
     assert [item.key for item in matter.legal_instruments.all()] == ["maarus"]
 
 

@@ -26,11 +26,13 @@ departed colleague who still owns an open Matter.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import FORMER_NAME, FORMER_OWNER_TITLE
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, open_next_action_form, sign_in
+from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, open_add_panel, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -152,13 +154,26 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page,
     sign_in(page, base_url, MARTIN)
     _open_matter(page, base_url, FORMER_OWNER_TITLE)
 
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill("Kontrollida, kas ministeerium vastas")
-    page.locator("#lisa-jargmine .uxchip", has_text="+1 nädal").first.click()
-    page.locator("#lisa-jargmine button[type=submit]").click()
+    # Through `+ Märge`, because that is the one ordinary way to set a first
+    # step since `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
+    # The refusal is the same one: `set_next_action` runs inside the note's own
+    # transaction, so a departed owner refuses the whole save.
+    when = date.today() + timedelta(days=7)
+    open_add_panel(page, "marge-tavaline")
+    page.locator("#id_marge_title").fill("Vaatasin toimikut")
+    page.locator("#id_marge_next_text").fill("Kontrollida, kas ministeerium vastas")
+    page.locator("#id_marge_next_date").fill(f"{when.day}.{when.month}.{when.year}")
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.get_by_text("ei ole enam aktiivne osakonna töötaja")).to_be_visible()
+    # Scoped to the panel the save came from. The page also carries a standing
+    # notice about the departed owner, so an unscoped match is two elements and
+    # Playwright answers that with a strict-mode violation — and what this test
+    # is about is the *refusal*, which has to be beside the control that was
+    # pressed rather than somewhere on the page.
+    expect(page.locator("#marge-tavaline .formerror")).to_contain_text(
+        "ei ole enam aktiivne osakonna töötaja"
+    )
 
 
 def test_the_register_filter_offers_the_department_and_not_the_administrator(page, base_url):

@@ -98,14 +98,16 @@ def test_every_fragment_minu_asjad_emits_resolves_at_its_destination(client, spe
         )
         seen.add(fragment)
 
-    # The two the next-step controls are supposed to use, and nothing named
-    # `jargmiseks`, which never existed. The pair moved with the workspace
-    # rebuild — the row and the composer became `PRAEGUNE TEGEVUS` and the
-    # `Muuda` / `+ Järgmine tegevus` disclosure — and the *class* guard above is
-    # what makes that a rename rather than four more dead links
-    # (docs/adr/0075 §3, §10).
+    # The ids the next-step controls are supposed to use, and nothing named
+    # `jargmiseks`, which never existed. They moved with the workspace rebuild
+    # — the row and the composer became `PRAEGUNE TEGEVUS` and the `Muuda`
+    # disclosure — and again on 2026-09-20, when `+ Järgmine tegevus` left the
+    # launcher and `Määra` on a stepless Matter started naming `+ Märge`
+    # instead. The *class* guard above is what makes each of those a rename
+    # rather than four more dead links (docs/adr/0075 §3, §10,
+    # docs/adr/0097 §8.2).
     assert "jargmiseks" not in seen
-    assert {"praegune-tegevus", "lisa-jargmine"} <= seen
+    assert {"praegune-tegevus", "lisa-marge"} <= seen
 
 
 def test_no_control_is_a_bare_hash(client, specialist, today):
@@ -163,7 +165,13 @@ def test_setting_a_next_step_sends_the_reader_to_the_form_that_writes_one(
     marker = body.index("quietrow__cta")
     cta = body[marker : marker + 200]
 
-    assert "#lisa-jargmine" in cta
+    # `#lisa-marge`, not `#lisa-jargmine`. These rows are Matters with **no**
+    # open step, and `PRAEGUNE TEGEVUS` renders its `Muuda` disclosure only
+    # beside a task — so once the launcher's `+ Järgmine tegevus` chip went
+    # (docs/adr/0097 §8.2) this link pointed at an id the page does not render,
+    # and a browser answers that by scrolling nowhere. The next step is set
+    # inside `+ Märge`, beside the thing that prompted it.
+    assert "#lisa-marge" in cta
     assert ">Määra<" in cta
 
 
@@ -251,3 +259,33 @@ def test_the_active_filters_are_still_stated_as_chips(client, specialist, today)
 
     assert "Tühjenda kõik" in body
     assert "Üle tähtaja" in body
+
+
+def test_every_next_step_fragment_is_one_the_arrival_handler_opens():
+    """A link that scrolls to a shut panel is a link that did nothing visible.
+
+    `test_every_fragment_minu_asjad_emits_resolves_at_its_destination` above
+    proves the destination *renders* the id. That is necessary and not enough:
+    the controls these links point at are collapsed, so the browser centres a
+    shut box and leaves the reader looking at a chip. `ux.js`'s
+    `arriveAtNextStep` is what opens it, and it acts only on the ids in
+    `NEXT_STEP_TARGETS` — so an href and that list disagreeing is a link that
+    resolves, scrolls, and does nothing.
+
+    Which is exactly what happened when `Määra` was repointed from
+    `#lisa-jargmine` to `#lisa-marge` and the list was left alone: the fragment
+    existed, the guard above stayed green, and arrival opened nothing
+    (docs/adr/0097 §8.2).
+    """
+    from pathlib import Path
+
+    from django.conf import settings
+
+    source = (Path(settings.BASE_DIR) / "static" / "js" / "ux.js").read_text(encoding="utf-8")
+    declaration = re.search(r"NEXT_STEP_TARGETS\s*=\s*\[(.*?)\]", source, re.S)
+    assert declaration, "ux.js no longer declares NEXT_STEP_TARGETS"
+    known = set(re.findall(r'"([^"]+)"', declaration.group(1)))
+
+    # The two a next-step control may name, and which of them a Matter gets is
+    # decided by whether it has an open step.
+    assert {"lisa-marge", "lisa-jargmine"} <= known, known

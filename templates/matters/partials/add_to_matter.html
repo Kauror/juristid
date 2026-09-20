@@ -1,50 +1,74 @@
 {% comment %}
 `LISA TEEMALE` — what do I want to add to this file?
 
-Ten choices, not ten forms. The launcher is a row of quiet chips and nothing
-else until somebody picks one; clicking a chip opens that one operation's small
-form, with its own fields, its own `Salvesta`, its own validation and its own
-atomic business operation (brief §10–§12).
+**Four choices.** A note, a consultation, an opinion, a publication:
 
-**This deliberately reverses «one composer, one global save»** (docs/adr/0074
-§3). One save that could mean *note* and *next step* and *deadline* and
-*consultation* and *win* and *commencement* and *closure* is a save whose
+    + Märge   + Kaasamine   + Arvamus / tagasiside   + Ülevaade / uudis
+
+and nothing else is a peer of those four (docs/adr/0097 §8).
+
+There were twelve. Twelve chips on one row, each of which was a *record type*
+this application happens to keep: `Märge`, `Järgmine tegevus`, `Kaasamine`,
+`Oluline tähtaeg`, `Jõustumine`, `Töövõit`, `Ülevaade / uudis`,
+`Meile saadetud tagasiside`, `Teiste arvamus`, `Koja arvamus`,
+`Menetluse areng`, `Menetluse link` — plus `Lõpeta teema` beside them. Every one
+of them is a truthful distinction and the row was still wrong, because the
+lawyer standing in front of it does not have a record type in mind. They have
+something that happened, and they were being asked to classify it against the
+back of the application before it would take it.
+
+So the row asks what *kind of thing* they are recording, and the distinctions
+that remain are asked second, inside the one they chose:
+
+    + Märge                   Tavaline · Oluline tähtaeg · Jõustumine · Töövõit
+    + Kaasamine               (no further question)
+    + Arvamus / tagasiside    Meile saadetud · Teiste arvamus · Koja arvamus
+    + Ülevaade / uudis        (no further question)
+
+**Grouped on the screen, distinct in the database.** This is a presentation
+change and deliberately not a data change: `+ Arvamus / tagasiside` still writes
+three different records through three different endpoints, and
+`Oluline tähtaeg`, `Jõustumine` and `Töövõit` keep their own models, their own
+services and their own reporting. One visible family, truthful backend types
+underneath — a structured model is never replaced to shorten a row of chips
+(docs/adr/0097 §8.1).
+
+**Three things left this launcher and did not go into a sub-choice**, because
+they are not content at all:
+
+* `Lõpeta teema` and `Kustuta teema` are operations on the Matter, not things
+  added to it, and they render under `TEEMA TOIMINGUD` in their own section
+  (`teema_toimingud.html`, docs/adr/0097 §9);
+* `Menetluse link` is a fact *about* the Matter — where the proceeding is
+  happening — and is asked on `Uus teema`, corrected on `Muuda teemat` and read
+  on the rail (docs/adr/0097 §5);
+* `Menetluse areng` is gone as a word. Its ordinary function is `+ Märge ·
+  Tavaline`, which writes the same record (docs/adr/0097 §6).
+
+`+ Järgmine tegevus` is gone from the row too. There is at most one open
+`NextAction` and there is now exactly one *ordinary* way to set one: while a
+task is current, `Muuda` in `PRAEGUNE TEGEVUS`; otherwise the optional
+`Järgmine tegevus` inside `+ Märge`, beside the thing that prompted it. Two
+controls both offering to set "the next action" is how a lawyer ends up
+believing they have two (docs/adr/0097 §8.2).
+
+**Ten choices, not ten forms — and that still holds.** The launcher is a row of
+quiet chips and nothing else until somebody picks one; picking one opens that
+operation's small form, with its own `Salvesta`, its own validation and its own
+atomic business operation. **This deliberately reverses «one composer, one
+global save»** (docs/adr/0074 §3): one save that could mean *note* and *next
+step* and *deadline* and *consultation* and *win* and *closure* is a save whose
 meaning the person has to reconstruct from which boxes they happened to fill in
-— and one invalid panel could refuse a note they had also typed. The person now
-says what they are recording first, and only then answers the questions that
-thing asks (docs/adr/0075 §2).
-
-**`+ Järgmine tegevus` is absent while a step is open.** There is at most one
-open `NextAction` and there is exactly one control for it: while a task is
-current, changing it is `Muuda` in `PRAEGUNE TEGEVUS`; once it is finished, the
-chip appears here. Two controls both offering to set "the next action" is how a
-lawyer ends up believing they have two (brief §15).
+(docs/adr/0075 §2).
 
 **The launcher is a stable choice bar, and picking a choice does not move it.**
-Each operation is a radio, its visible chip, and its form — in that order,
-ten times. The chips are ordinary flex items in the canonical order and never
-change size, line or position; the one chosen form is the single item with
-`order: 1` and a full-width basis, so it lands on its own line *under* the whole
-row rather than pushing its neighbours sideways.
-
-The panels were `<details>` until 2026-09-14, and an open one took
-`flex: 1 1 100%; order: 1` — which moved the chip somebody had just clicked to
-the start of the next line, under their cursor. Every other chip shifted with
-it. Splitting the control from the form is what makes that structurally
-impossible rather than tuned away: the thing that moves is no longer the thing
-you click (design feedback 2026-09-14).
-
-**Only one panel open at a time, and the browser enforces it** — one radio
-`name`, so choosing a second operation unchecks the first with no script
-involved. `ux.js` adds exactly one thing: clicking the chip that is already
-chosen puts the bar back to nothing chosen. With scripting off the bar still
-opens every form, switches between them and keeps the one a refusal came back
-in; what is lost is the click-to-close, not the capability (brief §11, §33).
-
-The radio itself is `position: absolute` and clipped, not `display: none`: it
-stays focusable, it keeps the group's arrow-key navigation, and `:checked` is
-what both the blue chip and the visible form hang off — so the active state is
-announced natively instead of being painted on with a class.
+Each operation is a radio, its visible chip, and its form — in that order. The
+chips are ordinary flex items in the canonical order and never change size,
+line or position; the one chosen form is the single item with `order: 1` and a
+full-width basis, so it lands on its own line *under* the whole row rather than
+pushing its neighbours sideways. The sub-choices are the same construction one
+level in, in their own radio group, and the CSS reaches them because every rule
+is written `.cx-panels > …` rather than against a depth (static/css/app.css).
 
 The whole section renders only for a writer on an open Matter; `overview.html`
 decides that, so a reader and a closed file get no launcher at all rather than a
@@ -60,10 +84,11 @@ row of controls that refuse (brief §30, §31).
   {% endcomment %}
   <div class="cx-panels">
     {% comment %}
-      `+ Märge`. Something happened and it is *not* the current task finishing:
-      «Ministeerium helistas ja ütles, et uus versioon tuleb reedel» while the
-      step that is open stays open. It writes an Entry and its files and touches
-      `Järgmiseks` in no way at all (brief §13).
+      1 — `+ Märge`. Something happened on this file.
+
+      The family that absorbed the most: the old `+ Märge`, `+ Menetluse areng`,
+      `+ Oluline tähtaeg`, `+ Jõustumine` and `+ Töövõit` are all in here, as one
+      default and three named kinds.
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-marge-valik"
            data-addpick aria-controls="lisa-marge"
@@ -71,847 +96,152 @@ row of controls that refuse (brief §30, §31).
     <label class="disclosure-chip" for="lisa-marge-valik">+ Märge</label>
     <div class="cx-panel" id="lisa-marge" data-addpanel>
       <div class="cx-panel__body">
-        {% if open_panel == "lisa-marge" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_note' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML"
-              hx-encoding="multipart/form-data">
-          {% csrf_token %}
-          <label class="cx-f__lab" for="{{ matter_note_form.body.id_for_label }}">
-            Mis juhtus või mida tegid?
-          </label>
-          {{ matter_note_form.body }}
-          {% if matter_note_form.body.errors %}
-            <p class="field__error">{{ matter_note_form.body.errors|first }}</p>
-          {% endif %}
-          {% include "matters/partials/add_files.html" with field=matter_note_form.attachments %}
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta</button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {% comment %}
+          `Märke liik`, and it is **not** a second toolbar.
 
-    {% if not current_action %}
-      <input class="addpick" type="radio" name="lisa-valik" id="lisa-jargmine-valik"
-             data-addpick aria-controls="lisa-jargmine"
-             {% if open_panel == "lisa-jargmine" %}checked{% endif %}>
-      <label class="disclosure-chip" for="lisa-jargmine-valik">+ Järgmine tegevus</label>
-      <div class="cx-panel" id="lisa-jargmine" data-addpanel>
-        <div class="cx-panel__body">
-          {% if open_panel == "lisa-jargmine" and workspace_error %}
-            <p class="formerror" role="alert">{{ workspace_error }}</p>
-          {% endif %}
-          {% include "matters/partials/next_action_form.html" %}
+          These four appear only after somebody has chosen `+ Märge`, which is
+          the whole point of the reorganisation: the ordinary case answers
+          nothing here at all, because `Tavaline` arrives chosen.
+
+          `Oluline tähtaeg`, `Jõustumine` and `Töövõit` keep every bit of their
+          structured meaning — three models, three services, three sets of
+          reporting — and lose only their standing chips. A lawyer recording a
+          win should not have to know that it becomes a special reporting
+          object; they should have to know that they are recording a win
+          (docs/adr/0097 §8.1).
+        {% endcomment %}
+        <span class="cx-f__lab cx-sublab">Märke liik</span>
+        <div class="cx-panels cx-panels--sub">
+          {% comment %}
+            **Which chip is checked is decided in Python, not here.**
+            `marge_choice` is always one of this group's four ids: the one a
+            refusal came from, or `marge-tavaline`.
+
+            The template could compare against `open_choice` directly and it
+            must not. `open_choice` is global to the page, so when a refusal
+            came from `+ Arvamus / tagasiside` it names one of *that* family's
+            children — and every test in this group would be false, leaving it
+            with no chip selected at all. Somebody opening `+ Märge` afterwards
+            would find four chips and no form. One variable per family, each
+            guaranteed to name one of its own, removes the whole class of
+            mistake rather than asking four `{% templatetag openblock %} if {% templatetag closeblock %}`s to agree
+            (`_workspace_choices`, docs/adr/0097 §8.3).
+          {% endcomment %}
+          <input class="addpick" type="radio" name="marke-liik" id="marge-tavaline-valik"
+                 data-addpick aria-controls="marge-tavaline"
+                 {% if marge_choice == "marge-tavaline" %}checked{% endif %}>
+          <label class="disclosure-chip" for="marge-tavaline-valik">Tavaline</label>
+          <div class="cx-panel" id="marge-tavaline" data-addpanel>
+            <div class="cx-panel__body">
+              {% if open_choice == "marge-tavaline" and workspace_error %}
+                <p class="formerror" role="alert">{{ workspace_error }}</p>
+              {% endif %}
+              {% include "matters/partials/add/marge_tavaline.html" %}
+            </div>
+          </div>
+
+          <input class="addpick" type="radio" name="marke-liik" id="marge-tahtaeg-valik"
+                 data-addpick aria-controls="marge-tahtaeg"
+                 {% if marge_choice == "marge-tahtaeg" %}checked{% endif %}>
+          <label class="disclosure-chip" for="marge-tahtaeg-valik">Oluline tähtaeg</label>
+          <div class="cx-panel" id="marge-tahtaeg" data-addpanel>
+            <div class="cx-panel__body">
+              {% include "matters/partials/add/tahtaeg.html" %}
+            </div>
+          </div>
+
+          <input class="addpick" type="radio" name="marke-liik" id="marge-joustumine-valik"
+                 data-addpick aria-controls="marge-joustumine"
+                 {% if marge_choice == "marge-joustumine" %}checked{% endif %}>
+          <label class="disclosure-chip" for="marge-joustumine-valik">Jõustumine</label>
+          <div class="cx-panel" id="marge-joustumine" data-addpanel>
+            <div class="cx-panel__body">
+              {% include "matters/partials/add/joustumine.html" %}
+            </div>
+          </div>
+
+          <input class="addpick" type="radio" name="marke-liik" id="marge-toovoit-valik"
+                 data-addpick aria-controls="marge-toovoit"
+                 {% if marge_choice == "marge-toovoit" %}checked{% endif %}>
+          <label class="disclosure-chip" for="marge-toovoit-valik">Töövõit</label>
+          <div class="cx-panel" id="marge-toovoit" data-addpanel>
+            <div class="cx-panel__body">
+              {% include "matters/partials/add/toovoit.html" %}
+            </div>
+          </div>
         </div>
       </div>
-    {% endif %}
+    </div>
+
+    {# 2 — `+ Kaasamine`. Koda asked somebody for input. #}
+    {% include "matters/partials/add/kaasamine.html" %}
 
     {% comment %}
-      `+ Kaasamine` — the three questions a consultation round actually has.
+      3 — `+ Arvamus / tagasiside`. Somebody's position on this file.
 
-      **Who was engaged, when it happened, and what came back.** The panel used
-      to open on a row of `Liik` chips and a
-      four-way `Täpsus` control, so the first two decisions a lawyer made were
-      a classification nothing ever read back and a precision an as-it-happens
-      round never needs. Both are gone: every row written here is `Muu` and an
-      exact day, historical rows keep whatever they were given, and correcting
-      one is `Muuda` on its chronology row (docs/adr/0086 §1).
+      Three records that are genuinely different — who said it, to whom, and
+      whether Koda is the author — behind one chip, because a lawyer holding a
+      letter knows it is an opinion before they know which of the three the
+      application calls it.
 
-      **`Kaasamise kuupäev` starts filled with today and clears.** Recording
-      something that just happened is the usual case, and the default is visible
-      in the box where it can be read, changed and emptied — which is the one
-      shape docs/adr/0078 §2 allows a date default to take.
-
-      **`Tagasisidet ootame kuni` is not asked here at all, which is where
-      docs/adr/0086 §2 finally lands.** That record put the box on this panel
-      opening on today + 7, on an argument that was right about its own subject:
-      a week is what a round asks for when nobody says otherwise. The first
-      lawyer test showed the *consequence* was out of proportion to a default —
-      recording «19.09 — kaasati 234 tööstusettevõtet» is a completed act, and
-      under a pre-filled deadline it also opened a managed wait, drew a work
-      item, appeared on somebody's Minu asjad and then needed a second
-      deliberate act to get off the page.
-
-      Emptying the default was the first answer and it was not enough: an empty
-      box is still a box that has to be read, understood and skipped, every
-      time, and it was still the panel that opened the wait. So the question
-      moved out of the capture panel altogether (lawyer feedback 11,
-      docs/adr/0091 §2).
-
-      **The wait itself is unchanged and is not withdrawn.** It is
-      `Ootan tagasisidet` on the round's own chronology row now — one named act,
-      taken by somebody who has decided this file is waiting on an answer. The
-      column, the single `WorkItem`, `PRAEGUNE TEGEVUS`, the overdue wording and
-      `Lõpeta kaasamine` are all exactly as docs/adr/0086 §3 and §6 built them;
-      it still creates no `Järgmiseks`, still is not `Arvamuse tähtaeg`, and
-      still counts towards no deadline statistic. Every round already waiting
-      goes on waiting (matters/partials/engagement_row.html).
+      **Grouped, never merged.** `Meile saadetud tagasiside` and
+      `Teiste arvamus` are two provenances of one `MatterExternalPosition`;
+      `Koja arvamus` is a `Submission` and is not that record at all. Nothing
+      here writes across those lines and no field was made to serve two of them
+      (docs/adr/0091 §3, §6, docs/adr/0097 §8.1).
     {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-kaasamine-valik"
-           data-addpick aria-controls="lisa-kaasamine"
-           {% if open_panel == "lisa-kaasamine" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-kaasamine-valik">+ Kaasamine</label>
-    <div class="cx-panel" id="lisa-kaasamine" data-addpanel>
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-arvamus-valik"
+           data-addpick aria-controls="lisa-arvamus"
+           {% if open_panel == "lisa-arvamus" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-arvamus-valik">+ Arvamus / tagasiside</label>
+    <div class="cx-panel" id="lisa-arvamus" data-addpanel>
       <div class="cx-panel__body">
-        {% if open_panel == "lisa-kaasamine" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_engagement_compact' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML"
-              hx-encoding="multipart/form-data">
-          {% csrf_token %}
-          <div class="cx-grid">
-            <label class="cx-f">
-              <span class="cx-f__lab">Keda kaasati</span>
-              {{ add_engagement_form.audience }}
-            </label>
-            <label class="cx-f cx-f--num">
-              <span class="cx-f__lab">Vastuseid
-                <span class="cx-f__opt">valikuline</span></span>
-              {{ add_engagement_form.response_count }}
-            </label>
-          </div>
-          <div class="cx-grid cx-grid--links">
-            <label class="cx-f cx-f--date">
-              <span class="cx-f__lab">Kaasamise kuupäev
-                <span class="cx-f__opt">valikuline</span></span>
-              {{ add_engagement_form.occurred_on }}
-            </label>
-          </div>
-          <label class="cx-f" for="{{ add_engagement_form.feedback_received.id_for_label }}">
-            <span class="cx-f__lab">Saadud tagasiside / arvamused
-              <span class="cx-f__opt">valikuline</span></span>
-            {{ add_engagement_form.feedback_received }}
-          </label>
+        <span class="cx-f__lab cx-sublab">Kelle arvamus</span>
+        <div class="cx-panels cx-panels--sub">
           {% comment %}
-            Where this round's material lives. Both optional, both inert: the
-            form validates the scheme and nothing else, no request is made to
-            either provider, and neither link makes a `Kaasamine` valid on its
-            own — `Keda kaasati` is still what identifies the record, so a panel
-            holding two addresses and no audience is refused rather than
-            silently discarded (docs/adr/0027, amended 2026-09-12).
-
-            The `_error` ids are what Django's own `aria-describedby` on a
-            refused control already points at; without them the pointer dangles.
+            `Meile saadetud tagasiside` arrives chosen, on the same reasoning
+            that gives `+ Märge` a default: a family panel that opens on three
+            more chips and no form is an extra click on every visit. It is the
+            commonest of the three — most of what reaches a department is
+            somebody answering it — and `arvamus_choice` is computed the same
+            way `marge_choice` is, so a refusal from either sibling still wins.
           {% endcomment %}
-          <div class="cx-grid cx-grid--links">
-            <label class="cx-f">
-              <span class="cx-f__lab">Smaily link</span>
-              {{ add_engagement_form.smaily_url }}
-            </label>
-            <label class="cx-f">
-              <span class="cx-f__lab">Alchemer link</span>
-              {{ add_engagement_form.alchemer_url }}
-            </label>
-          </div>
-          {% if add_engagement_form.audience.errors %}
-            <p class="field__error" id="{{ add_engagement_form.audience.auto_id }}_error">
-              {{ add_engagement_form.audience.errors|first }}</p>
-          {% endif %}
-          {% if add_engagement_form.response_count.errors %}
-            <p class="field__error" id="{{ add_engagement_form.response_count.auto_id }}_error">
-              {{ add_engagement_form.response_count.errors|first }}</p>
-          {% endif %}
-          {% if add_engagement_form.occurred_on.errors %}
-            <p class="field__error" id="{{ add_engagement_form.occurred_on.auto_id }}_error">
-              {{ add_engagement_form.occurred_on.errors|first }}</p>
-          {% endif %}
-          {% if add_engagement_form.smaily_url.errors %}
-            <p class="field__error" id="{{ add_engagement_form.smaily_url.auto_id }}_error">
-              {{ add_engagement_form.smaily_url.errors|first }}</p>
-          {% endif %}
-          {% if add_engagement_form.alchemer_url.errors %}
-            <p class="field__error" id="{{ add_engagement_form.alchemer_url.auto_id }}_error">
-              {{ add_engagement_form.alchemer_url.errors|first }}</p>
-          {% endif %}
-          {% include "matters/partials/add_files.html" with field=add_engagement_form.attachments %}
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    {% comment %}
-      `+ Oluline tähtaeg`. A milestone somebody else announced is often known
-      only to a month, a quarter or a year, so the panel asks at which of those
-      four precisions it is known and takes the answer that precision needs.
-      It creates no `NextAction` — a date the file has to live with is not an
-      instruction to a person (brief §17, docs/adr/0079 §1).
-    {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-tahtaeg-valik"
-           data-addpick aria-controls="lisa-tahtaeg"
-           {% if open_panel == "lisa-tahtaeg" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-tahtaeg-valik">+ Oluline tähtaeg</label>
-    <div class="cx-panel" id="lisa-tahtaeg" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-tahtaeg" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_important_date' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML"
-              hx-encoding="multipart/form-data">
-          {% csrf_token %}
-          <label class="cx-f">
-            <span class="cx-f__lab">Mis tähtaeg</span>
-            {{ important_date_form.deadline_title }}
-          </label>
-          {% if important_date_form.deadline_title.errors %}
-            <p class="field__error">{{ important_date_form.deadline_title.errors|first }}</p>
-          {% endif %}
-          {% include "matters/partials/period_composer.html" with chips=important_date_form.precision_chips date_field=important_date_form.deadline_date month_field=important_date_form.deadline_month quarter_field=important_date_form.deadline_quarter year_field=important_date_form.deadline_year only %}
-          {% include "matters/partials/add_files.html" with field=important_date_form.attachments %}
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-joustumine-valik"
-           data-addpick aria-controls="lisa-joustumine"
-           {% if open_panel == "lisa-joustumine" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-joustumine-valik">+ Jõustumine</label>
-    <div class="cx-panel" id="lisa-joustumine" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-joustumine" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_effective_date' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML"
-              hx-encoding="multipart/form-data">
-          {% csrf_token %}
-          <label class="cx-f">
-            <span class="cx-f__lab">Mis jõustub</span>
-            {{ effective_date_form.effective_title }}
-          </label>
-          {% if effective_date_form.effective_title.errors %}
-            <p class="field__error">{{ effective_date_form.effective_title.errors|first }}</p>
-          {% endif %}
-          {% include "matters/partials/period_composer.html" with chips=effective_date_form.precision_chips date_field=effective_date_form.effective_on month_field=effective_date_form.effective_month quarter_field=effective_date_form.effective_quarter year_field=effective_date_form.effective_year only %}
-          {% include "matters/partials/add_files.html" with field=effective_date_form.attachments %}
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    {% comment %}
-      `+ Töövõit`. A win is recorded when it happens, not when the file closes,
-      and it neither closes the Matter nor completes the current step
-      (brief §19).
-    {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-toovoit-valik"
-           data-addpick aria-controls="lisa-toovoit"
-           {% if open_panel == "lisa-toovoit" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-toovoit-valik">+ Töövõit</label>
-    <div class="cx-panel" id="lisa-toovoit" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-toovoit" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_work_victory' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML"
-              hx-encoding="multipart/form-data">
-          {% csrf_token %}
-          <label class="cx-f">
-            <span class="cx-f__lab">Mis muutus</span>
-            {{ work_victory_form.victory_change }}
-          </label>
-          {% if work_victory_form.victory_change.errors %}
-            <p class="field__error">{{ work_victory_form.victory_change.errors|first }}</p>
-          {% endif %}
-          {% include "matters/partials/period_composer.html" with chips=work_victory_form.precision_chips date_field=work_victory_form.victory_date month_field=work_victory_form.victory_month quarter_field=work_victory_form.victory_quarter year_field=work_victory_form.victory_year only %}
-          {% include "matters/partials/add_files.html" with field=work_victory_form.attachments %}
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    {% comment %}
-      `+ Ülevaade / uudis`. This file should be written up somewhere the public
-      can read it — an overview for the membership on the Chamber's own site, or
-      a news item somewhere else.
-
-      **One activity and no type selector.** The record used to be
-      `Kodulehe ülevaade` and could point only at koda.ee, which made the file
-      unable to record the same write-up appearing in a trade paper or on a
-      partner's site. It is neutral now, and it stays *one* control rather than
-      growing a `liik` chip: an overview and a news item are the same act, and
-      the address the row already carries is what tells a reader which they are
-      looking at (docs/adr/0085 §1).
-
-      **Two boxes, both answered, and one outcome.** This panel records a page
-      that exists.
-
-      docs/adr/0081 §1 gave it one button and no fields, because at the moment
-      somebody decides a Matter should be written up there is no address and no
-      date. docs/adr/0083 added the boxes as optional, so a lawyer recording a
-      page already published did not have to file a plan and publish it from a
-      second control. What that left was three answers, one of which — *neither
-      box* — was reached by pressing `Salvesta` on a form that looked untouched.
-
-      A save whose meaning depends on what somebody did not type is the one
-      shape a composer may not have. So the address is required, the day opens
-      on today, and a valid save is a publication (docs/adr/0095 §5).
-
-      **`Plaanis` and `Tühistatud` are untouched.** Every stored plan still
-      reads on the file, still carries `Avalda` and `Tühista` in
-      `website_overviews.html`, and `plan_website_overview` still writes one.
-      What is gone is a silent way to create one from this panel.
-
-      Still no title, no description and no attachment: the record's content is
-      the address and the day (docs/adr/0081 §2). It is not a `+ Märge`, it is
-      not a `+ Töövõit`, and it is not a deadline — a write-up that is owed
-      makes no `NextAction`, no work item and no badge, so a Matter carrying one
-      never reads as late (docs/adr/0081 §4).
-    {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-koduleht-valik"
-           data-addpick aria-controls="lisa-koduleht"
-           {% if open_panel == "lisa-koduleht" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-koduleht-valik">+ Ülevaade / uudis</label>
-    <div class="cx-panel" id="lisa-koduleht" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-koduleht" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_website_overview' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML">
-          {% csrf_token %}
           {% comment %}
-            The day and the address, and nothing else on the panel.
+            **The two `{% templatetag openblock %} url … as … {% templatetag closeblock %}` lines are load-bearing.**
 
-            **This records a page that exists.** The empty save that used to
-            file a plan is gone: pressing `Salvesta` on a panel that looks
-            untouched is a save whose meaning the person has to know in advance,
-            and what it filed was a row they then had to publish from a second
-            control (docs/adr/0095 §5).
+            `external_position_panel.html` takes its endpoint as `post_url`,
+            because the one partial serves two panels that post to two routes.
+            An include naming a variable nothing has set passes the *empty
+            string*, and Django says nothing about it: the form then carries
+            `hx-post=""`, HTMX posts to the page's own address, and the save
+            silently does not happen. The panel opens, the fields fill,
+            `Salvesta` responds — and the chronology never gains a row.
 
-            `PLANNED` and `CANCELLED` are untouched in the domain. Every stored
-            plan still reads, still carries `Avalda` and `Tühista` in
-            `website_overviews.html`, and `plan_website_overview` is still the
-            service that writes one.
-
-            **The date opens on today**, which narrows docs/adr/0089 §8 for this
-            box. That decision refused a default because the commonest save was
-            an address pasted with no known publication day — but what it
-            refused specifically was a date appearing *in response to a paste*,
-            unread. This one is in the box before anything is typed, and
-            clearing it still stores `NULL` and still reads «kuupäev teadmata»
-            (docs/adr/0078 §2).
-
-            The two are one row, as they always were: `cx-grid--links` is the
-            same pairing `+ Koja arvamus` uses for its file and its day.
+            These two lines were lost when this file was rewritten for the four
+            families, and every `Teiste arvamus` and
+            `Meile saadetud tagasiside` save went nowhere until a browser shard
+            spent thirty seconds per test waiting for a row that was never
+            coming. `tests/test_templates.py` now fails on it in a second.
           {% endcomment %}
-          <div class="cx-grid cx-grid--links">
-            <label class="cx-f cx-f--date"
-                   for="{{ website_overview_form.published_on.id_for_label }}">
-              <span class="cx-f__lab">{{ website_overview_form.published_on.label }}</span>
-              {{ website_overview_form.published_on }}
-            </label>
-            <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
-              <span class="cx-f__lab">{{ website_overview_form.url.label }}</span>
-              {{ website_overview_form.url }}
-            </label>
-          </div>
-          {% if website_overview_form.published_on.errors %}
-            <p class="field__error" id="{{ website_overview_form.published_on.auto_id }}_error">
-              {{ website_overview_form.published_on.errors|first }}</p>
-          {% endif %}
-          {% if website_overview_form.url.errors %}
-            <p class="field__error" id="{{ website_overview_form.url.auto_id }}_error">
-              {{ website_overview_form.url.errors|first }}</p>
-          {% endif %}
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
-          </div>
-        </form>
-      </div>
-    </div>
+          {% url 'matters:add_received_feedback' pk=matter.pk as received_feedback_post_url %}
+          {% include "matters/partials/external_position_panel.html" with panel_id="arvamus-tagasiside" chip_label="Meile saadetud tagasiside" post_url=received_feedback_post_url form=received_feedback_form picker_id="tagasiside" submit_label="Salvesta tagasiside" group_name="arvamuse-liik" open_value=arvamus_choice workspace_error=workspace_error %}
+          {% url 'matters:add_external_position' pk=matter.pk as external_position_post_url %}
+          {% include "matters/partials/external_position_panel.html" with panel_id="arvamus-teiste" chip_label="Teiste arvamus" post_url=external_position_post_url form=external_position_form picker_id="valine-seisukoht" submit_label="Salvesta arvamus" group_name="arvamuse-liik" open_value=arvamus_choice workspace_error=workspace_error %}
 
-    {% comment %}
-      `+ Meile saadetud tagasiside` — somebody gave feedback to Koda, and this
-      is where it goes: a member company's e-mail, an association's written
-      answer, a consultation response, the summary of a survey.
-
-      It is the chip the first lawyer test asked for by name. What the file
-      could not do before was tell «a member company answered our
-      consultation» apart from «the ministry published its position» — two
-      different professional facts that were being filed under one heading,
-      because provenance was not asked and could not honestly be guessed from
-      the other columns (lawyer feedback 12, docs/adr/0091 §3).
-
-      **The organisation is optional here and only here.** Aggregate answers
-      have no single author, and `Allikas` names the collection instead.
-    {% endcomment %}
-    {% url 'matters:add_received_feedback' pk=matter.pk as received_feedback_post_url %}
-    {% include "matters/partials/external_position_panel.html" with panel_id="lisa-tagasiside" chip_label="+ Meile saadetud tagasiside" post_url=received_feedback_post_url form=received_feedback_form picker_id="tagasiside" submit_label="Salvesta tagasiside" open_panel=open_panel workspace_error=workspace_error %}
-
-    {% comment %}
-      `+ Teiste arvamus` — what somebody *else* said about this file, found and
-      recorded as factual reference material.
-
-      Exactly the record docs/adr/0084 built, under the name that says which of
-      the two kinds it is. It is not Koda's own opinion, not a `Submission`, not
-      a `Töövõit` and not a `Märge`: a ministry's published position is a fact
-      about the world, and each of those four would have made it a claim about
-      the Chamber instead. It is not a `Kaasamine` either — an engagement records
-      that Koda *asked*, and this records that somebody *said* — which is why
-      `Seotud kaasamine` relates the two rather than merging them
-      (docs/adr/0084 §1).
-
-      The organisation is **required**: a discovered position with no author is
-      an anonymous claim on a professional file, and there is no `Allikas` box
-      here to answer it with (docs/adr/0091 §3.3).
-    {% endcomment %}
-    {% url 'matters:add_external_position' pk=matter.pk as external_position_post_url %}
-    {% include "matters/partials/external_position_panel.html" with panel_id="lisa-valine-seisukoht" chip_label="+ Teiste arvamus" post_url=external_position_post_url form=external_position_form picker_id="valine-seisukoht" submit_label="Salvesta arvamus" open_panel=open_panel workspace_error=workspace_error %}
-
-    {% comment %}
-      `+ Koja arvamus` — the Chamber's own opinion went out, recorded where the
-      work is.
-
-      The step the whole file is about, and until now the one a lawyer could not
-      take from this page: Koda's opinion is a `Submission`, and the surface that
-      manages submissions is the `Dokumendid` tab, behind a collapsed block, in
-      two acts — upload the file, then find it again in a select and register the
-      send. A lawyer working the Teema saw no sign of it (lawyer feedback 13,
-      docs/adr/0091 §6).
-
-      **One panel, one save, and the same service underneath.** This posts to
-      `register_sent_opinion_on_open_matter`, which is exactly what the
-      `Dokumendid` form posts to, so there is no second `KodaOpinion` record, no
-      second statistic and no second withdrawal path. The `Dokumendid` surface
-      keeps everything it has — drafts, `+ Uus arvamus`, `Võta tagasi`, the
-      channel and reference fields — and stays the place an opinion is *managed*
-      (docs/adr/0061).
-
-      **Four questions, and each is a fact a send really has.** What went out,
-      when, to whom, and — optionally — what to call it. Uploading a file here is
-      not what asserts the send: pressing the button is, which is why the bytes
-      and the `Submission` land in one transaction rather than as one act
-      (docs/adr/0091 §6.2).
-
-      **`Adressaadid` is not defaulted from `Saatja`.** An opinion on the first
-      draft goes to the ministry; one at second reading goes to a Riigikogu
-      committee; one on a revised text may go to a third body. Assuming the
-      original sender would put a false recipient on the canonical outbound
-      record of a professional letter (docs/adr/0091 §6.3).
-
-      **Several per Matter is the ordinary case.** An opinion on the VTK, one on
-      the draft, one during Riigikogu proceedings and one on the revised text are
-      four sends and four Submissions. Nothing here is unique, nothing supersedes
-      an earlier opinion, and no earlier file is overwritten (docs/adr/0091 §6.4).
-    {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-koja-arvamus-valik"
-           data-addpick aria-controls="lisa-koja-arvamus"
-           {% if open_panel == "lisa-koja-arvamus" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-koja-arvamus-valik">+ Koja arvamus</label>
-    <div class="cx-panel" id="lisa-koja-arvamus" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-koja-arvamus" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_koda_opinion' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML"
-              hx-encoding="multipart/form-data">
-          {% csrf_token %}
-          {% comment %}
-            What went out and when, paired on one row: they are the two halves of
-            one fact and a lawyer answers them together.
-
-            The date opens on today, visibly, because an opinion is written up on
-            the day it goes out far more often than not — and a cleared box is a
-            refusal naming the missing day rather than a stamp. `Registreeri
-            saatmine` learned that the hard way: a blank meant `now`, and the
-            outbound register reported `Arvamus välja <today>` about letters
-            nobody had dated (R2-01).
-          {% endcomment %}
-          <div class="cx-grid cx-grid--links">
-            <div class="cx-f">
-              <span class="cx-f__lab">{{ koda_opinion_form.upload.label }}</span>
-              {% include "matters/partials/add_files.html" with field=koda_opinion_form.upload drop_text="Lohista fail siia või " %}
+          <input class="addpick" type="radio" name="arvamuse-liik" id="arvamus-koja-valik"
+                 data-addpick aria-controls="arvamus-koja"
+                 {% if arvamus_choice == "arvamus-koja" %}checked{% endif %}>
+          <label class="disclosure-chip" for="arvamus-koja-valik">Koja arvamus</label>
+          <div class="cx-panel" id="arvamus-koja" data-addpanel>
+            <div class="cx-panel__body">
+              {% include "matters/partials/add/koja-arvamus.html" %}
             </div>
-            <label class="cx-f cx-f--date"
-                   for="{{ koda_opinion_form.sent_on.id_for_label }}">
-              <span class="cx-f__lab">{{ koda_opinion_form.sent_on.label }}</span>
-              {{ koda_opinion_form.sent_on }}
-            </label>
           </div>
-          {% if koda_opinion_form.sent_on.errors %}
-            <p class="field__error" id="{{ koda_opinion_form.sent_on.auto_id }}_error">
-              {{ koda_opinion_form.sent_on.errors|first }}</p>
-          {% endif %}
-
-          {% comment %}
-            `Adressaadid` — the shared picker, searchable, and opening on the
-            Teema's own `Saatja`.
-
-            **This reverses docs/adr/0091 §6.3 twice, deliberately.** That
-            decision drew the whole catalogue as a chip row and refused a
-            default, on two arguments. The first — that registering a letter
-            Koda sent is not the moment to invent the institution it went to —
-            was an argument against a picker whose `+` creates carelessly, and
-            what it produced was a panel where a body genuinely missing had to be
-            added on another page and the person had to come back. The second —
-            that an opinion at second reading goes to a committee rather than to
-            the ministry that sent the draft — is true, and is an argument
-            against a *silent* default rather than against a visible one.
-
-            So the control is the one every other institution question on the
-            page uses, `quiet` like `Uus teema`'s `Saatja`: one line reading
-            «Otsi või lisa asutus…» and the bodies actually chosen. The Teema's
-            senders are ticked in it before anything is saved, where they can be
-            read, removed, replaced and added to — a suggestion somebody accepts
-            rather than a recipient applied behind their back
-            (docs/adr/0078 §2, docs/adr/0095 §1).
-
-            **Several, still.** One letter really does go to two bodies at once,
-            which is what `SubmissionRecipient` has always held — and the control
-            never has to be told, because a checkbox already behaves as «several»
-            where a radio behaves as «one».
-
-            **And the default is a form default.** `Matter.source_organisations`
-            is not written by this save, is not read back from it, and a letter
-            sent to three committees leaves the Teema's `Saatja` exactly as it
-            was. Two facts, two columns (docs/adr/0095 §1).
-          {% endcomment %}
-          {% include "matters/partials/organisation_picker.html" with picker_id="koja-adressaat" legend=koda_opinion_form.recipients.label chips=koda_opinion_form.recipients_chip_choices tail=koda_opinion_form.recipients_tail_choices typed_field=koda_opinion_form.recipient_name add_label="Lisa uus adressaat" clearable=True quiet=True only %}
-          {% if koda_opinion_form.recipients.errors %}
-            <p class="field__error" id="{{ koda_opinion_form.recipients.auto_id }}_error">
-              {{ koda_opinion_form.recipients.errors|first }}</p>
-          {% endif %}
-
-          {% comment %}
-            `Kokkuvõte` last, optional, and a box with room in it.
-
-            **It is not the old `Pealkiri` renamed.** That field asked for a
-            name, and what it got was the file's name, nothing, or a sentence
-            trimmed to fit a heading — while the thing a colleague opening the
-            file next year actually wants is what the Chamber argued. So the
-            question changed, and the answer has its own column: a paragraph in
-            `Submission.summary`, never in `title` (docs/adr/0095 §2).
-
-            **The record still has an identity, and nothing invents one.**
-            `Submission.title` is the uploaded file's own name, which is where
-            `add_matter_koda_opinion` has taken it from whenever this panel's
-            title box was blank since the panel was written. Nothing is read out
-            of the file's contents, nothing is generated, and no headline is cut
-            from the first characters of this box.
-          {% endcomment %}
-          <label class="cx-f" for="{{ koda_opinion_form.summary.id_for_label }}">
-            <span class="cx-f__lab">{{ koda_opinion_form.summary.label }}
-              <span class="cx-f__opt">valikuline</span></span>
-            {{ koda_opinion_form.summary }}
-          </label>
-          {% if koda_opinion_form.summary.errors %}
-            <p class="field__error" id="{{ koda_opinion_form.summary.auto_id }}_error">
-              {{ koda_opinion_form.summary.errors|first }}</p>
-          {% endif %}
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Registreeri arvamus</button>
-          </div>
-        </form>
+        </div>
       </div>
     </div>
 
-    {% comment %}
-      `+ Menetluse areng` — the procedure moved, and this is the step it took.
-
-      «Ministeerium saatis uue eelnõu versiooni», «Eelnõu läks
-      Justiitsministeeriumisse», «Valitsus kiitis eelnõu heaks», «Eelnõu jõudis
-      Riigikokku», «Seadus võeti vastu». The continuation the file had no way to
-      record, and the reason a Matter used to end at «Arvamus saadetud» with
-      nothing obvious to press: recording one step meant up to three saves in
-      three places — a `Märge` with no date box, a `Hetkeseis` change in the
-      header, and `+ Järgmine tegevus` under this bar (lawyer feedback 14,
-      docs/adr/0091 §5).
-
-      **It writes a canonical `MatterProceduralDevelopment`**, beside `Kaasamine`
-      and `Teiste arvamus`. It was an `Entry` of a new kind for one round, and the
-      Package D discovery retired that: an incoming development cannot be
-      projected truthfully from an `Entry`, because the date cannot be unknown,
-      the lawyer's note has nowhere to go that is not the ministry's own sentence,
-      and a projection would have to parse a title out of prose.
-
-      **Three optional halves, each of them somebody's decision.** The
-      `Hetkeseis` is offered and never derived — nothing reads the sentence and
-      concludes that a file has reached the Riigikogu. `Järgmiseks` and `Millal?`
-      are the same two questions `+ Järgmine tegevus` asks, asked here because
-      «the ministry sent a new draft» and «I will read it by Friday» are one
-      thought. Both or neither, refused on the empty half (ADR 0052 §5).
-
-      **The whole save is one transaction.** A stage that moved without the
-      development that moved it would be a file claiming to be in the Riigikogu
-      with nothing saying how it got there (docs/adr/0091 §5.4).
-    {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-menetluse-areng-valik"
-           data-addpick aria-controls="lisa-menetluse-areng"
-           {% if open_panel == "lisa-menetluse-areng" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-menetluse-areng-valik">+ Menetluse areng</label>
-    <div class="cx-panel" id="lisa-menetluse-areng" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-menetluse-areng" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_development' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML"
-              hx-encoding="multipart/form-data">
-          {% csrf_token %}
-          <label class="cx-f" for="{{ development_form.title.id_for_label }}">
-            <span class="cx-f__lab">{{ development_form.title.label }}</span>
-            {{ development_form.title }}
-          </label>
-          {% if development_form.title.errors %}
-            <p class="field__error" id="{{ development_form.title.auto_id }}_error">
-              {{ development_form.title.errors|first }}</p>
-          {% endif %}
-
-          {% comment %}
-            The day it happened, **at the precision it is known to** — and
-            optional, which is what the canonical record buys over the `Entry`
-            this panel wrote for one round.
-
-            A step learned about from a third party months later frequently has no
-            day anybody could defend, and a government sitting is routinely
-            remembered as «oktoobris». The box opens on today because the common
-            case is writing up something just learned; emptying it stores `NULL`
-            and the row reads «Kuupäev teadmata», which is a fact the file has to
-            be able to hold (docs/adr/0079 §1, docs/adr/0091 §5.2).
-
-            The same shared composer `+ Kaasamine`, `+ Oluline tähtaeg` and
-            `+ Teiste arvamus` all carry, so a quarter stated here is the same
-            stored anchor as a quarter stated anywhere else.
-          {% endcomment %}
-          {% include "matters/partials/period_composer.html" with chips=development_form.precision_chips date_field=development_form.occurred_on month_field=development_form.areng_month quarter_field=development_form.areng_quarter year_field=development_form.areng_year only %}
-
-          {% comment %}
-            `Juristi märkus` — what this office makes of the step, under it and
-            visibly apart from it. «Ministeerium saatis uue versiooni» is a fact
-            about the world; «see ei arvesta meie ettepanekut» is a professional
-            judgement, and a history that read the second as part of the first
-            would misattribute it (docs/adr/0091 §4, §5).
-          {% endcomment %}
-          <label class="cx-f" for="{{ development_form.note.id_for_label }}">
-            <span class="cx-f__lab">{{ development_form.note.label }}
-              <span class="cx-f__opt">valikuline</span></span>
-            {{ development_form.note }}
-          </label>
-          {% if development_form.note.errors %}
-            <p class="field__error" id="{{ development_form.note.auto_id }}_error">
-              {{ development_form.note.errors|first }}</p>
-          {% endif %}
-
-          <label class="cx-f" for="{{ development_form.stage.id_for_label }}">
-            <span class="cx-f__lab">{{ development_form.stage.label }}
-              <span class="cx-f__opt">valikuline</span></span>
-            {{ development_form.stage }}
-          </label>
-          {% if development_form.stage.errors %}
-            <p class="field__error" id="{{ development_form.stage.auto_id }}_error">
-              {{ development_form.stage.errors|first }}</p>
-          {% endif %}
-
-          {% include "matters/partials/add_files.html" with field=development_form.attachments %}
-
-          {% comment %}
-            `Järgmiseks` and `Millal?`, together or not at all. The same two
-            questions and the same refusals as `+ Järgmine tegevus`, inside a
-            `<fieldset>` so that «this is the optional second half» is stated by
-            the markup as well as by the word (ADR 0052 §3, §5).
-
-            A step saved here supersedes whatever was open, which is
-            `NextAction`'s one-open invariant and not a decision this panel makes.
-          {% endcomment %}
-          <fieldset class="cx-fieldset">
-            <legend class="cx-f__lab">Mida teed järgmisena
-              <span class="cx-f__opt">valikuline</span></legend>
-            <div class="cx-grid cx-grid--links">
-              <label class="cx-f" for="{{ development_form.next_text.id_for_label }}">
-                <span class="cx-f__lab">{{ development_form.next_text.label }}</span>
-                {{ development_form.next_text }}
-              </label>
-              <label class="cx-f cx-f--date"
-                     for="{{ development_form.next_date.id_for_label }}">
-                <span class="cx-f__lab">{{ development_form.next_date.label }}</span>
-                {{ development_form.next_date }}
-              </label>
-            </div>
-            {% if development_form.next_text.errors %}
-              <p class="field__error" id="{{ development_form.next_text.auto_id }}_error">
-                {{ development_form.next_text.errors|first }}</p>
-            {% endif %}
-            {% if development_form.next_date.errors %}
-              <p class="field__error" id="{{ development_form.next_date.auto_id }}_error">
-                {{ development_form.next_date.errors|first }}</p>
-            {% endif %}
-          </fieldset>
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta areng</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    {% comment %}
-      `+ Menetluse link`. Where the official proceeding on this file actually
-      lives — the EIS toimik, a ministry's document register, the EU side, the
-      Riigikogu page — so that the colleague who opens this Teema in three
-      months does not have to reconstruct it from the title.
-
-      **A reference, and nothing is fetched.** No page is opened, crawled,
-      polled, resolved or previewed; no `Document` is created from it and no
-      date or metadata is read off the other end. The lawyer gives an address
-      and the application records that address. A future package may watch
-      official sources; this one deliberately does not, and the model is shaped
-      so that it will not have to be rebuilt when one does (docs/adr/0089 §4).
-
-      **It is not `+ Väline seisukoht` and it is not `+ Ülevaade / uudis`,**
-      which is why it is a third chip rather than a third field on either. A
-      ministry's *position* hosted at a URL and a ministry's *document register*
-      are two different facts about the same body; a write-up of this file
-      published where the public can read it is a third. The same address may
-      legitimately be recorded as more than one of them, because a lawyer meant
-      more than one — nothing infers any of them from another (docs/adr/0089 §5).
-
-      **No date and no state.** This record is not something that happened on a
-      day, it is where something is happening, so a date box would be a question
-      with nothing honest to answer it and a lifecycle would be one nobody
-      maintains. It creates no `NextAction`, no deadline, no work item and no
-      badge, so a Matter carrying four of these never reads as late.
-
-      Second to last, before `+ Lõpeta teema`, and the bar's order is otherwise
-      untouched (docs/adr/0078 §1).
-    {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-menetluse-link-valik"
-           data-addpick aria-controls="lisa-menetluse-link"
-           {% if open_panel == "lisa-menetluse-link" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-menetluse-link-valik">+ Menetluse link</label>
-    <div class="cx-panel" id="lisa-menetluse-link" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-menetluse-link" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:add_procedural_link' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML">
-          {% csrf_token %}
-          {% comment %}
-            The five sources as chips rather than a `<select>`, for the reason
-            `Menetlusliik` and `Hetkeseis` are chip rows on `Uus teema`: with a
-            vocabulary of five, a select is a click spent finding out what the
-            options even are.
-
-            A `<fieldset>` with a real `<legend>`, because the group is one
-            question and a screen reader announcing five unlabelled radios is a
-            group nobody can answer. Nothing is pre-selected here — unlike `Uus
-            teema`, where the file usually arrives from EIS, this panel is
-            opened from a Matter that already exists and the answer is as likely
-            to be any of the five.
-          {% endcomment %}
-          <fieldset class="cx-fieldset">
-            <legend class="cx-f__lab">{{ procedural_link_form.kind.label }}</legend>
-            <div class="chiprow">
-              {% for choice in procedural_link_form.kind %}
-                <label class="chip">
-                  {{ choice.tag }}
-                  <span class="chip__name">{{ choice.choice_label }}</span>
-                </label>
-              {% endfor %}
-            </div>
-            {% if procedural_link_form.kind.errors %}
-              <p class="field__error" id="{{ procedural_link_form.kind.auto_id }}_error">
-                {{ procedural_link_form.kind.errors|first }}</p>
-            {% endif %}
-          </fieldset>
-          <div class="cx-grid cx-grid--links">
-            <label class="cx-f" for="{{ procedural_link_form.url.id_for_label }}">
-              <span class="cx-f__lab">{{ procedural_link_form.url.label }}</span>
-              {{ procedural_link_form.url }}
-            </label>
-            <label class="cx-f" for="{{ procedural_link_form.label.id_for_label }}">
-              <span class="cx-f__lab">{{ procedural_link_form.label.label }}
-                <span class="cx-f__opt">valikuline</span></span>
-              {{ procedural_link_form.label }}
-            </label>
-          </div>
-          {% if procedural_link_form.url.errors %}
-            <p class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
-              {{ procedural_link_form.url.errors|first }}</p>
-          {% endif %}
-          {% if procedural_link_form.label.errors %}
-            <p class="field__error" id="{{ procedural_link_form.label.auto_id }}_error">
-              {{ procedural_link_form.label.errors|first }}</p>
-          {% endif %}
-          <p class="cx-note">
-            Avalik http:// või https:// aadress. Link salvestatakse sellisena,
-            nagu ta on — lehte ei avata ega jälgita.
-          </p>
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Lisa menetluse link</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    {% comment %}
-      `+ Lõpeta teema` — last, because finishing a file is not a routine
-      capture, and two questions, because closing a Matter is not a claim that
-      an opinion was sent. The six-question flow is not coming back and nothing
-      here fabricates a sent opinion, a work victory or final evidence
-      (docs/adr/0074 §10, brief §20).
-
-      No file control: closure gained no attachment requirement in this round,
-      and giving it one would quietly restore the final-evidence precondition
-      the previous round removed.
-    {% endcomment %}
-    <input class="addpick" type="radio" name="lisa-valik" id="lisa-lopeta-valik"
-           data-addpick aria-controls="lisa-lopeta"
-           {% if open_panel == "lisa-lopeta" %}checked{% endif %}>
-    <label class="disclosure-chip disclosure-chip--last" for="lisa-lopeta-valik">+ Lõpeta teema</label>
-    <div class="cx-panel" id="lisa-lopeta" data-addpanel>
-      <div class="cx-panel__body">
-        {% if open_panel == "lisa-lopeta" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <form class="addform" data-addform
-              hx-post="{% url 'matters:close_from_workspace' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML">
-          {% csrf_token %}
-          <div class="cx-when" data-chipgroup="{{ closure_form.disposition.html_name }}">
-            <span class="cx-f__lab">Kuidas lõppes</span>
-            {% for chip in closure_form.closure_chips %}
-              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
-                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
-            {% endfor %}
-            {{ closure_form.disposition }}
-          </div>
-          <label class="cx-f">
-            <span class="cx-f__lab">Lõppsõna <span class="cx-f__opt">valikuline</span></span>
-            {{ closure_form.closing_words }}
-          </label>
-          {% if closure_form.disposition.errors %}
-            <p class="field__error">{{ closure_form.disposition.errors|first }}</p>
-          {% endif %}
-          <p class="cx-note">Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.</p>
-          <div class="addform__actions">
-            <button class="button button--primary" type="submit">Salvesta</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    {# 4 — `+ Ülevaade / uudis`. What Koda published about the topic. #}
+    {% include "matters/partials/add/koduleht.html" %}
   </div>
 </section>

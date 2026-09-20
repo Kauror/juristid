@@ -196,8 +196,8 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
     # test is about is unchanged: this control belongs to *this* form, and the
     # commencement form's own radio several hundred pixels below must not reach
     # it.
-    open_add_panel(page, "lisa-tahtaeg")
-    panel_precision = page.locator("#lisa-tahtaeg label.precision__chip").first
+    open_add_panel(page, "marge-tahtaeg")
+    panel_precision = page.locator("#marge-tahtaeg label.precision__chip").first
     expect(panel_precision).to_be_visible()
 
     # Now the inline commencement form, and the answer that removes its own
@@ -215,5 +215,5 @@ def test_an_inline_commencement_does_not_reach_the_composers_own_period_control(
     # The panel is a different form on a different page and keeps its own.
     page.go_back()
     page.wait_for_load_state("networkidle")
-    open_add_panel(page, "lisa-tahtaeg")
-    expect(page.locator("#lisa-tahtaeg label.precision__chip").first).to_be_visible()
+    open_add_panel(page, "marge-tahtaeg")
+    expect(page.locator("#marge-tahtaeg label.precision__chip").first).to_be_visible()

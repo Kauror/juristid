@@ -224,16 +224,25 @@ WRITTEN = "Ministeerium lubas telefonis, et tähtaega pikendatakse kahe nädala 
 
 
 def test_a_stale_note_on_a_closed_matter_is_refused_and_still_readable(signed_in, specialist):
-    """The finding itself, on `+ Märge`."""
+    """The finding itself, on `+ Märge`.
+
+    `title` rather than `body`: the ordinary note asks `Mis juhtus?` as one
+    stated line and writes a `MatterProceduralDevelopment` since
+    docs/adr/0097 §6. What is being recovered is whatever the person typed into
+    whichever box the panel offers, which is what `unsaved_content` reads off
+    `form.data` — so the claim is unchanged and the field name follows the
+    form.
+    """
     matter = Matter.objects.create(title="Suletud teema", owner=specialist)
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
 
-    response = _post(signed_in, "matters:add_note", matter, {"body": WRITTEN})
+    response = _post(signed_in, "matters:add_note", matter, {"title": WRITTEN})
     body = response.content.decode()
 
     # The boundary, unchanged.
     assert response.status_code == 400
     assert matter.entries.count() == 0
+    assert matter.procedural_developments.count() == 0
     assert CLOSED_MATTER_REFUSAL in body
     # And the words, given back to be copied.
     assert WRITTEN in body
@@ -250,7 +259,7 @@ def test_the_recovery_block_offers_no_way_to_save_it(signed_in, specialist):
     matter = Matter.objects.create(title="Suletud teema", owner=specialist)
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
 
-    body = _post(signed_in, "matters:add_note", matter, {"body": WRITTEN}).content.decode()
+    body = _post(signed_in, "matters:add_note", matter, {"title": WRITTEN}).content.decode()
     block = body[
         body.index("Salvestamata sisu") : body.index("</section>", body.index("Salvestamata sisu"))
     ]
@@ -292,7 +301,7 @@ def test_the_block_does_not_appear_when_the_panel_itself_came_back(signed_in, sp
     on one page would be the fix making the common case worse."""
     matter = Matter.objects.create(title="Avatud teema", owner=specialist)
 
-    response = _post(signed_in, "matters:add_note", matter, {"body": ""})
+    response = _post(signed_in, "matters:add_note", matter, {"title": ""})
 
     assert response.status_code == 400
     assert "Salvestamata sisu" not in response.content.decode()
@@ -304,7 +313,7 @@ def test_nothing_typed_means_nothing_to_recover(signed_in, specialist):
     matter = Matter.objects.create(title="Suletud teema", owner=specialist)
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
 
-    body = _post(signed_in, "matters:add_note", matter, {"body": ""}).content.decode()
+    body = _post(signed_in, "matters:add_note", matter, {"title": ""}).content.decode()
 
     assert CLOSED_MATTER_REFUSAL in body or "suletud" in body.lower()
     assert "Salvestamata sisu" not in body
@@ -316,7 +325,7 @@ def test_the_recovered_text_is_escaped(signed_in, specialist):
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
     crafted = "<script>window.__paha=1</script>"
 
-    body = _post(signed_in, "matters:add_note", matter, {"body": crafted}).content.decode()
+    body = _post(signed_in, "matters:add_note", matter, {"title": crafted}).content.decode()
 
     assert "<script>window.__paha" not in body
     assert "&lt;script&gt;" in body
@@ -328,7 +337,7 @@ def test_the_refusal_still_leaves_the_matter_closed(signed_in, specialist):
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
     before = ChangeEvent.objects.filter(matter=matter).count()
 
-    _post(signed_in, "matters:add_note", matter, {"body": WRITTEN})
+    _post(signed_in, "matters:add_note", matter, {"title": WRITTEN})
 
     matter.refresh_from_db()
     assert matter.is_open is False

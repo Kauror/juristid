@@ -35,8 +35,8 @@ from e2e.conftest import MARTIN, READER, create_matter, open_matter, sign_in, si
 
 pytestmark = pytest.mark.e2e
 
-#: The seeded institution this file makes an addressee of. Named rather than
-#: taken by position: the Adressaat list is the whole `Organisation` catalogue
+#: The seeded institution this file makes a sender of. Named rather than
+#: taken by position: the Saatja list is the whole `Organisation` catalogue
 #: in alphabetical order, and every browser file that types a new institution
 #: adds a row to it — so `index=1` means "whichever body sorts first in this
 #: shard today". `e2e/test_counterparty_selection.py` files one under a
@@ -112,24 +112,30 @@ def document_overflows(page) -> bool:
 def sparse_matter(page, base_url: str, title: str) -> str:
     """A Matter with the shape the QA report described.
 
-    Teemaviide comes with the record. `Kellele` is filled in through the rail's own
-    control, which is both how a lawyer would do it and a second proof that the
-    control works, and it is filled in with a **named** institution: the option
-    at position 1 is whatever the shared catalogue happens to sort first, and a
-    long name there makes the row two lines tall and fails the density
-    assertion below for a reason that has nothing to do with density.
-    `Menetlusliik` and `Saatja` are deliberately left empty: the whole
-    complaint was that empty facts made the column tall.
+    Teemaviide comes with the record. `Saatja` is filled in through the rail's
+    own control, which is both how a lawyer would do it and a second proof that
+    the control works, and it is filled in with a **named** institution: a long
+    name makes the row two lines tall and fails the density assertion below for
+    a reason that has nothing to do with density.
+
+    It was `Kellele` until docs/adr/0097 §4 withdrew that question from the
+    ordinary Teema UI; `Saatja` is the editable counterparty row this rail still
+    has, and the density claim is about a row rather than about which fact it
+    carries.
 
     Built here rather than seeded: adding a Matter to the shared world changes
     the register every visual baseline photographs.
     """
     url = create_matter(page, base_url, title)
 
-    row = fact_row(page, "Kellele")
+    row = fact_row(page, "Saatja")
     row.get_by_text("+ Lisa").click()
-    row.locator("select[name=addressee_organisation]").select_option(label=MINISTRY)
-    expect(fact_value(page, "Kellele")).to_have_text(MINISTRY)
+    # Checkboxes over the catalogue, submitted once: the sender set is edited
+    # as a whole, so a control that posted on every tick would write the
+    # intermediate set (`rail.html`).
+    row.get_by_role("checkbox", name=MINISTRY, exact=True).check()
+    row.get_by_role("button", name="Salvesta", exact=False).first.click()
+    expect(fact_value(page, "Saatja")).to_contain_text(MINISTRY)
 
     return url
 
@@ -158,13 +164,12 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
     # the file was classified and the other a developer's switch. Every column,
     # value and endpoint is untouched (TEEMA_TARGET_SPEC §G.1,
     # docs/adr/0074 §2, §17).
-    assert keys[:4] == [
-        "Teemaviide",
-        "Menetlusliik",
-        "Saatja",
-        "Kellele",
-    ], keys
-    for gone in ("Saabus", "Muu valdkond", "Andmeklass"):
+    assert keys[:2] == ["Teemaviide", "Saatja"], keys
+    # `Menetlusliik` and `Kellele` were rows three and four until
+    # docs/adr/0097 §3, §4: the two Teema forms stopped asking about either, and
+    # a read-only rail row is the easiest place for a withdrawn question to
+    # survive its own removal. The columns are untouched.
+    for gone in ("Saabus", "Muu valdkond", "Andmeklass", "Menetlusliik", "Kellele"):
         assert gone not in keys, f"{gone} is retired from this rail"
 
     for row in rows:
@@ -195,17 +200,23 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
 
 
 def test_an_empty_fact_costs_no_more_than_a_filled_one(page, base_url):
-    """`+ Lisa` is a value, not a block of its own."""
+    """`+ Lisa` is a value, not a block of its own.
+
+    Measured on **one row across two Matters** rather than on two rows of one.
+    It used to be the latter, and it cannot be any more: `Saatja` is the only
+    editable fact this rail has left (docs/adr/0097 §3, §4), and every other row
+    is omitted entirely when it is empty, so there is no second `+ Lisa` to
+    compare against. The claim is unchanged and is if anything tested more
+    exactly — the same row, the same label, one answered and one not.
+    """
     sign_in(page, base_url, MARTIN)
-    sparse_matter(page, base_url, "Tühja välja kõrgus")
 
-    rows = {row["key"]: row for row in row_geometry(page)}
+    create_matter(page, base_url, "Tühja välja kõrgus")
+    empty = {row["key"]: row for row in row_geometry(page)}["Saatja"]["height"]
 
-    empty = rows["Menetlusliik"]["height"]
-    # `Kellele`, because `Saabus` left this rail for the header metaline
-    # (docs/adr/0074 §2). The sparse fixture fills it through the rail's own
-    # control, so it is the filled row this block still has.
-    filled = rows["Kellele"]["height"]
+    sparse_matter(page, base_url, "Täidetud välja kõrgus")
+    filled = {row["key"]: row for row in row_geometry(page)}["Saatja"]["height"]
+
     assert abs(empty - filled) <= 2, (
         f"an empty fact is {empty:.1f}px and a filled one {filled:.1f}px"
     )
@@ -257,10 +268,17 @@ def test_a_multi_sender_value_wraps_and_pushes_the_rest_down(page, base_url):
 # C. every `+ Lisa` opens a control somebody can actually use
 # ---------------------------------------------------------------------------
 
-#: Each editable fact, with the control its editor opens and how to commit it.
-#: Three, not four: `Saabus` is edited in the header metaline now, where the
-#: `Teema andmed` rail no longer carries it (docs/adr/0074 §2).
-EDITABLE_FACTS = ["Menetlusliik", "Saatja", "Kellele"]
+#: Each fact this rail still draws an inline editor for.
+#:
+#: One, and it was three. `Saabus` is edited in the header metaline, where this
+#: rail no longer carries it (docs/adr/0074 §2); `Menetlusliik` and `Kellele`
+#: left with the questions the two Teema forms stopped asking
+#: (docs/adr/0097 §3, §4).
+#:
+#: The claims parametrised over this list are about the *editor* — where it
+#: opens, that it fits the window, that the keyboard reaches it — and they hold
+#: on whichever fact still has one.
+EDITABLE_FACTS = ["Saatja"]
 
 
 @pytest.mark.parametrize("key", EDITABLE_FACTS)
@@ -344,18 +362,28 @@ def test_the_editor_is_reachable_from_the_keyboard(page, base_url, key):
     expect(fact_row(page, key).locator("form.inlineedit__form")).to_be_visible()
 
 
-def test_adding_a_menetlusliik_saves_and_the_rail_shows_it(page, base_url):
+def test_the_rail_offers_no_editor_for_a_withdrawn_question(page, base_url):
+    """`Menetlusliik` and `Kellele` each had a row here, and both are gone.
+
+    This file drove each of them through its own `+ Lisa`, which is the right
+    test of a control that exists. Neither does: the two Teema forms stopped
+    asking (docs/adr/0097 §3, §4), and a read-only rail row is where a withdrawn
+    question survives longest — shown, editable, and answered by whoever happens
+    to be looking at it. The withdrawal is asserted instead, on the surface it
+    was most likely to outlive, and `update_field` names neither any more.
+
+    Stored data is untouched: `Matter.track` and `Matter.addressee_organisation`
+    keep every value they hold.
+    """
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Menetlusliigi lisamine")
+    create_matter(page, base_url, "Tagasi võetud küsimused")
 
-    row = fact_row(page, "Menetlusliik")
-    expect(fact_value(page, "Menetlusliik")).to_have_text("+ Lisa")
-    row.get_by_text("+ Lisa").click()
-    row.locator("select[name=track]").select_option("EU_INITIATIVE")
-
-    expect(fact_value(page, "Menetlusliik")).to_have_text("ELi algatus")
-    page.reload()
-    expect(fact_value(page, "Menetlusliik")).to_have_text("ELi algatus")
+    card = facts_card(page)
+    for gone in ("Menetlusliik", "Kellele"):
+        label = card.locator(".railcard__key", has_text=re.compile(rf"^{gone}$"))
+        expect(label).to_have_count(0)
+    expect(card.locator("select[name=track]")).to_have_count(0)
+    expect(card.locator("select[name=addressee_organisation]")).to_have_count(0)
 
 
 def test_adding_a_sender_saves_and_the_rail_shows_it(page, base_url):
@@ -373,22 +401,6 @@ def test_adding_a_sender_saves_and_the_rail_shows_it(page, base_url):
     expect(fact_value(page, "Saatja")).to_have_text(name)
     page.reload()
     expect(fact_value(page, "Saatja")).to_have_text(name)
-
-
-def test_adding_an_addressee_saves_and_the_rail_shows_it(page, base_url):
-    sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Adressaadi lisamine")
-
-    row = fact_row(page, "Kellele")
-    expect(fact_value(page, "Kellele")).to_have_text("+ Lisa")
-    row.get_by_text("+ Lisa").click()
-    select = row.locator("select[name=addressee_organisation]")
-    chosen = select.locator("option").nth(1).inner_text().strip()
-    select.select_option(index=1)
-
-    expect(fact_value(page, "Kellele")).to_have_text(chosen)
-    page.reload()
-    expect(fact_value(page, "Kellele")).to_have_text(chosen)
 
 
 def test_adding_a_received_date_saves_and_the_header_formats_it(page, base_url):

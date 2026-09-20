@@ -55,8 +55,9 @@ import pytest
 from e2e.conftest import (
     MARTIN,
     create_matter,
+    finish_current_action,
     open_add_panel,
-    open_composer,
+    set_next_step,
     sign_in,
     unique_title,
 )
@@ -160,19 +161,27 @@ def _the_whole_address_is_still_there(readings: list[dict]) -> None:
         )
 
 
-def _file_a_development(page, url: str, **fields: str) -> None:
-    """One `+ Menetluse areng`, and a wait on the record rather than the network.
+def _file_a_development(page, url: str, note: str = "", **fields: str) -> None:
+    """One `+ Märge · Tavaline`, and a wait on the record rather than the network.
 
     The save swaps `#teema-vaade` wholesale, so the `networkidle` that follows the
     click can be the idle *before* the replacement lands — the flake
     `e2e/test_long_token_wrapping.py` records paying for once already. Waiting
     until the text is rendered is the only signal that means the record exists.
+
+    **`note` goes in through `Muuda`, not through the panel.** `+ Menetluse
+    areng` asked for `Juristi märkus` and `+ Märge` does not: two text areas
+    on the control a lawyer uses every day, where the second is empty on nearly
+    every save, is a form asking somebody to classify their own sentence before
+    it will take it (docs/adr/0097 §6.2). The editor still offers the box on a
+    stored row, which is where a note comes from now — and `.uxtl__msnote` is
+    rendered the same either way, which is what this file measures.
     """
-    open_add_panel(page, "lisa-menetluse-areng")
-    form = page.locator("#lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
+    form = page.locator("#marge-tavaline")
     for name, value in fields.items():
         form.locator(f"[name={name}]").fill(value)
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     marker = fields["title"].split(" ")[-1]
     page.wait_for_function(
@@ -180,6 +189,18 @@ def _file_a_development(page, url: str, **fields: str) -> None:
                .some(el => (el.textContent || '').includes(marker))""",
         arg=marker,
     )
+    if note:
+        row = page.locator(".uxtl__ms-body").first
+        row.wait_for()
+        # `.uxtl__edit`, not the accessible name: the button's name is built
+        # by `aria-labelledby` from its own word *and* the headline above it,
+        # so an exact match on «Muuda» finds nothing (`development_row.html`).
+        row.locator(".uxtl__edit").first.click()
+        editor = page.locator(".uxtl__editform")
+        editor.locator("textarea[name=note]").wait_for()
+        editor.locator("textarea[name=note]").fill(note)
+        editor.get_by_role("button", name="Salvesta", exact=True).click()
+        page.wait_for_load_state("networkidle")
     page.goto(url)
     page.wait_for_load_state("networkidle")
 
@@ -239,7 +260,7 @@ def test_a_valine_seisukoht_summary_does_not_widen_the_page(page, base_url: str)
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, unique_title("Pikk viide seisukohas"))
 
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     box = page.locator("#valine-seisukoht-otsi")
     box.click()
     # Typed a key at a time, the way the picker is driven everywhere else: the
@@ -249,10 +270,8 @@ def test_a_valine_seisukoht_summary_does_not_widen_the_page(page, base_url: str)
     page.locator("#valine-seisukoht-tulemused").get_by_role(
         "option", name="Näidisministeerium", exact=True
     ).click()
-    page.locator("#lisa-valine-seisukoht [name=summary]").fill(
-        f"Nende põhjendus on siin {PASTED_LINK}"
-    )
-    page.locator("#lisa-valine-seisukoht").get_by_role("button", name="Salvesta").click()
+    page.locator("#arvamus-teiste [name=summary]").fill(f"Nende põhjendus on siin {PASTED_LINK}")
+    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta").click()
     page.wait_for_load_state("networkidle")
     page.wait_for_function(
         """needle => [...document.querySelectorAll('.uxtl__mssub')]
@@ -343,10 +362,14 @@ def test_a_search_snippet_is_not_clipped_by_the_card_around_it(page, base_url: s
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Pikk viide margmes"))
-    open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill(f"Vaata eelnõu siit: {PASTED_LINK}")
-    page.locator("#lisa-marge button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    # Through `Mida tegid?`, because `.richtext` is `Entry.body` and the
+    # launcher's ordinary note writes a `MatterProceduralDevelopment` now
+    # (docs/adr/0097 §6). What is being measured is the *search snippet*, and
+    # the index reads both kinds of record — so the one that still produces a
+    # body is the one this files.
+    when = date.today() + timedelta(days=7)
+    set_next_step(page, "Järgmine samm", f"{when.day}.{when.month}.{when.year}")
+    finish_current_action(page, f"Vaata eelnõu siit: {PASTED_LINK}")
     page.wait_for_function(
         """needle => [...document.querySelectorAll('.richtext')]
                .some(el => (el.textContent || '').includes(needle))""",

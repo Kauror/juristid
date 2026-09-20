@@ -49,12 +49,12 @@ def _file_a_development(page, base_url: str) -> str:
     """One step, with one paper already on it, through the real panel."""
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, unique_title("Tõendi lisamine"))
-    open_add_panel(page, "lisa-menetluse-areng")
-    form = page.locator("#lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
+    form = page.locator("#marge-tavaline")
     form.locator("[name=title]").fill(HEADLINE)
     form.locator("[name=occurred_on]").fill(_estonian(date.today() - timedelta(days=3)))
     form.locator("input[type=file]").set_input_files(_pdf(FIRST_FILE))
-    form.get_by_role("button", name="Salvesta areng").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     # The record, not the network: the save swaps the whole view, and an idle
     # that lands before the replacement would let the next step act on the page
@@ -73,8 +73,8 @@ def _action(page, suffix: str):
 
     Both are named **by reference** — the button's own word, then the headline
     element above it — so a chronology showing a dozen of these does not put
-    «Menetluse areng: …» into the document twice. That makes the accessible name
-    «+ Lisa tõend Menetluse areng: …», which is right for a screen reader and
+    «Märge: …» into the document twice. That makes the accessible name
+    «+ Lisa tõend Märge: …», which is right for a screen reader and
     useless as a locator. The id is what identifies the control
     (`development_row.html`).
     """

@@ -45,7 +45,7 @@ from app.documents.links import DocumentLink
 from app.documents.models import Document
 from app.matters import work_items
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
-from app.matters.forms import ProceduralDevelopmentForm
+from app.matters.forms import ProceduralDevelopmentEditForm
 from app.matters.models import (
     EXTERNAL_POSITION_LEGACY_HEADLINE,
     Entry,
@@ -1161,7 +1161,7 @@ def test_a_development_keeps_the_lawyer_note_out_of_the_event(normal_matter, spe
     assert development.title == "Ministeerium saatis uue eelnõu versiooni"
     assert development.note == "Uus versioon ei arvesta meie ettepanekut."
     milestone = development_milestone(development)
-    assert milestone.what == "Menetluse areng: Ministeerium saatis uue eelnõu versiooni"
+    assert milestone.what == "Märge: Ministeerium saatis uue eelnõu versiooni"
     assert milestone.own_note == "Uus versioon ei arvesta meie ettepanekut."
     assert milestone.own_note_label == LAWYER_NOTE_LABEL
     assert "ettepanekut" not in milestone.what
@@ -1358,9 +1358,9 @@ def test_a_development_reaches_the_chronology(normal_matter, specialist):
 
     items, _ = matter_timeline(matter=normal_matter, user=specialist, limit=50)
     headlines = [item.milestone.what for item in items if item.milestone is not None]
-    assert "Menetluse areng: Eelnõu jõudis Riigikokku" in headlines
+    assert "Märge: Eelnõu jõudis Riigikokku" in headlines
     # Projected from the record, so the audit events draw no row of their own.
-    assert headlines.count("Menetluse areng: Eelnõu jõudis Riigikokku") == 1
+    assert headlines.count("Märge: Eelnõu jõudis Riigikokku") == 1
 
 
 def test_a_future_dated_row_filed_before_the_rule_is_still_not_history(normal_matter, specialist):
@@ -1396,11 +1396,10 @@ def test_the_development_route_records_everything_in_one_post(client, specialist
     stage = factories.StageFactory(label_et="Riigikogus", is_active=True)
     client.force_login(specialist)
     response = client.post(
-        reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
+        _development_url(normal_matter),
         {
             "title": "Eelnõu jõudis Riigikokku",
             "occurred_on": _estonian(_happened()),
-            "areng_precision": "EXACT",
             "stage": str(stage.pk),
             "next_text": "Vaatan uue teksti läbi",
             "next_date": _estonian(timezone.localdate() + dt.timedelta(days=4)),
@@ -1418,11 +1417,10 @@ def test_the_development_route_records_everything_in_one_post(client, specialist
 def test_a_half_filled_next_step_is_refused_on_the_empty_control(client, specialist, normal_matter):
     client.force_login(specialist)
     response = client.post(
-        reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
+        _development_url(normal_matter),
         {
             "title": "Eelnõu jõudis Riigikokku",
             "occurred_on": _estonian(_happened()),
-            "areng_precision": "EXACT",
             "next_text": "Vaatan uue teksti läbi",
         },
     )
@@ -1436,8 +1434,8 @@ def test_the_development_route_accepts_an_empty_date(client, specialist, normal_
     """The `Entry` design refused this; the canonical record is what allows it."""
     client.force_login(specialist)
     response = client.post(
-        reverse("matters:add_development", kwargs={"pk": normal_matter.pk}),
-        {"title": "Valitsus kiitis eelnõu heaks", "occurred_on": "", "areng_precision": "EXACT"},
+        _development_url(normal_matter),
+        {"title": "Valitsus kiitis eelnõu heaks", "occurred_on": ""},
     )
 
     assert response.status_code == 200
@@ -1675,12 +1673,27 @@ def today_is_18_september(monkeypatch):
 
 
 def _development_url(matter) -> str:
-    return reverse("matters:add_development", kwargs={"pk": matter.pk})
+    """Where a `MatterProceduralDevelopment` is created from the interface.
+
+    `matters:add_development` served `+ Menetluse areng`, which is retired as a
+    user-facing concept: the ordinary control is `+ Märge · Tavaline`, it posts
+    here, and it writes the same record (docs/adr/0097 §6).
+    """
+    return reverse("matters:add_note", kwargs={"pk": matter.pk})
 
 
-#: The four periods that are definitely still ahead on 18 September 2026, as the
-#: panel posts them. `HALF_YEAR` is not among them because the composer does not
-#: offer it as a chip (docs/adr/0079 §7); the predicate's own table covers it.
+#: The four periods that are definitely still ahead on 18 September 2026, as
+#: `Muuda` on a recorded step posts them. `HALF_YEAR` is not among them because
+#: the composer does not offer it as a chip (docs/adr/0079 §7); the predicate's
+#: own table covers it.
+#:
+#: **These are posted to the correction surface**, which is where the four
+#: precisions are still offered. `+ Märge · Tavaline` replaced
+#: `+ Menetluse areng` and asks for a day or nothing, so it cannot produce an
+#: approximate period at all — and the rule being asserted is about the period,
+#: not about the panel. `ProceduralDevelopmentEditForm` decides per *record*,
+#: which is where a statement about how well a date is known belongs, and the
+#: invariant still has to hold there (docs/adr/0097 §6.1).
 FUTURE_PERIODS = [
     ("exact 30.09.2026", {"areng_precision": "EXACT", "occurred_on": "30.09.2026"}),
     ("oktoober 2026", {"areng_precision": "MONTH", "areng_month": "10", "areng_year": "2026"}),
@@ -1705,25 +1718,51 @@ PAST_OR_CURRENT_PERIODS = [
 ]
 
 
+def _recorded_step(specialist, title="Toimunud samm"):
+    """A Matter with one past, exactly dated `MatterProceduralDevelopment` on it."""
+    matter = factories.MatterFactory(owner=specialist)
+    development = add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title=title,
+        occurred_on=dt.date(2026, 9, 1),
+    ).record
+    return matter, development
+
+
+def _correction_url(matter, development) -> str:
+    return reverse(
+        "matters:update_development",
+        kwargs={"pk": matter.pk, "development_id": development.pk},
+    )
+
+
 @pytest.mark.parametrize(("label", "fields"), FUTURE_PERIODS, ids=[p[0] for p in FUTURE_PERIODS])
-def test_a_future_development_is_refused_at_every_precision(
+def test_a_correction_may_not_move_a_period_into_the_future_at_any_precision(
     signed_in, specialist, today_is_18_september, label, fields
 ):
     """The rule is about the period, not about the stored number.
 
-    Each of these has its whole span after 18 September, at a precision the panel
-    can produce, and each is refused with the same sentence beside the control it
-    was typed into.
+    Each of these has its whole span after 18 September, at a precision the
+    correction form can produce, and each is refused with the same sentence
+    beside the control it was typed into — and the stored row is unchanged.
     """
-    matter = factories.MatterFactory(owner=specialist)
-    payload = {"title": f"Tulevane samm: {label}", "occurred_on": ""}
+    matter, development = _recorded_step(specialist)
+    payload = {
+        "title": f"Tulevane samm: {label}",
+        "occurred_on": "",
+        "revision": development_revision(development),
+    }
     payload.update(fields)
 
-    response = signed_in.post(_development_url(matter), payload, headers={"HX-Request": "true"})
+    response = signed_in.post(
+        _correction_url(matter, development), payload, headers={"HX-Request": "true"}
+    )
 
     assert response.status_code == 400
     assert DEVELOPMENT_CANNOT_BE_FUTURE in response.content.decode()
-    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    development.refresh_from_db()
+    assert development.occurred_on == dt.date(2026, 9, 1)
 
 
 @pytest.mark.parametrize(
@@ -1739,17 +1778,24 @@ def test_a_period_that_is_not_definitely_future_is_accepted(
     lawyer who knows only «septembris» choosing between an invented day and an
     empty field, which is the choice docs/adr/0079 exists to remove.
     """
-    matter = factories.MatterFactory(owner=specialist)
-    payload = {"title": f"Toimunud samm: {label}", "occurred_on": ""}
+    matter, development = _recorded_step(specialist)
+    payload = {
+        "title": f"Toimunud samm: {label}",
+        "occurred_on": "",
+        "revision": development_revision(development),
+    }
     payload.update(fields)
 
-    response = signed_in.post(_development_url(matter), payload, headers={"HX-Request": "true"})
+    response = signed_in.post(
+        _correction_url(matter, development), payload, headers={"HX-Request": "true"}
+    )
 
     assert response.status_code == 200, response.content.decode()[:2000]
-    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    development.refresh_from_db()
     assert development.title == f"Toimunud samm: {label}"
 
 
+@pytest.mark.django_db
 def test_the_refusal_names_the_control_the_period_was_typed_into(
     signed_in, specialist, today_is_18_september
 ):
@@ -1758,23 +1804,38 @@ def test_the_refusal_names_the_control_the_period_was_typed_into(
     A month is answered in the month select, and pinning «ei saa olla tulevikus»
     to the empty day box — which an approximate save leaves empty on purpose —
     would point at the wrong field.
+
+    Read off `ProceduralDevelopmentEditForm`, which is the form that still
+    offers the four precisions. `+ Märge · Tavaline` has one date box and
+    therefore one place a refusal can land, which is asserted where that panel
+    is (`tests/test_teema_ux_consolidation.py`).
     """
-    form = ProceduralDevelopmentForm(
+    _, record = _recorded_step(specialist, title="Toimunud samm")
+
+    form = ProceduralDevelopmentEditForm(
         {
             "title": "Komisjon arutab eelnõu",
             "areng_precision": "MONTH",
             "areng_month": "10",
             "areng_year": "2026",
             "occurred_on": "",
-        }
+            "revision": development_revision(record),
+        },
+        record=record,
     )
 
     assert form.is_valid() is False
     assert form.errors["areng_month"] == [DEVELOPMENT_CANNOT_BE_FUTURE]
     assert "occurred_on" not in form.errors
 
-    exact = ProceduralDevelopmentForm(
-        {"title": "Esimene lugemine", "areng_precision": "EXACT", "occurred_on": "30.09.2026"}
+    exact = ProceduralDevelopmentEditForm(
+        {
+            "title": "Esimene lugemine",
+            "areng_precision": "EXACT",
+            "occurred_on": "30.09.2026",
+            "revision": development_revision(record),
+        },
+        record=record,
     )
     assert exact.is_valid() is False
     assert exact.errors["occurred_on"] == [DEVELOPMENT_CANNOT_BE_FUTURE]
@@ -1801,7 +1862,6 @@ def test_a_refused_future_development_moves_no_stage_action_or_evidence(
         _development_url(matter),
         {
             "title": "Riigikogu esimene lugemine",
-            "areng_precision": "EXACT",
             "occurred_on": "30.09.2026",
             "stage": str(parliament.pk),
             "next_text": "Valmistan märkused",
@@ -1941,7 +2001,6 @@ def test_nothing_clamps_clears_or_half_saves_a_refused_future_date(
         _development_url(matter),
         {
             "title": "Riigikogu esimene lugemine",
-            "areng_precision": "EXACT",
             "occurred_on": "30.09.2026",
         },
         headers={"HX-Request": "true"},
@@ -1978,7 +2037,11 @@ def test_a_sent_opinion_with_no_open_step_offers_the_continuation(
     ).content.decode()
 
     assert "Menetlus võib jätkuda" in body
-    assert "#lisa-menetluse-areng" in body
+    # `#lisa-marge`, which is the family. The sentence used to offer two links
+    # — «lisa menetluse areng või järgmine tegevus» — pointing at two launcher
+    # chips; there is one chip now and the next action is a box inside it
+    # (docs/adr/0097 §6, §8.2).
+    assert "#lisa-marge" in body
 
 
 def test_a_matter_with_no_sent_opinion_offers_nothing_of_the_kind(
@@ -2107,8 +2170,12 @@ def test_the_koda_opinion_and_development_routes_refuse_a_reader(
     client, normal_matter, reader, ministry
 ):
     client.force_login(reader)
-    for route in ("matters:add_koda_opinion", "matters:add_development"):
+    # `matters:add_development` is not a route any more: `+ Menetluse areng` is
+    # retired and its ordinary function is `+ Märge`, which posts to
+    # `matters:add_note` (docs/adr/0097 §6). The same record, the same refusal.
+    for route in ("matters:add_koda_opinion", "matters:add_note"):
         response = client.post(reverse(route, kwargs={"pk": normal_matter.pk}), {})
         assert response.status_code == 404, route
     assert not Submission.objects.exists()
     assert not Entry.objects.exists()
+    assert not MatterProceduralDevelopment.objects.exists()

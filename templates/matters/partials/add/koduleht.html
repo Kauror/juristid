@@ -1,0 +1,101 @@
+    {% comment %}
+      `+ Ülevaade / uudis`. This file should be written up somewhere the public
+      can read it — an overview for the membership on the Chamber's own site, or
+      a news item somewhere else.
+
+      **One activity and no type selector.** The record used to be
+      `Kodulehe ülevaade` and could point only at koda.ee, which made the file
+      unable to record the same write-up appearing in a trade paper or on a
+      partner's site. It is neutral now, and it stays *one* control rather than
+      growing a `liik` chip: an overview and a news item are the same act, and
+      the address the row already carries is what tells a reader which they are
+      looking at (docs/adr/0085 §1).
+
+      **Two boxes, both answered, and one outcome.** This panel records a page
+      that exists.
+
+      docs/adr/0081 §1 gave it one button and no fields, because at the moment
+      somebody decides a Matter should be written up there is no address and no
+      date. docs/adr/0083 added the boxes as optional, so a lawyer recording a
+      page already published did not have to file a plan and publish it from a
+      second control. What that left was three answers, one of which — *neither
+      box* — was reached by pressing `Salvesta` on a form that looked untouched.
+
+      A save whose meaning depends on what somebody did not type is the one
+      shape a composer may not have. So the address is required, the day opens
+      on today, and a valid save is a publication (docs/adr/0095 §5).
+
+      **`Plaanis` and `Tühistatud` are untouched.** Every stored plan still
+      reads on the file, still carries `Avalda` and `Tühista` in
+      `website_overviews.html`, and `plan_website_overview` still writes one.
+      What is gone is a silent way to create one from this panel.
+
+      Still no title, no description and no attachment: the record's content is
+      the address and the day (docs/adr/0081 §2). It is not a `+ Märge`, it is
+      not a `+ Töövõit`, and it is not a deadline — a write-up that is owed
+      makes no `NextAction`, no work item and no badge, so a Matter carrying one
+      never reads as late (docs/adr/0081 §4).
+    {% endcomment %}
+    <input class="addpick" type="radio" name="lisa-valik" id="lisa-koduleht-valik"
+           data-addpick aria-controls="lisa-koduleht"
+           {% if open_panel == "lisa-koduleht" %}checked{% endif %}>
+    <label class="disclosure-chip" for="lisa-koduleht-valik">+ Ülevaade / uudis</label>
+    <div class="cx-panel" id="lisa-koduleht" data-addpanel>
+      <div class="cx-panel__body">
+        {% if open_panel == "lisa-koduleht" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_website_overview' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          {% comment %}
+            The day and the address, and nothing else on the panel.
+
+            **This records a page that exists.** The empty save that used to
+            file a plan is gone: pressing `Salvesta` on a panel that looks
+            untouched is a save whose meaning the person has to know in advance,
+            and what it filed was a row they then had to publish from a second
+            control (docs/adr/0095 §5).
+
+            `PLANNED` and `CANCELLED` are untouched in the domain. Every stored
+            plan still reads, still carries `Avalda` and `Tühista` in
+            `website_overviews.html`, and `plan_website_overview` is still the
+            service that writes one.
+
+            **The date opens on today**, which narrows docs/adr/0089 §8 for this
+            box. That decision refused a default because the commonest save was
+            an address pasted with no known publication day — but what it
+            refused specifically was a date appearing *in response to a paste*,
+            unread. This one is in the box before anything is typed, and
+            clearing it still stores `NULL` and still reads «kuupäev teadmata»
+            (docs/adr/0078 §2).
+
+            The two are one row, as they always were: `cx-grid--links` is the
+            same pairing `+ Koja arvamus` uses for its file and its day.
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f cx-f--date"
+                   for="{{ website_overview_form.published_on.id_for_label }}">
+              <span class="cx-f__lab">{{ website_overview_form.published_on.label }}</span>
+              {{ website_overview_form.published_on }}
+            </label>
+            <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
+              <span class="cx-f__lab">{{ website_overview_form.url.label }}</span>
+              {{ website_overview_form.url }}
+            </label>
+          </div>
+          {% if website_overview_form.published_on.errors %}
+            <p class="field__error" id="{{ website_overview_form.published_on.auto_id }}_error">
+              {{ website_overview_form.published_on.errors|first }}</p>
+          {% endif %}
+          {% if website_overview_form.url.errors %}
+            <p class="field__error" id="{{ website_overview_form.url.auto_id }}_error">
+              {{ website_overview_form.url.errors|first }}</p>
+          {% endif %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
+          </div>
+        </form>
+      </div>
+    </div>

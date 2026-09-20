@@ -859,13 +859,20 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
 #: them is reworded.
 EXTERNAL_POSITION_DATE_UNKNOWN = "Kuupäev teadmata"
 
-#: What the chronology calls a `Menetluse areng` row.
+#: What the chronology calls a `MatterProceduralDevelopment` row.
 #:
 #: Named here because the projection, the correction partial and a test all have
 #: to agree about it — and because the headline is the *step*, with the record's
 #: own title after the colon, so a reader scanning a proceeding sees what happened
 #: rather than a label (docs/adr/0091 §5).
-DEVELOPMENT_HEADLINE = "Menetluse areng"
+#:
+#: It read «Menetluse areng» until docs/adr/0097 §6. The launcher stopped
+#: offering that word and a lawyer who files a `Märge` has to get a `Märge` back
+#: — a capture concept that is retired on the way in and printed on the way out
+#: is the same two vocabularies with the seam moved one screen along. The
+#: **record** is untouched: same table, same rows, same events, same historical
+#: values, and every stored title reads exactly as it was written.
+DEVELOPMENT_HEADLINE = "Märge"
 
 
 #: What the chronology calls the line holding the lawyer's own comment.
@@ -1021,7 +1028,7 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
     way a `Kaasamine`'s and a `Väline seisukoht`'s are.
 
     **The headline is the step itself**, which is what the record's `title` holds
-    and what Package D will project: «Menetluse areng: Ministeerium saatis uue
+    and what Package D will project: «Märge: Ministeerium saatis uue
     eelnõu versiooni». A reader scanning a year of a proceeding is looking for the
     steps, and folding the lawyer's assessment into that line would make one line
     say two things with two authors.

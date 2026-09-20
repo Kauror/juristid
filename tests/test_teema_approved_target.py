@@ -249,15 +249,18 @@ def test_a_refused_save_comes_back_with_what_was_typed(signed_in, normal_matter,
     action = _action(normal_matter, specialist)
     response = signed_in.post(
         reverse("matters:add_note", kwargs={"pk": normal_matter.pk}),
-        {"body": ""},
+        {"title": "", "occurred_on": "19.09.2026"},
         headers={"HX-Request": "true"},
     )
     html = response.content.decode()
 
     assert response.status_code == 400
-    # Its own panel, open, with its own refusal beside its own field.
+    # Its own panel, open, with its own refusal beside its own field — and the
+    # sub-choice inside it reopened too, or the sentence would be printed in a
+    # panel nobody can see (docs/adr/0097 §8).
     assert 'id="lisa-marge"' in html
-    assert "Kirjelda, mis juhtus." in html
+    assert 'id="marge-tavaline-valik"' in html
+    assert "Kirjuta, mis juhtus." in html
     # And the current action is untouched by a refused note.
     action.refresh_from_db()
     assert action.status == ActionStatus.OPEN
@@ -294,8 +297,16 @@ def test_the_next_step_is_asked_for_in_its_own_words(signed_in, normal_matter):
     happened* and *what happens next* are two intentions and two saves now. What
     survives unchanged is the vocabulary — a next step is a sentence and a day
     (docs/adr/0075 §2, ADR 0052)."""
+    # `Muuda` beside an open step, because that is the one host this form has
+    # since `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
+    set_next_action(
+        matter=normal_matter,
+        text="Koosta arvamus",
+        target_date=timezone.localdate() + timedelta(days=7),
+        actor=normal_matter.owner,
+    )
     body = _detail(signed_in, normal_matter)
-    panel = body[body.index('id="lisa-jargmine"') : body.index('id="lisa-kaasamine"')]
+    panel = body[body.index('id="lisa-jargmine"') : body.index('id="lisa-teemale"')]
 
     assert panel.index("Mida on vaja teha?") < panel.index("Millal?")
     # `Kuupäev…` is gone, and it is gone because the box it disclosed is no
@@ -337,34 +348,34 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     """**§18, as ADR 0075 restates it.** Thirteen operations, each its own form,
     and the zone is a choice until one is picked.
 
-    The twelveh is `+ Ülevaade / uudis`, added by docs/adr/0081. docs/adr/0084
-    added `+ Väline seisukoht`; docs/adr/0091 §3 split that one in two — one
-    record and one panel partial, named by how what it holds reached the file —
-    and added `+ Koja arvamus` and `+ Menetluse areng` beside them. The claim
-    this test makes is about the zone's *shape* — a choice of operations, none of
-    them open — and it is unchanged by the number of them."""
+    The row grew to thirteen and then to four. Every one of the thirteen was a
+    truthful distinction and the row was still wrong, because the lawyer in
+    front of it does not have a record type in mind — so the launcher asks what
+    *kind of thing* is being recorded and the rest is asked second, inside the
+    family chosen (docs/adr/0097 §8). The claim this test makes is about the
+    zone's *shape* — a choice of operations, none of them open — and it is
+    unchanged by the number of them."""
     body = _detail(signed_in, normal_matter)
-    panels = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
+    panels = body[body.index('id="lisa-teemale"') : body.index('id="teema-toimingud"')]
 
     expected = [
         "+ Märge",
-        "+ Järgmine tegevus",
+        "Tavaline",
+        "Oluline tähtaeg",
+        "Jõustumine",
+        "Töövõit",
         "+ Kaasamine",
-        "+ Oluline tähtaeg",
-        "+ Jõustumine",
-        "+ Töövõit",
-        "+ Ülevaade / uudis",
+        "+ Arvamus / tagasiside",
         # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
         # and one panel partial, named by how what it holds reached the file.
-        "+ Meile saadetud tagasiside",
-        "+ Teiste arvamus",
-        "+ Koja arvamus",
-        "+ Menetluse areng",
-        "+ Menetluse link",
-        "+ Lõpeta teema",
+        # Both are choices inside `+ Arvamus / tagasiside` now.
+        "Meile saadetud tagasiside",
+        "Teiste arvamus",
+        "Koja arvamus",
+        "+ Ülevaade / uudis",
     ]
-    assert [chip for chip in expected if chip in panels] == expected
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 13
+    assert [chip for chip in expected if f">{chip}<" in panels] == expected
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 11
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -395,8 +406,8 @@ def test_the_panels_offered_do_not_depend_on_what_the_matter_already_holds(
 
     body = _detail(signed_in, normal_matter)
 
-    assert "+ Jõustumine" in body
-    assert "+ Töövõit" in body
+    assert ">Jõustumine<" in body
+    assert ">Töövõit<" in body
 
 
 def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
@@ -420,13 +431,16 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     assert completion.count('type="submit"') == 1
     assert zone.count('type="submit"') == 2
 
-    # Thirteen choices under LISA TEEMALE, minus the one hidden while a step is
-    # open, each with exactly one save of its own. The organisation picker inside
-    # each feedback panel contributes none: its `+` is an explicit
+    # Nine operations under LISA TEEMALE — four families, of which two ask a
+    # second question — each with exactly one save of its own. The organisation
+    # picker inside each feedback panel contributes none: its `+` is an explicit
     # `type="button"`, precisely so that naming a body the catalogue does not
     # hold cannot submit the panel (docs/adr/0073).
-    panels = body[body.index('id="lisa-teemale"') : body.index('id="ajajoon"')]
-    assert panels.count('type="submit"') == 12
+    #
+    # `Lõpeta teema` is not among them: it is under `TEEMA TOIMINGUD`, which is
+    # not this zone (docs/adr/0097 §9).
+    panels = body[body.index('id="lisa-teemale"') : body.index('id="teema-toimingud"')]
+    assert panels.count('type="submit"') == 9
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 
@@ -671,8 +685,11 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     `Vastuseid` — are unchanged, and the old five-field form is still gone.
     """
     body = _detail(signed_in, normal_matter)
-    panel = body[body.index('id="lisa-kaasamine"') :]
-    panel = panel[: panel.index('id="lisa-tahtaeg"')]
+    # To `+ Arvamus / tagasiside`, the family after `+ Kaasamine`.
+    # `marge-tahtaeg` is a sub-choice inside `+ Märge` and stands earlier in
+    # the document now (docs/adr/0097 §8).
+    start = body.index('id="lisa-kaasamine"')
+    panel = body[start : body.index('id="lisa-arvamus"', start)]
 
     assert 'name="kind"' not in panel
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
@@ -2422,14 +2439,28 @@ def test_the_rail_holds_the_four_target_blocks_in_order(signed_in, normal_matter
     assert "Seotud teemasid ega taustmaterjali ei ole valitud." in rail
 
 
-def test_teema_andmed_holds_the_four_target_rows(signed_in, normal_matter):
+def test_teema_andmed_holds_the_target_rows_that_are_still_asked(signed_in, normal_matter):
+    """Two of the target's four rows went with the questions that fed them.
+
+    `Menetlusliik` and `Kellele` were rows here and are not: the two Teema
+    forms stopped asking about either, and a read-only rail row is the easiest
+    place for a withdrawn question to survive its own removal. The columns and
+    every stored value are untouched (docs/adr/0097 §3, §4).
+    """
     body = _detail(signed_in, normal_matter)
     card = body[body.index('id="teema-andmed"') :]
     card = card[: card.index('id="koja-arvamus"')]
 
-    for row in ("Teemaviide", "Menetlusliik", "Saatja", "Kellele"):
+    for row in ("Teemaviide", "Saatja"):
         assert row in card
-    for gone in ("Saabus", "Muu valdkond", "Andmeklass", "Märgi testandmeteks"):
+    for gone in (
+        "Saabus",
+        "Muu valdkond",
+        "Andmeklass",
+        "Märgi testandmeteks",
+        "Menetlusliik",
+        "Kellele",
+    ):
         assert gone not in card
 
 

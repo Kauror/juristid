@@ -22,6 +22,7 @@ from e2e.conftest import (
     create_matter,
     open_add_panel,
     open_next_action_form,
+    set_next_step,
     sign_in,
 )
 
@@ -58,6 +59,12 @@ def test_a_next_action_can_be_stated_as_a_month_and_reads_as_one(page, base_url)
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Kuu täpsusega järgmine tegevus")
 
+    # A first step, so `Muuda` exists at all. `+ Järgmine tegevus` left the
+    # launcher and the ordinary way to set the first one is the box inside
+    # `+ Märge` — which asks for a day, so the precision this test is about is
+    # stated on the editor beside the task (docs/adr/0097 §8.2).
+    set_next_step(page, "Esimene samm", _future(7))
+
     open_next_action_form(page)
     page.locator("#lisa-jargmine [name='text']").fill("Koosta arvamus")
     choose(page, "#lisa-jargmine", "Kuu")
@@ -75,14 +82,10 @@ def test_the_edit_path_can_state_a_quarter_on_an_existing_step(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Kvartali täpsusega muudatus")
 
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill("Koosta arvamus")
-    page.locator("#id_target_date").fill(_future(7))
-    save(page, "#lisa-jargmine")
+    set_next_step(page, "Koosta arvamus", _future(7))
 
-    # `Muuda` inside PRAEGUNE TEGEVUS carries the same `#lisa-jargmine` id as
-    # the launcher chip does when no step is open, which is what lets one
-    # helper open either host (e2e/conftest.py `open_next_action_form`).
+    # `Muuda` inside PRAEGUNE TEGEVUS, which is the one host this form has
+    # since `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
     open_next_action_form(page)
     choose(page, "#lisa-jargmine", "Kvartal")
     page.locator("#lisa-jargmine [name=next_quarter]").select_option("4")
@@ -110,11 +113,11 @@ def test_an_important_deadline_can_be_stated_as_a_year(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Aasta täpsusega tähtaeg")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    page.locator("#lisa-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
-    choose(page, "#lisa-tahtaeg", "Aasta")
-    page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
-    save(page, "#lisa-tahtaeg")
+    open_add_panel(page, "marge-tahtaeg")
+    page.locator("#marge-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
+    choose(page, "#marge-tahtaeg", "Aasta")
+    page.locator("#marge-tahtaeg [name=deadline_year]").fill("2024")
+    save(page, "#marge-tahtaeg")
 
     body = page.locator("#teema-vaade")
     expect(body).to_contain_text("Ülevõtmise tähtaeg")
@@ -128,12 +131,12 @@ def test_a_commencement_keeps_its_period_across_a_reload(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Kvartali täpsusega jõustumine")
 
-    open_add_panel(page, "lisa-joustumine")
-    page.locator("#lisa-joustumine [name=effective_title]").fill("Pakendiseaduse muudatused")
-    choose(page, "#lisa-joustumine", "Kvartal")
-    page.locator("#lisa-joustumine [name=effective_quarter]").select_option("4")
-    page.locator("#lisa-joustumine [name=effective_year]").fill("2026")
-    save(page, "#lisa-joustumine")
+    open_add_panel(page, "marge-joustumine")
+    page.locator("#marge-joustumine [name=effective_title]").fill("Pakendiseaduse muudatused")
+    choose(page, "#marge-joustumine", "Kvartal")
+    page.locator("#marge-joustumine [name=effective_quarter]").select_option("4")
+    page.locator("#marge-joustumine [name=effective_year]").fill("2026")
+    save(page, "#marge-joustumine")
 
     expect(page.locator("#teema-vaade")).to_contain_text("IV kvartal 2026")
 
@@ -143,24 +146,34 @@ def test_a_commencement_keeps_its_period_across_a_reload(page, base_url):
     expect(page.locator("#teema-vaade")).not_to_contain_text("01.10.2026")
 
 
-def test_a_work_victory_is_refused_without_a_period_and_accepted_with_one(page, base_url):
-    """§35 E. Both halves, in the order a person meets them."""
+def test_a_work_victory_is_refused_without_a_date_and_accepted_with_one(page, base_url):
+    """§35 E, narrowed to one day by docs/adr/0097 §7.
+
+    Both halves, in the order a person meets them. The panel offered four
+    precisions and asks for a day now: a töövõit is something Koda achieved
+    and the organisation should be able to say when it happened.
+    """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töövõidu periood")
 
-    open_add_panel(page, "lisa-toovoit")
-    page.locator("#lisa-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
-    save(page, "#lisa-toovoit")
+    open_add_panel(page, "marge-toovoit")
+    page.locator("#marge-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
+    # Emptied, because the box arrives holding today: a win is nearly always
+    # written up on the day it lands, and the default is visible where it can
+    # be read, changed and emptied (docs/adr/0097 §7).
+    page.locator("#marge-toovoit [name=victory_date]").fill("")
+    save(page, "#marge-toovoit")
 
-    # Refused, and the panel it was refused in is the panel that reopened.
-    expect(page.locator("#lisa-toovoit .field__error")).to_be_visible()
-    expect(page.locator("#lisa-toovoit [name=victory_change]")).to_have_value(
+    # Refused, and the panel it was refused in is the panel that reopened —
+    # both levels of it, because a sub-choice's refusal has to reopen the
+    # family as well (docs/adr/0097 §8).
+    expect(page.locator("#marge-toovoit .field__error")).to_be_visible()
+    expect(page.locator("#marge-toovoit [name=victory_change]")).to_have_value(
         "Üleminekuaeg pikendati"
     )
 
-    choose(page, "#lisa-toovoit", "Aasta")
-    page.locator("#lisa-toovoit [name=victory_year]").fill("2026")
-    save(page, "#lisa-toovoit")
+    page.locator("#marge-toovoit [name=victory_date]").fill("19.9.2026")
+    save(page, "#marge-toovoit")
 
     expect(page.locator("#teema-vaade")).to_contain_text("Üleminekuaeg pikendati")
 
@@ -183,20 +196,20 @@ def test_choosing_a_precision_reveals_its_own_control_and_hides_the_others(page,
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Täpsuse juhtelement")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    day = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="day"]')
-    quarter = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="quarter"]')
-    year = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="year"]')
+    open_add_panel(page, "marge-tahtaeg")
+    day = page.locator('#marge-tahtaeg .precision__group[data-precision-for="day"]')
+    quarter = page.locator('#marge-tahtaeg .precision__group[data-precision-for="quarter"]')
+    year = page.locator('#marge-tahtaeg .precision__group[data-precision-for="year"]')
 
     expect(day).to_be_visible()
     expect(quarter).to_be_hidden()
 
-    choose(page, "#lisa-tahtaeg", "Kvartal")
+    choose(page, "#marge-tahtaeg", "Kvartal")
     expect(quarter).to_be_visible()
     expect(year).to_be_visible()
     expect(day).to_be_hidden()
 
-    choose(page, "#lisa-tahtaeg", "Aasta")
+    choose(page, "#marge-tahtaeg", "Aasta")
     expect(year).to_be_visible()
     expect(quarter).to_be_hidden()
 
@@ -211,15 +224,15 @@ def test_the_chips_are_reachable_and_operable_from_the_keyboard(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Täpsus klaviatuurilt")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    first = page.locator('#lisa-tahtaeg input[name="deadline_precision"]').first
+    open_add_panel(page, "marge-tahtaeg")
+    first = page.locator('#marge-tahtaeg input[name="deadline_precision"]').first
     first.focus()
     page.keyboard.press("ArrowRight")
 
-    chosen = page.locator('#lisa-tahtaeg input[name="deadline_precision"]:checked')
+    chosen = page.locator('#marge-tahtaeg input[name="deadline_precision"]:checked')
     expect(chosen).to_have_value("MONTH")
     expect(
-        page.locator('#lisa-tahtaeg .precision__group[data-precision-for="month"]')
+        page.locator('#marge-tahtaeg .precision__group[data-precision-for="month"]')
     ).to_be_visible()
 
 
@@ -234,13 +247,13 @@ def test_choosing_a_precision_does_not_move_the_launcher(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Käivitusriba ei liigu")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    launcher = page.locator('label[for="lisa-toovoit-valik"]')
+    open_add_panel(page, "marge-tahtaeg")
+    launcher = page.locator('label[for="marge-toovoit-valik"]')
     before = launcher.bounding_box()
-    chip = page.locator("#lisa-tahtaeg label.precision__chip", has_text="Kvartal").first
+    chip = page.locator("#marge-tahtaeg label.precision__chip", has_text="Kvartal").first
     chip_before = chip.bounding_box()
 
-    choose(page, "#lisa-tahtaeg", "Kvartal")
+    choose(page, "#marge-tahtaeg", "Kvartal")
 
     after = launcher.bounding_box()
     chip_after = chip.bounding_box()
@@ -255,8 +268,8 @@ def test_the_precision_control_fits_a_phone(page, base_url):
     create_matter(page, base_url, "Täpsus telefonis")
     page.set_viewport_size({"width": 375, "height": 812})
 
-    open_add_panel(page, "lisa-tahtaeg")
-    choose(page, "#lisa-tahtaeg", "Kvartal")
+    open_add_panel(page, "marge-tahtaeg")
+    choose(page, "#marge-tahtaeg", "Kvartal")
 
     overflow = page.evaluate(
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
@@ -264,8 +277,8 @@ def test_the_precision_control_fits_a_phone(page, base_url):
     assert overflow <= 0, f"the page scrolls sideways by {overflow}px"
 
     for locator in (
-        page.locator("#lisa-tahtaeg .precision__chips"),
-        page.locator('#lisa-tahtaeg .precision__group[data-precision-for="quarter"]'),
+        page.locator("#marge-tahtaeg .precision__chips"),
+        page.locator('#marge-tahtaeg .precision__group[data-precision-for="quarter"]'),
     ):
         box = locator.bounding_box()
         assert box["x"] >= 0, box
@@ -302,26 +315,31 @@ def test_a_precision_can_be_stated_with_scripting_off(browser, base_url, javascr
         sign_in(page, base_url, MARTIN)
         create_matter(page, base_url, "Täpsus ilma skriptita")
 
-        page.locator('label[for="lisa-tahtaeg-valik"]').click()
-        page.locator("#lisa-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
+        # Two clicks, because `Oluline tähtaeg` is a choice inside `+ Märge`
+        # rather than a peer of it — and both levels are `:checked` CSS, so
+        # they work with scripting off, which is the point of this test
+        # (docs/adr/0097 §8).
+        page.locator('label[for="lisa-marge-valik"]').click()
+        page.locator('label[for="marge-tahtaeg-valik"]').click()
+        page.locator("#marge-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
 
-        year_group = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="year"]')
+        year_group = page.locator('#marge-tahtaeg .precision__group[data-precision-for="year"]')
         expect(year_group).to_be_hidden()
 
-        page.locator("#lisa-tahtaeg label.precision__chip", has_text="Aasta").first.click()
+        page.locator("#marge-tahtaeg label.precision__chip", has_text="Aasta").first.click()
 
-        checked = page.locator('#lisa-tahtaeg input[name="deadline_precision"]:checked')
+        checked = page.locator('#marge-tahtaeg input[name="deadline_precision"]:checked')
         expect(checked).to_have_value("YEAR")
         expect(year_group).to_be_visible()
         expect(
-            page.locator('#lisa-tahtaeg .precision__group[data-precision-for="day"]')
+            page.locator('#marge-tahtaeg .precision__group[data-precision-for="day"]')
         ).to_be_hidden()
 
-        page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
+        page.locator("#marge-tahtaeg [name=deadline_year]").fill("2024")
 
         # The radio and the year are both inside the form that would carry them,
         # and neither needed a line of script to get its value.
-        form = page.locator("#lisa-tahtaeg form")
+        form = page.locator("#marge-tahtaeg form")
         expect(form.locator('input[name="deadline_precision"]:checked')).to_have_count(1)
         expect(form.locator('[name="deadline_year"]')).to_have_value("2024")
     finally:

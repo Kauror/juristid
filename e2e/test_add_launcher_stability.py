@@ -30,48 +30,39 @@ from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
-#: The canonical order. `+ Järgmine tegevus` is absent while a step is open, and
-#: this Matter is new, so all thirteen are here.
+#: The top-level row: four families, in the canonical order.
 #:
-#: **Thirteen where there were thirteen**, and the growth is docs/adr/0091's stated
-#: cost rather than a slip: the bar is the product's inventory of what can be
-#: recorded, and four of the things lawyers do had no chip. `+ Väline seisukoht`
-#: became two — `+ Meile saadetud tagasiside` and `+ Teiste arvamus` — over one
-#: record and one panel partial, and `+ Koja arvamus` and `+ Menetluse areng`
-#: joined them. The geometry contract below is unchanged and is exactly what this
-#: file exists to hold: more chips is allowed, a chip that *moves* is not.
+#: **Four where there were thirteen.** The bar grew to thirteen because it was
+#: the product's inventory of record types, and the lawyer standing in front of
+#: it does not have a record type in mind — so it asks what *kind of thing* is
+#: being recorded and the rest is asked second, inside the family chosen
+#: (docs/adr/0097 §8). The geometry contract is unchanged and is exactly what
+#: this file exists to hold: fewer chips is allowed, a chip that *moves* is not.
 CANONICAL = [
     "+ Märge",
-    "+ Järgmine tegevus",
     "+ Kaasamine",
-    "+ Oluline tähtaeg",
-    "+ Jõustumine",
-    "+ Töövõit",
+    "+ Arvamus / tagasiside",
     "+ Ülevaade / uudis",
-    # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
-    # and one panel partial, named by how what it holds reached the file.
-    "+ Meile saadetud tagasiside",
-    "+ Teiste arvamus",
-    "+ Koja arvamus",
-    "+ Menetluse areng",
-    "+ Menetluse link",
-    "+ Lõpeta teema",
 ]
 
+#: The four family panels, which is what the top-level chips open.
 PANEL_IDS = [
     "lisa-marge",
-    "lisa-jargmine",
     "lisa-kaasamine",
-    "lisa-tahtaeg",
-    "lisa-joustumine",
-    "lisa-toovoit",
+    "lisa-arvamus",
     "lisa-koduleht",
-    "lisa-tagasiside",
-    "lisa-valine-seisukoht",
-    "lisa-koja-arvamus",
-    "lisa-menetluse-areng",
-    "lisa-menetluse-link",
-    "lisa-lopeta",
+]
+
+#: The sub-choices, and which family each is inside. Opening one of these is the
+#: nested case: it must move none of the four chips above it either.
+SUBCHOICES = [
+    ("lisa-marge", "marge-tavaline"),
+    ("lisa-marge", "marge-tahtaeg"),
+    ("lisa-marge", "marge-joustumine"),
+    ("lisa-marge", "marge-toovoit"),
+    ("lisa-arvamus", "arvamus-tagasiside"),
+    ("lisa-arvamus", "arvamus-teiste"),
+    ("lisa-arvamus", "arvamus-koja"),
 ]
 
 #: Sub-pixel layout noise from a font metric or a scrollbar is not a jump. The
@@ -81,6 +72,12 @@ TOLERANCE = 1.5
 
 def chip_geometry(page) -> list[tuple[str, float, float]]:
     """Every launcher control: its label, and where it sits **inside the zone**.
+
+    The **top-level** chips only — a direct-child selector, not a descendant
+    one. The sub-choices inside `+ Märge` and `+ Arvamus / tagasiside` appear
+    and disappear with their family, which is what they are for; counting them
+    here would make this file assert that a control which is supposed to come
+    and go does not (docs/adr/0097 §8).
 
     Measured against `#lisa-teemale` rather than against the viewport, because
     two of the states being compared are separated by an HTMX swap and a scroll:
@@ -95,7 +92,7 @@ def chip_geometry(page) -> list[tuple[str, float, float]]:
             """() => {
                 const zone = document.getElementById('lisa-teemale').getBoundingClientRect();
                 return [...document.querySelectorAll(
-                    '#lisa-teemale label.disclosure-chip'
+                    '#lisa-teemale > .cx-panels > label.disclosure-chip'
                 )].map(node => {
                     const box = node.getBoundingClientRect();
                     return [node.innerText, box.x - zone.x, box.y - zone.y];
@@ -116,6 +113,31 @@ def assert_unchanged(before, after, what: str) -> None:
 
 
 def open_panel(page, panel_id: str):
+    """Open one choice, and never close it by pressing it again.
+
+    **A chip is a toggle.** `ux.js` un-checks a radio that is already chosen,
+    so a blind click on a chip that arrives *checked* shuts its panel. That
+    never mattered while every chip arrived unchecked; two of them arrive
+    chosen now, because a family panel that opened on more chips and no form
+    would be an extra click on every visit — `Tavaline` and
+    `Meile saadetud tagasiside` (docs/adr/0097 §8).
+
+    So this looks before it clicks, which is what `e2e/conftest.py`'s own
+    `open_add_panel` has always done.
+    """
+    radio = page.locator(f"#{panel_id}-valik")
+    if not radio.is_checked():
+        press_chip(page, panel_id)
+    return page.locator(f"#{panel_id}")
+
+
+def press_chip(page, panel_id: str):
+    """Press a chip whatever state it is in — which is how one is *closed*.
+
+    `open_panel` above will not do this, on purpose. Separating the two is the
+    whole of the fix for a toggle that arrives chosen: asking for it must be a
+    no-op, and closing it must still be one click.
+    """
     page.locator(f'label[for="{panel_id}-valik"]').click()
     page.wait_for_timeout(80)
     return page.locator(f"#{panel_id}")
@@ -133,7 +155,7 @@ def a_new_matter(page, base_url: str) -> str:
 def test_no_launcher_control_moves_when_a_form_is_opened(page, base_url):
     """The primary regression, chip by chip.
 
-    Eight clicks, and after each one every control is where it was before the
+    Four clicks, and after each one every control is where it was before the
     first — not merely where it was before *that* click, which a launcher that
     drifted one row at a time would also satisfy.
     """
@@ -150,6 +172,28 @@ def test_no_launcher_control_moves_when_a_form_is_opened(page, base_url):
         assert_unchanged(resting, chip_geometry(page), f"with {panel_id} open")
 
 
+def test_no_launcher_control_moves_when_a_sub_choice_is_opened(page, base_url):
+    """The nested case, which is new and is where the old defect would return.
+
+    A family's panel is a `.cx-panels` of its own, one level in, and every rule
+    that lays the outer row out is written `.cx-panels > …` rather than against
+    a depth — so it reaches this group unchanged, and so a sub-choice's form
+    takes `order: 1` inside its *family* rather than inside the launcher. If it
+    did not, choosing `Oluline tähtaeg` would push `+ Kaasamine` sideways
+    (docs/adr/0097 §8).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    resting = chip_geometry(page)
+
+    for family, choice in SUBCHOICES:
+        open_panel(page, family)
+        panel = open_panel(page, choice)
+
+        expect(panel).to_be_visible()
+        assert_unchanged(resting, chip_geometry(page), f"with {choice} open")
+
+
 def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     """Blue, from the application's own accent tokens, and exactly one of them.
 
@@ -159,9 +203,9 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    #: Each chip's own resting colour. `+ Lõpeta teema` is quieter than the eleven
-    #: above it on purpose, so one shared "quiet" value would be a colour no
-    #: last chip ever has.
+    #: Each chip's own resting colour, read per chip rather than as one shared
+    #: value: a rule that gave one of them a different quiet colour would
+    #: otherwise read as the chosen state.
     resting = {
         panel_id: page.locator(f'label[for="{panel_id}-valik"]').evaluate(
             "n => getComputedStyle(n).color"
@@ -174,7 +218,7 @@ def test_the_chosen_chip_is_the_only_one_that_looks_chosen(page, base_url):
     active = chosen.evaluate("n => getComputedStyle(n).color")
 
     assert active != resting["lisa-kaasamine"], (
-        "the chosen choice is not distinguished from the eleven others"
+        "the chosen choice is not distinguished from the three others"
     )
     accent = page.evaluate(
         "() => getComputedStyle(document.documentElement).getPropertyValue('--accent-link').trim()"
@@ -201,11 +245,16 @@ def test_the_form_opens_below_the_whole_row_and_only_one_does(page, base_url):
     a_new_matter(page, base_url)
 
     open_panel(page, "lisa-marge")
+    # The **top-level** bar, by a direct-child selector. A descendant one now
+    # reaches the sub-choice chips inside the panel that just opened, which are
+    # below the form's own top by construction — so the measurement would be
+    # asking whether a form opens below the chips it contains
+    # (docs/adr/0097 §8).
     form_top, bottom_of_bar = page.evaluate(
         """() => {
             const form = document.getElementById('lisa-marge').getBoundingClientRect();
             const bar = [...document.querySelectorAll(
-                '#lisa-teemale label.disclosure-chip'
+                '#lisa-teemale > .cx-panels > label.disclosure-chip'
             )].map(node => node.getBoundingClientRect().bottom);
             return [form.top, Math.max(...bar)];
         }"""
@@ -215,13 +264,13 @@ def test_the_form_opens_below_the_whole_row_and_only_one_does(page, base_url):
         "the form does not open below the last row of chips"
     )
 
-    for panel_id in PANEL_IDS:
+    # One family open, and the rest shut. `marge-tavaline` is inside the open
+    # one and is visible with it — that is the nesting, not a second open form
+    # (docs/adr/0097 §8).
+    shown = {"lisa-marge", "marge-tavaline"}
+    for panel_id in PANEL_IDS + [choice for _, choice in SUBCHOICES]:
         expectation = expect(page.locator(f"#{panel_id}"))
-        (
-            expectation.to_be_visible()
-            if panel_id == "lisa-marge"
-            else expectation.not_to_be_visible()
-        )
+        (expectation.to_be_visible() if panel_id in shown else expectation.not_to_be_visible())
 
 
 def test_choosing_a_second_operation_replaces_the_form_and_moves_nothing(page, base_url):
@@ -229,12 +278,12 @@ def test_choosing_a_second_operation_replaces_the_form_and_moves_nothing(page, b
     a_new_matter(page, base_url)
     resting = chip_geometry(page)
 
-    open_panel(page, "lisa-lopeta")
-    expect(page.locator("#lisa-lopeta")).to_be_visible()
+    open_panel(page, "lisa-koduleht")
+    expect(page.locator("#lisa-koduleht")).to_be_visible()
 
     open_panel(page, "lisa-marge")
     expect(page.locator("#lisa-marge")).to_be_visible()
-    expect(page.locator("#lisa-lopeta")).not_to_be_visible()
+    expect(page.locator("#lisa-koduleht")).not_to_be_visible()
     assert_unchanged(resting, chip_geometry(page), "after switching operations")
 
 
@@ -244,11 +293,11 @@ def test_choosing_the_active_operation_again_closes_it(page, base_url):
     a_new_matter(page, base_url)
     resting = chip_geometry(page)
 
-    open_panel(page, "lisa-toovoit")
-    expect(page.locator("#lisa-toovoit")).to_be_visible()
+    open_panel(page, "lisa-kaasamine")
+    expect(page.locator("#lisa-kaasamine")).to_be_visible()
 
-    open_panel(page, "lisa-toovoit")
-    expect(page.locator("#lisa-toovoit")).not_to_be_visible()
+    press_chip(page, "lisa-kaasamine")
+    expect(page.locator("#lisa-kaasamine")).not_to_be_visible()
     assert_unchanged(resting, chip_geometry(page), "after closing the form again")
 
 
@@ -260,8 +309,27 @@ def test_the_launcher_is_operable_from_the_keyboard(page, base_url):
     page.locator("#lisa-marge-valik").focus()
     page.keyboard.press("ArrowDown")
 
-    expect(page.locator("#lisa-jargmine")).to_be_visible()
-    assert page.evaluate("() => document.activeElement.id") == "lisa-jargmine-valik"
+    expect(page.locator("#lisa-kaasamine")).to_be_visible()
+    assert page.evaluate("() => document.activeElement.id") == "lisa-kaasamine-valik"
+
+
+def test_a_family_and_its_sub_choices_are_separate_keyboard_groups(page, base_url):
+    """Arrowing inside `+ Märge` must not arrow *out* of it.
+
+    The families share `lisa-valik` and each family's choices are a group of
+    their own, so the browser's own radio behaviour is what keeps the two
+    levels apart — press Down on `Oluline tähtaeg` and you reach `Jõustumine`,
+    never `+ Kaasamine` (docs/adr/0097 §8).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+
+    open_panel(page, "lisa-marge")
+    page.locator("#marge-tahtaeg-valik").focus()
+    page.keyboard.press("ArrowDown")
+
+    assert page.evaluate("() => document.activeElement.id") == "marge-joustumine-valik"
+    expect(page.locator("#lisa-marge")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

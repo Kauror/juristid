@@ -72,14 +72,21 @@ def delete_url(matter: Matter) -> str:
 
 
 def edit_payload(matter: Matter, **overrides) -> dict:
-    """The whole edit form, as the browser posts it back unchanged."""
+    """The whole edit form, as the browser posts it back unchanged.
+
+    Every key here is a field `MatterEditForm` declares. `track`,
+    `addressee_organisation`, `addressee_name` and `tags` used to be among them
+    and are not fields any more, so posting them would make this helper a worse
+    model of the browser rather than a better one — the tests that prove a
+    crafted POST cannot write them send them deliberately, one at a time
+    (docs/adr/0097 §2–§4).
+    """
     initial = edit_initial(matter)
     payload = {
         "title": initial["title"],
         "brief_summary": initial["brief_summary"] or "",
         "owner": initial["owner"] or "",
         "stage": initial["stage"] or "",
-        "track": initial["track"] or "",
         "policy_areas": [str(pk) for pk in initial["policy_areas"]],
         "policy_area_other_selected": "on" if initial["policy_area_other_selected"] else "",
         "policy_area_other": initial["policy_area_other"] or "",
@@ -87,11 +94,8 @@ def edit_payload(matter: Matter, **overrides) -> dict:
         "legal_instrument_other": initial["legal_instrument_other"] or "",
         "source_organisations": [str(pk) for pk in initial["source_organisations"]],
         "sender_name": "",
-        "addressee_organisation": initial["addressee_organisation"] or "",
-        "addressee_name": "",
         "received_date": "",
         "response_deadline": "",
-        "tags": [str(pk) for pk in initial["tags"]],
     }
     payload.update(overrides)
     return payload
@@ -103,9 +107,17 @@ def edit_payload(matter: Matter, **overrides) -> dict:
 
 #: Facts both pages ask about, and the control each of them must draw for it.
 #: Not every field on either form: the master's own extras (`Märkmed`, the file
-#: row) and the edit page's stated three (`track`, `addressee_organisation`,
-#: `tags`) are exempt by decision, and the test below names them so that adding
-#: a fourth is a decision somebody makes rather than a drift nobody notices.
+#: row) are exempt by decision, and the test below names them so that adding
+#: another is a decision somebody makes rather than a drift nobody notices.
+#:
+#: **The edit page's own three are gone.** `track`, `addressee_organisation`
+#: and `tags` stood under «Ainult olemasoleva teema kohta» on the reading that
+#: a canonical fact the master does not ask has to be answered somewhere. The
+#: owner withdrew all three from the ordinary Teema UI: a question a lawyer
+#: never meets while filing, waiting on the screen they open to correct a
+#: mistake, is a question only ever answered by somebody guessing. `EDIT_ONLY`
+#: is empty now, and that is the strongest form this contract has taken — the
+#: two forms ask exactly the same questions (docs/adr/0097 §2, §3, §4).
 SHARED_FACTS = (
     "title",
     "brief_summary",
@@ -124,7 +136,7 @@ SHARED_FACTS = (
 )
 
 CREATE_ONLY = {"notes", "uploads", "suggestion_state"}
-EDIT_ONLY = {"track", "addressee_organisation", "addressee_name", "tags"}
+EDIT_ONLY: set[str] = set()
 
 
 def test_every_shared_fact_is_on_both_forms(specialist):
@@ -180,6 +192,12 @@ CLASSIFICATION_PARTIALS = (
     "matters/partials/valdkonnad_field.html",
     "matters/partials/hetkeseis_field.html",
     "matters/partials/oigusakt_field.html",
+    # `Menetluse link` joined them on 2026-09-20. It is not a classification,
+    # but it is the same claim: one question, one block of markup, included by
+    # both pages — which is what makes `Link` and `Nimetus` incapable of
+    # drifting between the page somebody files from and the page they correct
+    # from (docs/adr/0097 §5).
+    "matters/partials/procedural_link_create.html",
 )
 
 
@@ -203,25 +221,27 @@ def test_both_pages_include_the_same_classification_partial(partial):
         assert partial in (root / page).read_text(encoding="utf-8"), page
 
 
-def test_the_edit_page_states_its_own_three_questions_as_a_group(signed_in, specialist):
-    """`Menetlusliik`, `Kellele` and `Sildid`, under a heading that says so.
+def test_the_edit_page_states_no_questions_of_its_own(signed_in, specialist):
+    """The group that said «ainult olemasoleva teema kohta» is gone with its three.
 
-    They are absent from `Uus teema` by decision (docs/adr/0090 §4, §5) and they
-    are canonical facts, so the page that corrects a record is where they are
-    answered. Below the master's questions and named, so a reader comparing the
-    two screens reads the difference as a rule rather than as an inconsistency.
+    This test asserted the opposite for one round: that `Menetlusliik`,
+    `Kellele` and `Sildid` stood under a heading naming them as edit-only, so
+    that a reader comparing the two screens read the difference as a rule
+    rather than as an inconsistency. The heading was doing its job and the rule
+    was the problem — `Uus teema` is the master, and a section of questions the
+    master has no counterpart for is the drift itself (docs/adr/0097 §2–§4).
+
+    A Tag exists here on purpose: the empty vocabulary used to render a
+    sentence instead of a control, which would have made an absence assertion
+    measure nothing.
     """
-    # A Tag has to exist for `Sildid` to render any control at all — the empty
-    # vocabulary renders a sentence instead, which is correct and would make
-    # this assertion measure nothing.
     factories.TagFactory(name_et="Kiireloomuline")
     matter = factories.MatterFactory(owner=specialist)
     page = signed_in.get(edit_url(matter)).content.decode()
 
-    heading = page.index("Ainult olemasoleva teema kohta")
-    assert page.index('name="response_deadline"') < heading
-    for name in ("track", "addressee_organisation", "tags"):
-        assert page.index(f'name="{name}"') > heading
+    assert "Ainult olemasoleva teema kohta" not in page
+    for name in ("track", "addressee_organisation", "addressee_name", "tags"):
+        assert f'name="{name}"' not in page
 
 
 def test_the_edit_page_asks_the_master_questions_in_the_master_order(signed_in, specialist):

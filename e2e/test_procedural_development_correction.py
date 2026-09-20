@@ -54,19 +54,27 @@ MOVED = (dt.date.today() - dt.timedelta(days=20)).strftime("%d.%m.%Y")
 MOVED_READ = (dt.date.today() - dt.timedelta(days=20)).strftime("%-d.%-m.%Y")
 
 
-def _file_a_development(page, *, occurred_on: str = HAPPENED, note: str = NOTE) -> None:
-    """Record one procedural step through the real `+ Menetluse areng` panel."""
-    open_add_panel(page, "lisa-menetluse-areng")
-    page.locator("#lisa-menetluse-areng input[name=title]").fill(HEADLINE)
-    page.locator("#lisa-menetluse-areng input[name=occurred_on]").fill(occurred_on)
-    if note:
-        page.locator("#lisa-menetluse-areng textarea[name=note]").fill(note)
+def _file_a_development(page, *, occurred_on: str = HAPPENED) -> None:
+    """Record one procedural step through the real `+ Märge · Tavaline` panel.
+
+    `+ Menetluse areng` filed these until docs/adr/0097 §6 and posted to
+    `/lisa/menetluse-areng/`. The panel is retired and the record is not: the
+    ordinary note writes the same `MatterProceduralDevelopment`, through
+    `/lisa/marge/`, and this file is about correcting one.
+
+    **No `Juristi märkus` here**, because the panel does not ask for one any
+    more (§6.2). The editor still offers the box on a stored row — which is
+    what the correction tests below use it for, and is the stronger shape of
+    the same claim: a note the *correction* surface adds is a note the reader
+    sees attributed to this office.
+    """
+    open_add_panel(page, "marge-tavaline")
+    page.locator("#marge-tavaline input[name=title]").fill(HEADLINE)
+    page.locator("#marge-tavaline input[name=occurred_on]").fill(occurred_on)
     with page.expect_response(
-        lambda response: (
-            "/lisa/menetluse-areng/" in response.url and response.request.method == "POST"
-        )
+        lambda response: "/lisa/marge/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-menetluse-areng button[type=submit]").click()
+        page.locator("#marge-tavaline button[type=submit]").click()
     assert caught.value.status == 200, f"the development was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
@@ -109,18 +117,19 @@ def test_a_filed_menetluse_areng_can_be_corrected_in_place(page, base_url):
     _file_a_development(page)
 
     expect(page.locator(".uxtl__ms-body")).to_have_count(1)
-    expect(_row(page)).to_contain_text(f"Menetluse areng: {HEADLINE}")
-    # QA-05, before the correction: the lawyer's reading is its own labelled line.
-    expect(_row(page)).to_contain_text(NOTE_LABEL)
-    expect(_row(page)).to_contain_text(NOTE)
+    expect(_row(page)).to_contain_text(f"Märge: {HEADLINE}")
+    # QA-05, before the correction: no `Juristi märkus` line, because the panel
+    # that filed this one does not ask for one (docs/adr/0097 §6.2).
+    expect(_row(page)).not_to_contain_text(NOTE_LABEL)
 
     form = _open_the_editor(page)
 
     # Prefilled, every box of it. Retyping a procedural step to fix its sentence
-    # is the thing this avoids.
+    # is the thing this avoids — and the note box is offered, empty, because
+    # this is the surface that decides per record.
     assert form.locator("input[name=title]").input_value() == HEADLINE
     assert form.locator("input[name=occurred_on]").input_value() == HAPPENED_READ
-    assert form.locator("textarea[name=note]").input_value() == NOTE
+    assert form.locator("textarea[name=note]").input_value() == ""
     # And it is holding the version it was filled from.
     assert form.locator("input[name=revision]").input_value()
     # The editor asks about this record and nothing beside it: no `Uus
@@ -139,19 +148,19 @@ def test_a_filed_menetluse_areng_can_be_corrected_in_place(page, base_url):
     # Same row, corrected, and no second line underneath it. No full-page
     # navigation either — the reader is still where they were.
     row = _row(page)
-    expect(row).to_contain_text(f"Menetluse areng: {CORRECTED}")
+    expect(row).to_contain_text(f"Märge: {CORRECTED}")
     expect(row).to_contain_text(MOVED_READ)
     expect(page.locator(".uxtl__ms-body")).to_have_count(1)
     expect(page.locator(".uxtl__editform")).to_have_count(0)
-    # QA-05 after the correction: still its own labelled line, still attributed
-    # to this office and not to the ministry named in the headline.
+    # QA-05 after the correction: its own labelled line, attributed to this
+    # office and not to the ministry named in the headline.
     expect(row).to_contain_text(NOTE_LABEL)
     expect(row).to_contain_text(CORRECTED_NOTE)
 
     # What was shown is what was stored.
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(_row(page)).to_contain_text(f"Menetluse areng: {CORRECTED}")
+    expect(_row(page)).to_contain_text(f"Märge: {CORRECTED}")
     expect(_row(page)).to_contain_text(MOVED_READ)
     expect(_row(page)).to_contain_text(CORRECTED_NOTE)
 
@@ -196,7 +205,7 @@ def test_cancelling_leaves_the_row_exactly_as_it_was(page, base_url):
 
     row = _row(page)
     expect(page.locator(".uxtl__editform")).to_have_count(0)
-    expect(row).to_contain_text(f"Menetluse areng: {HEADLINE}")
+    expect(row).to_contain_text(f"Märge: {HEADLINE}")
     expect(row).not_to_contain_text("Seda ei salvestata")
 
 

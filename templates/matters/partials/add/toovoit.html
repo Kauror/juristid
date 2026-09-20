@@ -1,0 +1,42 @@
+  {% comment %}
+    `+ Töövõit`. A win is recorded when it happens, not when the file closes,
+    and it neither closes the Matter nor completes the current step
+    (brief §19).
+
+    **One date box and no `Täpsus` chips.** A töövõit is something Koda
+    achieved and the organisation should be able to say when — so this panel
+    asks for the day, filled with today and clearable, rather than opening on
+    a four-way precision choice. Historical `Kuu`, `Kvartal` and `Aasta` wins
+    keep their periods and the reporting still reads periods; this panel simply
+    cannot produce a new approximate one (docs/adr/0097 §7).
+  {% endcomment %}
+      {% if open_choice == "marge-toovoit" and workspace_error %}
+        <p class="formerror" role="alert">{{ workspace_error }}</p>
+      {% endif %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_work_victory' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Mis muutus</span>
+          {{ work_victory_form.victory_change }}
+        </label>
+        {% if work_victory_form.victory_change.errors %}
+          <p class="field__error">{{ work_victory_form.victory_change.errors|first }}</p>
+        {% endif %}
+        <div class="cx-grid cx-grid--links">
+          <label class="cx-f cx-f--date">
+            <span class="cx-f__lab">Millal</span>
+            {{ work_victory_form.victory_date }}
+          </label>
+        </div>
+        {% if work_victory_form.victory_date.errors %}
+          <p class="field__error" id="{{ work_victory_form.victory_date.auto_id }}_error">
+            {{ work_victory_form.victory_date.errors|first }}</p>
+        {% endif %}
+        {% include "matters/partials/add_files.html" with field=work_victory_form.attachments %}
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Salvesta</button>
+        </div>
+      </form>

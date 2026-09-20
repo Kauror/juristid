@@ -29,7 +29,7 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, create_matter, open_next_action_form, sign_in
+from e2e.conftest import MARTIN, create_matter, open_next_action_form, set_next_step, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -38,10 +38,15 @@ def test_the_next_action_panel_reopens_while_its_save_is_still_in_flight(page, b
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Paneel avaneb salvestuse järel")
 
+    # A first step, so that `Muuda` exists at all: the launcher chip that used
+    # to draw this form without one is gone (docs/adr/0097 §8.2).
+    target = date.today() + timedelta(days=7)
+    when = f"{target.day}.{target.month}.{target.year}"
+    set_next_step(page, "Esimene samm", when)
+
     open_next_action_form(page)
     page.locator("#lisa-jargmine [name='text']").fill("Koosta arvamus")
-    target = date.today() + timedelta(days=7)
-    page.locator("#id_target_date").fill(f"{target.day}.{target.month}.{target.year}")
+    page.locator("#id_target_date").fill(when)
     # No wait of any kind after the click. The helper is being asked to open a
     # panel that the response now on its way is about to replace.
     page.locator("#lisa-jargmine button[type=submit]").first.click()

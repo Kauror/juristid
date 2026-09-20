@@ -144,11 +144,12 @@ def test_the_matter_page_offers_a_visible_edit_action(signed_in, specialist):
 
 def test_the_edit_page_offers_every_editable_fact(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
-    # Sildid renders a control only when the governed vocabulary has something
-    # in it; an empty vocabulary is a sentence, not an empty fieldset. Since the
-    # v2 rebuild the two organisation controls are chips over the reference
-    # data and behave the same way, so this world needs one of those too.
-    factories.TagFactory()
+    # The organisation control is chips over the reference data, so this world
+    # needs at least one body for it to draw anything. A `Tag` used to be here
+    # for the same reason and is not, because `Sildid` is not on this page:
+    # `Uus teema` never asked for one, so the only way to tag a Matter was to
+    # open the correction screen of a file that was already right
+    # (docs/adr/0097 §2).
     factories.OrganisationFactory()
     body = _body(signed_in.get(_edit_url(matter)))
 
@@ -163,16 +164,12 @@ def test_the_edit_page_offers_every_editable_fact(signed_in, specialist):
         "id_response_deadline",
     ):
         assert field in body, field
-    for field in (
-        "owner",
-        "stage",
-        "track",
-        "policy_areas",
-        "source_organisations",
-        "addressee_organisation",
-        "tags",
-    ):
+    for field in ("owner", "stage", "policy_areas", "source_organisations"):
         assert f'name="{field}"' in body, field
+    # And the three this page stopped asking about, which are stored facts with
+    # no ordinary control anywhere (docs/adr/0097 §2–§4).
+    for withdrawn in ("track", "addressee_organisation", "tags"):
+        assert f'name="{withdrawn}"' not in body, withdrawn
     # And `Nähtavus`, which the page deliberately does not offer any more: the
     # ordinary Teema UI does not ask who may see a Matter (docs/adr/0096 §3).
     assert 'name="visibility"' not in body
@@ -184,7 +181,6 @@ def test_one_save_changes_everything_and_audits_each_fact(
     """One job, one save, one transaction — and one event per fact changed."""
     matter = factories.MatterFactory(owner=specialist, title="Vale pealkiri")
     area = factories.PolicyAreaFactory(name_et="Keskkond")
-    tag = factories.TagFactory(name_et="Prioriteetne")
 
     response = signed_in.post(
         _edit_url(matter),
@@ -193,16 +189,12 @@ def test_one_save_changes_everything_and_audits_each_fact(
             "brief_summary": "Tõstab pakendiaktsiisi.",
             "owner": str(other_specialist.pk),
             "stage": "",
-            "track": "",
             "policy_areas": [str(area.pk)],
             "policy_area_other_selected": "on",
             "policy_area_other": "Ringmajandus",
             "source_organisations": [str(organisation.pk)],
-            "addressee_organisation": "",
             "received_date": "3.8.2026",
             "response_deadline": "20.8.2026",
-            "tags": [str(tag.pk)],
-            "visibility": Visibility.NORMAL,
         },
     )
     assert response.status_code == 302
@@ -213,7 +205,6 @@ def test_one_save_changes_everything_and_audits_each_fact(
     assert matter.owner == other_specialist
     assert matter.policy_area_other == "Ringmajandus"
     assert [area.name_et for area in matter.policy_areas.all()] == ["Keskkond"]
-    assert [tag.name_et for tag in matter.tags.all()] == ["Prioriteetne"]
     assert list(matter.source_organisations.all()) == [organisation]
     assert matter.received_date.isoformat() == "2026-08-03"
     assert matter.response_deadline.isoformat() == "2026-08-20"
@@ -223,7 +214,10 @@ def test_one_save_changes_everything_and_audits_each_fact(
     assert ChangeEventType.MATTER_BRIEF_SUMMARY_SET in kinds
     assert ChangeEventType.MATTER_ASSIGNED in kinds
     assert ChangeEventType.MATTER_POLICY_AREAS_CHANGED in kinds
-    assert ChangeEventType.TAG_ASSIGNED in kinds
+    # No `TAG_ASSIGNED`: this page does not assign tags. `set_tags` and the
+    # event are untouched and are still what writes one wherever that happens
+    # (docs/adr/0097 §2).
+    assert ChangeEventType.TAG_ASSIGNED not in kinds
 
 
 def test_an_unchanged_field_writes_no_event(signed_in, specialist):
@@ -238,12 +232,9 @@ def test_an_unchanged_field_writes_no_event(signed_in, specialist):
             "brief_summary": matter.brief_summary,
             "owner": str(specialist.pk),
             "stage": "",
-            "track": "",
             "policy_area_other": "",
-            "addressee_organisation": "",
             "received_date": "",
             "response_deadline": "",
-            "visibility": matter.visibility,
         },
     )
 

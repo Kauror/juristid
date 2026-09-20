@@ -145,7 +145,7 @@ def expect_chip(page, label: str):
     `+ Jõustumine` and `+ Töövõit` are closed disclosures in the add-to-matter
     launcher now, not links into a fragment (docs/adr/0075 §2).
     """
-    panel = {"+ Jõustumine": "#lisa-joustumine", "+ Töövõit": "#lisa-toovoit"}[label]
+    panel = {"+ Jõustumine": "#marge-joustumine", "+ Töövõit": "#marge-toovoit"}[label]
     return expect(page.locator(panel))
 
 

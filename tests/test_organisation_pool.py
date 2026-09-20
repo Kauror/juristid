@@ -79,42 +79,44 @@ def select_block(body: str, field: str) -> str:
     return body[start : body.index("</select>", start)]
 
 
-def answer_on_muuda_teemat(signed_in, matter, **fields) -> None:
-    """Answer a counterparty question on `Muuda teemat`.
+def record_addressee(matter, name: str) -> Organisation:
+    """Put an addressee on a Matter, through the resolver the importers use.
 
-    `Uus teema` asks who sent the file and nothing else since docs/adr/0090 §5,
-    so a test that needs an addressee names one where the question is asked.
+    **Not through a form**, and that is the change rather than a shortcut. The
+    ordinary Teema UI stopped asking who Koda answers on 2026-09-20: `Uus teema`
+    never asked (docs/adr/0090 §5) and `Muuda teemat` stopped
+    (docs/adr/0097 §4). `Matter.addressee_organisation` is written by the
+    importers, the register refresh and the cutover now, so a Matter carrying
+    one is made the way those make one.
+
+    What these tests are about is untouched by any of that: the register's
+    `?adressaat=` and `?asutus=` filters still have to find such a Matter, and
+    the catalogue behind them is still one catalogue. `resolve_addressee` is the
+    same function the surviving typed controls call, so «one name is one row»
+    holds here for the same reason it holds there.
     """
-    signed_in.post(
-        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
-        {
-            "title": matter.title,
-            "brief_summary": matter.brief_summary,
-            "visibility": matter.visibility,
-            # Carried, not omitted: every control on this form posts, and an
-            # omitted multi-select means «none of them».
-            "source_organisations": [
-                str(organisation.pk) for organisation in matter.source_organisations.all()
-            ],
-            **fields,
-        },
-    )
+    from app.matters.services import resolve_addressee
+
+    organisation = resolve_addressee(chosen=None, typed_name=name)
+    assert organisation is not None
+    matter.addressee_organisation = organisation
+    matter.save(update_fields=["addressee_organisation"])
+    return organisation
 
 
 def name_the_body(signed_in, title: str, payload_key: str) -> None:
-    """File a Teema naming `Zeta Näidisliit` in one direction, through the UI.
+    """File a Teema naming `Zeta Näidisliit` in one direction.
 
-    `sender_name` reaches the create form; `addressee_name` reaches the edit
-    form. Both resolve through the same catalogue in the same transaction, which
-    is what these tests are about.
+    `sender_name` goes through `Uus teema`, which is where a person types a
+    sender. `addressee_name` goes through `record_addressee`, because no form in
+    the ordinary Teema product asks that question any more — see that helper for
+    why the change does not weaken what these tests pin.
     """
     if payload_key == "sender_name":
         signed_in.post(CREATE, {"title": title, "sender_name": "Zeta Näidisliit"})
         return
     signed_in.post(CREATE, {"title": title})
-    answer_on_muuda_teemat(
-        signed_in, Matter.objects.get(title=title), **{payload_key: "Zeta Näidisliit"}
-    )
+    record_addressee(Matter.objects.get(title=title), "Zeta Näidisliit")
 
 
 # ---------------------------------------------------------------------------
@@ -129,11 +131,11 @@ def name_the_body(signed_in, title: str, payload_key: str) -> None:
 def test_a_body_typed_on_uus_teema_is_immediately_findable(signed_in, typed_field, payload_key):
     """The whole reported round trip, in one test and with no reindex between.
 
-    Create the institution the way Uus teema creates one — by typing it into
-    the sender or addressee field — then search for it in the register's
-    chooser and apply it. The chooser's contract is a direct lookup against the
-    canonical catalogue, so nothing here waits on a search-index rebuild and
-    nothing here may start to.
+    Create the institution the way it gets created — typed as a sender on
+    `Uus teema`, or resolved as an addressee by the machinery that writes that
+    column — then search for it in the register's chooser and apply it. The
+    chooser's contract is a direct lookup against the canonical catalogue, so
+    nothing here waits on a search-index rebuild and nothing here may start to.
     """
     crowd_the_catalogue()
     name_the_body(signed_in, "Uue asutusega teema", payload_key)
@@ -210,12 +212,14 @@ def test_one_body_on_both_relations_is_found_by_both_precise_filters(signed_in):
 
     Built in two steps now. `Uus teema` used to answer Adressaat from Saatja and
     this was the test of what that did to the register; the default is gone with
-    the question (docs/adr/0090 §5), so the composed case is what a lawyer makes
-    by answering both — which is the case the register still has to handle.
+    the question (docs/adr/0090 §5), and the question itself is gone from the
+    ordinary UI (docs/adr/0097 §4). The composed case is still what the register
+    meets — an imported Matter whose counterparty column named one body in both
+    directions — so it is still what the filters have to handle.
     """
     name_the_body(signed_in, "Mõlemana", "sender_name")
     matter = Matter.objects.get(title="Mõlemana")
-    answer_on_muuda_teemat(signed_in, matter, addressee_name="Zeta Näidisliit")
+    record_addressee(matter, "Zeta Näidisliit")
     created = Organisation.objects.get(name="Zeta Näidisliit")
 
     for parameter in ("saatja", "adressaat", "asutus"):

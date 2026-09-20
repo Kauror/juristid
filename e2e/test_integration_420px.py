@@ -8,7 +8,7 @@ and are not repeated here:
   375 px, and holds the Matter workspace at 375;
 * `e2e/test_teema_workspace.py` operates `PRAEGUNE TEGEVUS` and one opened
   `LISA TEEMALE` panel at 420 px;
-* `e2e/test_matter_form_ux.py`, `test_addressee_free_entry.py`,
+* `e2e/test_matter_form_ux.py`, `test_unified_organisation_picker.py`,
   `test_oigusakt_row.py` and `test_date_ux.py` hold `Uus teema` at 420 px.
 
 What none of them touches: the file affordance *inside* an opened add panel,
@@ -103,7 +103,7 @@ def test_every_add_panel_offers_its_file_control_inside_420px(page, base_url):
     page.set_viewport_size(NARROW)
     open_matter(page, base_url, OPEN_TITLE)
 
-    for panel in ("lisa-marge", "lisa-tahtaeg", "lisa-toovoit"):
+    for panel in ("lisa-marge", "marge-tahtaeg", "marge-toovoit"):
         open_add_panel(page, panel)
 
         assert not overflows(page), f"{panel} makes the Teema page scroll sideways at 420px"

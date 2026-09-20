@@ -2340,7 +2340,9 @@ class MatterProceduralDevelopment(VisibilityInheritingModel):
         ]
 
     def __str__(self) -> str:
-        return f"Menetluse areng: {self.title}"[:120]
+        # `Märge` rather than `Menetluse areng` since docs/adr/0097 §6, for the
+        # same reason `DEVELOPMENT_HEADLINE` changed: one word for one record.
+        return f"Märge: {self.title}"[:120]
 
     def parent_visibility(self) -> str:
         return self.matter.visibility

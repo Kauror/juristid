@@ -1,0 +1,51 @@
+    {% comment %}
+      `Lõpeta teema` — **under `TEEMA TOIMINGUD`**, because finishing a file
+      is not a capture at all, and two questions, because closing a Matter is
+      not a claim that an opinion was sent.
+
+      It was the last chip in `LISA TEEMALE` until docs/adr/0097 §9. Last, so
+      that it did not sit among the routine controls — which was the right
+      instinct and the wrong fix: a chip at the end of a row of chips is still
+      a chip in that row, and the row is captioned «Lisa teemale». The six-question flow is not coming back and nothing
+      here fabricates a sent opinion, a work victory or final evidence
+      (docs/adr/0074 §10, brief §20).
+
+      No file control: closure gained no attachment requirement in this round,
+      and giving it one would quietly restore the final-evidence precondition
+      the previous round removed.
+    {% endcomment %}
+    <input class="addpick" type="radio" name="teema-toiming" id="teema-lopeta-valik"
+           data-addpick aria-controls="teema-lopeta"
+           {% if open_panel == "teema-lopeta" %}checked{% endif %}>
+    <label class="disclosure-chip disclosure-chip--last" for="teema-lopeta-valik">+ Lõpeta teema</label>
+    <div class="cx-panel" id="teema-lopeta" data-addpanel>
+      <div class="cx-panel__body">
+        {% if open_panel == "teema-lopeta" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:close_from_workspace' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          <div class="cx-when" data-chipgroup="{{ closure_form.disposition.html_name }}">
+            <span class="cx-f__lab">Kuidas lõppes</span>
+            {% for chip in closure_form.closure_chips %}
+              <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
+                      data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
+            {% endfor %}
+            {{ closure_form.disposition }}
+          </div>
+          <label class="cx-f">
+            <span class="cx-f__lab">Lõppsõna <span class="cx-f__opt">valikuline</span></span>
+            {{ closure_form.closing_words }}
+          </label>
+          {% if closure_form.disposition.errors %}
+            <p class="field__error">{{ closure_form.disposition.errors|first }}</p>
+          {% endif %}
+          <p class="cx-note">Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.</p>
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Salvesta</button>
+          </div>
+        </form>
+      </div>
+    </div>

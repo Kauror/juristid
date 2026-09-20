@@ -31,9 +31,18 @@ room to spare goes on occupying one line.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 
-from e2e.conftest import MARTIN, create_matter, open_composer, sign_in, unique_title
+from e2e.conftest import (
+    MARTIN,
+    create_matter,
+    finish_current_action,
+    set_next_step,
+    sign_in,
+    unique_title,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -71,7 +80,19 @@ ROUNDING = 1
 
 
 def _file_a_note(page, text: str) -> None:
-    """Write one note through the real composer, the way a lawyer would.
+    """Write one authored body through the real surface that writes one.
+
+    **`Mida tegid?` in `PRAEGUNE TEGEVUS`, not `+ Märge`.** This file measures
+    `.richtext`, which is prose a person authored — `Entry.body` — and the
+    launcher's ordinary note stopped writing one on 2026-09-20: `+ Märge` asks
+    `Mis juhtus?` as a single stated line and files a
+    `MatterProceduralDevelopment`, whose headline the chronology renders as a
+    milestone rather than as a body (docs/adr/0097 §6).
+
+    Entries are still written, and this is where most of them come from:
+    completing a step records what was done about it. So the fixture gives the
+    Matter a step, finishes it with the text, and gives it another — which is
+    also what a lawyer actually does between two notes.
 
     **The wait is on the note, not on the network.** Filing two notes in a row
     is the whole point of the fixture below, and `networkidle` alone does not
@@ -87,10 +108,9 @@ def _file_a_note(page, text: str) -> None:
     Waiting until the text is actually rendered is the only signal that means
     the note exists, so that is what is waited for.
     """
-    open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill(text)
-    page.locator("#lisa-marge button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    when = date.today() + timedelta(days=7)
+    set_next_step(page, "Järgmine samm", f"{when.day}.{when.month}.{when.year}")
+    finish_current_action(page, text)
     # The distinctive tail of what was just filed, looked for in the authored
     # bodies themselves. A prefix would match the composer's own value while
     # the save is still on the wire.

@@ -30,15 +30,17 @@ be expensive to get wrong:
 * **an answer is visible.** Whatever put it there — a click, the search, `+`,
   the intake reader, or a refused save — it is a chip somebody can see and
   undo.
-* **both questions get the same control.** `Uus teema` asks who sent the file;
-  `Muuda teemat` asks that and who Koda answers, and a person who learns one
-  must not meet a different one on the other page.
+* **both pages get the same control.** `Uus teema` and `Muuda teemat` ask who
+  sent the file, and a person who learns the control on one must not meet a
+  different one on the other.
 
-**Adressaat is asserted on `Muuda teemat`.** `Uus teema` stopped asking who Koda
-answers (docs/adr/0090 §5), so the fold ADR 0069 gave that field — and the
-sender→addressee default the fold existed for — are both gone, together with the
-tests that pinned them. The picker itself is unchanged and is exercised on the
-page that still draws two of them.
+**Adressaat is gone from both pages.** `Uus teema` stopped asking who Koda
+answers (docs/adr/0090 §5) and `Muuda teemat` stopped on 2026-09-20
+(docs/adr/0097 §4), so the fold ADR 0069 gave that field, the sender→addressee
+default the fold existed for, and the second picker itself are all gone,
+together with the tests that pinned them. The picker is unchanged and is
+exercised where it is drawn; what remains of Adressaat here is the assertion
+that neither page draws one.
 
 **This suite shares one database with every other browser file and does not
 grow the catalogue.** The seeded world holds two institutions, which is enough
@@ -81,9 +83,10 @@ SENDER = "saatja"
 #: Saatja's picker id on `Muuda teemat`. Every picker's ids are derived from it,
 #: and the two pages number theirs differently.
 EDIT_SENDER = "muuda-saatja"
-#: Adressaat's picker id on `Muuda teemat`, which is the one form that asks the
-#: question (docs/adr/0090 §5). `Uus teema` numbered its own `adressaat` and has
-#: no such control any more.
+#: `Muuda teemat` drew a second picker for the Matter-level `Kellele` until
+#: docs/adr/0097 §4 withdrew that question. Kept as a constant because several
+#: tests below assert its *absence*, and a bare string repeated six times is how
+#: an absence check stops matching the thing it is about.
 ADDRESSEE = "muuda-adressaat"
 
 #: The seeded open Teema, mirroring `seed_e2e_data`. Opened rather than filed,
@@ -236,7 +239,7 @@ def file_the_teema(page, title: str) -> None:
     the first page of that list expecting the seeded record to be on it — two
     Matters from one file were once enough to push it off. So this says what
     happens next, which is what a lawyer filing a real one does anyway
-    (`e2e/test_addressee_free_entry.py`).
+    (`e2e/test_sender_free_entry.py`).
     """
     page.locator("#id_title").fill(title)
     give_first_step(page)
@@ -333,7 +336,8 @@ def test_the_retired_controls_are_nowhere_on_the_page(page, base_url):
     assert "Uus saatja" not in body
     assert "Uus adressaat" not in body
     assert page.locator(f"#{SENDER}-valik details").count() == 0
-    assert page.locator(f"#{ADDRESSEE}-valik details").count() == 0
+    # And no Adressaat control of any shape (docs/adr/0097 §4).
+    assert page.locator(f"#{ADDRESSEE}-valik").count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -507,14 +511,20 @@ def test_a_typed_sender_does_not_replace_a_chosen_one(page, base_url):
     assert name in chosen_names(page, SENDER)
 
 
-def test_the_addressee_keeps_exactly_one_answer(page, base_url):
-    """One value, so choosing a second replaces the first (task §7)."""
+def test_muuda_teemat_draws_no_addressee_picker(page, base_url):
+    """This asserted the Adressaat radio group kept exactly one answer.
+
+    That group was the Matter-level `Kellele`, which left the ordinary Teema
+    UI on 2026-09-20 — `Uus teema` never asked it and `Muuda teemat` stopped,
+    so both pages now draw one picker and it is `Saatja` (docs/adr/0097 §4).
+    The one-value behaviour it pinned is a radio group's and is unchanged
+    wherever one is still drawn.
+    """
     edit_form(page, base_url)
 
-    choose_result(page, ADDRESSEE, MINISTRY)
-    choose_result(page, ADDRESSEE, PARTNER)
-
-    assert chosen_names(page, ADDRESSEE) == [PARTNER]
+    expect(page.locator(f"#{ADDRESSEE}-valik")).to_have_count(0)
+    expect(page.locator("[name='addressee_organisation']")).to_have_count(0)
+    expect(page.locator("[name='addressee_name']")).to_have_count(0)
 
 
 # ---------------------------------------------------------------------------
@@ -659,13 +669,10 @@ def test_the_box_announces_itself_as_a_combobox_only_once_it_is_one(page, base_u
 
 def test_both_add_buttons_say_which_field_they_belong_to(page, base_url):
     """«+» alone is not a name. Task §20."""
-    create_form(page, base_url)
-    expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_have_count(1)
-    expect(page.get_by_role("button", name="Lisa uus adressaat", exact=True)).to_have_count(0)
-
-    edit_form(page, base_url)
-    expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_have_count(1)
-    expect(page.get_by_role("button", name="Lisa uus adressaat", exact=True)).to_have_count(1)
+    for open_form in (create_form, edit_form):
+        open_form(page, base_url)
+        expect(page.get_by_role("button", name="Lisa uus saatja", exact=True)).to_have_count(1)
+        expect(page.get_by_role("button", name="Lisa uus adressaat", exact=True)).to_have_count(0)
 
 
 # ---------------------------------------------------------------------------
@@ -677,8 +684,10 @@ def test_both_add_buttons_say_which_field_they_belong_to(page, base_url):
 def test_the_picker_never_takes_the_page_sideways(page, base_url, width):
     """Chips wrap; the box and its button stay on one row and inside it.
 
-    On `Muuda teemat`, because it draws both pickers — which is the harder case
-    and the only one where two of them can collide (docs/adr/0090 §5).
+    On `Muuda teemat`, which drew both pickers and was the harder case for
+    that reason. It draws one since docs/adr/0097 §4; the claim — chips wrap,
+    the box and its button stay on one row and inside it — is the picker's and
+    holds wherever it is drawn.
     """
     edit_form(page, base_url)
     page.set_viewport_size({"width": width, "height": 900})
@@ -689,7 +698,7 @@ def test_the_picker_never_takes_the_page_sideways(page, base_url, width):
     )
     assert overflow <= 1, f"the page scrolls sideways by {overflow}px at {width}"
 
-    for field in (EDIT_SENDER, ADDRESSEE):
+    for field in (EDIT_SENDER,):
         control = box(page, field).bounding_box()
         button = add_button(page, field).bounding_box()
         assert control and button

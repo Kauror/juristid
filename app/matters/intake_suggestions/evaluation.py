@@ -175,10 +175,42 @@ def evaluate(
                 case=expectation.name,
                 field=field_name,
                 wanted=expectation.wanted(field_name),
-                filled=tuple(decided.prefilled_values(field_name)),
+                filled=_scored_values(analysis, decided, field_name),
             )
         )
     return decided
+
+
+def _scored_values(
+    analysis: IntakeAnalysis, decided: IntakeAnalysis, field_name: str
+) -> tuple[str, ...]:
+    """What this field decided, whether or not a form takes it.
+
+    For four of the five that is `prefill_initial`'s own answer, which is the
+    honest measure: a suggestion strong enough to be written into the form is a
+    suggestion the extraction got right, and one that was not is not.
+
+    **`Menetlusliik` is the exception, and it is a fact about the form rather
+    than about the reading.** `MatterEditForm` stopped declaring `track` on
+    2026-09-20, so `prefill_initial` stopped filling it — a form that does not
+    ask cannot be pre-filled, and «vormil eeltäidetud» beside a control nobody
+    draws would be the review claiming something untrue (docs/adr/0097 §3).
+    None of that is a statement about how well the extraction reads a
+    procedural track, which is what this scorecard measures and what its floor
+    protects.
+
+    So the track is scored on the candidate `prefill_initial` *would* have
+    written: the same `prefill_candidate`, under the same thresholds and the
+    same conflict handling. A rule that stops reading tracks correctly still
+    fails here, which is the whole point of the floor.
+    """
+    if field_name != SuggestedField.TRACK:
+        return tuple(decided.prefilled_values(field_name))
+    suggestions = analysis.fields.get(SuggestedField.TRACK)
+    if suggestions is None:
+        return ()
+    chosen = suggestions.prefill_candidate
+    return (chosen.value,) if chosen is not None else ()
 
 
 def describe(outcome: FieldOutcome, expectation: Expectation) -> str:

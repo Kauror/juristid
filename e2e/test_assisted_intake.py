@@ -109,7 +109,19 @@ def test_the_review_pre_fills_what_it_is_sure_of_and_saves_what_the_person_confi
     ).to_be_visible()
     expect(page.get_by_text("kirja päis").first).to_be_visible()
     expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
-    expect(page.locator('input[name="track"][value="DOMESTIC"]')).to_be_checked()
+    # **No `Menetlusliik`, pre-filled or otherwise.** The extractor still reads
+    # the track out of the letter and the corpus-quality floor is still scored
+    # on what it found — nothing about the analysis changed — but this review is
+    # `MatterEditForm`, and that form stopped asking the question
+    # (docs/adr/0097 §3). A prefill for a field the form never declares is a
+    # value that reaches a widget nobody draws, so the prefill went with it.
+    expect(page.locator('input[name="track"]')).to_have_count(0)
+    # And the panel does not *offer* one either. This caught the real defect:
+    # the analyser still finds the track, `FORM_FIELDS` still listed it, and the
+    # panel printed «Menetlusliik» with a `Kasuta` button pointing at a box that
+    # is not on the page — a suggestion a reader cannot accept, which is worse
+    # than one that was never made (`intake_suggestions/types.py`).
+    expect(page.get_by_text("Menetlusliik", exact=True)).to_have_count(0)
     expect(page.get_by_text("vormil eeltäidetud").first).to_be_visible()
     # The title is never written into the box, even here, where the Matter
     # still carries intake's mechanical filename: nothing in the record

@@ -108,21 +108,28 @@ def test_the_page_offers_both_controls(page, base_url):
 
 
 def test_the_matters_own_tags_are_not_preselected(page, base_url):
-    """The decision, as a reader meets it: an empty form on a classified file.
+    """The decision, as a reader meets it: an empty form on a new opinion.
 
-    The Matter is given a `Silt` on `Muuda teemat` first, so the box that would
-    be ticked by an inheriting implementation exists and is offered. It must be
-    offered **unticked** — a default here is not a convenience, it is the
-    application stating a classification nobody made (docs/adr/0093 §1).
+    An opinion's `Märksõnad` are its own and are never inherited from the
+    Matter — a default here is not a convenience, it is the application stating
+    a classification nobody made (docs/adr/0093 §1).
+
+    **The setup step is gone with the control it used.** This test gave the
+    Matter a `Silt` on `Muuda teemat` first, so that an inheriting
+    implementation would have something to inherit. `Sildid` left the ordinary
+    Teema UI on 2026-09-20 — `Uus teema` never asked for one, so the only way
+    to tag a Matter was to open the correction screen of a file that was
+    already right (docs/adr/0097 §2) — and the browser can no longer perform
+    that step at all.
+
+    The inheritance claim is not weakened by that: it is proved against a
+    Matter that really does carry tags in
+    `tests/test_opinion_marksonad_and_overview_links.py`, which creates them on
+    the model and reads the opinion form's `initial`. What a browser can still
+    add is what this keeps: the boxes are offered, and they arrive empty.
     """
     sign_in(page, base_url, SANDRA)
     matter_url = a_draft_opinion(page, base_url)
-
-    page.goto(f"{matter_url.rstrip('/')}/muuda/")
-    page.wait_for_load_state("networkidle")
-    page.get_by_role("checkbox", name=KEYWORD, exact=True).check()
-    page.get_by_role("button", name="Salvesta").click()
-    page.wait_for_load_state("networkidle")
 
     block = open_opinion_block(page, matter_url)
     block.get_by_role("link", name=METADATA_LINK).first.click()

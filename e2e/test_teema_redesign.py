@@ -27,7 +27,7 @@ from e2e.conftest import (
     open_add_panel,
     open_composer,
     open_matter,
-    open_next_action_form,
+    set_next_step,
     sign_in,
 )
 
@@ -162,10 +162,8 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     for index in range(12):
         page.goto(url)
         open_composer(page)
-        page.locator("#lisa-marge .composer__body").fill(
-            f"Sissekanne number {index} sünteetilises maailmas."
-        )
-        page.locator("#lisa-marge button[type=submit]").click()
+        page.locator("#id_marge_title").fill(f"Sissekanne number {index} sünteetilises maailmas.")
+        page.locator("#marge-tavaline button[type=submit]").click()
         page.wait_for_load_state("networkidle")
 
     page.goto(url)
@@ -198,46 +196,42 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     url = create_matter(page, base_url, "Lõpetatav teema brauserikatsest")
 
     # A next step first, so the closure has something to end.
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill("Esitada arvamus ministeeriumile")
-    page.locator("#id_target_date").fill(_future(5))
-    page.locator("#lisa-jargmine button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    set_next_step(page, "Esitada arvamus ministeeriumile", _future(5))
     expect(page.locator(".curact__text")).to_have_text("Esitada arvamus ministeeriumile")
 
     # The narrative is its own save now: the closure no longer borrows a body
     # from another operation (docs/adr/0075 §9).
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Menetlus lõppes; töö on tehtud.")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#id_marge_title").fill("Menetlus lõppes; töö on tehtud.")
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     # Closing is a `LISA TEEMALE` panel, not a box in the rail.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
-    open_add_panel(page, "lisa-lopeta")
-    expect(page.locator("#lisa-lopeta")).to_be_visible()
+    open_add_panel(page, "teema-lopeta")
+    expect(page.locator("#teema-lopeta")).to_be_visible()
 
     # No confirmation box: answering the panel is the request (pilot QA F-02).
     expect(page.locator("#id_close_matter")).to_have_count(0)
-    expect(page.locator("#lisa-lopeta button[type=submit]")).to_have_text("Salvesta")
+    expect(page.locator("#teema-lopeta button[type=submit]")).to_have_text("Salvesta")
 
     # `Kuidas lõppes` is three chips over the field the server validates, and
     # nothing is chosen until somebody chooses (docs/adr/0074 §10).
-    page.locator("#lisa-lopeta .uxchip", has_text="Jõustus").click()
-    expect(page.locator("#lisa-lopeta input[name=disposition]")).to_have_value("COMPLETED")
+    page.locator("#teema-lopeta .uxchip", has_text="Jõustus").click()
+    expect(page.locator("#teema-lopeta input[name=disposition]")).to_have_value("COMPLETED")
     # No confirmation box, no second narrative box, and no work-victory
     # decision: closing a file is not a claim that anything was won, and
     # `+ Töövõit` records a win without closing anything.
     expect(page.locator("#id_closure_reason")).to_have_count(0)
     expect(page.locator("[name=work_victory]")).to_have_count(0)
-    page.locator("#lisa-lopeta [name=closing_words]").fill("Menetlus lõppes; töö on tehtud.")
+    page.locator("#teema-lopeta [name=closing_words]").fill("Menetlus lõppes; töö on tehtud.")
     # The server's own answer, not what the page looks like afterwards. A save
     # that is refused and a save that quietly did nothing leave an identical
     # screen, and the difference is the whole question here.
     with page.expect_response(
         lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-lopeta button[type=submit]").click()
+        page.locator("#teema-lopeta button[type=submit]").click()
     saved = caught.value
     assert saved.status == 200, f"the closure save was refused: {saved.status}"
     page.wait_for_load_state("networkidle")
@@ -258,10 +252,13 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     # No writable next step and no workspace at all (docs/adr/0075, brief §31).
     expect(page.locator("#lisa-teemale")).to_have_count(0)
     expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
-    # The past stays readable, and is open on arrival. The head no longer quotes
-    # the newest entry, so the words are on the page exactly once
-    # (docs/adr/0074 §16).
-    expect(page.locator(".richtext").get_by_text("Menetlus lõppes; töö on tehtud.")).to_be_visible()
+    # The past stays readable, and is open on arrival. Scoped to the chronology
+    # row's headline: the closing banner quotes the same sentence above it, and
+    # the `Märge` itself is a `MatterProceduralDevelopment` rather than the
+    # `Entry` prose this used to read (docs/adr/0074 §16, docs/adr/0097 §6).
+    expect(
+        page.locator(".uxtl__mswhat").get_by_text("Märge: Menetlus lõppes; töö on tehtud.")
+    ).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -390,9 +387,12 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     page.set_viewport_size({"width": 420, "height": 900})
     open_matter(page, base_url, OPEN_TITLE)
 
-    open_next_action_form(page)
-    page.locator('label[for="lisa-marge-valik"]').click()
-    drop = page.locator("#lisa-marge .cx-drop")
+    open_add_panel(page, "marge-tavaline")
+    # Scoped to the sub-choice rather than to the family. `+ Märge` holds four
+    # panels now and each takes files, so `#lisa-marge .cx-drop` is four
+    # elements — three of them the hidden siblings of the one on screen
+    # (docs/adr/0097 §8).
+    drop = page.locator("#marge-tavaline .cx-drop")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 420px the drop area is still absolutely positioned — this is the "
@@ -400,7 +400,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     )
 
     box = drop.bounding_box()
-    form = page.locator("#lisa-marge form").first.bounding_box()
+    form = page.locator("#marge-tavaline form").first.bounding_box()
     assert box["width"] >= form["width"] * 0.9, (
         f"the drop area is {box['width']:.0f}px in a {form['width']:.0f}px form — still a "
         f"corner affordance. Below 720px it is a full-width row of its own"
@@ -427,8 +427,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     # overlapping nothing.
     page.set_viewport_size({"width": 1440, "height": 900})
     page.wait_for_timeout(120)
-    open_next_action_form(page)
-    page.locator('label[for="lisa-marge-valik"]').click()
+    open_add_panel(page, "marge-tavaline")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 1440px the drop area is absolutely positioned inside a narrow panel "
@@ -436,8 +435,8 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     )
     box = drop.bounding_box()
     others = [
-        page.locator("#lisa-marge .composer__body").bounding_box(),
-        page.locator("#lisa-marge button[type=submit]").bounding_box(),
+        page.locator("#id_marge_title").bounding_box(),
+        page.locator("#marge-tavaline button[type=submit]").bounding_box(),
     ]
     assert all(not _overlap(box, other) for other in others), (
         "at 1440px the drop area is painted over another control in its own form"
@@ -525,14 +524,17 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     url = create_matter(page, base_url, "Klaviatuuri brauserikatse")
 
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Salvestatud klaviatuurilt.")
-    page.locator("#lisa-marge .composer__body").press("ControlOrMeta+Enter")
+    page.locator("#id_marge_title").fill("Salvestatud klaviatuurilt.")
+    page.locator("#id_marge_title").press("ControlOrMeta+Enter")
     page.wait_for_load_state("networkidle")
 
-    # Scoped to the entry body: the accordion quotes the newest entry in its own
-    # summary line, so the words appear twice on the page now
-    # (design handoff 1b).
-    expect(page.locator(".richtext").get_by_text("Salvestatud klaviatuurilt.")).to_be_visible()
+    # Scoped to the chronology row's headline, which is where a `Märge` lands.
+    # It was `.richtext` — `Entry.body`, prose — until `+ Märge` started writing
+    # the structured record: the sentence is a `title` now and the row prints it
+    # after the headline word (docs/adr/0097 §6, `DEVELOPMENT_HEADLINE`).
+    expect(
+        page.locator(".uxtl__mswhat").get_by_text("Märge: Salvestatud klaviatuurilt.")
+    ).to_be_visible()
 
     # The visible equivalent is the button itself. The `Ctrl + Enter` hint that
     # used to sit beside it went with the approved target's action row, which is
@@ -542,33 +544,32 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     page.goto(url)
     open_composer(page)
     expect(page.locator(".composer__hint")).to_have_count(0)
-    expect(page.locator("#lisa-marge button[type=submit]")).to_be_visible()
+    expect(page.locator("#marge-tavaline button[type=submit]")).to_be_visible()
 
 
 def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, base_url):
     """One open step, one control for it.
 
-    On a Matter with no step the launcher offers `+ Järgmine tegevus`; once one
-    exists that chip is gone and `Muuda` beside the task is the way to change
-    it, prefilled with what is there. Two controls both offering to set "the
-    next action" is how a lawyer ends up believing they have two
-    (docs/adr/0075 §10).
+    There is no launcher chip for the next step at all since docs/adr/0097
+    §8.2: two controls both offering to set «the next action» is how a lawyer
+    ends up believing they have two, so the *only* ordinary way to set the
+    first one is the optional box inside `+ Märge`, and once a step exists
+    `Muuda` beside the task is the way to change it, prefilled with what is
+    there (docs/adr/0075 §10).
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Fookuse brauserikatse")
 
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
     expect(page.get_by_role("button", name="Määra allpool ↓")).to_have_count(0)
-    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(1)
+    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
+    # And no editor either, because there is no task for one to sit beside.
+    expect(page.locator("#lisa-jargmine")).to_have_count(0)
 
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill("Koostada arvamuse mustand")
-    page.locator("#id_target_date").fill(_future(4))
-    page.locator("#lisa-jargmine button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    set_next_step(page, "Koostada arvamuse mustand", _future(4))
 
-    # Now there is a step. The launcher chip is gone and `Muuda` is beside the
-    # task, carrying what is already recorded.
+    # Now there is a step. `Muuda` is beside the task, carrying what is already
+    # recorded, and the launcher still offers no second way to set one.
     expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
     # A native `<summary>`, not a button: the disclosure has to work with
     # scripting off (brief §33).

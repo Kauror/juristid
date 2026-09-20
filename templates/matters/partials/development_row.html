@@ -47,7 +47,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       this element again, so every answer — saved, refused, conflicted — lands
       in the one place the reader is looking.
     {% endcomment %}
-    <form class="uxtl__editform" aria-label="Menetluse arengu parandamine"
+    <form class="uxtl__editform" aria-label="Märke parandamine"
           hx-post="{% url 'matters:update_development' pk=matter.pk development_id=development.pk %}"
           hx-target="#menetluse-areng-{{ development.pk }}-sisu"
           hx-swap="outerHTML">
@@ -241,7 +241,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
           chronology may show a dozen of these. The accessible name is built by
           reference — the button's own word, then the headline element above it
           — rather than by repeating the headline into a visually-hidden span,
-          which would put «Menetluse areng: …» into the document twice.
+          which would put «Märge: …» into the document twice.
         {% endcomment %}
         <button class="uxtl__edit" type="button"
                 id="menetluse-areng-{{ development.pk }}-muuda"
@@ -258,7 +258,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
           (docs/adr/0084 §8).
 
           Named by reference like its neighbour, so a chronology showing a dozen
-          of these does not put «Menetluse areng: …» into the document twice.
+          of these does not put «Märge: …» into the document twice.
 
           There is deliberately no counterpart that removes one. Evidence is
           additive and immutable: a file attached to the wrong step is answered by

@@ -1482,7 +1482,10 @@ def test_high_confidence_suggestions_prefill_the_empty_unsaved_form(
     # takes its strong suggestion (see the title-provenance tests below).
     assert 'data-suggest-value="Pakendiseaduse muutmise seaduse eelnõu"' in body
     assert _control_value(body, "id_response_deadline") == "18.9.2026"
-    assert _checked(body, "track", Track.DOMESTIC)
+    # No `Menetlusliik` control and therefore nothing prefilled into one:
+    # `MatterEditForm` stopped declaring the field (docs/adr/0097 §3), so the
+    # analysis's track suggestion reaches no box on this page.
+    assert 'name="track"' not in body
     keskkond = PolicyArea.objects.get(key="keskkond")
     assert _checked(body, "policy_areas", str(keskkond.pk))
     assert _checked(body, "source_organisations", str(ministry.pk))
@@ -1511,8 +1514,7 @@ def test_an_existing_canonical_value_is_never_overwritten_by_a_suggestion(
     body = response.content.decode()
     assert _control_value(body, "id_title") == "Minu enda pealkiri"
     assert _control_value(body, "id_response_deadline") == "1.12.2026"
-    assert _checked(body, "track", Track.STRATEGY)
-    assert not _checked(body, "track", Track.DOMESTIC)
+    assert 'name="track"' not in body
     assert _checked(body, "source_organisations", str(other.pk))
     assert not _checked(body, "source_organisations", str(ministry.pk))
     # The document's answers are still on the page — as «Kasuta» offers.
@@ -1542,6 +1544,8 @@ def test_the_posted_value_wins_over_every_suggestion(
         {
             "title": "Pakendiseaduse muutmise seaduse eelnõu",
             "response_deadline": "19.9.2026",
+            # Crafted: neither is a field on this form any more, and neither
+            # reaches the record (docs/adr/0096 §3, docs/adr/0097 §3).
             "track": Track.DOMESTIC,
             "visibility": Visibility.NORMAL,
             "owner": specialist.pk,
@@ -1551,7 +1555,7 @@ def test_the_posted_value_wins_over_every_suggestion(
     intake_matter.refresh_from_db()
     assert intake_matter.response_deadline == date(2026, 9, 19)
     assert intake_matter.title == "Pakendiseaduse muutmise seaduse eelnõu"
-    assert intake_matter.track == Track.DOMESTIC
+    assert intake_matter.track == ""
     # The medium sender suggestion was not chosen, so it was not saved; the
     # audit trail names the person, not a classifier.
     assert not intake_matter.source_organisations.exists()
@@ -1560,10 +1564,15 @@ def test_the_posted_value_wins_over_every_suggestion(
         event_type__in=(
             ChangeEventType.MATTER_TITLE_CHANGED,
             ChangeEventType.MATTER_DATE_CHANGED,
-            ChangeEventType.MATTER_TRACK_CHANGED,
         ),
     )
-    assert saved.count() == 3
+    assert saved.count() == 2
+    # And no `MATTER_TRACK_CHANGED`, because this page writes no track: the
+    # field is gone from the form and the service is never called
+    # (docs/adr/0097 §3).
+    assert not ChangeEvent.objects.filter(
+        matter=intake_matter, event_type=ChangeEventType.MATTER_TRACK_CHANGED
+    ).exists()
     assert all(event.actor_id == specialist.pk for event in saved)
     assert not ChangeEvent.objects.filter(
         matter=intake_matter, event_type=ChangeEventType.MATTER_POLICY_AREAS_CHANGED
@@ -1864,7 +1873,6 @@ def test_an_untouched_intake_fallback_title_is_offered_rather_than_filled(
     assert SuggestedField.TITLE not in response.context["assisted"].prefilled
     assert 'data-suggest-value="Pakendiseaduse muutmise seaduse eelnõu"' in body
     # The other fields still pre-fill: only the title lacks provenance.
-    assert _checked(body, "track", Track.DOMESTIC)
     assert _control_value(body, "id_response_deadline") == "18.9.2026"
 
 

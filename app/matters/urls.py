@@ -110,6 +110,14 @@ urlpatterns = [
     # record in one transaction, so a partial swap would be describing something
     # the save does not do (app/matters/views.py, `matter_edit`).
     path("teemad/<uuid:pk>/muuda/", views.matter_edit, name="matter_edit"),
+    # `Kustuta teema` — one address, two methods. GET describes the deletion
+    # and POST performs it, so following a link can never remove a Matter and
+    # the CSRF token is what stands between the two (docs/adr/0096 §10).
+    #
+    # Under the Matter rather than behind a `haldus/` prefix: it is an ordinary
+    # operation a lawyer performs on their own file, reached from
+    # `TEEMA TOIMINGUD` on the Teema page.
+    path("teemad/<uuid:pk>/kustuta/", views.matter_delete, name="matter_delete"),
     # The same edit page with what the documents say beside it. Its own route
     # and GET-only: it computes and shows, and the form on it posts to
     # `matter_edit` like the plain one, so there is one write path
@@ -231,13 +239,16 @@ urlpatterns = [
         views.add_koda_opinion,
         name="add_koda_opinion",
     ),
-    # `+ Menetluse areng` — one dated step the external procedure took, with the
-    # `Hetkeseis` and the next action it may carry (docs/adr/0091 §5).
-    path(
-        "teemad/<uuid:pk>/lisa/menetluse-areng/",
-        views.add_development,
-        name="add_development",
-    ),
+    # There is deliberately **no `lisa/menetluse-areng/` route**. `+ Menetluse
+    # areng` is retired as a user-facing concept and its ordinary function is
+    # `+ Märge`, which posts to `add_note` above — so the second address that
+    # created the same record is gone rather than left reachable behind no
+    # button. A withdrawn control whose endpoint still answers is a withdrawn
+    # control in the templates only (docs/adr/0096 §7).
+    #
+    # `MatterProceduralDevelopment` itself is untouched: the two routes below
+    # still correct one and still attach evidence to one, and every stored row
+    # reads exactly as it did.
     # `Muuda` on a filed `Menetluse areng`, under the record rather than under
     # the Teema, and spelled the way `update_external_position` and
     # `update_engagement` are — one address for the form and the save, GET
@@ -303,11 +314,11 @@ urlpatterns = [
     # There is deliberately **no delete route**, on an open Matter or a closed
     # one: a mistaken link is corrected, because what the file recorded and who
     # recorded it is part of the file (docs/adr/0084 §8).
-    path(
-        "teemad/<uuid:pk>/lisa/menetluse-link/",
-        views.add_procedural_link,
-        name="add_procedural_link",
-    ),
+    # And no `lisa/menetluse-link/` route either. `Menetluse link` is a fact
+    # about the Matter rather than something that happened to it, so it is
+    # asked on `Uus teema` and corrected on `Muuda teemat` — both of which save
+    # through those pages' own transactions — and the launcher chip that
+    # created one is gone (docs/adr/0096 §6).
     path(
         "teemad/<uuid:pk>/menetluse-link/<uuid:link_id>/paranda/",
         views.correct_procedural_link_view,

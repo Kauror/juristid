@@ -34,6 +34,7 @@ from e2e.conftest import (
     open_composer,
     open_matter,
     open_next_action_form,
+    set_next_step,
     sign_in,
 )
 
@@ -50,12 +51,13 @@ def _future(days: int) -> str:
 
 
 def set_step(page, text: str, days: int) -> None:
-    """Record a next step, the way the design says: its own panel, its own save."""
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill(text)
-    page.locator("#id_target_date").fill(_future(days))
-    page.locator("#lisa-jargmine button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    """Record a next step, the way the design says: its own panel, its own save.
+
+    `set_next_step` in the conftest decides which control this Matter offers —
+    `Muuda` beside an open task, or the optional box inside `+ Märge` when
+    there is none (docs/adr/0097 §8.2).
+    """
+    set_next_step(page, text, _future(days))
     expect(page.locator(".curact__text")).to_have_text(text)
 
 
@@ -111,7 +113,10 @@ def test_saving_the_result_completes_the_step_in_one_save(page, base_url):
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
     expect(page.locator("#ajalugu-loend")).to_contain_text("uus versioon tuleb reedel")
     # And no new step was opened on anybody's behalf (docs/adr/0075 §5).
-    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(1)
+    expect(page.locator(".curact__text")).to_have_count(0)
+    # The launcher offers no second way to set one either: that chip is gone,
+    # and the ordinary route is the box inside `+ Märge` (docs/adr/0097 §8.2).
+    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -141,8 +146,8 @@ def test_a_marge_records_what_happened_and_leaves_the_step_open(page, base_url):
     set_step(page, "Oodata ministeeriumi vastust", 9)
 
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Ministeerium helistas vahepeal.")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#id_marge_title").fill("Ministeerium helistas vahepeal.")
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#ajalugu-loend")).to_contain_text("Ministeerium helistas vahepeal")
@@ -254,23 +259,35 @@ def test_the_rail_has_no_sildid_card(page, base_url):
     expect(rail.locator(".tag")).to_have_count(0)
 
 
-def test_the_rail_carries_the_four_target_rows_and_no_maintenance_ones(page, base_url):
-    """`Teemaviide`, `Menetlusliik`, `Saatja`, `Kellele` — every one of them a
-    question a lawyer asks mid-sentence (TEEMA_TARGET_SPEC §G.1).
+def test_the_rail_carries_the_target_rows_and_no_maintenance_ones(page, base_url):
+    """`Teemaviide` and `Saatja` — questions a lawyer asks mid-sentence
+    (TEEMA_TARGET_SPEC §G.1).
 
     `Muu valdkond`, `Andmeklass` and `Märgi testandmeteks` are retired from this
     page: the first is a correction to how the file was classified and the other
     two are a developer's switch. The columns, the values and the endpoints are
-    untouched, and `Muuda teemat` still edits what it edited
-    (docs/adr/0074 §17).
+    untouched (docs/adr/0074 §17).
+
+    `Menetlusliik` and `Kellele` were two of the target's four rows and went on
+    2026-09-20, for a different reason: the two Teema forms stopped asking about
+    them, and a read-only rail row is the easiest place for a withdrawn question
+    to survive its own removal. The columns and every stored value are untouched
+    there too (docs/adr/0097 §3, §4).
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Raili brauserikatse")
 
     rail = page.locator("#teema-andmed")
-    for row in ("Teemaviide", "Menetlusliik", "Saatja", "Kellele"):
+    for row in ("Teemaviide", "Saatja"):
         expect(rail).to_contain_text(row)
-    for gone in ("Muu valdkond", "Andmeklass", "Märgi testandmeteks", "Saabus"):
+    for gone in (
+        "Muu valdkond",
+        "Andmeklass",
+        "Märgi testandmeteks",
+        "Saabus",
+        "Menetlusliik",
+        "Kellele",
+    ):
         assert gone not in rail.inner_text()
 
 
@@ -313,6 +330,6 @@ def test_the_teema_surface_does_not_scroll_sideways(page, base_url, width):
     # And an opened `LISA TEEMALE` form uses the width it is given rather than
     # standing in a narrow column of its own.
     open_composer(page)
-    box = page.locator("#lisa-marge .composer__body").bounding_box()
+    box = page.locator("#id_marge_title").bounding_box()
     assert box["width"] > 0
     assert box["x"] + box["width"] <= width + 1

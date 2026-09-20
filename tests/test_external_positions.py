@@ -1050,7 +1050,7 @@ def _panel_markup(body: str) -> str:
     launcher's own contract (`WORKSPACE_PANELS`), and a test that guessed where one
     `<form>` ends would break on markup that is not this file's subject.
     """
-    start = body.index('id="lisa-valine-seisukoht"')
+    start = body.index('id="arvamus-teiste"')
     return body[start:]
 
 
@@ -1091,7 +1091,7 @@ def _stated_on_box(body: str) -> str:
     already knows which it has and the distinction is not what any of them is
     testing.
     """
-    scoped = _panel_markup(body) if 'id="lisa-valine-seisukoht"' in body else body
+    scoped = _panel_markup(body) if 'id="arvamus-teiste"' in body else body
     return _tag_with(scoped, 'name="stated_on"')
 
 
@@ -1109,16 +1109,21 @@ def _as_typed(day: dt.date) -> str:
 def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matter, ministry):
     body = _detail(signed_in, normal_matter)
 
-    assert 'id="lisa-valine-seisukoht"' in body
+    assert 'id="arvamus-teiste"' in body
     # The chip is named by how the record reached the file. It was
     # `+ Väline seisukoht`; docs/adr/0091 §3 split it in two, and this panel is
     # the half that records what Koda found somewhere.
-    assert "+ Teiste arvamus" in body
+    #
+    # `Teiste arvamus` without the `+`: it is a choice *inside*
+    # `+ Arvamus / tagasiside` rather than a peer of it, and the `+` is what the
+    # launcher's four top-level chips carry (docs/adr/0097 §8).
+    assert ">Teiste arvamus<" in body
+    assert "+ Arvamus / tagasiside" in body
     assert "Rahandusministeerium" in body
 
 
 def test_a_closed_matter_offers_no_panel(signed_in, closed_matter):
-    assert 'id="lisa-valine-seisukoht"' not in _detail(signed_in, closed_matter)
+    assert 'id="arvamus-teiste"' not in _detail(signed_in, closed_matter)
 
 
 def test_the_panel_records_a_url_only_position(signed_in, normal_matter, ministry):
@@ -1505,7 +1510,10 @@ def test_the_panel_validates_against_the_whole_shared_catalogue(catalogue, speci
     pool = {organisation.pk for organisation in Organisation.objects.all()}
     assert {row.pk for row in panel.fields["organisation"].queryset} == pool
     assert {row.pk for row in uus_teema.fields["source_organisations"].queryset} == pool
-    assert {row.pk for row in muuda.fields["addressee_organisation"].queryset} == pool
+    # `Muuda teemat` validates its one counterparty question against the whole
+    # catalogue, the same as the other two. It had a second until
+    # docs/adr/0097 §4.
+    assert {row.pk for row in muuda.fields["source_organisations"].queryset} == pool
     assert len(pool) == len(catalogue)
 
 

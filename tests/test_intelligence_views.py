@@ -66,9 +66,11 @@ def test_an_empty_section_does_not_render_at_all(signed_in, specialist):
     assert "Olulisi tähtaegu pole lisatud." not in body
     assert "Jõustumise infot pole lisatud." not in body
     assert "Töövõite ega kandidaate pole lisatud." not in body
-    # The one quiet row that replaces all three.
-    assert "+ Jõustumine" in body
-    assert "+ Töövõit" in body
+    # The one quiet row that replaces all three. The chips lost their `+`
+    # when they became choices inside `+ Märge` rather than peers of it
+    # (docs/adr/0097 §8).
+    assert "Jõustumine" in body
+    assert "Töövõit" in body
 
 
 def test_a_populated_section_still_renders(signed_in, specialist):
@@ -161,7 +163,7 @@ def test_a_specialist_sees_no_confirmation_control(signed_in, specialist):
     # candidate is a proposal awaiting somebody else's judgement, not a
     # professional fact about the file (docs/adr/0074 §8).
     page = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
-    assert "+ Töövõit" in page
+    assert "Töövõit" in page
     assert "Kandidaat" not in page
 
     body = _text(signed_in.get(_add_effective(matter), headers={"HX-Request": "true"}))
@@ -385,10 +387,10 @@ def test_the_matter_page_records_both_facts_from_the_composer(signed_in, special
     body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
 
     assert 'id="teema-faktid"' not in body
-    assert 'id="lisa-joustumine"' in body
-    assert 'id="lisa-toovoit"' in body
-    assert "+ Jõustumine" in body
-    assert "+ Töövõit" in body
+    assert 'id="marge-joustumine"' in body
+    assert 'id="marge-toovoit"' in body
+    assert "Jõustumine" in body
+    assert "Töövõit" in body
 
 
 # The «two chips on the empty state» test retired with the surface it measured.
@@ -579,8 +581,8 @@ def test_a_reader_gets_no_inline_form_and_no_new_route(client, specialist, reade
         assert client.post(url, {"title": "Loata"}, headers=HTMX).status_code == 404
 
     body = _text(client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
-    assert "+ Jõustumine" not in body
-    assert "+ Töövõit" not in body
+    assert "Jõustumine" not in body
+    assert "Töövõit" not in body
     assert matter.effective_dates.count() == 0
     assert matter.work_victories.count() == 0
 

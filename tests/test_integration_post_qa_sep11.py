@@ -157,8 +157,7 @@ def test_a_file_attached_to_a_work_victory_is_never_a_send_candidate(
         normal_matter,
         {
             "victory_change": "Uleminekuaeg pikenes kuue kuuni",
-            "victory_precision": "YEAR",
-            "victory_year": "2026",
+            "victory_date": "19.09.2026",
         },
         files=[_pdf("toovoidu_tous.pdf")],
     )
@@ -215,7 +214,7 @@ def test_the_workspace_file_and_a_real_opinion_stay_apart_on_the_same_matter(
         signed_in,
         "matters:add_note",
         normal_matter,
-        {"body": "<p>Ministeeriumi kiri saabus.</p>"},
+        {"title": "Ministeeriumi kiri saabus.", "occurred_on": "19.09.2026"},
         files=[_pdf("ministeeriumi_kiri.pdf")],
     )
     opinion = _opinion_file(normal_matter, name="Koja_arvamus.pdf", actor=specialist)

@@ -12,9 +12,9 @@ stop matching the service's refusal (docs/adr/0091 §3).
 
 What the caller passes is exactly what differs:
 
-* `panel_id` — `lisa-tagasiside` or `lisa-valine-seisukoht`, which is the radio's
-  `aria-controls`, the element `open_panel` names and the anchor the page links
-  to;
+* `panel_id` — `arvamus-tagasiside` or `arvamus-teiste`, which is the radio's
+  `aria-controls`, the element `open_value` is compared against and the anchor
+  the page links to;
 * `chip_label` — `+ Meile saadetud tagasiside` or `+ Teiste arvamus`;
 * `post_url` — the endpoint, one per chip, so a refusal comes back into the panel
   it was posted from;
@@ -24,7 +24,17 @@ What the caller passes is exactly what differs:
   page and the shared picker derives its search box, results list and status
   region from this one string, so two of them sharing it would put duplicate ids
   in the document (docs/adr/0073);
-* `submit_label` — what the button promises.
+* `submit_label` — what the button promises;
+* `group_name` — which radio group the chip belongs to, and `open_value` — the
+  context variable compared against `panel_id` to decide whether it is checked.
+
+  Both were constants here until docs/adr/0097 §8. `LISA TEEMALE` is four
+  families now rather than twelve chips, and these two panels are choices
+  *inside* `+ Arvamus / tagasiside` — so their radio group is the family's own
+  (`arvamuse-liik`, not `lisa-valik`), and what reopens one after a refusal is
+  `open_choice` rather than `open_panel`. Parameters rather than a second copy
+  of the partial: the questions did not change, only which control chooses
+  them.
 
 Neither panel offers a `provenance` control, and that is not an omission: the
 chip decides it, the form class carries it, and the view reads it off the class.
@@ -71,13 +81,13 @@ Neither panel creates a `NextAction`, a deadline row, a work item or a badge, an
 neither moves `Arvamuse tähtaeg` — so a Matter carrying ten of these never reads
 as late (docs/adr/0084 §5).
 {% endcomment %}
-<input class="addpick" type="radio" name="lisa-valik" id="{{ panel_id }}-valik"
+<input class="addpick" type="radio" name="{{ group_name }}" id="{{ panel_id }}-valik"
        data-addpick aria-controls="{{ panel_id }}"
-       {% if open_panel == panel_id %}checked{% endif %}>
+       {% if open_value == panel_id %}checked{% endif %}>
 <label class="disclosure-chip" for="{{ panel_id }}-valik">{{ chip_label }}</label>
 <div class="cx-panel" id="{{ panel_id }}" data-addpanel>
   <div class="cx-panel__body">
-    {% if open_panel == panel_id and workspace_error %}
+    {% if open_value == panel_id and workspace_error %}
       <p class="formerror" role="alert">{{ workspace_error }}</p>
     {% endif %}
     <form class="addform" data-addform

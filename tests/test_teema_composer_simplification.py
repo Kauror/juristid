@@ -182,7 +182,7 @@ def closed_matter(normal_matter, specialist):
 
 
 def test_the_panel_no_longer_explains_itself(signed_in, normal_matter):
-    body = _panel(_detail(signed_in, normal_matter), "lisa-koja-arvamus")
+    body = _panel(_detail(signed_in, normal_matter), "arvamus-koja")
 
     assert "Registreerib, et Koja arvamus on välja saadetud" not in body
     assert "muutumatu tõendina" not in body
@@ -198,7 +198,7 @@ def test_the_addressee_control_is_the_shared_searchable_picker(
     to reach one without a round trip — so the claim is about what is *painted*,
     which is `data-orgfind-tail` plus `hidden` (docs/adr/0088, docs/adr/0095 §1).
     """
-    body = _panel(_detail(signed_in, normal_matter), "lisa-koja-arvamus")
+    body = _panel(_detail(signed_in, normal_matter), "arvamus-koja")
 
     assert 'id="koja-adressaat-valik"' in body
     assert "Otsi või lisa asutus…" in body
@@ -211,7 +211,7 @@ def test_the_addressee_control_is_the_shared_searchable_picker(
 def test_one_matter_sender_is_preselected(signed_in, normal_matter, ministry):
     normal_matter.source_organisations.set([ministry])
 
-    body = _panel(_detail(signed_in, normal_matter), "lisa-koja-arvamus")
+    body = _panel(_detail(signed_in, normal_matter), "arvamus-koja")
 
     assert "checked" in _chip_for(body, str(ministry.pk))
 
@@ -221,7 +221,7 @@ def test_every_matter_sender_is_preselected(
 ):
     normal_matter.source_organisations.set([ministry, committee, member_company])
 
-    body = _panel(_detail(signed_in, normal_matter), "lisa-koja-arvamus")
+    body = _panel(_detail(signed_in, normal_matter), "arvamus-koja")
 
     for organisation in (ministry, committee, member_company):
         assert "checked" in _chip_for(body, str(organisation.pk))
@@ -232,7 +232,7 @@ def test_a_matter_with_no_sender_opens_with_no_recipient(
 ):
     assert not normal_matter.source_organisations.exists()
 
-    body = _panel(_detail(signed_in, normal_matter), "lisa-koja-arvamus")
+    body = _panel(_detail(signed_in, normal_matter), "arvamus-koja")
 
     for organisation in (ministry, committee):
         assert "checked" not in _chip_for(body, str(organisation.pk))
@@ -343,7 +343,7 @@ def test_a_refused_save_keeps_the_recipients_that_were_posted(
         # No file — a refusal, with the recipient choice already made.
         {"sent_on": "14.03.2026", "recipients": [str(committee.pk)]},
     )
-    body = _panel(response.content.decode(), "lisa-koja-arvamus")
+    body = _panel(response.content.decode(), "arvamus-koja")
 
     assert response.status_code == 400
     assert "checked" in _chip_for(body, str(committee.pk))
@@ -374,7 +374,7 @@ def test_recording_an_opinion_does_not_touch_the_matters_senders(
 
 
 def test_the_panel_asks_for_a_summary_rather_than_a_title(signed_in, normal_matter):
-    body = _panel(_detail(signed_in, normal_matter), "lisa-koja-arvamus")
+    body = _panel(_detail(signed_in, normal_matter), "arvamus-koja")
 
     assert 'name="title"' not in body
     assert 'name="summary"' in body
@@ -550,7 +550,7 @@ def test_the_sending_date_is_still_required_and_still_never_in_the_future(
 
 @pytest.mark.parametrize(
     "panel_id",
-    ["lisa-valine-seisukoht", "lisa-tagasiside"],
+    ["arvamus-teiste", "arvamus-tagasiside"],
 )
 def test_neither_feedback_panel_draws_the_catalogue(signed_in, normal_matter, committee, panel_id):
     body = _panel(_detail(signed_in, normal_matter), panel_id)
@@ -560,7 +560,7 @@ def test_neither_feedback_panel_draws_the_catalogue(signed_in, normal_matter, co
     assert "hidden" in _chip_for(body, str(committee.pk))
 
 
-@pytest.mark.parametrize("panel_id", ["lisa-valine-seisukoht", "lisa-tagasiside"])
+@pytest.mark.parametrize("panel_id", ["arvamus-teiste", "arvamus-tagasiside"])
 def test_neither_feedback_panel_asks_a_precision_or_a_note_or_a_round(
     signed_in, normal_matter, panel_id
 ):
@@ -575,7 +575,7 @@ def test_neither_feedback_panel_asks_a_precision_or_a_note_or_a_round(
     assert "Seotud kaasamine" not in body
 
 
-@pytest.mark.parametrize("panel_id", ["lisa-valine-seisukoht", "lisa-tagasiside"])
+@pytest.mark.parametrize("panel_id", ["arvamus-teiste", "arvamus-tagasiside"])
 def test_both_feedback_panels_open_on_today(signed_in, normal_matter, panel_id):
     body = _panel(_detail(signed_in, normal_matter), panel_id)
 
@@ -585,8 +585,8 @@ def test_both_feedback_panels_open_on_today(signed_in, normal_matter, panel_id):
 @pytest.mark.parametrize(
     ("route", "panel_id"),
     [
-        ("add_external_position", "lisa-valine-seisukoht"),
-        ("add_received_feedback", "lisa-tagasiside"),
+        ("add_external_position", "arvamus-teiste"),
+        ("add_received_feedback", "arvamus-tagasiside"),
     ],
 )
 def test_a_record_made_here_stores_exact_and_nothing_else(
@@ -701,7 +701,7 @@ def test_the_helper_sentence_about_the_three_sources_is_gone(signed_in, normal_m
 
 
 def test_received_feedback_no_longer_offers_allikas(signed_in, normal_matter):
-    body = _panel(_detail(signed_in, normal_matter), "lisa-tagasiside")
+    body = _panel(_detail(signed_in, normal_matter), "arvamus-tagasiside")
 
     assert 'name="source_label"' not in body
     assert "Allikas" not in body
@@ -805,9 +805,9 @@ def test_a_historical_engagement_link_survives(signed_in, normal_matter, special
 def test_the_member_mark_is_offered_on_received_feedback_alone(signed_in, normal_matter):
     body = _detail(signed_in, normal_matter)
 
-    assert 'name="source_is_member"' in _panel(body, "lisa-tagasiside")
-    assert 'name="source_is_member"' not in _panel(body, "lisa-valine-seisukoht")
-    assert "Liige" in _panel(body, "lisa-tagasiside")
+    assert 'name="source_is_member"' in _panel(body, "arvamus-tagasiside")
+    assert 'name="source_is_member"' not in _panel(body, "arvamus-teiste")
+    assert "Liige" in _panel(body, "arvamus-tagasiside")
 
 
 def test_an_unticked_box_stores_false(signed_in, normal_matter, member_company):

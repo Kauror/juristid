@@ -215,12 +215,17 @@ task above it is a form asking about work nobody has named. The route to work is
       draws no column and puts no sentence here either (app/matters/views.py,
       AUTH-003).
     {% endcomment %}
+    {% comment %}
+      **One link, where there were two.** It read «lisa menetluse areng või
+      järgmine tegevus» and pointed at two launcher chips; there is one chip
+      now, and the next action is a box inside it. Both halves of the old
+      sentence are reachable through `+ Märge`, which is what it says
+      (docs/adr/0097 §6, §8.3).
+    {% endcomment %}
     {% if opinion_sent and can_write %}
       <p class="curact__continue">
         Koja arvamus on saadetud. Menetlus võib jätkuda —
-        <a class="curact__continuelink" href="#lisa-menetluse-areng">lisa menetluse areng</a>
-        või
-        <a class="curact__continuelink" href="#lisa-jargmine">järgmine tegevus</a>.
+        <a class="curact__continuelink" href="#lisa-marge">lisa märge</a>.
       </p>
     {% endif %}
     {% comment %}

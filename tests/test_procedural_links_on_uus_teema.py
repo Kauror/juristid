@@ -228,14 +228,20 @@ def test_a_forged_kind_reaches_nothing(signed_in):
 def test_the_withdrawn_kinds_are_still_supported_elsewhere(signed_in):
     """A vocabulary is not retired because one form stopped asking for it.
 
-    `Muuda menetluse linki` and the Teema page's own `+ Menetluse link` still
-    offer all five, and every historical row keeps what it was filed under.
-    """
-    from app.matters.forms import ProceduralLinkEditForm, ProceduralLinkForm
+    `Paranda` on a recorded row still offers all five, and every historical row
+    keeps what it was filed under.
 
-    for form_class in (ProceduralLinkForm, ProceduralLinkEditForm):
-        offered = {value for value, _label in form_class().fields["kind"].choices if value}
-        assert offered == set(ProceduralLinkKind.values)
+    It used to be two forms. `ProceduralLinkForm` — the `+ Menetluse link`
+    panel's own class — went with the chip on 2026-09-20, when the question
+    moved off the launcher and onto the two Teema forms, neither of which asks
+    the source. `ProceduralLinkEditForm` is the one surviving surface that
+    states it, which makes it the one this claim rests on
+    (docs/adr/0097 §5).
+    """
+    from app.matters.forms import ProceduralLinkEditForm
+
+    offered = {value for value, _label in ProceduralLinkEditForm().fields["kind"].choices if value}
+    assert offered == set(ProceduralLinkKind.values)
 
 
 def test_an_untouched_block_writes_nothing_and_refuses_nothing(signed_in):

@@ -649,9 +649,20 @@ def _panel_is_open(body: str, panel_id: str) -> bool:
     stopped being `<details>` on 2026-09-14 — a chip that grows when you click
     it is a chip that moves, so the control and the form are two elements now
     (templates/matters/partials/add_to_matter.html).
+
+    **`lisa-jargmine` is the exception and is now the only one.** It is `Muuda`
+    inside `PRAEGUNE TEGEVUS`: one disclosure, alone on its line, with no
+    siblings to displace and nothing to be chosen instead of — so a native
+    `<details>` is still the honest markup for it. It had a launcher chip too
+    until docs/adr/0097 §8.2, which is why this helper could once assume a
+    radio for every panel.
     """
-    tag = body.split(f'id="{panel_id}-valik"')[1].split(">")[0]
-    return "checked" in tag
+    radio = f'id="{panel_id}-valik"'
+    if radio in body:
+        return "checked" in body.split(radio)[1].split(">")[0]
+    marker = f'id="{panel_id}"'
+    assert marker in body, f"{panel_id} is not on the page at all"
+    return " open" in body.split(marker)[1].split(">")[0]
 
 
 @pytest.mark.django_db
@@ -667,12 +678,27 @@ def test_a_refused_save_comes_back_in_its_own_open_panel(client, specialist) -> 
     moves (docs/adr/0075 §2, brief §33).
     """
     matter = factories.MatterFactory(owner=specialist)
+    # An open step, because `Muuda` — the panel this refusal belongs to — is
+    # drawn beside a task and nowhere else. The launcher's
+    # `+ Järgmine tegevus` chip drew it without one until docs/adr/0097 §8.2;
+    # there is one ordinary way to set a next step now and it is the optional
+    # box inside `+ Märge`. A Matter with no step and a refused `set_action` is
+    # the stale-tab case, and `_workspace_refusal` answers it above the column
+    # rather than inside a panel that is not there.
+    set_next_action(
+        matter=matter,
+        text="Koosta arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate() + timedelta(days=3),
+        actor=specialist,
+    )
     client.force_login(specialist)
     url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
     body = client.get(url).content.decode()
-    assert "Järgmine samm on määramata" in body, "nothing to complete, stated compactly"
-    assert not _panel_is_open(body, "lisa-jargmine"), "the zone is a choice until one is made"
+    assert "Koosta arvamus" in body, "the open step reads on the page"
+    assert not _panel_is_open(body, "lisa-jargmine"), "the editor is shut until it is opened"
 
     # A next step with no date: refused, and its own panel must come back open
     # with the sentence still in it (ADR 0052 §5).
@@ -687,7 +713,7 @@ def test_a_refused_save_comes_back_in_its_own_open_panel(client, specialist) -> 
     )
     assert "Saada arvamus" in html
     # And no other panel was opened on its behalf.
-    for other in ("lisa-marge", "lisa-kaasamine", "lisa-toovoit", "lisa-lopeta"):
+    for other in ("lisa-marge", "lisa-kaasamine", "marge-toovoit", "teema-lopeta"):
         assert not _panel_is_open(html, other), other
 
 
@@ -767,17 +793,22 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     # a paper remembered as «kevadel 2019» is corrected, and every stored
     # `MONTH`/`QUARTER`/`YEAR` row keeps its precision and its rendering. That
     # form is not a workspace panel, so its fields are not enumerated here.
+    # **`victory_half` is not on this list any more, and neither is any other
+    # `victory_*` period field.** docs/adr/0097 §7 took the four precision chips
+    # off `+ Töövõit`: a win is something Koda achieved and the organisation
+    # should be able to say when it happened, so `Millal` is one date box and
+    # `CompactWorkVictoryForm` no longer carries the shared group at all. Every
+    # stored `MONTH`/`QUARTER`/`YEAR` row keeps its period and its rendering.
+    #
+    # **And `areng_half` went with `+ Menetluse areng`.** That panel was the
+    # seventh surface to take the shared group; `+ Märge` replaced it and asks
+    # for a day or nothing. `ProceduralDevelopmentEditForm` still offers the
+    # whole control on a stored row, and is not a workspace panel, so its
+    # fields are not enumerated here (docs/adr/0097 §6.1).
     derived = {
         "deadline_half",
         "effective_half",
-        "victory_half",
         "next_half",
-        # And `+ Menetluse areng`, which is the seventh surface to take it. A
-        # procedural step is routinely remembered as «oktoobris», so the panel
-        # offers the four precisions — and `Poolaasta` is not one of the four, so
-        # this is the shared group's unused branch again rather than a question
-        # this panel declines to ask (docs/adr/0079 §7, docs/adr/0091 §5.2).
-        "areng_half",
         "responsible",
     }
 
@@ -808,6 +839,16 @@ def test_the_quick_dates_carry_the_day_the_server_resolved(client, specialist) -
     was chosen — and identically with the chips ignored entirely.
     """
     matter = factories.MatterFactory(owner=specialist)
+    # An open step: the quick dates belong to the next-step editor, which is
+    # drawn beside a task since docs/adr/0097 §8.2 and nowhere else.
+    set_next_action(
+        matter=matter,
+        text="Koosta arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate() + timedelta(days=3),
+        actor=specialist,
+    )
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 

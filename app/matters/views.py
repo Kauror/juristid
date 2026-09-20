@@ -111,16 +111,15 @@ from app.matters.forms import (
     MatterCreateForm,
     MatterEditForm,
     MatterFieldForm,
-    MatterNoteForm,
+    MatterLinkForm,
+    MatterProgressForm,
     NextActionForm,
     OtherOpinionForm,
     PersonalNoteForm,
     PositionForm,
     ProceduralDevelopmentEditForm,
-    ProceduralDevelopmentForm,
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
-    ProceduralLinkForm,
     ReceivedFeedbackForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
@@ -171,12 +170,12 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
-    change_track,
     close_matter,
     compose_update,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
+    correct_procedural_link,
     create_matter,
     edit_entry,
     engagement_revision_token,
@@ -200,7 +199,6 @@ from app.matters.services import (
     set_policy_area_other,
     set_policy_areas,
     set_position,
-    set_tags,
 )
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
@@ -2817,7 +2815,10 @@ def _header_context(
         # reference table, and a membership test that re-queried per row would
         # be an N+1 nobody notices until the institution list grows.
         "selected_sender_ids": matter.source_organisation_ids,
-        "tracks": Track.choices,
+        # No `tracks` and no `visibilities`. The rail rows that read them are
+        # gone with the questions the two Teema forms stopped asking, and a
+        # vocabulary handed to a template that draws no control is how a
+        # withdrawn question survives its own removal (docs/adr/0097 §3).
         # No `current_action` either. The header band no longer shows the next
         # step — the Järgmiseks row does — and the overview context reads it
         # once for both.
@@ -3873,22 +3874,22 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         current=selectors.current_action_of(matter, request.user),
     )
 
+    # Both refusals through `_workspace_refusal`, which is where every other
+    # workspace save's already went. This view hand-rolled its own render, and
+    # the difference stopped being cosmetic when `+ Järgmine tegevus` left the
+    # launcher: `#lisa-jargmine` is now drawn **beside an open task and nowhere
+    # else**, so a refusal on a Matter with no open step named a panel the page
+    # does not render and the sentence — or the field error — was printed
+    # inside nothing. The shared helper falls back to the workspace-level slot
+    # for exactly that case, and brings a closed Matter's header with it
+    # (docs/adr/0097 §8.2).
     if not form.is_valid():
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["action_form"] = form
-        context["open_panel"] = WORKSPACE_PANELS["action_form"]
-        return render(request, "matters/partials/overview.html", context, status=400)
+        return _workspace_refusal(request, matter, key="action_form", form=form)
 
     try:
         set_next_action_for_new_work(matter=matter, actor=request.user, **form.as_service_kwargs())
     except DomainError as error:
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["action_form"] = form
-        context["workspace_error"] = str(error)
-        context["open_panel"] = WORKSPACE_PANELS["action_form"]
-        return render(request, "matters/partials/overview.html", context, status=400)
+        return _workspace_refusal(request, matter, key="action_form", form=form, error=str(error))
 
     return _render_overview(request, matter)
 
@@ -4211,9 +4212,7 @@ def _next_action_error(request: HttpRequest, matter: Matter, message: str) -> Ht
 FIELD_SERVICES = {
     "owner",
     "stage",
-    "track",
     "source_organisations",
-    "addressee_organisation",
     "received_date",
     "response_deadline",
     # `visibility` is deliberately absent, so this endpoint answers 404 for it.
@@ -4221,6 +4220,17 @@ FIELD_SERVICES = {
     # in this set would be an accepted POST parameter behind a control nobody
     # draws — which is exactly the shape the removal exists to close
     # (docs/adr/0096 §3).
+    #
+    # `track` and `addressee_organisation` joined it on 2026-09-20, with the
+    # rail rows that posted to them. Removed from the *set*, not merely from
+    # the templates: a branch left standing behind a control nobody is offered
+    # is a working write path reachable by a crafted POST, and «the button is
+    # gone» is not an answer to that. `update_field` 404s on a field it does
+    # not name, so the two addresses are now simply not routes (docs/adr/0097
+    # §3, §4).
+    #
+    # Nothing about the stored columns changed. The importers, the register
+    # refresh and the cutover all still write both.
     "policy_area_other",
     "policy_areas",
 }
@@ -4249,17 +4259,33 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     returns early when the value it was given is the value already there.
     """
     matter = get_visible_matter(request, pk)
+    # `Menetluse link` is a Matter fact and is answered on this page, so it
+    # rides in the same `<form>` element under its own prefix — exactly the
+    # arrangement `Uus teema` uses, for the same reason: two form classes,
+    # namespaced POST keys, and neither able to collide with a field name in the
+    # other (docs/adr/0089 §13, docs/adr/0097 §5).
+    link = _primary_procedural_link(matter)
     if request.method == "GET":
         form = MatterEditForm(initial=edit_initial(matter), matter=matter, viewer=request.user)
-        return render(request, "matters/matter_edit.html", _edit_context(request, matter, form))
-
-    form = MatterEditForm(request.POST, matter=matter, viewer=request.user)
-    if not form.is_valid():
-        # The bound form is re-rendered, so everything typed is still there.
         return render(
             request,
             "matters/matter_edit.html",
-            _edit_context(request, matter, form),
+            _edit_context(request, matter, form, MatterLinkForm(link=link, prefix="menetlus")),
+        )
+
+    form = MatterEditForm(request.POST, matter=matter, viewer=request.user)
+    link_form = MatterLinkForm(request.POST, link=link, prefix="menetlus")
+    # Both, and `and` after both have run rather than short-circuiting: a page
+    # refused for a wrong title must still come back with the address refusal
+    # under the address box, and `is_valid()` is what fills `errors` at all.
+    forms_valid = form.is_valid()
+    forms_valid = link_form.is_valid() and forms_valid
+    if not forms_valid:
+        # The bound forms are re-rendered, so everything typed is still there.
+        return render(
+            request,
+            "matters/matter_edit.html",
+            _edit_context(request, matter, form, link_form),
             status=400,
         )
 
@@ -4272,7 +4298,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             )
             assign_matter(matter=matter, owner=data.get("owner"), actor=request.user)
             change_stage(matter=matter, stage=data.get("stage"), actor=request.user)
-            change_track(matter=matter, track=data.get("track") or "", actor=request.user)
+            # No `change_track`. `Menetlusliik` is off this page, so there is no
+            # cleaned value to pass and the service is not called with a default
+            # either — a Matter's track survives every save of this form
+            # untouched (docs/adr/0097 §3).
             # `list(...)` rather than the queryset on both set-valued fields,
             # so an empty POST arrives as "none of them" — a decision somebody
             # made — and never as the sentinel that means "leave them alone"
@@ -4280,17 +4309,20 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # Resolved inside this transaction, and before the Matter is
             # touched. A typed name that names a body nobody has filed against
             # yet becomes an Organisation here; if any service below refuses,
-            # the rollback takes that Organisation with it and the Matter keeps
-            # the addressee it already had (§6).
+            # the rollback takes that Organisation with it.
+            #
+            # **`addressee_organisation` is not passed, and that is the whole of
+            # what its removal means here.** The parameter defaults to `_UNSET`,
+            # which is the sentinel for «leave this alone» — so a Matter that
+            # carries an addressee from the register keeps it through every save
+            # of this form. Passing `None` would have been the defect: it is a
+            # decision, and it would clear a fact nobody was offered the chance
+            # to state (docs/adr/0097 §4).
             set_organisations(
                 matter=matter,
                 source_organisations=resolve_source_organisations(
                     chosen=data.get("source_organisations"),
                     typed_name=data.get("sender_name") or "",
-                ),
-                addressee_organisation=resolve_addressee(
-                    chosen=data.get("addressee_organisation"),
-                    typed_name=data.get("addressee_name") or "",
                 ),
                 actor=request.user,
             )
@@ -4318,18 +4350,39 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             set_legal_instrument_other(
                 matter=matter, value=data.get("legal_instrument_other") or "", actor=request.user
             )
-            set_tags(matter=matter, tags=list(data.get("tags") or []), actor=request.user)
-            # No `set_matter_visibility` call. `Nähtavus` is gone from this page
-            # and from `MatterEditForm`, so there is no cleaned value to pass on
-            # and a crafted `visibility=RESTRICTED` in this POST changes nothing
-            # (docs/adr/0096 §3).
+            # No `set_tags` call and no `set_matter_visibility` call.
+            # `Sildid` and `Nähtavus` are gone from this page and from
+            # `MatterEditForm`, so there is no cleaned value to pass on and
+            # neither service is called with a default either: a crafted
+            # `tags=` or `visibility=RESTRICTED` in this POST changes nothing,
+            # and a Matter's tags and its visibility survive every save of this
+            # form untouched (docs/adr/0096 §3, docs/adr/0097 §2).
+            _save_procedural_link(matter=matter, form=link_form, actor=request.user)
+    except ProceduralLinkConflict as conflict:
+        # Somebody else corrected the same address between this page being
+        # opened and being saved. Refused rather than overwritten, and the
+        # refusal lands under the address box rather than at the top of a page
+        # whose other twelve fields were fine — the rule `correct_procedural_link`
+        # enforces and `procedural_links.html` reports on its own card.
+        #
+        # Caught *before* `DomainError`, which it subclasses: the generic
+        # handler below would otherwise answer a stale-copy conflict with 400
+        # and a non-field error, losing both the status and the place.
+        link_form.add_error(None, str(conflict))
+        matter.refresh_from_db()
+        return render(
+            request,
+            "matters/matter_edit.html",
+            _edit_context(request, matter, form, link_form),
+            status=409,
+        )
     except DomainError as error:
         form.add_error(None, str(error))
         matter.refresh_from_db()
         return render(
             request,
             "matters/matter_edit.html",
-            _edit_context(request, matter, form),
+            _edit_context(request, matter, form, link_form),
             status=400,
         )
 
@@ -4389,7 +4442,16 @@ def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
     form = MatterEditForm(
         initial=initial, matter=matter, viewer=request.user, suggested_senders=suggested_senders
     )
-    context = _edit_context(request, matter, form)
+    context = _edit_context(
+        request,
+        matter,
+        form,
+        # Unbound, and the assisted review proposes nothing about it: the
+        # extraction reads facts off a document, and where the proceeding lives
+        # is not one of them. The block renders holding whatever the Matter
+        # already has (app/matters/intake_suggestions).
+        MatterLinkForm(link=_primary_procedural_link(matter), prefix="menetlus"),
+    )
     context["assisted"] = analysis
     return render(request, "matters/matter_edit.html", context)
 
@@ -4497,10 +4559,97 @@ DELETION_SUMMARY_ROWS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, Any]:
+def _primary_procedural_link(matter: Matter) -> Any:
+    """The one `Menetluse link` `Muuda teemat` puts in a box, or `None`.
+
+    Oldest first, so the address a Matter was filed with is the one the page
+    offers to correct — and so the choice is stable across renders rather than
+    depending on the order a query happened to come back in.
+
+    A Matter carrying several keeps every one of them; the rest are read and
+    corrected on the Teema page's `Menetluse lingid` card, which has held a
+    `Paranda` per row since docs/adr/0089 §6.
+    """
+    return matter.procedural_links.order_by("created_at", "pk").first()
+
+
+def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
+    """Record or correct this Matter's `Menetluse link`, or do nothing.
+
+    Three cases, and the third is the ordinary one:
+
+    * the Matter has a link and the form holds an address — a correction,
+      through `correct_procedural_link` under the revision the page was drawn
+      from, so a stale copy is refused rather than allowed to overwrite a newer
+      one;
+    * the Matter has none and somebody typed an address — a new row under
+      `STORED_KIND`, exactly as `Uus teema` files one;
+    * nobody answered the block — nothing at all. No row, no event, no empty
+      record (docs/adr/0089 §7).
+
+    Called inside `matter_edit`'s transaction, so an address the service refuses
+    takes the whole correction back with it. A page that saved twelve fields and
+    then reported that the thirteenth was wrong would have left the record in a
+    state nobody chose.
+    """
+    data = getattr(form, "cleaned_data", None) or {}
+    url = (data.get("url") or "").strip()
+    if form.link is not None:
+        if not url:
+            # Refused in `MatterLinkForm.clean`, so this is unreachable through
+            # the page. Belt and braces for a caller constructing the form by
+            # hand: there is no deletion of a procedural link, here or anywhere
+            # (docs/adr/0084 §8).
+            return
+        correct_procedural_link(
+            link=form.link,
+            # The kind this row already carries, not `STORED_KIND`. A correction
+            # of the address must not silently reclassify a link somebody
+            # deliberately filed as `EIS` — the kind is stated on the Teema
+            # page's own `Paranda`, which is the only control that offers the
+            # vocabulary (docs/adr/0094 §3, docs/adr/0097 §5).
+            kind=form.link.kind,
+            url=url,
+            label=data.get("label") or "",
+            actor=actor,
+            expected_revision=data.get("revision") or "",
+        )
+        return
+    if form.wants_link:
+        # The **workspace** wrapper, not `record_procedural_link` directly.
+        #
+        # Recording an address is new business content, and new business
+        # content is refused on a closed Teema — a rule that lives in
+        # `lock_open_matter_for_business_write` rather than in whether a page
+        # drew a control, so that it holds against a POST from a tab that was
+        # open before somebody else shut the file (R2-02).
+        #
+        # `matter_create` calls the service directly and is right to: the
+        # Matter it has just filed is open by construction. This page is the
+        # one that can be looking at a finished file. Correcting an existing
+        # address stays direct for the opposite reason — closure has never
+        # meant that an address recorded wrongly must stay wrong.
+        workspace.add_matter_procedural_link(
+            matter=matter,
+            author=actor,
+            kind=MatterLinkForm.STORED_KIND,
+            url=url,
+            label=data.get("label") or "",
+        )
+
+
+def _edit_context(
+    request: HttpRequest, matter: Matter, form: Any, link_form: Any
+) -> dict[str, Any]:
     return {
         "matter": matter,
         "form": form,
+        # Under the name `procedural_link_create.html` reads, because it is the
+        # same block: `Uus teema` and `Muuda teemat` draw one control from one
+        # partial, which is what stops `Link` and `Nimetus` drifting apart
+        # between the page somebody files from and the page they correct from
+        # (docs/adr/0097 §1, §5).
+        "procedural_link_form": link_form,
         # Named here rather than derived in the template: the page states, in
         # words, which facts about this Matter it will not let anybody change,
         # so their absence reads as a decision rather than as an omission
@@ -4578,8 +4727,6 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             assign_matter(matter=matter, owner=value, actor=request.user)
         elif field == "stage":
             change_stage(matter=matter, stage=value, actor=request.user)
-        elif field == "track":
-            change_track(matter=matter, track=value or "", actor=request.user)
         elif field == "source_organisations":
             # `list(...)` rather than the queryset, so an empty POST arrives as
             # `[]` — "clear every sender" — and never as the `_UNSET` that means
@@ -4599,8 +4746,6 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
                     ),
                     actor=request.user,
                 )
-        elif field == "addressee_organisation":
-            set_organisations(matter=matter, addressee_organisation=value, actor=request.user)
         elif field == "received_date":
             set_matter_dates(matter=matter, received_date=value, actor=request.user)
         elif field == "response_deadline":
@@ -5570,25 +5715,85 @@ ACTION_KIND_LABELS = dict(ActionKind.choices)
 # closure they had merely opened (docs/adr/0075 §2).
 
 
-#: The `<details>` id each operation's panel carries. A refusal reopens exactly
-#: the one it came from — reopening the whole group would answer a refusal by
-#: offering six other forms, and reopening none would print the error inside a
-#: panel nobody can see (brief §33).
-WORKSPACE_PANELS: dict[str, str] = {
-    "matter_note_form": "lisa-marge",
-    "action_form": "lisa-jargmine",
-    "add_engagement_form": "lisa-kaasamine",
-    "important_date_form": "lisa-tahtaeg",
-    "effective_date_form": "lisa-joustumine",
-    "work_victory_form": "lisa-toovoit",
-    "website_overview_form": "lisa-koduleht",
-    "received_feedback_form": "lisa-tagasiside",
-    "external_position_form": "lisa-valine-seisukoht",
-    "koda_opinion_form": "lisa-koja-arvamus",
-    "development_form": "lisa-menetluse-areng",
-    "procedural_link_form": "lisa-menetluse-link",
-    "closure_form": "lisa-lopeta",
+#: Which controls a refusal has to reopen, per operation: the top-level family
+#: and, where the family asks a second question, the choice inside it.
+#:
+#: A refusal reopens exactly the path it came from — reopening the whole group
+#: would answer a refusal by offering six other forms, and reopening none would
+#: print the error inside a panel nobody can see (brief §33).
+#:
+#: **Two levels since docs/adr/0097 §8**, because `LISA TEEMALE` is four choices
+#: rather than twelve. `+ Oluline tähtaeg` is no longer a chip; it is
+#: `Märke liik · Oluline tähtaeg` inside `+ Märge`, so a refused deadline has to
+#: reopen both or the person is looking at the wrong form — or at no form at
+#: all, holding a sentence about a panel that is shut.
+#:
+#: An empty second element means the family asks no further question and its own
+#: panel is the form.
+WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
+    # `+ Märge` — one visible family, four truthful record types underneath.
+    "progress_form": ("lisa-marge", "marge-tavaline"),
+    "important_date_form": ("lisa-marge", "marge-tahtaeg"),
+    "effective_date_form": ("lisa-marge", "marge-joustumine"),
+    "work_victory_form": ("lisa-marge", "marge-toovoit"),
+    # `+ Kaasamine` — one question, no sub-choice.
+    "add_engagement_form": ("lisa-kaasamine", ""),
+    # `+ Arvamus / tagasiside` — grouped on screen, three distinct records.
+    "received_feedback_form": ("lisa-arvamus", "arvamus-tagasiside"),
+    "external_position_form": ("lisa-arvamus", "arvamus-teiste"),
+    "koda_opinion_form": ("lisa-arvamus", "arvamus-koja"),
+    # `+ Ülevaade / uudis` — one question, no sub-choice.
+    "website_overview_form": ("lisa-koduleht", ""),
+    # `TEEMA TOIMINGUD` — not content, and not in the launcher at all. Its panel
+    # lives in its own section and is named here so a refused closure still
+    # reopens the control it came from (docs/adr/0097 §9).
+    "closure_form": ("teema-lopeta", ""),
+    # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher either.
+    "action_form": ("lisa-jargmine", ""),
 }
+
+
+#: Which sub-choice each family falls back to when no refusal names one of its
+#: own. Both are the ordinary case rather than the first alphabetically: a
+#: `Märge` is usually just a note, and most of what reaches a department is
+#: somebody answering it.
+WORKSPACE_DEFAULT_CHOICES: dict[str, str] = {
+    "marge_choice": "marge-tavaline",
+    "arvamus_choice": "arvamus-tagasiside",
+}
+
+#: Which family each sub-choice belongs to, so a refusal can be routed to the
+#: one variable that owns it.
+WORKSPACE_CHOICE_FAMILY: dict[str, str] = {
+    "marge-tavaline": "marge_choice",
+    "marge-tahtaeg": "marge_choice",
+    "marge-joustumine": "marge_choice",
+    "marge-toovoit": "marge_choice",
+    "arvamus-tagasiside": "arvamus_choice",
+    "arvamus-teiste": "arvamus_choice",
+    "arvamus-koja": "arvamus_choice",
+}
+
+
+def _workspace_choices(open_choice: str) -> dict[str, str]:
+    """One variable per sub-choice group, each naming one of that group's own ids.
+
+    The template cannot do this with `open_choice` alone, and the failure is
+    quiet rather than loud. `open_choice` is global to the page: when a refusal
+    comes from `+ Arvamus / tagasiside` it names one of *that* family's
+    children, so every `if open_choice == "marge-…"` test in the `+ Märge` group
+    is false at once and that group renders with **no radio checked**. Opening
+    `+ Märge` afterwards then shows four chips and no form — nothing errors,
+    nothing logs, and the page is simply missing a control.
+
+    So each group is told which of *its* ids is chosen, and the answer is always
+    one of them (docs/adr/0097 §8.3).
+    """
+    choices = dict(WORKSPACE_DEFAULT_CHOICES)
+    family = WORKSPACE_CHOICE_FAMILY.get(open_choice)
+    if family is not None:
+        choices[family] = open_choice
+    return choices
 
 
 def workspace_forms(
@@ -5623,7 +5828,16 @@ def workspace_forms(
     engagements = visible_engagements_of(matter, viewer)
     return {
         "current_action_form": CompleteCurrentActionForm(),
-        "matter_note_form": MatterNoteForm(),
+        # `+ Märge · Tavaline`. What happened, when, optionally the stage it
+        # moves the file to and the next thing the lawyer will do about it —
+        # one atomic operation over three canonical services.
+        #
+        # This one key replaces two: `matter_note_form` (an `Entry`) and
+        # `development_form` (a `MatterProceduralDevelopment`). They were two
+        # chips asking the same question with different amounts of ceremony, and
+        # `MatterProgressForm` says at length why the survivor writes the
+        # structured record rather than the prose one (docs/adr/0097 §6).
+        "progress_form": MatterProgressForm(),
         # The period travels with the text. Reopening the editor on `Täpne
         # päev` / `01.10.2026` for a step recorded as *oktoober 2026* would
         # invite somebody to save the invented day back, which is the whole
@@ -5656,12 +5870,12 @@ def workspace_forms(
         # the other seven so that a refusal comes back through the same
         # machinery.
         "website_overview_form": CompactWebsiteOverviewForm(),
-        # `+ Menetluse link`. Three boxes, of which two are required: which kind
-        # of official source this is and the address, plus an optional name for
-        # it. No date, no status and nothing about fetching — this record is
-        # where the file is happening, not something that happened to it
-        # (docs/adr/0089 §5).
-        "procedural_link_form": ProceduralLinkForm(),
+        # `Menetluse link` is **not** built here any more, because it is not a
+        # thing that happened to this Matter. It is where the proceeding the
+        # Matter is about is taking place — a fact about the file, in the same
+        # way its `Saatja` and its `Õigusakt` are — and it is asked on
+        # `Uus teema`, corrected on `Muuda teemat` and read on the rail
+        # (`MatterLinkForm`, docs/adr/0097 §5).
         # `+ Väline seisukoht`. The one form here that has to be told which
         # Matter it is on and who is looking: `Organisatsioon` is ranked by the
         # institutions *this reader's* visible Matters involve, and
@@ -5692,13 +5906,15 @@ def workspace_forms(
         # called a submission, and this is a second door onto it rather than a
         # second record of it (docs/adr/0091 §6).
         "koda_opinion_form": KodaOpinionForm(matter=matter, viewer=viewer, choices=organisations),
-        # `+ Menetluse areng`. The continuation the file had no way to record: a
-        # dated step the external procedure took, optionally with the Hetkeseis it
-        # puts the file in and the next thing the lawyer will do about it
-        # (docs/adr/0091 §5).
-        "development_form": ProceduralDevelopmentForm(),
+        # `Lõpeta teema`, which is no longer one of these at all: closing a
+        # Matter is an operation on the record rather than content added to it,
+        # so it renders under `TEEMA TOIMINGUD` and not in the launcher. It is
+        # still built here because the refusal machinery is shared
+        # (docs/adr/0097 §9).
         "closure_form": CompactClosureForm(),
         "open_panel": "",
+        "open_choice": "",
+        **_workspace_choices(""),
         "workspace_error": "",
     }
 
@@ -5759,13 +5975,18 @@ def _workspace_refusal(
     that shows why.
 
     **Unless that panel is not on the page any more.** The column is re-rendered
-    from the Matter as it is *now*, and two stale-tab refusals arrive at a page
-    that no longer holds the form they came from: `PRAEGUNE TEGEVUS` →
+    from the Matter as it is *now*, and three stale-tab refusals arrive at a
+    page that no longer holds the form they came from: `PRAEGUNE TEGEVUS` →
     `Salvesta` after a colleague finished the step and set no new one — the
     fresh column has no open step, so no completion form and no paragraph to
-    print the sentence in — and any `LISA TEEMALE` save, `+ Lõpeta teema`
-    included, after the Matter was closed elsewhere, where `overview.html`
-    renders no launcher at all. Put the sentence in the panel and the browser
+    print the sentence in; `Muuda` beside that step, for the same reason and as
+    of docs/adr/0097 §8.2 — the next-step editor is drawn *beside a task* and
+    the launcher chip that used to draw it without one is gone, so a Matter
+    with no open step now renders no `#lisa-jargmine` at all; and any
+    `LISA TEEMALE` save, `+ Lõpeta teema` included, after the Matter was closed
+    elsewhere, where `overview.html` renders no launcher at all.
+
+    Put the sentence in the panel and the browser
     swaps in a 400 that looks exactly like somebody else's successful save,
     with what the person typed gone and not a word about why. So the refusal
     goes to the workspace-level slot `overview.html` already keeps for «a
@@ -5786,16 +6007,54 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # Both of the forms that live beside the current task, not just the
+    # completion box. `action_form` joined it when `+ Järgmine tegevus` left the
+    # launcher: its panel is `Muuda` inside `PRAEGUNE TEGEVUS`, which
+    # `current_action.html` draws only under `{% elif current_action %}`
+    # (docs/adr/0097 §8.2).
+    needs_current_action = {"current_action_form", "action_form"}
     panel_is_rendered = matter.is_open and (
-        key != "current_action_form" or context["current_action"] is not None
+        key not in needs_current_action or context["current_action"] is not None
     )
+    if not error and not panel_is_rendered:
+        # A *validation* refusal whose panel is not on the fresh column.
+        #
+        # `error` is a service's sentence and has always had this fallback; a
+        # form error had none, because until docs/adr/0097 §8.2 every form
+        # whose panel could vanish was refused by a service rather than by
+        # itself. `Muuda` is now the only host of the next-step form, so a
+        # stale tab posting it on a Matter whose step somebody else finished
+        # arrives here with `form.errors` and nothing to print them in — a 400
+        # that looks exactly like somebody else's successful save.
+        #
+        # The first sentence, because these forms refuse one thing at a time
+        # and a list of every message would be a paragraph about a form the
+        # reader cannot see. What they typed comes back below it either way.
+        error = next(
+            (
+                str(message)
+                for messages in form.errors.values()
+                for message in messages
+                if str(message).strip()
+            ),
+            "",
+        )
     if error and not panel_is_rendered:
         context["composer_error"] = error
         context["workspace_error"] = ""
         context["open_panel"] = ""
+        context["open_choice"] = ""
+        context.update(_workspace_choices(""))
     else:
         context["workspace_error"] = error
-        context["open_panel"] = WORKSPACE_PANELS.get(key, "")
+        # Both halves, and the template checks each against its own radio: the
+        # family is what puts the person back in `+ Märge`, and the choice is
+        # what puts them back on `Oluline tähtaeg` rather than on the ordinary
+        # note (docs/adr/0097 §8).
+        family, choice = WORKSPACE_PANELS.get(key, ("", ""))
+        context["open_panel"] = family
+        context["open_choice"] = choice
+        context.update(_workspace_choices(choice))
     if not panel_is_rendered:
         # The panel that held their words is not on the fresh column, so the
         # words come back beside the refusal instead — read-only, and labelled
@@ -5854,22 +6113,54 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Märge` — something happened, and the current step stays exactly as it is."""
+    """`+ Märge · Tavaline` — something happened on this file, and this says what.
+
+    **One endpoint where there were two.** This route and `add_development`
+    asked the same question with different amounts of ceremony, and the second
+    is gone: `+ Menetluse areng` is retired as a user-facing concept, its
+    ordinary function is this panel, and the route that served its chip is
+    removed rather than left reachable behind no button (docs/adr/0097 §6).
+
+    Up to four canonical writes in one transaction: the
+    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and the next step.
+    A refusal anywhere leaves the Matter exactly as it was — a stage that moved
+    without the note that moved it would be a file claiming to be in the
+    Riigikogu with nothing saying how it got there
+    (`workspace.add_procedural_development`, docs/adr/0091 §5).
+
+    **The `Hetkeseis` and the next step are optional and never inferred.**
+    Nothing reads the sentence and concludes anything from it; a save naming
+    neither changes neither; nothing is read from or written to a
+    `Menetluse link`.
+    """
     matter = get_visible_matter(request, pk)
-    form = MatterNoteForm(request.POST, request.FILES)
+    form = MatterProgressForm(request.POST, request.FILES)
     if not form.is_valid():
-        return _workspace_refusal(request, matter, key="matter_note_form", form=form)
+        return _workspace_refusal(request, matter, key="progress_form", form=form)
     try:
-        workspace.add_matter_note(
+        workspace.add_procedural_development(
             matter=matter,
             author=request.user,
-            body=form.cleaned_data["body"],
+            title=form.cleaned_data["title"],
+            # Always a day or nothing, and always `EXACT`: this panel has no
+            # `Täpsus` control to read. An emptied box is «kuupäev teadmata»
+            # rather than a refusal, which is the one thing the four-way
+            # precision group bought that a lawyer writing up this morning's
+            # events ever needed (docs/adr/0097 §6.1).
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+            # `Juristi märkus` is not asked here, so nothing is passed and the
+            # column stores "". Historical rows keep theirs and
+            # `ProceduralDevelopmentEditForm` still offers the box on a record
+            # that has one (docs/adr/0097 §6.2).
+            note="",
+            stage=form.cleaned_data.get("stage"),
+            next_text=form.cleaned_data.get("next_text") or "",
+            next_date=form.cleaned_data.get("next_date"),
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:
-        return _workspace_refusal(
-            request, matter, key="matter_note_form", form=form, error=str(error)
-        )
+        return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
 
@@ -6268,45 +6559,6 @@ def _procedural_link_refusal(
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
-def add_procedural_link(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Menetluse link` — where the official proceeding on this file lives.
-
-    Three boxes and one row. **Nothing is fetched**: the address is recorded,
-    not opened, not read and not watched (docs/adr/0089 §4).
-
-    A refusal comes back through `_workspace_refusal` with the form still bound,
-    so an address somebody pasted is still in the box — losing it would cost
-    them the one fact they opened the panel to record. The closed-Matter refusal
-    is the service's, answered under the Matter's row lock, because a POST may
-    arrive from a tab that was open before somebody else shut the file (R2-02).
-
-    A repeated submit — a double-click, a browser retry, a stale response —
-    lands on `record_procedural_link`'s own idempotency and writes one row, so
-    the answer here is the ordinary re-render rather than a refusal about a save
-    that actually happened (docs/adr/0089 §6).
-    """
-    matter = get_visible_matter(request, pk)
-    form = ProceduralLinkForm(request.POST)
-    if not form.is_valid():
-        return _workspace_refusal(request, matter, key="procedural_link_form", form=form)
-    try:
-        workspace.add_matter_procedural_link(
-            matter=matter,
-            author=request.user,
-            kind=form.cleaned_data.get("kind"),
-            url=form.cleaned_data.get("url"),
-            label=form.cleaned_data.get("label") or "",
-        )
-    except DomainError as error:
-        return _workspace_refusal(
-            request, matter, key="procedural_link_form", form=form, error=str(error)
-        )
-    return _render_overview(request, matter)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
 def correct_procedural_link_view(request: HttpRequest, pk: Any, link_id: Any) -> HttpResponse:
     """`Paranda` — the kind, the name or the address on a recorded link was wrong.
 
@@ -6540,57 +6792,8 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def add_development(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Menetluse areng` — one step the procedure took, and what follows.
-
-    Up to four canonical writes in one transaction: the
-    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and the next step. A
-    refusal anywhere leaves the Matter exactly as it was — a stage that moved
-    without the development that moved it would be a file claiming to be in the
-    Riigikogu with nothing saying how it got there
-    (`workspace.add_procedural_development`, docs/adr/0091 §5).
-
-    **The date is optional**, which is what the canonical record buys over the
-    `Entry` this panel wrote for one round: a step learned about months later
-    frequently has no day anybody could defend (§5.2).
-
-    **The `Hetkeseis` and the next step are optional and never inferred.** Nothing
-    reads the title and concludes anything from it; a save naming neither changes
-    neither, and nothing is read from or written to a `Menetluse link` — Package
-    B's links are references, and a reference is not an event (§5.6).
-    """
-    matter = get_visible_matter(request, pk)
-    form = ProceduralDevelopmentForm(request.POST, request.FILES)
-    if not form.is_valid():
-        return _workspace_refusal(request, matter, key="development_form", form=form)
-    try:
-        workspace.add_procedural_development(
-            matter=matter,
-            author=request.user,
-            title=form.cleaned_data["title"],
-            # The resolved anchor and its precision, not the day box: `Kuu`,
-            # `Kvartal` and `Aasta` leave that box empty on purpose, and an
-            # emptied one is «kuupäev teadmata» rather than a refusal.
-            occurred_on=form.cleaned_data.get("occurred_on_value"),
-            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            note=form.cleaned_data.get("note") or "",
-            stage=form.cleaned_data.get("stage"),
-            next_text=form.cleaned_data.get("next_text") or "",
-            next_date=form.cleaned_data.get("next_date"),
-            uploads=form.cleaned_data["attachments"],
-        )
-    except (DomainError, UploadRejected) as error:
-        return _workspace_refusal(
-            request, matter, key="development_form", form=form, error=str(error)
-        )
-    return _render_overview(request, matter)
-
-
 # ---------------------------------------------------------------------------
-# `Menetluse areng`
+# Correcting a recorded `Marge`
 # ---------------------------------------------------------------------------
 
 

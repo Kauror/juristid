@@ -7,12 +7,26 @@ the first one a lawyer asks when they open a file three months later — «kus s
 päriselt käib» — and the answer is an address they want to click, not a
 narrative they want to read (`rail.html`).
 
-**Nothing at all when there are none**, which is the ordinary case on a Matter
-nobody has recorded one for. There are no permanently visible empty sections on
-this page, and an empty table of five placeholder rows would be exactly the
-clutter this design removed the standing sections to be rid of. The one compact
-add affordance is the launcher's own `+ Menetluse link` chip, which is on every
-open Matter a writer can see (TEEMA_TARGET_SPEC §F, docs/adr/0074 §15).
+**One quiet line when there are none, and it points at `Muuda teemat`.**
+
+This card used to render nothing at all on a Matter with no link, because the
+add affordance lived somewhere else: `+ Menetluse link` was a chip in the
+`LISA TEEMALE` launcher, on every open Matter a writer could see
+(TEEMA_TARGET_SPEC §F, docs/adr/0074 §15).
+
+That chip is gone. `Menetluse link` is not something that *happened* to a
+Matter — it is where the proceeding the Matter is about is taking place, which
+is a fact about the Matter in the same way its `Saatja` and its `Õigusakt` are
+— and a launcher of things-that-happened is the wrong list for it. It is asked
+on `Uus teema`, corrected on `Muuda teemat`, and read here (docs/adr/0097 §5).
+
+So the empty state is a single `+ Lisa` line rather than nothing: an address
+recorded nowhere, with no visible way to record one, is a capability that has
+quietly left the product. It is the same «quiet + Lisa rather than an em dash»
+the rail's own empty rows use, and it is shown only to a writer on an open
+Matter — the two conditions under which the answer «add one» is true.
+
+Still no empty table of placeholder rows. One line.
 
 **A reference, and this page says so.** Nothing here is fetched, checked or
 watched, and the card claims nothing about whether the page is still up: a saved
@@ -38,10 +52,11 @@ There is deliberately **no delete control**. A mistaken row is corrected,
 because what the file recorded and who recorded it is part of the file
 (docs/adr/0084 §8).
 {% endcomment %}
-{% if procedural_links %}
+{% if procedural_links or can_write and matter.is_open %}
   <div class="railcard" id="menetluse-lingid">
     <span class="railcard__label">Menetluse lingid</span>
-    {% for link, edit_form in procedural_links %}
+    {% if procedural_links %}
+      {% for link, edit_form in procedural_links %}
       <div class="proclink" id="menetluse-link-{{ link.pk }}">
         <div class="railcard__row">
           <span class="railcard__key">{{ link.get_kind_display }}</span>
@@ -109,14 +124,41 @@ because what the file recorded and who recorded it is part of the file
           </details>
         {% endif %}
       </div>
-    {% endfor %}
-    {% comment %}
-      A refusal that belongs to no open disclosure — a conflict that arrived
-      after the card was re-read. Printed once, under the rows, rather than
-      nowhere at all (`_procedural_link_refusal`).
-    {% endcomment %}
-    {% if procedural_link_error and not procedural_link_open %}
-      <p class="formerror" role="alert">{{ procedural_link_error }}</p>
+      {% endfor %}
+      {% comment %}
+        A refusal that belongs to no open disclosure — a conflict that arrived
+        after the card was re-read. Printed once, under the rows, rather than
+        nowhere at all (`_procedural_link_refusal`).
+      {% endcomment %}
+      {% if procedural_link_error and not procedural_link_open %}
+        <p class="formerror" role="alert">{{ procedural_link_error }}</p>
+      {% endif %}
+    {% else %}
+      {% comment %}
+        A link to the page that asks the question, not a panel that asks it
+        here.
+
+        `Menetluse link` is answered in one place — the two boxes shared by
+        `Uus teema` and `Muuda teemat` — and a second control on this card
+        would be a second implementation of one question, which is the whole
+        failure docs/adr/0097 exists to close. The anchor lands the reader on
+        the block (`id="menetluse-link"` in `procedural_link_create.html`).
+
+        **The empty state is inside the card rather than beside it**, so the
+        card's id is written once and a reader looking for it finds it whether
+        or not the Matter has a link. It was two sibling branches for one
+        commit of this branch's life, each drawing its own `.railcard` and only
+        the populated one carrying the id — so every test and every anchor that
+        names the card found nothing on exactly the Matters the empty state
+        exists for.
+
+        The id is not repeated in this sentence on purpose:
+        `tests/test_templates.py` reads the source rather than a render, so a
+        literal `id=` in prose counts as a second declaration.
+      {% endcomment %}
+      <div class="railcard__row">
+        <a class="railcard__add" href="{% url 'matters:matter_edit' pk=matter.pk %}#menetluse-link">+ Lisa menetluse link</a>
+      </div>
     {% endif %}
   </div>
 {% endif %}

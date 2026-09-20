@@ -12114,3 +12114,82 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex: 1 1 100%;
   margin: 0;
 }
+
+/* -- LISA TEEMALE: a family's own choices ---------------------------------
+ *
+ * The sub-choice row inside `+ Märge` and `+ Arvamus / tagasiside`. It is the
+ * launcher's own construction one level in — radio, chip, panel — so it needs
+ * no rules of its own beyond these two: every `.cx-panels` rule above is
+ * written `.cx-panels > …` rather than against a depth, and therefore reaches a
+ * nested group unchanged (docs/adr/0097 §8).
+ *
+ * What it does need is to not look like a second toolbar. The outer row is the
+ * page's offer; this is a question *inside* an answer, so it sits under a small
+ * label and closer to the form it chooses. */
+#teema-vaade-wrap .cx-panels--sub {
+  margin-top: var(--spacing-1);
+}
+
+/* A sub-choice's form is not a second bordered box inside the first.
+ *
+ * `.cx-panel__body` draws a bordered, padded card, which is right for a panel
+ * that opens under the launcher row. Nested, it draws that card *inside* one:
+ * two rules and two paddings around one form, which reads as noise and — the
+ * measurable half — costs the form about 26px of width at every viewport. At
+ * 375px that is the difference between the opinion panel's picker fitting and
+ * the Teema page scrolling sideways (e2e/test_teema_composer_simplification.py).
+ *
+ * The left accent rule stays: it is what says «this is the chosen one», and it
+ * costs 2px. */
+#teema-vaade-wrap .cx-panels--sub > .cx-panel > .cx-panel__body {
+  padding: 0 0 0 var(--spacing-2);
+  border: 0;
+  border-left: 2px solid var(--accent-border);
+  border-radius: 0;
+}
+
+/* And the sub-choice chips may shrink rather than push the row wide. The
+ * launcher's own chips are `flex: none` because the top row is four short
+ * labels; `Meile saadetud tagasiside` is not short, and it sits inside a panel
+ * that has already spent some of the width. */
+#teema-vaade-wrap .cx-panels--sub > .disclosure-chip {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+/* The label above a sub-choice row — `Märke liik`, `Kelle arvamus`.
+ *
+ * `.cx-f__lab` already draws a field label in this zone; this adds only the one
+ * thing a group label needs that a field label does not, which is to be a block
+ * so the chips start on the line below it rather than beside it. */
+#teema-vaade-wrap .cx-sublab {
+  display: block;
+}
+
+/* `Kustuta teema`, which is a link rather than a form control and is the one
+ * destructive thing on this page.
+ *
+ * Quiet by default and never red at rest: a control nobody is about to press
+ * should not be shouting, and colour is what this design reserves for state
+ * rather than for danger. The warning belongs on the confirmation page, where
+ * somebody is actually deciding. What it does get here is the danger colour on
+ * hover and on focus, so the intent is unmistakable at the moment of pressing
+ * it (docs/adr/0096 §4). */
+#teema-vaade-wrap .addzone__danger {
+  margin-left: auto;
+}
+
+#teema-vaade-wrap .addzone__danger:hover,
+#teema-vaade-wrap .addzone__danger:focus-visible {
+  color: var(--status-danger);
+  border-color: var(--status-danger);
+}
+
+/* `TEEMA TOIMINGUD` — separated from the launcher above it by more than a
+ * heading, because the whole point of the section is that it is not the
+ * launcher (docs/adr/0097 §9). */
+.addzone--ops {
+  margin-top: var(--spacing-4);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--border-subtle);
+}

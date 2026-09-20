@@ -220,10 +220,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     for panel in (
         "#lisa-marge",
         "#lisa-kaasamine",
-        "#lisa-tahtaeg",
-        "#lisa-joustumine",
-        "#lisa-toovoit",
-        "#lisa-lopeta",
+        "#marge-tahtaeg",
+        "#marge-joustumine",
+        "#marge-toovoit",
+        "#teema-lopeta",
     ):
         expect(page.locator(panel)).not_to_be_visible()
     # `+ Kaasamine` **is** among them. It was kept out while the standalone
@@ -240,21 +240,26 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # Something happened. It is a `Märge`, and it must leave the open step alone.
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
+    page.locator("#id_marge_title").fill("Ministeerium lubas uue sõnastuse")
     # Opening one panel closes whichever was open (docs/adr/0075 §2).
-    page.locator('label[for="lisa-tahtaeg-valik"]').click()
-    expect(page.locator("#lisa-tahtaeg")).to_be_visible()
-    expect(page.locator("#lisa-marge")).not_to_be_visible()
-    expect(page.locator("#lisa-lopeta")).not_to_be_visible()
+    page.locator('label[for="marge-tahtaeg-valik"]').click()
+    expect(page.locator("#marge-tahtaeg")).to_be_visible()
+    # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
+    # family, so `+ Märge` staying visible is the nesting working rather
+    # than a panel that failed to close (docs/adr/0097 §8).
+    expect(page.locator("#marge-tavaline")).not_to_be_visible()
+    expect(page.locator("#teema-lopeta")).not_to_be_visible()
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
+    page.locator("#id_marge_title").fill("Ministeerium lubas uue sõnastuse")
     screenshots(page, "04-marge")
-    page.locator("#lisa-marge button[type=submit]").click()
+    page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".uxtl__body .richtext").first).to_contain_text(
-        "Ministeerium lubas uue sõnastuse"
-    )
+    # `.uxtl__mswhat`, not `.richtext`. A `Märge` writes a
+    # `MatterProceduralDevelopment` since docs/adr/0097 §6, so the chronology
+    # renders it as a milestone headline — a stated line rather than prose,
+    # which is the reason that record type survived the merge.
+    expect(page.locator(".uxtl__mswhat").first).to_contain_text("Ministeerium lubas uue sõnastuse")
 
     # And what happens next is a second, deliberate save. The step that was open
     # is replaced through `Muuda`, which is the one control for the one open
@@ -294,7 +299,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # and the next step were one composer save until docs/adr/0075; they are two
     # intentions and two saves now, so the strip that says what was decided
     # rides on the save that decided it rather than on the note beside it.
-    entry = page.locator(".uxtl__body").filter(has_text="Ministeerium lubas uue sõnastuse")
+    entry = page.locator(".uxtl__ms-body").filter(has_text="Ministeerium lubas uue sõnastuse")
     expect(entry).to_have_count(1)
     # The kind badge is **not rendered at all** on a work entry any more. The
     # 2026-09 refinement hid it with CSS because every note said «Märkus»; the

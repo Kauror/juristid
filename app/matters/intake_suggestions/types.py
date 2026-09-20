@@ -95,15 +95,29 @@ class SuggestedField(StrEnum):
 #: The fields the edit form can take a value for, in the order the panel
 #: shows them. Everything else is a finding.
 #:
-#: `Õigusakt` sits between Menetlusliik and Valdkonnad, which is where the two
-#: forms put the control: the panel reads in the order somebody fills the form
-#: in, or a suggestion and the box it belongs in are two scrolls apart
+#: `Õigusakt` sits between Saatja and Valdkonnad, which is where the two forms
+#: put the control: the panel reads in the order somebody fills the form in, or
+#: a suggestion and the box it belongs in are two scrolls apart
 #: (docs/adr/0070 §1, OIGUSAKT_UUS_TEEMA_DESIGN).
+#:
+#: **`TRACK` is not here, and its absence is the load-bearing part.** This
+#: tuple's contract is *the form can take a value for it*, and `MatterEditForm`
+#: stopped asking about `Menetlusliik` (docs/adr/0097 §3). Left in, the panel
+#: printed «Menetlusliik» with a value beside it and `Kasuta` pointing at a box
+#: that is not on the page — a suggestion a reader cannot accept, which is
+#: worse than one that was never offered.
+#:
+#: The analyser is untouched: `SuggestedField.TRACK` is still detected, still
+#: scored, still carries its evidence, and the corpus-quality floor still reads
+#: it (`evaluation.py`). What changed is only whether the *review panel* offers
+#: it as a form value. Nothing else picks it up: `findings` and `other_findings`
+#: are appended to by name, one detector at a time, rather than being «whatever
+#: is left over», so a field removed from this tuple does not reappear lower
+#: down the panel under a different heading.
 FORM_FIELDS: tuple[str, ...] = (
     SuggestedField.TITLE,
     SuggestedField.SOURCE_ORGANISATIONS,
     SuggestedField.RESPONSE_DEADLINE,
-    SuggestedField.TRACK,
     SuggestedField.LEGAL_INSTRUMENTS,
     SuggestedField.POLICY_AREAS,
 )
