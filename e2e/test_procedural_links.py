@@ -218,7 +218,7 @@ def test_an_emptied_address_is_refused_rather_than_silently_ignored(page, base_u
     open_edit(page, base_url)
     save_link(page, url="")
 
-    expect(edit_block(page)).to_contain_text("ei saa tühjaks jätta")
+    expect(edit_block(page)).to_contain_text("vajab veebiaadressi")
 
 
 # ---------------------------------------------------------------------------

@@ -4616,12 +4616,25 @@ def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
         )
         return
     if form.wants_link:
-        record_procedural_link(
+        # The **workspace** wrapper, not `record_procedural_link` directly.
+        #
+        # Recording an address is new business content, and new business
+        # content is refused on a closed Teema — a rule that lives in
+        # `lock_open_matter_for_business_write` rather than in whether a page
+        # drew a control, so that it holds against a POST from a tab that was
+        # open before somebody else shut the file (R2-02).
+        #
+        # `matter_create` calls the service directly and is right to: the
+        # Matter it has just filed is open by construction. This page is the
+        # one that can be looking at a finished file. Correcting an existing
+        # address stays direct for the opposite reason — closure has never
+        # meant that an address recorded wrongly must stay wrong.
+        workspace.add_matter_procedural_link(
             matter=matter,
+            author=actor,
             kind=MatterLinkForm.STORED_KIND,
             url=url,
             label=data.get("label") or "",
-            actor=actor,
         )
 
 

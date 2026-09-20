@@ -88,9 +88,18 @@ FAMILY_IDS = ["lisa-marge", "lisa-kaasamine", "lisa-arvamus", "lisa-koduleht"]
 
 
 def _zone(client, matter) -> str:
+    """`LISA TEEMALE` alone — up to `TEEMA TOIMINGUD`, not up to the chronology.
+
+    The two sections are siblings and `TEEMA TOIMINGUD` renders between the
+    launcher and `#ajajoon`, so slicing to the chronology would pull
+    `Lõpeta teema` and `Kustuta teema` back into every claim this file makes
+    about the launcher — which is the exact distinction the section exists to
+    draw (docs/adr/0097 §9).
+    """
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     start = body.index('id="lisa-teemale"')
-    return body[start : body.index('id="ajajoon"', start)]
+    end = body.index('id="teema-toimingud"', start)
+    return body[start:end]
 
 
 def _chip_ids(zone: str) -> list[str]:

@@ -121,14 +121,17 @@ def test_an_eis_link_is_recorded_and_reads_on_the_matter(signed_in, normal_matte
 
     Saved, on the page, opening normally — and creating no publication, which is
     the confusion docs/adr/0089 §5 exists to prevent.
-    """
-    response = _add(
-        signed_in, normal_matter, kind=ProceduralLinkKind.EIS.value, url=EIS_URL, label=""
-    )
 
-    assert response.status_code == 200
+    The kind is `OTHER` because this surface does not ask: every row recorded
+    from `Uus teema` or `Muuda teemat` is filed under the enum's own honest
+    answer for a link nobody classified, and nothing is inferred from
+    `eelnoud.valitsus.ee` (docs/adr/0097 §5). §E is where a person states it.
+    """
+    response = _add(signed_in, normal_matter, url=EIS_URL, label="")
+
+    assert response.status_code == 302
     link = MatterProceduralLink.objects.get(matter=normal_matter)
-    assert link.kind == ProceduralLinkKind.EIS
+    assert link.kind == ProceduralLinkKind.OTHER
     assert link.url == EIS_URL
     assert link.label == ""
     assert link.created_by == specialist
@@ -341,14 +344,20 @@ def test_submitting_the_same_link_twice_writes_one_row_and_one_event(
 ):
     """Scenario: a double-click, a browser retry, a stale response.
 
-    The second submit is answered with the row that is already there — not a
-    refusal, because the save the person meant *happened*, and not a second row.
+    One row and one event, and the second submit is **refused** rather than
+    quietly re-applied. That is stronger than the answer the retired panel gave
+    — it returned the row that was already there — and it is what the surface
+    now asking the question makes possible: the block on `Muuda teemat` is
+    bound to the Matter's link and carries the revision it was drawn from, so a
+    second POST from a page rendered *before* the first is a stale copy by
+    definition. Refusing it is the same rule that stops two lawyers overwriting
+    each other, applied to one lawyer pressing twice (docs/adr/0097 §5).
     """
-    first = _add(signed_in, normal_matter, kind=ProceduralLinkKind.EIS.value, url=EIS_URL)
-    second = _add(signed_in, normal_matter, kind=ProceduralLinkKind.EIS.value, url=EIS_URL)
+    first = _add(signed_in, normal_matter, url=EIS_URL)
+    second = _add(signed_in, normal_matter, url=EIS_URL)
 
-    assert first.status_code == 200
-    assert second.status_code == 200
+    assert first.status_code == 302
+    assert second.status_code == 409
     assert MatterProceduralLink.objects.filter(matter=normal_matter).count() == 1
     assert (
         ChangeEvent.objects.filter(
@@ -863,7 +872,11 @@ def test_an_emptied_address_on_a_recorded_link_is_refused(signed_in, normal_matt
     response = _add(signed_in, normal_matter, url="", revision=link.revision_token)
 
     assert response.status_code == 400
-    assert "Menetluse lingi aadressi ei saa tühjaks jätta." in response.content.decode()
+    # The mixin's own sentence, which is the canonical one for an empty
+    # address. `MatterLinkForm` adds no second message of its own: two errors
+    # on one field is one the reader never sees, because the box renders
+    # `errors|first`.
+    assert "Menetluse link vajab veebiaadressi." in response.content.decode()
     link.refresh_from_db()
     assert link.url == EIS_URL
 

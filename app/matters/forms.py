@@ -6565,6 +6565,13 @@ class MatterLinkForm(ProceduralLinkCreateForm):
     of the file (docs/adr/0084 §8). Emptying the address of a link that exists
     is therefore refused rather than silently ignored — ignoring it would leave
     the page saying the link was gone while the record still held it.
+
+    That refusal is :meth:`has_changed` below and **nothing else**. The mixin
+    already refuses an empty address with «Menetluse link vajab veebiaadressi.»;
+    all this class has to do is stop `empty_permitted` skipping the check when
+    the Matter has a link. A second sentence of its own here was a second
+    message on the same field, and `errors|first` is what the template renders
+    — so the one the reader actually saw was the mixin's anyway.
     """
 
     #: The copy of the row this form was filled from, so a correction cannot
@@ -6596,16 +6603,6 @@ class MatterLinkForm(ProceduralLinkCreateForm):
         if self.link is not None:
             return True
         return super().has_changed()
-
-    def clean(self) -> dict[str, Any]:
-        cleaned = super().clean() or {}
-        if self.link is not None and not (cleaned.get("url") or "").strip():
-            self.add_error(
-                "url",
-                "Menetluse lingi aadressi ei saa tühjaks jätta. Paranda aadress "
-                "või jäta väli muutmata.",
-            )
-        return cleaned
 
 
 class MatterProgressForm(forms.Form):
