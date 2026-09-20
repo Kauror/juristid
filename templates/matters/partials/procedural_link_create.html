@@ -91,6 +91,23 @@ rather than a feature.
         {{ procedural_link_form.label }}
       </label>
     </div>
+    {% comment %}
+      The copy this form was filled from, so a correction cannot overwrite a
+      newer one.
+
+      **Only `Muuda teemat` has one.** `MatterLinkForm` declares `revision`
+      because it may be correcting a real row; `ProceduralLinkCreateForm` on
+      `Uus teema` has no such field and there is nothing to correct, so this
+      renders as nothing at all there.
+
+      Its absence was a real defect for exactly one day of this branch's life:
+      without it the edit page posted an empty token, `correct_procedural_link`
+      compared that against the row's real revision, and **every** save of a
+      Matter carrying a link answered 409 — including a save that never
+      touched the address. Found by the test that saves a corrected link
+      (`tests/test_teema_ux_consolidation.py`).
+    {% endcomment %}
+    {{ procedural_link_form.revision }}
     {% if procedural_link_form.url.errors %}
       <span class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
         {{ procedural_link_form.url.errors|first }}</span>

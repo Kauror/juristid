@@ -56,7 +56,7 @@ from app.matters.models import (
 )
 from app.organisations.models import Organisation
 from app.taxonomy.models import PolicyArea, Tag
-from app.workflow.enums import Track
+from app.workflow.enums import ActionStatus, Track
 from app.workflow.models import NextAction
 from tests import factories
 
@@ -165,10 +165,19 @@ def test_an_existing_menetluse_link_is_editable_from_muuda_teemat(signed_in, spe
 
     page = page_of(signed_in, edit_url(matter))
     assert "https://eelnoud.ee/vana" in page
+    # The token the page rendered, submitted as a browser submits it. Posting
+    # without it is a *stale* copy by definition and is answered 409 — which is
+    # the contract, and which is how the missing hidden field was found.
+    revision = re.search(r'name="menetlus-revision" value="([^"]+)"', page)
+    assert revision is not None
 
     response = signed_in.post(
         edit_url(matter),
-        {"title": matter.title, "menetlus-url": "https://eelnoud.ee/uus"},
+        {
+            "title": matter.title,
+            "menetlus-url": "https://eelnoud.ee/uus",
+            "menetlus-revision": revision.group(1),
+        },
     )
 
     assert response.status_code == 302
@@ -239,8 +248,8 @@ def test_a_crafted_edit_post_cannot_change_visibility(signed_in, specialist):
 
 def test_a_crafted_edit_post_cannot_change_tags(signed_in, specialist):
     """Historical tag assignments survive a save of the simplified form."""
-    tag = Tag.objects.create(name_et="Maksud", is_active=True)
-    other = Tag.objects.create(name_et="Energeetika", is_active=True)
+    tag = Tag.objects.create(key="maksud", name_et="Maksud", is_active=True)
+    other = Tag.objects.create(key="energeetika", name_et="Energeetika", is_active=True)
     matter = factories.MatterFactory(owner=specialist)
     matter.tags.set([tag])
 
@@ -264,7 +273,7 @@ def test_a_crafted_edit_post_cannot_change_track_or_addressee(signed_in, special
         edit_url(matter),
         {
             "title": matter.title,
-            "track": Track.NATIONAL_OWN_INITIATIVE,
+            "track": Track.KODA_INITIATIVE,
             "addressee_organisation": str(other.pk),
         },
     )
@@ -284,10 +293,10 @@ def test_an_ordinary_save_clears_no_unrelated_field(signed_in, specialist):
     clear a fact nobody was offered the chance to state (docs/adr/0096 §5).
     """
     body = Organisation.objects.create(name="Justiitsministeerium")
-    tag = Tag.objects.create(name_et="Maksud", is_active=True)
+    tag = Tag.objects.create(key="maksud", name_et="Maksud", is_active=True)
     matter = factories.MatterFactory(
         owner=specialist,
-        track=Track.EU_PROPOSAL,
+        track=Track.EU_INITIATIVE,
         addressee_organisation=body,
         visibility=Visibility.RESTRICTED,
     )
@@ -298,7 +307,7 @@ def test_an_ordinary_save_clears_no_unrelated_field(signed_in, specialist):
     assert response.status_code == 302
     matter.refresh_from_db()
     assert matter.title == "Uus pealkiri"
-    assert matter.track == Track.EU_PROPOSAL
+    assert matter.track == Track.EU_INITIATIVE
     assert matter.addressee_organisation_id == body.pk
     assert matter.visibility == Visibility.RESTRICTED
     assert list(matter.tags.all()) == [tag]
@@ -335,12 +344,23 @@ def test_the_teema_header_offers_no_visibility_control(signed_in, specialist, st
     assert "Piiratud" in page
 
 
-def test_a_restricted_matter_is_still_filtered(signed_in, other_specialist, specialist):
-    """Withdrawing the control withdrew no part of the mechanism (§4)."""
+def test_a_restricted_matter_keeps_its_visibility_and_its_filter(signed_in, reader, specialist):
+    """Withdrawing the control withdrew no part of the mechanism (§4).
+
+    **Read against `reader`, not against another specialist.** `RESTRICTED` on
+    this product does not mean «the owner and the participants» — ADR 0042
+    widened it to the department, which is why
+    `app/core/visibility_help.py` exists and why the banner says what it says.
+    A test asserting the narrower promise would be asserting a rule the product
+    deliberately does not have (`tests/test_authorization_matrix.py` owns the
+    matrix itself).
+    """
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
 
-    assert matter not in Matter.objects.visible_to(other_specialist)
     assert matter in Matter.objects.visible_to(specialist)
+    assert matter not in Matter.objects.visible_to(reader)
+    matter.refresh_from_db()
+    assert matter.visibility == Visibility.RESTRICTED
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +489,11 @@ def test_the_marge_date_defaults_to_today(signed_in, specialist, stage):
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
 
-    assert timezone.localdate().strftime("%d.%m.%Y") in zone
+    # `format_estonian_date`'s own shape — `20.9.2026`, no leading zeroes.
+    # `strftime` is what that function exists to avoid: the directive that
+    # drops a leading zero is `%-d` on Linux and `%#d` on Windows.
+    today = timezone.localdate()
+    assert f"{today.day}.{today.month}.{today.year}" in zone
 
 
 def test_a_marge_writes_a_procedural_development(signed_in, specialist, stage):
@@ -526,7 +550,7 @@ def test_a_marge_can_set_the_next_action_and_otherwise_creates_none(signed_in, s
         add_note_url(matter),
         {"title": "Uus versioon saabus", "occurred_on": "19.09.2026"},
     )
-    assert not NextAction.objects.filter(matter=matter, completed_at__isnull=True).exists()
+    assert not NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).exists()
 
     signed_in.post(
         add_note_url(matter),
@@ -537,7 +561,7 @@ def test_a_marge_can_set_the_next_action_and_otherwise_creates_none(signed_in, s
             "next_date": "25.09.2026",
         },
     )
-    action = NextAction.objects.get(matter=matter, completed_at__isnull=True)
+    action = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     assert action.text == "Vaatan uue versiooni üle"
 
 
@@ -580,7 +604,7 @@ def test_historical_developments_still_read_and_correct(signed_in, specialist, s
         occurred_on=None,
         occurred_on_precision="EXACT",
         note="Juristi tähelepanek",
-        author=specialist,
+        created_by=specialist,
     )
 
     page = page_of(signed_in, teema_url(matter))
