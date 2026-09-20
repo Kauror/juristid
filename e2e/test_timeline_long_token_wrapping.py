@@ -168,8 +168,8 @@ def _file_a_development(page, url: str, **fields: str) -> None:
     `e2e/test_long_token_wrapping.py` records paying for once already. Waiting
     until the text is rendered is the only signal that means the record exists.
     """
-    open_add_panel(page, "lisa-menetluse-areng")
-    form = page.locator("#lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
+    form = page.locator("#marge-tavaline")
     for name, value in fields.items():
         form.locator(f"[name={name}]").fill(value)
     form.get_by_role("button", name="Salvesta areng").click()
@@ -239,7 +239,7 @@ def test_a_valine_seisukoht_summary_does_not_widen_the_page(page, base_url: str)
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, unique_title("Pikk viide seisukohas"))
 
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     box = page.locator("#valine-seisukoht-otsi")
     box.click()
     # Typed a key at a time, the way the picker is driven everywhere else: the
@@ -249,10 +249,8 @@ def test_a_valine_seisukoht_summary_does_not_widen_the_page(page, base_url: str)
     page.locator("#valine-seisukoht-tulemused").get_by_role(
         "option", name="Näidisministeerium", exact=True
     ).click()
-    page.locator("#lisa-valine-seisukoht [name=summary]").fill(
-        f"Nende põhjendus on siin {PASTED_LINK}"
-    )
-    page.locator("#lisa-valine-seisukoht").get_by_role("button", name="Salvesta").click()
+    page.locator("#arvamus-teiste [name=summary]").fill(f"Nende põhjendus on siin {PASTED_LINK}")
+    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta").click()
     page.wait_for_load_state("networkidle")
     page.wait_for_function(
         """needle => [...document.querySelectorAll('.uxtl__mssub')]
@@ -344,7 +342,7 @@ def test_a_search_snippet_is_not_clipped_by_the_card_around_it(page, base_url: s
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Pikk viide margmes"))
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill(f"Vaata eelnõu siit: {PASTED_LINK}")
+    page.locator("#id_marge_title").fill(f"Vaata eelnõu siit: {PASTED_LINK}")
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
     page.wait_for_function(

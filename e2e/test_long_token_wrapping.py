@@ -88,7 +88,7 @@ def _file_a_note(page, text: str) -> None:
     the note exists, so that is what is waited for.
     """
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill(text)
+    page.locator("#id_marge_title").fill(text)
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
     # The distinctive tail of what was just filed, looked for in the authored

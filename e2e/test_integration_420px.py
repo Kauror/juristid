@@ -103,7 +103,7 @@ def test_every_add_panel_offers_its_file_control_inside_420px(page, base_url):
     page.set_viewport_size(NARROW)
     open_matter(page, base_url, OPEN_TITLE)
 
-    for panel in ("lisa-marge", "lisa-tahtaeg", "lisa-toovoit"):
+    for panel in ("lisa-marge", "marge-tahtaeg", "marge-toovoit"):
         open_add_panel(page, panel)
 
         assert not overflows(page), f"{panel} makes the Teema page scroll sideways at 420px"

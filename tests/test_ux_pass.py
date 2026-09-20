@@ -687,7 +687,7 @@ def test_a_refused_save_comes_back_in_its_own_open_panel(client, specialist) -> 
     )
     assert "Saada arvamus" in html
     # And no other panel was opened on its behalf.
-    for other in ("lisa-marge", "lisa-kaasamine", "lisa-toovoit", "lisa-lopeta"):
+    for other in ("lisa-marge", "lisa-kaasamine", "marge-toovoit", "teema-lopeta"):
         assert not _panel_is_open(html, other), other
 
 

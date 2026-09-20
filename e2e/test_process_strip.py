@@ -238,29 +238,29 @@ def add_a_commencement(page, *, what: str, when: str) -> None:
     Three commencements in a row is the first thing here that saves twice, and
     it found it: `Salvesta` resolved, then «element was detached from the DOM».
     """
-    open_add_panel(page, "lisa-joustumine")
-    field = page.locator("#lisa-joustumine #id_effective_on")
+    open_add_panel(page, "marge-joustumine")
+    field = page.locator("#marge-joustumine #id_effective_on")
     field.wait_for(state="visible")
-    page.locator("#lisa-joustumine #id_effective_title").fill(what)
+    page.locator("#marge-joustumine #id_effective_title").fill(what)
     field.fill(when)
     with page.expect_response(
         lambda response: "/lisa/joustumine/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-joustumine button[type=submit]").first.click()
+        page.locator("#marge-joustumine button[type=submit]").first.click()
     assert caught.value.status == 200, f"the commencement was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
 
 def close_the_matter(page, label: str = "Menetlus lõppes") -> None:
     """Close the open Matter through the panel a person uses."""
-    open_add_panel(page, "lisa-lopeta")
-    panel = page.locator("#lisa-lopeta")
-    assert add_panel_is_open(page, "lisa-lopeta")
+    open_add_panel(page, "teema-lopeta")
+    panel = page.locator("#teema-lopeta")
+    assert add_panel_is_open(page, "teema-lopeta")
     panel.locator(".uxchip", has_text=label).click()
     with page.expect_response(
         lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-lopeta button[type=submit]").click()
+        page.locator("#teema-lopeta button[type=submit]").click()
     assert caught.value.status == 200, f"the closure was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
     expect(page.locator(".badge--state")).to_contain_text("Suletud")

@@ -862,10 +862,10 @@ def test_the_composer_starts_as_one_row(page, base_url):
     # One chip. The number is the difference between "note this down" and
     # "fill in this form".
     assert resting <= 48, f"the closed Märge chip is {resting}px tall"
-    expect(page.locator("#lisa-marge .composer__body")).to_be_hidden()
+    expect(page.locator("#id_marge_title")).to_be_hidden()
 
     open_composer(page)
-    field = page.locator("#lisa-marge .composer__body")
+    field = page.locator("#id_marge_title")
     expect(field).to_be_visible()
     working = field.bounding_box()["height"]
     # Three rows of an Estonian sentence. The box still grows the moment

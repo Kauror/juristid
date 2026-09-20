@@ -106,8 +106,8 @@ def _matter_with_instrument(page, base_url: str, instrument: str, *, stage: str 
 
 
 def _record_development(page, *, title: str, occurred_on: str | None, **extra) -> None:
-    open_add_panel(page, "lisa-menetluse-areng")
-    form = panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill(title)
     form.locator("[name=occurred_on]").fill(occurred_on or "")
     for name, value in extra.items():
@@ -117,8 +117,8 @@ def _record_development(page, *, title: str, occurred_on: str | None, **extra) -
 
 
 def _record_koda_opinion(page, *, sent_on: str, filename: str) -> None:
-    open_add_panel(page, "lisa-koja-arvamus")
-    form = panel(page, "lisa-koja-arvamus")
+    open_add_panel(page, "arvamus-koja")
+    form = panel(page, "arvamus-koja")
     form.locator("input[type=file]").set_input_files(
         {"name": filename, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
@@ -202,9 +202,9 @@ def test_one_development_save_reads_as_one_act_carrying_its_stage_and_step(page,
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Ministeerium saatis eelnõu uue versiooni")
     form.locator("[name=occurred_on]").fill(_past(2))
     form.locator("[name=stage]").select_option(label="Kooskõlastusringil")
@@ -266,9 +266,9 @@ def test_an_approximate_act_prints_its_period_and_not_a_day(page, base_url):
     """A month is written down as a month. The anchor never reaches a screen."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Valitsus kiitis eelnõu heaks")
     # The shared `Täpsus` control, under `Menetluse areng`'s own POST prefix
     # (`DEVELOPMENT_PREFIX`). The day box keeps the name `occurred_on`; the
@@ -301,8 +301,8 @@ def test_received_and_discovered_feedback_are_visibly_different_things(page, bas
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    open_add_panel(page, "lisa-tagasiside")
-    received = panel(page, "lisa-tagasiside")
+    open_add_panel(page, "arvamus-tagasiside")
+    received = panel(page, "arvamus-tagasiside")
     # Both panels name an institution since docs/adr/0095 §4 — `Allikas` is a
     # `Muuda` control, and the aggregate rows it was built for keep their labels.
     # What tells these two records apart is the chip that was opened, which is
@@ -312,8 +312,8 @@ def test_received_and_discovered_feedback_are_visibly_different_things(page, bas
     received.get_by_role("button", name="Salvesta tagasiside").click()
     history(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
 
-    open_add_panel(page, "lisa-valine-seisukoht")
-    discovered = panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
+    discovered = panel(page, "arvamus-teiste")
     choose_organisation(page, "valine-seisukoht")
     discovered.locator("[name=summary]").fill("Toetab varianti B.")
     discovered.get_by_role("button", name="Salvesta arvamus").click()
@@ -346,9 +346,9 @@ def test_a_documents_row_is_under_the_act_it_evidences(page, base_url):
     """Not a chronology row of its own with a dot, a date and an upload time."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Ministeerium saatis eelnõu uue versiooni")
     form.locator("[name=occurred_on]").fill(_past(2))
     form.locator("input[type=file]").set_input_files(
@@ -444,8 +444,8 @@ def test_an_explicitly_recorded_earlier_stage_reads_kirjas(page, base_url):
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
     _record_development(page, title="Eelnõu jõudis Riigikokku", occurred_on=_past(2))
 
-    open_add_panel(page, "lisa-menetluse-areng")
-    form = panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Riigikogu võttis menetlusse")
     form.locator("[name=occurred_on]").fill(_past(1))
     form.locator("[name=stage]").select_option(label="Riigikogus")
@@ -467,8 +467,8 @@ def test_koda_stopping_reads_beside_the_rail_and_not_on_it(page, base_url):
     # `Koda ei tegele edasi` is what the rail calls the same value. Two surfaces,
     # one stored answer, and this test is about the second reading the first
     # (app/matters/forms.py `COMPOSER_CLOSURE_CHOICES`, docs/adr/0032).
-    open_add_panel(page, "lisa-lopeta")
-    closing = panel(page, "lisa-lopeta")
+    open_add_panel(page, "teema-lopeta")
+    closing = panel(page, "teema-lopeta")
     closing.get_by_role("button", name="Loobuti", exact=True).click()
     closing.locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")

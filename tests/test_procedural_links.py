@@ -18,6 +18,15 @@ screenshot cannot show:
   search, not into a count;
 * **none of it is work**: no `NextAction`, no deadline, no work item, no
   chronology row, no search row.
+
+**Where it is asked changed on 2026-09-20 and what it *is* did not.** An address
+is a fact about the Matter — where the proceeding it is about is happening — not
+something that happened to it, so `+ Menetluse link` left the `LISA TEEMALE`
+launcher and the question is answered on `Uus teema` and `Muuda teemat`
+(docs/adr/0097 §5). `matters:add_procedural_link` is not a route any more, so
+§H drives the surface that replaced it; every rule above is unchanged, and
+`correct_procedural_link` — which still asks the kind, and is still reached from
+the rail card's own `Paranda` — is untouched.
 """
 
 from __future__ import annotations
@@ -67,11 +76,25 @@ def _detail(client, matter) -> str:
     return response.content.decode()
 
 
-def _add(client, matter, **fields):
+def _add(client, matter, *, url, label="", revision=""):
+    """Record a link the way the product now offers it: a `Muuda teemat` save.
+
+    The whole edit form, because that is what the browser posts — a page that
+    saved an address and silently dropped the twelve fields around it would be
+    a worse model of the surface than no test at all. `kind` is not among them
+    and cannot be: every row this block writes is filed under
+    `ProceduralLinkCreateForm.STORED_KIND` and nothing on the page asks
+    (docs/adr/0097 §5).
+    """
     return client.post(
-        reverse("matters:add_procedural_link", kwargs={"pk": matter.pk}),
-        fields,
-        headers={"HX-Request": "true"},
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
+        {
+            "title": matter.title,
+            "brief_summary": matter.brief_summary or "",
+            "menetlus-url": url,
+            "menetlus-label": label,
+            "menetlus-revision": revision,
+        },
     )
 
 
@@ -175,14 +198,22 @@ def test_several_links_of_one_kind_are_ordinary(normal_matter, specialist):
 def test_a_matter_with_no_links_renders_no_card_and_no_placeholders(signed_in, normal_matter):
     """Scenario C. There are no permanently visible empty sections on this page.
 
-    Specifically **not** five empty rows waiting to be filled in: the one
-    compact add affordance is the launcher chip, which is on every open Matter.
+    Specifically **not** five empty rows waiting to be filled in.
+
+    The card itself is no longer absent, and that is this round's one change to
+    the empty state: it renders a single quiet `+ Lisa menetluse link` line
+    pointing at `Muuda teemat`. The launcher chip that used to be the add
+    affordance is gone, and an address recorded nowhere with no visible way to
+    record one would be a capability that had quietly left the product
+    (docs/adr/0097 §5).
     """
     body = _detail(signed_in, normal_matter)
 
-    assert 'id="menetluse-lingid"' not in body
-    assert "Menetluse lingid" not in body
-    assert "+ Menetluse link" in body
+    assert "+ Menetluse link" not in body
+    card = _card(body)
+    assert "+ Lisa menetluse link" in card
+    # One line, not a table of placeholders.
+    assert "menetluse-link-" not in card
 
 
 def test_the_label_is_optional_and_the_host_stands_in_for_it(normal_matter, specialist):
@@ -640,12 +671,13 @@ def test_there_is_no_route_that_deletes_a_link(signed_in, normal_matter, special
 def test_a_closed_matter_refuses_a_new_link(signed_in, normal_matter, specialist):
     """New business content, refused under the Matter's own row lock.
 
-    A closed Teema renders no launcher, and that decides nothing about a POST
-    arriving from a tab that was open before somebody else shut the file.
+    Enforced by the service rather than by whether a page rendered a control,
+    which is what makes it hold against a POST arriving from a tab that was
+    open before somebody else shut the file.
     """
     close_matter(matter=normal_matter, disposition=Disposition.OTHER, actor=specialist)
 
-    response = _add(signed_in, normal_matter, kind=ProceduralLinkKind.EIS.value, url=EIS_URL)
+    response = _add(signed_in, normal_matter, url=EIS_URL)
 
     assert response.status_code == 400
     assert not MatterProceduralLink.objects.filter(matter=normal_matter).exists()
@@ -757,44 +789,120 @@ def test_a_reader_cannot_correct_a_link_on_a_matter_they_may_not_see(
 # ===========================================================================
 
 
+def test_a_link_is_recorded_from_muuda_teemat(signed_in, normal_matter):
+    """The ordinary path: two boxes on the page that owns the Matter's facts."""
+    response = _add(signed_in, normal_matter, url=EIS_URL, label="EIS toimik")
+
+    assert response.status_code == 302
+    link = MatterProceduralLink.objects.get(matter=normal_matter)
+    assert link.url == EIS_URL
+    assert link.label == "EIS toimik"
+    # Filed under the enum's own honest answer for a link nobody classified,
+    # and **not** inferred from `eelnoud.valitsus.ee` (docs/adr/0097 §5).
+    assert link.kind == ProceduralLinkKind.OTHER
+
+
 def test_a_refused_address_comes_back_in_the_box(signed_in, normal_matter):
-    """Losing a pasted address would cost the one fact they opened the panel for."""
-    response = _add(
-        signed_in, normal_matter, kind=ProceduralLinkKind.EIS.value, url="ftp://example.ee/x"
-    )
+    """Losing a pasted address would cost the one fact they came to record."""
+    response = _add(signed_in, normal_matter, url="ftp://example.ee/x")
     body = response.content.decode()
 
     assert response.status_code == 400
     assert not MatterProceduralLink.objects.filter(matter=normal_matter).exists()
-    assert 'id="lisa-menetluse-link"' in body
+    assert 'id="menetluse-link"' in body
     assert 'value="ftp://example.ee/x"' in body
 
 
-def test_a_missing_kind_is_refused_on_the_chip_row(signed_in, normal_matter):
-    """The panel pre-selects nothing, so the question has to be answered."""
-    response = _add(signed_in, normal_matter, kind="", url=EIS_URL)
-    body = response.content.decode()
+def test_the_kind_is_not_a_question_on_this_surface(signed_in, normal_matter):
+    """No chip row, and a crafted `kind=` reaches nothing.
 
-    assert response.status_code == 400
-    assert "Vali, millise menetluse allikaga" in body
-    assert f'value="{EIS_URL}"' in body
-
-
-def test_an_empty_address_is_refused_on_the_panel_too(signed_in, normal_matter):
-    """`+ Menetluse link` is not the optional block on `Uus teema`.
-
-    Somebody opened this panel on purpose, so an empty address is an unfinished
-    answer rather than an unused control, and it is refused here exactly as the
-    service refuses it. QA-01 made the *embedded* create sub-form a no-op when
-    nobody answered it; this test is what says that did not reach the panel and
-    turn its submit into a silent one.
+    The five sources were a chip row on the retired panel. Here the kind is a
+    constant rather than a field, so a forged POST naming `EIS` binds to no
+    form and the row is filed under `STORED_KIND` like every other. The
+    vocabulary is still offered where a person states the fact deliberately —
+    `Paranda` on a recorded row, which §E drives (docs/adr/0097 §5).
     """
-    response = _add(signed_in, normal_matter, kind=ProceduralLinkKind.EIS.value, url="")
-    body = response.content.decode()
+    response = signed_in.post(
+        reverse("matters:matter_edit", kwargs={"pk": normal_matter.pk}),
+        {
+            "title": normal_matter.title,
+            "brief_summary": "",
+            "menetlus-url": EIS_URL,
+            "menetlus-kind": ProceduralLinkKind.EIS.value,
+        },
+    )
+
+    assert response.status_code == 302
+    assert MatterProceduralLink.objects.get(matter=normal_matter).kind == ProceduralLinkKind.OTHER
+
+
+def test_an_unanswered_block_writes_nothing_at_all(signed_in, normal_matter):
+    """Both boxes empty is the ordinary save, and it records no link.
+
+    The rule `Uus teema` has always followed, on the page that now shares its
+    block: an empty answer creates no record saying somebody wrote nothing
+    (docs/adr/0089 §7).
+    """
+    response = _add(signed_in, normal_matter, url="")
+
+    assert response.status_code == 302
+    assert not MatterProceduralLink.objects.filter(matter=normal_matter).exists()
+    assert not ChangeEvent.objects.filter(
+        matter=normal_matter, event_type=ChangeEventType.PROCEDURAL_LINK_RECORDED
+    ).exists()
+
+
+def test_an_emptied_address_on_a_recorded_link_is_refused(signed_in, normal_matter, specialist):
+    """There is no deletion of a link, so emptying the box is not one either.
+
+    Ignoring it would leave the page saying the link was gone while the record
+    still held it, which is worse than either answer (docs/adr/0084 §8).
+    """
+    link = _record(normal_matter, specialist, url=EIS_URL)
+
+    response = _add(signed_in, normal_matter, url="", revision=link.revision_token)
 
     assert response.status_code == 400
-    assert "Menetluse link vajab veebiaadressi." in body
-    assert not MatterProceduralLink.objects.filter(matter=normal_matter).exists()
+    assert "Menetluse lingi aadressi ei saa tühjaks jätta." in response.content.decode()
+    link.refresh_from_db()
+    assert link.url == EIS_URL
+
+
+def test_a_correction_through_the_edit_page_keeps_the_stored_kind(
+    signed_in, normal_matter, specialist
+):
+    """An address correction must not silently reclassify a deliberate filing."""
+    link = _record(normal_matter, specialist, kind=ProceduralLinkKind.EIS, url=EIS_URL)
+
+    response = _add(signed_in, normal_matter, url=RIIGIKOGU_URL, revision=link.revision_token)
+
+    assert response.status_code == 302
+    link.refresh_from_db()
+    assert link.url == RIIGIKOGU_URL
+    assert link.kind == ProceduralLinkKind.EIS
+
+
+def test_a_stale_edit_page_cannot_overwrite_a_newer_address(signed_in, normal_matter, specialist):
+    """409, and the whole save is refused rather than half-applied."""
+    link = _record(normal_matter, specialist, url=EIS_URL)
+    stale = link.revision_token
+    correct_procedural_link(link=link, kind=link.kind, url=REGISTER_URL, actor=specialist)
+
+    response = signed_in.post(
+        reverse("matters:matter_edit", kwargs={"pk": normal_matter.pk}),
+        {
+            "title": "Uus pealkiri",
+            "brief_summary": "",
+            "menetlus-url": RIIGIKOGU_URL,
+            "menetlus-revision": stale,
+        },
+    )
+
+    assert response.status_code == 409
+    link.refresh_from_db()
+    assert link.url == REGISTER_URL
+    normal_matter.refresh_from_db()
+    assert normal_matter.title != "Uus pealkiri"
 
 
 def test_a_correction_refusal_reopens_the_row_it_came_from(signed_in, normal_matter, specialist):

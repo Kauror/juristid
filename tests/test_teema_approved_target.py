@@ -672,7 +672,7 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     """
     body = _detail(signed_in, normal_matter)
     panel = body[body.index('id="lisa-kaasamine"') :]
-    panel = panel[: panel.index('id="lisa-tahtaeg"')]
+    panel = panel[: panel.index('id="marge-tahtaeg"')]
 
     assert 'name="kind"' not in panel
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):

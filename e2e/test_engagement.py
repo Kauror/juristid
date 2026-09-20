@@ -195,7 +195,7 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     open_scratch_matter(page, base_url)
 
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Küsisin liikmetelt tagasisidet.")
+    page.locator("#id_marge_title").fill("Küsisin liikmetelt tagasisidet.")
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 

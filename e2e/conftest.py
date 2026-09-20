@@ -201,6 +201,28 @@ def wait_for_htmx(page, timeout: float = PANEL_TIMEOUT_MS) -> None:
     )
 
 
+#: Which family each `LISA TEEMALE` sub-choice lives inside.
+#:
+#: The launcher is four chips rather than twelve since docs/adr/0097 §8, and the
+#: distinctions it used to put on one row are asked second, inside the family
+#: that was chosen. So `marge-tahtaeg` is two clicks from a fresh page and
+#: `lisa-kaasamine` is one, and a helper that clicked once for both would look
+#: at a shut panel and call it a failing feature.
+#:
+#: A map rather than a rule read off the DOM: what is nested is a product
+#: decision, and a test suite that discovered it by walking parents would go on
+#: passing if the nesting silently changed.
+PANEL_FAMILY = {
+    "marge-tavaline": "lisa-marge",
+    "marge-tahtaeg": "lisa-marge",
+    "marge-joustumine": "lisa-marge",
+    "marge-toovoit": "lisa-marge",
+    "arvamus-tagasiside": "lisa-arvamus",
+    "arvamus-teiste": "lisa-arvamus",
+    "arvamus-koja": "lisa-arvamus",
+}
+
+
 def add_panel_is_open(page, panel_id: str) -> bool:
     """Whether one `LISA TEEMALE` operation is showing its form.
 
@@ -251,6 +273,11 @@ def add_panel_chip(page, panel_id: str):
 def open_add_panel(page, panel_id: str) -> None:
     """Open one `LISA TEEMALE` operation and wait for its form.
 
+    **Two levels where the panel is a sub-choice.** `PANEL_FAMILY` says which
+    chip has to be pressed first; the family is opened by this same function,
+    so the parity checking and the HTMX settling below apply to both clicks
+    (docs/adr/0097 §8).
+
     The zone is a choice of ten until one is picked, and picking one closes
     whichever was open (docs/adr/0075 §2). Every browser test that writes
     anything other than the current action's result goes through here, which is
@@ -274,6 +301,10 @@ def open_add_panel(page, panel_id: str) -> None:
     burned its 30s locator timeout and the test failed with a workspace that
     had rendered perfectly (e2e/test_panel_reopen_after_save.py).
     """
+    family = PANEL_FAMILY.get(panel_id)
+    if family is not None and not add_panel_is_open(page, family):
+        open_add_panel(page, family)
+
     deadline = time.monotonic() + PANEL_TIMEOUT_MS / 1000
     while True:
         try:
@@ -420,9 +451,16 @@ def open_composer(page) -> None:
     one form over one `Salvesta`; those are two intentions and two saves now.
     A test that used to type a body into the composer is recording a note, so
     that is what this opens (docs/adr/0075 §2).
+
+    **It opens `Märke liik · Tavaline`, and the box is `Mis juhtus?`.** The
+    ordinary note writes a `MatterProceduralDevelopment` now, through a single
+    stated line rather than a prose body, and `+ Menetluse areng` is gone as a
+    separate control — so a test that recorded a note through the composer
+    still records a note, and the record it lands in is the structured one
+    (docs/adr/0097 §6).
     """
-    open_add_panel(page, "lisa-marge")
-    page.locator("#lisa-marge .composer__body").wait_for(state="visible")
+    open_add_panel(page, "marge-tavaline")
+    page.locator("#id_marge_title").wait_for(state="visible")
 
 
 def finish_current_action(page, text: str) -> None:

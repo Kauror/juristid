@@ -56,17 +56,17 @@ MOVED_READ = (dt.date.today() - dt.timedelta(days=20)).strftime("%-d.%-m.%Y")
 
 def _file_a_development(page, *, occurred_on: str = HAPPENED, note: str = NOTE) -> None:
     """Record one procedural step through the real `+ Menetluse areng` panel."""
-    open_add_panel(page, "lisa-menetluse-areng")
-    page.locator("#lisa-menetluse-areng input[name=title]").fill(HEADLINE)
-    page.locator("#lisa-menetluse-areng input[name=occurred_on]").fill(occurred_on)
+    open_add_panel(page, "marge-tavaline")
+    page.locator("#marge-tavaline input[name=title]").fill(HEADLINE)
+    page.locator("#marge-tavaline input[name=occurred_on]").fill(occurred_on)
     if note:
-        page.locator("#lisa-menetluse-areng textarea[name=note]").fill(note)
+        page.locator("#marge-tavaline textarea[name=note]").fill(note)
     with page.expect_response(
         lambda response: (
             "/lisa/menetluse-areng/" in response.url and response.request.method == "POST"
         )
     ) as caught:
-        page.locator("#lisa-menetluse-areng button[type=submit]").click()
+        page.locator("#marge-tavaline button[type=submit]").click()
     assert caught.value.status == 200, f"the development was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 

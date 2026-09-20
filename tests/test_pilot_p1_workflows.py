@@ -181,14 +181,14 @@ def test_a_refused_closure_comes_back_with_the_closing_panel_open(signed_in, nor
     html = response.content.decode()
 
     assert response.status_code == 400
-    assert 'id="lisa-lopeta"' in html
+    assert 'id="teema-lopeta"' in html
     # The chosen state is on the panel's radio: the launcher's controls and its
     # forms have been separate elements since 2026-09-14, so that a chip cannot
     # move when the form it opens grows.
-    opening = html.split('id="lisa-lopeta-valik"', 1)[1].split(">", 1)[0]
+    opening = html.split('id="teema-lopeta-valik"', 1)[1].split(">", 1)[0]
     assert "checked" in opening
     # And no other panel was opened on its behalf (brief §33).
-    for other in ("lisa-marge", "lisa-toovoit"):
+    for other in ("lisa-marge", "marge-toovoit"):
         assert "checked" not in html.split(f'id="{other}-valik"', 1)[1].split(">", 1)[0]
 
 

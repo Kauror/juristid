@@ -162,9 +162,7 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     for index in range(12):
         page.goto(url)
         open_composer(page)
-        page.locator("#lisa-marge .composer__body").fill(
-            f"Sissekanne number {index} sünteetilises maailmas."
-        )
+        page.locator("#id_marge_title").fill(f"Sissekanne number {index} sünteetilises maailmas.")
         page.locator("#lisa-marge button[type=submit]").click()
         page.wait_for_load_state("networkidle")
 
@@ -208,36 +206,36 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     # The narrative is its own save now: the closure no longer borrows a body
     # from another operation (docs/adr/0075 §9).
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Menetlus lõppes; töö on tehtud.")
+    page.locator("#id_marge_title").fill("Menetlus lõppes; töö on tehtud.")
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     # Closing is a `LISA TEEMALE` panel, not a box in the rail.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
-    open_add_panel(page, "lisa-lopeta")
-    expect(page.locator("#lisa-lopeta")).to_be_visible()
+    open_add_panel(page, "teema-lopeta")
+    expect(page.locator("#teema-lopeta")).to_be_visible()
 
     # No confirmation box: answering the panel is the request (pilot QA F-02).
     expect(page.locator("#id_close_matter")).to_have_count(0)
-    expect(page.locator("#lisa-lopeta button[type=submit]")).to_have_text("Salvesta")
+    expect(page.locator("#teema-lopeta button[type=submit]")).to_have_text("Salvesta")
 
     # `Kuidas lõppes` is three chips over the field the server validates, and
     # nothing is chosen until somebody chooses (docs/adr/0074 §10).
-    page.locator("#lisa-lopeta .uxchip", has_text="Jõustus").click()
-    expect(page.locator("#lisa-lopeta input[name=disposition]")).to_have_value("COMPLETED")
+    page.locator("#teema-lopeta .uxchip", has_text="Jõustus").click()
+    expect(page.locator("#teema-lopeta input[name=disposition]")).to_have_value("COMPLETED")
     # No confirmation box, no second narrative box, and no work-victory
     # decision: closing a file is not a claim that anything was won, and
     # `+ Töövõit` records a win without closing anything.
     expect(page.locator("#id_closure_reason")).to_have_count(0)
     expect(page.locator("[name=work_victory]")).to_have_count(0)
-    page.locator("#lisa-lopeta [name=closing_words]").fill("Menetlus lõppes; töö on tehtud.")
+    page.locator("#teema-lopeta [name=closing_words]").fill("Menetlus lõppes; töö on tehtud.")
     # The server's own answer, not what the page looks like afterwards. A save
     # that is refused and a save that quietly did nothing leave an identical
     # screen, and the difference is the whole question here.
     with page.expect_response(
         lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-lopeta button[type=submit]").click()
+        page.locator("#teema-lopeta button[type=submit]").click()
     saved = caught.value
     assert saved.status == 200, f"the closure save was refused: {saved.status}"
     page.wait_for_load_state("networkidle")
@@ -436,7 +434,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     )
     box = drop.bounding_box()
     others = [
-        page.locator("#lisa-marge .composer__body").bounding_box(),
+        page.locator("#id_marge_title").bounding_box(),
         page.locator("#lisa-marge button[type=submit]").bounding_box(),
     ]
     assert all(not _overlap(box, other) for other in others), (
@@ -525,8 +523,8 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     url = create_matter(page, base_url, "Klaviatuuri brauserikatse")
 
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Salvestatud klaviatuurilt.")
-    page.locator("#lisa-marge .composer__body").press("ControlOrMeta+Enter")
+    page.locator("#id_marge_title").fill("Salvestatud klaviatuurilt.")
+    page.locator("#id_marge_title").press("ControlOrMeta+Enter")
     page.wait_for_load_state("networkidle")
 
     # Scoped to the entry body: the accordion quotes the newest entry in its own

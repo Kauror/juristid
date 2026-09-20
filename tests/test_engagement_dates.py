@@ -49,7 +49,7 @@ def _post(client, matter, **fields):
 def _panel(body: str) -> str:
     """The `+ Kaasamine` panel's own markup, from its id to the next panel's."""
     start = body.index('id="lisa-kaasamine"')
-    return body[start : body.index('id="lisa-tahtaeg"', start)]
+    return body[start : body.index('id="marge-tahtaeg"', start)]
 
 
 def _workspace(client, matter) -> str:

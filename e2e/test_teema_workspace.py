@@ -101,7 +101,7 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
     set_step(page, "Oodata ministeeriumi vastust")
 
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Ministeerium helistas reedel.")
+    page.locator("#id_marge_title").fill("Ministeerium helistas reedel.")
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
@@ -118,10 +118,10 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
 PANELS = (
     "lisa-marge",
     "lisa-kaasamine",
-    "lisa-tahtaeg",
-    "lisa-joustumine",
-    "lisa-toovoit",
-    "lisa-lopeta",
+    "marge-tahtaeg",
+    "marge-joustumine",
+    "marge-toovoit",
+    "teema-lopeta",
 )
 
 
@@ -143,17 +143,17 @@ def test_each_panel_saves_its_own_record_and_nothing_else(page, base_url, tmp_pa
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: iga oma salvestus")
 
-    open_add_panel(page, "lisa-toovoit")
-    page.locator("#lisa-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
+    open_add_panel(page, "marge-toovoit")
+    page.locator("#marge-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
     # The period a win belongs to. Nothing is defaulted, so a save without one
     # is refused — and this test is about the files, not the refusal
     # (docs/adr/0079 §10).
-    page.locator("#lisa-toovoit label.precision__chip", has_text="Aasta").click()
-    page.locator("#lisa-toovoit [name=victory_year]").fill("2026")
-    page.locator("#lisa-toovoit input[type=file]").set_input_files(
+    page.locator("#marge-toovoit label.precision__chip", has_text="Aasta").click()
+    page.locator("#marge-toovoit [name=victory_year]").fill("2026")
+    page.locator("#marge-toovoit input[type=file]").set_input_files(
         [_pdf(tmp_path, "toend.pdf"), _pdf(tmp_path, "lisatoend.pdf", b"kaks")]
     )
-    page.locator("#lisa-toovoit button[type=submit]").click()
+    page.locator("#marge-toovoit button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     victory = chronology(page).locator(".uxtl__item", has_text="Töövõit").first
@@ -166,13 +166,13 @@ def test_each_panel_saves_its_own_record_and_nothing_else(page, base_url, tmp_pa
     # The Matter is still open: a win closes nothing.
     expect(page.locator(".badge--state")).to_contain_text("Avatud")
 
-    open_add_panel(page, "lisa-joustumine")
-    page.locator("#lisa-joustumine [name=effective_title]").fill("Pakendiseaduse muudatused")
-    page.locator("#lisa-joustumine [name=effective_on]").fill(_future(-3))
-    page.locator("#lisa-joustumine input[type=file]").set_input_files(
+    open_add_panel(page, "marge-joustumine")
+    page.locator("#marge-joustumine [name=effective_title]").fill("Pakendiseaduse muudatused")
+    page.locator("#marge-joustumine [name=effective_on]").fill(_future(-3))
+    page.locator("#marge-joustumine input[type=file]").set_input_files(
         _pdf(tmp_path, "seadus.pdf", b"kolm")
     )
-    page.locator("#lisa-joustumine button[type=submit]").click()
+    page.locator("#marge-joustumine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     commencement = (
@@ -214,13 +214,13 @@ def test_a_refused_panel_reopens_itself_and_no_other(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: keeldumine")
 
-    open_add_panel(page, "lisa-toovoit")
-    page.locator("#lisa-toovoit button[type=submit]").click()
+    open_add_panel(page, "marge-toovoit")
+    page.locator("#marge-toovoit button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#lisa-toovoit")).to_be_visible()
-    expect(page.locator("#lisa-toovoit")).to_contain_text("Kirjuta, mis muutus")
-    for other in ("lisa-marge", "lisa-kaasamine", "lisa-tahtaeg", "lisa-lopeta"):
+    expect(page.locator("#marge-toovoit")).to_be_visible()
+    expect(page.locator("#marge-toovoit")).to_contain_text("Kirjuta, mis muutus")
+    for other in ("lisa-marge", "lisa-kaasamine", "marge-tahtaeg", "teema-lopeta"):
         assert not add_panel_is_open(page, other), other
 
 
@@ -303,9 +303,9 @@ def test_the_workspace_is_operable_at_every_width(page, base_url, width):
 
     # The launcher wraps rather than pushing the page wider, and an opened
     # mini-form stays inside the viewport (brief §38).
-    open_add_panel(page, "lisa-tahtaeg")
+    open_add_panel(page, "marge-tahtaeg")
     assert not page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     ), f"an open panel makes the page scroll sideways at {width}px"
-    body = page.locator("#lisa-tahtaeg .cx-panel__body").bounding_box()
+    body = page.locator("#marge-tahtaeg .cx-panel__body").bounding_box()
     assert body["x"] >= -1 and body["x"] + body["width"] <= width + 1

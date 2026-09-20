@@ -25,9 +25,9 @@ MINISTRY = "Näidisministeerium"
 
 #: The four panels this round simplified, by the id their launcher radio names.
 PANELS = [
-    "lisa-koja-arvamus",
-    "lisa-valine-seisukoht",
-    "lisa-tagasiside",
+    "arvamus-koja",
+    "arvamus-teiste",
+    "arvamus-tagasiside",
     "lisa-koduleht",
 ]
 
@@ -119,9 +119,9 @@ def test_the_organisation_search_is_usable_on_every_panel_that_has_one(page, bas
     page.set_viewport_size({"width": width, "height": 900})
 
     for panel_id, picker in (
-        ("lisa-valine-seisukoht", "valine-seisukoht"),
-        ("lisa-tagasiside", "tagasiside"),
-        ("lisa-koja-arvamus", "koja-adressaat"),
+        ("arvamus-teiste", "valine-seisukoht"),
+        ("arvamus-tagasiside", "tagasiside"),
+        ("arvamus-koja", "koja-adressaat"),
     ):
         open_add_panel(page, panel_id)
         box = page.locator(f"#{picker}-otsi")
@@ -142,9 +142,9 @@ def test_the_koja_panel_reads_as_the_four_answers_it_asks(page, base_url):
     """File, day, addressees, summary — and no catalogue and no title box."""
     sign_in(page, base_url, SANDRA)
     a_matter_with_a_sender(page, base_url)
-    open_add_panel(page, "lisa-koja-arvamus")
+    open_add_panel(page, "arvamus-koja")
 
-    panel = page.locator("#lisa-koja-arvamus")
+    panel = page.locator("#arvamus-koja")
     expect(panel.locator("input[type=file]")).to_have_count(1)
     expect(panel.locator("[name=sent_on]")).to_be_visible()
     expect(panel.locator("#koja-adressaat-otsi")).to_be_visible()

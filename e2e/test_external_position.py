@@ -53,7 +53,7 @@ def a_new_matter(page, base_url: str) -> str:
 
 
 def panel(page):
-    return page.locator("#lisa-valine-seisukoht")
+    return page.locator("#arvamus-teiste")
 
 
 def chronology(page):
@@ -89,7 +89,7 @@ def choose_organisation(page, name: str = MINISTRY) -> None:
 
 def record_one(page, base_url: str, *, url: str = POSITION_URL, summary: str = "") -> None:
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     choose_organisation(page)
     if url:
         panel(page).locator("[name=url]").fill(url)
@@ -136,7 +136,7 @@ def test_the_panel_asks_for_four_things_and_nothing_else(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
 
     expect(panel(page).locator("[data-orgfind]")).to_be_visible()
     expect(panel(page).locator("[name=summary]")).to_be_visible()
@@ -166,7 +166,7 @@ def test_the_institution_is_found_through_the_search_rather_than_scrolled_to(pag
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     picker = panel(page).locator("[data-orgfind]")
 
     # At rest: the search box, and no institution drawn under it.
@@ -197,7 +197,7 @@ def test_the_written_position_leads_the_three_sources(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
 
     order = panel(page).evaluate(
         """node => {
@@ -232,7 +232,7 @@ def test_a_written_position_alone_is_a_complete_record(page, base_url):
 def test_the_date_box_opens_on_today_and_the_saved_row_reads_it_back(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     choose_organisation(page)
     today = today_in_estonian(page)
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
@@ -249,7 +249,7 @@ def test_the_date_box_opens_on_today_and_the_saved_row_reads_it_back(page, base_
 def test_emptying_the_date_box_is_a_real_answer(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("")
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
@@ -263,7 +263,7 @@ def test_a_recorded_position_reopens_on_its_own_date_and_never_on_today(page, ba
     """`Muuda` carries no default. An undated row opens undated."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("")
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
@@ -311,7 +311,7 @@ def test_a_save_recording_nothing_comes_back_with_what_was_typed(page, base_url)
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("14.03.2026")
     panel(page).get_by_role("button", name="Salvesta").click()
@@ -326,7 +326,7 @@ def test_an_emptied_date_box_does_not_refill_itself_on_a_refusal(page, base_url)
     """An `initial` that reasserted itself would hand back a date somebody removed."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("")
     panel(page).get_by_role("button", name="Salvesta").click()
@@ -339,7 +339,7 @@ def test_an_emptied_date_box_does_not_refill_itself_on_a_refusal(page, base_url)
 def test_a_hostile_address_is_refused_with_the_value_returned(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
     choose_organisation(page)
     panel(page).locator("[name=url]").fill("javascript:alert(1)")
     panel(page).get_by_role("button", name="Salvesta").click()
@@ -393,7 +393,7 @@ def test_the_chip_is_reachable_and_operable_from_the_keyboard(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    radio = page.locator("#lisa-valine-seisukoht-valik")
+    radio = page.locator("#arvamus-teiste-valik")
     radio.focus()
     page.keyboard.press("Space")
 
@@ -404,7 +404,7 @@ def test_the_chip_is_reachable_and_operable_from_the_keyboard(page, base_url):
 def test_every_control_in_the_panel_is_reachable_by_tabbing(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
 
     # `engagement` is not among them any more: the panel stopped asking for a
     # `Kaasamine` and the field is absent from the document, so a tab order
@@ -420,7 +420,7 @@ def test_the_panel_does_not_scroll_the_page_sideways_at_phone_width(page, base_u
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     page.set_viewport_size({"width": 375, "height": 812})
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
 
     overflows = page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"

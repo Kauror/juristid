@@ -227,13 +227,13 @@ def test_feedback_with_no_organisation_is_refused_on_the_page(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-tagasiside")
+    open_add_panel(page, "arvamus-tagasiside")
 
-    form = panel(page, "lisa-tagasiside")
+    form = panel(page, "arvamus-tagasiside")
     form.locator("[name=summary]").fill("58 vastust 234 küsitletust; enamik toetab.")
     form.get_by_role("button", name="Salvesta tagasiside").click()
 
-    reopened = panel(page, "lisa-tagasiside")
+    reopened = panel(page, "arvamus-tagasiside")
     expect(reopened.locator(".field__error").first).to_be_visible()
     # And what they wrote is still in the box.
     expect(reopened.locator("[name=summary]")).to_have_value(
@@ -247,11 +247,11 @@ def test_neither_feedback_panel_offers_the_source_box_any_more(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    open_add_panel(page, "lisa-tagasiside")
-    expect(panel(page, "lisa-tagasiside").locator("[name=source_label]")).to_have_count(0)
+    open_add_panel(page, "arvamus-tagasiside")
+    expect(panel(page, "arvamus-tagasiside").locator("[name=source_label]")).to_have_count(0)
 
-    open_add_panel(page, "lisa-valine-seisukoht")
-    expect(panel(page, "lisa-valine-seisukoht").locator("[name=source_label]")).to_have_count(0)
+    open_add_panel(page, "arvamus-teiste")
+    expect(panel(page, "arvamus-teiste").locator("[name=source_label]")).to_have_count(0)
 
 
 def test_the_member_mark_is_on_the_received_panel_alone_and_is_recorded(page, base_url):
@@ -265,11 +265,11 @@ def test_the_member_mark_is_on_the_received_panel_alone_and_is_recorded(page, ba
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    open_add_panel(page, "lisa-valine-seisukoht")
-    expect(panel(page, "lisa-valine-seisukoht").locator("[name=source_is_member]")).to_have_count(0)
+    open_add_panel(page, "arvamus-teiste")
+    expect(panel(page, "arvamus-teiste").locator("[name=source_is_member]")).to_have_count(0)
 
-    open_add_panel(page, "lisa-tagasiside")
-    form = panel(page, "lisa-tagasiside")
+    open_add_panel(page, "arvamus-tagasiside")
+    form = panel(page, "arvamus-tagasiside")
     mark = form.locator("[name=source_is_member]")
     expect(mark).to_have_count(1)
     expect(mark).not_to_be_checked()
@@ -290,11 +290,11 @@ def test_the_member_mark_is_on_the_received_panel_alone_and_is_recorded(page, ba
 def test_a_named_organisation_reads_under_the_received_heading(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-tagasiside")
+    open_add_panel(page, "arvamus-tagasiside")
 
     choose_organisation(page, "tagasiside")
-    panel(page, "lisa-tagasiside").locator("[name=summary]").fill("Vastasid kirjaga.")
-    panel(page, "lisa-tagasiside").get_by_role("button", name="Salvesta tagasiside").click()
+    panel(page, "arvamus-tagasiside").locator("[name=summary]").fill("Vastasid kirjaga.")
+    panel(page, "arvamus-tagasiside").get_by_role("button", name="Salvesta tagasiside").click()
 
     chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
     expect(chronology(page)).to_contain_text(f"Meile saadetud tagasiside: {MINISTRY}")
@@ -323,9 +323,9 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
 
-    form = panel(page, "lisa-valine-seisukoht")
+    form = panel(page, "arvamus-teiste")
     choose_organisation(page, "valine-seisukoht")
     form.locator("[name=summary]").fill("Toetab varianti B.")
     form.get_by_role("button", name="Salvesta arvamus").click()
@@ -353,8 +353,8 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
 
 
 def _record_koda_opinion(page, base_url: str, *, sent_on: str, summary: str = "") -> None:
-    open_add_panel(page, "lisa-koja-arvamus")
-    form = panel(page, "lisa-koja-arvamus")
+    open_add_panel(page, "arvamus-koja")
+    form = panel(page, "arvamus-koja")
     form.locator("input[type=file]").set_input_files(
         {"name": "koja_arvamus.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
@@ -389,19 +389,17 @@ def test_the_koda_opinion_panel_refuses_a_save_with_nothing_in_it(page, base_url
     """Each missing answer named on its own control, with the rest still typed."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-koja-arvamus")
+    open_add_panel(page, "arvamus-koja")
 
-    form = panel(page, "lisa-koja-arvamus")
+    form = panel(page, "arvamus-koja")
     form.locator("[name=summary]").fill("Toetame eelnõu.")
     form.locator("[name=sent_on]").fill("")
     form.get_by_role("button", name="Registreeri arvamus").click()
 
-    expect(page.locator("#lisa-koja-arvamus")).to_contain_text("Lisa fail, mis välja saadeti.")
-    expect(page.locator("#lisa-koja-arvamus")).to_contain_text("Vali vähemalt üks adressaat.")
+    expect(page.locator("#arvamus-koja")).to_contain_text("Lisa fail, mis välja saadeti.")
+    expect(page.locator("#arvamus-koja")).to_contain_text("Vali vähemalt üks adressaat.")
     # And what they typed is still in its box.
-    expect(page.locator("#lisa-koja-arvamus").locator("[name=summary]")).to_have_value(
-        "Toetame eelnõu."
-    )
+    expect(page.locator("#arvamus-koja").locator("[name=summary]")).to_have_value("Toetame eelnõu.")
 
 
 def test_the_koda_opinion_panel_asks_a_summary_and_no_title(page, base_url):
@@ -412,9 +410,9 @@ def test_the_koda_opinion_panel_asks_a_summary_and_no_title(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-koja-arvamus")
+    open_add_panel(page, "arvamus-koja")
 
-    form = panel(page, "lisa-koja-arvamus")
+    form = panel(page, "arvamus-koja")
     expect(form.locator("[name=title]")).to_have_count(0)
     expect(form.locator("textarea[name=summary]")).to_be_visible()
     expect(form).not_to_contain_text("Registreerib, et Koja arvamus on välja saadetud")
@@ -441,9 +439,9 @@ def test_the_addressee_opens_on_the_teema_sender(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Adressaat"), sender=MINISTRY)
-    open_add_panel(page, "lisa-koja-arvamus")
+    open_add_panel(page, "arvamus-koja")
 
-    chosen = panel(page, "lisa-koja-arvamus").locator(
+    chosen = panel(page, "arvamus-koja").locator(
         "#koja-adressaat-valik .orgfind__chips .chip", has_text=MINISTRY
     )
     expect(chosen).to_be_visible()
@@ -467,9 +465,9 @@ def test_a_development_records_the_step_the_stage_and_the_next_action(page, base
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Ministeerium saatis uue eelnõu versiooni")
     form.locator("[name=occurred_on]").fill(_past(2))
     form.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
@@ -485,14 +483,14 @@ def test_a_development_records_the_step_the_stage_and_the_next_action(page, base
 def test_a_half_filled_next_step_is_refused_on_the_empty_control(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
     form.locator("[name=next_text]").fill("Vaatan uue teksti läbi")
     form.get_by_role("button", name="Salvesta areng").click()
 
-    expect(page.locator("#lisa-menetluse-areng")).to_contain_text("Vali järgmise tegevuse kuupäev.")
+    expect(page.locator("#marge-tavaline")).to_contain_text("Vali järgmise tegevuse kuupäev.")
     # Nothing was written: the whole save is one transaction.
     expect(chronology(page)).not_to_contain_text("Eelnõu jõudis Riigikokku")
 
@@ -514,8 +512,8 @@ def test_after_a_sent_opinion_the_page_offers_the_continuation(page, base_url):
 
     # And the anchor reaches a control that is really there and really opens.
     link.click()
-    open_add_panel(page, "lisa-menetluse-areng")
-    expect(panel(page, "lisa-menetluse-areng").locator("[name=title]")).to_be_visible()
+    open_add_panel(page, "marge-tavaline")
+    expect(panel(page, "marge-tavaline").locator("[name=title]")).to_be_visible()
 
 
 def test_the_continuation_is_absent_while_a_step_is_open(page, base_url):
@@ -525,8 +523,8 @@ def test_the_continuation_is_absent_while_a_step_is_open(page, base_url):
     _record_koda_opinion(page, base_url, sent_on=_past(1))
     expect(page.locator("#praegune-tegevus")).to_contain_text("Menetlus võib jätkuda")
 
-    open_add_panel(page, "lisa-menetluse-areng")
-    form = panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Eelnõu läks Justiitsministeeriumisse")
     form.locator("[name=occurred_on]").fill(_past(1))
     form.locator("[name=next_text]").fill("Vaatan läbi")
@@ -574,8 +572,8 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     # What came back — named, and marked as a member's. `Allikas` is a `Muuda`
     # control since docs/adr/0095 §4, so the creation panel names an
     # institution.
-    open_add_panel(page, "lisa-tagasiside")
-    tagasiside = panel(page, "lisa-tagasiside")
+    open_add_panel(page, "arvamus-tagasiside")
+    tagasiside = panel(page, "arvamus-tagasiside")
     choose_organisation(page, "tagasiside")
     tagasiside.locator("[name=source_is_member]").check()
     tagasiside.locator("[name=summary]").fill("58 vastust; enamik toetab.")
@@ -584,8 +582,8 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
 
     # What somebody else said. `Juristi märkus` is a `Muuda` control too, so the
     # one substantive box is `Seisukoht` (docs/adr/0095 §3).
-    open_add_panel(page, "lisa-valine-seisukoht")
-    valine = panel(page, "lisa-valine-seisukoht")
+    open_add_panel(page, "arvamus-teiste")
+    valine = panel(page, "arvamus-teiste")
     choose_organisation(page, "valine-seisukoht")
     valine.locator("[name=summary]").fill("Toetab varianti B.")
     valine.get_by_role("button", name="Salvesta arvamus").click()
@@ -596,8 +594,8 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     expect(page.locator(".tl-strip")).to_contain_text("Koja arvamus")
 
     # And the procedure continues on the same file.
-    open_add_panel(page, "lisa-menetluse-areng")
-    areng = panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
+    areng = panel(page, "marge-tavaline")
     areng.locator("[name=title]").fill("Ministeerium saatis uue eelnõu versiooni")
     areng.locator("[name=occurred_on]").fill(_past(1))
     areng.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
@@ -626,9 +624,9 @@ def test_a_developments_lawyer_note_reads_on_the_row_under_its_own_label(page, b
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Ministeerium saatis parandatud eelnõu")
     form.locator("[name=occurred_on]").fill(_past(3))
     form.locator("[name=note]").fill("Muudatused ei arvesta Koja ettepanekut.")
@@ -656,9 +654,9 @@ def test_a_development_with_no_note_gains_no_empty_note_block(page, base_url):
     """Most steps carry no assessment, and none of them gains a bordered gap."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
     form.locator("[name=occurred_on]").fill(_past(2))
     form.get_by_role("button", name="Salvesta areng").click()
@@ -684,16 +682,16 @@ def test_a_future_development_is_refused_and_moves_no_stage(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Riigikogu esimene lugemine")
     form.locator("[name=occurred_on]").fill(_future(12))
     form.locator("[name=stage]").select_option(label="Riigikogus")
     form.get_by_role("button", name="Salvesta areng").click()
     page.wait_for_load_state("networkidle")
 
-    panel_after = panel(page, "lisa-menetluse-areng")
+    panel_after = panel(page, "marge-tavaline")
     expect(panel_after).to_contain_text("Menetluse areng ei saa olla tulevikus.")
     # Nothing was written, and that includes the half of the act that used to
     # survive on its own: a standalone `Hetkeseis` row, carrying the day of data
@@ -720,8 +718,8 @@ def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
         ("Kvartal", lambda f: f.locator("[name=areng_quarter]").select_option(value="4")),
         ("Aasta", lambda f: None),
     ):
-        open_add_panel(page, "lisa-menetluse-areng")
-        form = panel(page, "lisa-menetluse-areng")
+        open_add_panel(page, "marge-tavaline")
+        form = panel(page, "marge-tavaline")
         form.locator("[name=title]").fill(f"Tulevane samm, {precision}")
         form.locator("label.precision__chip", has_text=precision).click()
         fill(form)
@@ -729,7 +727,7 @@ def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
         form.get_by_role("button", name="Salvesta areng").click()
         page.wait_for_load_state("networkidle")
 
-        expect(panel(page, "lisa-menetluse-areng")).to_contain_text(
+        expect(panel(page, "marge-tavaline")).to_contain_text(
             "Menetluse areng ei saa olla tulevikus."
         )
         expect(chronology(page)).not_to_contain_text(f"Tulevane samm, {precision}")
@@ -747,10 +745,10 @@ def test_a_current_month_is_accepted_and_prints_its_period(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-areng")
+    open_add_panel(page, "marge-tavaline")
 
     today = date.today()
-    form = panel(page, "lisa-menetluse-areng")
+    form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Ministeerium saatis uue versiooni")
     form.locator("label.precision__chip", has_text="Kuu").click()
     form.locator("[name=areng_month]").select_option(value=str(today.month))

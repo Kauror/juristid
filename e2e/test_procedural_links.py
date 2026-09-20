@@ -2,10 +2,9 @@
 
 The rules this file is here for are the ones only a running page can settle:
 
-* that the tenth launcher choice opens, saves through HTMX, and puts the
-  reference in the rail without a reload;
-* that the rail card is **absent** on a Matter carrying none — no heading, no
-  empty table and no five placeholder rows;
+* that `Muuda teemat` records a reference and the rail shows it;
+* that the rail card holds one quiet `+ Lisa` line on a Matter carrying none —
+  no empty table and no five placeholder rows;
 * that the link renders as its name or its host in a new tab and **never** as a
   printed address;
 * that a refused address comes back in the box with what was typed;
@@ -23,6 +22,15 @@ everywhere.
 **Everything here happens on a Matter the test creates.** The screenshot suite
 opens `OPEN_TITLE`, and a rail that grew while these ran would make that baseline
 depend on test order.
+
+**The `LISA TEEMALE` panel is gone.** `+ Menetluse link` was the launcher's
+tenth chip until 2026-09-20; an address is a fact *about* a Matter rather than
+something that happened to it, so the question moved to the two Teema forms and
+the chip and its route went with it (docs/adr/0097 §5). The scenarios below are
+unchanged in what they claim and are driven through `Muuda teemat`, which is the
+surface that now answers them — including the source vocabulary, which this
+surface deliberately does not ask and which `Paranda` on a recorded row still
+does.
 """
 
 from __future__ import annotations
@@ -32,7 +40,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_title
+from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -50,8 +58,16 @@ def a_new_matter(page, base_url: str) -> str:
     return create_matter(page, base_url, unique_title("Menetluse link"))
 
 
-def panel(page):
-    return page.locator("#lisa-menetluse-link")
+def edit_block(page):
+    """`Menetluse link` on `Muuda teemat` — the same two boxes `Uus teema` draws."""
+    return page.locator("#menetluse-link")
+
+
+def open_edit(page, base_url: str) -> None:
+    """Go from the Teema page to its `Muuda teemat`, and wait for the block."""
+    page.get_by_role("link", name="Muuda teemat").first.click()
+    page.wait_for_load_state("load")
+    edit_block(page).locator("[name='menetlus-url']").wait_for(state="visible")
 
 
 def card(page):
@@ -73,15 +89,20 @@ def create_block(page):
     return block
 
 
-def record_one(page, base_url, *, url: str = EIS_URL, kind: str = "EIS", label: str = "") -> None:
-    """Open the panel, answer it, save, and wait for the card to appear."""
-    a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-link")
-    panel(page).get_by_role("radio", name=kind, exact=True).check()
-    panel(page).locator("[name=url]").fill(url)
+def save_link(page, *, url: str, label: str = "") -> None:
+    """Answer the block on an open `Muuda teemat` and save the page."""
+    edit_block(page).locator("[name='menetlus-url']").fill(url)
     if label:
-        panel(page).locator("[name=label]").fill(label)
-    panel(page).get_by_role("button", name="Lisa menetluse link").click()
+        edit_block(page).locator("[name='menetlus-label']").fill(label)
+    page.get_by_role("button", name="Salvesta").first.click()
+    page.wait_for_load_state("load")
+
+
+def record_one(page, base_url, *, url: str = EIS_URL, label: str = "") -> None:
+    """File a Matter, correct it with an address, and wait for the card."""
+    a_new_matter(page, base_url)
+    open_edit(page, base_url)
+    save_link(page, url=url, label=label)
     card(page).wait_for()
 
 
@@ -96,7 +117,6 @@ def test_the_panel_records_a_reference_and_the_rail_shows_it(page, base_url):
     record_one(page, base_url, label="Eelnõu 123 SE")
 
     expect(card(page)).to_contain_text("Menetluse lingid")
-    expect(card(page)).to_contain_text("EIS")
     link = card(page).get_by_role("link", name="Eelnõu 123 SE")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", EIS_URL)
@@ -127,45 +147,31 @@ def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
     assert "avaneb uues aknas" in name
 
 
-def test_several_references_coexist_on_one_matter(page, base_url):
-    """Scenario B. Four kinds on one file, each keeping its own."""
-    sign_in(page, base_url, SANDRA)
-    record_one(page, base_url, label="EIS toimik")
+def test_a_matter_with_no_references_shows_one_quiet_add_line(page, base_url):
+    """Scenario C. No empty table and no five placeholder rows — one line.
 
-    for kind, url, label in (
-        ("Ministeeriumi dokumendiregister", LONG_REGISTER_URL, "Kiri 1-4/2026-123"),
-        ("Riigikogu", "https://riigikogu.ee/tegevus/eelnoud/eelnou/123-SE", "Eelnõu 123 SE"),
-        ("Muu menetluslink", "http://vana.register.example/2019/toimik/77", "Vana toimik"),
-    ):
-        open_add_panel(page, "lisa-menetluse-link")
-        panel(page).get_by_role("radio", name=kind, exact=True).check()
-        panel(page).locator("[name=url]").fill(url)
-        panel(page).locator("[name=label]").fill(label)
-        panel(page).get_by_role("button", name="Lisa menetluse link").click()
-        card(page).get_by_role("link", name=label).wait_for()
-
-    for label in ("EIS toimik", "Kiri 1-4/2026-123", "Eelnõu 123 SE", "Vana toimik"):
-        expect(card(page).get_by_role("link", name=label)).to_be_visible()
-
-
-def test_a_matter_with_no_references_shows_no_card_at_all(page, base_url):
-    """Scenario C. No heading, no empty table, and no five placeholder rows."""
+    The card used to be absent entirely, because the add affordance was the
+    launcher chip. That chip is gone, and an address recorded nowhere with no
+    visible way to record one is a capability that has quietly left the product
+    (docs/adr/0097 §5).
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    expect(card(page)).to_have_count(0)
-    expect(page.locator("#teema-andmed")).not_to_contain_text("Menetluse lingid")
-    # The one compact add affordance is the chip, and it is there.
-    expect(page.locator("label[for='lisa-menetluse-link-valik']")).to_be_visible()
+    expect(card(page).get_by_role("link", name="+ Lisa menetluse link")).to_be_visible()
+    expect(card(page).get_by_role("link", name="eelnoud.valitsus.ee")).to_have_count(0)
+    expect(page.locator("label[for='lisa-menetluse-link-valik']")).to_have_count(0)
 
 
-def test_the_panel_says_nothing_is_fetched(page, base_url):
-    """The product promise, on the page where somebody decides to trust it."""
+def test_the_add_line_lands_on_the_block_that_asks(page, base_url):
+    """`+ Lisa` is a link to the question, not a second control asking it."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-link")
 
-    expect(panel(page)).to_contain_text("lehte ei avata ega jälgita")
+    card(page).get_by_role("link", name="+ Lisa menetluse link").click()
+    page.wait_for_load_state("load")
+
+    expect(edit_block(page).locator("[name='menetlus-url']")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -177,15 +183,11 @@ def test_a_hostile_address_is_refused_with_the_value_returned(page, base_url):
     """Scenario J. Losing a pasted address would cost the one fact they came for."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-link")
-    panel(page).get_by_role("radio", name="EIS", exact=True).check()
-    panel(page).locator("[name=url]").fill("javascript:alert(1)")
-    panel(page).get_by_role("button", name="Lisa menetluse link").click()
-    page.wait_for_timeout(400)
+    open_edit(page, base_url)
+    save_link(page, url="javascript:alert(1)")
 
-    expect(panel(page)).to_contain_text("http:// või https://")
-    expect(panel(page).locator("[name=url]")).to_have_value("javascript:alert(1)")
-    expect(card(page)).to_have_count(0)
+    expect(edit_block(page)).to_contain_text("http:// või https://")
+    expect(edit_block(page).locator("[name='menetlus-url']")).to_have_value("javascript:alert(1)")
 
 
 def test_a_reference_can_be_corrected_from_its_own_row(page, base_url):
@@ -205,23 +207,18 @@ def test_a_reference_can_be_corrected_from_its_own_row(page, base_url):
     assert card(page).get_by_role("link").count() == 1
 
 
-def test_the_same_address_cannot_be_added_twice_by_hand(page, base_url):
-    """Scenario: the person genuinely repeats themselves rather than double-clicking.
+def test_an_emptied_address_is_refused_rather_than_silently_ignored(page, base_url):
+    """There is no deletion of a link, so emptying the box is not one either.
 
-    Answered with a sentence naming the row that is already there, and the card
-    still holds one reference.
+    Ignoring it would leave the page saying the link was gone while the record
+    still held it, which is worse than either answer (docs/adr/0084 §8).
     """
     sign_in(page, base_url, SANDRA)
     record_one(page, base_url, label="Esimene")
+    open_edit(page, base_url)
+    save_link(page, url="")
 
-    open_add_panel(page, "lisa-menetluse-link")
-    panel(page).get_by_role("radio", name="Riigikogu", exact=True).check()
-    panel(page).locator("[name=url]").fill(EIS_URL)
-    panel(page).get_by_role("button", name="Lisa menetluse link").click()
-    page.wait_for_timeout(400)
-
-    expect(panel(page)).to_contain_text("juba")
-    assert card(page).get_by_role("link").count() == 1
+    expect(edit_block(page)).to_contain_text("ei saa tühjaks jätta")
 
 
 # ---------------------------------------------------------------------------
@@ -284,43 +281,51 @@ def test_a_refused_create_keeps_the_typed_address(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_the_chip_is_reachable_and_operable_from_the_keyboard(page, base_url):
-    """The radio is clipped rather than `display: none` precisely so it stays
-    focusable, and the focus ring is drawn on the chip (docs/adr/0078 §1)."""
+def test_the_add_line_is_reachable_and_operable_from_the_keyboard(page, base_url):
+    """The rail's `+ Lisa` is an ordinary link, so Enter is what opens it.
+
+    It replaces the launcher chip — a clipped radio whose focus ring was drawn
+    on its label — and an anchor needs none of that arrangement to be
+    focusable, which is the point of it being one (docs/adr/0097 §5).
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    radio = page.locator("#lisa-menetluse-link-valik")
-    radio.focus()
-    page.keyboard.press("Space")
+    add = card(page).get_by_role("link", name="+ Lisa menetluse link")
+    add.focus()
+    expect(add).to_be_focused()
+    page.keyboard.press("Enter")
+    page.wait_for_load_state("load")
 
-    expect(panel(page)).to_be_visible()
-    expect(radio).to_be_focused()
+    expect(edit_block(page).locator("[name='menetlus-url']")).to_be_visible()
 
 
-def test_every_control_in_the_panel_is_reachable_by_tabbing(page, base_url):
+def test_every_control_in_the_block_is_reachable_by_tabbing(page, base_url):
+    """Two boxes, and `kind` is not one of them on this surface."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-menetluse-link")
+    open_edit(page, base_url)
 
-    for name in ("kind", "url", "label"):
-        control = panel(page).locator(f"[name={name}]").first
+    for name in ("menetlus-url", "menetlus-label"):
+        control = edit_block(page).locator(f"[name='{name}']").first
         control.focus()
         expect(control).to_be_focused()
 
+    expect(edit_block(page).locator("[name='menetlus-kind']")).to_have_count(0)
+
 
 @pytest.mark.parametrize("width", [420, 375])
-def test_the_panel_does_not_scroll_the_page_sideways_at_phone_width(page, base_url, width):
+def test_the_block_does_not_scroll_the_page_sideways_at_phone_width(page, base_url, width):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
+    open_edit(page, base_url)
     page.set_viewport_size({"width": width, "height": 812})
-    open_add_panel(page, "lisa-menetluse-link")
 
     overflows = page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )
 
-    assert not overflows, "the Menetluse link panel makes the Teema page scroll sideways"
+    assert not overflows, "the Menetluse link block makes Muuda teemat scroll sideways"
 
 
 @pytest.mark.parametrize("width", [420, 375])
@@ -333,7 +338,7 @@ def test_a_long_register_address_does_not_destroy_the_layout(page, base_url, wid
     edge of the window once before (`.railcard__value`).
     """
     sign_in(page, base_url, SANDRA)
-    record_one(page, base_url, kind="Ministeeriumi dokumendiregister", url=LONG_REGISTER_URL)
+    record_one(page, base_url, url=LONG_REGISTER_URL)
     page.set_viewport_size({"width": width, "height": 812})
 
     expect(card(page)).to_be_visible()

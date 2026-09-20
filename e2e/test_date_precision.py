@@ -110,11 +110,11 @@ def test_an_important_deadline_can_be_stated_as_a_year(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Aasta täpsusega tähtaeg")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    page.locator("#lisa-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
-    choose(page, "#lisa-tahtaeg", "Aasta")
-    page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
-    save(page, "#lisa-tahtaeg")
+    open_add_panel(page, "marge-tahtaeg")
+    page.locator("#marge-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
+    choose(page, "#marge-tahtaeg", "Aasta")
+    page.locator("#marge-tahtaeg [name=deadline_year]").fill("2024")
+    save(page, "#marge-tahtaeg")
 
     body = page.locator("#teema-vaade")
     expect(body).to_contain_text("Ülevõtmise tähtaeg")
@@ -128,12 +128,12 @@ def test_a_commencement_keeps_its_period_across_a_reload(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Kvartali täpsusega jõustumine")
 
-    open_add_panel(page, "lisa-joustumine")
-    page.locator("#lisa-joustumine [name=effective_title]").fill("Pakendiseaduse muudatused")
-    choose(page, "#lisa-joustumine", "Kvartal")
-    page.locator("#lisa-joustumine [name=effective_quarter]").select_option("4")
-    page.locator("#lisa-joustumine [name=effective_year]").fill("2026")
-    save(page, "#lisa-joustumine")
+    open_add_panel(page, "marge-joustumine")
+    page.locator("#marge-joustumine [name=effective_title]").fill("Pakendiseaduse muudatused")
+    choose(page, "#marge-joustumine", "Kvartal")
+    page.locator("#marge-joustumine [name=effective_quarter]").select_option("4")
+    page.locator("#marge-joustumine [name=effective_year]").fill("2026")
+    save(page, "#marge-joustumine")
 
     expect(page.locator("#teema-vaade")).to_contain_text("IV kvartal 2026")
 
@@ -148,19 +148,19 @@ def test_a_work_victory_is_refused_without_a_period_and_accepted_with_one(page, 
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töövõidu periood")
 
-    open_add_panel(page, "lisa-toovoit")
-    page.locator("#lisa-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
-    save(page, "#lisa-toovoit")
+    open_add_panel(page, "marge-toovoit")
+    page.locator("#marge-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
+    save(page, "#marge-toovoit")
 
     # Refused, and the panel it was refused in is the panel that reopened.
-    expect(page.locator("#lisa-toovoit .field__error")).to_be_visible()
-    expect(page.locator("#lisa-toovoit [name=victory_change]")).to_have_value(
+    expect(page.locator("#marge-toovoit .field__error")).to_be_visible()
+    expect(page.locator("#marge-toovoit [name=victory_change]")).to_have_value(
         "Üleminekuaeg pikendati"
     )
 
-    choose(page, "#lisa-toovoit", "Aasta")
-    page.locator("#lisa-toovoit [name=victory_year]").fill("2026")
-    save(page, "#lisa-toovoit")
+    choose(page, "#marge-toovoit", "Aasta")
+    page.locator("#marge-toovoit [name=victory_year]").fill("2026")
+    save(page, "#marge-toovoit")
 
     expect(page.locator("#teema-vaade")).to_contain_text("Üleminekuaeg pikendati")
 
@@ -183,20 +183,20 @@ def test_choosing_a_precision_reveals_its_own_control_and_hides_the_others(page,
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Täpsuse juhtelement")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    day = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="day"]')
-    quarter = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="quarter"]')
-    year = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="year"]')
+    open_add_panel(page, "marge-tahtaeg")
+    day = page.locator('#marge-tahtaeg .precision__group[data-precision-for="day"]')
+    quarter = page.locator('#marge-tahtaeg .precision__group[data-precision-for="quarter"]')
+    year = page.locator('#marge-tahtaeg .precision__group[data-precision-for="year"]')
 
     expect(day).to_be_visible()
     expect(quarter).to_be_hidden()
 
-    choose(page, "#lisa-tahtaeg", "Kvartal")
+    choose(page, "#marge-tahtaeg", "Kvartal")
     expect(quarter).to_be_visible()
     expect(year).to_be_visible()
     expect(day).to_be_hidden()
 
-    choose(page, "#lisa-tahtaeg", "Aasta")
+    choose(page, "#marge-tahtaeg", "Aasta")
     expect(year).to_be_visible()
     expect(quarter).to_be_hidden()
 
@@ -211,15 +211,15 @@ def test_the_chips_are_reachable_and_operable_from_the_keyboard(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Täpsus klaviatuurilt")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    first = page.locator('#lisa-tahtaeg input[name="deadline_precision"]').first
+    open_add_panel(page, "marge-tahtaeg")
+    first = page.locator('#marge-tahtaeg input[name="deadline_precision"]').first
     first.focus()
     page.keyboard.press("ArrowRight")
 
-    chosen = page.locator('#lisa-tahtaeg input[name="deadline_precision"]:checked')
+    chosen = page.locator('#marge-tahtaeg input[name="deadline_precision"]:checked')
     expect(chosen).to_have_value("MONTH")
     expect(
-        page.locator('#lisa-tahtaeg .precision__group[data-precision-for="month"]')
+        page.locator('#marge-tahtaeg .precision__group[data-precision-for="month"]')
     ).to_be_visible()
 
 
@@ -234,13 +234,13 @@ def test_choosing_a_precision_does_not_move_the_launcher(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Käivitusriba ei liigu")
 
-    open_add_panel(page, "lisa-tahtaeg")
-    launcher = page.locator('label[for="lisa-toovoit-valik"]')
+    open_add_panel(page, "marge-tahtaeg")
+    launcher = page.locator('label[for="marge-toovoit-valik"]')
     before = launcher.bounding_box()
-    chip = page.locator("#lisa-tahtaeg label.precision__chip", has_text="Kvartal").first
+    chip = page.locator("#marge-tahtaeg label.precision__chip", has_text="Kvartal").first
     chip_before = chip.bounding_box()
 
-    choose(page, "#lisa-tahtaeg", "Kvartal")
+    choose(page, "#marge-tahtaeg", "Kvartal")
 
     after = launcher.bounding_box()
     chip_after = chip.bounding_box()
@@ -255,8 +255,8 @@ def test_the_precision_control_fits_a_phone(page, base_url):
     create_matter(page, base_url, "Täpsus telefonis")
     page.set_viewport_size({"width": 375, "height": 812})
 
-    open_add_panel(page, "lisa-tahtaeg")
-    choose(page, "#lisa-tahtaeg", "Kvartal")
+    open_add_panel(page, "marge-tahtaeg")
+    choose(page, "#marge-tahtaeg", "Kvartal")
 
     overflow = page.evaluate(
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
@@ -264,8 +264,8 @@ def test_the_precision_control_fits_a_phone(page, base_url):
     assert overflow <= 0, f"the page scrolls sideways by {overflow}px"
 
     for locator in (
-        page.locator("#lisa-tahtaeg .precision__chips"),
-        page.locator('#lisa-tahtaeg .precision__group[data-precision-for="quarter"]'),
+        page.locator("#marge-tahtaeg .precision__chips"),
+        page.locator('#marge-tahtaeg .precision__group[data-precision-for="quarter"]'),
     ):
         box = locator.bounding_box()
         assert box["x"] >= 0, box
@@ -302,26 +302,26 @@ def test_a_precision_can_be_stated_with_scripting_off(browser, base_url, javascr
         sign_in(page, base_url, MARTIN)
         create_matter(page, base_url, "Täpsus ilma skriptita")
 
-        page.locator('label[for="lisa-tahtaeg-valik"]').click()
-        page.locator("#lisa-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
+        page.locator('label[for="marge-tahtaeg-valik"]').click()
+        page.locator("#marge-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
 
-        year_group = page.locator('#lisa-tahtaeg .precision__group[data-precision-for="year"]')
+        year_group = page.locator('#marge-tahtaeg .precision__group[data-precision-for="year"]')
         expect(year_group).to_be_hidden()
 
-        page.locator("#lisa-tahtaeg label.precision__chip", has_text="Aasta").first.click()
+        page.locator("#marge-tahtaeg label.precision__chip", has_text="Aasta").first.click()
 
-        checked = page.locator('#lisa-tahtaeg input[name="deadline_precision"]:checked')
+        checked = page.locator('#marge-tahtaeg input[name="deadline_precision"]:checked')
         expect(checked).to_have_value("YEAR")
         expect(year_group).to_be_visible()
         expect(
-            page.locator('#lisa-tahtaeg .precision__group[data-precision-for="day"]')
+            page.locator('#marge-tahtaeg .precision__group[data-precision-for="day"]')
         ).to_be_hidden()
 
-        page.locator("#lisa-tahtaeg [name=deadline_year]").fill("2024")
+        page.locator("#marge-tahtaeg [name=deadline_year]").fill("2024")
 
         # The radio and the year are both inside the form that would carry them,
         # and neither needed a line of script to get its value.
-        form = page.locator("#lisa-tahtaeg form")
+        form = page.locator("#marge-tahtaeg form")
         expect(form.locator('input[name="deadline_precision"]:checked')).to_have_count(1)
         expect(form.locator('[name="deadline_year"]')).to_have_value("2024")
     finally:

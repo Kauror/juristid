@@ -156,17 +156,28 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     # the one that did not exist before this round, and its absence was why the
     # panel had to derive a period from the day somebody typed
     # (docs/adr/0079 §1, superseding docs/adr/0074 §11).
-    open_add_panel(page, "lisa-tahtaeg")
-    expect(page.locator("#lisa-tahtaeg [name=deadline_date]")).to_be_visible()
+    open_add_panel(page, "marge-tahtaeg")
+    expect(page.locator("#marge-tahtaeg [name=deadline_date]")).to_be_visible()
     for label in ("Täpne päev", "Kuu", "Kvartal", "Aasta"):
-        expect(page.locator("#lisa-tahtaeg label.precision__chip", has_text=label)).to_have_count(1)
-    expect(page.locator("#lisa-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
+        expect(page.locator("#marge-tahtaeg label.precision__chip", has_text=label)).to_have_count(
+            1
+        )
+    expect(page.locator("#marge-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
-    open_add_panel(page, "lisa-lopeta")
-    expect(page.locator("#lisa-lopeta")).to_be_visible()
-    expect(page.locator("#lisa-lopeta [name=closing_words]")).to_be_visible()
-    # Opening the last one closed the one before it (docs/adr/0075 §2).
-    expect(page.locator("#lisa-tahtaeg")).not_to_be_visible()
+    # `Lõpeta teema` is under `TEEMA TOIMINGUD` now, in a radio group of its
+    # own — so opening it does **not** close a capture panel, and that is the
+    # point of the separation rather than a regression in it: finishing a file
+    # and writing down what happened are not alternatives to each other
+    # (docs/adr/0097 §9).
+    open_add_panel(page, "teema-lopeta")
+    expect(page.locator("#teema-lopeta")).to_be_visible()
+    expect(page.locator("#teema-lopeta [name=closing_words]")).to_be_visible()
+    expect(page.locator("#marge-tahtaeg")).to_be_visible()
+
+    # Inside the launcher the rule still holds: one open form at a time.
+    open_add_panel(page, "lisa-kaasamine")
+    expect(page.locator("#lisa-kaasamine")).to_be_visible()
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
 
 
 # =========================================================================

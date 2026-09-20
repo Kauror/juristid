@@ -520,7 +520,7 @@ def test_the_work_victory_date_box_is_not_prefilled_with_today(signed_in, normal
     body = _detail(signed_in, normal_matter)
     today = datetime.date.today()
 
-    panel = _panel(body, "lisa-toovoit")
+    panel = _panel(body, "marge-toovoit")
 
     assert f'value="{today.strftime("%d.%m.%Y")}"' not in panel
     assert f'value="{today.year}"' not in panel
@@ -669,9 +669,9 @@ def test_the_precision_control_is_a_real_radio_group_on_every_panel(signed_in, n
     body = _detail(signed_in, normal_matter)
 
     for panel, field in (
-        ("lisa-tahtaeg", "deadline_precision"),
-        ("lisa-joustumine", "effective_precision"),
-        ("lisa-toovoit", "victory_precision"),
+        ("marge-tahtaeg", "deadline_precision"),
+        ("marge-joustumine", "effective_precision"),
+        ("marge-toovoit", "victory_precision"),
     ):
         section = _panel(body, panel)
         pattern = rf'<input[^>]*type="radio"[^>]*name="{field}"[^>]*>'
@@ -712,7 +712,7 @@ def test_a_refused_period_comes_back_carrying_what_was_chosen(signed_in, normal_
     )
 
     assert response.status_code == 400
-    panel = _panel(response.content.decode(), "lisa-tahtaeg")
+    panel = _panel(response.content.decode(), "marge-tahtaeg")
     chosen = re.search(r'<input[^>]*value="QUARTER"[^>]*>', panel, re.S)
     assert chosen is not None, "the chosen precision is gone from the refusal"
     assert "checked" in chosen.group(0), "the refusal reset the chips to Täpne päev"
@@ -808,7 +808,7 @@ def test_the_quick_spans_belong_to_the_next_step_and_to_nothing_else(signed_in, 
     """
     body = _detail(signed_in, normal_matter)
 
-    for panel in ("lisa-tahtaeg", "lisa-joustumine", "lisa-toovoit"):
+    for panel in ("marge-tahtaeg", "marge-joustumine", "marge-toovoit"):
         section = _panel(body, panel)
         assert "data-quickdate" not in section, f"{panel} offers day shortcuts"
         for label in ("Homme", "+1 nädal", "+2 nädalat"):

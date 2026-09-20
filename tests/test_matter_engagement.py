@@ -562,7 +562,7 @@ def test_the_composer_panel_asks_for_one_date(signed_in, specialist):
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
-    panel = body[body.index('id="lisa-kaasamine"') : body.index('id="lisa-tahtaeg"')]
+    panel = body[body.index('id="lisa-kaasamine"') : body.index('id="marge-tahtaeg"')]
 
     assert 'name="audience"' in panel
     assert 'name="response_count"' in panel

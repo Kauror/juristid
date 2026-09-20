@@ -54,7 +54,7 @@ CORRECTED = "Ministeerium lubas uue sõnastuse esmaspäevaks."
 def _file_an_entry(page, text: str) -> None:
     """Write one note through the real composer, the way a lawyer would."""
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill(text)
+    page.locator("#id_marge_title").fill(text)
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
@@ -163,12 +163,12 @@ def test_a_closed_teema_takes_the_correction_and_no_new_work(page, base_url):
     _file_an_entry(page, ORIGINAL)
 
     # Close it through the real panel, the way `test_teema_closing_flow` does.
-    open_add_panel(page, "lisa-lopeta")
-    page.locator("#lisa-lopeta .uxchip", has_text="Menetlus lõppes").click()
+    open_add_panel(page, "teema-lopeta")
+    page.locator("#teema-lopeta .uxchip", has_text="Menetlus lõppes").click()
     with page.expect_response(
         lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-lopeta button[type=submit]").click()
+        page.locator("#teema-lopeta button[type=submit]").click()
     assert caught.value.status == 200
     page.wait_for_load_state("networkidle")
 

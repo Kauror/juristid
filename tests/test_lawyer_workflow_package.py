@@ -2037,7 +2037,7 @@ def test_a_sent_opinion_with_no_open_step_offers_the_continuation(
     ).content.decode()
 
     assert "Menetlus võib jätkuda" in body
-    assert "#lisa-menetluse-areng" in body
+    assert "#marge-tavaline" in body
 
 
 def test_a_matter_with_no_sent_opinion_offers_nothing_of_the_kind(

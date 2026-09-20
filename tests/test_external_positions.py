@@ -1050,7 +1050,7 @@ def _panel_markup(body: str) -> str:
     launcher's own contract (`WORKSPACE_PANELS`), and a test that guessed where one
     `<form>` ends would break on markup that is not this file's subject.
     """
-    start = body.index('id="lisa-valine-seisukoht"')
+    start = body.index('id="arvamus-teiste"')
     return body[start:]
 
 
@@ -1091,7 +1091,7 @@ def _stated_on_box(body: str) -> str:
     already knows which it has and the distinction is not what any of them is
     testing.
     """
-    scoped = _panel_markup(body) if 'id="lisa-valine-seisukoht"' in body else body
+    scoped = _panel_markup(body) if 'id="arvamus-teiste"' in body else body
     return _tag_with(scoped, 'name="stated_on"')
 
 
@@ -1109,7 +1109,7 @@ def _as_typed(day: dt.date) -> str:
 def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matter, ministry):
     body = _detail(signed_in, normal_matter)
 
-    assert 'id="lisa-valine-seisukoht"' in body
+    assert 'id="arvamus-teiste"' in body
     # The chip is named by how the record reached the file. It was
     # `+ Väline seisukoht`; docs/adr/0091 §3 split it in two, and this panel is
     # the half that records what Koda found somewhere.
@@ -1118,7 +1118,7 @@ def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matte
 
 
 def test_a_closed_matter_offers_no_panel(signed_in, closed_matter):
-    assert 'id="lisa-valine-seisukoht"' not in _detail(signed_in, closed_matter)
+    assert 'id="arvamus-teiste"' not in _detail(signed_in, closed_matter)
 
 
 def test_the_panel_records_a_url_only_position(signed_in, normal_matter, ministry):

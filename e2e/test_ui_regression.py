@@ -1163,7 +1163,7 @@ def test_matter_add_to_matter_zone(page, base_url):
     photograph a state the page does not have.
     """
     signed_in_matter(page, base_url, OPEN_TITLE)
-    open_add_panel(page, "lisa-tahtaeg")
+    open_add_panel(page, "marge-tahtaeg")
     _at_rest(page)
     compare("teema-lisa", capture(page, "teema-lisa", clip_to=".addzone"))
 

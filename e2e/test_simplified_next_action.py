@@ -141,7 +141,7 @@ def test_a_marge_records_what_happened_and_leaves_the_step_open(page, base_url):
     set_step(page, "Oodata ministeeriumi vastust", 9)
 
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Ministeerium helistas vahepeal.")
+    page.locator("#id_marge_title").fill("Ministeerium helistas vahepeal.")
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
@@ -313,6 +313,6 @@ def test_the_teema_surface_does_not_scroll_sideways(page, base_url, width):
     # And an opened `LISA TEEMALE` form uses the width it is given rather than
     # standing in a narrow column of its own.
     open_composer(page)
-    box = page.locator("#lisa-marge .composer__body").bounding_box()
+    box = page.locator("#id_marge_title").bounding_box()
     assert box["width"] > 0
     assert box["x"] + box["width"] <= width + 1

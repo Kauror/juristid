@@ -220,10 +220,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     for panel in (
         "#lisa-marge",
         "#lisa-kaasamine",
-        "#lisa-tahtaeg",
-        "#lisa-joustumine",
-        "#lisa-toovoit",
-        "#lisa-lopeta",
+        "#marge-tahtaeg",
+        "#marge-joustumine",
+        "#marge-toovoit",
+        "#teema-lopeta",
     ):
         expect(page.locator(panel)).not_to_be_visible()
     # `+ Kaasamine` **is** among them. It was kept out while the standalone
@@ -240,14 +240,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # Something happened. It is a `Märge`, and it must leave the open step alone.
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
+    page.locator("#id_marge_title").fill("Ministeerium lubas uue sõnastuse")
     # Opening one panel closes whichever was open (docs/adr/0075 §2).
-    page.locator('label[for="lisa-tahtaeg-valik"]').click()
-    expect(page.locator("#lisa-tahtaeg")).to_be_visible()
+    page.locator('label[for="marge-tahtaeg-valik"]').click()
+    expect(page.locator("#marge-tahtaeg")).to_be_visible()
     expect(page.locator("#lisa-marge")).not_to_be_visible()
-    expect(page.locator("#lisa-lopeta")).not_to_be_visible()
+    expect(page.locator("#teema-lopeta")).not_to_be_visible()
     open_composer(page)
-    page.locator("#lisa-marge .composer__body").fill("Ministeerium lubas uue sõnastuse")
+    page.locator("#id_marge_title").fill("Ministeerium lubas uue sõnastuse")
     screenshots(page, "04-marge")
     page.locator("#lisa-marge button[type=submit]").click()
     page.wait_for_load_state("networkidle")

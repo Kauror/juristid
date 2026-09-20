@@ -338,12 +338,12 @@ def test_a_closed_teema_offers_no_correction(page, base_url):
     create_matter(page, base_url, unique_title("Kaasamise paranduse katse: suletud"))
     _file_an_engagement(page)
 
-    open_add_panel(page, "lisa-lopeta")
-    page.locator("#lisa-lopeta .uxchip", has_text="Menetlus lõppes").click()
+    open_add_panel(page, "teema-lopeta")
+    page.locator("#teema-lopeta .uxchip", has_text="Menetlus lõppes").click()
     with page.expect_response(
         lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-lopeta button[type=submit]").click()
+        page.locator("#teema-lopeta button[type=submit]").click()
     assert caught.value.status == 200
     page.wait_for_load_state("networkidle")
 

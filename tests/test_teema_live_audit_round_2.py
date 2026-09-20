@@ -72,14 +72,21 @@ def delete_url(matter: Matter) -> str:
 
 
 def edit_payload(matter: Matter, **overrides) -> dict:
-    """The whole edit form, as the browser posts it back unchanged."""
+    """The whole edit form, as the browser posts it back unchanged.
+
+    Every key here is a field `MatterEditForm` declares. `track`,
+    `addressee_organisation`, `addressee_name` and `tags` used to be among them
+    and are not fields any more, so posting them would make this helper a worse
+    model of the browser rather than a better one — the tests that prove a
+    crafted POST cannot write them send them deliberately, one at a time
+    (docs/adr/0097 §2–§4).
+    """
     initial = edit_initial(matter)
     payload = {
         "title": initial["title"],
         "brief_summary": initial["brief_summary"] or "",
         "owner": initial["owner"] or "",
         "stage": initial["stage"] or "",
-        "track": initial["track"] or "",
         "policy_areas": [str(pk) for pk in initial["policy_areas"]],
         "policy_area_other_selected": "on" if initial["policy_area_other_selected"] else "",
         "policy_area_other": initial["policy_area_other"] or "",
@@ -87,11 +94,8 @@ def edit_payload(matter: Matter, **overrides) -> dict:
         "legal_instrument_other": initial["legal_instrument_other"] or "",
         "source_organisations": [str(pk) for pk in initial["source_organisations"]],
         "sender_name": "",
-        "addressee_organisation": initial["addressee_organisation"] or "",
-        "addressee_name": "",
         "received_date": "",
         "response_deadline": "",
-        "tags": [str(pk) for pk in initial["tags"]],
     }
     payload.update(overrides)
     return payload
