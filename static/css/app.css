@@ -11248,139 +11248,175 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
+/* `Kustuta`, beside `Muuda teemat`.
+ *
+ * Quiet like its neighbour, and danger ink only on hover: an action that is
+ * permanently red beside an ordinary one is an action people learn to look
+ * past, and this one has a confirmation page behind it doing the real work. */
+#teema-vaade-wrap .matterhead__delete:hover,
+#teema-vaade-wrap .matterhead__delete:focus-visible {
+  color: var(--status-danger);
+}
+
+/* `Liige`, in the organisation picker's own footer rather than a row of its
+ * own. One line instead of three (matters/partials/external_position_panel.html). */
+#teema-vaade-wrap .orgpick__mark {
+  margin-top: 6px;
+}
+
 #teema-vaade-wrap .lprail__aside--koda {
   color: var(--text-muted);
 }
 
-/* `Praegu: Riigikogus` — the answer in a sentence, above the picture of it.
+/* The heading row: the section's name, and `Muuda` pushed to the far end.
  *
- * A rail is a diagram and a diagram has to be read; this is the one line that
- * answers «where is this» without the reader decoding four states and six dots
- * first. Body ink and a hair larger than the node labels, because it is the
- * most-read thing in the section. */
-#teema-vaade-wrap .lprail__now {
+ * The edit control sits at the *right* of the heading rather than under the
+ * rail, because it acts on the whole section and a control below the thing it
+ * edits reads as another step on it. */
+#teema-vaade-wrap .lprail__bar {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-2);
-  margin: 0 0 var(--spacing-3);
-  font-size: 13px;
-  line-height: 1.3;
+  margin-bottom: var(--spacing-3);
 }
 
-#teema-vaade-wrap .lprail__nowlabel {
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-#teema-vaade-wrap .lprail__nowvalue {
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-body);
-}
-
-/* -- Ees võib olla ---------------------------------------------------------
- *
- * The road ahead. Deliberately **not** a second rail: no dots, no connectors and
- * no dates — a second diagram beside the first is the stacking §4 of the brief
- * rules out, and a dotted continuation of the rail would read as steps that are
- * merely later rather than steps that are merely possible.
- *
- * So it is a row of words with arrows between them, muted, and every word of it
- * is qualified by the heading above. Muting is the *second* signal here and
- * never the only one: the heading says «võib olla» and a conditional step says
- * «kui menetlus jätkub» in text. */
-#teema-vaade-wrap .lpahead {
-  margin: 0 0 var(--spacing-4);
-}
-
-#teema-vaade-wrap .lpahead__head,
-#teema-vaade-wrap .lpdates__head {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: var(--typography-weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-#teema-vaade-wrap .lpahead__steps {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px var(--spacing-2);
+#teema-vaade-wrap .lprail__bar .lprail__head {
   margin: 0;
+}
+
+#teema-vaade-wrap .lprail__edit {
+  margin-left: auto;
+}
+
+/* -- Muuda kulgu ----------------------------------------------------------
+ *
+ * The panel, in place under the heading it belongs to. It takes the capture
+ * panels' ground so it reads as the same kind of thing: a short form that saves
+ * where it stands. */
+#teema-vaade-wrap .kulgform {
+  margin: 0 0 var(--spacing-4);
+  padding: var(--spacing-3);
+  background: var(--surface-capture);
+  border-radius: var(--radius-sm);
+}
+
+#teema-vaade-wrap .kulgform__lede {
+  margin: 0 0 var(--spacing-3);
+  max-width: 62ch;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .kulgform__rows {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 var(--spacing-3);
   padding: 0;
   list-style: none;
 }
 
-#teema-vaade-wrap .lpahead__step {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+/* One row per phase: the name with its box, then the date or what dated it.
+ * A grid rather than a flex row so the date boxes line up down the panel
+ * whatever the phase names are called. */
+#teema-vaade-wrap .kulgform__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+#teema-vaade-wrap .kulgform__show {
   min-width: 0;
-  font-size: 12.5px;
-  line-height: 1.35;
-  color: var(--text-muted);
 }
 
-/* The arrow between steps, drawn rather than typed, so it is never read out as
- * a word and never breaks to a line of its own. `:last-child` draws none. */
-#teema-vaade-wrap .lpahead__step + .lpahead__step::before {
-  content: "→";
-  margin-right: 2px;
-  color: var(--border-strong);
-}
-
-/* The phase's own name inside a possible step. Body ink would make the horizon
- * read as strongly as the rail; it stays muted with its parent and takes only
- * the weight, so the names are still scannable in a row of three. */
-#teema-vaade-wrap .lpahead__what {
-  font-weight: var(--typography-weight-semibold);
-}
-
-#teema-vaade-wrap .lpahead__if {
-  font-size: 11px;
+/* A phase dated by a record the file already holds. Muted, because it is a
+ * statement rather than a control — there is nothing here to press. */
+#teema-vaade-wrap .kulgform__recorded {
+  font-size: 11.5px;
   line-height: 1.3;
   color: var(--text-muted);
-  opacity: 0.85;
-  white-space: nowrap;
 }
 
-#teema-vaade-wrap .lpahead__more {
-  margin-top: 6px;
-}
-
-#teema-vaade-wrap .lpahead__moresummary {
-  display: inline-block;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-#teema-vaade-wrap .lpahead__moresummary:hover {
-  color: var(--text-body);
-}
-
-#teema-vaade-wrap .lpahead__steps--rest {
-  margin-top: 6px;
-}
-
-/* -- Kirjas olevad kuupäevad ----------------------------------------------
- *
- * The strip, under the words that say what it is. The strip's own rules are
- * unchanged and follow this block; what the wrapper does is give it the heading
- * it lost when it moved out of `Teema käik`, and take away the bottom border it
- * used to need as the first thing in that section — here it is the last thing in
- * this one, and the section's own border already closes it. */
-#teema-vaade-wrap .lpdates {
+#teema-vaade-wrap .kulgform__date {
   margin: 0;
 }
 
-#teema-vaade-wrap .lpdates .tl-strip {
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: 0;
+/* One column on a phone. The 160px date box leaves the phase name about 119px
+ * at 375, which fits and reads badly — `Kooskõlastusring` on two lines beside a
+ * box is a row a thumb has to parse. Stacked, each row is a name and then its
+ * date, which is the order the question is asked in anyway. */
+@media (max-width: 520px) {
+  #teema-vaade-wrap .kulgform__row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 2px;
+  }
+}
+
+/* -- Phases on the strip ---------------------------------------------------
+ *
+ * `Menetluse kulg` draws phases and dated points in one row, so the phases take
+ * the strip's own grammar rather than a second one beside it. The mapping is
+ * the obvious one and is stated here because it is the whole of the merge:
+ *
+ *   current / recorded  → behind us: solid dot, solid rail   (like `past`)
+ *   unknown / possible  → not reached: hollow dot, muted rail (like `future`)
+ *
+ * `--tl-reach` carries the second half — the template hands a phase 100% or 0%
+ * — so nothing here has to restate which side of the row a state sits on. */
+#teema-vaade-wrap .tl-step--recorded .tl-step__dot,
+#teema-vaade-wrap .tl-step--current .tl-step__dot {
+  border-color: var(--accent-link);
+  background: var(--accent-link);
+}
+
+/* The current phase is the one node a reader looks for first, and the only one
+ * that is filled *and* ringed. */
+#teema-vaade-wrap .tl-step--current .tl-step__dot {
+  box-shadow: 0 0 0 3px var(--accent-border);
+}
+
+#teema-vaade-wrap .tl-step--current .tl-step__what {
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* `Teadmata` and `Võimalik` are both hollow, and they are deliberately not two
+ * shades of the same hollow dot: «may have happened» and «may yet happen» is
+ * not a difference in brightness. The dash is what separates them, and the
+ * words are gone from the rail by design — what a reader needs from an earlier
+ * phase with no evidence is that nothing claims it happened. */
+#teema-vaade-wrap .tl-step--unknown .tl-step__dot,
+#teema-vaade-wrap .tl-step--possible .tl-step__dot {
+  border-color: var(--border-strong);
+  background: var(--surface-base);
+}
+
+#teema-vaade-wrap .tl-step--unknown .tl-step__dot {
+  border-style: dashed;
+}
+
+#teema-vaade-wrap .tl-step--unknown .tl-step__what,
+#teema-vaade-wrap .tl-step--possible .tl-step__what {
+  color: var(--text-muted);
+}
+
+/* The canonical `Hetkeseis`, under the current phase's name.
+ *
+ * Body ink and a size between the name and the date: it is the most specific
+ * true thing the rail says about where the file is, and on a phase that holds
+ * two stages it is the only thing telling them apart. */
+#teema-vaade-wrap .tl-step__stage {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-body);
+}
+
+/* A dated point, beside the phases. Italic is the whole distinction: it is the
+ * same kind of object on the same rail, and what differs is that a date is
+ * something the file *holds* rather than a step of a procedure. */
+#teema-vaade-wrap .tl-step--milestone .tl-step__what {
+  font-style: italic;
 }
 
 #teema-vaade-wrap .tl-strip {

@@ -297,11 +297,11 @@ def test_scenario_c_a_late_entry_shows_no_earlier_history(specialist, organisati
     for absent in ("VTK", "Kooskõlastusring", "Valitsuses"):
         assert absent not in _labels(matter, specialist)
 
-    # And the road ahead still works from there: adoption and commencement may
-    # follow, undated and labelled possible.
+    # And what may still follow reads from where the file actually is, rather
+    # than from the beginning of a procedure Koda never saw: the rail draws
+    # commencement as possible, undated (docs/adr/0099 §2).
     rail = legal_process_rail(matter=matter, user=specialist)
-    assert [node.label for node in rail.ahead] == ["Jõustumine"]
-    assert all(node.state == "possible" for node in rail.ahead)
+    assert [node.label for node in rail.nodes if node.state == "possible"] == ["Jõustumine"]
 
 
 # ---------------------------------------------------------------------------
@@ -410,10 +410,12 @@ def test_scenario_g_koda_stopping_is_not_the_procedure_stopping(specialist):
     rail = legal_process_rail(matter=matter, user=specialist)
     assert rail.koda_stopped is True
     assert rail.pattern.key == PATTERN_KOJA_ETTEPANEK
-    # Not a node, not a state, and not a claim that the procedure ended: the
-    # road ahead is exactly what it was.
+    # Not a node, not a state, and not a claim that the procedure ended: what
+    # is still ahead on the rail is exactly what it was.
     assert "Koda" not in " ".join(node.label for node in rail.nodes)
-    assert rail.ahead, "Koda stopping must not empty the road ahead"
+    assert [node.label for node in rail.nodes if node.state == "possible"], (
+        "Koda stopping must not empty what is still ahead"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -476,9 +478,9 @@ def test_an_eu_regulation_acquires_no_transposition_obligation(specialist):
 
     rail = legal_process_rail(matter=matter, user=specialist)
     assert rail.pattern.key == PATTERN_EU_REGULATION
+    # `nodes` is the whole drawn pattern — there is no second, shorter list to
+    # check since docs/adr/0099 §2 — so this is the claim in full.
     assert "Ülevõtmine" not in [node.label for node in rail.nodes]
-    assert "Ülevõtmine" not in [node.label for node in rail.ahead]
-    assert "Ülevõtmine" not in [node.label for node in rail.ahead_rest]
 
 
 def test_a_transposition_stage_on_a_regulation_reads_beside_the_rail(specialist):
@@ -804,27 +806,35 @@ def test_reading_the_roadmap_writes_nothing_and_creates_no_work(specialist):
     assert matter.stage_id == before_stage
 
 
-def test_the_horizon_is_short_and_the_rest_is_behind_a_disclosure(specialist):
-    """§10. One to three phases, and the remainder available rather than listed."""
+def test_a_recorded_phase_is_never_drawn_as_one_that_may_be_ahead(specialist):
+    """What §10 rationed is simply all there now; the other half still holds.
+
+    §10 asked for one to three phases and the remainder behind a disclosure,
+    because a *second* list of six speculative steps beside the rail read as a
+    schedule. With that list gone the rail is the only rendering and it shows
+    the route in full (docs/adr/0099 §2) — so what has to survive is the claim
+    the horizon was also making: a phase the file can prove it reached is not
+    something that «may be ahead», however the pattern sorts it.
+    """
     matter = _matter(specialist, instruments=("vtk", "seadus"))
     _step(matter, specialist, "VTK kooskõlastusringile", date(2026, 1, 9), PHASE_VTK, stage="idea")
 
     rail = legal_process_rail(matter=matter, user=specialist)
     assert rail.pattern.key == PATTERN_VTK
-    assert len(rail.ahead) <= 3
-    # Nothing in the horizon is dated, ticked or counted.
-    assert all(node.state in {"possible", "unknown"} for node in rail.ahead)
-    # **`VTK` is not on the horizon**, because the file recorded a step in it.
-    # A phase it can prove it reached is not something that «may be ahead»,
-    # however it sorts — and the rail says `Kirjas` on the same node.
+    # The file reads as being at the beginning, and the one phase it can prove
+    # it reached sorts *after* that — and is still not drawn as a possibility.
     assert {node.label for node in rail.nodes if node.state == "recorded"} == {"VTK"}
-    # And the whole remaining route is reachable without being on screen.
-    assert [node.label for node in (*rail.ahead, *rail.ahead_rest)] == [
+    assert {node.label for node in rail.nodes if node.state == "current"} == {"Algus"}
+    # The remaining route is on the rail rather than behind a disclosure, and
+    # every step of it is merely possible …
+    assert [node.label for node in rail.nodes if node.state == "possible"] == [
         "Kooskõlastusring",
         "Valitsuses",
         "Riigikogus",
         "Jõustumine",
     ]
+    # … which accounts for the whole rail: nothing else is drawn as reached.
+    assert len(rail.nodes) == 6
 
 
 # ---------------------------------------------------------------------------

@@ -81,13 +81,17 @@ would leave a reader working out whether those are the same thing.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
+
+from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.matters.models import Matter
 from app.matters.process_phases import ProcessPattern, pattern_for
+from app.workflow.dates import format_at_precision
 from app.workflow.enums import Disposition
 
 # ---------------------------------------------------------------------------
@@ -122,22 +126,6 @@ STATE_LABELS: dict[str, str] = {
     STATE_UNKNOWN: "Teadmata",
     STATE_POSSIBLE: "Võimalik",
 }
-
-#: What a node says when the pattern marks it as one that **may not apply at
-#: all**, as opposed to one that simply has not happened yet.
-#:
-#: A VTK does not have to become a law; a `Määrus` may be a minister's and never
-#: reach the Government; a Koja ettepanek may be answered and go no further. Those
-#: are not «next steps», and a reader has to be able to tell them from one. The
-#: word is on the node, not in the stylesheet, for the reason the four states are.
-CONDITIONAL_LABEL = "kui menetlus jätkub"
-
-#: How many phases the road ahead names before it asks to be expanded.
-#:
-#: «Normally the next one to three relevant phases» — a horizon, not a plan. A
-#: rail that listed six speculative steps would read as a schedule, and the whole
-#: property this section has to keep is that none of it is promised.
-AHEAD_HORIZON = 3
 
 #: What the rail says beside itself when Koda has stopped following the file.
 #:
@@ -194,16 +182,11 @@ class ProcessNode:
 class LegalProcessRail:
     """One Matter's `Menetluse kulg`, or nothing at all.
 
-    ``ahead`` is the road ahead: the next few phases of the pattern, in the
-    lawyers' own words, every one of them undated and labelled possible. It is a
-    **reminder of the route, never a plan** — it creates no `NextAction`, sets no
-    deadline, assigns nobody, makes nothing late and is not written anywhere. What
-    *this office* does next is `PRAEGUNE TEGEVUS`, which is a different question
-    about a different actor and stays where it is (§5 of the brief).
-
-    ``ahead_rest`` is the remainder of the pattern behind a disclosure, so a
-    lawyer who wants the whole route can see it without the section turning into
-    a six-step schedule for everybody else.
+    **There is no separate «road ahead» list.** There was one — `Ees võib olla`,
+    with the rest of the pattern behind a disclosure — and it said what the rail
+    beside it was already drawing: a phase nobody has reached is muted, carries no
+    date and says «Tulevikus». Two renderings of one fact is one of them too many,
+    and the second was the wordier (docs/adr/0099).
 
     ``unplaced_stage`` is the current `Hetkeseis` when it cannot honestly be
     placed on the chosen pattern — `Muu`, or `ELi õiguse ülevõtmise ootel` on a
@@ -220,8 +203,6 @@ class LegalProcessRail:
 
     pattern: ProcessPattern
     nodes: tuple[ProcessNode, ...]
-    ahead: tuple[ProcessNode, ...] = ()
-    ahead_rest: tuple[ProcessNode, ...] = ()
     current_label: str = ""
     unplaced_stage: str = ""
     koda_stopped: bool = False
@@ -514,14 +495,6 @@ def legal_process_rail(
             )
         )
 
-    # **The road ahead: what is past the anchor and not already recorded.**
-    #
-    # Drawn from the same nodes rather than from a second list, so a phase cannot
-    # be `Võimalik` on the rail and absent from the horizon, or the other way
-    # round — and a node the file can prove it reached is not offered as
-    # something that «may be ahead», however it sorts.
-    ahead = tuple(node for node in drawn[anchor + 1 :] if node.state == STATE_POSSIBLE)
-
     # A `Hetkeseis` the chosen pattern cannot honestly hold — `Muu`, or a European
     # stage on a file the pattern says is never transposed — reads beside the rail
     # in its own words rather than being pushed onto the nearest node.
@@ -532,19 +505,241 @@ def legal_process_rail(
     return LegalProcessRail(
         pattern=pattern,
         nodes=tuple(drawn),
-        ahead=ahead[:AHEAD_HORIZON],
-        ahead_rest=ahead[AHEAD_HORIZON:],
         current_label=(drawn[current_index].label if current_index is not None else ""),
         unplaced_stage=unplaced,
         koda_stopped=facts.disposition == Disposition.MONITORING_STOPPED,
     )
 
 
+# ---------------------------------------------------------------------------
+# One rail
+# ---------------------------------------------------------------------------
+#
+# `Menetluse kulg` drew two things: the phase rail, and a second strip of the
+# dated points the file holds. Two rails one above the other, both called a
+# timeline, answering «where could this go» and «what dates are written down» —
+# and a reader had to work out that those were different questions before either
+# answer was any use.
+#
+# They are one rail now. A phase and a dated milestone are both *a named thing
+# on this file's course*, they draw identically, and the difference between them
+# is what a reader does with them rather than how they are shown.
+
+#: A phase: a step of the procedure this file may pass through.
+KIND_PHASE = "phase"
+#: A dated point the file actually holds — `Arvamuse tähtaeg`, `Koja arvamus`,
+#: `Jõustumine`, `Lõpetatud`. Read off its own canonical record by
+#: `app/matters/process_timeline.py`, which stays the one place those are read.
+KIND_MILESTONE = "milestone"
+
+
+@dataclass(frozen=True)
+class RailStep:
+    """One item on the single rail: a name, maybe a date, and how to draw it.
+
+    ``kind`` is what the editor acts on and nothing else. A phase can be hidden
+    and given an expected date; a milestone cannot, because each one *is* a
+    canonical record with its own editor, and a second place to change
+    `Matter.response_deadline` is how two screens start disagreeing.
+    """
+
+    key: str
+    label: str
+    kind: str
+    state: str
+    display_date: str = ""
+    sort_on: date | None = None
+    #: Secondary information, read as the item's `title`: a closure's
+    #: `Disposition`, a commencement's «mis jõustub». It is what tells two
+    #: `Jõustumine` columns apart, and it is not a second visible line because
+    #: «Vastus esitatud ja järeltegevus tehtud» under a 150px column wraps to
+    #: three and pushes its neighbours' dates out of alignment.
+    detail: str = ""
+    #: How much of the connector running from this item to the next is behind
+    #: us. A milestone measures it against today; a phase has no measurement
+    #: because it is not a date, and takes what its state implies.
+    reach: float = 1.0
+
+    @property
+    def is_phase(self) -> bool:
+        return self.kind == KIND_PHASE
+
+    @property
+    def reach_percent(self) -> str:
+        """``reach`` as a CSS length — ``0%``, ``37.2%``, ``100%``.
+
+        Formatted here rather than interpolated as a number, for the reason
+        `ProcessStep.reach_percent` gives: the application runs in Estonian and
+        Django would localise ``0.372`` to ``0,372``, which is not a CSS parse
+        error anywhere a person would see — the gradient simply stops being
+        drawn.
+        """
+        return f"{round(self.reach * 100, 1):g}%"
+
+
+def _step_rows(*, matter: Matter, user: Any) -> dict[str, Any]:
+    """This Matter's own timeline steps, by phase key. Scoped like everything."""
+    from app.matters.models import MatterTimelineStep
+
+    return {
+        row.phase_key: row
+        for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(user)
+    }
+
+
+def recorded_phase_dates(
+    *, matter: Matter, user: Any, phase_keys: frozenset[str]
+) -> dict[str, Any]:
+    """The earliest recorded business date in each phase, from what the file has.
+
+    **Reused, never duplicated.** A phase that actually happened is dated by the
+    `Menetluse areng` the lawyer filed in it — the same record the chronology
+    groups on — so the rail asks that record rather than storing the day a second
+    time. Only a phase with no such record can carry an expectation of its own.
+
+    Undated developments contribute nothing: «kuupäev teadmata» is an answer, and
+    it is not a day to print beside a phase.
+    """
+    from app.matters.models import MatterProceduralDevelopment
+
+    found: dict[str, Any] = {}
+    rows = (
+        MatterProceduralDevelopment.objects.filter(
+            matter=matter, process_phase__in=phase_keys, occurred_on__isnull=False
+        )
+        .visible_to(user)
+        .values_list("process_phase", "occurred_on", "occurred_on_precision")
+        .order_by("occurred_on")
+    )
+    for phase_key, occurred_on, precision in rows:
+        found.setdefault(phase_key, (occurred_on, precision))
+    return found
+
+
+def matter_rail(
+    *,
+    matter: Matter,
+    user: Any,
+    rail: LegalProcessRail | None,
+    milestones: Any = (),
+) -> list[RailStep]:
+    """The one rail `Menetluse kulg` draws, phases and dated points together.
+
+    ``milestones`` is `process_timeline.process_steps` — already built, already
+    scoped — handed in rather than read again, so the seven dated points stay
+    defined in exactly one module.
+
+    **The phases hold the frame and the current node divides it.** A phase list
+    has an order that is not chronological — a phase with no date sits where the
+    procedure puts it — and a dated point has a date and no place in a pattern.
+    Reconciling them by date alone does not work, because *the ordinary file
+    dates none of its phases*: every dated point then sorts ahead of every
+    phase, and a rail opens with commencement in 2027 and reaches `Algus` five
+    columns later.
+
+    So the one place both kinds agree on does the work: the phase the file is on
+    now. A dated point that has **already happened** is looked for among the
+    phases up to and including it, and one still **ahead** among the phases past
+    it — the same reading of today the strip's own `--tl-reach` grammar makes
+    (docs/adr/0074 §12.2). Inside that window a point still sorts against any
+    phase that *is* dated, so a recorded `Kooskõlastusring` in January and a file
+    opened in September read in the order they happened rather than in the order
+    the pattern lists them.
+
+    **Hidden steps are gone from the result, not marked.** A row a person removed
+    from this file's rail is not a row drawn in grey — that would be the clutter
+    they were removing.
+    """
+    rows = _step_rows(matter=matter, user=user)
+    steps: list[RailStep] = []
+
+    if rail is not None:
+        keys = frozenset(node.key for node in rail.nodes)
+        recorded = recorded_phase_dates(matter=matter, user=user, phase_keys=keys)
+        for node in rail.nodes:
+            row = rows.get(node.key)
+            if row is not None and row.hidden:
+                continue
+            # **What the phase happened on, before what somebody expects.** A
+            # recorded step is a fact and an expectation is a plan; where the
+            # file has both, the fact wins and the plan is simply no longer
+            # interesting.
+            when, display = None, ""
+            if node.key in recorded:
+                when, precision = recorded[node.key]
+                display = format_at_precision(when, precision)
+            elif row is not None and row.occurs_on is not None:
+                when, display = row.occurs_on, row.display_date
+            steps.append(
+                RailStep(
+                    key=node.key,
+                    label=node.label,
+                    kind=KIND_PHASE,
+                    state=node.state,
+                    display_date=display,
+                    sort_on=when,
+                    # A phase the file has reached joins the solid rail; one it
+                    # has not does not. `Teadmata` — an earlier phase with no
+                    # evidence — draws no solid connector either, because a
+                    # connector behind it would be the completed milestone the
+                    # late-entry rule refuses (docs/adr/0092 §13).
+                    reach=1.0 if node.state in (STATE_CURRENT, STATE_RECORDED) else 0.0,
+                )
+            )
+
+    today = timezone.localdate()
+    for milestone in sorted(milestones, key=lambda one: one.sort_on):
+        step = RailStep(
+            key=f"milestone:{milestone.label}:{milestone.sort_on.isoformat()}",
+            label=milestone.label,
+            kind=KIND_MILESTONE,
+            state=milestone.state,
+            display_date=milestone.display,
+            sort_on=milestone.sort_on,
+            # The strip already measured this one against today.
+            reach=milestone.reach,
+            detail=milestone.detail,
+        )
+        # Recomputed rather than carried, because placing a dated point that has
+        # already happened moves the current node one to the right.
+        current = next(
+            (index for index, placed in enumerate(steps) if placed.state == STATE_CURRENT),
+            len(steps),
+        )
+        if milestone.sort_on <= today:
+            window, default = (0, min(current + 1, len(steps))), current
+        else:
+            window, default = (current, len(steps)), len(steps)
+        steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
+    return steps
+
+
+def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], default: int) -> int:
+    """Where a dated point sits among steps that mostly have no date.
+
+    An undated step does not constrain it: a phase with no date makes no claim
+    about what preceded it, and on the ordinary file *no phase has one*. So the
+    scan runs backwards over the dated steps in the window only — after the last
+    one that is not later, before the first one that is — and a window holding no
+    dated step at all falls back to ``default``, which is the current phase.
+    """
+    low, high = window
+    position = default
+    for index in range(high - 1, low - 1, -1):
+        placed = steps[index]
+        if placed.sort_on is None:
+            continue
+        if placed.sort_on <= when:
+            return index + 1
+        position = index
+    return position
+
+
 #: Kept out of the query above on purpose: this module reads and never filters a
 #: population, so it has no `Q` of its own to export.
 __all__ = [
-    "AHEAD_HORIZON",
-    "CONDITIONAL_LABEL",
+    "KIND_MILESTONE",
+    "KIND_PHASE",
     "KODA_STOPPED_LABEL",
     "STATE_CURRENT",
     "STATE_LABELS",
@@ -554,8 +749,11 @@ __all__ = [
     "LegalProcessRail",
     "PhaseContext",
     "ProcessNode",
+    "RailStep",
     "legal_process_rail",
+    "matter_rail",
     "phase_context",
+    "recorded_phase_dates",
     "recorded_phase_keys",
     "recorded_stage_keys",
 ]

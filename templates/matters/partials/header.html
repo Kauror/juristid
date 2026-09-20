@@ -70,6 +70,25 @@ rather than read.
       <a class="button button--quiet button--tiny matterhead__edit"
          href="{% url 'matters:matter_edit' pk=matter.pk %}">Muuda teemat</a>
       {% comment %}
+        `Kustuta`, beside `Muuda` — the two things you do to the *record* rather
+        than to the file's contents, in one place.
+
+        It sat at the foot of the page in a section of its own, which put the
+        one irreversible action furthest from the one a person goes looking for
+        when they realise a Matter is wrong. They are the same errand: this
+        record should not say what it says. Deleting is the harder answer to it,
+        so it reads quieter and marks itself destructive, but it belongs in the
+        same breath (docs/adr/0097 §9, amended).
+
+        Still a link to a confirmation page and never an inline button: a
+        deletion has to be read before it is agreed to — which Matter, what goes
+        with it, what cannot be undone — and no `confirm()` or `hx-confirm`,
+        because a browser dialog is one keystroke from dismissed and is not
+        something the server can require (docs/adr/0096 §4).
+      {% endcomment %}
+      <a class="button button--quiet button--tiny matterhead__delete"
+         href="{% url 'matters:matter_delete' pk=matter.pk %}">Kustuta</a>
+      {% comment %}
         The ⋯ menu, for a Matter that has files.
 
         It holds one link now that `Nähtavus` has gone, and it is rendered only

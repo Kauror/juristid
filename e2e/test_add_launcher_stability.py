@@ -30,27 +30,37 @@ from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
-#: The top-level row: four families, in the canonical order.
+#: The top-level row, in the canonical order: the four families, then the one
+#: control that ends a file rather than adding to it.
 #:
-#: **Four where there were thirteen.** The bar grew to thirteen because it was
-#: the product's inventory of record types, and the lawyer standing in front of
-#: it does not have a record type in mind — so it asks what *kind of thing* is
-#: being recorded and the rest is asked second, inside the family chosen
-#: (docs/adr/0097 §8). The geometry contract is unchanged and is exactly what
-#: this file exists to hold: fewer chips is allowed, a chip that *moves* is not.
+#: **Four families where there were thirteen chips.** The bar grew to thirteen
+#: because it was the product's inventory of record types, and the lawyer
+#: standing in front of it does not have a record type in mind — so it asks what
+#: *kind of thing* is being recorded and the rest is asked second, inside the
+#: family chosen (docs/adr/0097 §8).
+#:
+#: `+ Lõpeta teema` is back at the end of it (docs/adr/0099 §5), which makes it
+#: this file's business again: it is in the row, so it has to hold still like
+#: everything else in the row, and opening it must not shift the four.
+#:
+#: The geometry contract itself is unchanged and is exactly what this file
+#: exists to hold: fewer chips is allowed, more chips is allowed, a chip that
+#: *moves* is not.
 CANONICAL = [
     "+ Märge",
     "+ Kaasamine",
     "+ Arvamus / tagasiside",
     "+ Ülevaade / uudis",
+    "+ Lõpeta teema",
 ]
 
-#: The four family panels, which is what the top-level chips open.
+#: The top-level panels, which is what the chips above open.
 PANEL_IDS = [
     "lisa-marge",
     "lisa-kaasamine",
     "lisa-arvamus",
     "lisa-koduleht",
+    "teema-lopeta",
 ]
 
 #: The sub-choices, and which family each is inside. Opening one of these is the
@@ -155,9 +165,13 @@ def a_new_matter(page, base_url: str) -> str:
 def test_no_launcher_control_moves_when_a_form_is_opened(page, base_url):
     """The primary regression, chip by chip.
 
-    Four clicks, and after each one every control is where it was before the
-    first — not merely where it was before *that* click, which a launcher that
-    drifted one row at a time would also satisfy.
+    One click per chip, and after each one every control is where it was before
+    the first — not merely where it was before *that* click, which a launcher
+    that drifted one row at a time would also satisfy.
+
+    `+ Lõpeta teema` is among them. Its panel is the tallest in the row and it
+    is the one chip whose own rule (`--last`) gives it different spacing, which
+    makes it the likeliest to push the row around (docs/adr/0099 §5).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)

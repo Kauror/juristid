@@ -1175,18 +1175,14 @@ def test_matter_add_to_matter_zone(page, base_url):
     compare("teema-lisa", capture(page, "teema-lisa", clip_to="#lisa-teemale"))
 
 
-def test_matter_operations_zone(page, base_url):
-    """`TEEMA TOIMINGUD` — what happens *to* the Matter, apart from the capture row.
-
-    A baseline because the claim is visual and is the whole point of the
-    section: `Lõpeta teema` and `Kustuta teema` have to read as a different
-    kind of thing from the four chips above them, and the destructive one has to
-    read as the most consequential control on the page without shouting at
-    somebody who is not about to press it (docs/adr/0097 §9).
-    """
-    signed_in_matter(page, base_url, OPEN_TITLE)
-    _at_rest(page)
-    compare("teema-toimingud", capture(page, "teema-toimingud", clip_to="#teema-toimingud"))
+# `TEEMA TOIMINGUD` had a baseline of its own here until docs/adr/0099 §5,
+# because the claim was visual and was the whole point of the section. The
+# section is retired and both of its claims are still photographed, in the two
+# places the controls moved to: `+ Lõpeta teema` has to read as a different kind
+# of thing from the four chips beside it, which `teema-lisa` now shows since it
+# clips `#lisa-teemale`; and `Kustuta` has to read as consequential without
+# shouting, which `teema-pais` shows. A third capture of the same two controls
+# would have been a baseline photographing nothing of its own.
 
 
 def test_matter_current_action_zone(page, base_url):

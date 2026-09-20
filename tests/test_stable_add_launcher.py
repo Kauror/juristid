@@ -1,6 +1,7 @@
 """`LISA TEEMALE` is a stable choice bar, and the server's half of that contract.
 
-**Four chips in one order**, where there were thirteen. Choosing one opens its
+**Four families in one order**, where there were thirteen, followed by the one
+control that ends a file rather than adding to it. Choosing any of them opens its
 form; it does not move the chip, reorder the row, or change which line anything
 sits on. The browser half — that no control's bounding box moves by a pixel when
 a panel opens — is `e2e/test_add_launcher_stability.py`; what *this* file pins is
@@ -60,15 +61,19 @@ SUBCHOICES = {
     "lisa-arvamus": ["Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"],
 }
 
-#: Every panel in the zone, family and sub-choice alike.
+#: Every panel in the zone: family, sub-choice and closure alike.
+#:
+#: `teema-lopeta` is among them again. It sat in a `TEEMA TOIMINGUD` section of
+#: its own between docs/adr/0097 §9 and docs/adr/0099 §5 — the reading that
+#: closure is not capture stands, but a heading over one control cost more than
+#: the complaint did, and what keeps the distinction now is `--last` and the
+#: chip's own prefix.
 #:
 #: `lisa-jargmine` is **not** among them: `+ Järgmine tegevus` left the row, and
 #: the one ordinary way to set a next step while none is open is the optional
-#: box inside `+ Märge`. Nor is `teema-lopeta`, which is real but renders in
-#: `TEEMA TOIMINGUD` — a section of its own, outside `#lisa-teemale`, asserted
-#: below. Nor `lisa-menetluse-link`, which is not a thing that happened to a
-#: Matter at all and is asked on the two Teema forms (docs/adr/0097 §5, §8.2,
-#: §9).
+#: box inside `+ Märge`. Nor is `lisa-menetluse-link`, which is not a thing that
+#: happened to a Matter at all and is asked on the two Teema forms
+#: (docs/adr/0097 §5, §8.2).
 PANEL_IDS = [
     "lisa-marge",
     "marge-tavaline",
@@ -81,24 +86,31 @@ PANEL_IDS = [
     "arvamus-teiste",
     "arvamus-koja",
     "lisa-koduleht",
+    "teema-lopeta",
 ]
 
-#: The families, which are the only chips in `name="lisa-valik"`.
+#: The four kinds of thing a file can have **added** to it.
 FAMILY_IDS = ["lisa-marge", "lisa-kaasamine", "lisa-arvamus", "lisa-koduleht"]
+
+#: Everything in `name="lisa-valik"`: the four families and the control that
+#: ends the file. One group, so the browser enforces one-open-at-a-time across
+#: the whole row — including between a capture panel and closure, which is the
+#: half docs/adr/0099 §5 deliberately changed back.
+EXCLUSIVE_IDS = [*FAMILY_IDS, "teema-lopeta"]
 
 
 def _zone(client, matter) -> str:
-    """`LISA TEEMALE` alone — up to `TEEMA TOIMINGUD`, not up to the chronology.
+    """`LISA TEEMALE` alone — its own `<section>`, opening tag to closing tag.
 
-    The two sections are siblings and `TEEMA TOIMINGUD` renders between the
-    launcher and `#ajajoon`, so slicing to the chronology would pull
-    `Lõpeta teema` and `Kustuta teema` back into every claim this file makes
-    about the launcher — which is the exact distinction the section exists to
-    draw (docs/adr/0097 §9).
+    It sliced to `id="teema-toimingud"` while that section existed. Bounding the
+    zone by the launcher's own element instead of by whatever happens to render
+    next is what this file wanted all along: the launcher holds no nested
+    `<section>`, so the first close is its own, and the slice no longer depends
+    on a neighbour that may be conditional, moved or — as here — retired.
     """
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     start = body.index('id="lisa-teemale"')
-    end = body.index('id="teema-toimingud"', start)
+    end = body.index("</section>", start)
     return body[start:end]
 
 
@@ -178,14 +190,20 @@ def test_the_open_step_control_is_not_in_the_launcher(signed_in, specialist):
     assert "lisa-jargmine" not in zone
 
 
-def test_closure_and_deletion_are_outside_the_launcher(signed_in, specialist):
-    """`TEEMA TOIMINGUD` is a region of its own, under the capture controls.
+def test_closure_is_the_last_chip_and_deletion_is_in_the_header(signed_in, specialist):
+    """`TEEMA TOIMINGUD` is retired, and its two controls moved apart.
 
-    `+ Lõpeta teema` was the last chip in this row and `Kustuta teema` was on
-    the edit page. Neither adds content to the Matter, and a row that mixes
-    «write this down» with «this file is finished» is a row where the most
-    consequential control looks exactly like the most routine one
-    (docs/adr/0097 §9).
+    docs/adr/0097 §9 put both in a section of their own, on the reading that
+    neither adds content to the Matter and a row mixing «write this down» with
+    «this file is finished» makes the most consequential control look like the
+    most routine one. That reading stands; the cure was a heading over one
+    control (docs/adr/0099 §5).
+
+    So the distinction is carried by position and class rather than by a region:
+    closure is **last** and marked `--last`, it is not addressed by the `lisa-`
+    prefix the four capture families share, and deletion is not in this row at
+    all — it is beside `Muuda teemat` in the header, where «this record is
+    wrong» is answered.
     """
     matter = factories.MatterFactory(owner=specialist)
     body = signed_in.get(
@@ -193,13 +211,21 @@ def test_closure_and_deletion_are_outside_the_launcher(signed_in, specialist):
     ).content.decode()
     zone = _zone(signed_in, matter)
 
-    assert "teema-lopeta" not in zone
-    assert "Kustuta teema" not in zone
+    assert 'id="teema-toimingud"' not in body
 
-    operations = body[body.index('id="teema-toimingud"') :]
-    operations = operations[: operations.index("</section>")]
-    assert 'for="teema-lopeta-valik"' in operations
-    assert "Kustuta teema" in operations
+    # Last, and the only chip in the row carrying `--last`.
+    assert _chip_ids(zone)[-1] == "teema-lopeta"
+    assert zone.count("disclosure-chip--last") == 1
+    assert 'for="teema-lopeta-valik"' in zone
+    # Not a fifth family: it keeps its own id prefix and it is not offered as
+    # something to add.
+    assert _family_chips(zone) == CANONICAL
+
+    # Deletion left the launcher and did not come back to it.
+    assert "Kustuta" not in zone
+    header = body[body.index('id="teema-pais"') : body.index('id="lisa-teemale"')]
+    assert "matterhead__delete" in header
+    assert "Kustuta" in header
 
 
 def test_a_refusal_reopens_its_own_panel_and_leaves_the_order_alone(signed_in, specialist):
@@ -298,11 +324,16 @@ def test_every_chip_is_a_control_and_its_form_is_a_separate_element(signed_in, s
 def test_each_group_is_its_own_radio_group_so_only_one_form_can_be_open(signed_in, specialist):
     """Three groups, and which one a chip is in is what makes the nesting work.
 
-    The four families share `lisa-valik`, so the browser enforces one-open-at-a-
-    time across the row with scripting off. Each family's sub-choices are a
-    group of their **own** — `marke-liik`, `arvamuse-liik` — because putting
-    them in `lisa-valik` would make choosing `Oluline tähtaeg` un-choose
-    `+ Märge`, which is the panel it lives inside (docs/adr/0097 §8).
+    The four families **and closure** share `lisa-valik`, so the browser enforces
+    one-open-at-a-time across the whole row with scripting off. `Lõpeta teema`
+    had a group of its own while it was a section of its own, which meant it
+    could stand open beside a capture panel; back in the row, sharing the group
+    is the point — picking it closes whatever was open (docs/adr/0099 §5).
+
+    Each family's sub-choices are a group of their **own** — `marke-liik`,
+    `arvamuse-liik` — because putting them in `lisa-valik` would make choosing
+    `Oluline tähtaeg` un-choose `+ Märge`, which is the panel it lives inside
+    (docs/adr/0097 §8).
     """
     matter = factories.MatterFactory(owner=specialist)
     zone = _zone(signed_in, matter)
@@ -310,7 +341,7 @@ def test_each_group_is_its_own_radio_group_so_only_one_form_can_be_open(signed_i
     names = re.findall(r'<input class="addpick" type="radio" name="([^"]+)"', zone)
 
     assert len(names) == len(PANEL_IDS)
-    assert names.count("lisa-valik") == len(FAMILY_IDS)
+    assert names.count("lisa-valik") == len(EXCLUSIVE_IDS)
     assert set(names) == {"lisa-valik", "marke-liik", "arvamuse-liik"}
 
 

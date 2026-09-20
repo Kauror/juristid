@@ -415,7 +415,8 @@ def test_muuda_supersedes_rather_than_completes(signed_in, normal_matter, specia
 
 
 def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, normal_matter):
-    """Four peers, and the distinctions asked second inside the one chosen.
+    """Four peers, the distinctions asked second inside the one chosen, and
+    the one control that ends the file rather than adding to it.
 
     It was thirteen chips in this row. Every one of them was a truthful
     distinction and the row was still wrong, because the lawyer in front of it
@@ -423,9 +424,15 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     here is the shape after that: the four top-level chips carry a `+`, the
     sub-choices inside two of them do not, and nothing is open until somebody
     chooses.
+
+    `+ Lõpeta teema` is at the end of the row again (docs/adr/0099 §5). It is
+    still not a fifth family — it adds nothing to the file — so it is named here
+    separately rather than joining the four.
     """
     body = _detail(signed_in, normal_matter)
-    zone = body[body.index('id="lisa-teemale"') : body.index('id="teema-toimingud"')]
+    zone = body[
+        body.index('id="lisa-teemale"') : body.index("</section>", body.index('id="lisa-teemale"'))
+    ]
 
     for chip in ("+ Märge", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
         assert chip in zone, chip
@@ -444,18 +451,23 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         assert f">{choice}<" in zone, choice
 
     # Not peers of the four, and not in this zone at all.
-    for gone in ("+ Järgmine tegevus", "+ Menetluse areng", "+ Menetluse link", "+ Lõpeta teema"):
+    for gone in ("+ Järgmine tegevus", "+ Menetluse areng", "+ Menetluse link"):
         assert gone not in zone, gone
 
+    # Present, last, and marked as the one control that is not a capture.
+    assert "+ Lõpeta teema" in zone
+    assert zone.index("+ Lõpeta teema") > zone.index("+ Ülevaade / uudis")
+    assert "disclosure-chip--last" in zone
+
     assert 'cx-panel" open' not in zone
-    # Nine operations in the launcher, nine saves. There is no shared one left,
-    # and `Lõpeta teema` is not counted because it is not in this zone.
+    # Nine capture operations, nine saves, plus closure's own — ten. There is no
+    # shared save left.
     #
     # The organisation picker inside each feedback panel contributes no
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 9
+    assert zone.count('type="submit"') == 10
     assert "composer__actions" not in zone
 
 

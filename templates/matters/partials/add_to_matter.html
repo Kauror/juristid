@@ -3,7 +3,7 @@
 
 **Four choices.** A note, a consultation, an opinion, a publication:
 
-    + Märge   + Kaasamine   + Arvamus / tagasiside   + Ülevaade / uudis
+    + Märge   + Kaasamine   + Arvamus / tagasiside   + Ülevaade / uudis   ·   + Lõpeta teema
 
 and nothing else is a peer of those four (docs/adr/0097 §8).
 
@@ -243,5 +243,26 @@ row of controls that refuse (brief §30, §31).
 
     {# 4 — `+ Ülevaade / uudis`. What Koda published about the topic. #}
     {% include "matters/partials/add/koduleht.html" %}
+
+    {% comment %}
+      5 — `+ Lõpeta teema`. This file is finished.
+
+      **Back among the ordinary actions**, where it was before docs/adr/0097 §9
+      moved it into a section of its own. The reasoning for moving it was that
+      closure is not capture and a chip row mixing them is a row where the most
+      consequential control looks like the most routine one. True — and the cure
+      turned out worse than the complaint: a lawyer finishing a file had to
+      scroll past everything they had just been adding to find the one action
+      they came for, and the section below it held a single control.
+
+      What keeps the distinction is `disclosure-chip--last`, which puts real
+      space between it and the four capture chips. Same row, visibly apart, and
+      one fewer heading on the page.
+
+      Only while the Matter is open: closing a closed file is not an operation.
+    {% endcomment %}
+    {% if matter.is_open %}
+      {% include "matters/partials/add/lopeta.html" %}
+    {% endif %}
   </div>
 </section>

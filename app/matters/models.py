@@ -2428,6 +2428,150 @@ class MatterProceduralDevelopment(VisibilityInheritingModel):
         return self.occurred_on is not None and is_approximate(self.occurred_on_precision)
 
 
+class MatterTimelineStepQuerySet(models.QuerySet):
+    def visible_to(self, user: object | None) -> MatterTimelineStepQuerySet:
+        """The only supported entry point for reading timeline steps."""
+        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+
+
+class MatterTimelineStep(VisibilityInheritingModel):
+    """What **this** file's `Menetluse kulg` shows, and when each phase happens.
+
+    The rail is a projection: `app/matters/legal_process.py` reads a pattern off
+    the `Õigusakt`, and every node's state is derived from what the file already
+    records. That answers «where could this go» well and leaves two questions it
+    structurally cannot answer, both of which are the lawyer's rather than the
+    data's:
+
+    * **which phases are worth showing on this file.** A pattern is a reviewed
+      reading of an ordinary procedure, not a claim about this Matter. A file
+      that will plainly never see a `VTK` still gets the node, because nothing in
+      the record says otherwise — and only the person working the file knows.
+    * **when a phase is expected.** `Jõustumine` in January is a thing a lawyer
+      is told and plans around. There is no canonical record of it until it
+      happens, and inventing one would be the manufactured milestone
+      docs/adr/0092 §13 refuses.
+
+    So one row per phase the lawyer has said something about, and **no row at
+    all** for the ordinary case. An absent row means «nothing said», which is
+    what the rail already assumed; the table starts empty and stays empty for
+    every file nobody edits.
+
+    What this is not
+    ----------------
+    **Not a second store of business events.** It holds a *preference* and an
+    *expectation*, and neither is a record of something that happened. When a
+    phase actually occurs the lawyer files a `Menetluse areng` in it, exactly as
+    before, and that record — not this one — is what the chronology reads and
+    what dates the phase from then on (`app/matters/phase_history.py`).
+
+    **Not a workflow engine.** No transitions, no ordering rules, no per-step
+    status, no assignment, no notifications. A step is shown or it is not, and it
+    carries a date or it does not.
+
+    **Nothing is inferred.** Not from a title, a filename, an organisation, a
+    link's host or today's date. Every row here was written by a person pressing
+    `Salvesta` on the one panel that writes it.
+
+    **It creates no work.** Hiding a phase makes no Matter late; a date here is
+    not a `NextAction`, not an `Oluline tähtaeg` and not a deadline anybody is
+    measured against. It is a note on a roadmap (docs/adr/0078 §3).
+    """
+
+    matter = models.ForeignKey(
+        Matter,
+        on_delete=models.CASCADE,
+        related_name="timeline_steps",
+        verbose_name="teema",
+    )
+    #: Which phase this row is about. A code-managed key, never a label — the
+    #: reviewed vocabulary has been reworded before without a key moving
+    #: (`app/matters/process_phases.py`).
+    phase_key = models.CharField(max_length=32, verbose_name="etapp")
+    #: Whether the lawyer took this phase off *this* file's rail.
+    #:
+    #: Hidden, never deleted, and never hidden by default: the pattern still
+    #: contains the phase and a second lawyer opening the file can put it back.
+    #: What is removed is the node, not the possibility.
+    hidden = models.BooleanField(default=False, verbose_name="peidetud")
+    #: When the phase is expected, as far as anybody knows. Optional, and the
+    #: ordinary value is empty.
+    #:
+    #: **An expectation, and drawn as one.** A date here says «we are told the
+    #: act comes into force in January», which is a plan and not a fact — so it
+    #: reads on the rail and contributes no chronology row, because the
+    #: chronology means «what has already happened».
+    occurs_on = models.DateField(null=True, blank=True, verbose_name="kuupäev")
+    #: How exactly :attr:`occurs_on` is known. The same four precisions, through
+    #: the same composer, as every other period on this product: a commencement
+    #: known only as «esimeses kvartalis» had an invented day or an empty field
+    #: before this, and both are worse than the one the person has
+    #: (docs/adr/0079 §2).
+    occurs_on_precision = models.CharField(
+        max_length=16,
+        choices=DatePrecision.choices,
+        default=DatePrecision.EXACT,
+        verbose_name="kuupäeva täpsus",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="edited_timeline_steps",
+        verbose_name="muutis",
+    )
+
+    objects = MatterTimelineStepQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "menetluse kulu samm"
+        verbose_name_plural = "menetluse kulu sammud"
+        ordering = ["phase_key"]
+        constraints = [
+            # One row per phase per Matter. The editor writes with
+            # `update_or_create`, so a second row would be a second answer to a
+            # question that has one.
+            models.UniqueConstraint(
+                fields=["matter", "phase_key"], name="matters_timeline_step_unique"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(phase_key__in=PHASE_KEYS),
+                name="matters_timeline_step_phase_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(occurs_on_precision__in=DatePrecision.values),
+                name="matters_timeline_step_precision_vocabulary",
+            ),
+            # An unknown date has no precision. `NULL` + `MONTH` would be a
+            # period with nothing to qualify — the rule `MatterProceduralDevelopment`
+            # keeps, for the same reason.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(occurs_on__isnull=False)
+                    | models.Q(occurs_on_precision=DatePrecision.EXACT)
+                ),
+                name="matters_timeline_step_undated_is_exact",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
+                ),
+                name="matters_timeline_step_visibility_vocabulary",
+            ),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover - admin convenience
+        return f"{self.matter_id} · {self.phase_key}"
+
+    @property
+    def display_date(self) -> str:
+        """The expectation at the precision it was given, or ``""``."""
+        if self.occurs_on is None:
+            return ""
+        return format_at_precision(self.occurs_on, self.occurs_on_precision)
+
+
 class MatterProceduralLinkQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterProceduralLinkQuerySet:
         """The only supported entry point for reading procedural links."""

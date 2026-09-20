@@ -5994,6 +5994,101 @@ class KodaOpinionForm(forms.Form):
         return clean_typed_organisation_name(self.cleaned_data.get("recipient_name"))
 
 
+class TimelineStepsForm(forms.Form):
+    """`Muuda kulgu` — which phases this file's rail shows, and when.
+
+    **Not a Django formset, and deliberately.** A formset brings management
+    fields, prefixes, ordering, deletion and an `empty_form`, and what this panel
+    is is a short fixed list of checkboxes and date boxes over a vocabulary the
+    *server* chose. The phases come from the pattern, not from the POST, so there
+    is nothing for a management form to manage — and a crafted extra row has
+    nowhere to land rather than needing to be refused.
+
+    **The pattern's phases and no others.** A `Määrus` is not offered
+    `Riigikogus`, for the same reason `+ Märge`'s `Etapp` select is not: a
+    control offering it invites somebody to record a phase the procedure does not
+    have (`app/matters/process_phases.py`).
+
+    **A phase that actually happened is not given a date box.** Where the file
+    records a `Menetluse areng` in a phase, that record dates it — so the panel
+    shows the day and says where it comes from rather than offering a second
+    place to type it. That is the whole of «reuse rather than duplicate»: the box
+    exists only where there is nothing to reuse.
+    """
+
+    use_required_attribute = False
+
+    def __init__(
+        self, *args: Any, phases: Any = None, rows: Any = None, recorded: Any = None, **kwargs: Any
+    ) -> None:
+        kwargs.setdefault("auto_id", "id_kulg_%s")
+        super().__init__(*args, **kwargs)
+        #: The pattern's nodes, in its own order. Empty when the file is read
+        #: against no procedure, and the panel then has nothing to offer.
+        self.nodes = list(phases.pattern.nodes) if phases and phases.pattern else []
+        #: Phases dated by a record the file already holds.
+        self.recorded = dict(recorded or {})
+        stored = dict(rows or {})
+        for node in self.nodes:
+            key = node.phase_key
+            row = stored.get(key)
+            # **The box means «show», because that is how it reads.** A ticked
+            # box that *removes* a step is the one shape of this control
+            # somebody gets backwards, and the cost of getting it backwards is
+            # a phase silently off the rail. The column stores `hidden` — the
+            # absence of a row is the default — and `steps()` inverts once,
+            # here, where both spellings are visible together.
+            self.fields[f"{key}__shown"] = forms.BooleanField(
+                label=node.label,
+                required=False,
+                initial=not row.hidden if row is not None else True,
+            )
+            if key in self.recorded:
+                # Dated by a `Menetluse areng`. No box, so there is nothing to
+                # save over a fact.
+                continue
+            self.fields[f"{key}__date"] = EstonianDateField(
+                label="Kuupäev",
+                required=False,
+                widget=EstonianDateInput(),
+                initial=row.occurs_on if row is not None else None,
+            )
+
+    @property
+    def rows(self) -> list[dict[str, Any]]:
+        """What the template draws: one entry per phase, in the pattern's order."""
+        drawn: list[dict[str, Any]] = []
+        for node in self.nodes:
+            key = node.phase_key
+            drawn.append(
+                {
+                    "key": key,
+                    "label": node.label,
+                    "shown_field": self[f"{key}__shown"],
+                    "date_field": self[f"{key}__date"] if f"{key}__date" in self.fields else None,
+                    "recorded_date": self.recorded.get(key, ""),
+                }
+            )
+        return drawn
+
+    def steps(self) -> list[tuple[str, bool, Any, str]]:
+        """The cleaned answers, as `set_timeline_steps` takes them.
+
+        A phase dated by a record carries no date here — the service is handed
+        `None`, which is what stops a save writing an expectation over a day the
+        file already proved.
+        """
+        from app.workflow.enums import DatePrecision
+
+        answers: list[tuple[str, bool, Any, str]] = []
+        for node in self.nodes:
+            key = node.phase_key
+            hidden = not self.cleaned_data.get(f"{key}__shown")
+            when = self.cleaned_data.get(f"{key}__date") if key not in self.recorded else None
+            answers.append((key, hidden, when, DatePrecision.EXACT.value))
+        return answers
+
+
 class ProceduralDevelopmentEditForm(forms.Form):
     """`Muuda` on a recorded `Menetluse areng`. What the record says, and nothing else.
 

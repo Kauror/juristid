@@ -8,6 +8,65 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-21
+basis = "deployment"
+# Omaniku koristusring eilsel menetluse kulul. Eile pandi sinna kolm asja
+# korraga — etappide rida, «Ees võib olla» loetelu ja kuupäevade riba — ja
+# omanik luges tulemust: iga üksik osa vastas õigele küsimusele, aga koos
+# lugesid nad nagu arenduse silumispaneel. Selle ringi punktid on peaaegu kõik
+# *vähem*, ja üks on juurde.
+#
+# **Kaks esimest punkti võtavad tagasi eilse kaheteistkümnenda punkti.** Eile
+# ütles kirje, et sulgemine ja kustutamine on omaette plokis «Teema toimingud».
+# See oli õige mõte ja vale ravi: plokk jäi ühe nupuga lehele ja teema
+# lõpetamiseks pidi kerima läbi kogu selle, mida oli just lisatud. Vanu punkte
+# ei kustutata ega parandata — 20. september ütleb, mis sel päeval tõesti nii
+# oli (docs/release-notes/README.md) —, aga lugeja peab teadma, kust need kaks
+# nuppu nüüd leiab. Mõlemad punktid ütlevad ka selle, mis *ei* muutu:
+# kustutamist küsitakse endiselt eraldi lehel üle.
+#
+# **Kolmas punkt on kogu ringi mõte ühe lausena.** Kolmest plokist sai üks
+# rida. Punkt ei loetle, mis kadus — lugeja ei pea teadma, et seal oli kolm
+# asja, ta näeb, et nüüd on üks.
+#
+# **Neljas punkt nimetab arvamuse tähtaega eraldi**, sest see on see kuupäev,
+# mille pärast jurist sellele reale vaatab. Eilne kuueteistkümnes punkt lubas
+# kuupäevad menetluse kulu juurde; see punkt ütleb, et need on nüüd etappide
+# endi vahel, mitte nende all omaette ribana.
+#
+# **Viies punkt võtab tagasi eilse viieteistkümnenda.** «Ees võib olla» loetelu
+# kadus tervenisti ja sõnad «praegu», «võimalik» ja «teadmata» koos sellega.
+# Punkt ütleb otse välja, et info ise ei kadunud, ja nimetab ka ekraanilugeja —
+# vastasel juhul loeks see nagu ligipääsetavuse kaotus. Lubadus, et edasisest
+# teest ei teki tähtaega, on kirjas seitsmendas punktis ja kehtib edasi.
+#
+# **Kuues ja seitsmes punkt on ainus asi, mis juurde tuli**, ja nad käivad
+# koos. Kuues ütleb, mida saab teha; seitsmes ütleb, mida see *ei* tee.
+# Teine on siin tähtsam kui esimene: kuupäev menetluse kulus on juristi enda
+# ootus, mitte tähtaeg, mille vastu keegi teda mõõdab, ja ilma selle punktita
+# loeks lugeja esimest lubadusena, et rakendus hakkab seda jälgima.
+#
+# **Kaheksas punkt on väike ja see oli päris viga.** Hetkeseis seisis korraga
+# päises ja menetluse kulu real — «Kooskõlastusringil» sõna «Kooskõlastusring»
+# all, ühe tähe kaugusel. Leiti brauserist, mitte katsest.
+#
+# Ükski punkt ei nimeta ekraaniosade sisemisi nimesid ega luba, et rakendus
+# ise midagi teksti või failinime järgi arvab: menetluse kulg näitab ainult
+# seda, mis on teemale kirja pandud, ja seda, mida jurist ise sinna paneb.
+prs = [269]
+changes = [
+  "Teema kustutamine on nüüd teema lehe ülaosas «Muuda teemat» kõrval. Kustutamist küsitakse endiselt eraldi lehel üle.",
+  "Teema lõpetamine on taas teemale lisamise real, viimase valikuna ja teistest veidi eemal; omaette plokki «Teema toimingud» enam ei ole.",
+  "Menetluse kulg on nüüd üks rida, kus menetluse etapid ja teemale kirja pandud kuupäevad on koos selles järjekorras, nagu need menetluses tulevad.",
+  "Arvamuse tähtaeg, alustamise päev, Koja arvamus ja jõustumine on nüüd menetluse kulu real etappide endi vahel, mitte eraldi ribana nende all.",
+  "Menetluse kulust kadusid seda selgitavad sõnad — «praegu», «kirjas», «teadmata», «võimalik» ja loetelu «Ees võib olla». Info ise on alles: praegune etapp on esile tõstetud, veel ees olevad on hallid ja ekraanilugeja ütleb nende juures «tulevikus».",
+  "Menetluse kulgu saab nüüd ise kohandada: «Muuda» avab loetelu, kust saab eemaldada etapid, mida selle teema puhul ei tule, ja lisada kuupäeva sinna, kus see on juba teada.",
+  "Menetluse kulus lisatud kuupäev on märge selle teema enda rea peal: sellest ei teki tähtaega ega järgmist tegevust, ükski teema ei muutu sellest hilinenuks ja ühtegi varem kirja pandud kirjet see ei muuda.",
+  "Hetkeseis on nüüd kirjas ainult teema päises; varem korrati seda ka menetluse kulu real.",
+  "Liikme märkimine käib nüüd asutuse valiku juures samal real, mitte eraldi reana selle all.",
+]
+
+[[day]]
 date = 2026-09-20
 basis = "deployment"
 # Omaniku teine läbivaatus Teema ekraanidel. Neli parandust, millest kolm

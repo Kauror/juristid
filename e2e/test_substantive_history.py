@@ -177,15 +177,24 @@ def test_the_two_sections_are_headings_of_the_same_level(page, base_url):
     expect(page.get_by_role("heading", level=2).filter(has_text="Menetluse kulg")).to_have_count(1)
 
 
-def test_the_current_node_says_which_side_of_its_node_the_file_is_on(page, base_url):
-    """`Jõustumine · Praegu` alone cannot tell two real situations apart."""
+def test_the_stage_reads_in_the_header_and_the_phase_on_the_rail(page, base_url):
+    """`Hetkeseis` has one home, and it is not the rail (docs/adr/0099).
+
+    It rode on the current node while the rail was a thing of its own, because
+    `Jõustumine · Praegu` could not tell a file waiting for commencement from one
+    already in force. Merged onto the dated row, that became
+    `Kooskõlastusringil` under a node called `Kooskõlastusring` on every ordinary
+    file — which is what docs/adr/0074 §12.1 took off this row to begin with.
+    """
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Jõustumise ootel")
 
-    current = rail(page).locator(".lprail__node--current")
+    current = rail(page).locator(".tl-step--current")
     expect(current).to_contain_text("Jõustumine")
-    expect(current).to_contain_text("Praegu")
-    expect(current).to_contain_text("Jõustumise ootel")
+    expect(current).not_to_contain_text("Jõustumise ootel")
+    expect(current).not_to_contain_text("Praegu")
+    # Stated once, in the header band where it has always been stated.
+    expect(page.locator("#teema-pais")).to_contain_text("Jõustumise ootel")
 
 
 # ---------------------------------------------------------------------------
@@ -410,18 +419,23 @@ def test_the_technical_log_is_one_link_away(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_a_domestic_rail_names_its_states_in_words(page, base_url):
+def test_a_domestic_rail_draws_its_states_without_naming_them(page, base_url):
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
 
     expect(rail(page)).to_contain_text("Menetluse kulg")
-    expect(rail(page)).to_contain_text("Riigisisene menetlus")
-    for label in ("Algus", "Kooskõlastus", "Valitsus", "Riigikogu", "Jõustumine"):
-        expect(rail(page).locator(".lprail__what").filter(has_text=label)).to_have_count(1)
-    current = rail(page).locator(".lprail__node--current")
+    # The five phases, each drawn once. `Jõustumine` is matched on the *phase*
+    # rather than on the word: since docs/adr/0099 the dated points share this
+    # row, and a seeded commencement carries the same noun.
+    for label in ("Algus", "Kooskõlastus", "Valitsus", "Riigikogu"):
+        expect(rail(page).locator(".tl-step__what").filter(has_text=label)).to_have_count(1)
+    phases = rail(page).locator(".tl-step--phase")
+    expect(phases.filter(has_text="Jõustumine")).to_have_count(1)
+    current = rail(page).locator(".tl-step--current")
     expect(current).to_have_count(1)
     expect(current).to_contain_text("Kooskõlastus")
-    expect(current).to_contain_text("Praegu")
+    # `Praegu` is gone as a word; the node says so three other ways.
+    expect(current).not_to_contain_text("Praegu")
     expect(current).to_have_attribute("aria-current", "step")
 
 
@@ -436,7 +450,6 @@ def test_an_eu_rail_makes_no_domestic_claim(page, base_url):
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "ELi direktiiv", stage="Eesti seisukoht koostamisel")
 
-    expect(rail(page)).to_contain_text("Direktiivi menetlus")
     expect(rail(page)).to_contain_text("ELi menetlus")
     expect(rail(page)).to_contain_text("Eesti seisukoht")
     expect(rail(page)).to_contain_text("Ülevõtmine")
@@ -451,14 +464,17 @@ def test_a_late_entry_reads_teadmata_and_never_as_three_completed_steps(page, ba
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Riigikogus")
 
-    states = rail(page).locator(".lprail__node")
-    expect(states).to_have_count(5)
-    expect(rail(page).locator(".lprail__node--unknown")).to_have_count(3)
-    expect(rail(page).locator(".lprail__node--current")).to_contain_text("Riigikogu")
-    expect(rail(page).locator(".lprail__node--possible")).to_contain_text("Jõustumine")
-    expect(rail(page)).to_contain_text("Teadmata")
-    expect(rail(page)).to_contain_text("Võimalik")
-    expect(rail(page)).not_to_contain_text("Tehtud")
+    expect(rail(page).locator(".tl-step--phase")).to_have_count(5)
+    expect(rail(page).locator(".tl-step--unknown")).to_have_count(3)
+    expect(rail(page).locator(".tl-step--current")).to_contain_text("Riigikogu")
+    expect(rail(page).locator(".tl-step--possible")).to_contain_text("Jõustumine")
+    # The words are gone (docs/adr/0099) and nothing is colour alone: the state
+    # is a class, `aria-current` marks the current node, and a node still ahead
+    # says «Tulevikus» to a screen reader.
+    for retired in ("Teadmata", "Võimalik", "Kirjas", "Tehtud"):
+        expect(rail(page)).not_to_contain_text(retired)
+    expect(rail(page).locator('[aria-current="step"]')).to_have_count(1)
+    expect(rail(page)).to_contain_text("Tulevikus")
 
 
 def test_an_explicitly_recorded_earlier_stage_reads_kirjas(page, base_url):
@@ -474,10 +490,12 @@ def test_an_explicitly_recorded_earlier_stage_reads_kirjas(page, base_url):
     form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
-    recorded = rail(page).locator(".lprail__node--recorded")
+    recorded = rail(page).locator(".tl-step--recorded")
     expect(recorded).to_contain_text("Kooskõlastus")
-    expect(recorded).to_contain_text("Kirjas")
-    expect(rail(page).locator(".lprail__node--current")).to_contain_text("Riigikogu")
+    # `Kirjas` is drawn rather than written (docs/adr/0099): the phase the file
+    # can prove it reached joins the solid rail.
+    expect(recorded).to_have_class(re.compile(r"tl-step--recorded"))
+    expect(rail(page).locator(".tl-step--current")).to_contain_text("Riigikogu")
 
 
 def test_koda_stopping_reads_beside_the_rail_and_not_on_it(page, base_url):
@@ -497,10 +515,10 @@ def test_koda_stopping_reads_beside_the_rail_and_not_on_it(page, base_url):
     page.goto(url)
     page.wait_for_load_state("networkidle")
 
-    expect(rail(page).locator(".lprail__node--current")).to_contain_text("Riigikogu")
+    expect(rail(page).locator(".tl-step--current")).to_contain_text("Riigikogu")
     expect(rail(page).locator(".lprail__aside--koda")).to_have_text("Koda ei tegele edasi")
     # And no node was renamed after the disposition.
-    expect(rail(page).locator(".lprail__what").filter(has_text="Koda")).to_have_count(0)
+    expect(rail(page).locator(".tl-step__what").filter(has_text="Koda")).to_have_count(0)
 
 
 def test_a_matter_with_nothing_to_place_draws_no_rail(page, base_url):
@@ -514,7 +532,7 @@ def test_a_matter_with_nothing_to_place_draws_no_rail(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    expect(rail(page).locator(".lprail__node")).to_have_count(0)
+    expect(rail(page).locator(".tl-step--phase")).to_have_count(0)
     expect(rail(page).locator(".lpahead")).to_have_count(0)
     expect(rail(page)).not_to_contain_text("Ees võib olla")
     expect(rail(page)).to_contain_text("Alustatud")
@@ -574,7 +592,7 @@ def test_nothing_overflows_sideways_at_narrow_widths(page, base_url, width):
     )
     assert overflow <= 1, f"the document scrolls sideways by {overflow}px at {width}px"
     # Every node is still drawn, rather than dropped to fit.
-    expect(rail(page).locator(".lprail__node")).to_have_count(5)
+    expect(rail(page).locator(".tl-step--phase")).to_have_count(5)
 
 
 # ---------------------------------------------------------------------------
@@ -682,20 +700,29 @@ def test_a_late_entry_draws_no_earlier_sections_at_all(page, base_url):
     expect(history(page)).not_to_contain_text("Valitsuses")
 
 
-def test_the_road_ahead_says_it_is_possible_in_words(page, base_url):
-    """§10. No percentages, no checkmarks, no dates, and never colour alone."""
+def test_a_phase_still_ahead_is_drawn_ahead_and_carries_no_date(page, base_url):
+    """What `Ees võib olla` said, said once by the rail itself (docs/adr/0099).
+
+    The separate list was a second rendering of a fact the rail beside it was
+    already drawing. What has to survive its removal is the *claim*: a phase
+    nobody has reached is not dated, not ticked, not scored, and not marked by
+    colour alone.
+    """
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
 
-    ahead = page.locator(".lpahead")
-    expect(ahead).to_be_visible()
-    expect(ahead).to_contain_text("Ees võib olla")
-    expect(ahead).to_contain_text("Valitsuses")
-    # A horizon, not a plan: at most three steps on screen.
-    assert ahead.locator(".lpahead__steps").first.locator(".lpahead__step").count() <= 3
-    # And nothing in it is dated or scored.
-    assert not re.search(r"\d{1,2}\.\d{1,2}\.\d{4}", ahead.inner_text())
-    assert "%" not in ahead.inner_text()
+    ahead = rail(page).locator(".tl-step--possible")
+    expect(ahead.filter(has_text="Valitsuses")).to_have_count(1)
+    # Nothing ahead carries a date, a percentage or a tick …
+    for index in range(ahead.count()):
+        step = ahead.nth(index)
+        expect(step.locator(".tl-step__date")).to_have_count(0)
+        assert "%" not in step.inner_text()
+    # … and it is not colour alone.
+    expect(ahead.first).to_contain_text("Tulevikus")
+    # The retired block is gone.
+    expect(page.locator(".lpahead")).to_have_count(0)
+    expect(rail(page)).not_to_contain_text("Ees võib olla")
 
 
 def test_a_regulation_is_never_offered_the_riigikogu(page, base_url):
@@ -703,10 +730,10 @@ def test_a_regulation_is_never_offered_the_riigikogu(page, base_url):
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Määrus", stage="Kooskõlastusringil")
 
-    expect(rail(page)).to_contain_text("Määruse menetlus")
+    # A regulation is not adopted by Parliament, so the phase is not on the rail
+    # at all — which is the claim, and it does not need a word beside it.
     expect(rail(page)).not_to_contain_text("Riigikogus")
-    # `Valitsuses` is offered as a step that may not apply, in words.
-    expect(rail(page).locator(".lpahead")).to_contain_text("kui menetlus jätkub")
+    expect(rail(page).locator(".tl-step--phase").filter(has_text="Valitsuses")).to_have_count(1)
 
 
 def test_an_eu_regulation_is_never_offered_a_transposition(page, base_url):
@@ -714,7 +741,6 @@ def test_an_eu_regulation_is_never_offered_a_transposition(page, base_url):
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "ELi määrus", stage="ELi menetluses")
 
-    expect(rail(page)).to_contain_text("ELi määruse menetlus")
     expect(rail(page)).not_to_contain_text("Ülevõtmine")
 
 
@@ -723,7 +749,9 @@ def test_the_dated_points_read_inside_menetluse_kulg_and_not_in_the_history(page
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    expect(rail(page).locator(".lpdates")).to_contain_text("Kirjas olevad kuupäevad")
+    # One rail, carrying both. The separate block and its heading are gone.
+    expect(rail(page)).not_to_contain_text("Kirjas olevad kuupäevad")
+    expect(rail(page).locator(".tl-step--milestone")).not_to_have_count(0)
     expect(rail(page).locator(".tl-strip")).to_be_visible()
     expect(history(page).locator(".tl-strip")).to_have_count(0)
 
@@ -747,7 +775,7 @@ def test_one_save_updates_the_rail_the_headings_and_the_dates_together(page, bas
     )
 
     # One swap, no reload: the rail, the heading and the sentence all moved.
-    expect(rail(page).locator(".lprail__nowvalue")).to_have_text("Riigikogus")
+    expect(rail(page).locator(".tl-step--current")).to_contain_text("Riigikogus")
     assert _phase_headings(page)[0] == "Riigikogus"
     expect(history(page).locator("h3.uxtl__phase").first).to_contain_text("Praegu")
 

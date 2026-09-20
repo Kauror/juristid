@@ -356,7 +356,13 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     zone's *shape* — a choice of operations, none of them open — and it is
     unchanged by the number of them."""
     body = _detail(signed_in, normal_matter)
-    panels = body[body.index('id="lisa-teemale"') : body.index('id="teema-toimingud"')]
+    # The launcher's own section, opening tag to closing tag. It sliced on
+    # `#teema-toimingud` while that section existed; it is gone and both of its
+    # controls moved — `Lõpeta teema` back into this row, `Kustuta` up beside
+    # `Muuda teemat` — so the zone is bounded by the launcher itself rather
+    # than by whatever renders next (docs/adr/0099 §5).
+    start = body.index('id="lisa-teemale"')
+    panels = body[start : body.index("</section>", start)]
 
     expected = [
         "+ Märge",
@@ -373,9 +379,15 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
         "Teiste arvamus",
         "Koja arvamus",
         "+ Ülevaade / uudis",
+        # Back among the ordinary actions, and visibly last: a section of
+        # its own put the one action a lawyer finishing a file came for
+        # below everything they had just been adding.
+        "+ Lõpeta teema",
     ]
     assert [chip for chip in expected if f">{chip}<" in panels] == expected
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 11
+    # Twelve panels: eleven capture operations and `Lõpeta teema`, which is a
+    # peer chip in the same exclusive group again (docs/adr/0097 §9, amended).
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 12
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -431,16 +443,18 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     assert completion.count('type="submit"') == 1
     assert zone.count('type="submit"') == 2
 
-    # Nine operations under LISA TEEMALE — four families, of which two ask a
-    # second question — each with exactly one save of its own. The organisation
-    # picker inside each feedback panel contributes none: its `+` is an explicit
-    # `type="button"`, precisely so that naming a body the catalogue does not
-    # hold cannot submit the panel (docs/adr/0073).
+    # Ten operations under LISA TEEMALE — four families, of which two ask a
+    # second question, plus `Lõpeta teema` — each with exactly one save of its
+    # own. The organisation picker inside each feedback panel contributes none:
+    # its `+` is an explicit `type="button"`, precisely so that naming a body the
+    # catalogue does not hold cannot submit the panel (docs/adr/0073).
     #
-    # `Lõpeta teema` is not among them: it is under `TEEMA TOIMINGUD`, which is
-    # not this zone (docs/adr/0097 §9).
-    panels = body[body.index('id="lisa-teemale"') : body.index('id="teema-toimingud"')]
-    assert panels.count('type="submit"') == 9
+    # `Lõpeta teema` *is* among them now. It sat under `TEEMA TOIMINGUD`, a
+    # section holding one control, which put the action a lawyer finishing a file
+    # came for below everything they had just been adding (docs/adr/0097 §9,
+    # amended). The zone runs to `Menetluse kulg`, which is what follows it.
+    panels = body[body.index('id="lisa-teemale"') : body.index('id="menetluse-kulg-heading"')]
+    assert panels.count('type="submit"') == 10
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 

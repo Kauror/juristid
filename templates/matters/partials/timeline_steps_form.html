@@ -1,0 +1,71 @@
+{% comment %}
+`Muuda kulgu` — which phases this file's rail shows, and when each is expected.
+
+**A short list, not a configuration screen.** One row per phase the file's own
+procedure has, each with a box to take it off this rail and a box for a date.
+There is no ordering, no adding a phase the pattern does not contain, no
+per-step status and nothing to assign: the panel answers two questions and
+closes.
+
+**A phase the file has already recorded carries no date box.** Where a
+`Menetluse areng` is filed in a phase, that record dates it — the day is shown
+and named as recorded, because offering a second place to type it is how two
+screens start disagreeing. The box exists only where there is nothing to reuse
+(app/matters/forms.py `TimelineStepsForm`).
+
+Swaps itself in place, like every other correction on this page. A save
+re-renders the whole Teema view: hiding a phase changes the rail, and on a file
+whose phases carry dates it changes what the rail says about all of them.
+{% endcomment %}
+<form class="kulgform" data-addform
+      hx-post="{% url 'matters:timeline_steps' pk=matter.pk %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML">
+  {% csrf_token %}
+
+  {% if timeline_steps_error %}
+    <p class="formerror" role="alert">{{ timeline_steps_error }}</p>
+  {% endif %}
+
+  <p class="kulgform__lede">
+    Eemalda sammud, mida selle teema puhul ei tule, ja lisa kuupäev sinna, kus
+    see on teada.
+  </p>
+
+  <ul class="kulgform__rows">
+    {% for row in timeline_steps_form.rows %}
+      <li class="kulgform__row">
+        {% comment %}
+          Ticked means shown. A box that *removes* a step when ticked is the one
+          shape of this control somebody gets backwards, and the cost is a phase
+          silently off the rail. The column stores `hidden` and the form inverts
+          once, where both spellings are visible together.
+        {% endcomment %}
+        <label class="chip kulgform__show">
+          {{ row.shown_field }}
+          <span class="chip__name">{{ row.label }}</span>
+        </label>
+
+        {% if row.recorded_date %}
+          {% comment %}
+            Dated by a `Menetluse areng` this file already holds. Shown, and not
+            offered as something to type over.
+          {% endcomment %}
+          <span class="kulgform__recorded">{{ row.recorded_date }} · kirja pandud</span>
+        {% else %}
+          <label class="cx-f cx-f--date kulgform__date"
+                 for="{{ row.date_field.id_for_label }}">
+            <span class="visually-hidden">{{ row.label }} — {{ row.date_field.label }}</span>
+            {{ row.date_field }}
+          </label>
+          {% if row.date_field.errors %}
+            <p class="field__error">{{ row.date_field.errors|first }}</p>
+          {% endif %}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">Salvesta</button>
+  </div>
+</form>

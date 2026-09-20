@@ -98,6 +98,20 @@ def labels(page) -> list[str]:
     return [text.strip() for text in page.locator(".tl-step__what").all_inner_texts()]
 
 
+def dated_labels(page) -> list[str]:
+    """Only the columns that are *dated points*, in the order they are drawn.
+
+    The rail carries this file's phases on the same row since docs/adr/0099, and
+    a test about which dated sources reach it has to say which columns it means.
+    Filtered on the class rather than on the words, because `Jõustumine` is both
+    a phase and a commencement and no list of labels can tell them apart.
+    """
+    return [
+        text.strip()
+        for text in page.locator(".tl-step--milestone .tl-step__what").all_inner_texts()
+    ]
+
+
 def dates_drawn(page) -> list[str]:
     """Every column's date, in the order the strip draws them."""
     return [text.strip() for text in page.locator(".tl-step__date").all_inner_texts()]
@@ -602,12 +616,14 @@ def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
     open_matter(page, base_url, OPEN_TITLE)
 
     expect(strip(page)).to_have_count(1)
-    # Four columns. `seed_e2e_data` files a sent opinion on this Matter for the
-    # Statistika world, and records two commencements with known dates plus one
-    # `GENERAL_ORDER` — «jõustub üldises korras», which is a statement about
-    # what is *not* known and therefore has no position on a rail. The two
-    # watched dates, the engagement, the stage and the `Töövõit` draw nothing.
-    assert labels(page) == ["Alustatud", "Koja arvamus", "Jõustumine", "Jõustumine"]
+    # The four dated columns, in order, and now with the file's phases merged
+    # onto the same row (docs/adr/0099). `seed_e2e_data` files a sent opinion on
+    # this Matter for the Statistika world, and records two commencements with
+    # known dates plus one `GENERAL_ORDER` — «jõustub üldises korras», which is
+    # a statement about what is *not* known and therefore has no position on a
+    # rail. The two watched dates, the engagement and the `Töövõit` draw
+    # nothing, which is what this test is actually about.
+    assert dated_labels(page) == ["Alustatud", "Koja arvamus", "Jõustumine", "Jõustumine"]
     for gone in RETIRED:
         expect(strip(page).get_by_text(gone, exact=False)).to_have_count(0)
     # No countdown either: the `N p` suffix went with the future sources.

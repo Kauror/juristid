@@ -563,7 +563,16 @@ def test_the_late_entry_rule_is_unchanged_by_the_recorded_rule(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_the_rail_renders_on_the_matter_page_with_its_states_in_words(signed_in, specialist):
+def test_the_rail_renders_on_the_matter_page_without_its_state_words(signed_in, specialist):
+    """The state words are gone; what they said is drawn and marked up.
+
+    `Teadmata`, `Praegu` and `Võimalik` were three labels explaining a picture a
+    lawyer reads in a second, and the owner's cleanup round took them off. What
+    replaces them is not nothing: the current phase carries `aria-current`, a
+    phase still ahead says «Tulevikus» to a screen reader, and the canonical
+    `Hetkeseis` is written out on the one node that needs a word. None of it is
+    colour alone (docs/adr/0074 §12.2).
+    """
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
 
@@ -573,29 +582,50 @@ def test_the_rail_renders_on_the_matter_page_with_its_states_in_words(signed_in,
     rail = body[body.index('class="lprail"') : body.index('id="ajalugu-loend"')]
 
     assert "Menetluse kulg" in rail
-    assert "Riigisisene menetlus" in rail
-    # Every state is text on the page, not only a class.
-    assert "Teadmata" in rail
-    assert "Praegu" in rail
-    assert "Võimalik" in rail
+    assert "Riigikogus" in rail
+    # The explanatory labels are gone.
+    for retired in ("Teadmata", "Kirjas", "Võimalik", "Ees võib olla", "Kogu võimalik teekond"):
+        assert retired not in rail, f"{retired} is back on the rail"
+    # And what they said is still reachable without seeing the colours.
     assert 'aria-current="step"' in rail
-    # And the history section is still below it, saying what actually happened.
+    assert "Tulevikus" in rail
+    # The history section is still below it, saying what actually happened.
     assert "Teema käik" in body
 
 
-def test_the_current_nodes_stage_label_reaches_the_page(signed_in, specialist):
+def test_the_stage_is_stated_in_the_header_and_not_on_the_rail(signed_in, specialist):
+    """`Hetkeseis` has one home, and the merged rail is not it.
+
+    docs/adr/0092 §13's amendment put the canonical stage on the current node,
+    because `Jõustumine · Praegu` read identically for a file waiting for
+    commencement and one already in force. Merging the phases onto the dated
+    strip made that a duplicate on every ordinary file — `Kooskõlastusringil`
+    under a node called `Kooskõlastusring`, one letter apart — which is exactly
+    what docs/adr/0074 §12.1 took off this row in the first place.
+
+    The reason for the amendment is weaker now: the `Praegu` it disambiguated is
+    gone from the rail too. So the rail draws the phase and the header states
+    the stage, once. The projection still carries the label — the assertions
+    above are over `ProcessNode.stage_label` and are unchanged — and what moved
+    is only that the page stopped printing it twice.
+    """
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("awaiting_entry"), actor=specialist)
 
+    def split(body: str) -> tuple[str, str]:
+        """Everything before the section, and the section itself."""
+        start = body.index('class="lprail"')
+        return body[:start], body[start : body.index('id="ajajoon"')]
+
     url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
-    waiting = signed_in.get(url).content.decode()
-    assert "Jõustumise ootel" in waiting[waiting.index('class="lprail"') :][:2000]
+    head, rail = split(signed_in.get(url).content.decode())
+    assert "Jõustumise ootel" not in rail
+    assert "Jõustumise ootel" in head
 
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
-    in_force = signed_in.get(url).content.decode()
-    rail = in_force[in_force.index('class="lprail"') :][:2000]
-    assert "Jõustunud" in rail
-    assert "Jõustumise ootel" not in rail
+    head, rail = split(signed_in.get(url).content.decode())
+    assert "Jõustunud" not in rail
+    assert "Jõustunud" in head
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +661,7 @@ def test_the_rail_is_not_inside_the_teema_kaik_disclosure(signed_in, specialist)
     assert "lprail" not in inside
 
 
-def test_the_dated_strip_reads_inside_menetluse_kulg(signed_in, specialist):
+def test_the_dated_points_read_on_the_one_rail(signed_in, specialist):
     """The dated points answer «where is this going», so they moved to the rail.
 
     They rendered at the head of `Teema käik` until the road ahead arrived, which
@@ -644,10 +674,13 @@ def test_the_dated_strip_reads_inside_menetluse_kulg(signed_in, specialist):
     change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
     body = _detail(signed_in, matter)
 
-    assert "Kirjas olevad kuupäevad" in body
-    assert body.index('aria-label="Menetluse tähtajad"') < body.index('id="ajajoon"')
+    # One rail, carrying both: the phases and the dates the file holds.
+    assert body.index('aria-label="Menetluse kulg"') < body.index('id="ajajoon"')
     inside = body[body.index('id="ajajoon"') :]
-    assert 'aria-label="Menetluse tähtajad"' not in inside
+    assert 'aria-label="Menetluse kulg"' not in inside
+    # And the separate strip, with its own heading, is gone.
+    assert "Kirjas olevad kuupäevad" not in body
+    assert 'aria-label="Menetluse tähtajad"' not in body
 
 
 def test_the_rail_heading_is_a_sibling_heading_and_not_a_sub_heading(signed_in, specialist):

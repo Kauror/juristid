@@ -314,6 +314,18 @@ class ChangeEventType(models.TextChoices):
     # on the file, it is where the file is happening. A chronology row saying
     # «EIS link added» on 17 September would be the history of somebody's typing
     # rather than the history of the proceeding (docs/adr/0089 §11).
+    # `Menetluse kulg` — which phases this file's rail shows, and when each is
+    # expected. One event for the whole save, not one per step: the panel is a
+    # single `Salvesta` over a short list, and a reader auditing it asks «who
+    # changed this file's rail, and when», not «which of the six rows moved».
+    # What moved is in the payload.
+    #
+    # Not in `TIMELINE_EVENT_TYPES`. Tailoring a roadmap is not something that
+    # happened to the proceeding, and a chronology row for it would put a
+    # presentation preference in a professional case history
+    # (docs/adr/0074 §14).
+    TIMELINE_STEPS_CHANGED = "TIMELINE_STEPS_CHANGED", "Menetluse kulgu muudetud"
+
     PROCEDURAL_LINK_RECORDED = "PROCEDURAL_LINK_RECORDED", "Menetluse link lisatud"
     PROCEDURAL_LINK_CORRECTED = "PROCEDURAL_LINK_CORRECTED", "Menetluse linki parandatud"
 

@@ -1,20 +1,37 @@
     {% comment %}
-      `Lõpeta teema` — **under `TEEMA TOIMINGUD`**, because finishing a file
-      is not a capture at all, and two questions, because closing a Matter is
-      not a claim that an opinion was sent.
+      `Lõpeta teema` — the **last** chip in `LISA TEEMALE`, and two questions,
+      because closing a Matter is not a claim that an opinion was sent.
 
-      It was the last chip in `LISA TEEMALE` until docs/adr/0097 §9. Last, so
-      that it did not sit among the routine controls — which was the right
-      instinct and the wrong fix: a chip at the end of a row of chips is still
-      a chip in that row, and the row is captioned «Lisa teemale». The six-question flow is not coming back and nothing
-      here fabricates a sent opinion, a work victory or final evidence
+      It spent one round in a `TEEMA TOIMINGUD` section of its own
+      (docs/adr/0097 §9), on the reading that finishing a file is not a capture
+      and should not look like one. That reading stands and the cure cost more
+      than the complaint: a heading over a single control, between the launcher
+      and the chronology. Last, marked `--last`, and outside the `lisa-` prefix
+      is enough to say it (docs/adr/0099 §5).
+
+      The six-question flow is not coming back and nothing here fabricates a
+      sent opinion, a work victory or final evidence
       (docs/adr/0074 §10, brief §20).
 
       No file control: closure gained no attachment requirement in this round,
       and giving it one would quietly restore the final-evidence precondition
       the previous round removed.
     {% endcomment %}
-    <input class="addpick" type="radio" name="teema-toiming" id="teema-lopeta-valik"
+    {% comment %}
+      `name="lisa-valik"` — the launcher's own group, so this chip is a peer of
+      the four families and picking it closes whichever panel was open. It had a
+      group of its own while it lived in `TEEMA TOIMINGUD`, which was right for a
+      separate section and wrong here: two groups in one row means two panels can
+      stand open at once, and the row's whole contract is that it is a choice
+      (docs/adr/0075 §2).
+
+      The **id** stays `teema-lopeta-valik` rather than becoming `lisa-…`. The
+      four capture families are addressed by that prefix, and closing a file is
+      not a fifth kind of thing to add to it — it is the one control in the row
+      that ends rather than records, which is what `--last` says visually and
+      what this says in the markup.
+    {% endcomment %}
+    <input class="addpick" type="radio" name="lisa-valik" id="teema-lopeta-valik"
            data-addpick aria-controls="teema-lopeta"
            {% if open_panel == "teema-lopeta" %}checked{% endif %}>
     <label class="disclosure-chip disclosure-chip--last" for="teema-lopeta-valik">+ Lõpeta teema</label>
