@@ -1,0 +1,72 @@
+{% load stage_help %}
+{% comment %}
+  `Hetkeseis` — one value, drawn at rest, on both pages that ask it.
+
+  The sibling of `valdkonnad_field.html` and included by the same two pages, for
+  the same reason: one question about one record, one control (docs/adr/0096
+  §1, §2).
+
+  **Radios, because the field holds one value.** No `field__count`, no
+  `chip__clear` — the two things `Valdkonnad` and `Õigusakt` carry and this does
+  not, which is the row saying what kind of question it is. «Määramata» is a
+  real chip: `blank=True` exists so that «not decided yet» can be chosen and
+  un-chosen, and an edit page without it could not take a stage *off* a record.
+
+  **The explanations are the reason this is not a `<select>`.** Whether a file
+  is `Kooskõlastusringil` or `Valitsuses` depends on an event that has or has
+  not happened, and the department wrote a sentence per stage saying which. The
+  bubble is a *sibling* of the label, never a child: inside, it became part of
+  the option's accessible name and a screen reader announced a paragraph as the
+  name of a radio button. The description reaches the reader through
+  `aria-describedby`, which `DescribedRadioSelect` writes; the name is the words
+  on the chip (app/workflow/selectors.py).
+
+  **`retired_stage_ids`** is at most one row — the stage this Matter already
+  holds, if the department has since withdrawn it. Offered back and marked,
+  because `Hetkeseis` is optional and a control narrowed to the active rows
+  would not merely refuse the unchanged stage, it would clear it on the next
+  unrelated correction (docs/adr/0032 §Amendment). Empty on `Uus teema`.
+{% endcomment %}
+<fieldset class="field">
+  <legend class="field__label">{{ form.stage.label }}</legend>
+  <div class="chiprow">
+    {% for choice in form.stage %}
+      {% with help=form.stage_help|stage_help:choice.data.value %}
+        {% if choice.data.value in form.retired_stage_ids %}
+          {% if help %}
+            <span class="chip chip--explained chip--retired">
+              <label class="chip__hit">
+                {{ choice.tag }}
+                <span class="chip__name">{{ choice.choice_label }} · kasutusest väljas</span>
+              </label>
+              <span class="stagehelp" role="tooltip"
+                    id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
+            </span>
+          {% else %}
+            <label class="chip chip--retired">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }} · kasutusest väljas</span>
+            </label>
+          {% endif %}
+        {% elif help %}
+          <span class="chip chip--explained">
+            <label class="chip__hit">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}</span>
+            </label>
+            <span class="stagehelp" role="tooltip"
+                  id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
+          </span>
+        {% else %}
+          <label class="chip">
+            {{ choice.tag }}
+            <span class="chip__name">{{ choice.choice_label }}</span>
+          </label>
+        {% endif %}
+      {% endwith %}
+    {% endfor %}
+  </div>
+  {% if form.stage.errors %}
+    <span class="field__error" id="{{ form.stage.auto_id }}_error">{{ form.stage.errors|first }}</span>
+  {% endif %}
+</fieldset>

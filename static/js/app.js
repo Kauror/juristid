@@ -2743,114 +2743,6 @@
     }
   }
 
-  /* ---- Valdkonnad and Hetkeseis: nothing to script -----------------------
-   *
-   * `bindChipMenus` stood here. It gave the two `Uus teema` vocabularies the
-   * three behaviours that make a menu a menu rather than a fold: Escape shut
-   * the panel, a click outside shut it, and a single-select panel shut itself
-   * the moment a radio was picked.
-   *
-   * All three are gone with the menu (docs/adr/0096 §1). `.chipfold` is a
-   * `<details open>` in ordinary flow: the section is already on the screen when
-   * the page arrives, so there is nothing to open, and collapsing it is a
-   * deliberate act by the reader rather than a side effect of answering a
-   * question. Escape closing it would undo that act on a keystroke people press
-   * for other reasons; a click on the form closing it would move the form under
-   * the click; and a single-select closing itself is precisely how the menu
-   * re-created, one row further down, the re-layout it was built to stop.
-   *
-   * `<details>` and `<summary>` already give the trigger its tab stop, Enter and
-   * Space, and a natively announced expanded state — so the `aria-expanded` the
-   * old binding kept in sync is not merely unnecessary, it was a second copy of
-   * a fact the element states itself.
-   *
-   * What is still scripted here is `bindChipSummaries` below, which keeps the
-   * collapsed-state answer on the trigger true while boxes are being ticked.
-   */
-
-  /* ---- What is chosen, on the door that hides it --------------------------
-   *
-   * A disclosure that can be folded away has to say what the answer is, or it
-   * has to be opened again every time to find out. `.chipfold` arrives open, so
-   * on the ordinary visit the chips themselves are the answer and this is
-   * redundant — it earns its place the moment somebody collapses the section,
-   * which is the whole reason the section may be collapsed at all. The server
-   * renders the answer into the summary on load; this keeps it true while
-   * somebody is ticking boxes before collapsing it
-   * (templates/matters/matter_create.html, docs/adr/0088 §3, docs/adr/0096 §1).
-   *
-   * Reads the controls the page already has and writes one text node. Nothing
-   * here is posted, nothing here is a control, and with scripting off the
-   * server-rendered summary is still correct on every load — it is only the
-   * live edit in between that this covers.
-   */
-  function bindChipSummaries(scope) {
-    (scope || document).querySelectorAll("[data-chipsummary-for]").forEach(function (target) {
-      if (!once(target, "ChipSummary")) {
-        return;
-      }
-      var name = target.getAttribute("data-chipsummary-for");
-      var form = target.closest("form");
-      if (!form) {
-        return;
-      }
-      /* The group, plus the free-text affordance beside it where there is one.
-         `Valdkond · Muu` is a checkbox that is not a PolicyArea and posts under
-         its own name, and a summary that ignored it would read «Valdkonnad»
-         over a ticked Muu and a sentence of typed text (app/matters/forms.py
-         `policy_area_summary`, which renders exactly this set server-side). */
-      var boxes = form.querySelectorAll(
-        'input[name="' + name + '"], input[name="' + name + '_other_selected"]'
-      );
-      if (!boxes.length) {
-        return;
-      }
-
-      var chipName = function (box) {
-        var label = box.closest(".chip");
-        var text = label ? label.querySelector(".chip__name") : null;
-        /* The `×` is decoration inside the name — `aria-hidden`, and not part
-           of what the chip is called. */
-        return text ? text.textContent.trim().replace(/\s*×$/, "") : "";
-      };
-
-      /* Names or a number, and which one is the trigger's own decision.
-       *
-       * `Hetkeseis` holds one value, so its name *is* the compact answer:
-       * «Hetkeseis · Riigikogus». `Valdkonnad` holds several, and three
-       * Estonian policy areas spelled out are wider than the field — the
-       * trigger would ellipsise to «Maksujõuetus, Energee…», which says less
-       * than a count does about whether anything has been answered at all. So
-       * the multi-select counts, and `policy_area_chosen` renders exactly this
-       * number server-side (docs/adr/0094 §2.2). */
-      var counting = target.hasAttribute("data-chipsummary-count");
-
-      var sync = function () {
-        var chosen = [];
-        boxes.forEach(function (box) {
-          if (box.checked) {
-            var label = chipName(box);
-            if (label) {
-              chosen.push(label);
-            }
-          }
-        });
-        if (!chosen.length) {
-          target.textContent = "";
-          return;
-        }
-        /* textContent, so a vocabulary label containing a bracket or an
-           ampersand stays a label. */
-        target.textContent = " · " + (counting ? String(chosen.length) : chosen.join(", "));
-      };
-
-      boxes.forEach(function (box) {
-        box.addEventListener("change", sync);
-      });
-      sync();
-    });
-  }
-
   /* ---- How many are chosen ------------------------------------------------
    * A count beside the label, for the rows where the chips wrap onto three
    * lines and "did I tick Ehitus?" costs a scan. Reads the controls the page
@@ -3590,7 +3482,6 @@
     bindOrganisationPickers(document);
     bindOpenChosenDetails(document);
     bindChipCounts(document);
-    bindChipSummaries(document);
     bindStageHelp(document);
     bindRequiredAction(document);
     bindSuggestionUse(document);
@@ -3624,7 +3515,6 @@
     bindOrganisationPickers(event.target.querySelector ? event.target : document);
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
-    bindChipSummaries(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
     bindSuggestionUse(event.target.querySelector ? event.target : document);

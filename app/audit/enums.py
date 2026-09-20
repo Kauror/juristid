@@ -11,19 +11,6 @@ class ChangeEventType(models.TextChoices):
     """
 
     MATTER_CREATED = "MATTER_CREATED", "Teema loodud"
-    #: `Kustuta teema`. The Matter's business content is gone and the row that
-    #: carried it is an audit tombstone.
-    #:
-    #: This event is the point of the tombstone. A deletion whose only trace
-    #: was the absence of a record would be a deletion nobody could ask about;
-    #: this says the Matter existed, who removed it and when — and it is
-    #: written *before* anything is removed, so a refusal rolls it back with
-    #: everything else (`app.matters.deletion`, docs/adr/0096 §10).
-    #:
-    #: Its payload carries counts and never content. What the Matter said is
-    #: what the deletion removed, and copying it in here would be keeping the
-    #: business data under another name.
-    MATTER_DELETED = "MATTER_DELETED", "Teema kustutatud"
     MATTER_ASSIGNED = "MATTER_ASSIGNED", "Teema määratud"
     # The Matter's own name. Its own event rather than a reused one, for the
     # reason every other field here has its own: the title is what everybody
@@ -75,6 +62,13 @@ class ChangeEventType(models.TextChoices):
     # about the policy work (Agent-C brief 19).
     MATTER_DATA_CLASS_CHANGED = "MATTER_DATA_CLASS_CHANGED", "Andmeklass muudetud"
     MATTER_CLOSED = "MATTER_CLOSED", "Teema suletud"
+    # A Teema that was deleted. Its own type, and the one event that describes a
+    # record which is no longer there: every owned business row is gone and the
+    # `Matter` row survives only because this row points at it under `PROTECT`
+    # onto an append-only table. Deliberately absent from
+    # `matters.timeline.TIMELINE_EVENT_TYPES` — there is no chronology left to
+    # render it on (docs/adr/0096 §4).
+    MATTER_DELETED = "MATTER_DELETED", "Teema kustutatud"
     MATTER_REOPENED = "MATTER_REOPENED", "Teema taasavatud"
     # An archive register record activated as current work. Distinct from
     # MATTER_CREATED — nothing was created, the identity and the provenance are

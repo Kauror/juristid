@@ -17,22 +17,24 @@
   the chip control, which is the same input with a smaller skin
   (design/mockups/Uus teema.dc.html 8a/8b/8c, Uus teema redesign §2, §3).
 
-  Since then `Menetluse link` asks for an address and nothing about it, and
-  `Arvamuse tähtaeg` is the one date and the last question, with `Järgmiseks`
-  gone from creation altogether (docs/adr/0094).
+  `Menetluse link` asks for an address and nothing about it, and `Arvamuse
+  tähtaeg` is the one date and the last question, with `Järgmiseks` gone from
+  creation altogether (docs/adr/0094).
 
-  `Valdkonnad` and `Hetkeseis` were menus for one round — a pill carrying the
-  answer over a panel that overlaid the form — and are drawn again:
-  `.chipfold`, open as the server renders it, in flow, collapsible by the person
-  who wants the room back. The ordinary choice is made by looking at the page
-  and pressing a chip, which is what `Õigusakt` below has always asked for
-  (docs/adr/0096).
+  **Every vocabulary is drawn at rest again.** `Valdkonnad` and `Hetkeseis`
+  spent a round as `chipmenu`s — a pill carrying the answer and a panel taken
+  out of flow — and the lawyers reviewing the live page asked for the visible
+  chips back: a classification you can read without opening anything is what
+  `Õigusakt` beside them always was. All three are now the same kind of control,
+  each drawn by a partial that `Muuda teemat` includes as well, because this
+  page is the master the edit page follows for every fact they share
+  (docs/adr/0096, superseding §2 of docs/adr/0094).
 
   Two things the shape still has to say, and one it must not:
 
   - the shape of a control is a promise about the data. One value where the model
-    holds one — Vastutaja, Hetkeseis — several where it holds several. Radios
-    and checkboxes are what they are; a chip is only how one looks
+    holds one — Vastutaja, Hetkeseis — several where it holds several. Chips are
+    how they look; what they are has not moved
     (Stage-2E.1 brief 16, ADR 0025);
   - **one counterparty question, not two.** This page asks who sent the file and
     stops there. `Adressaat` is a different fact — Koda answers a ministry, the
@@ -350,49 +352,42 @@
       </fieldset>
     </div>
 
-    {# 5 — Valdkonnad. #}
-    {% include "matters/partials/field_valdkonnad.html" %}
-
-    {# 6 — Where the procedure stands. #}
-    {% include "matters/partials/field_hetkeseis.html" %}
-
+    {# 5 — Valdkonnad, 6 — Hetkeseis, 7 — Õigusakt. #}
     {% comment %}
-      **`Menetlusliik` is not on this page**, and the row it occupied is gone
-      rather than hidden.
+      The three classifications, drawn at rest, each through the partial that
+      `Muuda teemat` includes as well.
 
-      It asked a lawyer to classify one file twice. The reviewed `Õigusakt`
-      vocabulary below names the group in the label — six types say
-      *siseriiklik*, four say *ELi* — so the distinction stays readable from the
-      type the Matter carries.
+      They were two shapes and three copies. `Valdkonnad` and `Hetkeseis` were
+      `chipmenu`s — a pill carrying the answer and a panel taken out of flow —
+      while `Õigusakt` directly under them drew its chips permanently; and the
+      edit page drew all three again, differently, in its own markup. The
+      lawyers reviewing the live page asked for the visible chips back, and the
+      owner's rule for the round is that `Uus teema` is the master the edit page
+      follows (docs/adr/0096 §1, §2).
 
-      Readable, not derived. `Matter.track` says what kind of *procedure* a file
-      is on, it has seven values rather than two, and no instrument type entails
-      one: a `Seadus` transposing a directive is a domestic instrument on a
-      `NATIONAL_TRANSPOSITION` track. So this page writes nothing to it.
+      So: one selection language for the three vocabularies, and one file per
+      vocabulary. What each control *is* has not moved — `Valdkonnad` and
+      `Õigusakt` hold several values and say so, `Hetkeseis` holds one and says
+      so, and `Muu` means what it meant on both of the fields that offer one.
 
-      **And neither does `Muuda teemat` any more**, which is what changed on
-      2026-09-20. This comment used to end «it is answered where it is known —
-      on `Muuda teemat` and in the Teema rail» and that is no longer true: both
-      controls are withdrawn, because a question asked on one of two pages that
-      are supposed to be one job seen twice is drift rather than a decision
-      (docs/adr/0090 §4, docs/adr/0096 §5). `Matter.track` keeps every stored
-      value and the importers still write it.
-
-      The field is gone from `MatterCreateForm` too, so a forged POST carrying
-      `track=NATIONAL_TRANSPOSITION` is not part of this request as far as this
-      form is concerned.
+      `Menetlusliik` is still not on this page, and the row it occupied is gone
+      rather than hidden: it asked a lawyer to classify one file twice, the
+      `Õigusakt` vocabulary already names the group in the label, and
+      `Matter.track` is answered where it is known — on `Muuda teemat` and in
+      the Teema rail. The field is absent from `MatterCreateForm` too, so a
+      forged `track=` is not part of this request (docs/adr/0090 §4).
     {% endcomment %}
+    <div class="createform__row">
+      {% include "matters/partials/valdkonnad_field.html" %}
+    </div>
 
-    {# 7b — Õigusakt: what kind of instrument this file is about. #}
-    {% comment %}
-      The last of the classification rows, and the last question the page asks
-      about what kind of file this is: Saatja, Valdkond, Hetkeseis, Õigusakt,
-      in that order and with nothing between them (docs/adr/0090 §7).
+    <div class="createform__row">
+      {% include "matters/partials/hetkeseis_field.html" %}
+    </div>
 
-      One partial, shared with `Muuda teemat`, for the reason the two above it
-      are shared (docs/adr/0096 §2).
-    {% endcomment %}
-    {% include "matters/partials/field_oigusakt.html" %}
+    <div class="createform__row">
+      {% include "matters/partials/oigusakt_field.html" %}
+    </div>
 
     {# 7a — Menetluse link: where the proceeding this file is about lives. #}
     {% comment %}

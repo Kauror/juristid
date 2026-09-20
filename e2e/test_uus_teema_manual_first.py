@@ -19,14 +19,14 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, VALDKONNAD_FOLD, open_valdkond, sign_in
+from e2e.conftest import MARTIN, VALDKONNAD_FIELD, open_valdkond, sign_in
 
 pytestmark = pytest.mark.e2e
 
 CREATE_PATH = "/teemad/uus/"
 NARROW = {"width": 420, "height": 900}
 
-VALDKOND = VALDKONNAD_FOLD
+VALDKOND = VALDKONNAD_FIELD
 SENDER_CHIPS = "#saatja-valik label.chip"
 
 
@@ -145,66 +145,57 @@ def test_the_quiet_sender_field_fits_a_narrow_screen(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_valdkond_arrives_shut_and_opens_when_asked(page, base_url):
-    """The vocabulary is behind a trigger, and the trigger opens a menu."""
+def test_valdkond_is_drawn_at_rest_and_needs_no_opening(page, base_url):
+    """The vocabulary is on the page, and so is every one of its chips.
+
+    Three shapes have stood here: drawn permanently, folded behind a
+    `<details>` (docs/adr/0088 §3), and a `chipmenu` overlaying the form
+    (docs/adr/0094 §2). The owner's live audit put it back to the first, and
+    what this asserts is the difference that matters to a reader — the chips are
+    visible without anything being pressed (docs/adr/0096 §2).
+    """
     create_form(page, base_url)
 
-    disclosure = page.locator(VALDKOND)
-    expect(disclosure).to_be_visible()
-    assert not disclosure.evaluate("node => node.open"), "Valdkonnad is open on arrival"
-    expect(page.locator('label.chip:has(input[name="policy_areas"])').first).to_be_hidden()
-
-    open_valdkond(page)
-
+    block = page.locator(VALDKOND).first
+    expect(block).to_be_visible()
+    assert block.locator("summary").count() == 0, "Valdkonnad grew a trigger again"
     expect(page.locator('label.chip:has(input[name="policy_areas"])').first).to_be_visible()
 
 
-def test_the_trigger_says_how_many_have_been_chosen(page, base_url):
-    """A shut field that hid the answer would cost a click on every visit.
+def test_the_count_beside_the_label_says_how_many_have_been_chosen(page, base_url):
+    """The answer, where the question is, and it keeps up with the ticking.
 
-    A count rather than the names since docs/adr/0094 §2.2: the trigger is a pill
-    on one line, and three Estonian policy areas spelled out do not fit on it.
-    What the trigger has to carry is whether the question has been answered, and
-    a number says that better than a truncated list.
-
-    Ticking twice also proves the menu stays open, which is the whole of what
-    makes `Valdkonnad` multi-select rather than a menu answered once.
+    The count moved from a menu trigger to the `field__count` badge beside the
+    legend, which is where `Õigusakt` and `Sildid` have always carried theirs.
+    Ticking twice also proves the control is multi-select: `Matter.policy_areas`
+    holds several and nothing closes after the first.
     """
     create_form(page, base_url)
     open_valdkond(page)
 
     chips = page.locator('label.chip:has(input[name="policy_areas"])')
-    trigger = page.locator(f"{VALDKOND} > summary")
+    count = page.locator('[data-chipcount-for="policy_areas"]')
 
     chips.nth(0).click()
-    assert "· 1" in (trigger.inner_text() or ""), trigger.inner_text()
-    assert page.locator(VALDKOND).evaluate("node => node.open"), (
-        "ticking one area closed a multi-select menu"
-    )
+    expect(count).to_contain_text("1")
 
     chips.nth(1).click()
-    text = trigger.inner_text() or ""
-    assert "· 2" in text, f"the trigger lost one of the two: {text!r}"
+    expect(count).to_contain_text("2")
 
     # And unticking leaves the other one alone.
     chips.nth(0).click()
-    assert "· 1" in (trigger.inner_text() or ""), trigger.inner_text()
+    expect(count).to_contain_text("1")
+    expect(chips.nth(1).locator("input")).to_be_checked()
 
 
-def test_the_vocabulary_is_reachable_and_choosable_by_keyboard(page, base_url):
-    """A `<details>` is a button and a region, and Enter is how it opens.
+def test_the_vocabulary_is_choosable_by_keyboard(page, base_url):
+    """A checkbox group is one tab stop per box, and Space takes one.
 
-    Kept as a `<details>` for exactly this: the trigger is one tab stop, it
-    activates on Enter and on Space, it announces its own expanded state, and it
-    works with scripting off — none of which a scripted `<div>` menu gives
-    (docs/adr/0094 §2).
+    There is no trigger to reach first any more, which is the point: what the
+    menu added — Enter to open, Escape to shut, a focus stop of its own — is
+    behaviour a plain fieldset never needed (docs/adr/0096 §2).
     """
     create_form(page, base_url)
-
-    summary = page.locator(f"{VALDKOND} > summary")
-    summary.focus()
-    page.keyboard.press("Enter")
-    assert page.locator(VALDKOND).evaluate("node => node.open")
 
     first = page.locator('input[name="policy_areas"]').first
     first.focus()
@@ -212,18 +203,18 @@ def test_the_vocabulary_is_reachable_and_choosable_by_keyboard(page, base_url):
     expect(first).to_be_checked()
 
 
-def test_the_open_vocabulary_fits_a_narrow_screen(page, base_url):
-    """Twenty-one labels and `Muu`, at the width nobody has looked at.
+def test_the_vocabulary_fits_a_narrow_screen(page, base_url):
+    """Twenty-one labels and `Muu`, wrapped, at the width nobody looks at.
 
-    An overlay makes this claim sharper rather than softer: a panel wider than
-    its row would take the document sideways without lengthening it, so nothing
-    that measures height would notice (docs/adr/0094 §2).
+    Drawn in the flow the page is simply taller, so the claim is about width:
+    no chip may hang off the right edge and the document may not scroll
+    sideways.
     """
     create_form(page, base_url, NARROW)
     open_valdkond(page)
 
     assert not overflows(page)
-    assert on_screen(page, page.locator(f"{VALDKOND} > summary"), width=420)
+    assert on_screen(page, page.locator(VALDKOND).first, width=420)
     assert on_screen(
         page, page.locator('label.chip:has(input[name="policy_areas"])').first, width=420
     )

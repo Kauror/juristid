@@ -8,6 +8,44 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-20
+basis = "deployment"
+# Omaniku teine läbivaatus Teema ekraanidel. Neli parandust, millest kolm
+# muudavad seda, mida leht küsib, ja üks lisab tegevuse, mida rakenduses seni
+# üldse ei olnud.
+#
+# **Esimene punkt võtab tagasi selle, mida eile lubati.** 19. septembri kirje
+# kuues ja seitsmes punkt ütlesid, et valdkonnad ja hetkeseis valitakse nüüd
+# rippmenüüst. Juristid vaatasid lehte ja palusid nähtavad valikud tagasi.
+# Punkt nimetab mõlemad väljad korraga, sest lugeja jaoks on see üks muudatus:
+# klassifikatsioonid on lehel lahti, nagu õigusakt nende all alati olnud on.
+# Vanu punkte ei kustutata ega parandata — 19. september ütleb, mis sel päeval
+# tõesti nii oli (docs/release-notes/README.md).
+#
+# **Teine punkt on see, mida lugeja päriselt märkab** kahe ekraani võrdlusest:
+# samad küsimused, samas järjekorras, samade valikutega. Punkt ei nimeta
+# ühtegi välja, sest nimekiri oleks pikem kui see, mida keegi peab teadma —
+# oluline on, et muutmise vaadet ei pea eraldi õppima.
+#
+# **Kolmas punkt nimetab ka selle, mis ei muutu.** Nähtavuse valikut enam ei
+# küsita, kuid juba piiratud teemad jäävad piiratuks — vaikimine jätaks mulje,
+# et valiku kadumisega kadus ka piirang. Seda, kuidas piirangut nüüd seatakse,
+# punkt ei luba, sest rakenduses seda praegu teha ei saa.
+#
+# **Neljas ja viies punkt käivad koos.** Kustutamine on ainus pöördumatu tegu
+# rakenduses, nii et lugeja peab teadma nii seda, et see on olemas, kui ka
+# seda, et see võib keelduda. Keeldumise põhjuseid punkt ei loetle — rakendus
+# ütleb need ise, siis kui need kehtivad.
+prs = [263]
+changes = [
+  "Uue teema lisamisel on valdkonnad ja hetkeseis taas kohe nähtavate valikutena — rippmenüüsid enam ei ole ja kõik valikud on lehel lahti.",
+  "Teema muutmise vaade järgib nüüd uue teema lisamise vaadet: samad küsimused samas järjekorras ja samade valikutega, lisaks menetlusliik, kellele ja sildid, mida uut teemat luues ei küsita.",
+  "Teema muutmise vaatest ja saabunud materjali registreerimisest eemaldati nähtavuse valik; juba piiratud nähtavusega teemad jäävad piiratuks.",
+  "Teema saab nüüd muutmise vaatest kustutada: kustutamine eemaldab teema ja kogu selle sisu jäädavalt ning seda küsitakse eraldi lehel üle.",
+  "Kui teemat kustutada ei saa, ütleb rakendus seda enne kustutamist ja põhjendab, miks.",
+]
+
+[[day]]
 date = 2026-09-19
 basis = "deployment"
 # Kaks väljalaset, viis ühendust. Hommikul: menetluse arengu parandamine,

@@ -1279,6 +1279,37 @@ def test_create_matter_form(page, base_url):
     compare("uus-teema", capture(page, "uus-teema"))
 
 
+def test_matter_edit_form(page, base_url):
+    """`Muuda teemat`, which follows `Uus teema` as of docs/adr/0096 §1.
+
+    The scenario this surface never had, added in the round that made the two
+    pages one design: the whole point of §1 is that a reader can compare them,
+    and a baseline for one of the two is half a comparison.
+
+    `OPEN_TITLE`'s own edit page, so the capture holds real pre-filled values
+    rather than the empty form `uus-teema` already covers.
+    """
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    page.goto(f"{page.url}muuda/")
+    page.wait_for_load_state("networkidle")
+    _at_rest(page)
+    compare("teema-muuda", capture(page, "teema-muuda"))
+
+
+def test_matter_delete_confirmation(page, base_url):
+    """`Kustuta teema`, the one irreversible page in the product.
+
+    Captured because «unmistakable» is a claim about how it looks, and because
+    a red box that quietly stopped being red would be the one regression here
+    that costs a record. A GET, so nothing is deleted by taking the picture.
+    """
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    page.goto(f"{page.url}kustuta/")
+    page.wait_for_load_state("networkidle")
+    _at_rest(page)
+    compare("teema-kustuta", capture(page, "teema-kustuta"))
+
+
 def test_create_matter_refused(page, base_url):
     """A refused save: the error beside the field, the layout intact.
 

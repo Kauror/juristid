@@ -2,107 +2,96 @@
 {% block title %}Kustuta teema · {{ application_name }}{% endblock %}
 
 {% comment %}
-`KUSTUTA TEEMA` — the page somebody reads before agreeing to a deletion.
+  The question, on a page of its own.
 
-A page, and not a panel on the Teema page. Every other control in `LISA
-TEEMALE` and `TEEMA TOIMINGUD` saves where it stands, because every other
-control records something that can be corrected afterwards. This one cannot, so
-the person gets the three things a decision needs and nothing competing for
-their attention: **which** Matter, **what goes with it**, and **that it cannot
-be undone**.
+  Not a `confirm()`. A browser dialog says one line, cannot name what is about
+  to go, is dismissed by the same reflex that dismisses every other dialog, and
+  is not there at all for anybody driving the page without scripting. This page
+  names the Teema, counts what is inside it, states that the act cannot be
+  undone, and offers `Loobu` as the equal alternative to the one red button
+  (docs/adr/0096 §4.3).
 
-**The title is printed in full.** «Kas oled kindel?» over a button is a
-question nobody can answer — a lawyer with four tabs open has no way to tell
-which file the dialog belongs to. The Matter's own title is the answer, and it
-is the largest thing on the page.
+  **Reached by GET and acted on by POST**, with a CSRF token. Nothing here
+  writes: the counts come from `plan_matter_deletion`, which walks the ownership
+  graph and reads.
 
-**The counts are the plan's, not a guess.** What is listed is what
-`build_deletion_plan` walked: the actual rows this deletion would remove, read
-off the ownership graph at the moment the page was rendered. It is rebuilt
-again under the Matter's row lock when the POST arrives, so what somebody
-agreed to is what happens — and a Matter that became undeletable in between is
-refused rather than half-deleted (`app.matters.deletion`).
-
-**A blocked Matter renders no button at all.** The refusal is the page. The
-form is simply absent, so there is nothing to press and nothing to be talked
-past; a crafted POST reaches the same refusal from the service, because the
-plan the service trusts is the one it builds itself.
-
-**`Loobu` is a link back to the Matter**, first in the source order and
-ordinary in appearance, because leaving is the safe answer and the safe answer
-should never be the harder one to hit.
-
-What this page deliberately does not do: no `confirm()`, no `hx-confirm`, no
-"type the title to continue". The first two are dismissible with a keystroke
-and say nothing; the third is ceremony that trains people to copy text without
-reading it (docs/adr/0096 §10).
+  **A refusal is the page again, with the reason.** Where the deletion cannot
+  proceed — a legal hold, a record outside this Matter standing on something
+  inside it, an entry whose correction history the database keeps permanently —
+  there is no final button at all, and the sentences say which. The POST
+  re-checks independently under the row lock, so a blocker that appears while
+  somebody is reading this page is caught there rather than here.
 {% endcomment %}
 
 {% block content %}
-<div class="page page--narrow">
+<div class="page page--create">
+  <nav class="crumbs" aria-label="Asukoht">
+    <a href="{% url 'matters:matter_edit' pk=matter.pk %}">← Muuda teemat</a>
+  </nav>
+
   <div class="pagehead">
     <h1 class="pagehead__title">Kustuta teema</h1>
   </div>
 
-  <div class="dangercard">
-    <p class="dangercard__subject">{{ matter.title }}</p>
-    {% if matter.display_reference %}
-      <p class="dangercard__meta">{{ matter.display_reference }}</p>
-    {% endif %}
+  {% if delete_error %}
+    <p class="formerror" role="alert">{{ delete_error }}</p>
+  {% endif %}
 
-    {% if refusal %}
-      {% comment %}
-        Blocked. The sentence says which of the four reasons applied, in the
-        words that reason actually means — `BLOCKER_MESSAGES`. No button
-        follows.
-      {% endcomment %}
-      <p class="formerror" role="alert">{{ refusal }}</p>
-      <p class="dangercard__note">
-        Teemat ei kustutatud. Midagi ei muudetud.
-      </p>
-      <div class="createform__actions">
-        <a class="button button--primary"
-           href="{% url 'matters:matter_detail' pk=matter.pk %}">Tagasi teema juurde</a>
+  <div class="dangerzone">
+    {% comment %}
+      A question where there is a decision to take, and a statement where there
+      is not. The blocked page used to ask «Kas kustutada see teema?» and then
+      answer it in the next line, which reads as a control that failed rather
+      than as an answer the reader has been given.
+    {% endcomment %}
+    <h2 class="dangerzone__title">
+      {% if plan.is_blocked %}Seda teemat ei saa kustutada{% else %}Kas kustutada see teema?{% endif %}
+    </h2>
+    {% comment %}
+      The title, said back. A person may have several Teemad open, and the only
+      thing that makes this button safe to press is knowing which record it is
+      about (task §37).
+    {% endcomment %}
+    <p class="dangerzone__subject">{{ matter.title }}</p>
+
+    {% if plan.is_blocked %}
+      <ul class="dangerzone__list">
+        {% for refusal in plan.refusals %}
+          <li>{{ refusal }}</li>
+        {% endfor %}
+      </ul>
+      <div class="dangerzone__actions">
+        <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Tagasi</a>
       </div>
     {% else %}
-      <p class="dangercard__note">
-        Kustutamine eemaldab teema sisu jäädavalt. Seda ei saa tagasi võtta.
+      <p class="dangerzone__help">
+        Kustutamine eemaldab teema ja kogu selle sisu jäädavalt. Seda ei saa tagasi võtta.
       </p>
-
+      {% if summary or evidence_objects %}
+        <ul class="dangerzone__list">
+          {% for label, count in summary %}
+            <li>{{ count }} {{ label }}</li>
+          {% endfor %}
+          {% if evidence_objects %}
+            <li>{{ evidence_objects }} salvestatud faili</li>
+          {% endif %}
+        </ul>
+      {% else %}
+        <p class="dangerzone__help">Teemal ei ole veel sisu.</p>
+      {% endif %}
       {% comment %}
-        What goes, and what stays. Both halves, because a person deciding this
-        needs to know that deleting a Teema does not delete the institutions or
-        the valdkonnad it referred to — that is the fear that otherwise stops
-        somebody removing a duplicate they filed by mistake.
-      {% endcomment %}
-      <dl class="dangercard__facts">
-        <dt>Kustutatakse</dt>
-        <dd>
-          {{ plan.business_rows }} kirjet — märkmed, kaasamised, arvamused,
-          dokumendid ja otsingukirjed.
-        </dd>
-        {% if plan.evidence %}
-          <dt>Failid</dt>
-          <dd>
-            {% for item in plan.evidence %}
-              {{ item.label }}: {{ item.objects }}{% if not forloop.last %}; {% endif %}
-            {% endfor %}
-          </dd>
-        {% endif %}
-        <dt>Jääb alles</dt>
-        <dd>
-          Asutused, valdkonnad, sildid ja arhiiv — need ei kuulu teemale.
-          Alles jääb ka kanne selle kohta, et teema kustutati, ja kes seda tegi.
-        </dd>
-      </dl>
+        `button--danger-strong`, and the offer on `Muuda teemat` is the ordinary
+        outline `button--danger`.
 
-      <form method="post" action="{% url 'matters:matter_delete' pk=matter.pk %}">
+        The two look alike otherwise, and they must not: pressing the first is
+        a navigation and pressing this one is permanent. A filled button is the
+        page saying which of the two it is (docs/adr/0096 §4.3).
+      {% endcomment %}
+      <form class="dangerzone__actions" method="post"
+            action="{% url 'matters:matter_delete' pk=matter.pk %}">
         {% csrf_token %}
-        <div class="createform__actions">
-          <a class="button button--quiet"
-             href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
-          <button class="button button--danger" type="submit">Kustuta teema jäädavalt</button>
-        </div>
+        <button class="button button--danger button--danger-strong" type="submit">Kustuta teema</button>
+        <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Loobu</a>
       </form>
     {% endif %}
   </div>

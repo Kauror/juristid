@@ -458,8 +458,11 @@ def test_a_late_failure_on_muuda_teemat_leaves_no_institution_behind(
 ):
     """Same guarantee on the edit path, where there is also a record to protect.
 
-    `set_matter_visibility` is the last service the view calls, so a refusal
-    there is a refusal after the addressee has been resolved and written.
+    `set_tags` is the last service the view calls, so a refusal there is a
+    refusal after the addressee has been resolved and written. It was
+    `set_matter_visibility` until that call was removed with the control
+    (docs/adr/0096 §3); what is being tested is the transaction boundary, not
+    which service happens to stand at the end of it.
     """
     first = factories.OrganisationFactory(name="Rahandusministeerium")
     matter = factories.MatterFactory(
@@ -467,9 +470,9 @@ def test_a_late_failure_on_muuda_teemat_leaves_no_institution_behind(
     )
 
     def refuse(**kwargs):
-        raise DomainError("Nähtavust ei saa muuta.")
+        raise DomainError("Silte ei saa muuta.")
 
-    monkeypatch.setattr("app.matters.views.set_matter_visibility", refuse)
+    monkeypatch.setattr("app.matters.views.set_tags", refuse)
 
     response = signed_in.post(
         _edit(matter),

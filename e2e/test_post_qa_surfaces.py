@@ -509,17 +509,23 @@ def test_teema_andmed_with_oigusakt_and_muu_fits_every_width(page, base_url, siz
     which is exactly the pair that would push a metaline into a sideways scroll.
     """
     detail = edit_form(page, base_url)
-    # `Muu` is a real vocabulary row in Õigusakt, and `.chip--other` is the class
-    # the template puts on exactly those — a lookup by the label «Muu» would be
-    # a lookup by a word several rows on this form use. There are *two* of them
-    # since the reviewed vocabulary split the escape hatch into `Muu
-    # siseriiklik` and `Muu ELi dokument` (docs/adr/0090 §3), and either one
-    # reveals the same free-text box, so this takes the first.
+    # Two `Muu` chips on this page, and each reveals its own box.
+    #
+    # `Valdkonnad`'s is `#valdkond-muu`, a checkbox that is not a `PolicyArea`;
+    # `Õigusakt`'s are real vocabulary rows — two of them since the reviewed
+    # list split the escape hatch into `Muu siseriiklik` and `Muu ELi dokument`
+    # (docs/adr/0090 §3) — and either reveals the same box. Both blocks are
+    # drawn at rest since docs/adr/0096 §2, but each free-text box is still
+    # revealed by its chip, so both have to be ticked before either can be
+    # filled. Scoped by fieldset rather than by `.first`, because «the first
+    # `chip--other` on the page» is a position and positions move.
     #
     # The same save at every width, which is idempotent: it writes the values it
     # then reads, so running it three times leaves the Matter where one run
     # would have.
-    page.locator("label.chip--other input").first.check()
+    page.locator("#valdkond-muu input").check()
+    oigusakt = page.locator('fieldset:has(input[name="legal_instruments"])')
+    oigusakt.locator("label.chip--other input").first.check()
     page.fill("#id_legal_instrument_other", "Rohepöörde tegevuskava ja selle rakendusaktid")
     page.fill("#id_policy_area_other", "Ringmajandus ja kliimaneutraalsus")
     save_edit(page)
@@ -557,3 +563,124 @@ def test_the_filtered_documents_view_fits_every_width(page, base_url, size):
     page.wait_for_load_state("networkidle")
 
     no_horizontal_overflow(page)
+
+
+# ---------------------------------------------------------------------------
+# docs/adr/0096 — `Kustuta teema`, and the visibility control that is gone
+# ---------------------------------------------------------------------------
+#
+# Here rather than in a file of its own, deliberately. `ci_sharding.partition`
+# splits the browser suite by file, so a new one re-partitions every shard and
+# changes which scenarios share a world — a cost this round has no reason to
+# pay when the page these belong to is the page this file already drives.
+#
+# What a browser adds over `tests/test_teema_live_audit_round_2.py`: that the
+# destructive control is *seen* apart from `Salvesta`, that the confirmation is
+# a page a person reads rather than a dialog they dismiss, and that both fit a
+# phone. What a POST does is the server suite's, and is not repeated.
+
+
+def test_muuda_teemat_shows_no_visibility_control(page, base_url):
+    """The chip row that stood beside `Sildid` is gone from the page itself."""
+    edit_form(page, base_url)
+
+    form = page.locator("form.createform")
+    expect(form).not_to_contain_text("Nähtavus")
+    assert page.locator('[name="visibility"]').count() == 0
+
+
+def test_the_teema_page_offers_no_visibility_control_either(page, base_url):
+    """The ⋯ menu carried the product's one Matter-visibility control."""
+    detail = working_matter(page, base_url)
+    page.goto(detail)
+    page.wait_for_load_state("networkidle")
+
+    assert page.locator('[name="visibility"]').count() == 0
+    assert page.locator('form[hx-post*="vali/visibility"]').count() == 0
+
+
+@pytest.mark.parametrize("size", list(VIEWPORTS))
+def test_the_delete_offer_is_separated_from_salvesta(page, base_url, size):
+    """Visible, red, below the rule — and never in the row that saves.
+
+    The distance is the design: the control that ends a record must not be
+    reachable by the muscle memory that saves one (docs/adr/0096 §4.3).
+    """
+    edit_form(page, base_url)
+    page.set_viewport_size(VIEWPORTS[size])
+
+    save = page.get_by_role("button", name="Salvesta")
+    delete = page.get_by_role("link", name="Kustuta teema")
+    expect(save).to_be_visible()
+    expect(delete).to_be_visible()
+
+    save_box = save.bounding_box()
+    delete_box = delete.bounding_box()
+    assert save_box is not None and delete_box is not None
+    # Below it, and far enough that one is not the other's neighbour.
+    assert delete_box["y"] > save_box["y"] + save_box["height"] + 16
+    # And outside the form, so Enter in a text box cannot reach it.
+    assert delete.evaluate("node => node.closest('form') === null")
+    no_horizontal_overflow(page)
+
+
+@pytest.mark.parametrize("size", list(VIEWPORTS))
+def test_the_confirmation_is_a_page_that_names_the_teema(page, base_url, size):
+    """A page, not a `confirm()`: it says which record, and what goes with it.
+
+    Reached from the offer rather than by navigating to the address, because
+    the affordance being *followable* is half of what is being asserted.
+    """
+    detail = edit_form(page, base_url)
+    title = page.locator("#id_title").input_value()
+
+    page.set_viewport_size(VIEWPORTS[size])
+    page.get_by_role("link", name="Kustuta teema").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(page.get_by_role("heading", name="Kustuta teema")).to_be_visible()
+    expect(page.locator(".dangerzone")).to_contain_text(title)
+    expect(page.locator(".dangerzone")).to_contain_text("Seda ei saa tagasi võtta.")
+    expect(page.get_by_role("button", name="Kustuta teema")).to_be_visible()
+    expect(page.get_by_role("link", name="Loobu")).to_be_visible()
+    no_horizontal_overflow(page)
+
+    # And `Loobu` really is the way back, with the record untouched.
+    page.get_by_role("link", name="Loobu").click()
+    page.wait_for_load_state("networkidle")
+    assert page.url.rstrip("/").endswith("/muuda")
+    page.goto(detail)
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#teema-pais")).to_contain_text(title)
+
+
+def test_deleting_a_teema_removes_it_from_the_register(page, base_url):
+    """The whole act, on a Matter this test files for the purpose.
+
+    **Its own record, never the file's working Matter.** Everything above
+    depends on that one surviving, and a browser suite that deleted a row other
+    scenarios read would fail somewhere else entirely — which is the worst
+    shape a failure can take in a suite that shares one world.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size(VIEWPORTS["wide"])
+    title = f"Kustutatav teema {uuid.uuid4().hex[:8]}"
+    detail = create_matter(page, base_url, title)
+
+    page.goto(f"{detail}muuda/")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("link", name="Kustuta teema").click()
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("button", name="Kustuta teema").click()
+    page.wait_for_url(re.compile(r"/teemad/$"))
+
+    expect(page.locator(".messages")).to_contain_text("Teema kustutati.")
+
+    # Gone from the register's own search, at once.
+    page.goto(f"{base_url}/teemad/?otsing={title.split()[-1]}")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("main")).not_to_contain_text(title)
+
+    # And the address it had answers nothing.
+    page.goto(detail)
+    expect(page.locator("body")).to_contain_text("404")

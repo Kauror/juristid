@@ -74,6 +74,41 @@ class MatterQuerySet(models.QuerySet):
         return self.filter(data_class=MatterDataClass.TEST)
 
 
+class MatterManager(models.Manager.from_queryset(MatterQuerySet)):  # type: ignore[misc]
+    """The default manager, and it does not hand out deleted Matters.
+
+    `Kustuta teema` removes every owned business row the database permits and
+    leaves the `Matter` row itself behind as a tombstone, because
+    `audit.ChangeEvent.matter` is `PROTECT` onto an append-only table: the audit
+    rows can be neither deleted nor detached, so the row they point at cannot go
+    (docs/adr/0096 §4, app/matters/deletion.py).
+
+    A tombstone that any ordinary query could still return would be worse than
+    no deletion at all, so the exclusion lives *here* rather than in the
+    selectors. There are several hundred `Matter.objects...` call sites across
+    reporting, search, the register, work items and the archive, and a design
+    that asked each of them to remember `.exclude(deleted_at__isnull=False)`
+    would be one forgotten call away from showing a deleted Teema on a
+    dashboard. Excluding in the manager makes every one of them fail closed by
+    construction, including the ones nobody has written yet — which is the
+    property the brief asks for and the one a soft-delete flag normally fails to
+    give.
+
+    `Matter.all_objects` is the unfiltered manager, and the deletion machinery
+    is what it exists for: locking the row being deleted, and the integrity
+    commands that have to be able to see a tombstone in order to assert that it
+    holds nothing.
+
+    Django uses `_base_manager` — not this one — to follow a forward foreign key,
+    so `ChangeEvent.matter` still resolves for the audit trail. Reverse
+    accessors (`organisation.matters`) use the default manager and therefore
+    close as well.
+    """
+
+    def get_queryset(self) -> MatterQuerySet:
+        return cast(MatterQuerySet, super().get_queryset().filter(deleted_at__isnull=True))
+
+
 class MatterReferenceSequence(models.Model):
     """Per-year counter behind the familiar ``YYYY_N`` human reference.
 
@@ -93,37 +128,6 @@ class MatterReferenceSequence(models.Model):
 
     def __str__(self) -> str:
         return f"{self.year}: {self.last_number}"
-
-
-#: `Manager.from_queryset` builds a class at run time, which mypy cannot follow
-#: — so the base is named once here and the manager below is an ordinary
-#: subclass of it. `type: ignore` on the class statement itself would suppress
-#: the same message and would also suppress anything else wrong with it.
-_MatterManagerBase = models.Manager.from_queryset(MatterQuerySet)
-
-
-class MatterManager(_MatterManagerBase):
-    """The default manager, and it hides deleted Matters.
-
-    `Kustuta teema` leaves an audit tombstone behind — see `Matter.deleted_at`
-    for why the row cannot simply go — and a tombstone must not behave as a
-    Matter anywhere. This is the one place that is enforced, because the
-    alternative is every caller remembering to exclude them.
-
-    `Matter.all_objects` is the unfiltered manager, and `Meta.base_manager_name`
-    names it so that related lookups still resolve. Anything that genuinely
-    needs to see a tombstone — the audit trail, the deletion planner — asks for
-    it by name (docs/adr/0096 §10).
-    """
-
-    def get_queryset(self) -> MatterQuerySet:
-        # `cast` rather than a looser return type: every caller of
-        # `Matter.objects` relies on `MatterQuerySet`'s own methods —
-        # `visible_to`, `real_data`, `active` — and a manager typed as
-        # returning a plain `QuerySet` would take that away from all of them.
-        # `from_queryset` really does return one; mypy cannot see through the
-        # class it built at run time to know that.
-        return cast(MatterQuerySet, super().get_queryset().filter(deleted_at__isnull=True))
 
 
 class Matter(BaseModel):
@@ -396,29 +400,22 @@ class Matter(BaseModel):
     )
 
     # -- deletion ----------------------------------------------------------
-    #
-    # `Kustuta teema` removes a Matter's business content and leaves this row
-    # behind as an audit tombstone. Both columns are additive, both are NULL on
-    # every existing row, and nothing was backfilled (docs/adr/0096 §10).
-    #
-    # **Why a tombstone rather than a deleted row.** `ChangeEvent.matter` is
-    # `PROTECT`, and `ChangeEvent` is append-only *in the database* — a
-    # `BEFORE UPDATE OR DELETE` trigger on `audit_changeevent` raises
-    # `restrict_violation`. Every Matter has change events from the moment it
-    # is created, so `matter.delete()` is refused by Django's own collector,
-    # and nulling the pointer first is refused by PostgreSQL. Removing the row
-    # would therefore mean either dropping an audit guarantee or destroying the
-    # audit trail of a record somebody deleted — and the trail of a deletion is
-    # the one part of it nobody may lose.
-    #
-    # `app/matters/purge.py` says the same thing about development data and
-    # refuses to decide it inside a utility command. docs/adr/0096 §10 is where
-    # it is decided.
+    #: When this Matter was deleted, and by whom. Null on every live record.
+    #:
+    #: A tombstone rather than a soft delete of convenience: the row survives
+    #: because `audit.ChangeEvent.matter` is `PROTECT` onto an append-only
+    #: table, so a Matter that has ever been touched — which is every Matter,
+    #: from `MATTER_CREATED` onwards — cannot be removed without either
+    #: destroying audit history or detaching it, and the database refuses both.
+    #: Everything the deletion *could* remove is removed: entries, actions,
+    #: engagements, opinions, documents, search rows, snapshots and the rest are
+    #: gone, so the tombstone holds nothing but its own identity and the audit
+    #: trail that proves what happened to it (docs/adr/0096 §4).
+    #:
+    #: Nothing outside `app.matters.deletion` writes these two columns, and the
+    #: default manager excludes any row where the first one is set.
     deleted_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        db_index=True,
-        verbose_name="kustutatud",
+        null=True, blank=True, db_index=True, verbose_name="kustutatud"
     )
     deleted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -429,23 +426,18 @@ class Matter(BaseModel):
         verbose_name="kustutaja",
     )
 
-    #: **Live Matters only.** Every ordinary read goes through this.
-    #:
-    #: A tombstone is not a Matter: it has no business content left, it must
-    #: not appear in the register, on `Minu asjad`, on a department page, in a
-    #: statistic or in search, and its detail URL must answer 404. Filtering
-    #: here rather than at each of those sites is what makes that true by
-    #: construction — a list of fifty read sites is a list that is wrong the
-    #: first time somebody adds the fifty-first.
+    #: Live Matters only. See `MatterManager` for why the exclusion is here.
     objects = MatterManager()
-
-    #: Every row, tombstones included. `Meta.base_manager_name` points at this,
-    #: so related descriptors (`entry.matter`, `event.matter`) resolve a
-    #: tombstone rather than raising — an audit row whose Matter had become
-    #: unreachable would be an audit row nobody can read.
-    all_objects = MatterQuerySet.as_manager()
+    #: Every row, tombstones included. For `app.matters.deletion` and for the
+    #: integrity checks that have to be able to assert a tombstone is empty.
+    all_objects = models.Manager.from_queryset(MatterQuerySet)()
 
     class Meta:
+        # Named explicitly, because `objects` is no longer the first manager
+        # declared and Django would otherwise take `all_objects` for `_default_
+        # manager` on the strength of declaration order — which would reopen
+        # every reverse accessor this exclusion exists to close.
+        default_manager_name = "objects"
         base_manager_name = "all_objects"
         verbose_name = "teema"
         verbose_name_plural = "teemad"

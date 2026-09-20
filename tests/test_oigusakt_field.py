@@ -71,6 +71,11 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "stage": initial["stage"] or "",
         "track": initial["track"] or "",
         "policy_areas": [str(pk) for pk in initial["policy_areas"]],
+        # `Muu valdkond` belongs to the chip that reveals it on both pages now, so
+        # a payload that carried the text without the chip would be a save that
+        # cleared it — which is the trap this helper exists to avoid
+        # (docs/adr/0096 §2).
+        "policy_area_other_selected": "on" if initial["policy_area_other_selected"] else "",
         "policy_area_other": initial["policy_area_other"] or "",
         "legal_instruments": [str(pk) for pk in initial["legal_instruments"]],
         "legal_instrument_other": initial["legal_instrument_other"] or "",
@@ -81,7 +86,6 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "received_date": "",
         "response_deadline": "",
         "tags": [str(pk) for pk in initial["tags"]],
-        "visibility": initial["visibility"],
     }
     payload.update(overrides)
     return payload
@@ -594,7 +598,7 @@ def test_the_rendered_page_puts_oigusakt_last_in_the_classification_block(signed
     """
     body = signed_in.get(CREATE).content.decode()
 
-    valdkond = body.index('id="valdkonnad-menuu"')
+    valdkond = body.index('name="policy_areas"')
     stage = body.index('name="stage"')
     oigusakt = body.index('name="legal_instruments"')
     assert valdkond < stage < oigusakt

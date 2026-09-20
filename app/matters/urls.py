@@ -127,6 +127,13 @@ urlpatterns = [
         views.matter_edit_assisted,
         name="matter_edit_assisted",
     ),
+    # `Kustuta teema`. Its own route, GET to ask and POST to act — a deletion
+    # that a link could perform would be one a crawler, a prefetch or a pasted
+    # address could perform, and this is the one operation in the product that
+    # cannot be undone. The GET writes nothing; the POST goes through
+    # `app.matters.deletion`, which refuses in full or removes in full
+    # (docs/adr/0096 §4.3).
+    path("teemad/<uuid:pk>/kustuta/", views.matter_delete, name="matter_delete"),
     # -- the Teema workspace ------------------------------------------------
     #
     # One route per write intention. The single `sissekanne/` endpoint below is

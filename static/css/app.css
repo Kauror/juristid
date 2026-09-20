@@ -2470,6 +2470,23 @@ fieldset.field > legend {
   background: none;
 }
 
+/* The one button in the product that cannot be undone.
+ *
+ * The offer at the foot of `Muuda teemat` and the final button on the
+ * confirmation page are otherwise the same control wearing the same words, and
+ * pressing one is a navigation while pressing the other is permanent. Filled
+ * rather than outlined is the page saying which is which. */
+.button--danger-strong {
+  background: var(--status-danger);
+  border-color: var(--status-danger);
+  color: var(--surface-base);
+  font-weight: var(--typography-weight-bold);
+}
+
+.button--danger-strong:hover {
+  filter: brightness(1.1);
+}
+
 .button--tiny {
   min-height: 22px;
   padding: 1px var(--spacing-2);
@@ -5181,100 +5198,77 @@ a.barchart__row:hover {
   margin-top: var(--spacing-2);
 }
 
-/* -- Valdkonnad and Hetkeseis: the choices, drawn ------------------------ *
+/* -- what only an existing record is asked --------------------------------- *
  *
- * A section that is open when the page arrives, in ordinary flow, and which the
- * reader may collapse. Not a menu: the panel that overlaid the form is gone,
- * and with it the click that stood in front of an ordinary choice
- * (docs/adr/0096 §1).
+ * `Muuda teemat` follows `Uus teema` for every fact the two pages share, and
+ * carries three the master deliberately does not ask — Menetlusliik, Kellele,
+ * Sildid. They stand below the master's own questions under this heading, so
+ * that a reader comparing the two screens reads the difference as a rule
+ * rather than as an inconsistency (docs/adr/0096 §1).
  *
- * The complaint the menu was built for — answering a question re-laid out the
- * form under the reader’s hands — is answered here by never being shut. Nothing
- * below moves when a chip is pressed, because everything below is already drawn
- * where it stays. It moves once, if and when the *reader* collapses the section,
- * which is a thing they asked for rather than a thing that happened to them.
- *
- * Still a `<details>`, and deliberately: the trigger is keyboard-reachable,
- * announces its own expanded state, opens on Enter and Space, and works with
- * scripting off — none of which a `<div>` with a click handler gives. Nothing
- * is scripted on top of it any more.
- *
- * No `position: relative` and no `z-index`: there is nothing out of flow left to
- * contain. */
-.chipfold {
-  display: block;
-  max-width: 100%;
-}
-
-/* The pill, which is `.chipdetails__summary` in every respect a reader can see.
-   A separate class rather than that one because the two components differ in
-   what they *do*, and a shared name would invite a rule written for the long
-   tail to land on this. */
-.chipfold__trigger {
-  display: inline-block;
-  padding: 3px 11px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 13px;
+ * A `<p>` and not an `<h2>`: this is a label over a group of fields inside a
+ * form, and inserting a heading level between the page title and nothing would
+ * put a rung in the document outline that leads nowhere. */
+.createform__section {
+  margin: var(--spacing-6) 0 0;
   font-size: var(--typography-size-meta);
-  line-height: 1.5;
-  color: var(--text-secondary);
-  cursor: pointer;
-  list-style: none;
-  /* The trigger carries the answer for the collapsed state, and an answer can
-     be long: eleven Hetkeseis labels, and Valdkonnad counts up to twenty-two.
-     It stays one line and cuts, so the caret — the affordance — is never the
-     thing pushed off the row (`.inlineedit__trigger` makes the same argument). */
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
-
-.chipfold__trigger::-webkit-details-marker {
-  display: none;
-}
-
-.chipfold__trigger::after {
-  content: " ▾";
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.chipfold[open] > .chipfold__trigger::after {
-  content: " ▴";
+/* -- deleting a Teema ------------------------------------------------------ *
+ *
+ * Below the form, below a rule, and never in the row that holds `Salvesta`.
+ * The distance is the design: the button that ends a record must not be
+ * reachable by the muscle memory that saves one (docs/adr/0096 §4).
+ *
+ * Used twice — the offer at the foot of `Muuda teemat` and the confirmation
+ * page's own final button — so a reader meets the same red box in both places
+ * and the second one is recognisably the first one's consequence. */
+.dangerzone {
+  margin-top: var(--spacing-8);
+  padding: var(--spacing-4);
+  border: 1px solid var(--status-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--status-danger-soft);
 }
 
-.chipfold__trigger:hover {
+.dangerzone__title {
+  margin: 0;
+  font-size: var(--typography-size-base);
+  font-weight: 600;
+  color: var(--status-danger);
+}
+
+.dangerzone__help {
+  margin: var(--spacing-2) 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+/* The record this is about, named on the confirmation page, so that pressing
+   the final button is an answer about *this* Teema and not about whichever one
+   the reader believes they opened. */
+.dangerzone__subject {
+  margin: 0 0 var(--spacing-3);
+  font-weight: 600;
   color: var(--text-primary);
-  border-color: var(--accent-border);
 }
 
-.chipfold__trigger:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset-width);
+.dangerzone__list {
+  margin: 0 0 var(--spacing-3);
+  padding-left: var(--spacing-5);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
 }
 
-/* What the trigger opens onto, in the page rather than over it.
- *
- * No border, no shadow and no elevated surface. The menu needed all three to
- * read as a layer above the form; a section of the form needs none of them, and
- * `Õigusakt` directly below — a bare `<fieldset>` of the same chips — is the
- * neighbour this has to match rather than out-dress (docs/adr/0096 §1).
- *
- * No height cap and no internal scrolling either. A floating panel had to be
- * capped because anything past the bottom of a phone was unreachable; a section
- * in flow is reached by scrolling the page. That also removes the one rule that
- * ever clipped the `.stagehelp` bubbles hanging off the Hetkeseis chips. */
-.chipfold__body {
-  margin-top: var(--spacing-2);
-}
-
-/* Ticking `Muu` reveals its box **under the trigger**, not inside the fold.
-   A free-text answer which lived in the section would vanish the moment
-   somebody collapsed it, and a refusal about it would be printed somewhere
-   nobody can see (docs/adr/0094 §2.3, kept). */
-.createform__valdkond {
-  margin-top: var(--spacing-2);
+.dangerzone__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: center;
 }
 
 .chipdetails__body .chiprow {
@@ -7775,14 +7769,6 @@ button.accordion__action:focus-visible {
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-menu);
   padding: var(--spacing-3);
-}
-
-.headmenu__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 /* The extraction state, under a document's name rather than in a column. */
@@ -12127,131 +12113,4 @@ section:has(.pw-more[open]) tbody.uxextra {
 .curact__row .field__error {
   flex: 1 1 100%;
   margin: 0;
-}
-
-/* -- LISA TEEMALE: a family's own choices ---------------------------------
- *
- * The sub-choice row inside `+ Märge` and `+ Arvamus / tagasiside`. It is the
- * launcher's own construction one level in — radio, chip, panel — so it needs
- * no rules of its own beyond these two: every `.cx-panels` rule above is
- * written `.cx-panels > …` rather than against a depth, and therefore reaches
- * a nested group unchanged (docs/adr/0096 §8).
- *
- * What it does need is to not look like a second toolbar. The outer row is the
- * page's offer; this is a question *inside* an answer, so it sits under a small
- * label and closer to the form it chooses. */
-#teema-vaade-wrap .cx-panels--sub {
-  margin-top: var(--spacing-1);
-}
-
-/* The label above a sub-choice row — `Märke liik`, `Kelle arvamus`.
- *
- * `.cx-f__lab` already draws a field label in this zone; this adds only the
- * one thing a group label needs that a field label does not, which is to be a
- * block so the chips start on the line below it rather than beside it. */
-#teema-vaade-wrap .cx-sublab {
-  display: block;
-}
-
-/* `Kustuta teema`, which is a link rather than a form control and is the one
- * destructive thing on this page.
- *
- * Quiet by default and never red at rest: a control nobody is about to press
- * should not be shouting, and colour is what this design reserves for state
- * rather than for danger. The warning belongs on the confirmation page, where
- * somebody is actually deciding. What it does get here is the danger colour on
- * hover and on focus, so the intent is unmistakable at the moment of pressing
- * it (docs/adr/0096 §10). */
-#teema-vaade-wrap .addzone__danger {
-  margin-left: auto;
-}
-
-#teema-vaade-wrap .addzone__danger:hover,
-#teema-vaade-wrap .addzone__danger:focus-visible {
-  color: var(--status-danger);
-  border-color: var(--status-danger);
-}
-
-/* `TEEMA TOIMINGUD` — separated from the launcher above it by more than a
- * heading, because the whole point of the section is that it is not the
- * launcher. */
-.addzone--ops {
-  margin-top: var(--spacing-4);
-  padding-top: var(--spacing-3);
-  border-top: 1px solid var(--border-subtle);
-}
-
-/* -- the deletion confirmation -------------------------------------------
- *
- * One card, on a page that does nothing else. Everything here exists to make
- * three things readable before somebody presses an irreversible button: which
- * Matter, what goes with it, and that it cannot be undone
- * (templates/matters/matter_delete.html, docs/adr/0096 §10).
- *
- * The border is the danger colour and the fill is not. A card that was red
- * through would make the *title* — the one thing that has to be read — harder
- * to read, which is the opposite of what a confirmation is for. */
-.dangercard {
-  padding: var(--spacing-4);
-  border: 1px solid var(--status-danger);
-  border-radius: var(--radius-md);
-  background: var(--surface-panel);
-}
-
-/* The Matter's own title, and the largest thing on the page. «Kas oled
-   kindel?» over a button is a question nobody can answer; this is the answer. */
-.dangercard__subject {
-  margin: 0;
-  font-size: var(--typography-size-matter-title);
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--text-primary);
-  /* A title is arbitrary text somebody typed, and a long unbroken one must not
-     put a horizontal scrollbar on a page whose whole job is to be read at a
-     glance (`.richtext` makes the same argument). */
-  overflow-wrap: anywhere;
-}
-
-.dangercard__meta {
-  margin: var(--spacing-1) 0 0;
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
-
-.dangercard__note {
-  margin: var(--spacing-3) 0 0;
-  color: var(--text-secondary);
-}
-
-/* What goes and what stays, as label/value pairs rather than prose: somebody
-   about to delete something reads a list and skims a paragraph. */
-.dangercard__facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--spacing-1) var(--spacing-3);
-  margin: var(--spacing-3) 0 0;
-}
-
-.dangercard__facts dt {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.dangercard__facts dd {
-  margin: 0;
-  color: var(--text-secondary);
-}
-
-/* At a phone width the two columns become two rows: a label column sized to
-   «Kustutatakse» leaves the value column too narrow to read a sentence in. */
-@media (max-width: 480px) {
-  .dangercard__facts {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .dangercard__facts dd {
-    margin: 0 0 var(--spacing-2);
-  }
 }

@@ -22,6 +22,7 @@ import contextlib
 import contextvars
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
 from django.contrib.postgres.search import SearchVector
 from django.db import connection, transaction
@@ -327,6 +328,29 @@ def _recompute_vectors(documents: QuerySet[SearchDocument]) -> None:
 
 def refresh_matter(matter: Matter) -> int:
     return refresh_matters(indexable_matters().filter(pk=matter.pk))
+
+
+def forget_matter(matter_id: Any) -> int:
+    """Take one Matter out of the projection, with everything hanging off it.
+
+    The one operation `refresh_matters` cannot express. It writes the rows a
+    Matter *should* have, and «none, because the Matter is gone» reaches it as
+    an empty queryset — on which it returns early and deletes nothing.
+
+    Called by `app.matters.deletion` and by nothing else. It lives here because
+    `SearchDocument` is this app's table: no module outside `app.search` may
+    name it, which is the rule that keeps business state from depending on
+    derived data, and a deletion that reached across to empty the table itself
+    would be the first exception to it (master specification 11.3,
+    tests/test_search_reliability.py).
+
+    Unconditional and not suspension-aware, unlike the handlers: a caller that
+    has just removed a Matter's rows is not refreshing a projection, it is
+    stating that there is nothing left to project. Returns how many rows went,
+    so the caller can report it.
+    """
+    removed, _ = SearchDocument.objects.filter(matter_id=matter_id).delete()
+    return int(removed)
 
 
 def reindex_submission(submission: Submission) -> None:

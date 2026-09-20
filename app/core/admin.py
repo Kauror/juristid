@@ -6,6 +6,8 @@ schema. Product screens are Stage-1 work and are not built here.
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.contrib import admin
 
 from app.accounts.models import BreakGlassGrant, User
@@ -80,7 +82,23 @@ class MatterAdmin(admin.ModelAdmin):
     list_display = ("__str__", "record_mode", "origin", "owner", "is_open", "visibility")
     list_filter = ("record_mode", "origin", "is_open", "visibility", "track")
     search_fields = ("title", "reference_year", "reference_number")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at", "deleted_at", "deleted_by")
+
+    def get_queryset(self, request: Any) -> Any:
+        """Tombstones included, and read-only.
+
+        `Matter.objects` excludes a deleted Matter from every business surface,
+        which is the point of it — but administration is where somebody asks
+        *what happened to it*, and a row the audit trail names and the admin
+        cannot open is a dead end. `all_objects` is the unfiltered manager
+        (docs/adr/0096 §4.2).
+
+        The two columns are read-only above, so this is a window rather than a
+        way in: deleting is `app.matters.deletion`, which refuses what the
+        database refuses, and nothing here may resurrect a tombstone by clearing
+        a field.
+        """
+        return Matter.all_objects.get_queryset()
 
 
 @admin.register(TagAssignment)

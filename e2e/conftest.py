@@ -348,49 +348,48 @@ needs_intake_reading = pytest.mark.skipif(
 )
 
 
-#: The two `Uus teema` vocabularies that are drawn rather than hidden.
+#: The two classification blocks that have changed shape most often. Selected by
+#: the field they hold rather than by a class, because the class is what three
+#: rounds have changed and the name is what has not.
 #:
-#: Both are `<details class="chipfold" open>` sections in ordinary flow since
-#: docs/adr/0096 §3, so the chips are on the screen when the page arrives.
-#: Told apart by the summary each carries, because the two tags are otherwise
-#: identical — the menu era could tell them apart by `data-chipmenu-single`,
-#: and there is no such attribute now because nothing is scripted on them.
-VALDKONNAD_FOLD = 'details.chipfold:has([data-chipsummary-for="policy_areas"])'
-HETKESEIS_FOLD = 'details.chipfold:has([data-chipsummary-for="stage"])'
+#: Both are plain `<fieldset>`s again. They were permanently drawn chip rows,
+#: then `<details>` folds (docs/adr/0088 §3), then `chipmenu`s whose panels
+#: overlaid the form (docs/adr/0094 §2), and the owner's live audit put them
+#: back: a classification a lawyer can read without opening anything is what
+#: `Õigusakt` beside them always was (docs/adr/0096 §2).
+VALDKONNAD_FIELD = 'fieldset:has(> .chiprow input[name="policy_areas"])'
+HETKESEIS_FIELD = 'fieldset:has(> .chiprow input[name="stage"])'
+
+
+def _reach_classification(page, selector: str) -> None:
+    """Bring one classification block into view, and prove it is on screen.
+
+    **It opens nothing**, and the name it is called by is kept deliberately.
+    Every caller means «make this vocabulary answerable», which for two rounds
+    meant opening a disclosure and now means nothing at all — so the call sites
+    keep saying what they mean and this is the one place that knows how much
+    work that is today.
+
+    It is not a no-op, though: it asserts that the chips really are visible
+    without anything being opened, which is the promise the shape change makes.
+    A page that put them back behind a control would fail here, in every file
+    that files a Teema, rather than only in the one named after the shape.
+    """
+    block = page.locator(selector).first
+    if not block.count():
+        return
+    block.scroll_into_view_if_needed()
+    block.locator(".chip__input").first.wait_for(state="attached")
 
 
 def open_valdkond(page) -> None:
-    """Make sure Valdkonnad is open. It arrives open, so this is nearly always a no-op.
-
-    **Kept, and deliberately not deleted.** The chips are visible on arrival
-    now (docs/adr/0096 §3), so almost every caller of this needs nothing done —
-    but a scenario that collapsed the section earlier, or one that will, still
-    needs one place that says «have the chips on screen». Deleting the helper
-    would put that knowledge into a dozen tests instead.
-
-    Idempotent, so a caller may use it without knowing what an earlier step
-    left behind.
-    """
-    _open_fold(page, VALDKONNAD_FOLD)
+    """Make `Valdkonnad` answerable on `Uus teema` — which it already is."""
+    _reach_classification(page, VALDKONNAD_FIELD)
 
 
 def open_hetkeseis(page) -> None:
-    """Make sure Hetkeseis is open, for `open_valdkond`'s reason.
-
-    Anything that *checks* a stage radio still calls this: a radio inside a
-    collapsed `<details>` is in the document and not on the screen, and
-    Playwright refuses to click what it cannot see — correctly, because neither
-    can a person. What changed is that the section no longer closes itself once
-    answered, so a second chip in the same group needs no second call.
-    """
-    _open_fold(page, HETKESEIS_FOLD)
-
-
-def _open_fold(page, selector: str) -> None:
-    """Open one `chipfold`, if something has collapsed it."""
-    fold = page.locator(selector)
-    if fold.count() and not fold.evaluate("node => node.open"):
-        fold.locator("> summary").click()
+    """Make `Hetkeseis` answerable on `Uus teema` — which it already is."""
+    _reach_classification(page, HETKESEIS_FIELD)
 
 
 def give_first_step(page, *, days: int = 7) -> None:

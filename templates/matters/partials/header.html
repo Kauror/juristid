@@ -41,15 +41,21 @@ rather than read.
     <a href="{% url 'matters:matter_list' %}">Teemad</a>
 
     {% comment %}
-      The one secondary-action slot the header has. Everything a lawyer does
-      daily is somewhere it can be read; what lands here is the rest — today,
-      who may see this file.
+      **`Nähtavus` is not here any more, and nothing replaced it.**
 
-      `Nähtavus` had a service, an endpoint and a form field and no control at
-      all, so a Matter could only be restricted from the Django admin. It is
-      here rather than in the rail because it is not a fact somebody looks up:
-      it is a decision about the record, and it belongs beside the chip that
-      announces it (Teema redesign §4, §5.1).
+      This slot used to hold the product's one Matter-visibility control — a
+      `<select>` posting to `matters:update_field`, with the restricted-access
+      sentence under it. The ordinary lawyer-facing Teema product no longer
+      asks who may see a Matter anywhere: not here, not on `Muuda teemat`, not
+      on `Uus teema` and not on `Saabunud`. The field is gone from
+      `MatterFieldForm` and `visibility` is gone from `FIELD_SERVICES`, so the
+      endpoint answers 404 rather than accepting a crafted value through a
+      control that is no longer drawn (docs/adr/0096 §3).
+
+      Stored visibility, the badge that announces a restricted Matter, child
+      inheritance, restricted documents and every authorization filter are
+      untouched. What is gone is the business UI's way of writing it
+      (app/matters/services.py `set_matter_visibility`).
     {% endcomment %}
     {% comment %}
       `Muuda teemat`, visible rather than in the ⋯ menu.
@@ -60,44 +66,30 @@ rather than read.
       the action that answers "this record is wrong" cannot be the one action
       hidden behind a glyph (Teema QA §2.1).
     {% endcomment %}
-    {% comment %}
-      **`Nähtavus` is not in this header, and the `⋯` menu that held it is
-      gone with it** (docs/adr/0096 §4.2).
-
-      It was a `<select>` and a sentence behind a glyph — «who may read this
-      file» decided by a control a reader had to go looking for, on a page
-      where nothing else about authorization is stated. The owner asked for it
-      out of the ordinary interface, having asked once before; what kept
-      bringing it back was that it was small and it fitted in a menu.
-
-      With it gone the menu held one link, so the link stands on the row
-      instead. A `⋯` containing exactly one item is a glyph in front of a
-      button.
-
-      **Nothing about who may read this Matter changed.** `Matter.visibility`
-      is unmoved, `app.core.authorization` still filters every query by it, a
-      restricted Matter is still restricted, and `matter_banner.html` still
-      says so at the top of this page — the banner is a statement, not a
-      control, and it stays. `Saabunud` still asks for visibility when a
-      restricted letter is *first* filed, which is where the decision is
-      actually made (`IncomingIntakeForm`). What is gone is the ability to
-      change it afterwards from here, from `Muuda teemat`, or through
-      `update_field` — whose `visibility` branch was removed with these
-      controls, because a route left behind a withdrawn button is still a
-      route (app/matters/views.py `FIELD_SERVICES`).
-    {% endcomment %}
     {% if can_write %}
       <a class="button button--quiet button--tiny matterhead__edit"
          href="{% url 'matters:matter_edit' pk=matter.pk %}">Muuda teemat</a>
       {% comment %}
-        The assisted review, for a Matter that has files. Beside «Muuda
-        teemat» rather than inside a menu: the edit page itself offers it
-        prominently, and this is the second way in for somebody already on the
-        Teema page (app/matters/intake_suggestions).
+        The ⋯ menu, for a Matter that has files.
+
+        It holds one link now that `Nähtavus` has gone, and it is rendered only
+        where that link has something to point at — a menu whose panel would
+        open on nothing is a control that promises there is more here.
       {% endcomment %}
       {% if document_count %}
-        <a class="button button--quiet button--tiny"
-           href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
+        <details class="headmenu">
+          <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
+          <div class="headmenu__panel">
+            {% comment %}
+              The assisted review. In the menu rather than beside «Muuda
+              teemat»: the edit page itself offers it prominently, and this is
+              the second way in for somebody already on the Teema page
+              (app/matters/intake_suggestions).
+            {% endcomment %}
+            <a class="headmenu__link"
+               href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
+          </div>
+        </details>
       {% endif %}
     {% endif %}
   </div>

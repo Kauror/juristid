@@ -29,10 +29,11 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
-    HETKESEIS_FOLD,
+    HETKESEIS_FIELD,
     MARTIN,
-    VALDKONNAD_FOLD,
+    VALDKONNAD_FIELD,
     open_hetkeseis,
+    open_valdkond,
     sign_in,
     unique_title,
 )
@@ -77,12 +78,12 @@ INSTRUMENTS = (
 STAGE_FIELD = 'fieldset.field:has(input[name="stage"])'
 INSTRUMENT_FIELD = 'fieldset.field:has(input[name="legal_instruments"])'
 SENDER_FIELD = 'fieldset.field:has(input[name="sender_name"])'
-#: `Valdkonnad` and `Hetkeseis` answer through a menu since docs/adr/0094 §2,
-#: so the *row* is the trigger and the fieldset lives inside the panel. Order and
-#: overflow are about where the reader looks, so both are measured on the whole
-#: `<details>`; the chip vocabularies are read inside it.
-VALDKOND_FIELD = VALDKONNAD_FOLD
-STAGE_ROW = HETKESEIS_FOLD
+#: `Valdkonnad` and `Hetkeseis` are plain fieldsets again since docs/adr/0096 §2,
+#: so these are the blocks themselves. Kept as aliases because order and overflow
+#: are measured on the block while the vocabularies are read from the chips
+#: inside it, and the two readings want two names.
+VALDKOND_FIELD = VALDKONNAD_FIELD
+STAGE_ROW = HETKESEIS_FIELD
 
 
 def create_form(page, base_url, width: int = 1440) -> None:
@@ -159,8 +160,7 @@ def test_the_classification_block_reads_in_the_reviewed_order(page, base_url):
 def test_the_reviewed_vocabularies_are_what_the_page_offers(page, base_url):
     create_form(page, base_url)
 
-    # The panel is in the document whether or not the menu is open, so the
-    # vocabulary can be read without clicking anything.
+    # Drawn at rest, so the vocabulary is simply on the page (docs/adr/0096 §2).
     stages = chip_names(page, STAGE_FIELD)
     # Django's named blank option comes first and is a real answer here.
     assert stages[0] == "Määramata"
@@ -300,15 +300,17 @@ def test_the_classification_rows_never_take_the_page_sideways(page, base_url, wi
         assert field is not None and row is not None
         assert field["width"] <= row["width"] + 2, f"{selector} is wider than its row at {width}px"
 
-    # And with the menus open, which is the state a fold never had: an overlay
-    # that is wider than its row would take the document sideways without
-    # lengthening it, so nothing above would catch it (docs/adr/0094 §2).
-    open_hetkeseis(page)
-    page.locator(VALDKONNAD_FOLD).locator("> summary").click()
-    opened = page.evaluate(
+    # And with an area ticked, because a `:checked` chip is a different box from
+    # an unchecked one — a border that appears on selection is a pixel wider,
+    # and a row that just fitted stops fitting (docs/adr/0096 §2).
+    open_valdkond(page)
+    areas = page.locator(f'{VALDKOND_FIELD} input[type="checkbox"]')
+    if areas.count():
+        areas.first.check()
+    answered = page.evaluate(
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
     )
-    assert opened <= 1, f"an open menu scrolls the page sideways by {opened}px at {width}"
+    assert answered <= 1, f"an answered vocabulary scrolls the page sideways by {answered}px"
 
 
 @pytest.mark.parametrize("width", [1440, 420])
@@ -321,13 +323,8 @@ def test_both_vocabularies_are_answerable_from_the_keyboard(page, base_url, widt
     """
     create_form(page, base_url, width)
 
-    # The trigger is one tab stop and opens on Space, which is what keeps the
-    # menu reachable without a mouse (docs/adr/0094 §2).
-    trigger = page.locator(HETKESEIS_FOLD).locator("> summary")
-    trigger.focus()
-    page.keyboard.press(" ")
-    expect(page.locator(HETKESEIS_FOLD)).to_have_attribute("open", "")
-
+    # No trigger to reach first: the radio group is the one tab stop, which is
+    # the whole of what the keyboard has to walk (docs/adr/0096 §2).
     stage = page.locator(f'{STAGE_FIELD} input[type="radio"]').nth(2)
     stage.focus()
     page.keyboard.press(" ")
