@@ -28,6 +28,7 @@ import datetime as dt
 import pytest
 from playwright.sync_api import expect
 
+from app.core.dates import format_estonian_date
 from e2e.conftest import (
     MARTIN,
     create_matter,
@@ -48,10 +49,23 @@ DATE_UNKNOWN = "Kuupäev teadmata"
 #: A day that has already gone by, computed against the clock: a chronology row
 #: only renders once its day has arrived, and a `Menetluse areng` may not be
 #: dated into the future at all (QA-07).
+#:
+#: The `_READ` pair is what the **rendered page** says, which drops the leading
+#: zeros — and it is `format_estonian_date`, not a `strftime`. The directive that
+#: drops a leading zero is `%-d` on Linux and `%#d` on Windows, so either
+#: spelling is a module that cannot be *imported* on one of the two platforms
+#: this repository is developed and deployed on. It raised
+#: `ValueError: Invalid format string` at collection time on Windows, which
+#: aborts the whole `e2e` collection rather than failing one test, and Linux CI
+#: could never see it. The helper is the application's own and is written by
+#: hand for exactly this reason (`app/core/dates.py`).
+#:
+#: The typed-in pair keeps `%d.%m.%Y`: zero-padded is portable, and it is what
+#: the date box is filled with rather than what the page reads back.
 HAPPENED = (dt.date.today() - dt.timedelta(days=3)).strftime("%d.%m.%Y")
-HAPPENED_READ = (dt.date.today() - dt.timedelta(days=3)).strftime("%-d.%-m.%Y")
+HAPPENED_READ = format_estonian_date(dt.date.today() - dt.timedelta(days=3))
 MOVED = (dt.date.today() - dt.timedelta(days=20)).strftime("%d.%m.%Y")
-MOVED_READ = (dt.date.today() - dt.timedelta(days=20)).strftime("%-d.%-m.%Y")
+MOVED_READ = format_estonian_date(dt.date.today() - dt.timedelta(days=20))
 
 
 def _file_a_development(page, *, occurred_on: str = HAPPENED) -> None:

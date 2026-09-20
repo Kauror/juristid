@@ -12,8 +12,10 @@ not change: the columns are still ``DateField`` and still hold ISO.
 
 from __future__ import annotations
 
+import ast
 import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,9 @@ from app.core.dates import (
     parse_flexible_date,
 )
 from app.core.widgets import EstonianDateField, EstonianDateInput
+
+#: This file is `tests/`, so the repository is its parent.
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 #: What must never reach an Estonian screen. The first is what a US browser
 #: renders; the second is what the database speaks.
@@ -40,6 +45,10 @@ ISO_SHAPE = re.compile(r"\d{4}-\d{2}-\d{2}")
     ("value", "expected"),
     [
         (date(2026, 9, 7), "7.9.2026"),
+        # Both components zero-padded in ISO and neither padded here: the case
+        # a `%-d.%-m.%Y` was reached for, and the reason the guard below exists.
+        (date(2026, 2, 7), "7.2.2026"),
+        (date(2026, 11, 21), "21.11.2026"),
         (date(2026, 8, 23), "23.8.2026"),
         (date(2027, 1, 1), "1.1.2027"),
         (date(2026, 12, 31), "31.12.2026"),
@@ -209,3 +218,90 @@ def test_a_month_is_not_thirty_days():
 
     assert add_months(date(2026, 1, 31), 1) != date(2026, 1, 31) + timedelta(days=30)
     assert add_months(date(2026, 5, 15), 1) != date(2026, 5, 15) + timedelta(days=30)
+
+
+# ---------------------------------------------------------------------------
+# The format may not be rebuilt with a platform-specific directive
+# ---------------------------------------------------------------------------
+
+#: The directives that mean "drop the leading zero", and the reason
+#: `format_estonian_date` is written by hand instead of with `strftime`.
+#:
+#: `%-d` is glibc and `%#d` is the Microsoft CRT. Neither is in the C standard,
+#: so `strftime` raises `ValueError: Invalid format string` for the other one's
+#: spelling — and this repository is developed on Windows and deployed on Linux,
+#: so either spelling is a module one of the two platforms cannot *import*.
+#:
+#: That is what makes it worth a guard rather than a code review note. On
+#: 2026-09-20 `e2e/test_procedural_development_correction.py` carried a
+#: `%-d.%-m.%Y` at module scope: Linux CI was green, and on Windows the
+#: `ValueError` fired during **collection**, which aborts the entire `e2e`
+#: population rather than failing one test. The suite could not be run locally
+#: at all without `--ignore`, and nothing in CI could ever say so.
+NON_PORTABLE_STRFTIME = ("%-", "%#")
+
+#: Where a date format could plausibly be built.
+_SCANNED = ("app", "tests", "e2e")
+
+
+def _strftime_formats() -> list[tuple[Path, int, str]]:
+    """Every literal format string handed to a ``.strftime(...)`` call.
+
+    Parsed rather than searched, and that distinction is the whole reliability
+    of this test: `app/core/dates.py` and `tests/test_teema_ux_consolidation.py`
+    both *name* `%-d` and `%#d` in prose explaining why they are avoided, and a
+    grep-shaped guard would fail on the documentation of its own rule.
+
+    Only literal first arguments are visible here. A format held in a variable
+    is not checked, which is an honest limit rather than a gap worth closing
+    with a heuristic: the defect this exists for was written inline, and so is
+    every date format in this repository today.
+    """
+    found: list[tuple[Path, int, str]] = []
+    for directory in _SCANNED:
+        for path in sorted((REPO_ROOT / directory).rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if not isinstance(func, ast.Attribute) or func.attr != "strftime":
+                    continue
+                if not node.args:
+                    continue
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    found.append((path, node.lineno, first.value))
+    return found
+
+
+def test_no_strftime_uses_a_platform_specific_directive() -> None:
+    """Use `format_estonian_date`, not a directive one platform refuses.
+
+    Zero-padded `%d.%m.%Y` is portable and stays allowed — it is what a date box
+    is *filled with*. What is refused is the unpadded spelling, which is what the
+    page *reads back*, and which `format_estonian_date` already produces.
+    """
+    offenders = [
+        f"{path.relative_to(REPO_ROOT).as_posix()}:{line}: {fmt!r}"
+        for path, line, fmt in _strftime_formats()
+        if any(token in fmt for token in NON_PORTABLE_STRFTIME)
+    ]
+    assert not offenders, (
+        "strftime formats that one of Linux/Windows refuses to parse — use "
+        "app.core.dates.format_estonian_date instead:\n" + "\n".join(offenders)
+    )
+
+
+def test_the_guard_can_actually_see_a_strftime_format() -> None:
+    """The guard is worthless if its parser quietly finds nothing.
+
+    A scan that returns an empty list passes the test above for the wrong
+    reason, and would go on passing after a refactor moved every date format out
+    of its reach.
+    """
+    formats = _strftime_formats()
+    assert formats, "the strftime scan found no format strings at all"
+    assert any("%d.%m.%Y" == fmt for _path, _line, fmt in formats), (
+        "expected the portable zero-padded format to be among those scanned"
+    )
