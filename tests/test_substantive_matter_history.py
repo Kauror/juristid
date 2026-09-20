@@ -509,9 +509,7 @@ def test_two_undated_records_render_in_a_deterministic_order(normal_matter, spec
     first = [item.milestone.what for item in _history(normal_matter, specialist)]
     second = [item.milestone.what for item in _history(normal_matter, specialist)]
     assert first == second
-    assert first.index("Menetluse areng: Teine teadmata") < first.index(
-        "Menetluse areng: Esimene teadmata"
-    )
+    assert first.index("Märge: Teine teadmata") < first.index("Märge: Esimene teadmata")
 
 
 # ---------------------------------------------------------------------------

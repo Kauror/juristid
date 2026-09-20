@@ -267,9 +267,20 @@ are removed; `MatterProgressForm` posts to `matters:add_note`.
 **What widens, stated rather than discovered.** «Rääkisin
 Justiitsministeeriumiga» is now a `MatterProceduralDevelopment`, and under that
 record's old reading — *one step the external procedure took* — a phone call is
-not one. The category is now «what happened on this file». Nobody sees the word
-«areng»: not on the panel, not on the timeline row, not in the audit summary a
-reader sees.
+not one. The category is now «what happened on this file».
+
+**The word goes from the screens a lawyer works on.** Not on the panel, not on
+the chronology row — `DEVELOPMENT_HEADLINE` reads `Märge`, so a `Märge` that was
+filed comes back a `Märge` — not in a refusal, not in the correction form's
+accessible name, and not in the audit *summary*, which is the record's own title
+and always was.
+
+**It stays in one place, deliberately: the audit event's type label**
+(`PROCEDURAL_DEVELOPMENT_RECORDED` → «Menetluse areng lisatud»). That log names
+the *record* rather than the control, every historical event was written under
+that name, and relabelling them would make the change log say a thing nobody
+recorded. Nothing about the display name is stored, so the two can differ
+without either becoming wrong.
 
 ### 6.1 — No `Täpsus`, and nothing inferred
 

@@ -263,22 +263,35 @@ def test_an_undated_act_says_kuupaev_teadmata(page, base_url):
 
 
 def test_an_approximate_act_prints_its_period_and_not_a_day(page, base_url):
-    """A month is written down as a month. The anchor never reaches a screen."""
+    """A month is written down as a month. The anchor never reaches a screen.
+
+    Stated through `Muuda`, which is the surface that still carries the four-way
+    `Täpsus` group. `+ Märge` asks for a day or nothing and always writes
+    `EXACT`, so it cannot state an approximate period at all — the control
+    decides per *record* now, which is where a statement about how well a date
+    is known belongs (docs/adr/0097 §6.1).
+
+    The claim is the projection's and is unchanged: a month reaches the screen
+    as a month, and the stored anchor never does.
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
+    _record_development(page, title="Valitsus kiitis eelnõu heaks", occurred_on=None)
 
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Valitsus kiitis eelnõu heaks")
-    # The shared `Täpsus` control, under `Menetluse areng`'s own POST prefix
-    # (`DEVELOPMENT_PREFIX`). The day box keeps the name `occurred_on`; the
-    # period selects carry the prefix, which is what lets several of these forms
-    # sit on one page without one POST key meaning two dates.
-    #
+    row = (
+        history(page).locator("article.uxtl__item").filter(has_text="Valitsus kiitis eelnõu heaks")
+    )
     # The **label** is clicked, not the radio: the input is visually clipped and
     # the chip label sits over it, so `check()` on the control is intercepted by
     # the very thing a person actually presses. `e2e/test_date_precision.py`
     # chooses a precision exactly this way.
+    #
+    # `.uxtl__edit` rather than the accessible name: the button's name is
+    # composed by `aria-labelledby` from its own word *and* the headline above
+    # it, so an exact match on «Muuda» finds nothing.
+    row.locator(".uxtl__edit").first.click()
+    form = page.locator(".uxtl__editform")
+    form.wait_for()
     form.locator("label.precision__chip", has_text="Kuu").first.click()
     form.locator("[name=areng_month]").select_option(label="Märts")
     form.locator("[name=areng_year]").fill("2026")

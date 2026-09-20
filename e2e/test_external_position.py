@@ -393,6 +393,11 @@ def test_the_chip_is_reachable_and_operable_from_the_keyboard(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
+    # The family first: `Teiste arvamus` is a choice *inside*
+    # `+ Arvamus / tagasiside`, and a radio in a panel that is not shown is not
+    # focusable at all (docs/adr/0097 §8).
+    open_add_panel(page, "lisa-arvamus")
+
     radio = page.locator("#arvamus-teiste-valik")
     radio.focus()
     page.keyboard.press("Space")

@@ -1161,7 +1161,7 @@ def test_a_development_keeps_the_lawyer_note_out_of_the_event(normal_matter, spe
     assert development.title == "Ministeerium saatis uue eelnõu versiooni"
     assert development.note == "Uus versioon ei arvesta meie ettepanekut."
     milestone = development_milestone(development)
-    assert milestone.what == "Menetluse areng: Ministeerium saatis uue eelnõu versiooni"
+    assert milestone.what == "Märge: Ministeerium saatis uue eelnõu versiooni"
     assert milestone.own_note == "Uus versioon ei arvesta meie ettepanekut."
     assert milestone.own_note_label == LAWYER_NOTE_LABEL
     assert "ettepanekut" not in milestone.what
@@ -1358,9 +1358,9 @@ def test_a_development_reaches_the_chronology(normal_matter, specialist):
 
     items, _ = matter_timeline(matter=normal_matter, user=specialist, limit=50)
     headlines = [item.milestone.what for item in items if item.milestone is not None]
-    assert "Menetluse areng: Eelnõu jõudis Riigikokku" in headlines
+    assert "Märge: Eelnõu jõudis Riigikokku" in headlines
     # Projected from the record, so the audit events draw no row of their own.
-    assert headlines.count("Menetluse areng: Eelnõu jõudis Riigikokku") == 1
+    assert headlines.count("Märge: Eelnõu jõudis Riigikokku") == 1
 
 
 def test_a_future_dated_row_filed_before_the_rule_is_still_not_history(normal_matter, specialist):

@@ -252,10 +252,13 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     # No writable next step and no workspace at all (docs/adr/0075, brief §31).
     expect(page.locator("#lisa-teemale")).to_have_count(0)
     expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
-    # The past stays readable, and is open on arrival. The head no longer quotes
-    # the newest entry, so the words are on the page exactly once
-    # (docs/adr/0074 §16).
-    expect(page.locator(".richtext").get_by_text("Menetlus lõppes; töö on tehtud.")).to_be_visible()
+    # The past stays readable, and is open on arrival. Scoped to the chronology
+    # row's headline: the closing banner quotes the same sentence above it, and
+    # the `Märge` itself is a `MatterProceduralDevelopment` rather than the
+    # `Entry` prose this used to read (docs/adr/0074 §16, docs/adr/0097 §6).
+    expect(
+        page.locator(".uxtl__mswhat").get_by_text("Märge: Menetlus lõppes; töö on tehtud.")
+    ).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +388,11 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     open_matter(page, base_url, OPEN_TITLE)
 
     open_add_panel(page, "marge-tavaline")
-    drop = page.locator("#lisa-marge .cx-drop")
+    # Scoped to the sub-choice rather than to the family. `+ Märge` holds four
+    # panels now and each takes files, so `#lisa-marge .cx-drop` is four
+    # elements — three of them the hidden siblings of the one on screen
+    # (docs/adr/0097 §8).
+    drop = page.locator("#marge-tavaline .cx-drop")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 420px the drop area is still absolutely positioned — this is the "
@@ -393,7 +400,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     )
 
     box = drop.bounding_box()
-    form = page.locator("#lisa-marge form").first.bounding_box()
+    form = page.locator("#marge-tavaline form").first.bounding_box()
     assert box["width"] >= form["width"] * 0.9, (
         f"the drop area is {box['width']:.0f}px in a {form['width']:.0f}px form — still a "
         f"corner affordance. Below 720px it is a full-width row of its own"
@@ -521,10 +528,13 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     page.locator("#id_marge_title").press("ControlOrMeta+Enter")
     page.wait_for_load_state("networkidle")
 
-    # Scoped to the entry body: the accordion quotes the newest entry in its own
-    # summary line, so the words appear twice on the page now
-    # (design handoff 1b).
-    expect(page.locator(".richtext").get_by_text("Salvestatud klaviatuurilt.")).to_be_visible()
+    # Scoped to the chronology row's headline, which is where a `Märge` lands.
+    # It was `.richtext` — `Entry.body`, prose — until `+ Märge` started writing
+    # the structured record: the sentence is a `title` now and the row prints it
+    # after the headline word (docs/adr/0097 §6, `DEVELOPMENT_HEADLINE`).
+    expect(
+        page.locator(".uxtl__mswhat").get_by_text("Märge: Salvestatud klaviatuurilt.")
+    ).to_be_visible()
 
     # The visible equivalent is the button itself. The `Ctrl + Enter` hint that
     # used to sit beside it went with the approved target's action row, which is

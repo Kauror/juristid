@@ -335,8 +335,30 @@ def _open_add_panel_once(page, panel_id: str) -> bool:
         add_panel_chip(page, panel_id).click(timeout=PANEL_STEP_MS)
         if not add_panel_is_open(page, panel_id):
             return False
-    panel.locator("form").first.wait_for(state="visible", timeout=PANEL_STEP_MS)
+    # **A visible form, not the first one.** A family panel contains its
+    # sub-choices' forms as well as their chips, and only the chosen one is
+    # shown — so `form >> nth=0` inside `+ Märge` is `Tavaline`'s, which is
+    # hidden whenever somebody has chosen `Oluline tähtaeg`. Waiting on it then
+    # times out on a panel that is open, and the helper reports
+    # «did not open (open=True)», which is the confusing shape of a right
+    # answer to the wrong question (docs/adr/0097 §8).
+    panel.locator("form").locator("visible=true").first.wait_for(
+        state="visible", timeout=PANEL_STEP_MS
+    )
     return True
+
+
+def close_add_panel(page, panel_id: str) -> None:
+    """Press an open choice again, which is how the zone shuts one.
+
+    The browser's own radio group cannot un-check a chosen radio; `ux.js` adds
+    that, and it is the one behaviour `open_add_panel` deliberately will not
+    perform — that helper looks before it clicks, precisely so a chip which
+    arrives chosen is not closed by the act of asking for it (docs/adr/0097
+    §8).
+    """
+    add_panel_chip(page, panel_id).click(timeout=PANEL_STEP_MS)
+    wait_for_htmx(page)
 
 
 def set_next_step(page, text: str, when: str) -> None:

@@ -209,10 +209,18 @@ def test_the_launcher_offers_both_feedback_chips(page, base_url):
     a_new_matter(page, base_url)
 
     bar = page.locator("#lisa-teemale")
-    expect(bar.get_by_text("+ Meile saadetud tagasiside", exact=True)).to_be_visible()
-    expect(bar.get_by_text("+ Teiste arvamus", exact=True)).to_be_visible()
-    expect(bar.get_by_text("+ Koja arvamus", exact=True)).to_be_visible()
-    expect(bar.get_by_text("+ Menetluse areng", exact=True)).to_be_visible()
+    # One family chip, and the three records behind it asked second. They were
+    # three peers of `+ Märge`; grouping them is a presentation change and
+    # deliberately not a data change — `Meile saadetud tagasiside` and
+    # `Teiste arvamus` are still two provenances of one record and
+    # `Koja arvamus` is still a `Submission` (docs/adr/0097 §8, §8.1).
+    expect(bar.get_by_text("+ Arvamus / tagasiside", exact=True)).to_be_visible()
+    open_add_panel(page, "lisa-arvamus")
+    for choice in ("Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"):
+        expect(bar.get_by_text(choice, exact=True)).to_be_visible()
+    # And `+ Menetluse areng` is gone as a word: its ordinary function is
+    # `+ Märge`, which writes the same record (docs/adr/0097 §6).
+    expect(bar.get_by_text("+ Menetluse areng", exact=True)).to_have_count(0)
 
 
 def test_feedback_with_no_organisation_is_refused_on_the_page(page, base_url):
@@ -507,7 +515,10 @@ def test_after_a_sent_opinion_the_page_offers_the_continuation(page, base_url):
 
     current = page.locator("#praegune-tegevus")
     expect(current).to_contain_text("Menetlus võib jätkuda")
-    link = current.get_by_role("link", name="lisa menetluse areng")
+    # One link where there were two. It read «lisa menetluse areng või järgmine
+    # tegevus» and pointed at two launcher chips; there is one chip now and the
+    # next action is a box inside it (docs/adr/0097 §6, §8.2).
+    link = current.get_by_role("link", name="lisa märge")
     expect(link).to_be_visible()
 
     # And the anchor reaches a control that is really there and really opens.
@@ -640,7 +651,12 @@ def test_a_developments_lawyer_note_reads_on_the_row_under_its_own_label(page, b
     # editor offers the box on a stored row, and the row renders a note the
     # same whichever surface added it — which is what this test measures.
     row = chronology(page).locator(".uxtl__ms-body").first
-    row.get_by_role("button", name="Muuda", exact=True).click()
+    # `.uxtl__edit`, not the accessible name. The button's name is built by
+    # `aria-labelledby` from its own word *and* the headline above it, so a
+    # chronology of a dozen rows does not offer a dozen buttons all called
+    # «Muuda» — which makes an exact name match miss every one of them
+    # (`development_row.html`).
+    row.locator(".uxtl__edit").first.click()
     editor = page.locator(".uxtl__editform")
     editor.locator("textarea[name=note]").wait_for()
     editor.locator("textarea[name=note]").fill("Muudatused ei arvesta Koja ettepanekut.")
@@ -706,7 +722,7 @@ def test_a_future_development_is_refused_and_moves_no_stage(page, base_url):
     page.wait_for_load_state("networkidle")
 
     panel_after = panel(page, "marge-tavaline")
-    expect(panel_after).to_contain_text("Menetluse areng ei saa olla tulevikus.")
+    expect(panel_after).to_contain_text("Märge ei saa olla tulevikus.")
     # Nothing was written, and that includes the half of the act that used to
     # survive on its own: a standalone `Hetkeseis` row, carrying the day of data
     # entry, for a stage the file had not reached.
@@ -716,15 +732,44 @@ def test_a_future_development_is_refused_and_moves_no_stage(page, base_url):
     expect(panel_after.locator("[name=title]")).to_have_value("Riigikogu esimene lugemine")
 
 
+def _file_a_step(page, title: str):
+    """One `MatterProceduralDevelopment`, through `+ Märge · Tavaline`."""
+    open_add_panel(page, "marge-tavaline")
+    form = panel(page, "marge-tavaline")
+    form.locator("[name=title]").fill(title)
+    form.locator("[name=occurred_on]").fill(_past(3))
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    chronology(page).get_by_text(title).first.wait_for()
+
+
+def _open_the_editor(page):
+    """`Muuda` on the one stored step, which is where the four precisions live.
+
+    `.uxtl__edit` rather than the accessible name: the button's name is built
+    by `aria-labelledby` from its own word *and* the headline above it, so an
+    exact match on «Muuda» finds nothing (`development_row.html`).
+    """
+    chronology(page).locator(".uxtl__ms-body").first.locator(".uxtl__edit").first.click()
+    form = page.locator(".uxtl__editform")
+    form.wait_for()
+    return form
+
+
 def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
     """The rule is about the period, not about the day box.
 
-    A lawyer who picks `Kuu` and says *the month after next* has stated something
-    as wholly ahead as an exact date does, and the refusal has to reach the
-    control they answered it in.
+    A lawyer who picks `Kuu` and says *the month after next* has stated
+    something as wholly ahead as an exact date does, and the refusal has to
+    reach the control they answered it in.
+
+    **Driven through `Muuda`**, which is the surface that still offers the four
+    precisions: `+ Märge` asks for a day or nothing, so it cannot state an
+    approximate period at all (docs/adr/0097 §6.1). The rule being asserted is
+    the service's and is unchanged.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
+    _file_a_step(page, "Toimunud samm")
 
     next_year = date.today().year + 1
     for precision, fill in (
@@ -732,8 +777,7 @@ def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
         ("Kvartal", lambda f: f.locator("[name=areng_quarter]").select_option(value="4")),
         ("Aasta", lambda f: None),
     ):
-        open_add_panel(page, "marge-tavaline")
-        form = panel(page, "marge-tavaline")
+        form = _open_the_editor(page)
         form.locator("[name=title]").fill(f"Tulevane samm, {precision}")
         form.locator("label.precision__chip", has_text=precision).click()
         fill(form)
@@ -741,9 +785,7 @@ def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
         form.get_by_role("button", name="Salvesta", exact=True).click()
         page.wait_for_load_state("networkidle")
 
-        expect(panel(page, "marge-tavaline")).to_contain_text(
-            "Menetluse areng ei saa olla tulevikus."
-        )
+        expect(page.locator(".uxtl__editform")).to_contain_text("Märge ei saa olla tulevikus.")
         expect(chronology(page)).not_to_contain_text(f"Tulevane samm, {precision}")
         page.reload()
         page.wait_for_load_state("networkidle")
@@ -759,10 +801,10 @@ def test_a_current_month_is_accepted_and_prints_its_period(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
+    _file_a_step(page, "Esialgne sõnastus")
 
     today = date.today()
-    form = panel(page, "marge-tavaline")
+    form = _open_the_editor(page)
     form.locator("[name=title]").fill("Ministeerium saatis uue versiooni")
     form.locator("label.precision__chip", has_text="Kuu").click()
     form.locator("[name=areng_month]").select_option(value=str(today.month))

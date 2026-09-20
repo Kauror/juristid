@@ -3856,10 +3856,10 @@ DEVELOPMENT_NEEDS_TITLE = "Kirjuta, mis juhtus."
 #: file the future step undated, which is the same untruth with less of it
 #: written down. One wording, used by the form and by the service, so the two
 #: cannot come to mean subtly different things.
-DEVELOPMENT_CANNOT_BE_FUTURE = "Menetluse areng ei saa olla tulevikus."
+DEVELOPMENT_CANNOT_BE_FUTURE = "Märge ei saa olla tulevikus."
 #: What a stale correction is told. The sibling of `EXTERNAL_POSITION_EDIT_CONFLICT`
 #: and deliberately the same shape of sentence.
-DEVELOPMENT_EDIT_CONFLICT = "Menetluse arengut on vahepeal mujal muudetud."
+DEVELOPMENT_EDIT_CONFLICT = "Märget on vahepeal mujal muudetud."
 
 
 class ProceduralDevelopmentConflict(DomainError):

@@ -73,8 +73,8 @@ def _action(page, suffix: str):
 
     Both are named **by reference** — the button's own word, then the headline
     element above it — so a chronology showing a dozen of these does not put
-    «Menetluse areng: …» into the document twice. That makes the accessible name
-    «+ Lisa tõend Menetluse areng: …», which is right for a screen reader and
+    «Märge: …» into the document twice. That makes the accessible name
+    «+ Lisa tõend Märge: …», which is right for a screen reader and
     useless as a locator. The id is what identifies the control
     (`development_row.html`).
     """

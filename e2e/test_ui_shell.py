@@ -868,12 +868,21 @@ def test_the_composer_starts_as_one_row(page, base_url):
     field = page.locator("#id_marge_title")
     expect(field).to_be_visible()
     working = field.bounding_box()["height"]
-    # Three rows of an Estonian sentence. The box still grows the moment
-    # anybody types in it (design handoff §18).
-    assert 55 <= working <= 90, f"the opened box gives {working}px to write in"
+    # **One line, and that is the change.** The box measured three rows of an
+    # Estonian sentence while `+ Märge` wrote an `Entry`, whose `body` is prose.
+    # It writes a `MatterProceduralDevelopment` now, and `title` is a stated
+    # line rather than a paragraph — the same one-line control `Muuda` has
+    # always offered for the same column, which is the point: one field, one
+    # shape, on both surfaces (docs/adr/0097 §6).
+    #
+    # Still a real target rather than a hairline: a control under 32px is one
+    # somebody misses.
+    assert 32 <= working <= 52, f"the opened box gives {working}px to write in"
 
-    # And it does not shrink back when focus moves to a control beside it.
-    page.locator("#lisa-marge .cx-drop").click()
+    # And it does not reflow when focus moves to a control beside it. This is
+    # the claim the number above serves: a chip taking the focus must not move
+    # somebody's text under the pointer.
+    page.locator("#marge-tavaline .cx-drop").click()
     expect(field).to_have_css("height", f"{working:g}px")
 
 

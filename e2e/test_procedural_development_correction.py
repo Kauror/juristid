@@ -117,7 +117,7 @@ def test_a_filed_menetluse_areng_can_be_corrected_in_place(page, base_url):
     _file_a_development(page)
 
     expect(page.locator(".uxtl__ms-body")).to_have_count(1)
-    expect(_row(page)).to_contain_text(f"Menetluse areng: {HEADLINE}")
+    expect(_row(page)).to_contain_text(f"Märge: {HEADLINE}")
     # QA-05, before the correction: no `Juristi märkus` line, because the panel
     # that filed this one does not ask for one (docs/adr/0097 §6.2).
     expect(_row(page)).not_to_contain_text(NOTE_LABEL)
@@ -148,7 +148,7 @@ def test_a_filed_menetluse_areng_can_be_corrected_in_place(page, base_url):
     # Same row, corrected, and no second line underneath it. No full-page
     # navigation either — the reader is still where they were.
     row = _row(page)
-    expect(row).to_contain_text(f"Menetluse areng: {CORRECTED}")
+    expect(row).to_contain_text(f"Märge: {CORRECTED}")
     expect(row).to_contain_text(MOVED_READ)
     expect(page.locator(".uxtl__ms-body")).to_have_count(1)
     expect(page.locator(".uxtl__editform")).to_have_count(0)
@@ -160,7 +160,7 @@ def test_a_filed_menetluse_areng_can_be_corrected_in_place(page, base_url):
     # What was shown is what was stored.
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(_row(page)).to_contain_text(f"Menetluse areng: {CORRECTED}")
+    expect(_row(page)).to_contain_text(f"Märge: {CORRECTED}")
     expect(_row(page)).to_contain_text(MOVED_READ)
     expect(_row(page)).to_contain_text(CORRECTED_NOTE)
 
@@ -205,7 +205,7 @@ def test_cancelling_leaves_the_row_exactly_as_it_was(page, base_url):
 
     row = _row(page)
     expect(page.locator(".uxtl__editform")).to_have_count(0)
-    expect(row).to_contain_text(f"Menetluse areng: {HEADLINE}")
+    expect(row).to_contain_text(f"Märge: {HEADLINE}")
     expect(row).not_to_contain_text("Seda ei salvestata")
 
 

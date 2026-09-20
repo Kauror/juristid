@@ -127,8 +127,19 @@ def open_panel(page, panel_id: str):
     """
     radio = page.locator(f"#{panel_id}-valik")
     if not radio.is_checked():
-        page.locator(f'label[for="{panel_id}-valik"]').click()
-        page.wait_for_timeout(80)
+        press_chip(page, panel_id)
+    return page.locator(f"#{panel_id}")
+
+
+def press_chip(page, panel_id: str):
+    """Press a chip whatever state it is in — which is how one is *closed*.
+
+    `open_panel` above will not do this, on purpose. Separating the two is the
+    whole of the fix for a toggle that arrives chosen: asking for it must be a
+    no-op, and closing it must still be one click.
+    """
+    page.locator(f'label[for="{panel_id}-valik"]').click()
+    page.wait_for_timeout(80)
     return page.locator(f"#{panel_id}")
 
 
@@ -234,11 +245,16 @@ def test_the_form_opens_below_the_whole_row_and_only_one_does(page, base_url):
     a_new_matter(page, base_url)
 
     open_panel(page, "lisa-marge")
+    # The **top-level** bar, by a direct-child selector. A descendant one now
+    # reaches the sub-choice chips inside the panel that just opened, which are
+    # below the form's own top by construction — so the measurement would be
+    # asking whether a form opens below the chips it contains
+    # (docs/adr/0097 §8).
     form_top, bottom_of_bar = page.evaluate(
         """() => {
             const form = document.getElementById('lisa-marge').getBoundingClientRect();
             const bar = [...document.querySelectorAll(
-                '#lisa-teemale label.disclosure-chip'
+                '#lisa-teemale > .cx-panels > label.disclosure-chip'
             )].map(node => node.getBoundingClientRect().bottom);
             return [form.top, Math.max(...bar)];
         }"""
@@ -280,7 +296,7 @@ def test_choosing_the_active_operation_again_closes_it(page, base_url):
     open_panel(page, "lisa-kaasamine")
     expect(page.locator("#lisa-kaasamine")).to_be_visible()
 
-    open_panel(page, "lisa-kaasamine")
+    press_chip(page, "lisa-kaasamine")
     expect(page.locator("#lisa-kaasamine")).not_to_be_visible()
     assert_unchanged(resting, chip_geometry(page), "after closing the form again")
 

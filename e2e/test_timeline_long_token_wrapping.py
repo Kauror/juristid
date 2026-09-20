@@ -192,7 +192,10 @@ def _file_a_development(page, url: str, note: str = "", **fields: str) -> None:
     if note:
         row = page.locator(".uxtl__ms-body").first
         row.wait_for()
-        row.get_by_role("button", name="Muuda", exact=True).click()
+        # `.uxtl__edit`, not the accessible name: the button's name is built
+        # by `aria-labelledby` from its own word *and* the headline above it,
+        # so an exact match on «Muuda» finds nothing (`development_row.html`).
+        row.locator(".uxtl__edit").first.click()
         editor = page.locator(".uxtl__editform")
         editor.locator("textarea[name=note]").wait_for()
         editor.locator("textarea[name=note]").fill(note)
