@@ -779,9 +779,17 @@ def test_an_unplaced_row_stays_visible_and_says_it_is_not_a_defect(page, base_ur
         return page.locator('#teema-pais details:has(select[aria-label="Hetkeseis"])')
 
     control = stage_control(page)
-    control.locator(".inlineedit__trigger").click()
+    # Look first, and click only a disclosure just seen closed — a `<summary>`
+    # closes its own `<details>`, so a fixed click is a coin-toss on parity. The
+    # idiom `open_add_panel` uses, for the same reason (e2e/conftest.py).
+    if not control.evaluate("el => el.open"):
+        control.locator(".inlineedit__trigger").click()
+    expect(control.locator('select[aria-label="Hetkeseis"]')).to_be_visible()
+    # **The select submits itself** — `data-autosubmit` — and the response swaps
+    # `#teema-pais` wholesale. So there is no `Salvesta` left to press: reaching
+    # for it races the swap that detaches it, which is a click that times out on
+    # a save that already happened.
     control.locator('select[aria-label="Hetkeseis"]').select_option(label="Riigikogus")
-    control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
     page.wait_for_load_state("networkidle")
     expect(stage_control(page).locator(".inlineedit__trigger")).to_contain_text("Riigikogus")
     # An opinion sent afterwards: it could belong to either phase, so it belongs

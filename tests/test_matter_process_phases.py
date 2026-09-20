@@ -1440,3 +1440,48 @@ def test_correcting_a_phase_changes_the_phase_and_nothing_else(specialist, organ
 
     # And the history moved, which is the one thing the correction was for.
     assert _phase_of(matter, specialist, step) == PHASE_KOOSKOLASTUS
+
+
+def test_the_ordinary_register_row_gets_no_heading_at_all(specialist, organisation):
+    """The commonest file in the register, and the one this got wrong first.
+
+    A Matter carrying an `Õigusakt` **and** a `Hetkeseis` and no recorded step is
+    not a special case — it is nearly every row. For a while the current phase
+    alone made the page grouped, so every one of those files put its whole
+    history under an `Etapiga sidumata` heading with a sentence explaining
+    itself. A heading needs something to contrast with, and «where the file is
+    now» with no rows in it is not that: it is what the header band has always
+    said.
+
+    Caught by the visual lane — `teema-ajajoon` grew 65 px on the seeded world —
+    rather than by any of the assertions above, every one of which happened to
+    build its file without a stage.
+    """
+    matter = _matter(specialist, instruments=("seadus",))
+    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    _opinion(matter, specialist, organisation, date(2026, 5, 20))
+
+    items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
+    assert items.history.grouped is False
+    assert items.history.current_without_rows is None
+    assert items.history.occurrences == ()
+    assert all(item.phase is None for item in items)
+    assert all(item.opens_phase is False for item in items)
+
+
+def test_the_current_phase_reads_once_something_else_is_placed(specialist, organisation):
+    """And the moment one step is recorded, the section it is missing appears.
+
+    The same file, one `+ Märge` later: `Kooskõlastusring` is placed, so
+    `Riigikogus` — where the file says it is, with nothing recorded in it — has
+    something to contrast with and reads as its own dateless section.
+    """
+    matter = _matter(specialist, instruments=("seadus",))
+    _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
+    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
+
+    items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
+    assert items.history.grouped is True
+    current = items.history.current_without_rows
+    assert current is not None
+    assert (current.label, current.started_on) == ("Riigikogus", None)

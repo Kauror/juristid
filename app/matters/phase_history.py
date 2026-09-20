@@ -374,11 +374,19 @@ def build(
         for position, row in enumerate(rows):
             ordered.append(replace(row, phase=occurrence, opens_phase=position == 0))
 
-    has_placed = any(not occurrence.is_unplaced for occurrence in rendered)
-    if not has_placed and current_without_rows is None:
-        # No phase is known anywhere on this file. It reads exactly as it always
-        # has — one flat list, no headings, and no `Etapiga sidumata` announcing a
-        # gap that cannot be closed.
+    if not any(not occurrence.is_unplaced for occurrence in rendered):
+        # **Nothing is placed, so there is nothing to group against.** The file
+        # reads exactly as it always has — one flat list, no headings, and no
+        # `Etapiga sidumata` announcing a gap that cannot be closed.
+        #
+        # **Including when the file says where it is.** A Matter carrying an
+        # `Õigusakt` and a `Hetkeseis` and no recorded step is the ordinary
+        # register row, and for a while this grouped it: the current phase alone
+        # made `grouped` true, so every row on every such file fell under an
+        # `Etapiga sidumata` heading with a sentence explaining itself. A heading
+        # needs something to contrast with, and «where the file is now» with no
+        # rows in it is not that — it is what the header band has always said
+        # (docs/adr/0092 §16, docs/adr/0098 §5).
         return items, PhaseHistory()
 
     empty_current = (
