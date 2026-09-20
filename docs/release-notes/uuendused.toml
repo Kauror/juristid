@@ -51,6 +51,40 @@ basis = "deployment"
 #
 # Ükski punkt ei nimeta kirjeliike ega ekraaniosade sisemisi nimesid: lugeja
 # kohtab neid nuppudena, mitte mõistetena.
+#
+# **Kolmas väljalase samal päeval: teema käik etappide kaupa ja tingimuslik
+# edasine tee.** Sama kalendripäev, sama kirje — lugeja kohtab kõike kolme
+# järgmisel korral, kui rakenduse avab (docs/release-notes/README.md).
+#
+# **Esimene uus punkt on see, mida juristid päriselt palusid**: kolme aasta
+# teema ei loeta enam ühe pika kuupäevade veeruna, vaid menetluse enda kujuga.
+# Punkt nimetab etapid nende oma sõnadega, sest need on juristide endi sõnad.
+#
+# **Teine punkt ütleb, kust etapp tuleb, ja ütleb selle ausalt.** Rakendus ei
+# arva midagi teksti, faili ega kuupäeva järgi — etapi paneb inimene märke
+# juurde, ja ülejäänud kirjed leiavad koha kahe märke vahele jäävast ajast.
+# Punkt lubab ka seda, et vana sisu ei kirjutata ümber: ükski varem sisestatud
+# kirje ei saa etappi juurde ega kaota midagi.
+#
+# **Kolmas punkt on «Etapiga sidumata», ja see peab kõlama tavalise vastusena.**
+# See ei ole viga ega töönimekiri; kirje on olemas, loetav ja parandatav.
+# Punkt ütleb ka, kuidas see laheneb — üks märge, ja rida leiab oma koha.
+#
+# **Neljas punkt on edasine tee, ja iga sõna selles on tingimuslik.** «Võib
+# olla» on punktis sees, sest see on kogu asja mõte: rakendus tuletab meelde,
+# mis võib järgneda, ega luba, et see juhtub. Punkt ütleb otse välja, et sellest
+# ei teki tähtaega ega järgmist tegevust — muidu loeks lugeja seda plaanina.
+#
+# **Viies punkt nimetab kaks asja, mida rakendus enam valesti ei ütle.** ELi
+# määrust ei võeta üle ja määrust ei võta vastu Riigikogu; varem pakkus leht
+# mõlemat. Punkt kirjutab selle kasutaja keeles, mitte reegli keeles.
+#
+# **Kuues punkt on kuupäevade koht.** Need liikusid sinna, kus küsitakse «kuhu
+# see teema läheb», ja ülevõtmise tähtaeg on nüüd üldse nähtav — varem sai selle
+# kirja panna ja seejärel ei näinud seda enne, kui päev kätte jõudis.
+#
+# Ükski punkt ei luba, et rakendus jälgib eelnõude registrit ise: kõik, mida
+# leht ütleb, tuleb sellest, mis on teemale kirja pandud.
 prs = [263, 265]
 changes = [
   "Uue teema lisamisel on valdkonnad ja hetkeseis taas kohe nähtavate valikutena — rippmenüüsid enam ei ole ja kõik valikud on lehel lahti.",
@@ -65,6 +99,12 @@ changes = [
   "Sama märke juurde saab kohe valida uue hetkeseisu ja järgmise tegevuse, nii et eraldi järgmise tegevuse valikut lisamise real enam ei ole.",
   "Töövõidu lisamisel küsitakse nüüd täpset kuupäeva; varem kuu, kvartali või aasta täpsusega salvestatud töövõidud jäävad nii, nagu need on.",
   "Teema sulgemine ja kustutamine on teema lehel omaette plokis «Teema toimingud», eraldi sellest, mida teemale juurde lisatakse.",
+  "Teema käik on nüüd jaotatud menetluse etappideks — VTK, kooskõlastusring, valitsuses, riigikogus, jõustumine, ELi konsultatsioon, Eesti seisukoht, ELi menetlus ja ülevõtmine —, nii et kolme aasta teema loeb menetluse enda kujuga, mitte ühe pika kuupäevade veeruna.",
+  "Etapi paneb inimene märke juurde ja see on ette pakutud teema praeguse hetkeseisu järgi; rakendus ei tuleta etappi tekstist, failinimest ega kuupäevast. Ülejäänud kirjed leiavad koha kahe märke vahele jääva aja järgi ja varem sisestatud kirjed jäävad täpselt nii, nagu need on.",
+  "Kirjed, mille etappi ei saa kindlalt öelda, on koos pealkirja «Etapiga sidumata» all — need on täiesti tavalised kirjed, mitte vead. Kui lisad märke sammust, mis teema edasi liigutas, leiavad need ise oma etapi.",
+  "Menetluse kulg näitab nüüd ka seda, mis võib ees olla: järgmised üks kuni kolm etappi sõnadega «Ees võib olla», ilma kuupäevadeta. Sellest ei teki tähtaega, järgmist tegevust ega tähtaja ületamist — see on meeldetuletus teekonnast, mitte plaan.",
+  "Edasist teed pakutakse nüüd õigusakti liigi järgi: ELi määruse juures ei pakuta enam ülevõtmist, sest ELi määrust ei võeta üle, ja määruse juures ei pakuta Riigikogu. Valitsuse etapp on määruse puhul märgitud tingimuslikuna, sest õigusakti liik ei ütle, kas määruse annab valitsus või minister.",
+  "Kirjas olevad kuupäevad — alustatud, tähtajad, Koja arvamus, jõustumine — on nüüd menetluse kulu juures, sest need vastavad küsimusele, kuhu teema läheb. ELi õiguse ülevõtmise tähtaeg on nüüd nende seas nähtav juba siis, kui see alles ees on.",
 ]
 
 [[day]]
