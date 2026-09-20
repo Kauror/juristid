@@ -105,7 +105,7 @@ def chip_names(page, field: str) -> list[str]:
 
 def file_it(page, title: str) -> None:
     """Save the form with a first step, because every Teema this suite leaves
-    behind is somebody else's fixture (`e2e/test_addressee_free_entry.py`).
+    behind is somebody else's fixture (`e2e/test_unified_organisation_picker.py`).
 
     `Arvamuse tähtaeg` is how a Teema gets its first step now: `Järgmiseks` and
     its `Millal?` chips are off this page, and the one date establishes

@@ -112,24 +112,30 @@ def document_overflows(page) -> bool:
 def sparse_matter(page, base_url: str, title: str) -> str:
     """A Matter with the shape the QA report described.
 
-    Teemaviide comes with the record. `Kellele` is filled in through the rail's own
-    control, which is both how a lawyer would do it and a second proof that the
-    control works, and it is filled in with a **named** institution: the option
-    at position 1 is whatever the shared catalogue happens to sort first, and a
-    long name there makes the row two lines tall and fails the density
-    assertion below for a reason that has nothing to do with density.
-    `Menetlusliik` and `Saatja` are deliberately left empty: the whole
-    complaint was that empty facts made the column tall.
+    Teemaviide comes with the record. `Saatja` is filled in through the rail's
+    own control, which is both how a lawyer would do it and a second proof that
+    the control works, and it is filled in with a **named** institution: a long
+    name makes the row two lines tall and fails the density assertion below for
+    a reason that has nothing to do with density.
+
+    It was `Kellele` until docs/adr/0097 §4 withdrew that question from the
+    ordinary Teema UI; `Saatja` is the editable counterparty row this rail still
+    has, and the density claim is about a row rather than about which fact it
+    carries.
 
     Built here rather than seeded: adding a Matter to the shared world changes
     the register every visual baseline photographs.
     """
     url = create_matter(page, base_url, title)
 
-    row = fact_row(page, "Kellele")
+    row = fact_row(page, "Saatja")
     row.get_by_text("+ Lisa").click()
-    row.locator("select[name=addressee_organisation]").select_option(label=MINISTRY)
-    expect(fact_value(page, "Kellele")).to_have_text(MINISTRY)
+    # Checkboxes over the catalogue, submitted once: the sender set is edited
+    # as a whole, so a control that posted on every tick would write the
+    # intermediate set (`rail.html`).
+    row.get_by_role("checkbox", name=MINISTRY, exact=True).check()
+    row.get_by_role("button", name="Salvesta", exact=False).first.click()
+    expect(fact_value(page, "Saatja")).to_contain_text(MINISTRY)
 
     return url
 
@@ -158,13 +164,12 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
     # the file was classified and the other a developer's switch. Every column,
     # value and endpoint is untouched (TEEMA_TARGET_SPEC §G.1,
     # docs/adr/0074 §2, §17).
-    assert keys[:4] == [
-        "Teemaviide",
-        "Menetlusliik",
-        "Saatja",
-        "Kellele",
-    ], keys
-    for gone in ("Saabus", "Muu valdkond", "Andmeklass"):
+    assert keys[:2] == ["Teemaviide", "Saatja"], keys
+    # `Menetlusliik` and `Kellele` were rows three and four until
+    # docs/adr/0097 §3, §4: the two Teema forms stopped asking about either, and
+    # a read-only rail row is the easiest place for a withdrawn question to
+    # survive its own removal. The columns are untouched.
+    for gone in ("Saabus", "Muu valdkond", "Andmeklass", "Menetlusliik", "Kellele"):
         assert gone not in keys, f"{gone} is retired from this rail"
 
     for row in rows:
@@ -201,11 +206,12 @@ def test_an_empty_fact_costs_no_more_than_a_filled_one(page, base_url):
 
     rows = {row["key"]: row for row in row_geometry(page)}
 
-    empty = rows["Menetlusliik"]["height"]
-    # `Kellele`, because `Saabus` left this rail for the header metaline
-    # (docs/adr/0074 §2). The sparse fixture fills it through the rail's own
-    # control, so it is the filled row this block still has.
-    filled = rows["Kellele"]["height"]
+    # `Õigusakt` is the empty row this rail still has: `Menetlusliik` carried
+    # the claim until docs/adr/0097 §3 withdrew the question, and the sparse
+    # fixture leaves this one unanswered for the same reason it left that one.
+    empty = rows["Õigusakt"]["height"]
+    # And `Saatja`, which the fixture fills through the rail's own control.
+    filled = rows["Saatja"]["height"]
     assert abs(empty - filled) <= 2, (
         f"an empty fact is {empty:.1f}px and a filled one {filled:.1f}px"
     )

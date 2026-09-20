@@ -185,20 +185,21 @@ def test_the_results_panel_closes_when_focus_leaves_the_picker(page, base_url):
     expect(box(page, CREATE_SENDER)).to_have_attribute("aria-expanded", "false")
 
 
-def test_focus_moving_between_the_two_pickers_closes_only_the_one_left(page, base_url):
-    """Two of these on one form, and neither may hold the other's list open.
+def test_leaving_the_picker_closes_its_list(page, base_url):
+    """A list left open over the rest of the form is a list nobody dismissed.
 
-    On `Muuda teemat`, which is the form that draws two of them
-    (docs/adr/0090 §5).
+    This drove two pickers against each other, which is what `Muuda teemat`
+    drew until docs/adr/0097 §4 withdrew the Matter-level `Kellele`. One
+    picker, so the blur is proved against the control the focus goes *to* —
+    the title box, which is on every render of this page.
     """
     edit_form(page, base_url)
     search(page, EDIT_SENDER, "Näidis")
     expect(results(page, EDIT_SENDER)).to_be_visible()
 
-    search(page, EDIT_ADDRESSEE, "Näidis")
+    page.locator("#id_title").click()
 
     expect(results(page, EDIT_SENDER)).to_be_hidden()
-    expect(results(page, EDIT_ADDRESSEE)).to_be_visible()
 
 
 def test_clicking_a_result_still_selects_it(page, base_url):
@@ -318,11 +319,16 @@ def test_clearing_the_provisional_chip_takes_it_off_the_count(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_the_edit_page_carries_the_unified_picker_for_both_fields(page, base_url):
+def test_the_edit_page_carries_the_unified_picker_for_the_one_it_asks(page, base_url):
+    """`Saatja`, and that is the whole list — the same as `Uus teema`.
+
+    It carried two until docs/adr/0097 §4. One picker each is the sameness
+    docs/adr/0096 §1 wanted and the withdrawal finally produced.
+    """
     edit_form(page, base_url)
 
     expect(box(page, EDIT_SENDER)).to_be_visible()
-    expect(box(page, EDIT_ADDRESSEE)).to_be_visible()
+    expect(box(page, EDIT_ADDRESSEE)).to_have_count(0)
     expect(box(page, EDIT_SENDER)).to_have_attribute("placeholder", PLACEHOLDER)
     expect(box(page, EDIT_SENDER)).to_have_attribute("role", "combobox")
 
@@ -434,21 +440,24 @@ def test_enter_in_the_edit_search_box_never_submits_the_form(page, base_url):
 def test_choosing_a_sender_on_the_edit_page_does_not_answer_the_addressee(page, base_url):
     """§11. Ticking a sender here may not touch the addressee.
 
-    It never may anywhere now — `Uus teema`'s sender→addressee default went with
-    the question (docs/adr/0090 §5) — and this page is where the rule always
-    held, because both answers are established facts by the time it opens.
+    It never may anywhere now. `Uus teema`'s sender→addressee default went with
+    the question (docs/adr/0090 §5), and the Matter-level `Kellele` itself went
+    with docs/adr/0097 §4 — so the strongest form of this claim is that the
+    page carries no addressee control to answer and that the script which used
+    to write one has nothing to bind to.
 
-    Compared against what Adressaat held on arrival rather than against an empty
-    list: what must not happen is that *ticking a sender changes it*, and that is
-    the claim whether or not the Matter already names somebody.
+    The stored value is read off the page's own dataset rather than off a
+    control, because there is no control: what must not happen is that ticking
+    a sender changes what the record holds.
     """
     edit_form(page, base_url)
-    before = chosen_names(page, EDIT_ADDRESSEE)
 
     search(page, EDIT_SENDER, "Näidismin")
     results(page, EDIT_SENDER).get_by_role("option", name=MINISTRY, exact=True).click()
 
-    assert chosen_names(page, EDIT_ADDRESSEE) == before
+    expect(page.locator('[name="addressee_organisation"]')).to_have_count(0)
+    expect(page.locator('[name="addressee_name"]')).to_have_count(0)
+    expect(page.locator("[data-sender-chips]")).to_have_count(0)
 
 
 def test_the_edit_page_counts_a_provisional_sender_too(page, base_url):

@@ -206,7 +206,26 @@ row of controls that refuse (brief §30, §31).
             somebody answering it — and `arvamus_choice` is computed the same
             way `marge_choice` is, so a refusal from either sibling still wins.
           {% endcomment %}
+          {% comment %}
+            **The two `{% templatetag openblock %} url … as … {% templatetag closeblock %}` lines are load-bearing.**
+
+            `external_position_panel.html` takes its endpoint as `post_url`,
+            because the one partial serves two panels that post to two routes.
+            An include naming a variable nothing has set passes the *empty
+            string*, and Django says nothing about it: the form then carries
+            `hx-post=""`, HTMX posts to the page's own address, and the save
+            silently does not happen. The panel opens, the fields fill,
+            `Salvesta` responds — and the chronology never gains a row.
+
+            These two lines were lost when this file was rewritten for the four
+            families, and every `Teiste arvamus` and
+            `Meile saadetud tagasiside` save went nowhere until a browser shard
+            spent thirty seconds per test waiting for a row that was never
+            coming. `tests/test_templates.py` now fails on it in a second.
+          {% endcomment %}
+          {% url 'matters:add_received_feedback' pk=matter.pk as received_feedback_post_url %}
           {% include "matters/partials/external_position_panel.html" with panel_id="arvamus-tagasiside" chip_label="Meile saadetud tagasiside" post_url=received_feedback_post_url form=received_feedback_form picker_id="tagasiside" submit_label="Salvesta tagasiside" group_name="arvamuse-liik" open_value=arvamus_choice workspace_error=workspace_error %}
+          {% url 'matters:add_external_position' pk=matter.pk as external_position_post_url %}
           {% include "matters/partials/external_position_panel.html" with panel_id="arvamus-teiste" chip_label="Teiste arvamus" post_url=external_position_post_url form=external_position_form picker_id="valine-seisukoht" submit_label="Salvesta arvamus" group_name="arvamuse-liik" open_value=arvamus_choice workspace_error=workspace_error %}
 
           <input class="addpick" type="radio" name="arvamuse-liik" id="arvamus-koja-valik"

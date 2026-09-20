@@ -136,7 +136,7 @@ def test_a_sender_can_be_named_on_uus_teema(page, base_url):
 
     page.fill("#id_title", "Brauseris kirjutatud saatja")
     name_a_new_sender(page, TYPED_SENDER)
-    # A next step, for the same reason `test_addressee_free_entry` files one:
+    # A next step, for the same reason every file that creates Matters does:
     # every Teema this suite leaves behind without one is a permanent row in
     # the department's «järgmise tegevuseta» list, which another file reads.
     give_first_step(page)

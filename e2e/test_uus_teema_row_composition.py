@@ -12,15 +12,17 @@ with it. Saatja now carries a shortlist of about eight chips, a
 applied to the field beside it — and in a third of a row that is cramped.
 
 No field was renamed or reinterpreted, so nothing here asserts behaviour:
-`test_addressee_free_entry.py` owns what Adressaat *does* and
-`test_matter_form_ux.py` owns how the choice controls read. This file owns only
+`test_unified_organisation_picker.py` owns what the organisation control
+*does* and `test_matter_form_ux.py` owns how the choice controls read. This file owns only
 where the boxes are, at four widths, and it asserts that with bounding boxes
 rather than with a screenshot — a screenshot cannot say which row a field is on.
 
 **The Adressaat row left this page**, with the question it held
-(docs/adr/0090 §5), and so did the three measurements that were about it. The
-field and its fold are still measured where they still are, on `Muuda teemat`,
-by `e2e/test_addressee_free_entry.py`.
+(docs/adr/0090 §5), and so did the three measurements that were about it. It
+has since left `Muuda teemat` too (docs/adr/0097 §4), so there is no page left
+to measure it on — and the control those measurements were really about is
+swept at four widths by
+`e2e/test_unified_organisation_picker.py::test_the_picker_never_takes_the_page_sideways`.
 """
 
 from __future__ import annotations

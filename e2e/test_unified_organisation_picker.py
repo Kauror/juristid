@@ -239,7 +239,7 @@ def file_the_teema(page, title: str) -> None:
     the first page of that list expecting the seeded record to be on it — two
     Matters from one file were once enough to push it off. So this says what
     happens next, which is what a lawyer filing a real one does anyway
-    (`e2e/test_addressee_free_entry.py`).
+    (`e2e/test_sender_free_entry.py`).
     """
     page.locator("#id_title").fill(title)
     give_first_step(page)

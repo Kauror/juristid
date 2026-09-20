@@ -137,3 +137,61 @@ def test_no_css_or_svg_length_is_rendered_through_localization(template: Path) -
         f"Format it in Python and expose it as a `_css` string, or the decimal "
         f"comma will silently break the geometry."
     )
+
+
+#: `{% include … with name=value %}`, as its pairs.
+_INCLUDE_WITH = re.compile(r"\{%\s*include\s+[^%]*?\swith\s+([^%]*?)%\}", re.S)
+
+#: A name a template binds locally: `{% url … as name %}`, `{% with name=… %}`,
+#: or a `{% for name … %}` loop variable.
+_BOUND_LOCALLY = re.compile(
+    r"\{%\s*url\s[^%]*\sas\s+(\w+)\s*%\}|\{%\s*with\s+(\w+)\s*=|\{%\s*for\s+([\w\s,]+?)\s+in\s"
+)
+
+#: The names whose value is an **address**. A missing one is the failure this
+#: test exists for and is the one kind that fails silently in the browser
+#: rather than loudly on the page.
+_URL_ARGUMENTS = ("post_url", "action_url", "form_url", "href")
+
+
+@pytest.mark.parametrize("template", _templates(), ids=lambda p: p.name)
+def test_an_included_url_argument_is_bound_before_it_is_passed(template: Path) -> None:
+    """`{% include … with post_url=x %}` where nothing set `x` renders `hx-post=""`.
+
+    Django resolves an unknown variable to the empty string and says nothing
+    about it. For most arguments that is a visible defect — a label goes blank
+    and somebody notices. For an address it is invisible and total: the form
+    carries `hx-post=""`, HTMX posts to the page's own URL, the panel responds,
+    and the record is never written.
+
+    That is exactly what happened when `add_to_matter.html` was rewritten for
+    the four families and lost its two url-as lines: every `Teiste arvamus` and
+    `Meile saadetud tagasiside` save went nowhere, and the browser suite spent
+    thirty seconds per test waiting for a chronology row that was never coming
+    — thirty-odd tests, two shards past their fifteen-minute limit, and no
+    failure summary at all, because the shards were killed rather than finished.
+
+    So the rule is checked against the source, in a second: a URL argument
+    passed to an include must be bound in the same file, by a url-as tag, a
+    with tag, or a loop variable. A name that comes from the view's own context
+    does not look bound here, which is why only the four address-shaped
+    argument names are checked rather than every argument.
+    """
+    source = template.read_text(encoding="utf-8")
+    bound = {name for match in _BOUND_LOCALLY.findall(source) for name in match if name}
+    # A `{% for a, b in … %}` binds several.
+    bound |= {word.strip() for name in bound for word in name.split(",")}
+
+    unbound: list[str] = []
+    for arguments in _INCLUDE_WITH.findall(source):
+        for pair in re.findall(r"(\w+)=(\w+)", arguments):
+            argument, value = pair
+            if argument in _URL_ARGUMENTS and value not in bound:
+                unbound.append(f"{argument}={value}")
+
+    assert not unbound, (
+        f"{template.name} passes {sorted(set(unbound))} to an include, and nothing "
+        f"in the file binds the value. Django renders an unknown variable as the "
+        f"empty string, so the included form would carry an empty action and post "
+        f"to the page's own address."
+    )
