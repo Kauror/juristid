@@ -148,16 +148,18 @@ def test_a_sender_can_be_named_on_uus_teema(page, base_url):
     expect(page.locator(".railcard__value", has_text=TYPED_SENDER).first).to_be_visible()
 
 
-def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page, base_url):
+def test_a_sender_named_here_is_afterwards_in_the_one_catalogue(page, base_url):
     """One catalogue, which is what the department asked for.
 
-    The body named through Saatja above has to be selectable as an Adressaat on
-    the next form that asks — not because anything copies it across, but because
-    there was only ever one `Organisation` table.
+    The body named through Saatja above has to be a row like any other
+    afterwards — not because anything copies it anywhere, but because there was
+    only ever one `Organisation` table.
 
-    That form is `Muuda teemat`: `Uus teema` stopped asking who Koda answers
-    (docs/adr/0090 §5), and the claim is about the catalogue rather than about
-    which page renders it.
+    It read the Adressaat radio group on `Muuda teemat` until docs/adr/0097 §4
+    withdrew that question. The claim is about the catalogue rather than about
+    which page renders it, so it is read off the control that still renders it:
+    `Saatja` on the correction page, which offers the whole catalogue — the
+    ranked shortlist visible and every other body out of sight.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
@@ -165,37 +167,32 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
     # The Teema filed by the test above put this body in the catalogue. This one
     # files its own, because it needs a record to open `Muuda teemat` on.
     name_a_new_sender(page, TYPED_SENDER)
-    page.fill("#id_title", "Sama asutus adressaadina")
+    page.fill("#id_title", "Sama asutus kataloogis")
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
     page.get_by_role("link", name="Muuda", exact=False).first.click()
     page.wait_for_load_state("networkidle")
-    addressees = page.locator('input[name="addressee_organisation"]')
-    # `textContent`, not `innerText`. Adressaat offers the *whole* catalogue —
-    # the ranked shortlist visible and every other body rendered out of sight —
-    # so `innerText`, which is layout-aware, reads an empty string for a label
-    # that is present, correct and simply not painted, turning «is this body
-    # offered?» into «is this body on screen?».
-    #
-    # The two questions came apart the moment more than one browser file existed
-    # in this shard: `addressees_by_usage` falls back to the alphabetical head
-    # of the catalogue only while *nothing* has ever been filed as an addressee,
-    # so whether this body lands in the shortlist or the tail depends on what
-    # other tests put in the shared database first. Sharding is a pure function
-    # of the collected file set, so adding a file anywhere moves that. The claim
-    # here is the one in the docstring — selectable, one `Organisation` table —
-    # and that claim is about the form's choices, not about scroll position.
-    labels = addressees.evaluate_all(
+    offered = page.locator(
+        'input[name="source_organisations"], input[name="source_organisations_other"]'
+    )
+    # `textContent`, not `innerText`. The control offers the *whole* catalogue,
+    # so `innerText` — which is layout-aware — reads an empty string for a
+    # label that is present, correct and simply not painted, turning «is this
+    # body offered?» into «is this body on screen?».
+    labels = offered.evaluate_all(
         "nodes => nodes.map(node => {"
         "  const label = node.closest('label');"
-        "  return label ? label.textContent.replace(/\\s+/g, ' ').trim() : '';"
+        "  return label ? label.textContent.replace(/\s+/g, ' ').trim() : '';"
         "})"
     )
     assert any(TYPED_SENDER in label for label in labels), (
-        f"{TYPED_SENDER!r} is not offered as an addressee: {labels}"
+        f"{TYPED_SENDER!r} is not in the catalogue: {labels}"
     )
+
+    # And no Adressaat control of any shape on that page (docs/adr/0097 §4).
+    assert page.locator('input[name="addressee_organisation"]').count() == 0
 
 
 def test_the_count_beside_the_legend_reads_both_halves_of_the_set(page, base_url):

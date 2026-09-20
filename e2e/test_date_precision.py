@@ -22,6 +22,7 @@ from e2e.conftest import (
     create_matter,
     open_add_panel,
     open_next_action_form,
+    set_next_step,
     sign_in,
 )
 
@@ -58,6 +59,12 @@ def test_a_next_action_can_be_stated_as_a_month_and_reads_as_one(page, base_url)
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Kuu täpsusega järgmine tegevus")
 
+    # A first step, so `Muuda` exists at all. `+ Järgmine tegevus` left the
+    # launcher and the ordinary way to set the first one is the box inside
+    # `+ Märge` — which asks for a day, so the precision this test is about is
+    # stated on the editor beside the task (docs/adr/0097 §8.2).
+    set_next_step(page, "Esimene samm", _future(7))
+
     open_next_action_form(page)
     page.locator("#lisa-jargmine [name='text']").fill("Koosta arvamus")
     choose(page, "#lisa-jargmine", "Kuu")
@@ -75,14 +82,10 @@ def test_the_edit_path_can_state_a_quarter_on_an_existing_step(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Kvartali täpsusega muudatus")
 
-    open_next_action_form(page)
-    page.locator("#lisa-jargmine [name='text']").fill("Koosta arvamus")
-    page.locator("#id_target_date").fill(_future(7))
-    save(page, "#lisa-jargmine")
+    set_next_step(page, "Koosta arvamus", _future(7))
 
-    # `Muuda` inside PRAEGUNE TEGEVUS carries the same `#lisa-jargmine` id as
-    # the launcher chip does when no step is open, which is what lets one
-    # helper open either host (e2e/conftest.py `open_next_action_form`).
+    # `Muuda` inside PRAEGUNE TEGEVUS, which is the one host this form has
+    # since `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
     open_next_action_form(page)
     choose(page, "#lisa-jargmine", "Kvartal")
     page.locator("#lisa-jargmine [name=next_quarter]").select_option("4")
@@ -143,23 +146,33 @@ def test_a_commencement_keeps_its_period_across_a_reload(page, base_url):
     expect(page.locator("#teema-vaade")).not_to_contain_text("01.10.2026")
 
 
-def test_a_work_victory_is_refused_without_a_period_and_accepted_with_one(page, base_url):
-    """§35 E. Both halves, in the order a person meets them."""
+def test_a_work_victory_is_refused_without_a_date_and_accepted_with_one(page, base_url):
+    """§35 E, narrowed to one day by docs/adr/0097 §7.
+
+    Both halves, in the order a person meets them. The panel offered four
+    precisions and asks for a day now: a töövõit is something Koda achieved
+    and the organisation should be able to say when it happened.
+    """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töövõidu periood")
 
     open_add_panel(page, "marge-toovoit")
     page.locator("#marge-toovoit [name=victory_change]").fill("Üleminekuaeg pikendati")
+    # Emptied, because the box arrives holding today: a win is nearly always
+    # written up on the day it lands, and the default is visible where it can
+    # be read, changed and emptied (docs/adr/0097 §7).
+    page.locator("#marge-toovoit [name=victory_date]").fill("")
     save(page, "#marge-toovoit")
 
-    # Refused, and the panel it was refused in is the panel that reopened.
+    # Refused, and the panel it was refused in is the panel that reopened —
+    # both levels of it, because a sub-choice's refusal has to reopen the
+    # family as well (docs/adr/0097 §8).
     expect(page.locator("#marge-toovoit .field__error")).to_be_visible()
     expect(page.locator("#marge-toovoit [name=victory_change]")).to_have_value(
         "Üleminekuaeg pikendati"
     )
 
-    choose(page, "#marge-toovoit", "Aasta")
-    page.locator("#marge-toovoit [name=victory_year]").fill("2026")
+    page.locator("#marge-toovoit [name=victory_date]").fill("19.9.2026")
     save(page, "#marge-toovoit")
 
     expect(page.locator("#teema-vaade")).to_contain_text("Üleminekuaeg pikendati")
@@ -302,6 +315,11 @@ def test_a_precision_can_be_stated_with_scripting_off(browser, base_url, javascr
         sign_in(page, base_url, MARTIN)
         create_matter(page, base_url, "Täpsus ilma skriptita")
 
+        # Two clicks, because `Oluline tähtaeg` is a choice inside `+ Märge`
+        # rather than a peer of it — and both levels are `:checked` CSS, so
+        # they work with scripting off, which is the point of this test
+        # (docs/adr/0097 §8).
+        page.locator('label[for="lisa-marge-valik"]').click()
         page.locator('label[for="marge-tahtaeg-valik"]').click()
         page.locator("#marge-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
 

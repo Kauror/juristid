@@ -6715,6 +6715,12 @@ class MatterProgressForm(forms.Form):
             attrs={
                 "class": "field__input field__input--compact",
                 "placeholder": "nt Ministeerium saatis uue eelnõu versiooni",
+                # What the `L` shortcut focuses once it has opened this panel.
+                # Named on the box rather than found by type: the date control
+                # is above this one and arrives already filled, so «the first
+                # input» would put the cursor in the wrong place
+                # (static/js/ux.js, `openComposer`).
+                "data-composer-focus": "",
             }
         ),
     )

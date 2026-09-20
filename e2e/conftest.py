@@ -339,6 +339,33 @@ def _open_add_panel_once(page, panel_id: str) -> bool:
     return True
 
 
+def set_next_step(page, text: str, when: str) -> None:
+    """Give a Matter its next step, through whichever control this page offers.
+
+    **Two hosts, and which one exists is a fact about the Matter.** While a
+    task is open the control is `Muuda` inside `PRAEGUNE TEGEVUS`. While none
+    is, there is no control of its own at all: `+ Järgmine tegevus` left the
+    launcher on 2026-09-20, because two controls both offering to set «the next
+    action» is how a lawyer ends up believing they have two — and the one
+    ordinary way to set the first step is the optional `Järgmine tegevus` inside
+    `+ Märge`, beside the thing that prompted it (docs/adr/0097 §8.2).
+
+    `when` is an Estonian date as the box takes it.
+    """
+    if page.locator("#lisa-jargmine").count():
+        open_next_action_form(page)
+        page.locator("#lisa-jargmine [name='text']").fill(text)
+        page.locator("#id_target_date").fill(when)
+        page.locator("#lisa-jargmine button[type=submit]").first.click()
+    else:
+        open_add_panel(page, "marge-tavaline")
+        page.locator("#id_marge_title").fill(f"Kirjutasin üles: {text}")
+        page.locator("#id_marge_next_text").fill(text)
+        page.locator("#id_marge_next_date").fill(when)
+        page.locator("#marge-tavaline button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+
 def open_next_action_form(page) -> None:
     """`Muuda` or `+ Järgmine tegevus`, whichever this Matter is showing.
 

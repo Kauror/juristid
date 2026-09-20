@@ -54,7 +54,19 @@
        property nothing reads — the `L` shortcut then focused a box that was
        still hidden. Hoisted from below, where the arrival handler declares it. */
     revealDisclosure(composer);
-    var box = composer.querySelector("textarea");
+    /* `[data-composer-focus]` first, and a textarea only as the fallback.
+
+       `+ Märge` stopped having a textarea on 2026-09-20: the ordinary note
+       asks `Mis juhtus?` as one stated line, because the record it writes is
+       the structured one and its title is what the chronology renders
+       (docs/adr/0097 §6). A selector naming the control by *type* found
+       nothing, so `L` opened the panel and left the cursor where it was — a
+       shortcut that half works, which is the one thing worse than none.
+
+       The attribute is on the box the person is meant to type in rather than
+       on whichever control happens to be first: the date box is above it and
+       arrives already filled. */
+    var box = composer.querySelector("[data-composer-focus], textarea");
     if (box) {
       box.focus();
     }

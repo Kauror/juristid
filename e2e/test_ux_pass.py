@@ -85,7 +85,7 @@ def test_l_puts_the_caret_in_the_box_that_records_what_happened(page, base_url):
         assert not add_panel_is_open(page, "lisa-marge")
         page.keyboard.press("l")
         assert add_panel_is_open(page, "lisa-marge")
-        box = page.locator("#lisa-marge textarea.composer__body")
+        box = page.locator("#lisa-marge [data-composer-focus]")
         expect(box).to_be_focused()
 
     # And the same key inside the box types a letter rather than doing anything.
@@ -113,7 +113,10 @@ def test_a_marge_still_saves_with_ctrl_enter(page, base_url):
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     open_composer(page)
-    box = page.locator("#lisa-marge textarea.composer__body")
+    # `Mis juhtus?` is one stated line rather than a prose textarea since
+    # docs/adr/0097 §6. The shortcut is the form's, not the control's: the
+    # handler reaches `form[data-addform]` from anything inside it.
+    box = page.locator("#id_marge_title")
     box.fill("Sünteetiline kiirsissekanne klaviatuurilt.")
     box.press("Control+Enter")
     page.wait_for_load_state("networkidle")
