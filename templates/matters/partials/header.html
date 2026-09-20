@@ -60,40 +60,45 @@ rather than read.
       the action that answers "this record is wrong" cannot be the one action
       hidden behind a glyph (Teema QA §2.1).
     {% endcomment %}
+    {% comment %}
+      **`Nähtavus` is not in this header, and the `⋯` menu that held it is
+      gone with it** (docs/adr/0096 §4.2).
+
+      It was a `<select>` and a sentence behind a glyph — «who may read this
+      file» decided by a control a reader had to go looking for, on a page
+      where nothing else about authorization is stated. The owner asked for it
+      out of the ordinary interface, having asked once before; what kept
+      bringing it back was that it was small and it fitted in a menu.
+
+      With it gone the menu held one link, so the link stands on the row
+      instead. A `⋯` containing exactly one item is a glyph in front of a
+      button.
+
+      **Nothing about who may read this Matter changed.** `Matter.visibility`
+      is unmoved, `app.core.authorization` still filters every query by it, a
+      restricted Matter is still restricted, and `matter_banner.html` still
+      says so at the top of this page — the banner is a statement, not a
+      control, and it stays. `Saabunud` still asks for visibility when a
+      restricted letter is *first* filed, which is where the decision is
+      actually made (`IncomingIntakeForm`). What is gone is the ability to
+      change it afterwards from here, from `Muuda teemat`, or through
+      `update_field` — whose `visibility` branch was removed with these
+      controls, because a route left behind a withdrawn button is still a
+      route (app/matters/views.py `FIELD_SERVICES`).
+    {% endcomment %}
     {% if can_write %}
       <a class="button button--quiet button--tiny matterhead__edit"
          href="{% url 'matters:matter_edit' pk=matter.pk %}">Muuda teemat</a>
-      <details class="headmenu">
-        <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
-        <div class="headmenu__panel">
-          <span class="headmenu__label">Nähtavus</span>
-          <form class="inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='visibility' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <select class="field__input field__input--compact" name="visibility"
-                    aria-label="Nähtavus" data-autosubmit>
-              {% for value, label in visibilities %}
-                <option value="{{ value }}" {% if matter.visibility == value %}selected{% endif %}>
-                  {{ label }}
-                </option>
-              {% endfor %}
-            </select>
-            <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
-          </form>
-          <p class="field__help">{% restricted_visibility_help %}</p>
-          {% comment %}
-            The assisted review, for a Matter that has files. In the menu
-            rather than beside «Muuda teemat»: the edit page itself offers it
-            prominently, and this is the second way in for somebody already on
-            the Teema page (app/matters/intake_suggestions).
-          {% endcomment %}
-          {% if document_count %}
-            <a class="headmenu__link"
-               href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
-          {% endif %}
-        </div>
-      </details>
+      {% comment %}
+        The assisted review, for a Matter that has files. Beside «Muuda
+        teemat» rather than inside a menu: the edit page itself offers it
+        prominently, and this is the second way in for somebody already on the
+        Teema page (app/matters/intake_suggestions).
+      {% endcomment %}
+      {% if document_count %}
+        <a class="button button--quiet button--tiny"
+           href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
+      {% endif %}
     {% endif %}
   </div>
 

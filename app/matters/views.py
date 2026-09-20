@@ -111,16 +111,14 @@ from app.matters.forms import (
     MatterEditForm,
     MatterFieldForm,
     MatterLinkForm,
-    MatterNoteForm,
+    MatterProgressForm,
     NextActionForm,
     OtherOpinionForm,
     PersonalNoteForm,
     PositionForm,
     ProceduralDevelopmentEditForm,
-    ProceduralDevelopmentForm,
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
-    ProceduralLinkForm,
     ReceivedFeedbackForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
@@ -3872,7 +3870,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
         context["action_form"] = form
-        context["open_panel"] = WORKSPACE_PANELS["action_form"]
+        context["open_panel"] = WORKSPACE_PANELS["action_form"][0]
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
@@ -3882,7 +3880,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         context.update(_header_context(request, matter))
         context["action_form"] = form
         context["workspace_error"] = str(error)
-        context["open_panel"] = WORKSPACE_PANELS["action_form"]
+        context["open_panel"] = WORKSPACE_PANELS["action_form"][0]
         return render(request, "matters/partials/overview.html", context, status=400)
 
     return _render_overview(request, matter)
@@ -5575,24 +5573,41 @@ ACTION_KIND_LABELS = dict(ActionKind.choices)
 # closure they had merely opened (docs/adr/0075 §2).
 
 
-#: The `<details>` id each operation's panel carries. A refusal reopens exactly
-#: the one it came from — reopening the whole group would answer a refusal by
-#: offering six other forms, and reopening none would print the error inside a
-#: panel nobody can see (brief §33).
-WORKSPACE_PANELS: dict[str, str] = {
-    "matter_note_form": "lisa-marge",
-    "action_form": "lisa-jargmine",
-    "add_engagement_form": "lisa-kaasamine",
-    "important_date_form": "lisa-tahtaeg",
-    "effective_date_form": "lisa-joustumine",
-    "work_victory_form": "lisa-toovoit",
-    "website_overview_form": "lisa-koduleht",
-    "received_feedback_form": "lisa-tagasiside",
-    "external_position_form": "lisa-valine-seisukoht",
-    "koda_opinion_form": "lisa-koja-arvamus",
-    "development_form": "lisa-menetluse-areng",
-    "procedural_link_form": "lisa-menetluse-link",
-    "closure_form": "lisa-lopeta",
+#: Which controls a refusal has to reopen, per operation: the top-level family
+#: and, where the family asks a second question, the choice inside it.
+#:
+#: A refusal reopens exactly the path it came from — reopening the whole group
+#: would answer a refusal by offering six other forms, and reopening none would
+#: print the error inside a panel nobody can see (brief §33).
+#:
+#: **Two levels since docs/adr/0096 §8**, because `LISA TEEMALE` is four
+#: choices rather than twelve. `+ Oluline tähtaeg` is no longer a chip; it is
+#: `Märke liik · Oluline tähtaeg` inside `+ Märge`, so a refused deadline has
+#: to reopen both or the person is looking at the wrong form — or at no form at
+#: all, holding a sentence about a panel that is shut.
+#:
+#: An empty second element means the family asks no further question and its
+#: own panel is the form.
+WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
+    # `+ Märge` — one visible family, four truthful record types underneath.
+    "progress_form": ("lisa-marge", "marge-tavaline"),
+    "important_date_form": ("lisa-marge", "marge-tahtaeg"),
+    "effective_date_form": ("lisa-marge", "marge-joustumine"),
+    "work_victory_form": ("lisa-marge", "marge-toovoit"),
+    # `+ Kaasamine` — one question, no sub-choice.
+    "add_engagement_form": ("lisa-kaasamine", ""),
+    # `+ Arvamus / tagasiside` — grouped on screen, three distinct records.
+    "received_feedback_form": ("lisa-arvamus", "arvamus-tagasiside"),
+    "external_position_form": ("lisa-arvamus", "arvamus-teiste"),
+    "koda_opinion_form": ("lisa-arvamus", "arvamus-koja"),
+    # `+ Ülevaade / uudis` — one question, no sub-choice.
+    "website_overview_form": ("lisa-koduleht", ""),
+    # `TEEMA TOIMINGUD` — not content, and not in the launcher at all. Its
+    # panel lives in its own section and is named here so a refused closure
+    # still reopens the control it came from (docs/adr/0096 §9).
+    "closure_form": ("teema-lopeta", ""),
+    # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher either.
+    "action_form": ("lisa-jargmine", ""),
 }
 
 
@@ -5628,7 +5643,16 @@ def workspace_forms(
     engagements = visible_engagements_of(matter, viewer)
     return {
         "current_action_form": CompleteCurrentActionForm(),
-        "matter_note_form": MatterNoteForm(),
+        # `+ Märge · Tavaline`. What happened, when, optionally the stage it
+        # moves the file to and the next thing the lawyer will do about it —
+        # one atomic operation over three canonical services.
+        #
+        # This one key replaces two: `matter_note_form` (an `Entry`) and
+        # `development_form` (a `MatterProceduralDevelopment`). They were two
+        # chips asking the same question with different amounts of ceremony,
+        # and `MatterProgressForm` says at length why the survivor writes the
+        # structured record rather than the prose one (docs/adr/0096 §7).
+        "progress_form": MatterProgressForm(),
         # The period travels with the text. Reopening the editor on `Täpne
         # päev` / `01.10.2026` for a step recorded as *oktoober 2026* would
         # invite somebody to save the invented day back, which is the whole
@@ -5661,12 +5685,12 @@ def workspace_forms(
         # the other seven so that a refusal comes back through the same
         # machinery.
         "website_overview_form": CompactWebsiteOverviewForm(),
-        # `+ Menetluse link`. Three boxes, of which two are required: which kind
-        # of official source this is and the address, plus an optional name for
-        # it. No date, no status and nothing about fetching — this record is
-        # where the file is happening, not something that happened to it
-        # (docs/adr/0089 §5).
-        "procedural_link_form": ProceduralLinkForm(),
+        # `Menetluse link` is **not** built here any more, because it is not a
+        # thing that happened to this Matter. It is where the proceeding the
+        # Matter is about is taking place — a fact about the file, in the same
+        # way its `Saatja` and its `Õigusakt` are — and it is asked on
+        # `Uus teema`, corrected on `Muuda teemat` and read on the rail
+        # (`MatterLinkForm`, docs/adr/0096 §6).
         # `+ Väline seisukoht`. The one form here that has to be told which
         # Matter it is on and who is looking: `Organisatsioon` is ranked by the
         # institutions *this reader's* visible Matters involve, and
@@ -5697,13 +5721,14 @@ def workspace_forms(
         # called a submission, and this is a second door onto it rather than a
         # second record of it (docs/adr/0091 §6).
         "koda_opinion_form": KodaOpinionForm(matter=matter, viewer=viewer, choices=organisations),
-        # `+ Menetluse areng`. The continuation the file had no way to record: a
-        # dated step the external procedure took, optionally with the Hetkeseis it
-        # puts the file in and the next thing the lawyer will do about it
-        # (docs/adr/0091 §5).
-        "development_form": ProceduralDevelopmentForm(),
+        # `Lõpeta teema`, which is no longer one of these at all: closing a
+        # Matter is an operation on the record rather than content added to it,
+        # so it renders under `TEEMA TOIMINGUD` and not in the launcher. It is
+        # still built here because the refusal machinery is shared
+        # (docs/adr/0096 §9).
         "closure_form": CompactClosureForm(),
         "open_panel": "",
+        "open_choice": "",
         "workspace_error": "",
     }
 
@@ -5798,9 +5823,16 @@ def _workspace_refusal(
         context["composer_error"] = error
         context["workspace_error"] = ""
         context["open_panel"] = ""
+        context["open_choice"] = ""
     else:
         context["workspace_error"] = error
-        context["open_panel"] = WORKSPACE_PANELS.get(key, "")
+        # Both halves, and the template checks each against its own radio: the
+        # family is what puts the person back in `+ Märge`, and the choice is
+        # what puts them back on `Oluline tähtaeg` rather than on the ordinary
+        # note (docs/adr/0096 §8).
+        family, choice = WORKSPACE_PANELS.get(key, ("", ""))
+        context["open_panel"] = family
+        context["open_choice"] = choice
     if not panel_is_rendered:
         # The panel that held their words is not on the fresh column, so the
         # words come back beside the refusal instead — read-only, and labelled
@@ -5859,22 +5891,54 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Märge` — something happened, and the current step stays exactly as it is."""
+    """`+ Märge · Tavaline` — something happened on this file, and this says what.
+
+    **One endpoint where there were two.** This route and `add_development`
+    asked the same question with different amounts of ceremony, and the second
+    is gone: `+ Menetluse areng` is retired as a user-facing concept, its
+    ordinary function is this panel, and the route that served its chip is
+    removed rather than left reachable behind no button (docs/adr/0096 §7).
+
+    Up to four canonical writes in one transaction: the
+    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and the next
+    step. A refusal anywhere leaves the Matter exactly as it was — a stage that
+    moved without the note that moved it would be a file claiming to be in the
+    Riigikogu with nothing saying how it got there
+    (`workspace.add_procedural_development`, docs/adr/0091 §5).
+
+    **The `Hetkeseis` and the next step are optional and never inferred.**
+    Nothing reads the sentence and concludes anything from it; a save naming
+    neither changes neither; nothing is read from or written to a
+    `Menetluse link`.
+    """
     matter = get_visible_matter(request, pk)
-    form = MatterNoteForm(request.POST, request.FILES)
+    form = MatterProgressForm(request.POST, request.FILES)
     if not form.is_valid():
-        return _workspace_refusal(request, matter, key="matter_note_form", form=form)
+        return _workspace_refusal(request, matter, key="progress_form", form=form)
     try:
-        workspace.add_matter_note(
+        workspace.add_procedural_development(
             matter=matter,
             author=request.user,
-            body=form.cleaned_data["body"],
+            title=form.cleaned_data["title"],
+            # Always a day or nothing, and always `EXACT`: this panel has no
+            # `Täpsus` control to read. An emptied box is «kuupäev teadmata»
+            # rather than a refusal, which is the one thing the four-way
+            # precision group bought that a lawyer writing up this morning's
+            # events ever needed (docs/adr/0096 §7.1).
+            occurred_on=form.cleaned_data.get("occurred_on_value"),
+            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+            # `Juristi märkus` is not asked here, so nothing is passed and the
+            # column stores "". Historical rows keep theirs and
+            # `ProceduralDevelopmentEditForm` still offers the box on a record
+            # that has one (docs/adr/0096 §7.2).
+            note="",
+            stage=form.cleaned_data.get("stage"),
+            next_text=form.cleaned_data.get("next_text") or "",
+            next_date=form.cleaned_data.get("next_date"),
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:
-        return _workspace_refusal(
-            request, matter, key="matter_note_form", form=form, error=str(error)
-        )
+        return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
 
@@ -6273,45 +6337,6 @@ def _procedural_link_refusal(
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
-def add_procedural_link(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Menetluse link` — where the official proceeding on this file lives.
-
-    Three boxes and one row. **Nothing is fetched**: the address is recorded,
-    not opened, not read and not watched (docs/adr/0089 §4).
-
-    A refusal comes back through `_workspace_refusal` with the form still bound,
-    so an address somebody pasted is still in the box — losing it would cost
-    them the one fact they opened the panel to record. The closed-Matter refusal
-    is the service's, answered under the Matter's row lock, because a POST may
-    arrive from a tab that was open before somebody else shut the file (R2-02).
-
-    A repeated submit — a double-click, a browser retry, a stale response —
-    lands on `record_procedural_link`'s own idempotency and writes one row, so
-    the answer here is the ordinary re-render rather than a refusal about a save
-    that actually happened (docs/adr/0089 §6).
-    """
-    matter = get_visible_matter(request, pk)
-    form = ProceduralLinkForm(request.POST)
-    if not form.is_valid():
-        return _workspace_refusal(request, matter, key="procedural_link_form", form=form)
-    try:
-        workspace.add_matter_procedural_link(
-            matter=matter,
-            author=request.user,
-            kind=form.cleaned_data.get("kind"),
-            url=form.cleaned_data.get("url"),
-            label=form.cleaned_data.get("label") or "",
-        )
-    except DomainError as error:
-        return _workspace_refusal(
-            request, matter, key="procedural_link_form", form=form, error=str(error)
-        )
-    return _render_overview(request, matter)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
 def correct_procedural_link_view(request: HttpRequest, pk: Any, link_id: Any) -> HttpResponse:
     """`Paranda` — the kind, the name or the address on a recorded link was wrong.
 
@@ -6545,57 +6570,8 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def add_development(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Menetluse areng` — one step the procedure took, and what follows.
-
-    Up to four canonical writes in one transaction: the
-    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and the next step. A
-    refusal anywhere leaves the Matter exactly as it was — a stage that moved
-    without the development that moved it would be a file claiming to be in the
-    Riigikogu with nothing saying how it got there
-    (`workspace.add_procedural_development`, docs/adr/0091 §5).
-
-    **The date is optional**, which is what the canonical record buys over the
-    `Entry` this panel wrote for one round: a step learned about months later
-    frequently has no day anybody could defend (§5.2).
-
-    **The `Hetkeseis` and the next step are optional and never inferred.** Nothing
-    reads the title and concludes anything from it; a save naming neither changes
-    neither, and nothing is read from or written to a `Menetluse link` — Package
-    B's links are references, and a reference is not an event (§5.6).
-    """
-    matter = get_visible_matter(request, pk)
-    form = ProceduralDevelopmentForm(request.POST, request.FILES)
-    if not form.is_valid():
-        return _workspace_refusal(request, matter, key="development_form", form=form)
-    try:
-        workspace.add_procedural_development(
-            matter=matter,
-            author=request.user,
-            title=form.cleaned_data["title"],
-            # The resolved anchor and its precision, not the day box: `Kuu`,
-            # `Kvartal` and `Aasta` leave that box empty on purpose, and an
-            # emptied one is «kuupäev teadmata» rather than a refusal.
-            occurred_on=form.cleaned_data.get("occurred_on_value"),
-            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            note=form.cleaned_data.get("note") or "",
-            stage=form.cleaned_data.get("stage"),
-            next_text=form.cleaned_data.get("next_text") or "",
-            next_date=form.cleaned_data.get("next_date"),
-            uploads=form.cleaned_data["attachments"],
-        )
-    except (DomainError, UploadRejected) as error:
-        return _workspace_refusal(
-            request, matter, key="development_form", form=form, error=str(error)
-        )
-    return _render_overview(request, matter)
-
-
 # ---------------------------------------------------------------------------
-# `Menetluse areng`
+# Correcting a recorded `Märge`
 # ---------------------------------------------------------------------------
 
 

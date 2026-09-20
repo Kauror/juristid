@@ -6996,3 +6996,218 @@ class MatterLinkForm(ProceduralLinkCreateForm):
                 "või jäta väli muutmata.",
             )
         return cleaned
+
+
+class MatterProgressForm(forms.Form):
+    """`+ Märge · Tavaline` — something happened on this file, and this says what.
+
+    The ordinary note, and the one control a lawyer reaches for most. It asks
+    what happened, on what day, optionally moves `Hetkeseis`, optionally sets
+    the next step, and takes files — six controls for what is nearly always
+    three.
+
+    Why this is a `MatterProceduralDevelopment` and not an `Entry`
+    -------------------------------------------------------------
+    This form replaces two launcher chips: `+ Märge`, which wrote an `Entry`,
+    and `+ Menetluse areng`, which wrote a `MatterProceduralDevelopment`. One
+    visible control now writes one record type, and the record type it writes
+    is the structured one (docs/adr/0096 §7).
+
+    That is the opposite of the obvious reading — `Menetluse areng` is the term
+    the owner asked to retire, so retiring the record with it looks like the
+    tidy answer. It is not, and `MatterProceduralDevelopment`'s own class
+    docstring is why. That record exists because an `Entry` could not hold
+    three things the fact needs, and only two of the three were about the
+    control:
+
+    * the date had to be allowed to be unknown — `Entry.occurred_at` is
+      `NOT NULL`. This form defaults the box to today and lets it be cleared,
+      so «kuupäev teadmata» is still sayable;
+    * the lawyer's own note had to be a second field. This form drops
+      `Juristi märkus` on the owner's instruction, so that need is withdrawn
+      rather than unmet;
+    * **a projection needs a title it did not have to parse.** That one is
+      untouched by anything in this round. `title` is «what happened», stated;
+      `Entry.body` is prose, and deriving «what happened» from its first
+      sentence is exactly the guessing this repository refuses everywhere else.
+
+    So the toolbar loses a concept and the database keeps a record. That is the
+    brief's own rule — one visible family, truthful backend types underneath,
+    and no structured model replaced merely to shorten a row of chips.
+
+    **What widens, stated rather than discovered.** «Rääkisin
+    Justiitsministeeriumiga» is now filed as a `MatterProceduralDevelopment`,
+    and under the old reading of that record — *one step the external procedure
+    took* — a phone call is not one. The category is wider than it was: it is
+    now «what happened on this file», which is what the one visible control
+    asks and what the chronology has always rendered it as. Nobody sees the
+    word «areng» anywhere; it is not on this panel, not on the timeline row and
+    not in the audit summary a reader sees.
+
+    **What retires with it.** There is no UI path left that creates a bare
+    `Entry` from the launcher. Entries are still written — `PRAEGUNE TEGEVUS`
+    writes one on every completed step, which is the majority of them — still
+    read, still corrected through `Muuda` and still carry their append-only
+    `EntryRevision` history. Nothing was migrated and no historical row moved
+    between tables (docs/adr/0096 §7.3).
+    """
+
+    use_required_attribute = False
+
+    #: The day it happened. Exact, and **the only precision this panel offers**.
+    #:
+    #: `+ Menetluse areng` asked `Täpsus` first — `Täpne päev`, `Kuu`,
+    #: `Kvartal`, `Aasta` — because a step learned of from a third party months
+    #: later frequently has no day anybody could defend. That is true, and it
+    #: is the wrong first question to put in front of somebody writing up what
+    #: happened this morning, which is what nearly every save here is
+    #: (docs/adr/0096 §7.1).
+    #:
+    #: So the group is **deleted from this form**, not hidden: there is no
+    #: `areng_precision` field to bind, so a crafted `areng_precision=QUARTER`
+    #: reaches a form that never cleaned it and the service is called with
+    #: `EXACT`. The column still stores all four values, every historical row
+    #: keeps the precision it was filed under, and
+    #: `ProceduralDevelopmentEditForm` still offers the whole control when one
+    #: of those rows is being corrected — it decides per *record*, which is
+    #: where a statement about how well a date is known belongs.
+    #:
+    #: Clearable, and an emptied box stores `NULL` and reads «Kuupäev
+    #: teadmata». The default is visible in the box where it can be read,
+    #: changed and emptied, which is the one shape docs/adr/0078 §2 allows a
+    #: date default to take.
+    occurred_on = EstonianDateField(
+        label="Kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+        initial=timezone.localdate,
+    )
+    #: **One box, and it is the only text this panel asks for.**
+    #:
+    #: `+ Menetluse areng` had two — `Mis menetluses juhtus` and `Juristi
+    #: märkus` — on the argument that «Ministeerium saatis uue versiooni» is a
+    #: fact about the world and «uus versioon ei arvesta meie ettepanekut» is a
+    #: professional judgement, and one box carrying both is a box whose meaning
+    #: depends on who wrote the sentence (docs/adr/0091 §4, §5).
+    #:
+    #: The distinction is real and the owner withdrew the question anyway: two
+    #: text areas on the control a lawyer uses every day, where the second is
+    #: left empty on nearly every save, is a form asking somebody to classify
+    #: their own sentence before it will take it. `note` is deleted from this
+    #: form; `MatterProceduralDevelopment.note` keeps every stored value and
+    #: `ProceduralDevelopmentEditForm` still offers the box on a record that
+    #: has one (docs/adr/0096 §7.2).
+    #:
+    #: The label is `Mis juhtus?` rather than `Mis menetluses juhtus` — this
+    #: panel is no longer only about the procedure, and the narrower wording
+    #: would now be refusing sentences it accepts.
+    title = forms.CharField(
+        label="Mis juhtus?",
+        required=False,
+        max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt Ministeerium saatis uue eelnõu versiooni",
+            }
+        ),
+    )
+    #: `Hetkeseis`, optional, and moved in the **same transaction** as the note.
+    #:
+    #: «Eelnõu saadeti Riigikokku» and `Hetkeseis → Riigikogus` are one act, and
+    #: a product that made them two saves would be a product where the stage
+    #: and the sentence explaining it can disagree. A select rather than the
+    #: create form's chip row: eleven stages as chips is two lines inside a
+    #: panel that already holds five controls, and most saves leave it alone.
+    #:
+    #: **Nothing is inferred.** An empty answer changes no stage. No text is
+    #: read, no keyword is matched, and there is no model anywhere near this —
+    #: «Riigikogu võttis seaduse vastu» moves nothing unless somebody says so
+    #: (docs/adr/0096 §7.1).
+    stage = forms.ModelChoiceField(
+        label="Uus hetkeseis",
+        queryset=StageVocabulary.objects.none(),
+        required=False,
+        empty_label="Jätan muutmata",
+        blank=True,
+        widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
+    )
+    #: The next step, optional, through the canonical `NextAction` service.
+    #:
+    #: A progress note frequently ends in one — «Ministeerium saatis uue
+    #: versiooni» / «Vaatan uue versiooni üle, 25.09» — and making that a second
+    #: visit to a second control is how a file ends up with a note and no plan.
+    #:
+    #: **Never invented.** A `Märge` saved with these empty creates no
+    #: `NextAction` and supersedes none: a record of something that happened is
+    #: not an instruction to a person, which is the rule docs/adr/0078 §3 and
+    #: docs/adr/0084 §1 both keep.
+    next_text = forms.CharField(
+        label="Järgmine tegevus",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "placeholder": "nt Vaatan uue versiooni läbi",
+            }
+        ),
+    )
+    next_date = EstonianDateField(
+        label="Millal?",
+        required=False,
+        widget=EstonianDateInput(),
+    )
+    attachments = workspace_attachments("id_marge_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_marge_%s")
+        super().__init__(*args, **kwargs)
+        # The active vocabulary, in the department's reviewed order, read
+        # through the canonical selector rather than from a list in this
+        # module (`app/workflow/selectors.py`, docs/adr/0091 §8).
+        set_choices(self, "stage", active_stages())
+
+    def clean_title(self) -> str:
+        from app.matters.services import DEVELOPMENT_NEEDS_TITLE
+
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise forms.ValidationError(DEVELOPMENT_NEEDS_TITLE)
+        return title
+
+    def clean(self) -> dict[str, Any]:
+        """The day may not be ahead, and the next step is answered whole or not at all.
+
+        **The future-date refusal is the service's**, repeated here so a person
+        sees it beside the control they typed into rather than as a panel-level
+        banner. `record_procedural_development` is what actually enforces it,
+        and this panel cannot reach the approximate-period case the service
+        also guards — every date here is a day or nothing, so the comparison is
+        the plain one rather than `period_starts_after`.
+
+        **The half-filled next step is refused on the *empty* control**, which
+        is ADR 0052 §5's rule and its wording: «vali kuupäev» pinned to the
+        sentence box points at the wrong field.
+        """
+        from app.matters.services import DEVELOPMENT_CANNOT_BE_FUTURE
+
+        cleaned = super().clean() or {}
+
+        when = cleaned.get("occurred_on")
+        if when is not None and when > timezone.localdate():
+            self.add_error("occurred_on", DEVELOPMENT_CANNOT_BE_FUTURE)
+            when = None
+        # Named as the service names them, so the view hands the cleaned data
+        # straight on rather than translating between two vocabularies.
+        cleaned["occurred_on_value"] = when
+        cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
+
+        text = (cleaned.get("next_text") or "").strip()
+        cleaned["next_text"] = text
+        next_when = cleaned.get("next_date")
+        if text and next_when is None:
+            self.add_error("next_date", "Vali järgmise tegevuse kuupäev.")
+        elif next_when is not None and not text:
+            self.add_error("next_text", "Kirjuta järgmine tegevus.")
+        return cleaned
