@@ -28,11 +28,17 @@ from app.matters.legal_process import (
     STATE_POSSIBLE,
     STATE_RECORDED,
     STATE_UNKNOWN,
-    TEMPLATE_DOMESTIC,
-    TEMPLATE_EU,
     legal_process_rail,
     recorded_stage_keys,
-    template_for,
+)
+from app.matters.process_phases import (
+    PATTERN_DIRECTIVE,
+    PATTERN_DOMESTIC,
+    PATTERN_EU,
+    PATTERN_EU_REGULATION,
+    PATTERN_MAARUS,
+    PATTERN_VTK,
+    pattern_for,
 )
 from app.matters.services import change_stage, close_matter
 from app.taxonomy.legal_instruments import (
@@ -54,6 +60,17 @@ def _stage(key: str) -> StageVocabulary:
 
 def _instrument(key: str) -> LegalInstrumentType:
     return LegalInstrumentType.objects.get(key=key)
+
+
+def _pattern_key(*, track: str, instrument_keys: frozenset[str]) -> str:
+    """Which pattern a file is read against, as a key, or ``""`` for none.
+
+    The projection returns the pattern itself now that there are eight of them
+    rather than two templates; these tests are about *which* one is chosen, so
+    they keep asking in keys.
+    """
+    pattern = pattern_for(track=track, instrument_keys=instrument_keys)
+    return pattern.key if pattern is not None else ""
 
 
 def _rail(matter, user):
@@ -79,11 +96,11 @@ def _stage_labels(rail) -> dict[str, str]:
 
 
 def test_the_track_chooses_the_rail_where_its_semantics_safely_can():
-    assert template_for(track=Track.DOMESTIC.value, instrument_keys=frozenset()) == (
-        TEMPLATE_DOMESTIC
+    assert _pattern_key(track=Track.DOMESTIC.value, instrument_keys=frozenset()) == (
+        PATTERN_DOMESTIC
     )
-    assert template_for(track=Track.EU_INITIATIVE.value, instrument_keys=frozenset()) == (
-        TEMPLATE_EU
+    assert _pattern_key(track=Track.EU_INITIATIVE.value, instrument_keys=frozenset()) == (
+        PATTERN_EU
     )
 
 
@@ -106,9 +123,15 @@ def test_the_other_tracks_choose_nothing_and_fall_through(track):
     instrument, so the track alone cannot pick a rail. It falls through to the
     instrument grouping, which answers from what the Matter holds.
     """
-    assert template_for(track=track, instrument_keys=frozenset()) == ""
-    assert template_for(track=track, instrument_keys=frozenset({"seadus"})) == TEMPLATE_DOMESTIC
-    assert template_for(track=track, instrument_keys=frozenset({"direktiiv"})) == TEMPLATE_EU
+    assert _pattern_key(track=track, instrument_keys=frozenset()) == ""
+    # The *instrument* answers, and since the patterns became instrument-aware it
+    # answers at its own grain: `Seadus` is the domestic bill and `Direktiiv` is
+    # the directive, not «something domestic» and «something European». What this
+    # test protects is that the track contributed nothing to either answer.
+    assert _pattern_key(track=track, instrument_keys=frozenset({"seadus"})) == PATTERN_DOMESTIC
+    assert _pattern_key(track=track, instrument_keys=frozenset({"direktiiv"})) == (
+        PATTERN_DIRECTIVE
+    )
 
 
 def test_a_mixed_instrument_file_draws_no_rail():
@@ -117,7 +140,7 @@ def test_a_mixed_instrument_file_draws_no_rail():
     A Matter carrying one domestic and one European instrument has no reading
     that picks a rail, so it gets neither and `Hetkeseis` goes on answering.
     """
-    assert template_for(track="", instrument_keys=frozenset({"seadus", "direktiiv"})) == ""
+    assert _pattern_key(track="", instrument_keys=frozenset({"seadus", "direktiiv"})) == ""
 
 
 def test_the_reviewed_groups_are_what_the_projection_reads():
@@ -139,7 +162,7 @@ def test_choosing_a_template_from_oigusakt_never_writes_a_track(specialist):
 
     rail = _rail(matter, specialist)
     assert rail is not None
-    assert rail.template == TEMPLATE_EU
+    assert rail.pattern.key == PATTERN_DIRECTIVE
     matter.refresh_from_db()
     assert matter.track == ""
 
@@ -150,7 +173,7 @@ def test_a_seadus_does_not_become_a_transposition(specialist):
     matter.legal_instruments.set([_instrument("seadus")])
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
-    assert _rail(matter, specialist).template == TEMPLATE_DOMESTIC
+    assert _rail(matter, specialist).pattern.key == PATTERN_DOMESTIC
     matter.refresh_from_db()
     assert matter.track != Track.NATIONAL_TRANSPOSITION.value
     assert matter.track == ""
@@ -166,7 +189,7 @@ def test_a_domestic_file_on_a_consultation_round(specialist):
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
     rail = _rail(matter, specialist)
-    assert rail.template == TEMPLATE_DOMESTIC
+    assert rail.pattern.key == PATTERN_DOMESTIC
     assert _states(rail) == {
         "algus": STATE_UNKNOWN,
         "kooskolastus": STATE_CURRENT,
@@ -182,12 +205,12 @@ def test_an_eu_file_on_the_estonian_position(specialist):
     change_stage(matter=matter, stage=_stage("estonian_eu_position"), actor=specialist)
 
     rail = _rail(matter, specialist)
-    assert rail.template == TEMPLATE_EU
+    assert rail.pattern.key == PATTERN_EU
     assert _states(rail) == {
-        "algus": STATE_UNKNOWN,
+        "eli-konsultatsioon": STATE_UNKNOWN,
         "eesti-seisukoht": STATE_CURRENT,
-        "el-menetlus": STATE_POSSIBLE,
-        "vastu-voetud": STATE_POSSIBLE,
+        "eli-menetlus": STATE_POSSIBLE,
+        "joustumine": STATE_POSSIBLE,
         "ulevotmine": STATE_POSSIBLE,
     }
     assert "Riigikogu" not in [node.label for node in rail.nodes]
@@ -319,7 +342,7 @@ def test_a_european_stage_on_a_domestic_rail_reads_beside_it(specialist):
     change_stage(matter=matter, stage=_stage("eu_procedure"), actor=specialist)
 
     rail = _rail(matter, specialist)
-    assert rail.template == TEMPLATE_DOMESTIC
+    assert rail.pattern.key == PATTERN_DOMESTIC
     assert STATE_CURRENT not in _states(rail).values()
     assert rail.unplaced_stage == "ELi menetluses"
 
@@ -421,11 +444,15 @@ def test_the_three_european_end_stages_are_not_rendered_identically(specialist):
     """The strongest case: `Ülevõtmine / jõustumine` holds three stages."""
     matter = factories.MatterFactory(owner=specialist, track=Track.EU_INITIATIVE.value)
     seen = []
-    for key in ("awaiting_transposition", "awaiting_entry", "in_force"):
+    for key, node in (
+        ("awaiting_transposition", "ulevotmine"),
+        ("awaiting_entry", "joustumine"),
+        ("in_force", "joustumine"),
+    ):
         change_stage(matter=matter, stage=_stage(key), actor=specialist)
         rail = _rail(matter, specialist)
-        assert _states(rail)["ulevotmine"] == STATE_CURRENT
-        seen.append(_stage_labels(rail)["ulevotmine"])
+        assert _states(rail)[node] == STATE_CURRENT
+        seen.append(_stage_labels(rail)[node])
 
     assert seen == ["ELi õiguse ülevõtmise ootel", "Jõustumise ootel", "Jõustunud"]
     assert len(set(seen)) == 3
@@ -448,13 +475,18 @@ def test_a_node_whose_words_are_the_stages_own_words_does_not_say_them_twice(spe
     where it adds something.
     """
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
-    change_stage(matter=matter, stage=_stage("government"), actor=specialist)
-    rail = _rail(matter, specialist)
 
-    # `Valitsus` the node, `Valitsuses` the stage — different words, so it reads.
-    assert _stage_labels(rail)["valitsus"] == "Valitsuses"
+    # `Valitsuses` the phase and `Valitsuses` the stage are now the same word —
+    # the phase vocabulary is the lawyers' own — so nothing is carried at all.
+    change_stage(matter=matter, stage=_stage("government"), actor=specialist)
+    assert _stage_labels(_rail(matter, specialist))["valitsus"] == ""
+
+    # `Jõustumine` the phase, `Jõustunud` the stage — different words, so it reads.
+    change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
+    rail = _rail(matter, specialist)
+    assert _stage_labels(rail)["joustumine"] == "Jõustunud"
     # And it rides on the current node and on no other.
-    assert [node.key for node in rail.nodes if node.stage_label] == ["valitsus"]
+    assert [node.key for node in rail.nodes if node.stage_label] == ["joustumine"]
 
 
 def test_an_unplaceable_stage_puts_no_label_on_any_node(specialist):
@@ -602,14 +634,23 @@ def test_the_rail_is_not_inside_the_teema_kaik_disclosure(signed_in, specialist)
     assert "lprail" not in inside
 
 
-def test_menetluse_tahtajad_stays_where_it_was(signed_in, specialist):
-    """Only the rail moved. The dated strip is history's own summary line."""
+def test_the_dated_strip_reads_inside_menetluse_kulg(signed_in, specialist):
+    """The dated points answer «where is this going», so they moved to the rail.
+
+    They rendered at the head of `Teema käik` until the road ahead arrived, which
+    left three diagram-shaped things stacked above the working area. The strip is
+    unchanged — same columns, same sources, same states — under
+    `Kirjas olevad kuupäevad`, and it is no longer inside the history disclosure
+    (§4 of the brief, docs/adr/0074 §12).
+    """
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
     body = _detail(signed_in, matter)
 
+    assert "Kirjas olevad kuupäevad" in body
+    assert body.index('aria-label="Menetluse tähtajad"') < body.index('id="ajajoon"')
     inside = body[body.index('id="ajajoon"') :]
-    assert 'aria-label="Menetluse tähtajad"' in inside
+    assert 'aria-label="Menetluse tähtajad"' not in inside
 
 
 def test_the_rail_heading_is_a_sibling_heading_and_not_a_sub_heading(signed_in, specialist):
@@ -645,10 +686,24 @@ def test_the_anchor_and_the_filter_query_are_unchanged(signed_in, specialist):
 
 
 def test_the_rail_is_absent_rather_than_empty(signed_in, specialist):
+    """No pattern, no rail and no road ahead — and the recorded dates still read.
+
+    The three blocks of `Menetluse kulg` are independent. A file with no
+    `Õigusakt` and no `Menetlusliik` is read against no procedure, so it draws no
+    nodes and is promised no next steps: six «Teadmata» nodes is a heading spent
+    announcing that the application knows nothing.
+
+    Its `Alustatud` is not a claim about a procedure, though — it is a date the
+    file recorded — and it goes on reading. Withdrawing it because the file is
+    unclassified would lose recorded information in what is otherwise a layout
+    change.
+    """
     matter = factories.MatterFactory(owner=specialist, track="")
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert "lprail" not in body
-    assert "Menetluse kulg" not in body
+    assert "lprail__node" not in body
+    assert "lprail__now" not in body
+    assert "Ees võib olla" not in body
+    assert "Alustatud" in body

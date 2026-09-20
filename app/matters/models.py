@@ -34,6 +34,7 @@ from app.matters.enums import (
     TagAssignmentSource,
     WebsiteOverviewStatus,
 )
+from app.matters.process_phases import PHASE_KEYS
 from app.workflow.dates import format_at_precision, is_approximate
 from app.workflow.enums import DatePrecision, Disposition, Track
 
@@ -2289,6 +2290,43 @@ class MatterProceduralDevelopment(VisibilityInheritingModel):
     #: assessment as part of what the ministry did is a history that misleads
     #: (docs/adr/0091 §4, §5).
     note = models.TextField(blank=True, verbose_name="juristi märkus")
+    #: `Etapp` — which phase of the procedure this step belongs to.
+    #:
+    #: **The one explicit phase association in the product, and the anchor the
+    #: whole grouped history is built from.** `Teema käik` reads a file's year of
+    #: activity in phases — `VTK`, `Kooskõlastusring`, `Valitsuses` — and nothing
+    #: else in the domain says which phase an act belongs to: `Matter.stage` says
+    #: where the file stands *now*, `Õigusakt` says what it is *now*, and neither
+    #: dates an opinion sent last spring (`app/matters/process_phases.py`).
+    #:
+    #: **Not a copy of `Hetkeseis`,** which docs/adr/0091 §5.2 refused and this
+    #: does not reopen. The two vocabularies are different questions and do not
+    #: line up: `VTK` is a phase and not a stage — a file sits on `Idee` with no
+    #: väljatöötamiskavatsus in existence — and `Kooskõlastusring` occurs *twice*
+    #: on an ordinary VTK-then-bill file, which a single-valued current stage
+    #: cannot express at all. A stage answers «where is this»; this answers «which
+    #: part of the story is this act in».
+    #:
+    #: **Optional, and blank is an ordinary answer.** Blank means nobody has
+    #: placed this step, the record still reads in the chronology under
+    #: `Etapiga sidumata`, and nothing asks anybody to clear a backlog of them.
+    #: Every row written before this column existed is blank and stays blank:
+    #: there is no backfill, because there is nothing to backfill *from* —
+    #: guessing a phase out of a title is the prose-matching this repository
+    #: refuses (docs/adr/0092 §13).
+    #:
+    #: **Visible when it is proposed, never an invisible guess.** `+ Märge`
+    #: pre-selects the phase the file's own `Hetkeseis` places it on, in a select
+    #: the person is looking at while they type the date, and `Muuda` on the row
+    #: corrects it afterwards. Nothing writes this column without the value having
+    #: been on screen first.
+    process_phase = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="etapp",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -2316,6 +2354,13 @@ class MatterProceduralDevelopment(VisibilityInheritingModel):
             models.CheckConstraint(
                 condition=models.Q(occurred_on_precision__in=DatePrecision.values),
                 name="matters_development_precision_vocabulary",
+            ),
+            # The phase vocabulary is code-managed reference data, so the column
+            # is closed the way every other vocabulary column on this model is.
+            # `""` is a member of the set and means «nobody has placed this».
+            models.CheckConstraint(
+                condition=models.Q(process_phase__in=("", *PHASE_KEYS)),
+                name="matters_development_phase_vocabulary",
             ),
             # An unknown date has no precision. `NULL` + `MONTH` would be a period
             # with nothing to qualify, and every surface reading it would have to

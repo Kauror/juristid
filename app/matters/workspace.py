@@ -708,6 +708,7 @@ def add_procedural_development(
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     note: str = "",
+    process_phase: str = "",
     stage: Any = None,
     next_text: str = "",
     next_date: Any = None,
@@ -773,6 +774,7 @@ def add_procedural_development(
             occurred_on=occurred_on,
             occurred_on_precision=occurred_on_precision,
             note=note,
+            process_phase=process_phase,
             actor=author,
         )
         result.record = development

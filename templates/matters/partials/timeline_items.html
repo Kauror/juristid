@@ -29,6 +29,65 @@ record, not professional chronology (master specification 16.5).
   spine into two (app/matters/views.py, `timeline_page`).
 {% endcomment %}
 {% for item in timeline_items %}
+  {% if item.opens_phase %}
+    {% comment %}
+      A phase heading, inside the row stream rather than around it.
+
+      **A sibling of the rows, not a wrapper.** «Näita varasemaid» swaps its own
+      button for the next batch *in place* inside `#ajalugu-loend`, so the older
+      rows arrive as siblings of these; a `<details>` or a `<section>` per phase
+      would have to be opened on one page and closed on the next, and the spine
+      running down the left of the list would break into one piece per section.
+
+      `h3`, under the section's own `h2`. The history is one section with parts,
+      and a reader tabbing headings should be able to get from `Teema käik` to
+      `Riigikogus` without leaving it (docs/adr/0092 §2).
+
+      **`Praegu` is a state, said in a word.** A phase that is where the file
+      stands now says so; every other heading is just the phase and the day it
+      began. Nothing is ticked, nothing is numbered and no heading claims a phase
+      is finished — a later phase existing is not evidence that an earlier one
+      completed (app/matters/phase_history.py).
+    {% endcomment %}
+    <h3 class="uxtl__phase{% if item.phase.is_unplaced %} uxtl__phase--unplaced{% endif %}"
+        id="{{ item.phase.anchor }}">
+      <span class="uxtl__phasename">{{ item.phase.label }}</span>
+      {% if item.phase.is_current %}
+        <span class="uxtl__phasenow">Praegu</span>
+      {% endif %}
+      {% if item.phase.started_on %}
+        {% comment %}
+          The day the phase began — the business date of the `Menetluse areng`
+          that opened it, and never a `created_at`, an audit timestamp or today.
+          A phase whose beginning nobody recorded prints no date at all rather
+          than borrowing one (docs/adr/0092 §4).
+        {% endcomment %}
+        <span class="uxtl__phasefrom">alates {{ item.phase.started_on|date:"d.m.Y" }}</span>
+      {% endif %}
+      {% if item.phase_continues %}
+        {% comment %}
+          This section began on an earlier page and runs on here. Said in words
+          rather than left to the reader, because the alternative is the same
+          heading appearing twice with nothing to explain it.
+        {% endcomment %}
+        <span class="uxtl__phasemore">jätkub</span>
+      {% endif %}
+    </h3>
+    {% if item.phase.is_unplaced %}
+      {% comment %}
+        **Unplaced is not erroneous, and the sentence has to say so.** These are
+        ordinary records whose phase nobody can establish: an opinion sent before
+        the file recorded its first procedural step, a note with no date, a
+        `Hetkeseis` correction that dates nothing. Nothing here asks anybody to
+        clear a backlog, and no record is hidden or degraded by being here
+        (§6 of the brief).
+      {% endcomment %}
+      <p class="uxtl__phasenote">
+        Need kirjed on olemas, aga ühegi etapiga ei saa neid kindlalt siduda.
+        Etapp selgub, kui menetluse samm on kirja pandud.
+      </p>
+    {% endif %}
+  {% endif %}
   {% comment %}
     The id is what a search result for an entry scrolls to. Server-rendered
     anchor, no router: the timeline is already one page (Stage-2B brief 77).

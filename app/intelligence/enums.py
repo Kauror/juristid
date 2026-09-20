@@ -53,6 +53,32 @@ class WorkVictoryStatus(models.TextChoices):
     NOT_REALIZED = "NOT_REALIZED", "Ei realiseerunud"
 
 
+class ImportantDateKind(models.TextChoices):
+    """What *kind* of milestone an `Oluline tähtaeg` is, where the answer matters.
+
+    Two values, and deliberately not a taxonomy of everything a department
+    watches. `Oluline tähtaeg` is free text by design — «komisjoni istung»,
+    «eelnõu avalikustamine», «uus versioon lubatud» — and turning that column into
+    a classification exercise would make ordinary capture slower for no gain
+    (AGENTS.md, Stage-2G brief 6).
+
+    `TRANSPOSITION_DEADLINE` earns a value because one surface has to
+    **recognise** it rather than read it: `Menetluse kulg` says what may come
+    next, and on a directive the transposition deadline is the one recorded future
+    date that belongs beside the `Ülevõtmine` phase. The alternative was searching
+    the title for «ülevõtmine», which is the prose-matching this product refuses
+    everywhere else — a deadline named «direktiivi rakendamise kuupäev» would be
+    missed and one named «ülevõtmise arutelu» would be wrongly claimed.
+
+    `OTHER` is the default and stays the overwhelming majority. **Nothing is
+    backfilled**: a row written before this column existed reads `OTHER` because
+    nobody has said otherwise, which is exactly what it means.
+    """
+
+    OTHER = "OTHER", "Muu tähtaeg"
+    TRANSPOSITION_DEADLINE = "TRANSPOSITION_DEADLINE", "ELi õiguse ülevõtmise tähtaeg"
+
+
 class EventKind(models.TextChoices):
     """What a row in the combined *Olulised tähtajad* calendar came from.
 

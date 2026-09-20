@@ -107,6 +107,31 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
         <p class="field__error">{{ development_edit_form.note.errors|first }}</p>
       {% endif %}
 
+      {% if development_edit_form.process_phase %}
+        {% comment %}
+          `Muuda etappi` — the correction affordance, inside the correction form
+          that already exists rather than as a control of its own.
+
+          It opens on **what the record stores**, never on the file's current
+          phase: reopening a step filed under `VTK` on today's `Riigikogus` would
+          be one `Salvesta` away from silently re-filing it, which is the rule the
+          day box above keeps for the same reason.
+
+          This is also where an unplaced history gets placed. Recording or
+          correcting the development that opened a phase re-groups everything
+          dated inside it — one correction that fixes a section rather than a row
+          (§7 of the brief, app/matters/phase_history.py).
+        {% endcomment %}
+        <label class="cx-f" for="{{ development_edit_form.process_phase.id_for_label }}">
+          <span class="cx-f__lab">{{ development_edit_form.process_phase.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {{ development_edit_form.process_phase }}
+        </label>
+        {% if development_edit_form.process_phase.errors %}
+          <p class="field__error">{{ development_edit_form.process_phase.errors|first }}</p>
+        {% endif %}
+      {% endif %}
+
       {{ development_edit_form.revision }}
 
       {% if development_edit_error %}

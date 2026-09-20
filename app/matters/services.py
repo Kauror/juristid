@@ -3904,6 +3904,7 @@ def record_procedural_development(
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     note: str = "",
+    process_phase: str = "",
     actor: Any = None,
 ) -> MatterProceduralDevelopment:
     """Record one step the external procedure took.
@@ -3962,6 +3963,7 @@ def record_procedural_development(
         occurred_on=occurred_on,
         occurred_on_precision=precision,
         note=clean_note,
+        process_phase=_development_phase(process_phase),
         created_by=actor,
     )
     record_change_event(
@@ -3982,9 +3984,26 @@ def record_procedural_development(
             # beside the event's own title is the one place the two could be read
             # back as one statement (docs/adr/0091 §4, §5).
             "has_note": bool(development.note),
+            # Which phase the step was placed in, so the audit trail can answer
+            # «who filed this under Kooskõlastusring, and when» without reading
+            # the record's current value back.
+            "process_phase": development.process_phase,
         },
     )
     return development
+
+
+#: A phase key this product does not know places nothing, and is not an error.
+#:
+#: A crafted value on a form that never offered it, and a key a later vocabulary
+#: retired, are the same thing to every reader: the record is unplaced. Refusing
+#: the save would make a *presentation* association able to block a business
+#: write, which is a worse answer than storing nothing (`process_phases.py`).
+def _development_phase(value: Any) -> str:
+    from app.matters.process_phases import PHASE_KEYS
+
+    phase = (value or "").strip()
+    return phase if phase in PHASE_KEYS else ""
 
 
 def record_procedural_development_document(
@@ -4015,6 +4034,7 @@ def correct_procedural_development(
     occurred_on: Any,
     occurred_on_precision: Any,
     note: Any,
+    process_phase: Any = None,
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterProceduralDevelopment:
@@ -4062,6 +4082,15 @@ def correct_procedural_development(
         "occurred_on_precision": precision,
         "note": (note or "").strip(),
     }
+    # **`None` means «this caller is not answering», and is not «clear it».**
+    #
+    # The phase select is removed from the form entirely on a Matter whose
+    # `Õigusakt` chooses no procedure, so a correction of the *title* on such a
+    # record posts no `process_phase` at all — and a missing key read as an empty
+    # string would silently unplace a step somebody had placed. Only a caller that
+    # was actually offered the control may change it.
+    if process_phase is not None:
+        proposed["process_phase"] = _development_phase(process_phase)
     changed = [field for field, value in proposed.items() if getattr(current, field) != value]
     if not changed:
         # Nothing moved, so nothing is recorded. An audit row for a save that
@@ -4094,6 +4123,12 @@ def correct_procedural_development(
         # would say nothing had happened.
         payload["occurred_on_precision_from"] = current.occurred_on_precision
         payload["occurred_on_precision_to"] = precision
+    if "process_phase" in changed:
+        # Both sides, because «moved out of Kooskõlastusring» and «placed, having
+        # been unplaced» are different corrections and the audit trail is where
+        # the difference is answerable.
+        payload["process_phase_from"] = current.process_phase
+        payload["process_phase_to"] = proposed["process_phase"]
 
     for field, value in proposed.items():
         setattr(current, field, value)

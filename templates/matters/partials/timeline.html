@@ -48,21 +48,48 @@ when somebody asks for it.
 
   <div class="accordion__body">
     {% comment %}
-      The dated points, then what happened.
+      **The dated points moved, and nothing else about them changed.**
 
-      `Menetluse kulg` is **not** here. It answers a different question — where
-      the external procedure stands — and it renders as this section's sibling,
-      above, in `matters/partials/overview.html`. Collapsing `Teema käik` must
-      not take the answer to the other question away with it, which is what
-      nesting the rail inside this disclosure did (docs/adr/0092 §2, amended).
+      `Menetluse tähtajad` rendered here until this round. Once `Menetluse kulg`
+      gained a road ahead, the page carried three diagram-shaped things stacked
+      above the working area — a rail, a horizon and a strip — and the strip was
+      the one answering the other section's question: which dates are written
+      down is «where is this going», not «what happened». It is the same strip,
+      the same columns, the same sources and the same states, under
+      `Kirjas olevad kuupäevad` in `matters/partials/legal_process.html`
+      (§4 of the brief, docs/adr/0074 §12).
 
-      `Menetluse tähtajad` stays, and deliberately: the strip names the dated
-      points *this file* has and is heading for — `Alustatud`, `Arvamuse
-      tähtaeg`, `Koja arvamus`, `Jõustumine` — which are facts about the file's
-      own history, drawn at the head of it as a summary of what follows
-      (docs/adr/0074 §12).
+      `Menetluse kulg` itself is **not** here either, and has not been since
+      docs/adr/0092 §2: collapsing `Teema käik` must not take the answer to the
+      other question away with it.
+
+      What this section gained instead is **phase headings** — the history reads
+      as `VTK`, then `Kooskõlastusring`, then `Riigikogus`, in the file's own
+      recorded order. The headings are drawn inside the row stream below rather
+      than around it, so «Näita varasemaid» goes on swapping itself in place
+      (app/matters/phase_history.py).
     {% endcomment %}
-    {% include "matters/partials/process_strip.html" %}
+
+    {% if timeline_phases.current_without_rows %}
+      {% comment %}
+        The phase the file is on **with nothing recorded in it yet**.
+
+        «The bill is in the Riigikogu and nothing has happened there so far» is a
+        real and ordinary state, and the section exists to say it. It carries no
+        date, because nothing dated says when the file arrived — and it carries no
+        rows, because **nothing invents an event to fill it**. A fabricated
+        «Jõudis Riigikokku» here would be exactly the manufactured milestone the
+        late-entry rule refuses one section above (§6 of the brief).
+
+        At the top rather than in date order: it has no date to sort by, and it is
+        the present.
+      {% endcomment %}
+      <h3 class="uxtl__phase uxtl__phase--empty" id="{{ timeline_phases.current_without_rows.anchor }}">
+        <span class="uxtl__phasename">{{ timeline_phases.current_without_rows.label }}</span>
+        <span class="uxtl__phasenow">Praegu</span>
+      </h3>
+      <p class="uxtl__phasenote">Selles etapis ei ole veel midagi kirja pandud.</p>
+    {% endif %}
 
     {% comment %}
       The spine is this element, not the fragment inside it. «Näita varasemaid»

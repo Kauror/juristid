@@ -146,6 +146,31 @@ DEADLINE_LABEL = "Arvamuse tähtaeg"
 #: official obligation. Two labels, two sources, two sentences.
 FEEDBACK_DEADLINE_LABEL = "Tagasiside tähtaeg"
 
+#: `Ülevõtmise tähtaeg` — the day Estonia has to have transposed a directive by.
+#:
+#: **The one addition to §12.1's list since it was written, and it is not that
+#: retirement being undone.** `MatterImportantDate` left this strip because a
+#: watched expectation is not a procedural act and because a *past* one already
+#: reads in the chronology, where it belongs. A transposition deadline still
+#: ahead of us reads **nowhere at all** — the chronology projects only what has
+#: happened, and the standing `Olulised tähtajad` section went with the approved
+#: target — so a directive's single most consequential future date was recorded
+#: and then invisible until the day it passed.
+#:
+#: So: **future only, and only this kind.** A deadline that has passed keeps
+#: reading as a chronology row and draws no column, which is exactly §12.1's
+#: decision left standing. Every other `Oluline tähtaeg` stays off the strip.
+#:
+#: Found by `MatterImportantDate.kind` and **never by reading the title**:
+#: matching «ülevõtmine» in free text would miss «direktiivi rakendamise
+#: kuupäev» and wrongly claim «ülevõtmise arutelu» (docs/adr/0098 §9).
+#:
+#: Shorter than the vocabulary's own `ELi õiguse ülevõtmise tähtaeg`, because
+#: that is thirty characters under a 150 px column. The strip already names the
+#: act rather than restating the record: `Koja arvamus`, not «Koja arvamus
+#: pakendiseaduse kohta».
+TRANSPOSITION_DEADLINE_LABEL = "Ülevõtmise tähtaeg"
+
 #: `Jõustumine` — the noun, matching `MatterEffectiveDate`'s own
 #: `verbose_name`. Not `Jõustub`/`Jõustus`, which the chronology uses because
 #: its sentence has a tense; a strip column is a name, and a rail whose label
@@ -179,7 +204,8 @@ PHASE_FEEDBACK = 1
 PHASE_SENT = 2
 PHASE_DEADLINE = 3
 PHASE_EFFECTIVE = 4
-PHASE_CLOSED = 5
+PHASE_TRANSPOSITION = 5
+PHASE_CLOSED = 6
 
 
 #: The three presentation states a column can be in, and the CSS modifier each
@@ -324,7 +350,7 @@ def process_steps(
     so for three hours every evening the two are different days — and this is
     the date that decides whether a deadline reads as reached (CORR-03).
     """
-    from app.intelligence.enums import FactStatus
+    from app.intelligence.enums import FactStatus, ImportantDateKind
     from app.intelligence.selectors import matter_intelligence
     from app.matters.models import MatterEngagement
     from app.submissions.models import Submission
@@ -429,6 +455,36 @@ def process_steps(
                 detail="",
                 sort_on=matter.response_deadline,
                 phase=PHASE_DEADLINE,
+            )
+        )
+
+    # `Ülevõtmise tähtaeg` — a recorded transposition deadline still ahead of us.
+    #
+    # **Future only.** A deadline that has passed is a chronology row already and
+    # drawing a column for it too would be the duplication §12.1 removed. One
+    # still ahead has nowhere else on this page to be, and a directive's
+    # transposition date is precisely the kind of thing a lawyer plans a year
+    # around.
+    #
+    # Read off `MatterImportantDate.kind` and never off the title, and scoped
+    # through the record's own `visible_to` like every other source here, so a
+    # restricted deadline draws no column and moves no spacing (AUTH-003).
+    for record in facts.upcoming_dates:
+        if record.kind != ImportantDateKind.TRANSPOSITION_DEADLINE:
+            continue
+        if record.status != FactStatus.ACTIVE:
+            # A cancelled expectation is history and reads as history, in the
+            # chronology. It is not somewhere this file is still heading.
+            continue
+        steps.append(
+            ProcessStep(
+                label=TRANSPOSITION_DEADLINE_LABEL,
+                # The period at the precision it was recorded to. A deadline
+                # known only to a quarter prints as a quarter.
+                display=record.display_date,
+                detail=record.title,
+                sort_on=record.period_end,
+                phase=PHASE_TRANSPOSITION,
             )
         )
 

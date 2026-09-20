@@ -10197,6 +10197,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .uxnext,
 #teema-vaade-wrap .registerfacts,
+#teema-vaade-wrap .lprail,
 #teema-vaade-wrap .accordion--timeline .accordion__head,
 #teema-vaade-wrap .accordion--timeline .accordion__body {
   padding-left: var(--spacing-8);
@@ -11076,11 +11077,20 @@ section:has(.pw-more[open]) tbody.uxextra {
  * and a rail that sat flush against whatever precedes it read as part of that
  * thing (docs/adr/0092 §2, amended). */
 
+/* `Menetluse kulg` takes the page's own left edge, like every other region of
+ * this column. It did not until the dated strip moved in: the rail alone sat
+ * flush while `PRAEGUNE TEGEVUS` above it and `Teema käik` below it were both
+ * inset, and the strip — which *was* inset, inside the history's padded body —
+ * would have lost that inset on the way here. One edge, the whole column down
+ * (TEEMA_TARGET_SPEC, VISUAL PRECISION). */
 #teema-vaade-wrap .lprail {
   margin: var(--spacing-4) 0 14px;
-  padding: var(--spacing-3) 0 var(--spacing-2);
+  padding-top: var(--spacing-3);
+  padding-bottom: var(--spacing-2);
   border-bottom: 1px solid var(--border-subtle);
 }
+
+
 
 #teema-vaade-wrap .lprail__head {
   display: flex;
@@ -11101,11 +11111,17 @@ section:has(.pw-more[open]) tbody.uxextra {
   opacity: 0.85;
 }
 
+/* The rail, and the air under it.
+ *
+ * Each of the section's three blocks is a separate answer with its own quiet
+ * heading, and without the bottom margin the next heading sits on the last line
+ * of this one — `EES VÕIB OLLA` landed directly under `Kirjas` and read as a
+ * sixth node's caption rather than as a new question. */
 #teema-vaade-wrap .lprail__nodes {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  margin: 0;
+  margin: 0 0 var(--spacing-4);
   padding: 0;
   list-style: none;
 }
@@ -11236,6 +11252,137 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
+/* `Praegu: Riigikogus` — the answer in a sentence, above the picture of it.
+ *
+ * A rail is a diagram and a diagram has to be read; this is the one line that
+ * answers «where is this» without the reader decoding four states and six dots
+ * first. Body ink and a hair larger than the node labels, because it is the
+ * most-read thing in the section. */
+#teema-vaade-wrap .lprail__now {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-3);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+#teema-vaade-wrap .lprail__nowlabel {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .lprail__nowvalue {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-body);
+}
+
+/* -- Ees võib olla ---------------------------------------------------------
+ *
+ * The road ahead. Deliberately **not** a second rail: no dots, no connectors and
+ * no dates — a second diagram beside the first is the stacking §4 of the brief
+ * rules out, and a dotted continuation of the rail would read as steps that are
+ * merely later rather than steps that are merely possible.
+ *
+ * So it is a row of words with arrows between them, muted, and every word of it
+ * is qualified by the heading above. Muting is the *second* signal here and
+ * never the only one: the heading says «võib olla» and a conditional step says
+ * «kui menetlus jätkub» in text. */
+#teema-vaade-wrap .lpahead {
+  margin: 0 0 var(--spacing-4);
+}
+
+#teema-vaade-wrap .lpahead__head,
+#teema-vaade-wrap .lpdates__head {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .lpahead__steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#teema-vaade-wrap .lpahead__step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/* The arrow between steps, drawn rather than typed, so it is never read out as
+ * a word and never breaks to a line of its own. `:last-child` draws none. */
+#teema-vaade-wrap .lpahead__step + .lpahead__step::before {
+  content: "→";
+  margin-right: 2px;
+  color: var(--border-strong);
+}
+
+/* The phase's own name inside a possible step. Body ink would make the horizon
+ * read as strongly as the rail; it stays muted with its parent and takes only
+ * the weight, so the names are still scannable in a row of three. */
+#teema-vaade-wrap .lpahead__what {
+  font-weight: var(--typography-weight-semibold);
+}
+
+#teema-vaade-wrap .lpahead__if {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-muted);
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+#teema-vaade-wrap .lpahead__more {
+  margin-top: 6px;
+}
+
+#teema-vaade-wrap .lpahead__moresummary {
+  display: inline-block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+#teema-vaade-wrap .lpahead__moresummary:hover {
+  color: var(--text-body);
+}
+
+#teema-vaade-wrap .lpahead__steps--rest {
+  margin-top: 6px;
+}
+
+/* -- Kirjas olevad kuupäevad ----------------------------------------------
+ *
+ * The strip, under the words that say what it is. The strip's own rules are
+ * unchanged and follow this block; what the wrapper does is give it the heading
+ * it lost when it moved out of `Teema käik`, and take away the bottom border it
+ * used to need as the first thing in that section — here it is the last thing in
+ * this one, and the section's own border already closes it. */
+#teema-vaade-wrap .lpdates {
+  margin: 0;
+}
+
+#teema-vaade-wrap .lpdates .tl-strip {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 #teema-vaade-wrap .tl-strip {
   display: grid;
   grid-auto-flow: column;
@@ -11343,6 +11490,81 @@ section:has(.pw-more[open]) tbody.uxextra {
  * A 12px accent dot for something that happened to the file, a 6px muted one
  * for work somebody did on it. That is the whole hierarchy, and it is the one
  * thing a reader scanning six months uses (TEEMA_TARGET_SPEC §E). */
+
+/* -- Phase headings inside the chronology ---------------------------------
+ *
+ * `.uxtl` is a two-column grid and `.uxtl__item` is `display: contents`, so a
+ * heading dropped between rows would otherwise land in the 20px rail column and
+ * wrap one character per line. It spans both columns and sits on the page's own
+ * ground — no box, no rule above it, no background: the section already has one
+ * border and a second per phase would turn a history into a stack of cards.
+ *
+ * Two facts and no third: the phase, and — when it is where the file stands —
+ * `Praegu`. Nothing is ticked, counted or scored. A heading that read
+ * «Kooskõlastusring · läbitud» would be asserting that a phase finished, which
+ * a later phase existing is not evidence of. */
+#teema-vaade-wrap .uxtl__phase {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--spacing-2);
+  margin: var(--spacing-4) 0 6px;
+  font-size: 12px;
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The first heading of the list needs no space above it: the strip that used to
+ * sit there has moved, and the section's own padding already opens the list. */
+#teema-vaade-wrap .uxtl__phase:first-child {
+  margin-top: 0;
+}
+
+/* The current phase with nothing recorded in it. It renders *outside* the
+ * `.uxtl` grid — above the list, because it has no date to sort by and it is the
+ * present — so it takes the margin the grid would otherwise have given it. */
+#teema-vaade-wrap .uxtl__phase--empty {
+  margin-top: 0;
+}
+
+#teema-vaade-wrap .uxtl__phasename {
+  color: var(--text-body);
+}
+
+/* `Praegu`, in accent — the same ink the rail's current node uses, so the two
+ * surfaces agree about which word means «now». It carries the accent *and* the
+ * word, never the accent alone. */
+#teema-vaade-wrap .uxtl__phasenow {
+  color: var(--accent-link);
+  letter-spacing: 0.04em;
+}
+
+#teema-vaade-wrap .uxtl__phasefrom,
+#teema-vaade-wrap .uxtl__phasemore {
+  font-weight: var(--typography-weight-regular);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.9;
+}
+
+/* `Etapiga sidumata` is quieter than a phase, because it is not one. It is not
+ * *red* either, and it carries no icon and no count: these are ordinary records
+ * and the heading must not read as a queue of defects somebody owes work on. */
+#teema-vaade-wrap .uxtl__phase--unplaced .uxtl__phasename {
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .uxtl__phasenote {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--spacing-2);
+  max-width: 62ch;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
 
 #teema-vaade-wrap .uxtl__dot {
   width: 6px;
