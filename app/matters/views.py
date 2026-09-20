@@ -122,6 +122,7 @@ from app.matters.forms import (
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
     ReceivedFeedbackForm,
+    TimelineStepsForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
     development_period_initial,
@@ -145,6 +146,7 @@ from app.matters.legal_process import (
     CONDITIONAL_LABEL,
     KODA_STOPPED_LABEL,
     legal_process_rail,
+    matter_rail,
 )
 from app.matters.models import (
     Entry,
@@ -204,6 +206,7 @@ from app.matters.services import (
     set_policy_area_other,
     set_policy_areas,
     set_position,
+    set_timeline_steps,
 )
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
@@ -2543,6 +2546,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # and `opinion_sent` below asks whether one of them is a sent opinion. Calling
     # `process_steps` twice would be two reads of the same scoped question.
     steps = process_steps(matter=matter, user=request.user, intelligence=intelligence)
+    # Built once and read twice: the rail draws its nodes and `matter_rail`
+    # merges the dated points into them.
+    rail = legal_process_rail(matter=matter, user=request.user, context=phases)
     return {
         # `Menetluse kulg` — where the external procedure stands, which one to
         # three phases may follow, and the dated points the file actually holds.
@@ -2551,9 +2557,14 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # reviewed `Õigusakt` grouping. `None` where no pattern can be chosen or
         # where the file records nothing that places it on one, and the section
         # is then not rendered at all (app/matters/legal_process.py).
-        "legal_process": legal_process_rail(matter=matter, user=request.user, context=phases),
+        "legal_process": rail,
         "legal_process_stopped_label": KODA_STOPPED_LABEL,
         "legal_process_conditional_label": CONDITIONAL_LABEL,
+        # **The one rail.** Phases and the dated points the file holds, in one
+        # ordered list — the second strip is gone and its content is here, still
+        # read by `process_timeline.process_steps` and handed over rather than
+        # read again (app/matters/legal_process.py `matter_rail`).
+        "rail_steps": matter_rail(matter=matter, user=request.user, rail=rail, milestones=steps),
         # How `Teema käik` below is grouped: which phase occurrences it draws
         # headings for, and the current phase when the file records nothing in it
         # yet. Carried on the page itself, because which occurrence a row belongs
@@ -6967,6 +6978,75 @@ def _development_row(
         },
         status=status,
     )
+
+
+def _timeline_steps_form(
+    request: HttpRequest, matter: Matter, data: Any = None
+) -> TimelineStepsForm:
+    """The `Muuda kulgu` panel, opened on what this file actually says.
+
+    The pattern, the stored rows and the phases a `Menetluse areng` already
+    dates, all read once and handed to the form — so the panel offers this file's
+    own procedure and never a box over a day the record already proves.
+    """
+    from app.matters.models import MatterTimelineStep
+    from app.workflow.dates import format_at_precision
+
+    phases = legal_process.phase_context(matter=matter)
+    rows = {
+        row.phase_key: row
+        for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(request.user)
+    }
+    recorded = {}
+    if phases.pattern is not None:
+        keys = frozenset(node.phase_key for node in phases.pattern.nodes)
+        for key, (when, precision) in legal_process.recorded_phase_dates(
+            matter=matter, user=request.user, phase_keys=keys
+        ).items():
+            recorded[key] = format_at_precision(when, precision)
+    return TimelineStepsForm(data, phases=phases, rows=rows, recorded=recorded)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Muuda kulgu` — open the panel, or save it.
+
+    One small panel that swaps itself in place, like every other correction on
+    this page. A GET opens it; a POST saves and re-renders the whole Teema view,
+    because hiding a phase changes the rail, and on a file whose phases carry
+    dates it changes what the rail says about every one of them.
+    """
+    matter = get_visible_matter(request, pk)
+    if request.method == "GET":
+        return render(
+            request,
+            "matters/partials/timeline_steps_form.html",
+            {"matter": matter, "timeline_steps_form": _timeline_steps_form(request, matter)},
+        )
+    form = _timeline_steps_form(request, matter, request.POST)
+    if not form.is_valid():
+        return render(
+            request,
+            "matters/partials/timeline_steps_form.html",
+            {"matter": matter, "timeline_steps_form": form},
+            status=400,
+        )
+    try:
+        set_timeline_steps(matter=matter, steps=form.steps(), actor=request.user)
+    except DomainError as error:
+        return render(
+            request,
+            "matters/partials/timeline_steps_form.html",
+            {
+                "matter": matter,
+                "timeline_steps_form": form,
+                "timeline_steps_error": str(error),
+            },
+            status=400,
+        )
+    return _render_overview(request, matter)
 
 
 @login_required

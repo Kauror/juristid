@@ -112,18 +112,13 @@ next step and no history renders as a short, deliberate page.
     {% endif %}
 
     {% comment %}
-      `TEEMA TOIMINGUD` — what happens *to* the Matter, under what is added to
-      it.
-
-      Rendered for any writer, open Matter or closed, which is one condition
-      looser than the launcher above: `LISA TEEMALE` is business content and a
-      closed file takes none, but a Matter closed by mistake is exactly the
-      case `Kustuta teema` exists for. The section decides per control which of
-      the two it offers (docs/adr/0097 §9).
+      `TEEMA TOIMINGUD` is gone, and both of its controls moved rather than
+      retired: `Lõpeta teema` is back among the launcher's chips, and
+      `Kustuta` is beside `Muuda teemat` in the header, where the errand
+      «this record is wrong» is answered. A section holding one control under a
+      heading of its own was the clutter this round is about
+      (docs/adr/0097 §9, amended).
     {% endcomment %}
-    {% if can_write %}
-      {% include "matters/partials/teema_toimingud.html" %}
-    {% endif %}
 
     {% comment %}
       `Ülevaated / uudised` — the write-ups this file still owes a reader.

@@ -4006,6 +4006,91 @@ def _development_phase(value: Any) -> str:
     return phase if phase in PHASE_KEYS else ""
 
 
+@transaction.atomic
+def set_timeline_steps(
+    *,
+    matter: Matter,
+    steps: Any,
+    actor: Any = None,
+) -> int:
+    """`Muuda kulgu` — which phases this file's rail shows, and when.
+
+    ``steps`` is an iterable of ``(phase_key, hidden, occurs_on, precision)``,
+    one per phase the panel offered. The panel offers the pattern's own phases
+    and nothing else, and a key outside the vocabulary is dropped rather than
+    refused: a presentation preference may never block a business write, and a
+    crafted key places nothing (`app/matters/process_phases.py`).
+
+    **The ordinary answer writes no row.** A phase that is shown and carries no
+    date is the default, so its row is deleted rather than stored — the table
+    holds what somebody has said and stays empty for every file nobody edits.
+    That is also what makes «put it back» work: removing the row restores the
+    pattern, rather than storing a second kind of default.
+
+    **Nothing else moves.** Not `Hetkeseis`, not a `Menetluse areng`, not an
+    `Oluline tähtaeg`, not the chronology, and no `NextAction`: hiding a phase
+    makes no Matter late and a date here is not a deadline anybody is measured
+    against (docs/adr/0078 §3).
+
+    Returns the number of rows that actually changed, so a save that moved
+    nothing records nothing.
+    """
+    from app.matters.models import MatterTimelineStep
+    from app.matters.process_phases import PHASE_KEYS
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    existing = {
+        row.phase_key: row
+        for row in MatterTimelineStep.objects.select_for_update(no_key=True).filter(
+            matter=locked_matter
+        )
+    }
+    changed: list[str] = []
+    for phase_key, hidden, occurs_on, precision in steps:
+        if phase_key not in PHASE_KEYS:
+            continue
+        clean_precision = _development_precision(occurs_on, precision)
+        row = existing.get(phase_key)
+        # The default — shown, undated — is the absence of a row.
+        if not hidden and occurs_on is None:
+            if row is not None:
+                row.delete()
+                changed.append(phase_key)
+            continue
+        if (
+            row is not None
+            and row.hidden == hidden
+            and row.occurs_on == occurs_on
+            and row.occurs_on_precision == clean_precision
+        ):
+            continue
+        MatterTimelineStep.objects.update_or_create(
+            matter=locked_matter,
+            phase_key=phase_key,
+            defaults={
+                "hidden": hidden,
+                "occurs_on": occurs_on,
+                "occurs_on_precision": clean_precision,
+                "updated_by": actor,
+            },
+        )
+        changed.append(phase_key)
+
+    if not changed:
+        # Nothing moved, so nothing is recorded. An audit row for a save that
+        # changed no value would be a history of somebody pressing a button.
+        return 0
+    record_change_event(
+        event_type=ChangeEventType.TIMELINE_STEPS_CHANGED,
+        matter=locked_matter,
+        actor=actor,
+        obj=locked_matter,
+        summary=", ".join(sorted(changed))[:200],
+        payload={"phases": sorted(changed)},
+    )
+    return len(changed)
+
+
 def record_procedural_development_document(
     *, development: MatterProceduralDevelopment, document: Any, actor: Any = None
 ) -> None:

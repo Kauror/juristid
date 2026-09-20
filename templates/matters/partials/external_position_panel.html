@@ -139,16 +139,24 @@ as late (docs/adr/0084 §5).
         outermost of three defences rather than the only one.
       {% endcomment %}
       {% if form.member_mark %}
-        <div class="chiprow">
+        {% comment %}
+          **Beside the picker, not under it.** `Liige` is a second fact about the
+          *same* answer — who this came from — and it sat in a full-width row of
+          its own between the picker and the date, so one checkbox took the
+          width of the panel and read as a third question. It is in the picker's
+          own footer now: same control, same field, same refusals, one line
+          instead of three.
+        {% endcomment %}
+        <div class="orgpick__mark">
           <label class="chip">
             {{ form.member_mark }}
             <span class="chip__name">{{ form.member_mark.label }}</span>
           </label>
+          {% if form.member_mark.errors %}
+            <p class="field__error" id="{{ form.member_mark.auto_id }}_error">
+              {{ form.member_mark.errors|first }}</p>
+          {% endif %}
         </div>
-        {% if form.member_mark.errors %}
-          <p class="field__error" id="{{ form.member_mark.auto_id }}_error">
-            {{ form.member_mark.errors|first }}</p>
-        {% endif %}
       {% endif %}
 
       {% comment %}

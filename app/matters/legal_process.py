@@ -81,6 +81,7 @@ would leave a reader working out whether those are the same thing.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from app.audit.enums import ChangeEventType
@@ -88,6 +89,7 @@ from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.matters.models import Matter
 from app.matters.process_phases import ProcessPattern, pattern_for
+from app.workflow.dates import format_at_precision
 from app.workflow.enums import Disposition
 
 # ---------------------------------------------------------------------------
@@ -540,11 +542,207 @@ def legal_process_rail(
     )
 
 
+# ---------------------------------------------------------------------------
+# One rail
+# ---------------------------------------------------------------------------
+#
+# `Menetluse kulg` drew two things: the phase rail, and a second strip of the
+# dated points the file holds. Two rails one above the other, both called a
+# timeline, answering «where could this go» and «what dates are written down» —
+# and a reader had to work out that those were different questions before either
+# answer was any use.
+#
+# They are one rail now. A phase and a dated milestone are both *a named thing
+# on this file's course*, they draw identically, and the difference between them
+# is what a reader does with them rather than how they are shown.
+
+#: A phase: a step of the procedure this file may pass through.
+KIND_PHASE = "phase"
+#: A dated point the file actually holds — `Arvamuse tähtaeg`, `Koja arvamus`,
+#: `Jõustumine`, `Lõpetatud`. Read off its own canonical record by
+#: `app/matters/process_timeline.py`, which stays the one place those are read.
+KIND_MILESTONE = "milestone"
+
+
+@dataclass(frozen=True)
+class RailStep:
+    """One item on the single rail: a name, maybe a date, and how to draw it.
+
+    ``kind`` is what the editor acts on and nothing else. A phase can be hidden
+    and given an expected date; a milestone cannot, because each one *is* a
+    canonical record with its own editor, and a second place to change
+    `Matter.response_deadline` is how two screens start disagreeing.
+    """
+
+    key: str
+    label: str
+    kind: str
+    state: str
+    display_date: str = ""
+    sort_on: date | None = None
+    conditional: bool = False
+    stage_label: str = ""
+    #: Secondary information, read as the item's `title`: a closure's
+    #: `Disposition`, a commencement's «mis jõustub». It is what tells two
+    #: `Jõustumine` columns apart, and it is not a second visible line because
+    #: «Vastus esitatud ja järeltegevus tehtud» under a 150px column wraps to
+    #: three and pushes its neighbours' dates out of alignment.
+    detail: str = ""
+    #: How much of the connector running from this item to the next is behind
+    #: us. A milestone measures it against today; a phase has no measurement
+    #: because it is not a date, and takes what its state implies.
+    reach: float = 1.0
+
+    @property
+    def is_phase(self) -> bool:
+        return self.kind == KIND_PHASE
+
+    @property
+    def reach_percent(self) -> str:
+        """``reach`` as a CSS length — ``0%``, ``37.2%``, ``100%``.
+
+        Formatted here rather than interpolated as a number, for the reason
+        `ProcessStep.reach_percent` gives: the application runs in Estonian and
+        Django would localise ``0.372`` to ``0,372``, which is not a CSS parse
+        error anywhere a person would see — the gradient simply stops being
+        drawn.
+        """
+        return f"{round(self.reach * 100, 1):g}%"
+
+
+def _step_rows(*, matter: Matter, user: Any) -> dict[str, Any]:
+    """This Matter's own timeline steps, by phase key. Scoped like everything."""
+    from app.matters.models import MatterTimelineStep
+
+    return {
+        row.phase_key: row
+        for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(user)
+    }
+
+
+def recorded_phase_dates(
+    *, matter: Matter, user: Any, phase_keys: frozenset[str]
+) -> dict[str, Any]:
+    """The earliest recorded business date in each phase, from what the file has.
+
+    **Reused, never duplicated.** A phase that actually happened is dated by the
+    `Menetluse areng` the lawyer filed in it — the same record the chronology
+    groups on — so the rail asks that record rather than storing the day a second
+    time. Only a phase with no such record can carry an expectation of its own.
+
+    Undated developments contribute nothing: «kuupäev teadmata» is an answer, and
+    it is not a day to print beside a phase.
+    """
+    from app.matters.models import MatterProceduralDevelopment
+
+    found: dict[str, Any] = {}
+    rows = (
+        MatterProceduralDevelopment.objects.filter(
+            matter=matter, process_phase__in=phase_keys, occurred_on__isnull=False
+        )
+        .visible_to(user)
+        .values_list("process_phase", "occurred_on", "occurred_on_precision")
+        .order_by("occurred_on")
+    )
+    for phase_key, occurred_on, precision in rows:
+        found.setdefault(phase_key, (occurred_on, precision))
+    return found
+
+
+def matter_rail(
+    *,
+    matter: Matter,
+    user: Any,
+    rail: LegalProcessRail | None,
+    milestones: Any = (),
+) -> list[RailStep]:
+    """The one rail `Menetluse kulg` draws, phases and dated points together.
+
+    ``milestones`` is `process_timeline.process_steps` — already built, already
+    scoped — handed in rather than read again, so the seven dated points stay
+    defined in exactly one module.
+
+    **Ordering is the pattern's, with each milestone slotted by its date.** A
+    phase list has an order that is not chronological (a phase with no date sits
+    where the procedure puts it), and a milestone has a date and no place in a
+    pattern. So the phases hold the frame, and each milestone is inserted after
+    the last *dated* phase it is not earlier than. Deterministic, and it reads
+    the way a lawyer reads the file.
+
+    **Hidden steps are gone from the result, not marked.** A row a person removed
+    from this file's rail is not a row drawn in grey — that would be the clutter
+    they were removing.
+    """
+    rows = _step_rows(matter=matter, user=user)
+    steps: list[RailStep] = []
+
+    if rail is not None:
+        keys = frozenset(node.key for node in rail.nodes)
+        recorded = recorded_phase_dates(matter=matter, user=user, phase_keys=keys)
+        for node in rail.nodes:
+            row = rows.get(node.key)
+            if row is not None and row.hidden:
+                continue
+            # **What the phase happened on, before what somebody expects.** A
+            # recorded step is a fact and an expectation is a plan; where the
+            # file has both, the fact wins and the plan is simply no longer
+            # interesting.
+            when, display = None, ""
+            if node.key in recorded:
+                when, precision = recorded[node.key]
+                display = format_at_precision(when, precision)
+            elif row is not None and row.occurs_on is not None:
+                when, display = row.occurs_on, row.display_date
+            steps.append(
+                RailStep(
+                    key=node.key,
+                    label=node.label,
+                    kind=KIND_PHASE,
+                    state=node.state,
+                    display_date=display,
+                    sort_on=when,
+                    conditional=node.conditional,
+                    stage_label=node.stage_label,
+                    # A phase the file has reached joins the solid rail; one it
+                    # has not does not. `Teadmata` — an earlier phase with no
+                    # evidence — draws no solid connector either, because a
+                    # connector behind it would be the completed milestone the
+                    # late-entry rule refuses (docs/adr/0092 §13).
+                    reach=1.0 if node.state in (STATE_CURRENT, STATE_RECORDED) else 0.0,
+                )
+            )
+
+    # The dated points, slotted into the frame the phases hold.
+    for milestone in milestones:
+        step = RailStep(
+            key=f"milestone:{milestone.label}:{milestone.sort_on.isoformat()}",
+            label=milestone.label,
+            kind=KIND_MILESTONE,
+            state=milestone.state,
+            display_date=milestone.display,
+            sort_on=milestone.sort_on,
+            # The strip already measured this one against today.
+            reach=milestone.reach,
+            detail=milestone.detail,
+        )
+        position = len(steps)
+        for index in range(len(steps) - 1, -1, -1):
+            placed = steps[index]
+            if placed.sort_on is not None and placed.sort_on <= milestone.sort_on:
+                position = index + 1
+                break
+            position = index
+        steps.insert(position, step)
+    return steps
+
+
 #: Kept out of the query above on purpose: this module reads and never filters a
 #: population, so it has no `Q` of its own to export.
 __all__ = [
     "AHEAD_HORIZON",
     "CONDITIONAL_LABEL",
+    "KIND_MILESTONE",
+    "KIND_PHASE",
     "KODA_STOPPED_LABEL",
     "STATE_CURRENT",
     "STATE_LABELS",
@@ -554,8 +752,11 @@ __all__ = [
     "LegalProcessRail",
     "PhaseContext",
     "ProcessNode",
+    "RailStep",
     "legal_process_rail",
+    "matter_rail",
     "phase_context",
+    "recorded_phase_dates",
     "recorded_phase_keys",
     "recorded_stage_keys",
 ]

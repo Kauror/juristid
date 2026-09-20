@@ -14,7 +14,21 @@
       and giving it one would quietly restore the final-evidence precondition
       the previous round removed.
     {% endcomment %}
-    <input class="addpick" type="radio" name="teema-toiming" id="teema-lopeta-valik"
+    {% comment %}
+      `name="lisa-valik"` — the launcher's own group, so this chip is a peer of
+      the four families and picking it closes whichever panel was open. It had a
+      group of its own while it lived in `TEEMA TOIMINGUD`, which was right for a
+      separate section and wrong here: two groups in one row means two panels can
+      stand open at once, and the row's whole contract is that it is a choice
+      (docs/adr/0075 §2).
+
+      The **id** stays `teema-lopeta-valik` rather than becoming `lisa-…`. The
+      four capture families are addressed by that prefix, and closing a file is
+      not a fifth kind of thing to add to it — it is the one control in the row
+      that ends rather than records, which is what `--last` says visually and
+      what this says in the markup.
+    {% endcomment %}
+    <input class="addpick" type="radio" name="lisa-valik" id="teema-lopeta-valik"
            data-addpick aria-controls="teema-lopeta"
            {% if open_panel == "teema-lopeta" %}checked{% endif %}>
     <label class="disclosure-chip disclosure-chip--last" for="teema-lopeta-valik">+ Lõpeta teema</label>

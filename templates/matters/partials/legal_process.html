@@ -1,184 +1,110 @@
 {% comment %}
-`Menetluse kulg` — where the external legal procedure stands, what may come
-next, and the dated points this file actually holds.
+`Menetluse kulg` — one rail: where this file's procedure could go, and the dates
+it actually holds.
 
-**Two sections, two questions, and they are not the same question.**
-`Teema käik` below answers *what happened on this file*; this answers *where the
-procedure is*. Collapsing them was the defect the second lawyer round reported:
-a strip mixing «Alustatud», «Koja arvamus» and «Arvamuse tähtaeg» reads as a
-history of dated points and was labelled as the file's course, so neither
-question had an answer a reader could trust (docs/adr/0092 §2).
+**One rail, where there were two.** A phase rail and a strip of dated points sat
+one above the other, both called a timeline, answering «where could this go» and
+«what dates are written down» — and a reader had to work out that those were
+different questions before either answer was any use. They are one row now, in
+the order the procedure has, with each date where it falls among the phases
+(app/matters/legal_process.py `matter_rail`).
 
-**And therefore a sibling of `Teema käik`, not a child of it.** This section
-renders *outside* the `#ajajoon` disclosure and carries its own `h2`. Nesting it
-inside made the structure contradict the sentence above: a reader who collapsed
-the history — which is exactly what somebody does when they want to see where
-the procedure stands without scrolling six months of it — lost the answer to the
-other question, and a screen reader was told that «where is this» is part of
-«what happened» (docs/adr/0092 §2, amended).
+**It is the strip's own markup, and that is deliberate.** `.tl-strip` already
+knows how to lay a row of dated points out, scroll itself instead of the page at
+375px, draw what is behind us solid and what is ahead muted, and put today
+*between* two columns with `--tl-reach`. That grammar was reviewed
+(docs/adr/0074 §12.2) and the phases join it rather than replacing it: a phase
+and a dated point are both a named thing on this file's course, and drawing them
+as two kinds of object is what made a reader sort them before reading them.
 
-**Four states, in words.** `Praegu`, `Kirjas`, `Teadmata`, `Võimalik`. Each node
-prints its own state as text; the stylesheet decorates what the text already
-says. A rail whose four states were four hues would say nothing with the
-stylesheet off, nothing to a screen reader and nothing on a printout — and «this
-may have happened and nobody wrote it down» is exactly the state that cannot
-survive being a shade of grey.
+**And almost no words.** `Praegu`, `Kirjas`, `Teadmata`, `Võimalik`,
+`Ees võib olla`, `Kogu võimalik teekond` and `Kirjas olevad kuupäevad` were seven
+labels explaining a picture a lawyer reads in a second. What is left is the
+picture. The one state still written is the canonical `Hetkeseis` on the current
+phase — see below — because that is the one thing the drawing cannot say.
 
-**`Teadmata` is never `Tehtud`.** A Matter first filed when the bill was already
-in the Riigikogu proves the Riigikogu and proves nothing to its left. Marking
-those nodes complete because a later one is current would manufacture three
-milestones out of one, which is the late-entry rule
-(app/matters/legal_process.py, docs/adr/0092 §13).
+**Tailored, not configured.** `Muuda` opens a short panel that takes off the
+phases this file will never see and puts a date on the ones somebody knows. The
+pattern is unchanged by it: hiding is per-Matter, reversible, and stores nothing
+at all for the ordinary file (`app/matters/models.py` `MatterTimelineStep`).
 
-**Three blocks, and the order is the one a lawyer asks in.** Where the file is,
-what may come next, and which dates are written down. The third used to render
-inside `Teema käik` under its own heading, which left three diagram-shaped things
-stacked above the working area once the road ahead arrived; it is the same strip,
-moved, under the words that say what it is (§4 of the brief).
+`Teema käik` below is still the other question — what actually happened — and is
+still this section's sibling rather than a block inside it (docs/adr/0092 §2).
 
-**The rail is drawn only when a pattern can be chosen *and* the file records
-something that places it on one.** A heading over six «Teadmata» nodes is a
-section spent announcing that the application knows nothing.
-
-**The three blocks are independent, and the section renders when any of them has
-something to say.** A file with no `Õigusakt` and no `Menetlusliik` is read
-against no procedure and draws no rail — and it still has `Alustatud`, an
-`Arvamuse tähtaeg` and a `Jõustumine`, which are facts it recorded and a reader
-plans around. Guarding the dates on the rail would have withdrawn them from every
-unclassified Matter in the register the moment the strip moved here, which is a
-loss of recorded information dressed up as a layout change.
+Rendered when there is anything to draw. A file read against no procedure that
+still has an `Alustatud` and an `Arvamuse tähtaeg` draws those: they are dates it
+recorded, not claims about a procedure.
 {% endcomment %}
-{% if legal_process or process_steps %}
+{% if rail_steps %}
   <section class="lprail" aria-labelledby="menetluse-kulg-heading">
-    <h2 class="lprail__head" id="menetluse-kulg-heading">
-      Menetluse kulg
+    <div class="lprail__bar">
+      <h2 class="lprail__head" id="menetluse-kulg-heading">Menetluse kulg</h2>
       {% comment %}
-        Which procedure this file is being read against. A reader has to be able
-        to see that a domestic file is read against the domestic pattern —
-        otherwise «Riigikogus» on a European file would look like a claim rather
-        than a mismatch (docs/adr/0092 §14). Absent when no pattern was chosen,
-        because there is nothing to name.
+        `Muuda`, at the far end of the heading and quiet.
+
+        Only for a writer, and only where there is a procedure to tailor: a file
+        read against no pattern has no phases to hide and nothing to date, so the
+        control would open on an empty panel.
       {% endcomment %}
-      {% if legal_process %}
-        <span class="lprail__template">{{ legal_process.label }}</span>
+      {% if can_write and legal_process %}
+        <button type="button" class="button button--quiet button--tiny lprail__edit"
+                hx-get="{% url 'matters:timeline_steps' pk=matter.pk %}"
+                hx-target="#menetluse-kulg-muuda"
+                hx-swap="innerHTML">Muuda</button>
       {% endif %}
-    </h2>
+    </div>
 
-    {% if legal_process.current_label %}
-      {% comment %}
-        `Praegu`, said once in words before the rail draws it. The rail is a
-        picture and this is the sentence; a reader who scans rather than reads a
-        diagram still gets the answer they came for.
-      {% endcomment %}
-      <p class="lprail__now">
-        <span class="lprail__nowlabel">Praegu</span>
-        <span class="lprail__nowvalue">{{ legal_process.current_label }}</span>
-      </p>
-    {% endif %}
+    {% comment %}
+      Where the panel lands. Empty until `Muuda` is pressed, and gone again after
+      the save, which re-renders the whole Teema view.
+    {% endcomment %}
+    <div id="menetluse-kulg-muuda"></div>
 
-    {% if legal_process %}
-    <ol class="lprail__nodes">
-      {% for node in legal_process.nodes %}
-        <li class="lprail__node lprail__node--{{ node.state }}"
-            {% if node.state == "current" %}aria-current="step"{% endif %}>
-          <span class="lprail__dot" aria-hidden="true"></span>
-          <span class="lprail__what">{{ node.label }}</span>
-          <span class="lprail__state">{{ node.state_label }}</span>
+    <div class="tl-strip" aria-label="Menetluse kulg">
+      {% for step in rail_steps %}
+        {% comment %}
+          `--tl-reach` is how far into *this* column's segment today has come, as
+          a CSS length the server formatted. A phase carries no measurement — it
+          is not a date — so it takes the value its own state implies: a phase
+          behind us or current joins the solid rail, one still ahead does not.
+
+          It is a string and not a number on purpose: the application runs in
+          Estonian and Django would render a raw float as `0,372`, which drops
+          the gradient silently (app/matters/process_timeline.py).
+        {% endcomment %}
+        <span class="tl-step tl-step--{{ step.state }} tl-step--{{ step.kind }}"
+              style="--tl-reach: {{ step.reach_percent }}"
+              {% if step.state == "today" %}aria-current="date"{% endif %}
+              {% if step.state == "current" %}aria-current="step"{% endif %}
+              {% if step.detail %} title="{{ step.detail }}"{% endif %}>
+          <span class="tl-step__dot" aria-hidden="true"></span>
+          <span class="tl-step__what">{{ step.label }}</span>
           {% comment %}
-            The explicit `Hetkeseis`, on the current node and nowhere else.
+            Never colour alone. A column still ahead says so to a screen reader
+            and on a printout, which is what the muting cannot do
+            (docs/adr/0074 §12.2, amended).
+          {% endcomment %}
+          {% if step.state == "future" or step.state == "possible" %}
+            <span class="visually-hidden">Tulevikus</span>
+          {% endif %}
+          {% if step.display_date %}
+            <span class="tl-step__date">{{ step.display_date }}</span>
+          {% endif %}
+          {% comment %}
+            The canonical `Hetkeseis`, on the current phase and nowhere else.
 
-            A node is deliberately broader than a stage: `Jõustumine` holds both
-            «ootel» and «jõustunud». Two files on opposite sides of that node both
-            read `Praegu`, so the state alone said nothing — this is the canonical
-            stage's own words saying which side the file is on, without an extra
-            node and without a new vocabulary value
+            The one state still written, because it is the one thing the drawing
+            cannot say: a solid dot could be the phase the file is on or a phase
+            it has passed, and the node is deliberately broader than a stage —
+            `Jõustumine` alone cannot tell «ootel» from «jõustunud»
             (app/matters/legal_process.py `ProcessNode`).
           {% endcomment %}
-          {% if node.stage_label %}
-            <span class="lprail__stage">{{ node.stage_label }}</span>
+          {% if step.state == "current" %}
+            <span class="tl-step__stage">{{ step.stage_label|default:step.label }}</span>
           {% endif %}
-        </li>
+        </span>
       {% endfor %}
-    </ol>
-    {% endif %}
-
-    {% if legal_process.ahead %}
-      {% comment %}
-        `Ees võib olla` — the road ahead, and every word of it conditional.
-
-        **A reminder of the route, never a plan.** Nothing here creates a
-        `Järgmiseks`, sets a deadline, assigns anybody or makes a file read as
-        late. What *this office* does next is `PRAEGUNE TEGEVUS`, which is a
-        different question about a different actor and stays where it is (§5).
-
-        «Võib olla» is in the heading, and each step that the pattern says may not
-        apply at all carries «kui menetlus jätkub» of its own — a VTK does not
-        have to become a law and a `Määrus` may never reach the Government. No
-        percentages, no «3 of 7», no checkmarks and no dates: a step nobody has
-        recorded has no date, and inventing one is the whole thing this section
-        must not do.
-      {% endcomment %}
-      <div class="lpahead">
-        <h3 class="lpahead__head" id="ees-voib-olla-heading">Ees võib olla</h3>
-        <ol class="lpahead__steps" aria-labelledby="ees-voib-olla-heading">
-          {% for node in legal_process.ahead %}
-            <li class="lpahead__step">
-              <span class="lpahead__what">{{ node.label }}</span>
-              {% if node.conditional %}
-                <span class="lpahead__if">{{ legal_process_conditional_label }}</span>
-              {% endif %}
-            </li>
-          {% endfor %}
-        </ol>
-        {% if legal_process.ahead_rest %}
-          {% comment %}
-            The rest of the pattern, behind a disclosure. The horizon is one to
-            three steps because a list of six speculative ones reads as a
-            schedule; a lawyer who wants the whole route can still have it.
-          {% endcomment %}
-          <details class="lpahead__more">
-            <summary class="lpahead__moresummary">Kogu võimalik teekond</summary>
-            <ol class="lpahead__steps lpahead__steps--rest">
-              {% for node in legal_process.ahead_rest %}
-                <li class="lpahead__step">
-                  <span class="lpahead__what">{{ node.label }}</span>
-                  {% if node.conditional %}
-                    <span class="lpahead__if">{{ legal_process_conditional_label }}</span>
-                  {% endif %}
-                </li>
-              {% endfor %}
-            </ol>
-          </details>
-        {% endif %}
-      </div>
-    {% endif %}
-
-    {% if process_steps %}
-      {% comment %}
-        `Kirjas olevad kuupäevad` — the dated points this Matter actually holds.
-
-        **Only what is recorded.** `Alustatud`, `Tagasiside tähtaeg`,
-        `Koja arvamus`, `Arvamuse tähtaeg`, `Jõustumine`, `Lõpetatud` — each read
-        off a canonical record that exists for its own reasons, and a Matter draws
-        only the ones it really has (app/matters/process_timeline.py,
-        docs/adr/0074 §12).
-
-        **A future date belongs here and is drawn as future.** A recorded
-        commencement or an `Arvamuse tähtaeg` three weeks out is a fact the file
-        holds and a reader plans around; the strip's own `reached / today / ahead`
-        grammar is what keeps it from reading as something that already happened
-        (docs/adr/0074 §12.2, amended).
-
-        The strip itself is unchanged and moved verbatim: it rendered under its
-        own heading inside `Teema käik` until this round, which left a picture of
-        dated points sitting inside a section about what happened. Its columns,
-        sources, labels and states are the reviewed ones.
-      {% endcomment %}
-      <div class="lpdates">
-        <h3 class="lpdates__head">Kirjas olevad kuupäevad</h3>
-        {% include "matters/partials/process_strip.html" %}
-      </div>
-    {% endif %}
+    </div>
 
     {% if legal_process.unplaced_stage %}
       {% comment %}

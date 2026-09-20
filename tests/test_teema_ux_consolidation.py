@@ -322,8 +322,20 @@ RETIRED_CHIPS = [
     "+ Koja arvamus",
     "+ Menetluse areng",
     "+ Menetluse link",
-    "+ Lõpeta teema",
 ]
+
+#: `+ Lõpeta teema` is **not** retired: it is a top-level choice again.
+#:
+#: docs/adr/0097 §9 moved it into a `TEEMA TOIMINGUD` section of its own, on the
+#: reasoning that closure is not capture and a row mixing them is a row where the
+#: most consequential control looks like the most routine one. True, and the cure
+#: cost more than the complaint: a lawyer finishing a file had to scroll past
+#: everything they had just been adding, and the section held one control under a
+#: heading of its own. It is a peer chip again, in the same exclusive group, kept
+#: apart by `--last` rather than by a heading.
+#:
+#: It is deliberately not in `FAMILIES` either. The four are what a file can have
+#: *added* to it; this one ends it.
 
 
 def launcher(page: str) -> str:
@@ -385,21 +397,32 @@ def test_the_sub_choices_are_their_own_radio_groups(signed_in, specialist, stage
     assert zone.count('name="arvamuse-liik"') == 3
 
 
-def test_teema_toimingud_is_a_separate_section(signed_in, specialist, stage):
-    """Close and delete are operations on the Matter, not content added to it (§9)."""
+def test_teema_toimingud_is_gone_and_both_controls_moved(signed_in, specialist, stage):
+    """§9's section held one control under a heading of its own, and is retired.
+
+    Close and delete are still not content added to the file — that reading
+    stands. What changed is where each of them belongs: `Lõpeta teema` is the
+    end of the row it was taken out of, and `Kustuta` answers «this record is
+    wrong», which is the errand `Muuda teemat` answers, so it sits beside it in
+    the header (docs/adr/0097 §9, amended).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     page = page_of(signed_in, teema_url(matter))
 
-    assert 'id="teema-toimingud"' in page
-    assert "Teema toimingud" in page
-    ops = page[page.index('id="teema-toimingud"') :]
-    ops = ops[: ops.index("</section>")]
-    assert "Lõpeta teema" in ops
-    assert "Kustuta teema" in ops
-    # And neither is inside the launcher.
+    assert 'id="teema-toimingud"' not in page
+    assert "Teema toimingud" not in page
+
+    # `Lõpeta teema` is a peer chip in the launcher, and visibly the last of them.
     zone = launcher(page)
-    assert "Kustuta teema" not in zone
+    assert "+ Lõpeta teema" in zone
+    assert "disclosure-chip--last" in zone
+
+    # `Kustuta` is in the header, beside `Muuda teemat`, and not in the launcher.
+    head = page[: page.index('id="lisa-teemale"')]
+    assert "Muuda teemat" in head
+    assert "matterhead__delete" in head
+    assert "Kustuta" not in zone
 
 
 # ---------------------------------------------------------------------------

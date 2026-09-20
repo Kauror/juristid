@@ -47,7 +47,7 @@ from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.links import DocumentLink
-from app.matters.models import Matter
+from app.matters.models import Matter, MatterTimelineStep
 from app.matters.staging import MatterIntakeFile
 from app.related_materials.models import (
     MatterBackgroundMaterial,
@@ -55,6 +55,7 @@ from app.related_materials.models import (
     RelatedSuggestionDismissal,
 )
 from app.submissions.enums import SubmissionStatus
+from app.taxonomy.models import LegalInstrumentType
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from tests import factories
 
@@ -556,6 +557,26 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["development"].pk)
         ),
     ),
+    # `Muuda kulgu` — which phases this file's `Menetluse kulg` shows, and when.
+    #
+    # A business write like any other, and classified here for the same reason:
+    # it stores a per-Matter row, it is refused on a closed file by
+    # `lock_open_matter_for_business_write`, and a reader must not be able to
+    # reach it. That it edits a *presentation* rather than an event changes who
+    # may do it not at all.
+    WriteRoute(
+        name="matters:timeline_steps",
+        label="Menetluse kulu muutmine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            # `kooskolastus` unticked — «take this phase off this file's rail»,
+            # which is the write with the smallest payload the panel can make.
+            {},
+        ),
+        probe=lambda w: sorted(
+            MatterTimelineStep.objects.filter(matter=w["matter"]).values_list("phase_key", "hidden")
+        ),
+    ),
     # `+ Lisa tõend` — another paper supporting a step already on the file. New
     # business content on an open Matter like every other evidence capture, and
     # deliberately separate from the correction above: one changes what the row
@@ -899,6 +920,11 @@ def world(db):
     matter = factories.MatterFactory(
         owner=author, title="Tavaline avatud teema", reference_year=2099, reference_number=901
     )
+    # One reviewed `Õigusakt`, so the file is read against a procedure and
+    # `matters:timeline_steps` has phases to hide. A route whose form offers no
+    # fields writes nothing whoever posts to it, and a refusal assertion over a
+    # write that could not happen is coverage that is not there.
+    matter.legal_instruments.set([LegalInstrumentType.objects.get(key="seadus")])
     other = factories.UserFactory()
 
     # Dated, because the database refuses a DO/DEADLINE without one — the same

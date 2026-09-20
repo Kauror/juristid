@@ -274,6 +274,19 @@ urlpatterns = [
         views.update_development_view,
         name="update_development",
     ),
+    # `Muuda kulgu` — which phases this file's rail shows, and when each is
+    # expected. One route, GET to open the panel and POST to save it, like every
+    # other in-place correction on this page.
+    #
+    # Under the Teema rather than under a record, because what it edits is the
+    # Matter's own rail: there is no child row to name until somebody has said
+    # something, and the ordinary answer stores none at all
+    # (`app/matters/models.py` `MatterTimelineStep`).
+    path(
+        "teemad/<uuid:pk>/menetluse-kulg/muuda/",
+        views.timeline_steps_view,
+        name="timeline_steps",
+    ),
     # `+ Lisa tõend` on a filed `Menetluse areng`: another paper supporting a step
     # the file already records, arriving after the step was written up.
     #
