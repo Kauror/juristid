@@ -981,7 +981,18 @@ def test_a_position_is_not_work(normal_matter, specialist, ministry):
     assert my_work.overdue == 0
 
 
-def test_a_position_reaches_no_search_or_archive_projection(normal_matter, specialist, ministry):
+def test_a_position_is_projected_without_its_note_or_its_link(normal_matter, specialist, ministry):
+    """A recorded opinion is findable; what is private about it stays private.
+
+    It used to reach no projection at all, and that was the whole of QA-003's
+    second half: an opinion a lawyer recorded — and the organisation it came
+    from, where that body is known to the Matter only through this record —
+    could not be found by searching for either.
+
+    What does *not* go into the corpus is unchanged and is asserted here rather
+    than only in §9's own test: the lawyer's note is this office's assessment of
+    a third party, and the link is a citation rather than a name.
+    """
     position = _recorded(
         normal_matter,
         ministry,
@@ -990,17 +1001,15 @@ def test_a_position_reaches_no_search_or_archive_projection(normal_matter, speci
         summary="Toetab eelnõu, kuid soovib pikemat üleminekuaega.",
     )
 
-    before = rebuild_all().documents
-    after = rebuild_all()
+    rebuild_all()
 
-    assert after.documents == before
-    assert not SearchDocument.objects.filter(source_object_id=position.pk).exists()
+    row = SearchDocument.objects.get(source_object_id=position.pk)
+    assert row.title == "Toetab eelnõu, kuid soovib pikemat üleminekuaega."
+    # The organisation rides in the alias tier, which is what makes a body
+    # known to this Matter only through feedback reachable at all (QA-020).
+    assert ministry.name in row.alias_text
+    assert row.body_text == ""
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT count(*) FROM search_searchdocument WHERE body_text ILIKE %s",
-            ["%üleminekuaega%"],
-        )
-        assert cursor.fetchone()[0] == 0
         cursor.execute(
             "SELECT count(*) FROM search_searchdocument WHERE alias_text ILIKE %s",
             ["%rahandusministeerium.ee%"],
@@ -1929,9 +1938,18 @@ def test_a_text_only_position_reads_on_the_chronology_with_no_link(
     assert rows[0].external_position.pk == position.pk
 
 
-def test_a_text_only_position_creates_no_work_and_reaches_no_projection(
+def test_a_text_only_position_creates_no_work_and_is_findable_when_written(
     normal_matter, specialist, ministry
 ):
+    """Recording somebody else's position is not work, and is not silence.
+
+    «Creates no work» is the decision this test was written for and is
+    unchanged: no deadline, no work item, no `Entry`. What changed is that the
+    record now enters the corpus as it is written rather than only on a full
+    rebuild — the freshness rule every other child kind follows, and without it
+    a lawyer searching for the opinion they just recorded gets nothing
+    (QA-003).
+    """
     rebuild_all()
     before = SearchDocument.objects.count()
 
@@ -1944,7 +1962,7 @@ def test_a_text_only_position_creates_no_work_and_reaches_no_projection(
     )
     normal_matter.refresh_from_db()
 
-    assert SearchDocument.objects.count() == before
+    assert SearchDocument.objects.count() == before + 1
     assert normal_matter.response_deadline is None
     assert work_items.work_items(specialist) == []
     assert build_my_work(specialist).has_work is False

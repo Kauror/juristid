@@ -68,6 +68,8 @@ from app.matters.models import (
     Entry,
     Matter,
     MatterEngagement,
+    MatterExternalPosition,
+    MatterProceduralDevelopment,
     MatterSourceOrganisation,
     TagAssignment,
 )
@@ -76,9 +78,11 @@ from app.search.freshness import mark_rebuild_owed
 from app.search.indexing import (
     indexable_matters,
     indexing_is_suspended,
+    refresh_development,
     refresh_document_version,
     refresh_engagement,
     refresh_entry,
+    refresh_external_position,
     refresh_matters,
     refresh_source_link,
     refresh_submission,
@@ -271,6 +275,47 @@ def refresh_on_engagement_save(
     if indexing_is_suspended():
         return
     refresh_engagement(instance)
+
+
+@receiver(
+    post_save,
+    sender=MatterProceduralDevelopment,
+    dispatch_uid="search_refresh_procedural_development",
+)
+def refresh_on_development_save(
+    sender: type[MatterProceduralDevelopment],
+    instance: MatterProceduralDevelopment,
+    **kwargs: Any,
+) -> None:
+    """A recorded `Märge` has to be a findable one.
+
+    The same defect `refresh_on_engagement_save` documents, one composer
+    simplification later and larger: `+ Märge` is the product's main capture
+    action, and nothing it wrote had ever entered the corpus (QA-003).
+
+    No `post_delete` companion, for that handler's reason:
+    `SearchDocument.development` is a real foreign key with
+    `on_delete=CASCADE`, so the database already removes the projection row in
+    the statement that removes the record.
+    """
+    if indexing_is_suspended():
+        return
+    refresh_development(instance)
+
+
+@receiver(post_save, sender=MatterExternalPosition, dispatch_uid="search_refresh_external_position")
+def refresh_on_external_position_save(
+    sender: type[MatterExternalPosition], instance: MatterExternalPosition, **kwargs: Any
+) -> None:
+    """`Meile saadetud tagasiside` and `Teiste arvamus`, findable when written.
+
+    This row also carries the organisation, which is what makes a body known to
+    a Matter only through feedback reachable at all: the MATTER row carries
+    senders, and a company whose opinion somebody recorded is not one (QA-020).
+    """
+    if indexing_is_suspended():
+        return
+    refresh_external_position(instance)
 
 
 @receiver(post_save, sender=Submission, dispatch_uid="search_refresh_submission")

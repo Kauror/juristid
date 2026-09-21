@@ -30,7 +30,12 @@ from django.utils import timezone
 from app.core.richtext import plain_text
 from app.documents.enums import DerivativeStatus
 from app.documents.models import DocumentTextFragment, DocumentVersion
-from app.matters.models import Entry, MatterEngagement
+from app.matters.models import (
+    Entry,
+    MatterEngagement,
+    MatterExternalPosition,
+    MatterProceduralDevelopment,
+)
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
 
@@ -109,6 +114,126 @@ def refresh_engagements(engagements: QuerySet) -> int:
     ).delete()
     SearchDocument.objects.bulk_create(
         [SearchDocument(**_engagement_values(engagement, now)) for engagement in rows]
+    )
+    return len(rows)
+
+
+def indexable_developments() -> QuerySet:
+    """Every `Märge`, with the Matter its row will hang off.
+
+    Unfiltered by visibility, like every other builder here: the projection
+    covers everything and *reading* it is authorized at query time against the
+    development's own current override.
+    """
+    return MatterProceduralDevelopment.objects.select_related("matter")
+
+
+def _development_values(development, now: object) -> dict[str, object]:
+    """One `Märge` as a search row.
+
+    What a lawyer wrote and would search for: the sentence naming what
+    happened, and the note underneath it. Nothing else on the record is text a
+    person would type into a search box — a phase key is a vocabulary token and
+    a precision is a flag.
+
+    `note` is rich text, so it goes through `plain_text` for the reason
+    `_entry_values` does: indexing markup makes `<p>` a searchable token and
+    puts tag names in the way of the words.
+    """
+    return {
+        "matter": development.matter,
+        "source_kind": SearchSourceKind.PROCEDURAL_DEVELOPMENT,
+        "source_object_id": development.pk,
+        "development": development,
+        "title": development.title,
+        "identifiers": "",
+        "alias_text": "",
+        "body_text": plain_text(development.note or ""),
+        # No locator, for `_engagement_values`' reason: a `Märge` opens on its
+        # Teema and has no place inside anything.
+        "source_locator": "",
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_developments(developments: QuerySet) -> int:
+    rows = list(developments)
+    if not rows:
+        return 0
+    now = timezone.now()
+    identifiers = [development.pk for development in rows]
+    SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.PROCEDURAL_DEVELOPMENT,
+        source_object_id__in=identifiers,
+    ).delete()
+    SearchDocument.objects.bulk_create(
+        [SearchDocument(**_development_values(development, now)) for development in rows]
+    )
+    return len(rows)
+
+
+def indexable_positions() -> QuerySet:
+    """Every `Meile saadetud tagasiside` and `Teiste arvamus`."""
+    return MatterExternalPosition.objects.select_related("matter", "organisation")
+
+
+def _position_values(position, now: object) -> dict[str, object]:
+    """One recorded opinion as a search row.
+
+    The organisation goes in `alias_text` rather than the title tier, and that
+    is what answers the second half of the report: an Organisation known to a
+    Matter *only* through feedback was unfindable, because the Matter row
+    carries senders and this body is not one. It is an alternate name for the
+    thing rather than its name, so it must not rank a Matter as highly as a
+    title match — the reasoning `_engagement_values` gives for link hosts.
+
+    `source_label` rides beside it for the same reason: free-entry source
+    naming is how an opinion from a body nobody has filed against yet is
+    recorded, and it is exactly what somebody would search for.
+
+    **`lawyer_note` is deliberately not indexed, and `url` is not either.**
+    The note is this office's own assessment of a third party, and §9 of the
+    lawyer-workflow package decided that disclosing it is a decision somebody
+    makes rather than a convenience search performs — putting it in the corpus
+    would make it findable by everyone who can read the Matter. The URL is left
+    out for `_engagement_values`' reason in reverse: what would be worth
+    indexing there is the host, and a position's link is a citation rather than
+    a name anybody searches by.
+
+    Visibility is the row's own: this kind maps to
+    `external_position__visibility_override`, so a restricted opinion
+    disappears from search on the next query with no reindex.
+    """
+    organisation = getattr(position.organisation, "name", "") or ""
+    return {
+        "matter": position.matter,
+        "source_kind": SearchSourceKind.EXTERNAL_POSITION,
+        "source_object_id": position.pk,
+        "external_position": position,
+        "title": position.summary or organisation,
+        "identifiers": "",
+        "alias_text": " ".join(
+            term for term in dict.fromkeys([organisation, position.source_label]) if term
+        ),
+        "body_text": "",
+        "source_locator": "",
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_positions(positions: QuerySet) -> int:
+    rows = list(positions)
+    if not rows:
+        return 0
+    now = timezone.now()
+    identifiers = [position.pk for position in rows]
+    SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.EXTERNAL_POSITION, source_object_id__in=identifiers
+    ).delete()
+    SearchDocument.objects.bulk_create(
+        [SearchDocument(**_position_values(position, now)) for position in rows]
     )
     return len(rows)
 

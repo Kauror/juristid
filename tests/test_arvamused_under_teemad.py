@@ -1074,16 +1074,19 @@ def test_the_search_index_version_is_untouched() -> None:
     that moved `INDEX_VERSION` would silently require a search rebuild on
     deployment, which is exactly the cost this change should not have.
 
-    **The literal moved in docs/adr/0095 §2 and this test's claim did not.** The
-    pin is a tripwire: it fires on *any* bump, so that a rebuild is always
-    somebody's decision rather than a side effect. Opinion summaries moved out of
-    an indexed identity tier into a column the projection did not read, which is
-    a genuine contract change and the one this number now records — nothing to do
-    with the surface this file is about.
+    **The literal has moved twice and this test's claim has not.** The pin is a
+    tripwire: it fires on *any* bump, so that a rebuild is always somebody's
+    decision rather than a side effect. It fired for docs/adr/0095 §2, when
+    opinion summaries moved out of an indexed identity tier, and again for
+    QA-003, when `Märge` and `Arvamus / tagasiside` entered the projection at
+    all — the capture model had moved on and the indexer had not, so a lawyer's
+    own notes were not in the corpus. Both are genuine contract changes and
+    both require a rebuild after deployment; neither has anything to do with
+    the surface this file is about.
     """
     from app.search.models import INDEX_VERSION
 
-    assert INDEX_VERSION == "OPSUM.1"
+    assert INDEX_VERSION == "TEEMA.1"
 
 
 def test_no_migration_is_outstanding() -> None:

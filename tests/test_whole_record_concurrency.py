@@ -351,9 +351,7 @@ def test_an_absent_steps_revision_is_not_a_conflict(normal_matter, specialist):
     assert MatterTimelineStep.objects.filter(matter=normal_matter).count() == 2
 
 
-def test_a_refused_steps_panel_is_retargeted_to_its_own_slot(
-    signed_in, normal_matter, specialist
-):
+def test_a_refused_steps_panel_is_retargeted_to_its_own_slot(signed_in, normal_matter, specialist):
     """A refusal must not replace the page with a bare form.
 
     The form targets `#teema-vaade`, because a *saved* panel changes the rail

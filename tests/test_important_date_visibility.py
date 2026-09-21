@@ -95,9 +95,7 @@ def test_a_deadline_beyond_every_horizon_is_still_on_its_own_matter(normal_matte
     )
 
 
-def test_a_passed_deadline_still_reads_as_history_and_draws_no_column(
-    normal_matter, specialist
-):
+def test_a_passed_deadline_still_reads_as_history_and_draws_no_column(normal_matter, specialist):
     """docs/adr/0074 §12.1 left standing where it was right.
 
     A deadline that has arrived is a chronology row already; drawing a roadmap

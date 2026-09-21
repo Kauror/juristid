@@ -56,7 +56,13 @@ from django.db.models import Count, F, Q
 from app.documents.enums import DerivativeStatus
 from app.documents.models import DocumentTextFragment
 from app.legacy_import.source_pages import MatterSourcePage
-from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.models import (
+    Entry,
+    Matter,
+    MatterEngagement,
+    MatterExternalPosition,
+    MatterProceduralDevelopment,
+)
 from app.search.freshness import FreshnessStatus
 from app.search.freshness import status as freshness_status
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
@@ -110,6 +116,20 @@ def _expected_populations() -> list[tuple[str, str, int]]:
         # A kind that is projected and not counted here is a kind nothing
         # watches.
         ("Kaasamised", SearchSourceKind.ENGAGEMENT.value, MatterEngagement.objects.count()),
+        # And the two the composer simplification left outside the corpus for
+        # longer than AUTH-003 left `Kaasamine` there: `+ Märge` is the
+        # product's main capture action and nothing it wrote was ever indexed,
+        # and a recorded opinion was not either (QA-003).
+        (
+            "Märked",
+            SearchSourceKind.PROCEDURAL_DEVELOPMENT.value,
+            MatterProceduralDevelopment.objects.count(),
+        ),
+        (
+            "Arvamused ja tagasiside",
+            SearchSourceKind.EXTERNAL_POSITION.value,
+            MatterExternalPosition.objects.count(),
+        ),
     ]
 
 

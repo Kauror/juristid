@@ -52,7 +52,12 @@ from app.core.models import BaseModel
 #: The same fail-closed behaviour applies: pre-bump rows are ineligible from the
 #: moment the code is deployed, search returns too little until the one-time
 #: rebuild runs, and nothing confidential is returned in the meantime.
-INDEX_VERSION = "OPSUM.1"
+#: Bumped from `OPSUM.1` when `Märge` and `Arvamus / tagasiside` entered the
+#: projection. Rows built before this hold neither, so a deployment that has
+#: not rebuilt is a deployment whose search still answers against the older
+#: capture model — which is exactly the state QA-003 found, and exactly what a
+#: fail-closed version is for (`check_search_integrity`).
+INDEX_VERSION = "TEEMA.1"
 
 
 class SearchSourceKind(models.TextChoices):
@@ -87,6 +92,24 @@ class SearchSourceKind(models.TextChoices):
     # follows: text whose visibility may be narrower than its Matter's gets a
     # row whose visibility can express that.
     ENGAGEMENT = "ENGAGEMENT", "Kaasamine"
+    # `Märge`, and the reason it is here is the reason `ENGAGEMENT` is.
+    #
+    # The composer simplification made `+ Märge` write a
+    # `MatterProceduralDevelopment`; the indexer had been built around `Entry`,
+    # which the ordinary UI no longer creates. So every note a lawyer wrote
+    # after that change was unfindable, while the seeded legacy `Entry` rows
+    # went on matching — search was answering against a capture model the
+    # product had left behind (QA-003).
+    #
+    # Its own row rather than text folded into the Matter's, for AUTH-003's
+    # rule: a development carries its own `visibility_override` and may be
+    # stricter than its Matter, and a MATTER row is authorized by the Matter
+    # alone.
+    PROCEDURAL_DEVELOPMENT = "PROCEDURAL_DEVELOPMENT", "Märge"
+    # `Meile saadetud tagasiside` and `Teiste arvamus` — one model, two
+    # provenances, and neither was indexed. Same rule, same reason: a
+    # `MatterExternalPosition` carries its own override.
+    EXTERNAL_POSITION = "EXTERNAL_POSITION", "Arvamus või tagasiside"
 
 
 #: Which live column carries each kind's own restriction, for the authorization
@@ -103,6 +126,8 @@ SOURCE_OVERRIDE_FIELDS: dict[str, str | None] = {
     SearchSourceKind.SUBMISSION.value: "submission__visibility_override",
     SearchSourceKind.DOCUMENT_FRAGMENT.value: "document__visibility_override",
     SearchSourceKind.ENGAGEMENT.value: "engagement__visibility_override",
+    SearchSourceKind.PROCEDURAL_DEVELOPMENT.value: "development__visibility_override",
+    SearchSourceKind.EXTERNAL_POSITION.value: "external_position__visibility_override",
     # A source page has no restriction of its own. It is historical material
     # attached to a Matter, and the Matter's visibility is the whole answer —
     # so this maps to None, exactly like MATTER above.
@@ -189,6 +214,22 @@ class SearchDocument(BaseModel):
         blank=True,
         related_name="search_documents",
         verbose_name="kaasamine",
+    )
+    development = models.ForeignKey(
+        "matters.MatterProceduralDevelopment",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="märge",
+    )
+    external_position = models.ForeignKey(
+        "matters.MatterExternalPosition",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="arvamus või tagasiside",
     )
     matter_source_page = models.ForeignKey(
         "legacy_import.MatterSourcePage",

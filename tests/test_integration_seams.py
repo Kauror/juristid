@@ -518,4 +518,10 @@ def test_the_current_register_is_not_a_kind_of_search_row() -> None:
         # visibility, not a derived table — so this addition is a new *source*
         # rather than the failure this test guards against.
         "ENGAGEMENT",
+        # QA-003, and the same reasoning twice over. A `Märge` and a recorded
+        # opinion are canonical records with their own visibility, written by
+        # the ordinary capture surfaces. They are new sources; neither is a
+        # projection fed by another projection.
+        "PROCEDURAL_DEVELOPMENT",
+        "EXTERNAL_POSITION",
     }

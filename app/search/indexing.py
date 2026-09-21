@@ -32,7 +32,13 @@ from django.utils import timezone
 from app.core.text import normalize_for_matching
 from app.documents.models import DocumentVersion
 from app.legacy_import.source_pages import MatterSourcePage
-from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.models import (
+    Entry,
+    Matter,
+    MatterEngagement,
+    MatterExternalPosition,
+    MatterProceduralDevelopment,
+)
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
 
@@ -135,6 +141,8 @@ class RebuildResult:
     fragments: int = 0
     source_pages: int = 0
     engagements: int = 0
+    developments: int = 0
+    positions: int = 0
 
 
 def indexable_matters() -> QuerySet[Matter]:
@@ -432,6 +440,51 @@ def refresh_engagement(engagement: MatterEngagement) -> int:
 
 
 @transaction.atomic
+def refresh_development(development: MatterProceduralDevelopment) -> int:
+    """Reproject one `Märge`.
+
+    The same shape as `refresh_engagement`, and here for the same defect one
+    step further on. `+ Märge` writes a `MatterProceduralDevelopment`, the
+    indexer was built around `Entry`, and nothing bridged the two — so every
+    note written after the composer simplification was absent from the corpus
+    while the seeded legacy entries went on matching. A lawyer searching for
+    what they wrote got silence, which reads as «not recorded» rather than as
+    «not indexed» (QA-003).
+
+    Bounded fanout — one development is one row — so it is refreshed
+    synchronously inside the caller's transaction, and a recorded `Märge` is a
+    findable one. The vector recomputation is not bookkeeping: a row inserted
+    without it exists, counts as indexed, and can never match.
+    """
+    from app.search.child_indexing import indexable_developments, refresh_developments
+
+    _hold_off_a_rebuild()
+    count = refresh_developments(indexable_developments().filter(pk=development.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.PROCEDURAL_DEVELOPMENT,
+            source_object_id=development.pk,
+        )
+    )
+    return count
+
+
+@transaction.atomic
+def refresh_external_position(position: MatterExternalPosition) -> int:
+    """Reproject one recorded opinion or piece of received feedback."""
+    from app.search.child_indexing import indexable_positions, refresh_positions
+
+    _hold_off_a_rebuild()
+    count = refresh_positions(indexable_positions().filter(pk=position.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.EXTERNAL_POSITION, source_object_id=position.pk
+        )
+    )
+    return count
+
+
+@transaction.atomic
 def refresh_source_link(link: MatterSourcePage) -> int:
     """Reproject one Matter↔page relationship."""
     from app.search.child_indexing import indexable_source_links, refresh_source_links
@@ -526,9 +579,15 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
             chunk = identifiers[offset : offset + batch_size]
             total += refresh_matters(indexable_matters().filter(pk__in=chunk))
 
-        entries, submissions, fragments, source_pages, engagements = _rebuild_children(
-            batch_size=batch_size
-        )
+        (
+            entries,
+            submissions,
+            fragments,
+            source_pages,
+            engagements,
+            developments,
+            positions,
+        ) = _rebuild_children(batch_size=batch_size)
         documents = SearchDocument.objects.count()
 
     return RebuildResult(
@@ -539,12 +598,14 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
         fragments=fragments,
         source_pages=source_pages,
         engagements=engagements,
+        developments=developments,
+        positions=positions,
         seconds=(timezone.now() - started).total_seconds(),
         index_version=INDEX_VERSION,
     )
 
 
-def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int]:
+def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int, int, int]:
     """Entries, submissions and document fragments, inside the caller's
     transaction.
 
@@ -555,14 +616,18 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int]:
     nothing about it looks wrong (docs/adr/0013).
     """
     from app.search.child_indexing import (
+        indexable_developments,
         indexable_engagements,
         indexable_entries,
         indexable_fragments,
+        indexable_positions,
         indexable_source_links,
         indexable_submissions,
+        refresh_developments,
         refresh_engagements,
         refresh_entries,
         refresh_fragments,
+        refresh_positions,
         refresh_source_links,
         refresh_submissions,
     )
@@ -572,12 +637,14 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int]:
     fragments = _in_batches(indexable_fragments(), refresh_fragments, batch_size)
     source_pages = _in_batches(indexable_source_links(), refresh_source_links, batch_size)
     engagements = _in_batches(indexable_engagements(), refresh_engagements, batch_size)
+    developments = _in_batches(indexable_developments(), refresh_developments, batch_size)
+    positions = _in_batches(indexable_positions(), refresh_positions, batch_size)
 
     # One statement for every child row, rather than one per batch. The vectors
     # are computed in the database either way; doing it once means PostgreSQL
     # plans it once.
     _recompute_vectors(SearchDocument.objects.exclude(source_kind=SearchSourceKind.MATTER))
-    return entries, submissions, fragments, source_pages, engagements
+    return entries, submissions, fragments, source_pages, engagements, developments, positions
 
 
 def _in_batches(queryset: QuerySet, refresh: object, batch_size: int) -> int:
