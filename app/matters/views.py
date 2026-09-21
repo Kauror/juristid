@@ -4620,7 +4620,11 @@ DELETION_SUMMARY_ROWS: tuple[tuple[str, str], ...] = (
     ("järgmist tegevust", "workflow.NextAction"),
     ("kaasamist", "matters.MatterEngagement"),
     ("välist seisukohta", "matters.MatterExternalPosition"),
-    ("menetluse arengut", "matters.MatterProceduralDevelopment"),
+    # `märget`, not «menetluse arengut». The launcher calls this record a
+    # `Märge` and has never called it anything else to a lawyer; the
+    # confirmation screen for a destructive act is the last place to introduce
+    # a second name for the thing being destroyed (QA-012).
+    ("märget", "matters.MatterProceduralDevelopment"),
     ("ülevaadet või uudist", "matters.MatterWebsiteOverview"),
     ("arvamust", "submissions.Submission"),
     ("dokumenti", "documents.Document"),
@@ -6771,6 +6775,15 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
             # the form otherwise, and passing a value the record's provenance
             # forbids is what `_external_position_authorship` refuses.
             source_label=form.cleaned_data.get("source_label") or "",
+            # `Liige`, on the same terms. `None` where the form does not render
+            # the box, so a correction through that shape cannot clear a mark;
+            # `bool(...)` where it does, because an unticked box is a decision
+            # and not an absence (QA-014).
+            source_is_member=(
+                bool(form.cleaned_data.get("source_is_member"))
+                if "source_is_member" in form.fields
+                else None
+            ),
             # **Not asked and not moved.** `None` is the sentinel for «this form
             # did not render the control», which is what keeps a `LEGACY` row's
             # unspecified provenance through a correction and what stops one press
@@ -7022,30 +7035,30 @@ def _timeline_steps_form(
 ) -> TimelineStepsForm:
     """The `Muuda kulgu` panel, opened on what this file actually says.
 
-    The pattern, the stored rows and the phases a `Menetluse areng` already
-    dates, all read once and handed to the form — so the panel offers this file's
-    own procedure and never a box over a day the record already proves.
+    The pattern, the stored rows, which phase the file is standing on and which
+    phases carry a canonical dated fact — read once and handed to the form, so
+    the panel offers this file's own procedure and refuses the two removals
+    that would leave the rail saying something untrue.
+
+    **A date box on every phase now.** The panel used to withhold one wherever a
+    `Märge` already dated the phase, because the rail borrowed that date. It no
+    longer does — the rail is the roadmap and `Teema käik` is the history — so
+    withholding the box would leave a phase with no date and no way to give it
+    one (QA-006, QA-007).
     """
     from app.matters.models import MatterTimelineStep
-    from app.workflow.dates import format_at_precision
 
     phases = legal_process.phase_context(matter=matter)
     rows = {
         row.phase_key: row
         for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(request.user)
     }
-    recorded = {}
-    if phases.pattern is not None:
-        keys = frozenset(node.phase_key for node in phases.pattern.nodes)
-        for key, (when, precision) in legal_process.recorded_phase_dates(
-            matter=matter, user=request.user, phase_keys=keys
-        ).items():
-            recorded[key] = format_at_precision(when, precision)
     return TimelineStepsForm(
         data,
         phases=phases,
         rows=rows,
-        recorded=recorded,
+        current_phase=phases.current_phase,
+        anchored=legal_process.anchored_phase_keys(matter=matter, user=request.user),
         revision=timeline_steps_revision_token(matter),
     )
 

@@ -5270,6 +5270,15 @@ class ExternalPositionFieldsMixin:
     #: service refuses it again under the row lock, because a form is not a
     #: boundary (docs/adr/0091 §3.3).
     allows_source_label: bool = False
+    #: Whether this surface records feedback somebody sent **to this office**,
+    #: and may therefore name nobody.
+    #:
+    #: Deliberately not `allows_source_label`. That flag answers «does this
+    #: panel offer an `Allikas` box», which docs/adr/0095 §4 turned off for both
+    #: capture panels — and reading it as «may the author be absent» is what
+    #: made the received-feedback panel go on demanding an organisation after
+    #: the rule changed. Two questions, two flags (OWNER-01, docs/adr/0101).
+    author_is_optional: bool = False
 
     #: Whether this surface asks the date at a precision, or asks for one day.
     #:
@@ -5330,7 +5339,6 @@ class ExternalPositionFieldsMixin:
         the other ones (docs/adr/0084 §3).
         """
         from app.matters.services import (
-            EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL,
             EXTERNAL_POSITION_NEEDS_ORGANISATION,
             EXTERNAL_POSITION_NEEDS_SOURCE,
             normalize_external_position_url,
@@ -5349,10 +5357,13 @@ class ExternalPositionFieldsMixin:
         )
         label = (cleaned.get("source_label") or "").strip()
         cleaned["source_label"] = label
-        if self.allows_source_label:
-            if not named and not label:
-                self.add_error("organisation_name", EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL)
-        elif not named:
+        # Received feedback may name nobody at all: neither an organisation nor
+        # an `Allikas`. A lawyer writing down what a member said on the phone
+        # has neither, and a form that refuses to save until one of them exists
+        # is what puts invented names on files (OWNER-01, docs/adr/0101). A
+        # *discovered* position still needs an author, because an unattributed
+        # published opinion is an anonymous claim (docs/adr/0091 §3.3).
+        if not self.author_is_optional and not named:
             self.add_error("organisation_name", EXTERNAL_POSITION_NEEDS_ORGANISATION)
 
         # The lawyer's own note, trimmed the way the service trims it — and
@@ -5624,6 +5635,15 @@ class ReceivedFeedbackForm(CompactExternalPositionForm):
     #: refusal — the database constraint is met the way it has always been met and
     #: is not weakened to let an anonymous new row through.
     allows_source_label = False
+    #: Feedback somebody sent to this office may name nobody.
+    #:
+    #: A lawyer writing down what a member said on the telephone has neither a
+    #: catalogue row nor a name for a collection of answers, and a panel that
+    #: refuses to save until one of them exists is what puts invented names on
+    #: files. The record is still never empty: a position, a link or a file is
+    #: always there — what may be absent is whose it was
+    #: (OWNER-01, docs/adr/0101).
+    author_is_optional = True
     panel_slug = "tagasiside"
 
     #: `Liige` — this feedback came from a Chamber member.
@@ -5697,6 +5717,22 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
     summary = _external_position_summary_field()
     lawyer_note = _external_position_lawyer_note_field()
     source_label = _external_position_source_label_field()
+    #: `Liige`, correctable where it is answerable.
+    #:
+    #: The box was on the capture form and on no other surface: a tick was
+    #: saved, never displayed and never editable, so one made by mistake was
+    #: permanent and one made on purpose could not be confirmed. It is shown on
+    #: the row now and it is corrected here (QA-014).
+    #:
+    #: Removed below on anything that is not received feedback, for the reason
+    #: `source_label` is: «this came from a member» answers *who wrote to us*,
+    #: and a position found published somewhere was not written to us at all
+    #: (docs/adr/0095 §4).
+    source_is_member = forms.BooleanField(
+        label="Liige",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
+    )
     engagement = _external_position_engagement_field()
     stated_on = EstonianDateField(
         label="Seisukoha kuupäev",
@@ -5729,8 +5765,12 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         # The rule is `EngagementForm`'s, read the other way round: an editor must
         # not be able to write a shape its creating surface cannot.
         self.allows_source_label = bool(record is not None and record.is_received)
+        # Per record, like the label: a correction may leave received feedback
+        # naming nobody, and may not do that to a discovered position.
+        self.author_is_optional = self.allows_source_label
         if not self.allows_source_label:
             del self.fields["source_label"]
+            del self.fields["source_is_member"]
         attach_external_position_precision(self, record=record)
         attach_organisation_picker(self, viewer=viewer, choices=choices)
         set_external_position_engagements(
@@ -6147,7 +6187,8 @@ class TimelineStepsForm(forms.Form):
         *args: Any,
         phases: Any = None,
         rows: Any = None,
-        recorded: Any = None,
+        current_phase: str = "",
+        anchored: Any = None,
         revision: str = "",
         **kwargs: Any,
     ) -> None:
@@ -6159,8 +6200,14 @@ class TimelineStepsForm(forms.Form):
         #: The pattern's nodes, in its own order. Empty when the file is read
         #: against no procedure, and the panel then has nothing to offer.
         self.nodes = list(phases.pattern.nodes) if phases and phases.pattern else []
-        #: Phases dated by a record the file already holds.
-        self.recorded = dict(recorded or {})
+        #: The phase the file's `Hetkeseis` places it on. It cannot be taken
+        #: off the rail: the header would go on saying `Kooskõlastusringil`
+        #: while the rail no longer drew that phase at all, and the unanchored
+        #: deadline — which reads *beside the current phase* — would fall back
+        #: to sorting after every undated future one (QA-009).
+        self.current_phase = current_phase or ""
+        #: Phases pinned by a canonical dated fact (`anchored_phase_keys`).
+        self.anchored = frozenset(anchored or ())
         stored = dict(rows or {})
         for node in self.nodes:
             key = node.phase_key
@@ -6171,21 +6218,38 @@ class TimelineStepsForm(forms.Form):
             # a phase silently off the rail. The column stores `hidden` — the
             # absence of a row is the default — and `steps()` inverts once,
             # here, where both spellings are visible together.
-            self.fields[f"{key}__shown"] = forms.BooleanField(
+            protected = self._protection(key)
+            field = forms.BooleanField(
                 label=node.label,
                 required=False,
-                initial=not row.hidden if row is not None else True,
+                initial=True if protected else (not row.hidden if row is not None else True),
             )
-            if key in self.recorded:
-                # Dated by a `Menetluse areng`. No box, so there is nothing to
-                # save over a fact.
-                continue
+            if protected:
+                # Disabled rather than merely unticked: a disabled field takes
+                # its value from `initial` and ignores the POST entirely, so a
+                # crafted one cannot remove it either. The panel says why in a
+                # word beside the chip rather than in a dialog.
+                field.disabled = True
+                field.help_text = protected
+            self.fields[f"{key}__shown"] = field
             self.fields[f"{key}__date"] = EstonianDateField(
                 label="Kuupäev",
                 required=False,
                 widget=EstonianDateInput(),
                 initial=row.occurs_on if row is not None else None,
             )
+
+    #: Why a phase cannot be taken off this file's rail, in the panel's words.
+    CURRENT_PHASE_REASON = "praegune etapp"
+    ANCHORED_PHASE_REASON = "kirjas olev kuupäev"
+
+    def _protection(self, key: str) -> str:
+        """Why this phase may not be removed, or "" when it may."""
+        if key and key == self.current_phase:
+            return self.CURRENT_PHASE_REASON
+        if key in self.anchored:
+            return self.ANCHORED_PHASE_REASON
+        return ""
 
     @property
     def rows(self) -> list[dict[str, Any]]:
@@ -6198,11 +6262,46 @@ class TimelineStepsForm(forms.Form):
                     "key": key,
                     "label": node.label,
                     "shown_field": self[f"{key}__shown"],
-                    "date_field": self[f"{key}__date"] if f"{key}__date" in self.fields else None,
-                    "recorded_date": self.recorded.get(key, ""),
+                    "date_field": self[f"{key}__date"],
+                    "protected": self._protection(key),
                 }
             )
         return drawn
+
+    def clean(self) -> dict[str, Any]:
+        """Explicit roadmap dates must run in the procedure's own order.
+
+        A lawyer could set `Kooskõlastusring 01.12` and `Valitsuses 25.09` and
+        get a left-to-right time rail reading December before September. The
+        rail does not reorder the phases — a legal process has the order it has
+        — so the drawing was simply false, and nothing said so (QA-010).
+
+        Only *explicit* dates are compared, and only against each other. A
+        phase somebody has not dated makes no claim, and a file that went back
+        to an earlier phase is not describing its roadmap out of order: that is
+        history, it belongs in `Teema käik`, and these boxes are not where it is
+        recorded.
+
+        The error lands on the box that is out of order and the rest of the
+        panel comes back as it was typed, so nothing has to be re-entered.
+        """
+        cleaned = super().clean() or self.cleaned_data
+        seen: list[tuple[str, Any]] = []
+        for node in self.nodes:
+            key = node.phase_key
+            when = cleaned.get(f"{key}__date")
+            if when is None:
+                continue
+            for earlier_label, earlier in seen:
+                if when < earlier:
+                    self.add_error(
+                        f"{key}__date",
+                        f"{node.label} ei saa olla varem kui {earlier_label}.",
+                    )
+                    break
+            else:
+                seen.append((node.label, when))
+        return cleaned
 
     def steps(self) -> list[tuple[str, bool, Any, str]]:
         """The cleaned answers, as `set_timeline_steps` takes them.
@@ -6216,8 +6315,12 @@ class TimelineStepsForm(forms.Form):
         answers: list[tuple[str, bool, Any, str]] = []
         for node in self.nodes:
             key = node.phase_key
-            hidden = not self.cleaned_data.get(f"{key}__shown")
-            when = self.cleaned_data.get(f"{key}__date") if key not in self.recorded else None
+            # A protected phase is shown whatever arrived. The disabled field
+            # already ignores the POST; this says it a second time at the one
+            # seam that builds the service call, because «the control was not
+            # rendered» is never how a rule is kept here.
+            hidden = not self._protection(key) and not self.cleaned_data.get(f"{key}__shown")
+            when = self.cleaned_data.get(f"{key}__date")
             answers.append((key, hidden, when, DatePrecision.EXACT.value))
         return answers
 

@@ -986,6 +986,15 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     # (docs/adr/0091 §3.3, §3.4).
     author = position.author_label
     headline = f"{position.kind_label}: {author}" if author else position.kind_label
+    # **`Liige` is stated, because a fact nobody can see is a fact nobody can
+    # check.** The box has always been saved and has never been shown: a lawyer
+    # who ticked it had no way to confirm it, and no way to notice one ticked by
+    # mistake. Appended rather than given a line — «whose» is one question, and
+    # «a member's» is the rest of that answer — and never on a record with no
+    # author, where the marker would be the only thing the headline said about
+    # the source (QA-014).
+    if position.source_is_member:
+        headline = f"{headline} · Liige"
     return ChronologyMilestone(
         what=headline,
         # The date as it was actually known, or the words «kuupäev teadmata» —

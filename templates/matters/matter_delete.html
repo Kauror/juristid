@@ -91,7 +91,19 @@
             action="{% url 'matters:matter_delete' pk=matter.pk %}">
         {% csrf_token %}
         <button class="button button--danger button--danger-strong" type="submit">Kustuta teema</button>
-        <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Loobu</a>
+        {% comment %}
+          `Loobu` returns to the Teema, which is where somebody deciding not to
+          delete it wants to be.
+
+          It used to go to `Muuda teemat`, because this page's own back-link
+          reads «← Muuda teemat» and the route was reached from there. The
+          Teema header links straight here now, so cancelling dropped a reader
+          into an edit form they never asked for — a destructive question
+          answered «no» should leave nothing behind, including a form
+          (QA-017).
+        {% endcomment %}
+        <a class="button button--quiet"
+           href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
       </form>
     {% endif %}
   </div>

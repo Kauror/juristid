@@ -161,7 +161,19 @@ task above it is a form asking about work nobody has named. The route to work is
           {% endcomment %}
           {% include "matters/partials/add_files.html" with field=current_action_form.attachments %}
           <span class="curact__spacer"></span>
-          <button class="button button--primary" type="submit" data-composer-submit>Salvesta</button>
+          {% comment %}
+            `Salvesta tegevus`, not a bare `Salvesta`.
+
+            This button and an opinion panel's can be on screen together, and
+            both read `Salvesta` — two primary actions, identical words, saving
+            two different records. QA-024 found it the way anybody would: by
+            pressing the wrong one. Every other panel already names what it
+            saves (`Salvesta tagasiside`, `Salvesta arvamus`, `Registreeri
+            arvamus`); this one did not.
+          {% endcomment %}
+          <button class="button button--primary" type="submit" data-composer-submit>
+            Salvesta tegevus
+          </button>
         </div>
       </form>
     {% endif %}

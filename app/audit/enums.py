@@ -337,20 +337,28 @@ class ChangeEventType(models.TextChoices):
     # development from the canonical record through `projected_milestones`, and
     # reading the event as well would state one act twice — the rule every
     # structured fact on this page has kept since docs/adr/0074 §14.
+    #
+    # **The identifiers keep the name the model has; the labels say `Märge`.**
+    # `Menetluse areng` was retired as a user-facing concept when `+ Märge`
+    # became the one panel that records one, and these labels are read by a
+    # person on `Kõik muudatused` — which was still telling them their notes
+    # were «menetluse arengud», a phrase the launcher has never shown them
+    # (QA-012). The stored values are untouched: renaming those would rewrite
+    # what every historical row says happened.
     PROCEDURAL_DEVELOPMENT_RECORDED = (
         "PROCEDURAL_DEVELOPMENT_RECORDED",
-        "Menetluse areng lisatud",
+        "Märge lisatud",
     )
     PROCEDURAL_DEVELOPMENT_CORRECTED = (
         "PROCEDURAL_DEVELOPMENT_CORRECTED",
-        "Menetluse arengut parandatud",
+        "Märget parandatud",
     )
     # `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED` already record that bytes
     # arrived on the Matter; neither can say that they are the ministry's revised
     # draft rather than something else that turned up the same afternoon.
     PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED = (
         "PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED",
-        "Menetluse arengu fail lisatud",
+        "Märke fail lisatud",
     )
 
 

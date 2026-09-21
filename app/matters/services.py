@@ -500,12 +500,29 @@ def _raise_assignment_notice(*, matter: Matter, owner: Any, actor: Any) -> None:
     * ``provenance`` absent at the call site, which is how a system operation
       that *does* run under an operator's account says so (``assign_matter``).
 
-    ``actor is owner`` is not among them. Assigning a Matter to yourself
-    produces a notice like any other: the point of the block is that a person
-    returning to Minu asjad sees what has arrived, and something they filed
-    themselves an hour ago is exactly that.
+    **A fourth condition since QA-022: ``actor is owner`` is excluded.**
+
+    It used not to be, on the argument that «a person returning to Minu asjad
+    sees what has arrived, and something they filed themselves an hour ago is
+    exactly that». A working session showed what that argument misses: filing
+    your own Teema is the ordinary way work starts here, so `UUS ASI` filled up
+    with five files the reader had created themselves that morning — and a
+    block whose whole job is «look at this, it is new to you» is worth nothing
+    once most of it is not.
+
+    `Uus asi` means somebody handed you work. Handing it to yourself is not an
+    arrival; you were there when it happened.
+
+    **What still raises one is unchanged**: a colleague assigning the file to
+    you, a transfer of ownership to you by somebody else, any assignment whose
+    actor is another person. The test is on this single act, not on whether the
+    recipient has touched the Matter before — a lawyer who filed a Teema in
+    March and is handed it back in September is being handed work, and hears
+    about it.
     """
     if owner is None or not _is_human_actor(actor):
+        return
+    if actor is not None and getattr(actor, "pk", None) == getattr(owner, "pk", None):
         return
     MatterAssignmentNotice.objects.create(matter=matter, recipient=owner, assigned_by=actor)
 
@@ -3323,13 +3340,18 @@ EXTERNAL_POSITION_NEEDS_SOURCE = (
     "Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik."
 )
 EXTERNAL_POSITION_NEEDS_ORGANISATION = "Vali organisatsioon, kelle seisukoht see on."
-#: What received feedback with no author at all is told.
+#: **Retired.** Received feedback with no author at all is no longer refused.
 #:
-#: Different words from the sentence above, because the answer it asks for is
-#: different: an aggregate answer *may* have no organisation, and what it must
-#: have instead is a name for the collection of answers. Offering «vali
-#: organisatsioon» on a survey of 234 companies is the refusal that made somebody
-#: invent one (docs/adr/0091 §3.3).
+#: The sentence asked for a name for the collection of answers where there was
+#: no single author — «Liikmete küsitlus» for a survey of 234 companies. It was
+#: still one answer too many: a lawyer writing down what a member said on the
+#: telephone has neither a catalogue row nor a collection to name, and a form
+#: that will not save without one is what makes people invent one (OWNER-01,
+#: docs/adr/0101).
+#:
+#: Kept as a name rather than deleted, because tests and release notes cite it
+#: and a reader meeting the constant should find out what happened to it rather
+#: than only that it is gone. Nothing raises it.
 EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL = (
     "Vali organisatsioon või kirjuta, millisest allikast tagasiside tuli."
 )
@@ -3520,8 +3542,20 @@ def _external_position_authorship(
         if label:
             raise DomainError(EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY)
         return value, ""
-    if organisation is None and not label:
-        raise DomainError(EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL)
+    # 5. Received feedback may name nobody.
+    #
+    #    It used to require an organisation or an `Allikas`, and the refusal was
+    #    `EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL`. The rule was meant to stop a
+    #    file carrying an anonymous claim, and for `DISCOVERED` it still does
+    #    (above). For feedback somebody sent *to this office* it did the
+    #    opposite of what it intended: a lawyer writing down what a member said
+    #    on the telephone has neither a catalogue row nor a name for a
+    #    collection, and a form that will not save until one of them exists is
+    #    what makes people invent one (OWNER-01, docs/adr/0101).
+    #
+    #    The record is still never empty — `EXTERNAL_POSITION_NEEDS_SOURCE`
+    #    means a position, a link or a file is always present. What may be
+    #    absent is whose it was, and that absence is itself the honest record.
     return value, label
 
 
@@ -3723,6 +3757,7 @@ def correct_external_position(
     engagement: Any,
     provenance: Any = None,
     source_label: str = "",
+    source_is_member: Any = None,
     lawyer_note: Any = "",
     actor: Any = None,
     expected_revision: str | None = None,
@@ -3809,9 +3844,15 @@ def correct_external_position(
             # stated in this helper as well as in the database
             # (docs/adr/0095 §4).
             #
-            # Unreachable from `Muuda`, which passes `provenance=None` and never
-            # moves it. This is for the import and correction paths that can.
-            source_is_member=current.source_is_member,
+            # The mark as this save would leave it: the corrected value where
+            # the caller stated one, and the stored one where it did not.
+            # `Muuda` states one now — the box was saveable and never
+            # correctable, so a tick made by mistake was permanent and a tick
+            # made on purpose was invisible (QA-014) — and the import paths
+            # still pass nothing.
+            source_is_member=(
+                current.source_is_member if source_is_member is None else bool(source_is_member)
+            ),
         )
     clean_url = normalize_external_position_url(url)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
@@ -3844,6 +3885,12 @@ def correct_external_position(
         "lawyer_note": clean_note,
         "engagement_id": related.pk if related is not None else None,
     }
+    if source_is_member is not None:
+        # Absent unless the caller asked, so a path that does not render the
+        # box cannot clear a mark somebody set. `_external_position_authorship`
+        # above has already refused the combination this could otherwise make
+        # invalid — a member's mark on anything but received feedback.
+        proposed["source_is_member"] = bool(source_is_member)
     changed = [field for field, value in proposed.items() if getattr(current, field) != value]
     if not changed:
         # Nothing moved, so nothing is recorded. An audit row for a save that

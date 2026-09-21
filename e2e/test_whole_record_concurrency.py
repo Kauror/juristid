@@ -81,9 +81,7 @@ def test_a_stale_muuda_teemat_is_refused_and_keeps_what_was_typed(page, context,
     assert MARTIN.short_name in tab_a.locator("#teema-pais").inner_text()
 
 
-def test_the_refused_page_can_be_saved_again_once_the_person_has_looked(
-    page, context, base_url
-):
+def test_the_refused_page_can_be_saved_again_once_the_person_has_looked(page, context, base_url):
     """A conflict has to be resolvable from the page it happened on.
 
     A guard that refused forever would be a worse defect than the one it
@@ -138,9 +136,7 @@ def test_a_stale_menetluse_kulg_panel_is_refused(page, context, base_url):
     """
     sign_in(page, base_url, SANDRA)
     title = unique_title("QA kulu sakid")
-    matter_url = create_matter(
-        page, base_url, title, owner=SANDRA, stage="Kooskõlastusringil"
-    )
+    matter_url = create_matter(page, base_url, title, owner=SANDRA, stage="Kooskõlastusringil")
     # `Muuda` is drawn only where there is a roadmap to tailor, and a roadmap
     # needs both an `Õigusakt` to choose the pattern and something that places
     # the file on it — `legal_process_rail` returns `None` otherwise, and the

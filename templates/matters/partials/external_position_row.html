@@ -143,6 +143,27 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {% endif %}
       {% endif %}
 
+      {% comment %}
+        `Liige`, correctable where it is answerable.
+
+        The box was on the capture panel and on no other surface: a tick was
+        saved, never shown and never editable, so a mistake was permanent and a
+        deliberate tick could not be confirmed. The row states it now and this
+        corrects it (QA-014). The same control the panel uses, so the two
+        surfaces do not drift.
+      {% endcomment %}
+      {% if external_position_edit_form.member_mark %}
+        <div class="orgpick__mark">
+          <label class="chip">
+            {{ external_position_edit_form.member_mark }}
+            <span class="chip__name">{{ external_position_edit_form.member_mark.label }}</span>
+          </label>
+          {% if external_position_edit_form.member_mark.errors %}
+            <p class="field__error">{{ external_position_edit_form.member_mark.errors|first }}</p>
+          {% endif %}
+        </div>
+      {% endif %}
+
       <label class="cx-f" for="{{ external_position_edit_form.engagement.id_for_label }}">
         <span class="cx-f__lab">{{ external_position_edit_form.engagement.label }}
           <span class="cx-f__opt">valikuline</span></span>

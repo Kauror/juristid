@@ -52,21 +52,23 @@ whose phases carry dates it changes what the rail says about all of them.
           <span class="chip__name">{{ row.label }}</span>
         </label>
 
-        {% if row.recorded_date %}
+        {% if row.protected %}
           {% comment %}
-            Dated by a `Menetluse areng` this file already holds. Shown, and not
-            offered as something to type over.
+            Why this phase cannot be taken off the rail, in a word beside the
+            chip rather than in a dialog. The box itself is `disabled`, so the
+            reason is what turns a control that does not respond into one that
+            explains itself (app/matters/forms.py, `_protection`).
           {% endcomment %}
-          <span class="kulgform__recorded">{{ row.recorded_date }} · kirja pandud</span>
-        {% else %}
-          <label class="cx-f cx-f--date kulgform__date"
-                 for="{{ row.date_field.id_for_label }}">
-            <span class="visually-hidden">{{ row.label }} — {{ row.date_field.label }}</span>
-            {{ row.date_field }}
-          </label>
-          {% if row.date_field.errors %}
-            <p class="field__error">{{ row.date_field.errors|first }}</p>
-          {% endif %}
+          <span class="kulgform__protected">{{ row.protected }}</span>
+        {% endif %}
+
+        <label class="cx-f cx-f--date kulgform__date"
+               for="{{ row.date_field.id_for_label }}">
+          <span class="visually-hidden">{{ row.label }} — {{ row.date_field.label }}</span>
+          {{ row.date_field }}
+        </label>
+        {% if row.date_field.errors %}
+          <p class="field__error">{{ row.date_field.errors|first }}</p>
         {% endif %}
       </li>
     {% endfor %}

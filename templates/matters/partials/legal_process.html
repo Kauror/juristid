@@ -87,7 +87,24 @@ recorded, not claims about a procedure.
           {% if step.state == "future" or step.state == "possible" %}
             <span class="visually-hidden">Tulevikus</span>
           {% endif %}
-          {% if step.display_date %}
+          {% comment %}
+            One date line, from whichever source this node has.
+
+            A phase carrying canonical facts prints them as its lines —
+            «põhiosa 27.9.2027», «osad sätted 1.1.2028» — and does not also
+            print the first one bare above them, which would be the same date
+            twice. A phase carrying only a roadmap date prints that.
+
+            These used to be separate columns: `Jõustumine · Jõustumine
+            1.1.2027`, two adjacent names reading alike, with the sentence that
+            told them apart in a `title` tooltip — which is to say nowhere, for
+            a touch screen, a printout or a screen reader (QA-005).
+          {% endcomment %}
+          {% if step.notes %}
+            {% for note in step.notes %}
+              <span class="tl-step__note">{{ note }}</span>
+            {% endfor %}
+          {% elif step.display_date %}
             <span class="tl-step__date">{{ step.display_date }}</span>
           {% endif %}
           {% comment %}

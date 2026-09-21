@@ -11330,12 +11330,22 @@ section:has(.pw-more[open]) tbody.uxextra {
   min-width: 0;
 }
 
-/* A phase dated by a record the file already holds. Muted, because it is a
- * statement rather than a control — there is nothing here to press. */
-#teema-vaade-wrap .kulgform__recorded {
+/* Why a phase cannot be taken off this file's rail. Muted, because it is a
+ * statement rather than a control — there is nothing here to press. The chip
+ * beside it is `disabled`, and this is the word that makes that legible
+ * instead of merely unresponsive. */
+#teema-vaade-wrap .kulgform__protected {
   font-size: 11.5px;
   line-height: 1.3;
   color: var(--text-muted);
+}
+
+/* A disabled phase chip. Dimmed and not pressable, and deliberately still
+ * carrying its tick: the phase *is* shown, which is the thing the control
+ * states. */
+#teema-vaade-wrap .kulgform__show:has(input:disabled) {
+  opacity: 0.65;
+  cursor: default;
 }
 
 #teema-vaade-wrap .kulgform__date {
@@ -11519,6 +11529,42 @@ section:has(.pw-more[open]) tbody.uxextra {
   line-height: 1.3;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* A canonical fact folded onto a phase — «põhiosa 27.9.2027» under
+ * `Jõustumine`. One line per fact, wrapping rather than clipping: the whole
+ * point of moving this out of a `title` is that it can be read without a
+ * mouse, and a line truncated to fit would put it back out of reach. */
+/* A process link and the control that edits it, on one line.
+ *
+ * `Muuda` used to sit on a line of its own under the row, which read as a
+ * control belonging to the card rather than to the address — and on a Matter
+ * carrying three links, as three identical chips stacked under three addresses
+ * (OWNER-02). Wrapping, because a document-register deep link's host is long
+ * and the chip must not be pushed off the card. */
+#teema-vaade-wrap .proclink__value {
+  min-width: 0;
+}
+
+#teema-vaade-wrap .proclink__value > a {
+  overflow-wrap: anywhere;
+}
+
+/* Inline, so the chip reads on the same line as the address it edits and wraps
+ * with it when a document-register host is long. The panel it opens is still a
+ * block — a `<details>` lays its content out in normal flow whatever the
+ * element's own display is — so the form is not squeezed onto that line. */
+#teema-vaade-wrap .proclink__value > .proclink__fix {
+  display: inline;
+  margin-inline-start: var(--spacing-2);
+}
+
+#teema-vaade-wrap .tl-step__note {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 /* -- the chronology's two kinds -------------------------------------------

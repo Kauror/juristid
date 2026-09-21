@@ -1745,17 +1745,23 @@ class MatterExternalPosition(VisibilityInheritingModel):
     #: answers `Saatja` and `Adressaat` (docs/adr/0063, docs/adr/0073).
     #:
     #: **Required for a discovered position and optional for received
-    #: feedback**, which is the one asymmetry :attr:`provenance` introduces and
-    #: the whole of docs/adr/0091 §3.3. A ministry's published opinion with no
-    #: author is an anonymous claim on a professional file and stays refused. A
-    #: survey of 234 industrial companies that produced 58 answers has no single
-    #: author, and the two things this column could have been given for it were
-    #: an invented organisation called «234 ettevõtet» or one arbitrary
-    #: respondent standing for the rest — both of which put a fact on the file
-    #: that nobody stated. So the column is nullable and
-    #: `matters_external_position_author_or_label` is what keeps the rule: a
-    #: position must name an organisation, and received feedback may name a
-    #: :attr:`source_label` instead.
+    #: feedback**, which is the one asymmetry :attr:`provenance` introduces
+    #: (docs/adr/0091 §3.3, as relaxed by docs/adr/0101). A ministry's published
+    #: opinion with no author is an anonymous claim on a professional file and
+    #: stays refused.
+    #:
+    #: Received feedback is the other case, and it started out allowing a
+    #: :attr:`source_label` instead — «Liikmete küsitlus» for a survey of 234
+    #: companies that has no single author. Real use showed that was still one
+    #: answer too many: a lawyer writing down what somebody told them on the
+    #: phone has neither a catalogue row nor a name for a collection, and the
+    #: form refusing to save until one of them was invented is what put invented
+    #: names on files. So for `RECEIVED` the record may name nobody, and the
+    #: absence is the truth rather than a gap to fill.
+    #:
+    #: The record still cannot be empty: `EXTERNAL_POSITION_NEEDS_SOURCE` means
+    #: a position, a link or a file is always there. What is optional is *whose*
+    #: it was.
     #:
     #: Nothing about a *named* position is weakened. The ordinary record still
     #: carries the catalogue's own row, `PROTECT` still refuses to lose an
@@ -1992,10 +1998,7 @@ class MatterExternalPosition(VisibilityInheritingModel):
             models.CheckConstraint(
                 condition=(
                     models.Q(organisation__isnull=False)
-                    | (
-                        models.Q(provenance=ExternalPositionProvenance.RECEIVED)
-                        & ~models.Q(source_label="")
-                    )
+                    | models.Q(provenance=ExternalPositionProvenance.RECEIVED)
                 ),
                 name="matters_external_position_author_or_label",
             ),

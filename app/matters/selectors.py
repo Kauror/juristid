@@ -22,7 +22,13 @@ from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
+from app.workflow.enums import (
+    REVIEW_KINDS,
+    ActionKind,
+    ActionStatus,
+    DateSemantics,
+    Disposition,
+)
 from app.workflow.lateness import overdue_date_q
 from app.workflow.models import NextAction
 
@@ -393,10 +399,22 @@ class ActiveDeadline:
     #: kvartal* is counted late from the end of the quarter and not from the day
     #: it happens to sort on (`wi.WorkItem.days_late` reads it the same way).
     days_late: int = 0
+    #: Whether this deadline is still work anybody is doing.
+    #:
+    #: False on a closed Matter, and on one where Koda has explicitly stopped
+    #: following the file. The date stays — it is part of the record and the
+    #: header goes on stating it — but the countdown beside it does not: a
+    #: file archived this morning was reading `Tähtaeg 15.10.2026 · 24 p` in
+    #: the header while `Praegune tegevus` under it said the Matter was closed
+    #: and every work list had already dropped it (QA-011).
+    #:
+    #: The external procedure may well continue, and the rail goes on drawing
+    #: the phases that may still come. What stops is this office's own clock.
+    is_active: bool = True
 
     @property
     def is_today(self) -> bool:
-        return self.days_remaining == 0 and not self.is_past
+        return self.is_active and self.days_remaining == 0 and not self.is_past
 
 
 def active_deadline(
@@ -537,14 +555,21 @@ def response_deadline_of(
     day = today or timezone.localdate()
     value = matter.response_deadline
     is_past = value < day
+    # A closed file, or one this office has explicitly stopped following, owes
+    # nothing by a date. The deadline is still a fact about the record and the
+    # header still states it; what it stops doing is counting down (QA-011).
+    active = matter.is_open and matter.disposition != Disposition.MONITORING_STOPPED
     return ActiveDeadline(
         label="Arvamuse tähtaeg",
         value=value,
         display=format_estonian_date(value),
         is_past=is_past,
         days_remaining=(value - day).days,
-        is_overdue=response_deadline_is_outstanding(matter, user) if is_past else False,
+        is_overdue=(
+            response_deadline_is_outstanding(matter, user) if is_past and active else False
+        ),
         days_late=(day - value).days if is_past else 0,
+        is_active=active,
     )
 
 

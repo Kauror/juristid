@@ -78,7 +78,14 @@ The whole section renders only for a writer on an open Matter; `overview.html`
 decides that, so a reader and a closed file get no launcher at all rather than a
 row of controls that refuse (brief §30, §31).
 {% endcomment %}
-<section class="addzone" id="lisa-teemale" aria-labelledby="lisa-pealkiri">
+{% comment %}
+  `data-focus-after-save` — where the keyboard lands when a swap destroys
+  whatever had focus. A save's natural next action is another one, and the
+  launcher is where they all start, so this is one Tab from the thing the
+  person is most likely to want (static/js/app.js, QA-018).
+{% endcomment %}
+<section class="addzone" id="lisa-teemale" aria-labelledby="lisa-pealkiri"
+         data-focus-after-save tabindex="-1">
   <h2 class="rowlabel" id="lisa-pealkiri">Lisa teemale</h2>
 
   {% comment %}

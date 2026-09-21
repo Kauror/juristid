@@ -37,6 +37,88 @@
     ];
   }
 
+  /* ---- A save must not throw the keyboard back to the top ---------------
+   * Every capture on a Teema is an htmx swap, and a swap destroys the element
+   * that had focus. The browser's answer to that is `document.body`, so a
+   * keyboard user who saved a Märge on a file with thirty rows was returned to
+   * the skip link and had to tab back down through the whole page — after
+   * every single save, on the product's main loop (QA-018).
+   *
+   * One rule, applied where the swap happens, rather than a focus call written
+   * into every form:
+   *
+   *   1. only when focus was actually lost. A swap that left focus inside a
+   *      surviving element is already correct and must not be overridden;
+   *   2. the swapped region's own landing mark where it declares one
+   *      (`data-focus-after-save` — `Lisa teemale`, so the next action is one
+   *      Tab away from where the last one was);
+   *   3. otherwise the swapped element itself, which for a corrected
+   *      chronology row is exactly the row that changed — and nothing at all
+   *      when the swap replaced the element and the page declares no landing
+   *      mark, because guessing would be worse than leaving focus alone.
+   *
+   * `preventScroll`, because the page has not moved and a browser scrolling to
+   * "reveal" an element already on screen is the jump this is meant to avoid.
+   *
+   * A refusal is deliberately untouched: `_workspace_refusal` and its siblings
+   * already put focus on the field that was wrong, which is more specific than
+   * anything this could do.
+   *
+   * `afterSettle` rather than `afterSwap`. On `afterSwap` the replaced node is
+   * still being torn down, and the browser resets focus to `body` *after* the
+   * handler has run — so focusing there is immediately undone and the symptom
+   * looks exactly like no handler at all.
+   *
+   * **Capture phase**, and that is not a detail either. An `outerHTML` swap
+   * replaces the element the event is dispatched on, so by settle time it is
+   * detached and the event has no path to bubble along — a listener on `body`
+   * in the bubble phase never runs. Capture reaches it; measured, not assumed.
+   */
+  document.body.addEventListener("htmx:afterSettle", function (event) {
+    var target = event.detail && event.detail.target;
+    if (!target || !target.querySelector) {
+      return;
+    }
+    /* Focus counts as lost when it is on nothing, on the document, or on an
+     * element the swap has just detached. The last case is the common one and
+     * was missed at first: the browser moves focus to `body` only *after* the
+     * removed node is gone, so at `afterSwap` the old button is often still
+     * `document.activeElement` while no longer being in the document. */
+    var active = document.activeElement;
+    var lost =
+      !active ||
+      active === document.body ||
+      active === document.documentElement ||
+      !document.contains(active);
+    if (!lost) {
+      return;
+    }
+    /* **Search the live document where the swapped element is gone.**
+     *
+     * An `outerHTML` swap replaces the element the event carries, so
+     * `detail.target` is the *old* node: detached, still answering
+     * `querySelector`, and still holding a stale copy of everything inside it.
+     * Focusing something found in there does nothing at all — the symptom is
+     * a handler that demonstrably runs and demonstrably has no effect.
+     */
+    var root = document.contains(target) ? target : document;
+    var landing = root.querySelector("[data-focus-after-save]");
+    if (!landing && root !== document) {
+      landing = root;
+    }
+    if (!landing) {
+      return;
+    }
+    if (!landing.hasAttribute("tabindex")) {
+      landing.setAttribute("tabindex", "-1");
+    }
+    try {
+      landing.focus({ preventScroll: true });
+    } catch (error) {
+      landing.focus();
+    }
+  }, true);
+
   "use strict";
 
   /* ---- Ctrl/Cmd+K focuses the global search ------------------------------

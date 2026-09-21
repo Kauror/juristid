@@ -101,18 +101,12 @@ from typing import Any
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
-from app.matters.enums import MatterOrigin
 from app.matters.models import Matter
 from app.workflow.dates import format_at_precision
 
 #: The five labels this strip can draw. Each names an *act* or a *formal dated
 #: point*, never a stored title and never an outcome.
 #:
-#: `Alustatud` and not `Loodud`: the milestone is that the work started, which
-#: is what a reader placing the file in a process is looking for. The database
-#: row being written is not a procedural act.
-STARTED_LABEL = "Alustatud"
-
 #: `Koja arvamus` and not `Arvamus välja`. The chronology keeps `Arvamus välja`
 #: — there the sentence is about an event, and «välja» is what happened to the
 #: letter. Here the column names the thing itself, which is the Chamber's
@@ -199,7 +193,11 @@ CLOSED_LABEL = "Lõpetatud"
 #: read in, which `list.sort` being stable preserves and which each source fixes
 #: deterministically: sent opinions by `(sent_at, pk)` below, commencements by
 #: `MatterEffectiveDate.Meta.ordering`, which ends in `id`.
-PHASE_STARTED = 0
+#: `0` is retired rather than reused. The ordering constants are read by
+#: `legal_process._MILESTONE_PHASE`, and renumbering them to close the gap
+#: would change what every other kind means to any code — or any stored value —
+#: that still held the old number. Nothing draws a `PHASE_STARTED` any more
+#: (OWNER-03).
 PHASE_FEEDBACK = 1
 PHASE_SENT = 2
 PHASE_DEADLINE = 3
@@ -366,33 +364,30 @@ def process_steps(
     facts = intelligence if intelligence is not None else matter_intelligence(matter, user)
     steps: list[ProcessStep] = []
 
-    # `Alustatud`, for a Matter this system actually created.
+    # **There is no `Alustatud`, and that is the point.**
     #
-    # **Not for an imported one**, and not from `received_date` either.
-    # `created_at` on a register-archive row is the moment the importer wrote it
-    # into this database, which for a 2019 file is a fact about a migration;
-    # `Saabus` is the day Koda received something, which is a fact about the
-    # post and not about when the work started. There is no third field —
-    # `created_at`, `updated_at`, `closed_at`, `received_date` and
-    # `response_deadline` are every date `Matter` holds — so an imported Matter
-    # gets no `Alustatud` at all. An honest gap is better than the strip's one
-    # fabricated milestone standing leftmost on the page.
+    # It used to be drawn from `Matter.created_at` for a natively filed Matter,
+    # with the surrounding note explaining at length why neither `received_date`
+    # nor an importer's timestamp would do. The note was right about those two
+    # and wrong about the conclusion: `created_at` is *also* a fact about this
+    # database rather than about a procedure. Every consequence followed from
+    # that.
     #
-    # `PROMOTED_LEGACY` is imported too — an archive row somebody activated —
-    # and its `created_at` is the same import timestamp, so the test is the
-    # exact origin rather than "not LEGACY_IMPORT"
-    # (app/matters/enums.py `MatterOrigin`).
-    if matter.origin == MatterOrigin.NATIVE:
-        started = timezone.localtime(matter.created_at).date()
-        steps.append(
-            ProcessStep(
-                label=STARTED_LABEL,
-                display=format_estonian_date(started),
-                detail="",
-                sort_on=started,
-                phase=PHASE_STARTED,
-            )
-        )
+    # A file entered a month after it arrived drew `Saabus 1.9` in its header
+    # and `Alustatud 21.9` on its rail. One that recorded a backdated opinion
+    # drew `Koja arvamus 20.9` *before* `Alustatud 21.9` — the rail saying the
+    # opinion went out the day before the work began. And on a long file the
+    # column sat in the middle of dates running 5.3 → 2.4 → 21.9 → 3.6 → 17.6,
+    # because today is not where the procedure is (QA-006, QA-013).
+    #
+    # The owner's reading is shorter and is the one that decided it: `Alustatud`
+    # and `Algus` are the same conceptual beginning said twice, and the rail
+    # should say it once (OWNER-03). The pattern's own first phase is the
+    # beginning the procedure has; `Saabus` stays in the header, where it is a
+    # fact about the post and is labelled as one.
+    #
+    # Nothing replaces it. A synonym drawn from the same column would be the
+    # same fabricated milestone under a different word.
 
     # `Tagasiside tähtaeg` — one column per `Kaasamine` that carries a
     # reply-by date. Several per Matter is ordinary: a file routinely runs more
