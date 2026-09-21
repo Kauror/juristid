@@ -39,6 +39,26 @@ def _patterned(page, base_url: str, prefix: str) -> str:
     return url
 
 
+def _record_commencement(page, description: str, day: str) -> None:
+    """`+ Märge → Jõustumine`, through the launcher's own radio.
+
+    The subtype is a `.addpick` radio with a `<label class="disclosure-chip">`,
+    not a link and not a button. The label is what is clicked, because the radio
+    itself is visually hidden — the ring is painted on the label from the
+    radio's own focus — and because clicking the label is what a person does
+    (`add_to_matter.html`).
+
+    A `get_by_text("Jõustumine")` resolves to the `<option>` in the phase select
+    instead, which is not visible and never becomes so.
+    """
+    page.get_by_text("+ Märge", exact=True).click()
+    page.locator('label[for="marge-joustumine-valik"]').click()
+    page.fill("input[name='effective_title']", description)
+    page.fill("input[name='effective_on']", day)
+    page.locator("#marge-joustumine button[type=submit]").first.click()
+    page.wait_for_timeout(1200)
+
+
 def _open_feedback(page):
     page.get_by_text("+ Arvamus / tagasiside", exact=True).click()
     page.wait_for_selector("#id_tagasiside_summary")
@@ -120,7 +140,7 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
     page.wait_for_selector("text=Märgitud liikmeks ekslikult")
     assert "· Liige" in page.locator("#ajalugu-loend").inner_text()
 
-    row = page.locator("#ajalugu-loend li", has_text="Märgitud liikmeks ekslikult").first
+    row = page.locator("#ajalugu-loend .uxtl__item", has_text="Märgitud liikmeks ekslikult").first
     row.get_by_text("Muuda", exact=True).click()
     page.wait_for_selector("input[name='source_is_member']")
     page.locator("input[name='source_is_member']").uncheck()
@@ -174,12 +194,7 @@ def test_the_rail_draws_one_joustumine_and_says_what_it_is(page, base_url):
     url = _patterned(page, base_url, "QA joustumine")
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
-    page.get_by_text("Jõustumine", exact=True).first.click()
-    page.fill("input[name='effective_title']", "QA põhiosa")
-    page.fill("input[name='effective_on']", "01.01.2027")
-    page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_timeout(1200)
+    _record_commencement(page, "QA põhiosa", "01.01.2027")
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -197,12 +212,7 @@ def test_the_current_phase_and_an_anchored_phase_cannot_be_removed(page, base_ur
     url = _patterned(page, base_url, "QA kaitstud etapid")
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
-    page.get_by_text("Jõustumine", exact=True).first.click()
-    page.fill("input[name='effective_title']", "QA jõustub")
-    page.fill("input[name='effective_on']", "01.01.2027")
-    page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_timeout(1200)
+    _record_commencement(page, "QA jõustub", "01.01.2027")
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -295,7 +305,9 @@ def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Vale teema peale kirjutatud märge")
 
-    row = page.locator("#ajalugu-loend li", has_text="Vale teema peale kirjutatud märge").first
+    row = page.locator(
+        "#ajalugu-loend .uxtl__item", has_text="Vale teema peale kirjutatud märge"
+    ).first
     row.get_by_text("Kustuta", exact=True).click()
     # The confirmation names what is going and offers a way out.
     page.wait_for_selector("text=Eemaldan selle märke teema käigust")
@@ -318,7 +330,7 @@ def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=See märge jääb alles")
 
-    row = page.locator("#ajalugu-loend li", has_text="See märge jääb alles").first
+    row = page.locator("#ajalugu-loend .uxtl__item", has_text="See märge jääb alles").first
     row.get_by_text("Kustuta", exact=True).click()
     page.wait_for_selector("text=Eemaldan selle märke teema käigust")
     row.get_by_role("button", name="Loobu", exact=True).click()
@@ -340,7 +352,7 @@ def test_the_removal_is_still_in_the_change_log(page, base_url):
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Eemaldatav märge logis")
 
-    row = page.locator("#ajalugu-loend li", has_text="Eemaldatav märge logis").first
+    row = page.locator("#ajalugu-loend .uxtl__item", has_text="Eemaldatav märge logis").first
     row.get_by_text("Kustuta", exact=True).click()
     row.get_by_role("button", name="Eemalda", exact=True).click()
     page.wait_for_timeout(800)
@@ -410,13 +422,16 @@ def test_the_koja_arvamus_row_can_be_corrected_like_every_other(page, base_url):
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
-    row = page.locator("#ajalugu-loend li", has_text="Arvamus välja").first
+    row = page.locator("#ajalugu-loend .uxtl__item", has_text="Arvamus välja").first
     assert row.count(), "the chronology holds no recorded send to correct"
 
     row.get_by_text("Muuda", exact=True).click()
-    page.wait_for_selector("input[name='sent_on']")
-    page.fill("input[name='sent_on']", "15.05.2026")
-    page.fill("textarea[name='summary']", "Toetame eelnõu pikema üleminekuajaga.")
+    # Scoped to the row: `+ Koja arvamus` in the launcher renders its own
+    # `sent_on` on the same page, so a page-wide selector resolves to two.
+    box = row.locator("input[name='sent_on']")
+    box.wait_for(state="visible")
+    box.fill("15.05.2026")
+    row.locator("textarea[name='summary']").fill("Toetame eelnõu pikema üleminekuajaga.")
     row.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_timeout(600)
 
@@ -438,7 +453,7 @@ def test_a_recorded_send_offers_no_kustuta(page, base_url):
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
-    row = page.locator("#ajalugu-loend li", has_text="Arvamus välja").first
+    row = page.locator("#ajalugu-loend .uxtl__item", has_text="Arvamus välja").first
 
     assert row.get_by_text("Muuda", exact=True).count() == 1
     assert row.get_by_text("Kustuta", exact=True).count() == 0

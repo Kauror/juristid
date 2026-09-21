@@ -395,4 +395,10 @@ class SentOpinionEditForm(forms.Form):
             # every one of these controls the same `id` — enough to make a
             # `<label for>` reach the wrong box. The same per-record derivation
             # `ExternalPositionEditForm` uses.
-            self.auto_id = f"id_koja_arvamus_{record.pk}_%s"
+            #
+            # **`arvamuse_parandus`, not `koja_arvamus`.** The `+ Koja arvamus`
+            # launcher panel renders `id_koja_arvamus_sent_on` on the same page,
+            # and two controls whose ids differ only by a UUID in the middle are
+            # two controls a selector, a test and a reader all have to look
+            # twice at. The prefix names the act rather than the record.
+            self.auto_id = f"id_arvamuse_parandus_{record.pk}_%s"
