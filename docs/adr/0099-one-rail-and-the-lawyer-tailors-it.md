@@ -317,8 +317,14 @@ does not scroll sideways.
 ### Consequences of the amendment
 
 - No migration, no schema change, no new model field, no search or index change.
-- The rail's own baselines move: the seeded open Matter's two commencements
-  read at the `Jõustumine` end rather than between `Alustatud` and `Valitsuses`.
+- **No visual baseline moves**, which is worth recording because it was
+  predicted wrongly first. The commencement defect needs a *dated* current
+  phase to show — that is what puts a past dated point between the current
+  phase and everything ahead — and the photographed Matter's
+  `Kooskõlastusring` carries no `Menetluse areng`, so its two commencements
+  already read at the end. The rail that appeared to move locally had been
+  given a development by another browser file writing onto the seeded Matter.
+  `tests/test_rail_followup_round.py` builds the shape deliberately instead.
 - `docs/release-notes/uuendused.toml` keeps its earlier note naming
   `Lisa tõend`. A release note records what shipped on the day it shipped, and
   rewriting it would be the one place in this repository that lies about its
