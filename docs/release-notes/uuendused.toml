@@ -114,7 +114,7 @@ basis = "deployment"
 # Ükski punkt ei luba, et rakendus midagi teksti, lingi või failinime järgi
 # arvab. Kuupäeva hoiatus on kirjutamise hetkel antud vihje, mitte keeld, ja
 # punkt 30 ütleb selle otse välja.
-prs = [269, 270, 271]
+prs = [269, 270, 271, 274]
 changes = [
   "Teema kustutamine on nüüd teema lehe ülaosas «Muuda teemat» kõrval. Kustutamist küsitakse endiselt eraldi lehel üle.",
   "Teema lõpetamine on taas teemale lisamise real, viimase valikuna ja teistest veidi eemal; omaette plokki «Teema toimingud» enam ei ole.",
