@@ -389,6 +389,42 @@ def test_a_get_removes_nothing(signed_in, normal_matter, specialist):
     )
 
 
+def test_a_second_submit_from_a_stale_tab_is_a_404_and_writes_nothing(
+    signed_in, normal_matter, specialist
+):
+    """Idempotent in the service; a 404 through the door, and that is right.
+
+    `remove_matter_record` answers a repeated removal with the record it
+    already removed, which is what makes the act safe to retry. The endpoint
+    does not reach it a second time: the record is fetched through its own
+    `visible_to`, and `visible_to` is where the removal filter lives, so the
+    row a stale tab posts is already outside the query the lookup runs.
+
+    Keeping the authorization order is worth the plainer answer. Fetching a
+    removed record through the plain manager to give a second press a friendly
+    200 would mean the one lookup that decides whether this writer may touch
+    this child had stopped being the lookup that scopes it — the property
+    `_development_for_correction` exists for. Nothing is written either way,
+    the audit keeps one event, htmx does not swap a 4xx, and a reload shows the
+    reader exactly the state they asked for (docs/adr/0102 §5).
+    """
+    development = _note(normal_matter, specialist)
+    url = _url(normal_matter, "marge", development)
+    revision = development.revision_token
+
+    first = signed_in.post(url, {"revision": revision})
+    second = signed_in.post(url, {"revision": revision})
+
+    assert first.status_code == 200
+    assert second.status_code == 404
+    assert (
+        ChangeEvent.objects.filter(
+            event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_REMOVED, matter=normal_matter
+        ).count()
+        == 1
+    )
+
+
 def test_an_unknown_kind_is_a_404(signed_in, normal_matter, specialist):
     development = _note(normal_matter, specialist)
     url = reverse(

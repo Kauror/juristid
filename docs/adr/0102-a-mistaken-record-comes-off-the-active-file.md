@@ -150,9 +150,15 @@ One POST route for all eight families,
   leaves somebody's name on both decisions (docs/adr/0076 §2).
 * **Optimistic concurrency**, compared under the row lock against `updated_at`
   — the token every other editor on this product uses.
-* **A double submit is not an error.** The second call finds the row already
-  gone and returns it unchanged; a refusal would print an alarming sentence
-  about exactly the state the person asked for.
+* **A double submit is not an error.** `remove_matter_record` finds the row
+  already gone and returns it unchanged, which is what makes the act safe to
+  retry from anywhere. Through this route the second press does not reach it:
+  the lookup above runs `visible_to`, which is where the removal filter lives,
+  so a stale tab's post answers 404. That is the right way round — a friendly
+  200 would mean fetching a removed record outside the chokepoint that decides
+  whether this writer may touch this child. Nothing is written either way, the
+  audit keeps one event, htmx does not swap a 4xx, and a reload shows exactly
+  the state the person asked for.
 
 The whole Teema view is re-rendered, header included, because taking a row off
 the file can change the rail, the phase later rows are grouped under, and what
