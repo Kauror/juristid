@@ -781,7 +781,12 @@ def test_one_save_updates_the_rail_the_headings_and_the_dates_together(page, bas
 
 
 def test_an_unplaced_row_stays_visible_and_says_it_is_not_a_defect(page, base_url):
-    """Test 13. `Etapiga sidumata` is a heading, never a queue of work."""
+    """Test 13. `Etapiga sidumata` is a heading, never a queue of work.
+
+    The heading says it on its own now. Two sentences explaining that these
+    records were fine were two sentences insisting they might not be, and the
+    owner had them taken off (the follow-up round, 2026-09-21).
+    """
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
     _record_phase_development(
@@ -828,8 +833,15 @@ def test_an_unplaced_row_stays_visible_and_says_it_is_not_a_defect(page, base_ur
     # `#teema-vaade` is still being applied.
     expect(history(page).locator(".uxtl__phase--unplaced")).to_have_count(1)
     assert "Etapiga sidumata" in _phase_headings(page)
-    note = history(page).locator(".uxtl__phasenote").last
-    expect(note).to_contain_text("Etapp selgub")
+    # The group still carries its records. A phase heading is a *sibling* of the
+    # rows rather than a wrapper — «Näita varasemaid» swaps older rows in beside
+    # them — and `Etapiga sidumata` reads last, so everything after that heading
+    # is what is grouped under it (`timeline_items.html`, `phase_history.py`).
+    unplaced = history(page).locator(".uxtl__phase--unplaced ~ article.uxtl__item")
+    assert unplaced.count() >= 1, "the entries are still under the heading"
+    # … and no longer explains itself.
+    expect(history(page)).not_to_contain_text("Etapp selgub")
+    expect(history(page)).not_to_contain_text("ei saa neid kindlalt siduda")
     # Not red, not a count, not an icon.
     expect(history(page).locator(".uxtl__phase--unplaced")).not_to_contain_text("!")
 

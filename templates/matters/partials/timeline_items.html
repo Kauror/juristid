@@ -90,20 +90,19 @@ record, not professional chronology (master specification 16.5).
         <span class="visually-hidden">Ava või sulge etapp {{ item.phase.label }}</span>
       </button>
     </h3>
-    {% if item.phase.is_unplaced %}
-      {% comment %}
-        **Unplaced is not erroneous, and the sentence has to say so.** These are
-        ordinary records whose phase nobody can establish: an opinion sent before
-        the file recorded its first procedural step, a note with no date, a
-        `Hetkeseis` correction that dates nothing. Nothing here asks anybody to
-        clear a backlog, and no record is hidden or degraded by being here
-        (§6 of the brief).
-      {% endcomment %}
-      <p class="uxtl__phasenote">
-        Need kirjed on olemas, aga ühegi etapiga ei saa neid kindlalt siduda.
-        Etapp selgub, kui menetluse samm on kirja pandud.
-      </p>
-    {% endif %}
+    {% comment %}
+      **`Etapiga sidumata` says it by itself, and the paragraph under it is
+      gone.** Two sentences explaining that these records are fine were two
+      sentences insisting they might not be — a reader who has just read a
+      heading meaning «not tied to a phase» does not need to be told that the
+      phase is unknown, and being told twice is what made an ordinary group
+      look like a queue somebody is expected to clear.
+
+      The grouping is unchanged: the heading is still :data:`UNPLACED_LABEL`,
+      the records under it are still whole, and none of them is coloured,
+      counted or marked as a defect (`app/matters/process_phases.py`, the
+      owner's round 2026-09-21).
+    {% endcomment %}
   {% endif %}
   {% comment %}
     The id is what a search result for an entry scrolls to. Server-rendered
