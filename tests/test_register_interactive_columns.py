@@ -532,6 +532,36 @@ def test_kuupaev_descending_is_exact_and_still_puts_the_undated_last(signed_in, 
     assert dates_rendered(response)[-1] == "—"
 
 
+def _a_day_only_the_restricted_step_can_print():
+    """Three weeks back, stepped off any day the register prints by itself.
+
+    The assertion this feeds searches the *whole page*, so it answers a
+    question about the restricted step only while no other cell can carry that
+    same day. The docstring below names the wall clock, which is why the offset
+    is three weeks rather than one day. The saved-view chips are the other
+    source and were missed: `Tähtaeg sel kuul` writes the current month's first
+    and last day into its own `href`, and on the **22nd of any month**
+    `TODAY - 21` *is* that first day. On 2026-09-22 a shard duly failed a test
+    about disclosure over a date nobody had hidden — the 2026-09-16 failure
+    again, one calendar rule further out
+    (`app/matters/register_filters.saved_view_definitions`).
+
+    Both months' edges are refused, because the view reads its month from the
+    wall clock when the request is made and that may have rolled past the
+    module-level `TODAY` in between — which is the original hazard and is not
+    worth meeting twice.
+    """
+    printed = set()
+    for anchor in (TODAY, TODAY + timedelta(days=1)):
+        first = anchor.replace(day=1)
+        printed.add(first)
+        printed.add((first + timedelta(days=32)).replace(day=1) - timedelta(days=1))
+    day = TODAY - timedelta(days=21)
+    while day in printed:
+        day -= timedelta(days=1)
+    return day
+
+
 def test_a_restricted_step_moves_neither_the_date_nor_the_row(client, specialist):
     """Authorization happens before the sort key contributes.
 
@@ -550,8 +580,10 @@ def test_a_restricted_step_moves_neither_the_date_nor_the_row(client, specialist
     day the page was rendering anyway, and a test about disclosure failed over a
     date nobody hid. A day the calendar cannot walk into is the fix; the
     column-scoped assertions below are what makes the proof independent of it.
+    `_a_day_only_the_restricted_step_can_print` is that day, and says which
+    other cells it has to dodge.
     """
-    hidden_day = TODAY - timedelta(days=21)
+    hidden_day = _a_day_only_the_restricted_step_can_print()
     subject = matter(
         owner=specialist,
         title="Piiratud sammuga teema",
