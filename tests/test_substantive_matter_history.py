@@ -1187,21 +1187,61 @@ def test_the_change_log_vocabulary_is_a_subset_of_what_somebody_classified():
         ChangeEventType.MATTER_RELATION_REMOVED,
         ChangeEventType.BACKGROUND_MATERIAL_ADDED,
         ChangeEventType.BACKGROUND_MATERIAL_REMOVED,
-        ChangeEventType.WEBSITE_OVERVIEW_PLANNED,
-        ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
-        ChangeEventType.WEBSITE_OVERVIEW_CANCELLED,
-        ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
     ],
 )
 def test_an_unclassified_family_is_absent_rather_than_allowed(event_type):
     """The families the review proved leak, named one by one.
 
     Each summary or event label names an object carrying its own
-    `visibility_override`, and none of them has a classifier in
+    `visibility_override`, and neither of the two has a classifier in
     `_child_families` yet. Classifying them is the right fix and belongs in that
     map; until somebody makes it, they are off this page.
+
+    **The four `WEBSITE_OVERVIEW_` types were here and are not any more**, and
+    that is the fix arriving rather than the rule weakening. `Ülevaade / uudis`
+    now has a classifier — `MatterWebsiteOverview` in `_child_families`, scoped
+    through its own `visibility_override` like every other child — so the
+    events are *allowed because they are scoped*, which is exactly what this
+    test's own docstring said the right answer was. The test below asserts the
+    scoping rather than trusting the classification (OWNER-04,
+    docs/adr/0102 §2).
     """
     assert event_type not in change_log_event_types()
+
+
+def test_a_classified_family_is_allowed_because_it_is_scoped(specialist, reader, client):
+    """`Ülevaade / uudis`, the family that came off the list above.
+
+    A reader may open this Matter; the write-up is restricted below it. The
+    change log must name neither the act nor what the record holds — which is
+    what «allowed» buys only because the classifier is there.
+    """
+    from app.audit.visibility import child_event_types
+    from app.core.enums import Visibility
+    from app.matters.models import MatterWebsiteOverview
+    from app.matters.services import plan_website_overview
+
+    for event_type in (
+        ChangeEventType.WEBSITE_OVERVIEW_PLANNED,
+        ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
+        ChangeEventType.WEBSITE_OVERVIEW_CANCELLED,
+        ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
+    ):
+        assert event_type in change_log_event_types()
+        # Allowed *and* classified: an allowed type with no classifier passes
+        # `scope_change_events` untouched, which is the leak.
+        assert event_type in child_event_types()
+
+    matter = factories.MatterFactory(owner=specialist)
+    overview = plan_website_overview(matter=matter, actor=specialist)
+    MatterWebsiteOverview.objects.filter(pk=overview.pk).update(
+        visibility_override=Visibility.RESTRICTED
+    )
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "Ülevaade / uudis plaanis" not in body
 
 
 def test_a_restricted_related_matters_title_is_not_in_the_change_log(client, specialist, reader):
