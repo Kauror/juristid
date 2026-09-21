@@ -937,7 +937,12 @@ def test_the_change_log_shows_the_writes_the_history_leaves_out(
     ).content.decode()
 
     assert "Hetkeseis muudetud" in body
-    assert "Menetluse areng lisatud" in body
+    # **`Märge lisatud`, not `Menetluse areng lisatud`.** `Menetluse areng` was
+    # retired as a user-facing concept when `+ Märge` became the one panel that
+    # records one, and this page is read by a person — so it was still telling
+    # them their notes were «menetluse arengud», a phrase the launcher has
+    # never shown them. The stored `event_type` value is untouched (QA-012).
+    assert "Märge lisatud" in body
 
 
 def test_the_change_log_shows_no_payload_no_identifier_and_no_operation(
@@ -986,13 +991,13 @@ def test_the_change_log_hides_a_row_about_a_restricted_child(
     body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
 
     assert "salajase" not in body
-    assert "Menetluse areng lisatud" not in body
+    assert "Märge lisatud" not in body
     # And the reader who may see it does.
     client.force_login(specialist)
     allowed = client.get(
         reverse("matters:matter_changes", kwargs={"pk": matter.pk})
     ).content.decode()
-    assert "Menetluse areng lisatud" in allowed
+    assert "Märge lisatud" in allowed
 
 
 def test_the_change_log_refuses_a_matter_this_reader_may_not_open(client, reader, specialist):
@@ -1282,7 +1287,7 @@ def test_an_already_classified_restricted_development_is_still_hidden(client, sp
     client.force_login(reader)
     body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
     assert "salajase" not in body
-    assert "Menetluse areng lisatud" not in body
+    assert "Märge lisatud" not in body
 
 
 def test_the_matter_level_writes_the_page_exists_for_are_all_still_there(

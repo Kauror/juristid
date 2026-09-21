@@ -64,12 +64,16 @@ def test_a_matter_shows_structured_facts_and_submissions_together(client, specia
     assert response.status_code == 200
     body = response.content.decode()
     # Both have happened, so both are chronology milestones, projected from
-    # their own canonical record — and neither has a standing section any more.
-    # The strip beside them holds `Alustatud` and nothing either record put
-    # there (docs/adr/0074 §12, §15).
+    # their own canonical record — and neither has a standing section any more
+    # (docs/adr/0074 §12, §15).
+    #
+    # The strip beside them used to be asserted here as well, on the grounds
+    # that it held `Alustatud`. It does not: the milestone was
+    # `Matter.created_at` and is retired, so a strip exists only where the file
+    # has recorded something the rail draws — which this fixture, deliberately,
+    # has not (docs/adr/0100 §1).
     assert "Sünteetiline tähtaeg" in body
     assert "Sünteetiline võit" in body
-    assert "tl-strip" in body
 
 
 def test_the_matter_page_carries_both_stages_context(client, specialist):

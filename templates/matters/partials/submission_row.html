@@ -87,7 +87,8 @@ anything changed.
         person looking at a list of addressees cannot tell from it that the
         copied-in committees are safe.
       {% endcomment %}
-      <p class="cx-f__hint">{{ sent_opinion_edit_form.recipients.help_text }}</p>
+      <p class="uxtl__formhint"
+         id="{{ sent_opinion_edit_form.recipients.auto_id }}_helptext">{{ sent_opinion_edit_form.recipients.help_text }}</p>
       {% if sent_opinion_edit_form.recipients.errors %}
         <p class="field__error">{{ sent_opinion_edit_form.recipients.errors|first }}</p>
       {% endif %}
@@ -100,8 +101,8 @@ anything changed.
           above. Neither is chosen for the person: the shape every other
           conflicting editor on this page uses.
         {% endcomment %}
-        <div class="uxtl__conflict" role="status">
-          <p class="uxtl__conflictlead">Praegune kirje:</p>
+        <div class="uxtl__conflict">
+          <p class="uxtl__conflictnote">Praegune kirje:</p>
           <p class="uxtl__ms">
             <span class="uxtl__mswhat">{{ sent_opinion_conflict_milestone.what }}</span>
             <span class="uxtl__msdate">{{ sent_opinion_conflict_milestone.display_date }}</span>

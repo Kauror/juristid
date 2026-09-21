@@ -277,3 +277,168 @@ def test_a_refusal_still_focuses_the_field_that_was_wrong(page, base_url):
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.id")
     assert focused == "id_marge_title"
+
+
+# ---------------------------------------------------------------------------
+# OWNER-04 — a mistaken record comes off the file
+# ---------------------------------------------------------------------------
+
+
+def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
+    """The act that did not exist: `Muuda` was the only repair for a wrong file."""
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA eemaldamine"), owner=SANDRA)
+
+    page.goto(url)
+    page.get_by_text("+ Märge", exact=True).click()
+    page.fill("#id_marge_title", "Vale teema peale kirjutatud märge")
+    page.get_by_role("button", name="Salvesta").first.click()
+    page.wait_for_selector("text=Vale teema peale kirjutatud märge")
+
+    row = page.locator("#ajalugu-loend li", has_text="Vale teema peale kirjutatud märge").first
+    row.get_by_text("Kustuta", exact=True).click()
+    # The confirmation names what is going and offers a way out.
+    page.wait_for_selector("text=Eemaldan selle märke teema käigust")
+    row.get_by_role("button", name="Eemalda", exact=True).click()
+    page.wait_for_timeout(800)
+
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    assert "Vale teema peale kirjutatud märge" not in page.locator("#ajalugu-loend").inner_text()
+
+
+def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
+    """`Loobu` closes the disclosure and puts focus back on the chip."""
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA loobumine"), owner=SANDRA)
+
+    page.goto(url)
+    page.get_by_text("+ Märge", exact=True).click()
+    page.fill("#id_marge_title", "See märge jääb alles")
+    page.get_by_role("button", name="Salvesta").first.click()
+    page.wait_for_selector("text=See märge jääb alles")
+
+    row = page.locator("#ajalugu-loend li", has_text="See märge jääb alles").first
+    row.get_by_text("Kustuta", exact=True).click()
+    page.wait_for_selector("text=Eemaldan selle märke teema käigust")
+    row.get_by_role("button", name="Loobu", exact=True).click()
+    page.wait_for_timeout(300)
+
+    assert "See märge jääb alles" in page.locator("#ajalugu-loend").inner_text()
+    focused = page.evaluate("() => document.activeElement && document.activeElement.textContent")
+    assert "Kustuta" in (focused or "")
+
+
+def test_the_removal_is_still_in_the_change_log(page, base_url):
+    """«Take this off the active file», never «erase that it ever existed»."""
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA logi"), owner=SANDRA)
+
+    page.goto(url)
+    page.get_by_text("+ Märge", exact=True).click()
+    page.fill("#id_marge_title", "Eemaldatav märge logis")
+    page.get_by_role("button", name="Salvesta").first.click()
+    page.wait_for_selector("text=Eemaldatav märge logis")
+
+    row = page.locator("#ajalugu-loend li", has_text="Eemaldatav märge logis").first
+    row.get_by_text("Kustuta", exact=True).click()
+    row.get_by_role("button", name="Eemalda", exact=True).click()
+    page.wait_for_timeout(800)
+
+    page.goto(f"{url}muudatused/")
+    page.wait_for_load_state("networkidle")
+    log = page.locator("body").inner_text()
+    assert "Märge eemaldatud" in log
+    assert "Märge lisatud" in log
+
+
+# ---------------------------------------------------------------------------
+# QA-023 — the Chamber's own opinion is correctable
+# ---------------------------------------------------------------------------
+
+
+def _registered_send(page, base_url: str, prefix: str) -> str:
+    """A Matter with one recorded `Koja arvamus`, built the way a lawyer does.
+
+    An opinion file is uploaded and then *registered* as sent, which is what
+    puts `Arvamus välja` on the chronology — a draft is not on it, by design
+    (`Submission.historically_sent`, docs/adr/0092 §3).
+    """
+    url = create_matter(page, base_url, unique_title(prefix), owner=SANDRA)
+
+    page.goto(f"{url}dokumendid/")
+    page.wait_for_load_state("networkidle")
+    page.locator('[data-reveals="lae-dokument"]').first.click()
+    page.locator("#lae-dokument select[name=role]").first.wait_for(state="visible")
+    page.locator("#lae-dokument input[type=file][name=upload]").first.set_input_files(
+        {
+            "name": "Koja-arvamus.pdf",
+            "mimeType": "application/pdf",
+            "buffer": b"%PDF-1.4 arvamus",
+        }
+    )
+    page.locator("#lae-dokument select[name=role]").first.select_option("KODA_SUBMISSION_FINAL")
+    page.locator("#lae-dokument button[type=submit]").first.click()
+    page.wait_for_load_state("networkidle")
+
+    accordion = page.locator("details.accordion--opinions").first
+    if not accordion.evaluate("node => node.open"):
+        accordion.locator("summary").first.click()
+        page.wait_for_timeout(200)
+    page.locator("summary.disclosure__summary").filter(
+        has_text="+ Registreeri saatmine"
+    ).first.click()
+    page.wait_for_selector("#id_saadetud-sent_on")
+
+    page.fill("#id_saadetud-title", "Koja arvamus eelnõule")
+    page.fill("#id_saadetud-sent_on", "14.05.2026")
+    page.locator("#id_saadetud-recipients").select_option(index=0)
+    page.locator("form:has(#id_saadetud-sent_on) button[type=submit]").first.click()
+    page.wait_for_load_state("networkidle")
+    return url
+
+
+def test_the_koja_arvamus_row_can_be_corrected_like_every_other(page, base_url):
+    """The one chronology row that had no `Muuda` at all (QA-023).
+
+    A wrong send date reaches the outbound register, the process rail and every
+    report that counts advocacy, and the only repair was to ask an
+    administrator.
+    """
+    sign_in(page, base_url, SANDRA)
+    url = _registered_send(page, base_url, "QA arvamuse parandus")
+
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    row = page.locator("#ajalugu-loend li", has_text="Arvamus välja").first
+    assert row.count(), "the chronology holds no recorded send to correct"
+
+    row.get_by_text("Muuda", exact=True).click()
+    page.wait_for_selector("input[name='sent_on']")
+    page.fill("input[name='sent_on']", "15.05.2026")
+    page.fill("textarea[name='summary']", "Toetame eelnõu pikema üleminekuajaga.")
+    row.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_timeout(600)
+
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    chronology = page.locator("#ajalugu-loend").inner_text()
+    assert "15.5.2026" in chronology
+    assert "Toetame eelnõu pikema üleminekuajaga." in chronology
+
+
+def test_a_recorded_send_offers_no_kustuta(page, base_url):
+    """The one user-created row without one, and it is argued rather than omitted.
+
+    A sent opinion is a letter that left this office; taking it off the file
+    would be the record claiming it never went (docs/adr/0102 §4).
+    """
+    sign_in(page, base_url, SANDRA)
+    url = _registered_send(page, base_url, "QA arvamust ei kustuta")
+
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    row = page.locator("#ajalugu-loend li", has_text="Arvamus välja").first
+
+    assert row.get_by_text("Muuda", exact=True).count() == 1
+    assert row.get_by_text("Kustuta", exact=True).count() == 0

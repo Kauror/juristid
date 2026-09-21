@@ -36,26 +36,37 @@ from tests import factories
 pytestmark = pytest.mark.django_db
 
 
-def _sent(matter, specialist, organisation, *, when=None, summary="Toetame eelnõu."):
-    """A recorded send, built the short way: the row plus its recipients.
+def _sent(matter, specialist, organisation, capture_evidence, *, when=None, summary=""):
+    """A recorded send, through the door a person actually uses.
 
-    The full `register_sent_opinion` path needs evidence bytes and is exercised
-    where that path is tested; what these assert is the *correction*, so the
-    record is created in the shape a send leaves behind.
+    `register_sent_opinion` rather than a factory row:
+    `submissions_sent_requires_timestamp_and_evidence` is a check constraint
+    and not a convention, so a fixture that set the status directly would be
+    testing a row the product cannot produce — and the send event this service
+    writes is what puts `Arvamus välja` on the chronology, which is the surface
+    these tests are about.
     """
-    from app.submissions.services import set_recipients
+    from app.documents.enums import DocumentRole
+    from app.submissions.services import register_sent_opinion
 
-    submission = factories.SubmissionFactory(
-        matter=matter,
+    version = capture_evidence(
+        matter,
+        b"%PDF-1.4 synthetic evidence",
+        "koja-arvamus.pdf",
+        "application/pdf",
         title="Koja arvamus eelnõule",
-        kind=SubmissionKind.FORMAL_OPINION,
-        status=SubmissionStatus.SENT,
+        role=DocumentRole.KODA_SUBMISSION_FINAL,
+    )
+    submission = register_sent_opinion(
+        document=version.document,
+        version=version,
+        title="Koja arvamus eelnõule",
+        recipients=[organisation],
         sent_at=when or datetime.datetime(2026, 5, 14, 0, 0, tzinfo=datetime.UTC),
         sent_at_precision=SentAtPrecision.DATE,
-        summary=summary,
-        sent_by=specialist,
+        summary=summary or "Toetame eelnõu.",
+        actor=specialist,
     )
-    set_recipients(submission=submission, addressees=[organisation], actor=specialist)
     submission.refresh_from_db()
     return submission
 
@@ -65,8 +76,10 @@ def _sent(matter, specialist, organisation, *, when=None, summary="Toetame eeln�
 # ---------------------------------------------------------------------------
 
 
-def test_the_stated_facts_of_a_send_can_be_corrected(normal_matter, specialist, organisation):
-    submission = _sent(normal_matter, specialist, organisation)
+def test_the_stated_facts_of_a_send_can_be_corrected(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
     other = factories.OrganisationFactory()
 
     correct_sent_opinion(
@@ -86,10 +99,10 @@ def test_the_stated_facts_of_a_send_can_be_corrected(normal_matter, specialist, 
 
 
 def test_a_correction_touches_neither_the_evidence_nor_the_status(
-    normal_matter, specialist, organisation
+    normal_matter, specialist, organisation, capture_evidence
 ):
     """The two invariants the brief names, asserted rather than assumed."""
-    submission = _sent(normal_matter, specialist, organisation)
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
     evidence = submission.final_version_id
     sender = submission.sent_by_id
 
@@ -109,12 +122,14 @@ def test_a_correction_touches_neither_the_evidence_nor_the_status(
     assert submission.sent_by_id == sender
 
 
-def test_a_correction_keeps_the_teadmiseks_recipients(normal_matter, specialist, organisation):
+def test_a_correction_keeps_the_teadmiseks_recipients(
+    normal_matter, specialist, organisation, capture_evidence
+):
     """`set_recipients` replaces the whole set, so the other half must be handed back."""
     from app.submissions.enums import RecipientRole
     from app.submissions.services import set_recipients
 
-    submission = _sent(normal_matter, specialist, organisation)
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
     committee = factories.OrganisationFactory()
     set_recipients(
         submission=submission,
@@ -138,8 +153,10 @@ def test_a_correction_keeps_the_teadmiseks_recipients(normal_matter, specialist,
     assert [row.organisation for row in copied] == [committee]
 
 
-def test_the_correction_writes_its_own_audit_event(normal_matter, specialist, organisation):
-    submission = _sent(normal_matter, specialist, organisation)
+def test_the_correction_writes_its_own_audit_event(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
 
     correct_sent_opinion(
         submission=submission,
@@ -155,14 +172,20 @@ def test_the_correction_writes_its_own_audit_event(normal_matter, specialist, or
     )
     assert event.payload["from"]["sent_at"].startswith("2026-05-14")
     assert event.payload["to"]["sent_at"].startswith("2026-05-15")
-    # And it is not a second send.
-    assert not ChangeEvent.objects.filter(
-        event_type=ChangeEventType.SUBMISSION_SENT, matter=normal_matter
-    ).exists()
+    # And it is not a second send: the one `register_sent_opinion` wrote is
+    # still the only one on the file.
+    assert (
+        ChangeEvent.objects.filter(
+            event_type=ChangeEventType.SUBMISSION_SENT, matter=normal_matter
+        ).count()
+        == 1
+    )
 
 
-def test_a_save_that_changes_nothing_writes_no_audit_row(normal_matter, specialist, organisation):
-    submission = _sent(normal_matter, specialist, organisation)
+def test_a_save_that_changes_nothing_writes_no_audit_row(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
 
     correct_sent_opinion(
         submission=submission,
@@ -194,8 +217,10 @@ def test_a_draft_is_refused(normal_matter, specialist):
     assert str(refusal.value) == NOT_A_RECORDED_SEND
 
 
-def test_a_stale_second_tab_writes_nothing(normal_matter, specialist, organisation):
-    submission = _sent(normal_matter, specialist, organisation)
+def test_a_stale_second_tab_writes_nothing(
+    normal_matter, specialist, organisation, capture_evidence
+):
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
     stale = sent_opinion_revision(submission)
     correct_sent_opinion(
         submission=submission,
@@ -221,8 +246,8 @@ def test_a_stale_second_tab_writes_nothing(normal_matter, specialist, organisati
     assert submission.sent_at.date() == datetime.date(2026, 5, 15)
 
 
-def test_the_row_offers_muuda(client, normal_matter, specialist, organisation):
-    submission = _sent(normal_matter, specialist, organisation)
+def test_the_row_offers_muuda(client, normal_matter, specialist, organisation, capture_evidence):
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
     client.force_login(specialist)
 
     body = client.get(
@@ -233,9 +258,9 @@ def test_the_row_offers_muuda(client, normal_matter, specialist, organisation):
 
 
 def test_a_reader_is_offered_nothing_and_reaches_nothing(
-    client, normal_matter, specialist, organisation, reader
+    client, normal_matter, specialist, organisation, reader, capture_evidence
 ):
-    submission = _sent(normal_matter, specialist, organisation)
+    submission = _sent(normal_matter, specialist, organisation, capture_evidence)
     client.force_login(reader)
 
     body = client.get(
@@ -280,7 +305,7 @@ def test_a_paper_can_be_attached_to_a_position_after_the_fact(
     result = add_external_position_evidence(
         position=position,
         author=specialist,
-        uploads=[SimpleUploadedFile("seisukoht.txt", b"Liidu seisukoht.")],
+        uploads=[SimpleUploadedFile("seisukoht.pdf", b"%PDF-1.4 Liidu seisukoht.")],
     )
 
     assert len(result.documents) == 1
@@ -300,7 +325,7 @@ def test_attaching_a_paper_changes_nothing_the_record_says(normal_matter, specia
     add_external_position_evidence(
         position=position,
         author=specialist,
-        uploads=[SimpleUploadedFile("seisukoht.txt", b"Liidu seisukoht.")],
+        uploads=[SimpleUploadedFile("seisukoht.pdf", b"%PDF-1.4 Liidu seisukoht.")],
     )
 
     position.refresh_from_db()
@@ -451,8 +476,8 @@ def test_two_files_of_one_name_under_one_row_are_told_apart(normal_matter, speci
         author=specialist,
         body="<p>Kaks lisa.</p>",
         uploads=[
-            SimpleUploadedFile("lisa.pdf", b"esimene"),
-            SimpleUploadedFile("lisa.pdf", b"teine, pikem sisu"),
+            SimpleUploadedFile("lisa.pdf", b"%PDF-1.4 esimene"),
+            SimpleUploadedFile("lisa.pdf", b"%PDF-1.4 teine, tunduvalt pikem sisu siin"),
         ],
     )
 
@@ -476,7 +501,7 @@ def test_a_single_file_carries_no_detail(normal_matter, specialist):
         matter=normal_matter,
         author=specialist,
         body="<p>Üks lisa.</p>",
-        uploads=[SimpleUploadedFile("lisa.pdf", b"ainus")],
+        uploads=[SimpleUploadedFile("lisa.pdf", b"%PDF-1.4 ainus")],
     )
 
     page, _more = matter_timeline(matter=normal_matter, user=specialist)

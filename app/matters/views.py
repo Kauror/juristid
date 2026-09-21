@@ -7697,7 +7697,10 @@ def _sent_opinion_row(
                 milestone_of(conflict) if conflict is not None else None
             ),
             "sent_opinion_read_query": ENGAGEMENT_READ_QUERY,
-            "can_write_business_content": may_write_business_content(request.user),
+            # `can_write_business_content` is not set here: it is a context
+            # processor, so every render with a request already carries it —
+            # and the three sibling row renderers rely on the same thing
+            # (`app/core/context_processors.py`).
         },
         status=status,
     )

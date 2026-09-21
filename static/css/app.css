@@ -2420,6 +2420,29 @@ fieldset.field > legend {
   font-size: var(--typography-size-meta);
 }
 
+/* The conflict panel on `Muuda teemat`: the refusal, and then the fields that
+   moved under it.
+
+   A block rather than a line, because it holds a list — «praegu salvestatud X,
+   sinu lehel Y», field by field — and the whole point of stating them is that
+   the second press of `Salvesta` is an informed decision rather than the silent
+   revert done by hand (QA-002). Warning rather than danger: nothing was lost,
+   and the values are all still in the boxes below. */
+.formerror--detail {
+  padding: var(--spacing-3);
+  border-left: 3px solid var(--status-warning);
+  background: var(--surface-raised);
+  border-radius: var(--radius-card);
+}
+
+.formerror__list {
+  margin: var(--spacing-2) 0 0;
+  padding-left: var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
 .formgrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));

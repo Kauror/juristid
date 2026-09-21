@@ -588,6 +588,19 @@
   color: var(--text-muted);
 }
 
+/* A sentence under a control in an inline editor, saying something the control
+   itself cannot.
+
+   One rule rather than the conflict note's, which is about a different thing:
+   «teadmiseks-saajad jäävad muutmata» is a fact about what the save does, and a
+   person looking at a list of addressees cannot tell it from the list
+   (matters/partials/submission_row.html, QA-023). */
+.uxtl__formhint {
+  margin: 2px 0 0;
+  font: 400 11.5px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
 .uxtl__sysrow {
   margin: 0;
   font: 400 12px/1.4 var(--typography-font-sans);

@@ -328,7 +328,22 @@ def test_the_model_carries_no_data_class_of_its_own():
     """TEST-ness is a property of the Matter, never of a child (brief 15)."""
     names = {field.name for field in MatterEngagement._meta.get_fields()}
     assert "data_class" not in names
-    assert "removed_at" not in names
+    assert "status" not in names
+
+
+def test_the_model_carries_a_removal_column_and_it_is_not_a_status():
+    """`removed_at` arrived with OWNER-04, and this test said it never would.
+
+    The original claim was about `status`: a `Kaasamine` has no lifecycle of
+    its own, and giving it one would be the workflow engine this product
+    refuses. `removed_at` is not that. It answers «is this row still on the
+    active file», which is the same kind of question `visibility_override`
+    answers and is enforced in the same chokepoint — not a state a record moves
+    through, and never a `Tühistatud` (docs/adr/0102 §1).
+    """
+    names = {field.name for field in MatterEngagement._meta.get_fields()}
+    assert "removed_at" in names
+    assert "removed_by" in names
     assert "status" not in names
 
 

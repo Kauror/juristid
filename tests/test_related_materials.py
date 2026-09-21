@@ -1049,7 +1049,7 @@ def test_the_projections_are_read_under_their_current_versions():
     a genuine contract change and the one this number now records — nothing to do
     with the surface this file is about.
     """
-    assert INDEX_VERSION == "OPSUM.1"
+    assert INDEX_VERSION == "TEEMA.1"
     assert ARCHIVE_INDEX_VERSION == "1"
 
 
