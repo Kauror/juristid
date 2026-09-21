@@ -442,3 +442,40 @@ def test_a_recorded_send_offers_no_kustuta(page, base_url):
 
     assert row.get_by_text("Muuda", exact=True).count() == 1
     assert row.get_by_text("Kustuta", exact=True).count() == 0
+
+
+def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_url):
+    """OWNER-01's other half: the `+` beside the search box has to work.
+
+    Typing is not creating — the box posts nothing and only `+` writes the
+    typed name into the hidden field the save reads — so this presses it, saves,
+    reloads, and then looks for the body in the picker on a *second* Matter.
+    A name that only round-trips on the page it was typed on would pass a
+    shallower test and still leave nothing in the catalogue
+    (docs/adr/0073, `resolve_organisation_name`).
+    """
+    sign_in(page, base_url, SANDRA)
+    name = unique_title("QA Liit")
+    url = create_matter(page, base_url, unique_title("QA uus organisatsioon"), owner=SANDRA)
+
+    page.goto(url)
+    _open_feedback(page)
+    picker = page.locator("[data-orgfind]").first
+    picker.locator("[data-orgfind-input]").fill(name)
+    picker.locator("[data-orgfind-add]").click()
+    page.fill("#id_tagasiside_summary", "Uue liidu seisukoht.")
+    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.wait_for_selector("text=Uue liidu seisukoht")
+
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    assert name in page.locator("#ajalugu-loend").inner_text()
+
+    # And the catalogue holds it: a second Matter's picker finds it by name.
+    second = create_matter(page, base_url, unique_title("QA teine teema"), owner=SANDRA)
+    page.goto(second)
+    _open_feedback(page)
+    picker = page.locator("[data-orgfind]").first
+    picker.locator("[data-orgfind-input]").fill(name)
+    page.wait_for_timeout(400)
+    assert name in picker.inner_text()

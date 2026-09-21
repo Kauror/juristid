@@ -479,12 +479,22 @@
 /* `Kustuta` and its confirmation.
 
    A `<details>` so the confirmation opens in place with no second page and no
-   script, and `display: contents` so the disclosure itself lays out as if it
-   were not there: the chip has to sit on the same line as `Muuda` beside it,
-   and a block wrapper would put it on its own row on every chronology line
-   (OWNER-04, docs/adr/0102). */
+   script (OWNER-04, docs/adr/0102).
+
+   **An ordinary flex item, not `display: contents`.** The chip has to sit on
+   the same line as `Muuda` beside it, which `display: contents` also achieves —
+   by removing the `<details>` box entirely. That is the one declaration with a
+   standing accessibility caveat: several engines drop such an element from the
+   accessibility tree along with its box, and a disclosure whose grouping
+   disappears is exactly the kind of thing that breaks quietly. A flex item that
+   grows to the full row once it is open costs nothing and asserts nothing about
+   any engine's tree. */
 .uxtl__remove {
-  display: contents;
+  flex: 0 0 auto;
+}
+
+.uxtl__remove[open] {
+  flex-basis: 100%;
 }
 
 /* What tells two same-named attachments apart, when there are two.
@@ -513,11 +523,10 @@
   color: var(--status-danger);
 }
 
-/* The confirmation itself takes a line of its own under the chips, because it
-   is a sentence rather than a control and wrapping it between two buttons is
-   how a reader misses what is being removed. */
+/* The confirmation itself reads under the chip that opened it, because it is a
+   sentence rather than a control and wrapping it between two buttons is how a
+   reader misses what is being removed. */
 .uxtl__removeform {
-  flex-basis: 100%;
   margin-top: 4px;
 }
 
