@@ -6,10 +6,13 @@ this strip answers the third question, which is *what course is this file on* �
 the major acts it has been through, and the next dated point it is known to be
 heading for. Five of them exist today:
 
-    Alustatud · Tagasiside tähtaeg · Koja arvamus · Arvamuse tähtaeg ·
-    Jõustumine · Lõpetatud
+    Tagasiside tähtaeg · Koja arvamus · Arvamuse tähtaeg · Jõustumine ·
+    Lõpetatud
 
 and a Matter draws only the ones it really has. That is the whole vocabulary.
+There was a sixth, `Alustatud`, and the long note in `process_steps` says why
+it is gone: it was `Matter.created_at`, a fact about this database rather than
+about a procedure (docs/adr/0100 §1, OWNER-03).
 An earlier version of this module also projected the current `StageVocabulary`,
 every `MatterEngagement` and every `MatterImportantDate` — six sources, which
 made the strip a second, shorter copy of the chronology with the header's
@@ -23,14 +26,14 @@ strip: a consultation with no reply-by date draws nothing, however many rounds a
 file has run. What draws a column is the dated point the round is heading for,
 which is the *second* category below rather than the act.
 
-**A known beginning and a known destination.** A newly created Matter with a
-response deadline is not a file with only a start: where its first phase is
-heading is already recorded, on the Matter's own `response_deadline` column, and
-a strip that drew `Alustatud` alone would be withholding it. So the strip
-carries two kinds of truthful information — acts that have happened, and
-canonical dated points the file is known to be heading for:
+**A known destination, not only a history.** Where a newly created Matter's
+first phase is heading is already recorded, on the Matter's own
+`response_deadline` column, and a strip that drew only what had already happened
+would be withholding it. So the strip carries two kinds of truthful information
+— acts that have happened, and canonical dated points the file is known to be
+heading for:
 
-    Alustatud · Arvamuse tähtaeg 20.09.2026
+    Kooskõlastusring · Arvamuse tähtaeg 20.09.2026
 
 A future column claims nothing about the past. It says *this is the next dated
 point in the process*, which is exactly what the record says (docs/adr/0074

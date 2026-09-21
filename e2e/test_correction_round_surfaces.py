@@ -161,7 +161,22 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
 
 
 def test_the_process_link_is_a_real_link_with_its_control_beside_it(page, base_url):
-    """The stored address, opened safely, and `Muuda` where it belongs."""
+    """The stored address, opened safely, and `Muuda` where it belongs.
+
+    **Half of OWNER-02 was disproved before it was fixed.** The finding
+    reported the link as both broken and badly placed. Reproduced on
+    `a46fa5a` — this exact scenario, typed into that revision — the address
+    stored and the anchor opened it: `procedural_links.html` already rendered
+    `<a href="{{ link.url }}">`, and no step of this test failed on the link
+    itself. What did fail was the placement: the control sat outside the
+    link's own value region and read `Paranda`.
+
+    So this test is written to assert both halves at once. The `href`
+    assertions are the *regression guard on a thing that already worked*, kept
+    because a finding that names a defect which is not there is exactly how a
+    working behaviour gets rewritten by somebody fixing the sentence rather
+    than the code; the two below them are the correction.
+    """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA menetluse link"), owner=SANDRA)
     address = "https://eelnoud.valitsus.ee/main/mount/docList/qa-1?f=2"

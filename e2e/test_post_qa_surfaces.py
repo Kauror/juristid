@@ -671,6 +671,12 @@ def test_deleting_a_teema_removes_it_from_the_register(page, base_url):
     depends on that one surviving, and a browser suite that deleted a row other
     scenarios read would fail somewhere else entirely — which is the worst
     shape a failure can take in a suite that shares one world.
+
+    **Half of QA-017 was disproved before it was fixed.** The finding reported
+    the delete as landing on the register «without feedback». It did not: this
+    test's own `Teema kustutati.` assertion is on `a46fa5a` unchanged, and
+    running it against that revision passes. The half that was true was
+    `Loobu`, and only that moved — the test above reads its new destination.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size(VIEWPORTS["wide"])
