@@ -17,9 +17,9 @@ still says it today.
 
 | Gate | Job that reports it | What stands behind it |
 | --- | --- | --- |
-| Quality | `Format, lint, types and system checks` | ruff, mypy, Django checks, shellcheck, era contracts, shard completeness |
-| PostgreSQL tests | `PostgreSQL 18 test suite` | `PostgreSQL migration and runtime safety` + 5 test shards |
-| Browser | `Browser workflow (Playwright on PostgreSQL 18)` | 6 browser shards + `Visual regression` |
+| Quality | `Format, lint, types and system checks` | ruff, mypy, Django checks, shellcheck, era contracts, shard completeness, shard health |
+| PostgreSQL tests | `PostgreSQL 18 test suite` | `PostgreSQL migration and runtime safety` + 6 test shards |
+| Browser | `Browser workflow (Playwright on PostgreSQL 18)` | 7 browser shards + `Visual regression` |
 | Container/compose | `Container and compose smoke test` | unchanged |
 | Backup/restore | `Backup and restore rehearsal` | unchanged |
 | Dependency baseline | `Dependency vulnerability baseline` | unchanged |
@@ -69,11 +69,11 @@ suite reaches it.
 The command in the workflow is the whole mechanism, so it works anywhere:
 
 ```bash
-uv run pytest --shard-count=5 --shard-index=3
+uv run pytest --shard-count=6 --shard-index=3
 ```
 
 ```bash
-uv run pytest e2e --ignore=e2e/test_ui_regression.py --shard-count=6 --shard-index=2 --browser chromium
+uv run pytest e2e --ignore=e2e/test_ui_regression.py --shard-count=7 --shard-index=2 --browser chromium
 ```
 
 To see which files a shard holds without running them, add `--collect-only -q`.
@@ -206,6 +206,45 @@ Every sharded job uploads a JUnit report, so one run's reports describe the
 whole suite. `tests/test_ci_sharding.py` fails if the table names files that no
 longer exist, so it cannot quietly rot.
 
+### "Refresh it when balance has visibly drifted" was not enough
+
+It drifted for three weeks and nobody saw it. The table said 2026-08-30 and was
+read on 2026-09-21, and in between the suite had gone from 5328 tests to 10032:
+**39% of the collected files had no measurement at all**, and 36% of the tests.
+The partition still ran every one of them — that never depended on the table —
+but it was balancing a model of a suite that no longer existed, and the slowest
+PostgreSQL shard was finishing 42% above the median of its own run. Two and a
+half minutes a build, invisible, because nothing about a slow shard looks wrong.
+
+So the drift is now reported rather than waited for.
+`scripts/ci/report_shard_health.py` runs in the quality job and prints, every
+build: where the table came from and how old it is, how many collected files and
+tests have no measurement, how many files hold a different number of tests than
+the table records, the predicted load of each shard, and the slowest/median
+ratio. Given a directory of downloaded JUnit reports (`--durations`) it also
+prints what those runners actually did, which is the only honest check on the
+prediction.
+
+When something crosses a threshold it says `CI SHARD TIMINGS NEED REFRESH` and
+names which one, with the two commands above. The thresholds are the numbers the
+2026-08-30 table crossed — 15% of collected tests unmeasured, 20% of files, 30
+days old, or a predicted slowest shard 1.25x the median — so each is set where
+it would have fired while the drift was still cheap.
+
+**It is informational and exits 0 whatever it finds**, and the step carries
+`continue-on-error: true` as well. A performance report is not a correctness
+proof; hosted runners have slow days; and a build that went red over a
+three-week-old table would teach people to ignore the words. The correctness
+proofs are below, and they are the ones allowed to be red.
+
+Note which threshold does the work. The predicted slowest/median ratio is close
+to 1.00 almost always, *including when the table is badly stale* — the greedy
+schedule balances its own model, and a wrong model balances perfectly against
+itself. Under the 2026-08-30 table it predicted six equal 242s shards for a
+suite whose shards actually ranged over 100s. The unmeasured fraction is what
+detects staleness; the ratio detects the different fault of a shard count raised
+past what whole-file granularity can balance.
+
 ## Why the suite is complete, and how that is proved
 
 Two independent proofs, at different levels:
@@ -231,7 +270,7 @@ what it proves is what CI will actually do.
 It runs in the quality job, which has no database and finishes in well under a
 minute. The proof that the slow jobs are complete should not itself be slow.
 
-## What was measured
+## What was measured, when it was split (2026-08-30)
 
 Baseline, run [33321958813](https://github.com/Kauror/juristid/actions/runs/33321958813);
 the architecture benchmark, run
@@ -287,6 +326,89 @@ assignment is not reproducible, and running the whole suite through one
 PostgreSQL and four contended cores was measurably slower than the same work on
 independent runners. It also turned up an order dependency in the
 suite that independent shards do not (see below).
+
+## What was re-measured three weeks later (2026-09-21)
+
+The suite had roughly doubled — 5328 pytest tests to 10032, 423 browser tests
+to 1101 — and the split had not been re-measured since the day it was built.
+Twelve consecutive green `main` runs (35470566458 through 35591850047) put the
+median wall clock at **9:47**, against the 4:40 this document recorded.
+
+Almost none of that was the shards being too few. Breaking the jobs into steps
+shows how small the fixed cost of a runner actually is:
+
+| Per shard | PostgreSQL | Browser |
+| --- | --- | --- |
+| Job setup (containers, checkout, uv, OCR, upload) | 38s | 49s |
+| Test execution | ~392s | ~407s |
+
+An extra runner therefore costs about 40–50 runner-seconds and nothing at all on
+the critical path. What the runs were losing was **balance**: scoring the live
+file set against a run the table had never seen, the 2026-08-30 metadata put the
+slowest PostgreSQL shard at **1.42x** the median of its own run and the slowest
+browser shard at **1.28x**. The suite was not too big for five runners; it was
+being cut with a three-week-old ruler.
+
+| | 2026-08-30 table, 5+6 shards | refreshed, 5+6 | refreshed, 6+7 |
+| --- | --- | --- | --- |
+| PostgreSQL slowest | 578s | 481s | **409s** |
+| PostgreSQL imbalance | 1.42 | 1.03 | 1.01 |
+| Browser slowest | 565s | 486s | **424s** |
+| Browser imbalance | 1.28 | 1.05 | 1.04 |
+| Shard runner-minutes | 86.3 | 86.3 | 88.3 |
+
+Refreshing the table alone is free and recovers most of it — 97s off the
+PostgreSQL critical path and 79s off the browser one, for no extra machine at
+all. The sixth PostgreSQL runner is worth another 72s and the seventh browser
+runner another 62s, which is what a runner has to buy to be worth keeping
+forever.
+
+**It stops there**, and deliberately. A seventh
+PostgreSQL shard buys 45s and an eighth browser shard 47s — below the bar, for a
+permanent machine each. Past that the granularity runs out rather than the
+arithmetic: whole files are the unit, `tests/test_business_write_boundary.py`
+alone is 225s of the PostgreSQL suite's 1998s, and at nine shards it *is* a
+shard. The numbers were simulated out to nine and ten and are in the pull
+request that made this change; the answer was six and seven.
+
+### The slow files, and why none of them were touched
+
+The ten slowest files in each suite were read. Nothing in them is a defect:
+
+* `tests/test_read_side_existence_oracles.py` — 139s over 11 tests, 12.6s each.
+  It builds a full page of work with real evidence and real extraction, twice,
+  and compares the two worlds. The cost *is* the proof; a shared fixture would
+  weaken exactly what it asserts.
+* `tests/test_multiple_senders_migration.py` — 58s over 6 tests, running real
+  migrations forwards and backwards.
+* `tests/test_reference_data_isolation.py` — 46s, of which 28s is one test that
+  starts a second pytest process on purpose.
+* `tests/test_business_write_boundary.py` — 225s, but over 720 tests: 0.31s
+  each, and it is the whole write surface enumerated.
+
+These are expensive because they do expensive things, and a refreshed table
+schedules around them instead of being surprised by them. No test was made
+cheaper by being made weaker.
+
+### The setup costs that were investigated and left alone
+
+* **Tesseract.** Every PostgreSQL shard installs it, and it is genuinely absent
+  from the runner image — 9MB of packages, **11s median** (16s at p90). Exactly
+  four tests need the real runtime, all in `tests/test_extraction_parsers.py`,
+  and they cost 0.44s between them. Tempting, and rejected: `requires_ocr` is a
+  `skipif`, so a shard without the binary *silently skips* those four, and the
+  shard a file lands in is not stable across commits — there is no shard to
+  install it on. A dedicated job would mean carving one file out of a partition
+  whose entire virtue is having no special cases, to save 11s of a 409s shard.
+  The runtime's presence is already asserted separately, in
+  `PostgreSQL migration and runtime safety`, and all four tests are confirmed to
+  run rather than skip.
+* **`uv sync --frozen`** — 3s, on a confirmed `setup-uv` cache hit. Nothing to
+  win, and a second overlapping cache would only add a way to be stale.
+* **Playwright** — `~/.cache/ms-playwright` is hitting; `Install the browser`
+  takes **1s**. Left alone.
+* **Coverage** stays on every shard, and `COVERAGE_CORE=sysmon` stays rejected
+  for the reason recorded above: it reports a different number.
 
 ## The order dependency it turned up, since closed
 
