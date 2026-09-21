@@ -142,8 +142,11 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Märgitud liikmeks ekslikult").first
     row.get_by_text("Muuda", exact=True).click()
-    page.wait_for_selector("input[name='source_is_member']")
-    page.locator("input[name='source_is_member']").uncheck()
+    # Scoped to the row: the capture panel renders its own `source_is_member`
+    # on the same page, and that one is hidden inside a closed disclosure.
+    mark = row.locator("input[name='source_is_member']")
+    mark.wait_for(state="attached")
+    mark.uncheck(force=True)
     row.get_by_role("button", name="Salvesta").click()
     page.wait_for_timeout(500)
 

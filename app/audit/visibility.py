@@ -76,6 +76,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
         MatterExternalPosition,
         MatterProceduralDevelopment,
         MatterProceduralLink,
+        MatterWebsiteOverview,
     )
     from app.submissions.models import Submission
     from app.workflow.models import NextAction
@@ -88,7 +89,11 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
 
     return (
         (
-            (ChangeEventType.ENTRY_ADDED, ChangeEventType.ENTRY_EDITED),
+            (
+                ChangeEventType.ENTRY_ADDED,
+                ChangeEventType.ENTRY_EDITED,
+                ChangeEventType.ENTRY_REMOVED,
+            ),
             Entry,
             direct,
         ),
@@ -109,6 +114,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.SUBMISSION_WITHDRAWN,
                 ChangeEventType.SUBMISSION_SUPERSEDED,
                 ChangeEventType.SUBMISSION_RECIPIENTS_CHANGED,
+                ChangeEventType.SUBMISSION_CORRECTED,
             ),
             Submission,
             direct,
@@ -120,6 +126,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.IMPORTANT_DATE_ADDED,
                 ChangeEventType.IMPORTANT_DATE_CHANGED,
                 ChangeEventType.IMPORTANT_DATE_CANCELLED,
+                ChangeEventType.IMPORTANT_DATE_REMOVED,
             ),
             MatterImportantDate,
             direct,
@@ -129,6 +136,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.EFFECTIVE_DATE_ADDED,
                 ChangeEventType.EFFECTIVE_DATE_CHANGED,
                 ChangeEventType.EFFECTIVE_DATE_CANCELLED,
+                ChangeEventType.EFFECTIVE_DATE_REMOVED,
             ),
             MatterEffectiveDate,
             direct,
@@ -138,6 +146,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.ENGAGEMENT_ADDED,
                 ChangeEventType.ENGAGEMENT_CHANGED,
                 ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
+                ChangeEventType.ENGAGEMENT_REMOVED,
             ),
             MatterEngagement,
             direct,
@@ -148,6 +157,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.EXTERNAL_POSITION_CORRECTED,
                 ChangeEventType.EXTERNAL_POSITION_SOURCE_CHANGED,
                 ChangeEventType.EXTERNAL_POSITION_DOCUMENT_LINKED,
+                ChangeEventType.EXTERNAL_POSITION_REMOVED,
             ),
             MatterExternalPosition,
             direct,
@@ -174,6 +184,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,
                 ChangeEventType.PROCEDURAL_DEVELOPMENT_CORRECTED,
                 ChangeEventType.PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED,
+                ChangeEventType.PROCEDURAL_DEVELOPMENT_REMOVED,
             ),
             MatterProceduralDevelopment,
             direct,
@@ -184,8 +195,31 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.WORK_VICTORY_CHANGED,
                 ChangeEventType.WORK_VICTORY_CONFIRMED,
                 ChangeEventType.WORK_VICTORY_REJECTED,
+                ChangeEventType.WORK_VICTORY_REMOVED,
             ),
             MatterWorkVictory,
+            direct,
+        ),
+        (
+            # `Ülevaade / uudis`, classified at last.
+            #
+            # `MATTER_LEVEL_EVENT_TYPES` has said since it was written that
+            # these four were kept off the audit page because
+            # `MatterWebsiteOverview` is a `VisibilityInheritingModel` whose
+            # summary carries what the record holds, that classifying them here
+            # was the right fix, and that until somebody did it the page was
+            # «incomplete rather than unsafe». OWNER-04 made the removal of one
+            # a thing a lawyer does, and an act with no line in `Kõik
+            # muudatused` is the half of that act nobody can check — so this is
+            # the day (docs/adr/0102 §2).
+            (
+                ChangeEventType.WEBSITE_OVERVIEW_PLANNED,
+                ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
+                ChangeEventType.WEBSITE_OVERVIEW_CANCELLED,
+                ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
+                ChangeEventType.WEBSITE_OVERVIEW_REMOVED,
+            ),
+            MatterWebsiteOverview,
             direct,
         ),
     )
@@ -216,7 +250,7 @@ def child_event_types() -> frozenset[str]:
 #: neither is absent from the page until somebody decides which of the two it is.
 #: `tests/test_substantive_matter_history.py` fails if that stops being true.
 #:
-#: **Six families are deliberately not here**, and each is a concrete leak rather
+#: **Two families are deliberately not here**, and each is a concrete leak rather
 #: than a precaution:
 #:
 #: * `MATTER_RELATION_ADDED` / `MATTER_RELATION_REMOVED` — the summary names the
@@ -225,14 +259,22 @@ def child_event_types() -> frozenset[str]:
 #: * `BACKGROUND_MATERIAL_ADDED` / `BACKGROUND_MATERIAL_REMOVED` — the summary
 #:   names a `Document` or a foreign `Submission`, each of which carries its own
 #:   override.
-#: * `WEBSITE_OVERVIEW_PLANNED` / `_PUBLISHED` / `_CANCELLED` /
-#:   `_LINK_CORRECTED` — `MatterWebsiteOverview` is a
-#:   `VisibilityInheritingModel` and the summary carries what it holds.
 #:
-#: None of the three has a visibility classifier in :func:`_child_families`
-#: today. Classifying them is the right fix and it is a change to *that* map, not
-#: to this one; until somebody makes it, the audit page is incomplete rather than
-#: unsafe, which is the trade this vocabulary exists to take.
+#: `WEBSITE_OVERVIEW_PLANNED` / `_PUBLISHED` / `_CANCELLED` / `_LINK_CORRECTED`
+#: used to be the third of those, for the same reason:
+#: `MatterWebsiteOverview` is a `VisibilityInheritingModel` and the summary
+#: carries what it holds. This note said classifying them in
+#: :func:`_child_families` was the right fix, and that until somebody made it
+#: the audit page was incomplete rather than unsafe. OWNER-04 made it, because
+#: removing an `Ülevaade / uudis` is now a thing a lawyer does and an act with
+#: no line in `Kõik muudatused` is the half of that act nobody can check. They
+#: render scoped, from that map, and are no longer named here.
+#:
+#: Neither of the remaining two has a visibility classifier in
+#: :func:`_child_families` today. Classifying them is the right fix and it is a
+#: change to *that* map, not to this one; until somebody makes it, the audit
+#: page is incomplete rather than unsafe, which is the trade this vocabulary
+#: exists to take.
 #:
 #: `TAG_ASSIGNED` and `TAG_REMOVED` are here because a `Tag` is department
 #: reference data with no visibility of its own. `IMPORT_APPLIED` and the four

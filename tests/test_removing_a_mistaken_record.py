@@ -491,6 +491,70 @@ def test_every_removable_family_is_named_once_and_resolves(normal_matter, specia
         assert hasattr(kind.model, "removed_at")
 
 
+def test_every_removal_event_is_classified_for_the_change_log(normal_matter, specialist):
+    """A removal nobody can read about in `Kõik muudatused` is half an act.
+
+    `change_log_event_types` is an allowlist and `_child_families` is the map
+    that scopes each family — both enumerated rather than derived, so a new
+    event family reaches that page only when somebody adds it. Eight new types
+    arrived with OWNER-04 and none of them was in either, so the whole trail
+    this record promises was invisible. Found in a browser, which is where a
+    page that renders nothing looks exactly like a page with nothing to render
+    (`test_the_removal_is_still_in_the_change_log`).
+    """
+    from app.audit.visibility import change_log_event_types, child_event_types
+
+    readable = change_log_event_types()
+    scoped = child_event_types()
+    for kind in removable_kinds().values():
+        assert kind.event_type in readable, kind.key
+        # And scoped, not merely allowed: an unclassified type passes
+        # `scope_change_events` untouched, which for an event about a
+        # restricted child is the leak this module exists to prevent.
+        assert kind.event_type in scoped, kind.key
+
+
+def test_the_removal_reads_in_the_change_log(signed_in, normal_matter, specialist):
+    """End to end, on the page that promises it."""
+    from django.urls import reverse as _reverse
+
+    development = _note(normal_matter, specialist)
+    _remove(normal_matter, "marge", development, specialist)
+
+    body = signed_in.get(
+        _reverse("matters:matter_changes", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+
+    assert "Märge eemaldatud" in body
+    # And what it was doing there before is still readable beside it.
+    assert "Märge lisatud" in body
+
+
+def test_a_removal_on_a_restricted_child_is_not_readable_by_everybody(
+    client, normal_matter, specialist, reader
+):
+    """The scoping half, asserted rather than assumed.
+
+    A reader may open this Matter; the record is restricted below it. The line
+    saying somebody removed it names the record, so it is scoped by the
+    record's own visibility — which is what classifying the type in
+    `_child_families` buys.
+    """
+    development = _note(normal_matter, specialist)
+    MatterProceduralDevelopment.objects.filter(pk=development.pk).update(
+        visibility_override=Visibility.RESTRICTED
+    )
+    _remove(normal_matter, "marge", development, specialist)
+    client.force_login(reader)
+
+    body = client.get(
+        reverse("matters:matter_changes", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+
+    assert "Märge eemaldatud" not in body
+    assert NOTE_TITLE not in body
+
+
 def test_a_sent_koja_arvamus_is_not_removable():
     """The exclusion docs/adr/0102 argues rather than omits.
 
