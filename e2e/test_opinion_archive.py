@@ -481,9 +481,16 @@ def test_the_live_opinion_search_keeps_the_address_honest(page, base_url):
     go_to(page, "Teemad")
 
     # 1. A teemad search is active, live, and in the address.
+    #
+    # Waited for by the answer rather than by the clock, for the reason
+    # `test_the_opinion_tab_does_not_undo_a_live_teemad_search` sets out above:
+    # the register's live search is `input changed delay:250ms`, so a fixed
+    # sleep plus `networkidle` resolves on a page that has not fired the
+    # request yet, and the address is then read before the push. `.registercount`
+    # is inside the swapped fragment and names the term it answered for, so an
+    # auto-retrying assertion on it cannot pass early.
     page.locator("#teemad-otsing").fill("pakendiseaduse")
-    page.wait_for_timeout(600)
-    page.wait_for_load_state("networkidle")
+    expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
     assert "q=pakendiseaduse" in page.url
     teemad_rows = page.locator("#teemad-tulemused tbody tr").count()
     assert teemad_rows, "the register matched nothing, so this proves nothing"

@@ -247,7 +247,13 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # The strip is still drawn, and still says what it always said about this
     # Matter — so the assertion above is about the source, not about a strip
     # that stopped rendering.
-    expect(page.locator(".tl-step__what", has_text="Alustatud")).to_have_count(1)
+    #
+    # It used to be checked by looking for `Alustatud`, which every Matter had
+    # because it was `Matter.created_at`. That milestone is retired
+    # (docs/adr/0100 §1), so what proves the strip is still there has to be a
+    # date somebody recorded — and on this Matter the one that is always there,
+    # whatever else the file's tests have written, is the seeded important date.
+    expect(page.locator(".tl-step__what", has_text="Konfidentsiaalne tähtaeg")).to_have_count(1)
 
 
 def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, base_url):

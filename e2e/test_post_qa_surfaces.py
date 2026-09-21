@@ -654,12 +654,13 @@ def test_the_confirmation_is_a_page_that_names_the_teema(page, base_url, size):
     expect(page.get_by_role("link", name="Loobu")).to_be_visible()
     no_horizontal_overflow(page)
 
-    # And `Loobu` really is the way back, with the record untouched.
+    # And `Loobu` really is the way back — to the Teema, with the record
+    # untouched. It used to land on `Muuda teemat`, which put a reader who had
+    # just declined to delete anything into a form they never asked for
+    # (QA-017).
     page.get_by_role("link", name="Loobu").click()
     page.wait_for_load_state("networkidle")
-    assert page.url.rstrip("/").endswith("/muuda")
-    page.goto(detail)
-    page.wait_for_load_state("networkidle")
+    assert page.url.rstrip("/") == detail.rstrip("/"), page.url
     expect(page.locator("#teema-pais")).to_contain_text(title)
 
 

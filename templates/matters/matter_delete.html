@@ -95,12 +95,16 @@
           `Loobu` returns to the Teema, which is where somebody deciding not to
           delete it wants to be.
 
-          It used to go to `Muuda teemat`, because this page's own back-link
-          reads «← Muuda teemat» and the route was reached from there. The
-          Teema header links straight here now, so cancelling dropped a reader
-          into an edit form they never asked for — a destructive question
-          answered «no» should leave nothing behind, including a form
-          (QA-017).
+          It used to return to `Muuda teemat`, the page this one is reached
+          from. That is where the reader was, but it is not where they were
+          going: they opened the edit form, followed a destructive offer out of
+          it, and answered «no» — and landing back in a half-filled form makes
+          the answer look like a step in an edit rather than the end of the
+          question. A destructive question answered «no» should leave nothing
+          behind, the form included (QA-017).
+
+          The back-link at the top of this page still reads «← Muuda teemat»,
+          for the reader who did mean to go on editing.
         {% endcomment %}
         <a class="button button--quiet"
            href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>

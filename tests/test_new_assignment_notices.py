@@ -23,7 +23,14 @@ Neither deletes the row: what landed on a desk is a fact about that day.
 block*. Rendering `matter_detail` through any other route does not count, and
 the regression that proves it is the load-bearing test in this file — without
 it, somebody later "simplifies" the feature by clearing notices in
-`matter_detail` and silently breaks the explicit self-assignment requirement.
+`matter_detail`, and a hand-over that redirected its recipient into the Matter
+would be marked read before they ever saw the rail.
+
+**Who never gets one.** A lawyer who names themselves. `actor == owner` on the
+actor's own save is not news to anybody, and filing a Teema for yourself is the
+commonest act in the product — so the notice it used to write was noise in
+every ordinary working day (QA-022). Nothing else is suppressed: having touched
+a Matter before does not stop a colleague's hand-over reaching the block.
 
 **Whose it is.** The recipient's, absolutely. Another person cannot acknowledge
 it, cannot see it, and a department head reading the same page about a colleague

@@ -1049,9 +1049,13 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     # check.** The box has always been saved and has never been shown: a lawyer
     # who ticked it had no way to confirm it, and no way to notice one ticked by
     # mistake. Appended rather than given a line — «whose» is one question, and
-    # «a member's» is the rest of that answer — and never on a record with no
-    # author, where the marker would be the only thing the headline said about
-    # the source (QA-014).
+    # «a member's» is the rest of that answer (QA-014).
+    #
+    # Stated on an unattributed row too, and especially there: since
+    # docs/adr/0101 a received position may name nobody, and on such a row the
+    # mark is the *only* thing known about the source. «Meile saadetud
+    # tagasiside · Liige» — no empty punctuation where the author would have
+    # been, because `headline` above already dropped the separator with it.
     if position.source_is_member:
         headline = f"{headline} · Liige"
     return ChronologyMilestone(

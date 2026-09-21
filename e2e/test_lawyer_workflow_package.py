@@ -223,15 +223,22 @@ def test_the_launcher_offers_both_feedback_chips(page, base_url):
     expect(bar.get_by_text("+ Menetluse areng", exact=True)).to_have_count(0)
 
 
-def test_feedback_with_no_organisation_is_refused_on_the_page(page, base_url):
-    """`Allikas` is off this panel, so the institution is what answers authorship.
+def test_feedback_with_no_organisation_is_accepted_on_the_page(page, base_url):
+    """**Reversed by docs/adr/0101**, which this test used to assert the other way.
 
     docs/adr/0091 §3.3 widened the column for a survey of 234 companies with no
-    single author, and every row filed that way keeps its label and is corrected
-    through `Muuda`. What it cost was a question with two right answers at the
-    top of the panel a department fills in several times a week, so the creation
-    form names an institution — and the authorship rule is *met* rather than
-    relaxed (docs/adr/0095 §4).
+    single author, and docs/adr/0095 §4 then took `Allikas` off the creation
+    panel — leaving the institution as the one answer to authorship, and this
+    page refusing a save without it.
+
+    The owner met that refusal writing down a telephone call (OWNER-01). There
+    was nothing truthful to type, so the panel's question had to be answered by
+    inventing a name, and the rule meant to keep invented authorship off a
+    professional file was manufacturing it. For `RECEIVED` the absence is now
+    the record.
+
+    Read in a browser because the refusal was one: the service accepting the
+    save proves nothing about a panel that never posts it.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -240,14 +247,37 @@ def test_feedback_with_no_organisation_is_refused_on_the_page(page, base_url):
     form = panel(page, "arvamus-tagasiside")
     form.locator("[name=summary]").fill("58 vastust 234 küsitletust; enamik toetab.")
     form.get_by_role("button", name="Salvesta tagasiside").click()
+    page.wait_for_load_state("networkidle")
 
-    reopened = panel(page, "arvamus-tagasiside")
+    # Filed, and the headline ends where the author would have begun rather
+    # than trailing a colon into nothing.
+    expect(chronology(page)).to_contain_text("58 vastust 234 küsitletust")
+    expect(chronology(page)).to_contain_text("Meile saadetud tagasiside")
+    expect(chronology(page)).not_to_contain_text("Meile saadetud tagasiside:")
+    # The panel closed, which is what a save does and a refusal does not.
+    expect(panel(page, "arvamus-tagasiside").locator(".field__error")).to_have_count(0)
+
+
+def test_a_discovered_opinion_with_no_organisation_is_still_refused_on_the_page(page, base_url):
+    """The half of docs/adr/0091 §3.3 that docs/adr/0101 deliberately kept.
+
+    A published opinion always has a body that published it, so a `Teiste
+    arvamus` row naming nobody is an anonymous claim on a professional file.
+    The refusal above moved; this one did not.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "arvamus-teiste")
+
+    form = panel(page, "arvamus-teiste")
+    form.locator("[name=summary]").fill("Keegi kuskil arvas midagi.")
+    form.get_by_role("button", name="Salvesta arvamus").click()
+
+    reopened = panel(page, "arvamus-teiste")
     expect(reopened.locator(".field__error").first).to_be_visible()
     # And what they wrote is still in the box.
-    expect(reopened.locator("[name=summary]")).to_have_value(
-        "58 vastust 234 küsitletust; enamik toetab."
-    )
-    expect(chronology(page)).not_to_contain_text("Meile saadetud tagasiside:")
+    expect(reopened.locator("[name=summary]")).to_have_value("Keegi kuskil arvas midagi.")
+    expect(chronology(page)).not_to_contain_text("Teiste arvamus")
 
 
 def test_neither_feedback_panel_offers_the_source_box_any_more(page, base_url):
