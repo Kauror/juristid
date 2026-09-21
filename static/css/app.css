@@ -2391,6 +2391,25 @@ fieldset.field > legend {
   margin: 0;
 }
 
+/* A check, not a refusal.
+
+   `.field__error` is the danger colour and semibold, because a refusal is the
+   page telling somebody their save did not happen. This sentence says the save
+   *will* happen and asks them to look again, so it is the ordinary secondary
+   text weight and colour — a warning painted like an error is a warning people
+   learn to click past (QA-015). Empty until there is something to say, and
+   `:empty` keeps it from reserving a line on every date box on the page. */
+.field__hint--check {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.field__hint--check:empty {
+  display: none;
+}
+
 .formerror {
   margin: 0;
   padding: var(--spacing-2) var(--spacing-3);
@@ -2532,6 +2551,16 @@ fieldset.field > legend {
   font-size: var(--typography-size-meta);
   margin: 0;
   max-width: none;
+}
+
+/* Where the matches are, when the filter that is on has none.
+
+   A line of its own inside the empty box, so «nothing here» and «there is
+   something one filter away» read as two sentences rather than as one long
+   one that wraps between them (QA-019). */
+.empty__hint {
+  display: block;
+  margin-top: var(--spacing-2);
 }
 
 .visually-hidden {

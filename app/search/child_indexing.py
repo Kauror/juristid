@@ -107,15 +107,23 @@ def refresh_engagements(engagements: QuerySet) -> int:
     rows = list(engagements)
     if not rows:
         return 0
+    # **Delete for every row, insert only for the ones still on the file.**
+    #
+    # A record a lawyer removed is read here like any other — the builders use
+    # the plain manager, so it arrives — and then projects nothing. That keeps
+    # one shape of statement for both cases: the per-write refresh withdraws a
+    # row the moment it is removed, and a full rebuild reaches the same index
+    # without a second code path deciding what to skip (docs/adr/0102).
     now = timezone.now()
     identifiers = [engagement.pk for engagement in rows]
     SearchDocument.objects.filter(
         source_kind=SearchSourceKind.ENGAGEMENT, source_object_id__in=identifiers
     ).delete()
+    live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_engagement_values(engagement, now)) for engagement in rows]
+        [SearchDocument(**_engagement_values(engagement, now)) for engagement in live]
     )
-    return len(rows)
+    return len(live)
 
 
 def indexable_developments() -> QuerySet:
@@ -161,16 +169,24 @@ def refresh_developments(developments: QuerySet) -> int:
     rows = list(developments)
     if not rows:
         return 0
+    # **Delete for every row, insert only for the ones still on the file.**
+    #
+    # A record a lawyer removed is read here like any other — the builders use
+    # the plain manager, so it arrives — and then projects nothing. That keeps
+    # one shape of statement for both cases: the per-write refresh withdraws a
+    # row the moment it is removed, and a full rebuild reaches the same index
+    # without a second code path deciding what to skip (docs/adr/0102).
     now = timezone.now()
     identifiers = [development.pk for development in rows]
     SearchDocument.objects.filter(
         source_kind=SearchSourceKind.PROCEDURAL_DEVELOPMENT,
         source_object_id__in=identifiers,
     ).delete()
+    live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_development_values(development, now)) for development in rows]
+        [SearchDocument(**_development_values(development, now)) for development in live]
     )
-    return len(rows)
+    return len(live)
 
 
 def indexable_positions() -> QuerySet:
@@ -227,15 +243,23 @@ def refresh_positions(positions: QuerySet) -> int:
     rows = list(positions)
     if not rows:
         return 0
+    # **Delete for every row, insert only for the ones still on the file.**
+    #
+    # A record a lawyer removed is read here like any other — the builders use
+    # the plain manager, so it arrives — and then projects nothing. That keeps
+    # one shape of statement for both cases: the per-write refresh withdraws a
+    # row the moment it is removed, and a full rebuild reaches the same index
+    # without a second code path deciding what to skip (docs/adr/0102).
     now = timezone.now()
     identifiers = [position.pk for position in rows]
     SearchDocument.objects.filter(
         source_kind=SearchSourceKind.EXTERNAL_POSITION, source_object_id__in=identifiers
     ).delete()
+    live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_position_values(position, now)) for position in rows]
+        [SearchDocument(**_position_values(position, now)) for position in live]
     )
-    return len(rows)
+    return len(live)
 
 
 def indexable_fragments() -> QuerySet[DocumentTextFragment]:
@@ -405,15 +429,23 @@ def refresh_entries(entries: QuerySet[Entry]) -> int:
     rows = list(entries)
     if not rows:
         return 0
+    # **Delete for every row, insert only for the ones still on the file.**
+    #
+    # A record a lawyer removed is read here like any other — the builders use
+    # the plain manager, so it arrives — and then projects nothing. That keeps
+    # one shape of statement for both cases: the per-write refresh withdraws a
+    # row the moment it is removed, and a full rebuild reaches the same index
+    # without a second code path deciding what to skip (docs/adr/0102).
     now = timezone.now()
     identifiers = [entry.pk for entry in rows]
     SearchDocument.objects.filter(
         source_kind=SearchSourceKind.ENTRY, source_object_id__in=identifiers
     ).delete()
+    live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_entry_values(entry, now)) for entry in rows]
+        [SearchDocument(**_entry_values(entry, now)) for entry in live]
     )
-    return len(rows)
+    return len(live)
 
 
 def refresh_submissions(submissions: QuerySet[Submission]) -> int:

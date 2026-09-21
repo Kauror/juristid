@@ -1,0 +1,78 @@
+{% comment %}
+`Kustuta` on one user-created block of `Teema käik`, with its confirmation.
+
+Included by every removable row rather than written into each one, so the
+wording, the authorization gate, the stale-tab token and the swap target are
+decided once. The caller supplies `record`, `remove_kind`, `remove_label`,
+`remove_revision` and `remove_named_by` — the id of the element that already
+holds this row's headline (OWNER-04, docs/adr/0102).
+
+**A native disclosure rather than a second page.** The confirmation names what
+is going and offers `Loobu`, and it belongs to this row: there are no siblings
+to displace and nothing to be chosen instead of it, which is the same reasoning
+that leaves a `Menetluse link` correction a `<details>`. A `Kustuta` that
+navigated away would lose the reader's place on a file with thirty rows, and
+one that asked them to type the title would be ceremony on a mistake they are
+trying to undo.
+
+**Quiet, and never a red button in every row.** It is `.uxtl__edit`, the same
+chip `Muuda` and `+ Lisa fail` use, and only the confirm button inside carries
+any emphasis at all. A chronology is read far more often than it is corrected.
+
+**The act is a POST and only a POST.** There is no address that removes a
+record on GET — one would be a link a prefetcher could fire — and
+`can_write_business_content` gates the whole block, so a reader is not shown a
+control that would refuse them. The server does not trust either of those: it
+checks the role, the Matter's closure and the record's own visibility again
+(`remove_record_view`).
+
+**It swaps `#teema-vaade`.** Taking a row off the file changes the rail, the
+phase later rows are grouped under, and — for an `Oluline tähtaeg` — what the
+header says. Swapping this row alone would leave four surfaces describing a
+record that is not there.
+{% endcomment %}
+<details class="uxtl__remove">
+  {% comment %}
+    Named by reference where the row has a headline element with an id — the
+    button's own word, then that element — because repeating the headline into
+    a visually-hidden span would put it into the document twice, and a
+    chronology may show a dozen of these.
+
+    The generic milestone rows have no such id, so they name the record's
+    *kind* instead: «Kustuta oluline tähtaeg» is not as precise as the headline
+    would be and is still the difference between a list of twelve identical
+    buttons and a list somebody can navigate.
+  {% endcomment %}
+  {% if remove_named_by %}
+    <summary class="uxtl__edit" id="{{ remove_kind }}-{{ record.pk }}-kustuta"
+             aria-labelledby="{{ remove_kind }}-{{ record.pk }}-kustuta {{ remove_named_by }}">Kustuta</summary>
+  {% else %}
+    <summary class="uxtl__edit" id="{{ remove_kind }}-{{ record.pk }}-kustuta">Kustuta<span
+      class="visually-hidden"> — {{ remove_label }}</span></summary>
+  {% endif %}
+  <form class="uxtl__removeform"
+        hx-post="{% url 'matters:remove_record' pk=matter.pk kind=remove_kind record_id=record.pk %}"
+        hx-target="#teema-vaade" hx-swap="outerHTML">
+    {% csrf_token %}
+    {% comment %}
+      Which version of the record the person is looking at. A second tab that
+      corrected it in the meantime makes this removal a 409 that writes nothing,
+      rather than a removal of something other than what was on the screen
+      (`remove_matter_record`).
+    {% endcomment %}
+    <input type="hidden" name="revision" value="{{ remove_revision }}">
+    <p class="uxtl__removeask">
+      Eemaldan selle {{ remove_genitive }} teema käigust. Kirje jääb muudatuste logisse.
+    </p>
+    <p class="uxtl__editactions">
+      <button class="button button--quiet button--tiny" type="submit">Eemalda</button>
+      {% comment %}
+        `Loobu` closes the disclosure and puts focus back on the chip that
+        opened it — the click equivalent of the `Esc` every inline editor on
+        this page already answers (AGENTS.md: every shortcut has an obvious
+        click equivalent).
+      {% endcomment %}
+      <button class="uxtl__edit" type="button" data-close-disclosure>Loobu</button>
+    </p>
+  </form>
+</details>

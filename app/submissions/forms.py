@@ -321,3 +321,78 @@ class SubmissionMetadataForm(forms.Form):
         cast(Any, self.fields["website_overviews"]).queryset = selectable_website_overviews(
             submission, viewer=viewer
         )
+
+
+class SentOpinionEditForm(forms.Form):
+    """`Muuda` on a recorded `Koja arvamus`, from its own chronology row.
+
+    `Arvamus välja` was the one row on `Teema käik` with no correction control
+    at all — `Meile saadetud tagasiside`, `Teiste arvamus`, `Kaasamine`,
+    `Märge` and `Ülevaade / uudis` all carry one — on the record where a wrong
+    date or a wrong recipient matters most (QA-023).
+
+    **Four questions, and they are the four that were asked at capture.** The
+    day, the `Liik`, the `Kokkuvõte` and who the letter was addressed to: what
+    `Registreeri saatmine` asked, minus the two things a correction may not
+    touch. `Saadetud fail` is absent because the evidence is immutable and a
+    letter whose text was wrong is a different letter; `Pealkiri` is absent
+    because the chronology does not read it and `Arvamuse märksõnad ja seosed`
+    is where a letter's own metadata is edited (docs/adr/0093).
+
+    **`Teadmiseks` is absent and is not cleared.** `set_recipients` replaces the
+    whole set, so a form that asked only about addressees and handed back an
+    empty second list would quietly drop every copied-in committee. The service
+    reads the current ones and passes them through unchanged
+    (`correct_sent_opinion`, `_for_information_of`).
+
+    ``revision`` is the version the form was filled from, carried through the
+    round trip so the service can refuse a save whose record has moved on — the
+    same hidden field every other correction on the Teema page carries, and for
+    the same reason (QA-002).
+    """
+
+    use_required_attribute = False
+
+    #: A day, and never a native `type="date"`, for `RegisterSentOpinionForm`'s
+    #: reason: a native control takes its format from the *browser's* locale, so
+    #: a US-English Chrome reads `7.9.2026` as the 9th of July — on the one
+    #: field whose value is the date Koda claims to have written to a ministry.
+    sent_on = EstonianDateField(
+        label="Saadetud",
+        required=True,
+        widget=EstonianDateInput(),
+        help_text="Kuupäev, mil arvamus välja saadeti.",
+    )
+    kind = forms.ChoiceField(
+        label="Liik",
+        choices=SubmissionKind.choices,
+        widget=forms.Select(attrs={"class": "field__input"}),
+    )
+    summary = forms.CharField(
+        label="Kokkuvõte",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
+        help_text="Mida kiri ütles. Seda loeb teema käik.",
+    )
+    recipients = forms.ModelMultipleChoiceField(
+        label="Adressaadid",
+        queryset=Organisation.objects.none(),
+        required=True,
+        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "4"}),
+        help_text="Kellele kiri formaalselt saadeti. Teadmiseks-saajad jäävad muutmata.",
+    )
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def __init__(self, *args: Any, organisations: Any = None, record: Any = None, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.record = record
+        # The **queryset**, not only the rendered choices: that is what
+        # validates a posted id, so a crafted POST naming an organisation
+        # outside the catalogue is refused by the field itself.
+        set_choices(self, "recipients", organisations)
+        if record is not None:
+            # A chronology may show several sent opinions, and Django would give
+            # every one of these controls the same `id` — enough to make a
+            # `<label for>` reach the wrong box. The same per-record derivation
+            # `ExternalPositionEditForm` uses.
+            self.auto_id = f"id_koja_arvamus_{record.pk}_%s"

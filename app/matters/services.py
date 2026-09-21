@@ -4302,10 +4302,14 @@ def correct_procedural_development(
 ) -> MatterProceduralDevelopment:
     """`Muuda` on a recorded `Menetluse areng`, by a person, on an open Matter.
 
-    **There is no delete**, on an open Matter or a closed one. A mistaken row is
-    corrected, because what the file recorded and who recorded it is part of the
-    file — the rule `MatterEngagement` has kept since it was written and
-    `MatterExternalPosition` keeps beside it.
+    **Correcting and removing are two different acts, and this is the first.**
+    Until OWNER-04 there was no delete at all, on the reasoning that what the
+    file recorded and who recorded it is part of the file. That is right about a
+    record of something that *happened* and wrong about a row filed on the wrong
+    Teema, which is not history: correcting it leaves a sentence nobody wrote,
+    dated a day nobody chose, attributed to whoever was fixing it. Removal is
+    `remove_matter_record`, it is a column rather than a `DELETE`, and it leaves
+    the whole trail in `Kõik muudatused` (docs/adr/0102).
 
     **Refused on a closed Matter**, like a `Kaasamine` correction and unlike an
     entry's: every field on this record is substantive — what happened, when, and

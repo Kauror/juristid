@@ -75,8 +75,29 @@ somebody is typing into would move the caret on every keystroke.
     {% include "matters/partials/matter_table.html" with matters=page.object_list register_interactive=register_interactive %}
     {% include "components/pagination.html" with page=page query_string=query_string %}
   {% elif query %}
+  {% comment %}
+    Where the matches actually are, when they are not here.
+
+    `?q=…` on the default register answered `0 teemat` while the chips above
+    read `Avatud · 17 · Suletud · 1 · Arhiiv · 1 · Kõik · 18`, and the global
+    search found the file immediately. The scoping is right and the dead end is
+    not (QA-019).
+
+    **It does not widen the filter.** It says a wider view has matches and
+    offers the address; pressing it is the reader's decision, and the count is
+    taken from the same authorized, already-searched population every other
+    figure on this page reads — so a restricted Matter cannot make this
+    sentence appear (`_matches_elsewhere`).
+  {% endcomment %}
     <p class="empty">
       Otsing „{{ query }}” ei andnud selle filtriga tulemusi.
+      {% if matches_elsewhere %}
+        <span class="empty__hint">
+          {{ elsewhere_hint }}
+          <a href="?{{ matches_elsewhere.query }}">{{ matches_elsewhere.label }}
+            ({{ matches_elsewhere.count }})</a>
+        </span>
+      {% endif %}
       <a href="?{{ cleared_query }}">Tühjenda otsing ja filtrid</a>
     </p>
   {% elif filters.aasta_viga %}
@@ -91,6 +112,15 @@ somebody is typing into would move the caret on every keystroke.
       <a href="?{{ cleared_query }}">Tühjenda otsing ja filtrid</a>
     </p>
   {% else %}
-    <p class="empty">Selle filtriga teemasid ei leitud.</p>
+    <p class="empty">
+      Selle filtriga teemasid ei leitud.
+      {% if matches_elsewhere %}
+        <span class="empty__hint">
+          {{ elsewhere_hint }}
+          <a href="?{{ matches_elsewhere.query }}">{{ matches_elsewhere.label }}
+            ({{ matches_elsewhere.count }})</a>
+        </span>
+      {% endif %}
+    </p>
   {% endif %}
 </div>

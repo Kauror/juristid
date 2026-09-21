@@ -376,6 +376,164 @@ def mark_submission_sent(
     return submission
 
 
+#: What a caller is told when the record it named is not the one it holds.
+SENT_OPINION_CONFLICT = "Arvamust on vahepeal mujal muudetud."
+
+#: What a correction of something that never went out is told.
+NOT_A_RECORDED_SEND = "Ainult saadetud arvamuse andmeid saab siit parandada."
+
+
+class SentOpinionConflict(DomainError):
+    """The opinion moved between the row being drawn and `Salvesta` being pressed.
+
+    Carries the committed record so a caller can redraw it beside what the
+    person typed — the shape `ProceduralDevelopmentConflict` established, and
+    the reason a conflict is an exception with a payload rather than a boolean.
+    """
+
+    def __init__(self, current: Submission) -> None:
+        super().__init__(SENT_OPINION_CONFLICT)
+        self.current = current
+
+
+def sent_opinion_revision(submission: Submission) -> str:
+    """Which version of a recorded send a rendered correction form was filled from."""
+    return submission.updated_at.isoformat()
+
+
+@transaction.atomic
+def correct_sent_opinion(
+    *,
+    submission: Submission,
+    sent_at: datetime,
+    sent_at_precision: str,
+    summary: str,
+    kind: str,
+    addressees: list[Any] | None = None,
+    for_information: list[Any] | None = None,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> Submission:
+    """`Muuda` on a recorded `Koja arvamus` — what the file says about a send.
+
+    `Arvamus välja` was the one row on `Teema käik` with no correction control
+    at all, on the record where a wrong date or a wrong recipient matters most:
+    a letter registered with the day mistyped reported the wrong send date to
+    the outbound register, the process rail and every report that counts
+    advocacy, and the only repair was to ask an administrator (QA-023).
+
+    **It corrects what we wrote down, never what happened.** Four things move:
+    the business date and its precision, the `Kokkuvõte`, the `Liik`, and who
+    the letter was formally addressed to. Nothing else can:
+
+    * **the evidence is untouched.** `final_version` is not an argument here,
+      the immutable `DocumentVersion` is not superseded and no bytes are
+      rewritten. A letter whose *text* was wrong is a new letter, which is what
+      `supersede_submission` is for (docs/adr/0084 §8).
+    * **the status is untouched.** A correction cannot un-send, withdraw or
+      supersede an opinion: those are acts with their own services, their own
+      events and their own meaning, and folding them in here would let a
+      spelling fix change what the file claims Koda did.
+    * **`sent_by` is untouched.** Who sent the letter is not who corrected the
+      record, and the audit trail keeps both.
+
+    **Only a recorded send.** A `DRAFT` has no stated facts to correct — it is
+    edited through the routes that build it — and this refuses one rather than
+    silently inventing a send date for it.
+
+    **Optimistic concurrency, compared under the row lock**, so what the token
+    is compared against is the committed version rather than whatever the
+    caller's instance remembers. A stale save writes nothing at all.
+
+    Takes the Matter's lock before the submission's, the order every other
+    service here uses and the reason none of them can deadlock against each
+    other (app/matters/locks.py). Deliberately **not** the open-Matter lock:
+    correcting what a closed file recorded about a letter it sent is the same
+    kind of act as correcting an entry's text on one, and `withdraw_submission`
+    already works on a closed Matter (docs/adr/0075 §12, docs/adr/0093 §3).
+    """
+    lock_matter_for_evidence_integrity(submission.matter_id)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
+
+    if locked.status == SubmissionStatus.DRAFT or locked.sent_at is None:
+        raise DomainError(NOT_A_RECORDED_SEND)
+    if expected_revision is not None and sent_opinion_revision(locked) != expected_revision:
+        raise SentOpinionConflict(locked)
+
+    if sent_at is None:
+        raise DomainError("Arvamuse saatmise kuupäev on vajalik.")
+    if sent_at_precision not in SentAtPrecision.values:
+        raise DomainError(f"Tundmatu saatmisaja täpsus {sent_at_precision!r}.")
+    if kind not in SubmissionKind.values:
+        raise DomainError(f"Tundmatu arvamuse liik {kind!r}.")
+
+    before = {
+        "sent_at": locked.sent_at.isoformat(),
+        "sent_at_precision": locked.sent_at_precision,
+        "summary": locked.summary,
+        "kind": locked.kind,
+    }
+    locked.sent_at = sent_at
+    locked.sent_at_precision = sent_at_precision
+    locked.summary = (summary or "").strip()
+    locked.kind = kind
+    locked.save(update_fields=["sent_at", "sent_at_precision", "summary", "kind", "updated_at"])
+    after = {
+        "sent_at": locked.sent_at.isoformat(),
+        "sent_at_precision": locked.sent_at_precision,
+        "summary": locked.summary,
+        "kind": locked.kind,
+    }
+    changed = {field: value for field, value in after.items() if before[field] != value}
+
+    if addressees is not None:
+        # Through the canonical service, so the addressee/teadmiseks
+        # distinction, the overlap refusal, the search reprojection and the
+        # `SUBMISSION_RECIPIENTS_CHANGED` event are all the ones that already
+        # exist. A second implementation of «who did Koda write to» is exactly
+        # what `RecipientRole` was built to prevent.
+        set_recipients(
+            submission=locked,
+            addressees=addressees,
+            for_information=(
+                for_information if for_information is not None else _for_information_of(locked)
+            ),
+            actor=actor,
+        )
+
+    if changed:
+        # Only when a value actually moved. An audit row for a save that changed
+        # nothing would be a history of somebody pressing a button — and the
+        # recipients, when they moved, have already written their own event.
+        record_change_event(
+            event_type=ChangeEventType.SUBMISSION_CORRECTED,
+            matter=locked.matter,
+            actor=actor,
+            obj=locked,
+            summary=locked.title[:200],
+            payload={"from": {field: before[field] for field in changed}, "to": changed},
+        )
+
+    submission.refresh_from_db()
+    return submission
+
+
+def _for_information_of(submission: Submission) -> list[Any]:
+    """The organisations copied in, which a correction of addressees must keep.
+
+    `set_recipients` replaces the whole set, so a caller answering only the
+    addressee question has to hand back the other half unchanged — otherwise
+    correcting a date would quietly drop every «teadmiseks» row, which is the
+    distinction `RecipientRole` exists to keep.
+    """
+    return [
+        row.organisation
+        for row in submission.recipient_rows.filter(
+            role=RecipientRole.FOR_INFORMATION
+        ).select_related("organisation")
+    ]
+
+
 @transaction.atomic
 def withdraw_submission(
     *, submission: Submission, actor: Any = None, reason: str = ""

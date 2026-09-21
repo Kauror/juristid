@@ -275,7 +275,7 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
             # Always a supplied day, never `timezone.now()`: the form requires
             # `Saadetud` and the service refuses a call without it, so this
             # route has no path to a fabricated send date (R2-01).
-            sent_at=_as_midnight(sent_on),
+            sent_at=as_midnight(sent_on),
             sent_at_precision=SentAtPrecision.DATE,
         )
         messages.success(request, "Arvamus on märgitud saadetuks.")
@@ -303,12 +303,17 @@ def _refusal_detail(form: RegisterSentOpinionForm) -> str:
     return "täida " + ", ".join(labels) + "."
 
 
-def _as_midnight(value: Any) -> Any:
+def as_midnight(value: Any) -> Any:
     """A chosen day, as the aware midnight a submission stores.
 
     The same reading `app/matters/forms.py` gives the closing composer's
     `Saatmise kuupäev`, and for the same reason: `timezone.now()` would stamp
     today onto a letter that went out last month.
+
+    Public, because the chronology's own `Muuda` on a recorded send has to read
+    a day exactly as this route does — two readings of «what day is this» would
+    be two answers to when Koda wrote to a ministry (`update_sent_opinion_view`,
+    QA-023).
     """
     if value is None:
         return None

@@ -44,7 +44,7 @@ from django.utils import timezone
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, scope_for_user
 from app.core.enums import Visibility
-from app.core.models import VisibilityInheritingModel
+from app.core.models import RemovableRecord, VisibilityInheritingModel
 from app.intelligence.enums import (
     EffectiveDateKind,
     FactStatus,
@@ -72,14 +72,24 @@ class MatterFactQuerySet(models.QuerySet):
         Authorization is applied here, before any grouping, counting or
         merging, so a restricted Matter cannot leak through a heading, a year
         option or a total (Stage-2G brief 31).
+
+        A record a lawyer removed is filtered here too, for the same reason and
+        at the same moment: it is out of every heading, year option and total
+        as well, and it is out of them *before* anything is grouped rather than
+        after (docs/adr/0102).
+
+        **Removal is not `FactStatus.CANCELLED`.** A cancelled deadline is an
+        expectation somebody called off and it goes on reading in `Teema käik`
+        saying so. A removed one never belonged to this file.
         """
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return scoped.filter(removed_at__isnull=True)
 
     def active(self) -> MatterFactQuerySet:
         return self.filter(status=FactStatus.ACTIVE)
 
 
-class MatterFact(VisibilityInheritingModel):
+class MatterFact(VisibilityInheritingModel, RemovableRecord):
     """What the three structured facts have in common.
 
     Deliberately not a single "everything event" table. These are different

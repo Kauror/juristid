@@ -71,6 +71,49 @@ basis = "deployment"
 #
 # **Kaheteistkümnes punkt ütleb, et kirjed jäid alles.** Ilma selleta loeks
 # lause nii, nagu oleks jaotisest midagi kadunud.
+#
+# Sama päeva kolmas väljalase: täielik läbimängitud QA-ring kogu teema töövoos,
+# pluss omaniku neli tähelepanekut. Kakskümmend neli leidu, neist kolm rasket.
+# Punktid lisatakse sama päeva kirje lõppu, sest kirje käib kalendripäeva,
+# mitte väljalaske kohta.
+#
+# **Kolmeteistkümnes ja neljateistkümnes punkt on selle ringi kaks rasket
+# leidu**, ja mõlemad on sama asi: kaks akent, üks fail, vaikiv ülekirjutus.
+# Punktid ütlevad, mis nüüd juhtub — töö jääb ekraanile ja kirje jääb alles —
+# sest lugeja jaoks on see lubadus, mitte tehniline mehhanism. Kumbki punkt ei
+# nimeta «optimistlikku lukustust» ega muud sõna, mida keegi peaks õppima.
+#
+# **Viieteistkümnes punkt on kolmas raske leid.** Otsing ei leidnud seda, mida
+# jurist ise oli kirjutanud — mitte «leidis valesti», vaid ei leidnud üldse.
+# Punkt ütleb otse, mis nüüd leitav on.
+#
+# **Kuueteistkümnes punkt on QA ringi kõige selgem üksikviga**: salvestus
+# õnnestus, paneel sulgus, ja kirjet ei olnud teemal kusagil näha.
+#
+# **Seitsmeteistkümnendast kahekümne esimeseni on menetluse kulg.** Kaheksa
+# eraldi leidu osutusid üheks: rida vastas korraga kahele küsimusele — kuhu
+# fail läheb ja mis on juhtunud — ja teine küsimus on «Teema käigu» oma. Punkt
+# 17 ütleb, et «Alustatud» kadus, ja ütleb kohe ka selle, mis *ei* kadunud:
+# «Saabus» on endiselt päises. Ilma selleta loeks see kuupäeva kaotusena.
+#
+# **Kahekümne teine punkt on omaniku esimene tähelepanek** ja kogu ringi kõige
+# otsesem kasutajavõit: paneel ei nõua enam nime, mida juristil ei ole. Punkt
+# ütleb ka, mis ei muutu — avaldatud arvamus vajab endiselt autorit —, sest
+# muidu loeks see lubadusena, et failile võib panna nimetuid väiteid.
+#
+# **Kahekümne kuues punkt on omaniku neljas tähelepanek** ja ainus selle ringi
+# punkt, mis lisab päriselt uue tegevuse. Punkt ütleb selgelt, mida kustutamine
+# *ei* tee: kirje kaob teema käigust, mitte muudatuste logist. Ilma selleta
+# loeks see lubadusena, et jälg kaob, ja see ei ole tõsi ega hakka olema.
+#
+# **Kahekümne seitsmes punkt nimetab Koja arvamust eraldi**, sest see oli ainus
+# rida teema käigus, mida ei saanud üldse parandada — ja just seal loeb vale
+# kuupäev või vale saaja kõige rohkem. Punkt ütleb ka, mida see ei puuduta:
+# saadetud fail ise jääb muutmata, sest tõend on muutumatu.
+#
+# Ükski punkt ei luba, et rakendus midagi teksti, lingi või failinime järgi
+# arvab. Kuupäeva hoiatus on kirjutamise hetkel antud vihje, mitte keeld, ja
+# punkt 30 ütleb selle otse välja.
 prs = [269, 270, 271]
 changes = [
   "Teema kustutamine on nüüd teema lehe ülaosas «Muuda teemat» kõrval. Kustutamist küsitakse endiselt eraldi lehel üle.",
@@ -85,6 +128,30 @@ changes = [
   "Menetluse kulu real on arvamuse tähtaeg ja tagasiside tähtaeg nüüd jooksva etapi juures, kus töö parasjagu käib, mitte kogu teekonna lõpus; jõustumine ja ülevõtmise tähtaeg jäävad menetluse enda lõppu.",
   "Teema käigus märke juurde faili lisamise nupp ütleb nüüd «Lisa fail» senise «Lisa tõend» asemel ja teeb täpselt sama, mis enne.",
   "Teema käigu jaotise «Etapiga sidumata» alt on selgitav lõik ära võetud; kirjed ise on alles ja täpselt samas kohas.",
+  "Kui teema andmeid on vahepeal teises aknas muudetud, siis «Muuda teemat» ei kirjuta seda enam vaikselt üle: salvestus peatub, ekraanile jääb see, mis sisestati, ja kõrvale tuleb näha, mis vahepeal muutus.",
+  "Sama kehtib menetluse kulu muutmise kohta: teises aknas juba salvestatud kuupäev ei kao enam ära.",
+  "Otsing leiab nüüd ka selle, mis on kirjutatud märkmesse ning arvamusse ja tagasisidesse — nii teksti kui ka organisatsiooni nime järgi. Varem leidis otsing ainult teema enda välju.",
+  "«Oluline tähtaeg» on nüüd näha sellel teemal, kuhu see lisati: teema käigus, ja kui tähtaeg on alles ees, siis märkega «Eesolev tähtaeg».",
+  "Menetluse kulg näitab nüüd ainult seda, kuhu menetlus läheb, ja seda, mis on teemale kuupäevana kirja pandud. Rakenduse enda tekitatud «Alustatud» on ära võetud — see oli päev, mil teema sai süsteemi kirja, mitte päev, mil menetlus algas. «Saabus» on endiselt teema päises.",
+  "Etapi kuupäev tuleb nüüd sellest, mis on menetluse kulusse kirja pandud, mitte esimesest sinna alla sattunud märkest; korduva kooskõlastusringi ajalugu on teema käigus, kus iga kord on omaette.",
+  "Jõustumine on menetluse kulus nüüd üks veerg, mille all seisavad kõik kirja pandud jõustumised nähtava tekstina; varem joonistati iga jõustumine eraldi veeruna sama nimega.",
+  "Menetluse kulu muutmisel ei saa enam ära võtta praegust etappi ega etappi, mille juures on kirja pandud kuupäev; põhjus on nende juures kirjas ja iga muu etapi saab endiselt ära võtta.",
+  "Kui menetluse kulusse kirjutatud kuupäevad on menetluse järjekorra suhtes vastuolus, ütleb vorm seda kohe ja jätab sisestatu alles.",
+  "Suletud või «Koda ei tegele edasi» teemal ei loe päis enam tähtaja päevi alla; kuupäev ise jääb kirja.",
+  "«Meile saadetud tagasiside» ei nõua enam organisatsiooni valimist: kui jurist kirjutab üles, mida liige telefonis ütles, saab selle salvestada nimeta. «Teiste arvamus» vajab endiselt autorit.",
+  "Kui tagasiside juures on märgitud «Liige», siis see nüüd ka paistab teema käigus ja seda saab «Muuda» alt maha võtta.",
+  "Menetluse link avaneb nüüd täpselt sellel aadressil, mis on kirja pandud, ja selle muutmise nupp on lingi enda kõrval ning ütleb «Muuda».",
+  "Muudatuste logi ja teema kustutamise leht räägivad nüüd «märgetest», nagu teema leht ise; sõna «menetluse areng» sealt kadus.",
+  "Teema kustutamise juures «Loobu» viib nüüd tagasi teema lehele, mitte muutmise vormi.",
+  "Pärast salvestamist jääb klaviatuur nüüd kohta, kust saab edasi töötada, mitte lehe algusesse; vigase välja puhul läheb fookus endiselt sellele väljale.",
+  "Kui jurist loob teema ja määrab selle endale, siis «Uus asi» teadet enam ei tule; teiselt saadud teema puhul tuleb nagu enne.",
+  "«Praegune tegevus» salvestusnupp ütleb nüüd «Salvesta tegevus», et see ei oleks segi aetav kõrvalolevatega.",
+  "Teema käigus saab nüüd enda tehtud kirje — märke, kaasamise, arvamuse, ülevaate, olulise tähtaja, jõustumise või töövõidu — ära võtta «Kustuta» nupuga «Muuda» kõrval. Kirje kaob teema käigust, otsingust ja menetluse kulust, aga jääb muudatuste logisse koos sellega, kes selle ära võttis, ja lisatud failid jäävad alles.",
+  "Koja arvamuse rida teema käigus on nüüd parandatav: saatmise kuupäeva, kokkuvõtet, liiki ja adressaate saab «Muuda» alt korda teha. Saadetud fail ise jääb muutmata.",
+  "Arvamusele ja tagasisidele saab nüüd lisada faili ka hiljem, «Lisa fail» nupuga selle rea juures; varem sai faili panna ainult kirje lisamise hetkel.",
+  "Kui teemade otsing ei anna praeguse olekufiltriga tulemusi, aga mõnes teises olekus on vasteid, siis leht ütleb seda ja pakub lingi; filtrit ise ta ei muuda.",
+  "Ebatavaliselt vana kuupäeva sisestamisel ütleb väli seda kohe — salvestamist see ei takista, sest vanad kirjed on päris kirjed.",
+  "Kui teemal on kaks ühenimelist faili, siis nende juures on nüüd ka üleslaadimise kellaaeg ja faili suurus, et neid saaks eristada.",
 ]
 
 [[day]]

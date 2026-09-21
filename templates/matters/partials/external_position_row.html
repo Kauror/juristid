@@ -81,7 +81,8 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         **No upload control here**: adding a second piece of evidence to a
         position is a different act with a different audit trail, and a
         correction form that also captured bytes would make «what changed»
-        unanswerable from one event. Emptying the address of a position that
+        unanswerable from one event. That act is `+ Lisa fail` beside this
+        one, which a position did not have at all until QA-021. Emptying the address of a position that
         carries a file — or one whose `Seisukoht` says what the organisation
         wrote — is an ordinary correction; emptying the last of the three
         unsources the record and is refused under the row lock
@@ -220,6 +221,45 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-swap="outerHTML">Tühista</button>
       </p>
     </form>
+  {% elif external_position_evidence_form %}
+    {% comment %}
+      `+ Lisa fail`. The picker, and nothing else: this act adds a paper to a
+      position the file already records correctly, so nothing about the record
+      is on the form. `Muuda` is the surface that changes what the row *says*,
+      and the two share this element deliberately — a row cannot be correcting
+      and capturing at once (QA-021, `ExternalPositionEvidenceForm`).
+
+      **It swaps `#teema-vaade` rather than this element.** The files a position
+      carries are rendered by the chronology *around* this element, so answering
+      a successful upload with this element alone would come back looking
+      exactly as it did before the file arrived. A refusal takes the same route
+      and prints above the column: a browser will not repopulate a file picker
+      whatever the server sends, so there is nothing here to bring back, and a
+      stale picker left open would suggest the choice survived.
+    {% endcomment %}
+    <form class="uxtl__editform" aria-label="Faili lisamine seisukohale"
+          hx-post="{% url 'matters:add_external_position_evidence' pk=matter.pk position_id=position.pk %}"
+          hx-target="#teema-vaade" hx-swap="outerHTML"
+          hx-encoding="multipart/form-data">
+      {% csrf_token %}
+      {% comment %}
+        Which position the paper is being attached to, in the words the row was
+        reading a moment ago — the same orientation the correction form opens
+        with, and the reason this is a capture rather than a guess about which
+        record the files belong to.
+      {% endcomment %}
+      <p class="uxtl__ms">
+        <span class="uxtl__mswhat">{{ milestone.what }}</span>
+      </p>
+      {% include "matters/partials/add_files.html" with field=external_position_evidence_form.attachments %}
+      <p class="uxtl__editactions">
+        <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
+        <button class="button button--quiet button--tiny" type="button"
+                hx-get="{% url 'matters:add_external_position_evidence' pk=matter.pk position_id=position.pk %}{{ external_position_read_query }}"
+                hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
+                hx-swap="outerHTML">Tühista</button>
+      </p>
+    </form>
   {% else %}
     <p class="uxtl__ms">
       <span class="uxtl__mswhat" id="valine-seisukoht-{{ position.pk }}-pealkiri">{{ milestone.what }}</span>
@@ -270,6 +310,33 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-get="{% url 'matters:update_external_position' pk=matter.pk position_id=position.pk %}"
                 hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
                 hx-swap="outerHTML">Muuda</button>
+        {% comment %}
+          `+ Lisa fail` — the position paper that arrives after somebody wrote
+          down what was said. Beside `Muuda` and not inside it: correcting what
+          a position says and adding evidence to it are different acts with
+          different audit trails, and a correction form that also captured bytes
+          would make «what changed» unanswerable from one event (QA-021,
+          docs/adr/0084 §8).
+
+          There is deliberately no counterpart that removes one. Evidence is
+          additive and immutable: a file attached to the wrong position is
+          answered by attaching it to the right one.
+        {% endcomment %}
+        <button class="uxtl__edit" type="button"
+                id="valine-seisukoht-{{ position.pk }}-toend"
+                aria-labelledby="valine-seisukoht-{{ position.pk }}-toend valine-seisukoht-{{ position.pk }}-pealkiri"
+                hx-get="{% url 'matters:add_external_position_evidence' pk=matter.pk position_id=position.pk %}"
+                hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
+                hx-swap="outerHTML">+ Lisa fail</button>
+        {% comment %}
+          `Kustuta`, beside `Muuda`. A position attributed to the wrong body is
+          the mistake that matters most on this record — it is a claim about
+          what somebody else thinks — and rewriting it into a different
+          organisation's opinion is not a repair (OWNER-04, docs/adr/0102).
+        {% endcomment %}
+        {% with head_id=position.pk|stringformat:"s" %}
+          {% include "matters/partials/row_remove.html" with record=position remove_kind="seisukoht" remove_label="seisukoht" remove_genitive="seisukoha" remove_revision=position.updated_at.isoformat remove_named_by="valine-seisukoht-"|add:head_id|add:"-pealkiri" %}
+        {% endwith %}
       </p>
     {% endif %}
   {% endif %}

@@ -6486,8 +6486,8 @@ class ProceduralDevelopmentEditForm(forms.Form):
         return cleaned
 
 
-class DevelopmentEvidenceForm(forms.Form):
-    """`+ Lisa fail` on a recorded `Menetluse areng`. Files, and nothing else.
+class RecordEvidenceForm(forms.Form):
+    """`+ Lisa fail` on a record the file already holds. Files, and nothing else.
 
     **One question, because only one thing is being added.** A ministry sends the
     revised draft a fortnight after the step was written up, and the file learns
@@ -6519,7 +6519,13 @@ class DevelopmentEvidenceForm(forms.Form):
 
     use_required_attribute = False
 
-    attachments = workspace_attachments("id_menetluse_areng_toend_failid")
+    #: Which record family this picker belongs to, for the control's `id` only.
+    #: A class attribute rather than an argument, so the two subclasses below
+    #: are the whole list of surfaces that offer this act and a third is a
+    #: deliberate line of code.
+    slug = "kirje"
+
+    attachments = workspace_attachments("id_kirje_toend_failid")
 
     def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
         self.record = record
@@ -6529,7 +6535,7 @@ class DevelopmentEvidenceForm(forms.Form):
             # where the per-record one has to go too — `auto_id` would not reach
             # it (`ExternalPositionEditForm`).
             cast(Any, self.fields["attachments"].widget).attrs["id"] = (
-                f"id_menetluse_areng_{record.pk}_toend_failid"
+                f"id_{self.slug}_{record.pk}_toend_failid"
             )
 
     def clean_attachments(self) -> list[Any]:
@@ -6537,6 +6543,26 @@ class DevelopmentEvidenceForm(forms.Form):
         if not files:
             raise forms.ValidationError("Vali vähemalt üks fail.")
         return list(files)
+
+
+class DevelopmentEvidenceForm(RecordEvidenceForm):
+    """`+ Lisa fail` on a recorded `Menetluse areng`."""
+
+    slug = "menetluse_areng"
+
+
+class ExternalPositionEvidenceForm(RecordEvidenceForm):
+    """`+ Lisa fail` on a recorded `Väline seisukoht`.
+
+    The position panel captured files only at the moment of capture, so an
+    association that sends its position paper a week after somebody wrote down
+    what it said on the telephone had nowhere on the file to put it: `Muuda`
+    deliberately does not take bytes, and there was no second act. This is that
+    act, and it is the same one `Menetluse areng` has had since docs/adr/0091
+    §5.4 (QA-021).
+    """
+
+    slug = "valine_seisukoht"
 
 
 class CompactClosureForm(ChipChoices, forms.Form):

@@ -1005,6 +1005,37 @@
     }
   });
 
+  /* ---- `Loobu` inside a disclosure ---------------------------------------
+   * The click equivalent of the `Esc` the handler below already answers, for
+   * the one editor where leaving is the *expected* outcome rather than the
+   * exception: a removal confirmation is opened far more often than it is
+   * confirmed, and a reader who opened it to read what it says needs a way out
+   * that is on the screen (AGENTS.md: every keyboard shortcut has an obvious
+   * click equivalent — and this is the click half).
+   *
+   * Delegated and declarative, so a second confirmation anywhere on the
+   * product gets it by writing the attribute rather than by writing script.
+   */
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest) {
+      return;
+    }
+    var button = event.target.closest("[data-close-disclosure]");
+    if (!button) {
+      return;
+    }
+    var holder = button.closest("details");
+    if (!holder) {
+      return;
+    }
+    event.preventDefault();
+    holder.open = false;
+    var trigger = holder.querySelector("summary");
+    if (trigger) {
+      trigger.focus();
+    }
+  });
+
   /* ---- Inline editors: Ctrl/Cmd+Enter saves, Esc cancels -----------------
    * Every edit in the Matter workflow happens where the value is shown, in a
    * disclosure that opened in place. The two keys behave the same in all of
@@ -2083,6 +2114,81 @@
 
     panel.appendChild(grid);
   }
+
+  /* ---- An implausibly old date says so, and saves anyway ----------------
+   * A `Märge` dated `01.01.1900` saved without comment and rendered as
+   * `Märge: … 1.1.1900`. Future dates *are* refused and malformed ones are
+   * refused cleanly, so the silence on the other end was inconsistent — and a
+   * slipped digit (`2026` → `1026`) wrecks a chronology quietly, because the
+   * row sorts to the far end of the file where nobody looks (QA-015).
+   *
+   * **A warning, never a refusal.** A genuinely historical fact is a thing this
+   * product exists to hold: the register archive goes back to 2011, an
+   * imported row may be older, and a hard cutoff would block exactly the
+   * material the migration is for. The purpose is typo detection.
+   *
+   * **At input time only**, which is what keeps it out of everything the brief
+   * excludes: nothing rendered from the corpus is touched, no stored record is
+   * re-examined, and no ordinary multi-year proceeding comes near the
+   * threshold. A date somebody is typing is the one moment a typo can still be
+   * cheap to fix.
+   *
+   * The threshold is **25 years**, rolling. It sits well outside any Estonian
+   * legislative file a lawyer is working on — those run years, not decades —
+   * and comfortably inside the century a mistyped leading digit lands in.
+   */
+  var IMPLAUSIBLE_YEARS_AGO = 25;
+  var IMPLAUSIBLE_DATE_HINT = "Kuupäev on ebatavaliselt vana. Kontrolli, kas aasta on õige.";
+
+  function ageHintFor(input) {
+    var id = input.id ? input.id + "-vanus" : null;
+    if (!id) {
+      return null;
+    }
+    var hint = document.getElementById(id);
+    if (!hint) {
+      hint = document.createElement("span");
+      hint.id = id;
+      hint.className = "field__hint field__hint--check";
+      hint.setAttribute("role", "status");
+      /* After the control, and after the calendar trigger that wraps it, so the
+         sentence reads under the box rather than between the box and its
+         button. */
+      var wrap = input.closest(".datepicker") || input;
+      if (wrap.parentNode) {
+        wrap.parentNode.insertBefore(hint, wrap.nextSibling);
+      }
+    }
+    return hint;
+  }
+
+  function checkDateAge(input) {
+    var hint = ageHintFor(input);
+    if (!hint) {
+      return;
+    }
+    var parsed = parseEstonian(input.value);
+    var floor = new Date();
+    floor.setFullYear(floor.getFullYear() - IMPLAUSIBLE_YEARS_AGO);
+    if (parsed && parsed < floor) {
+      hint.textContent = IMPLAUSIBLE_DATE_HINT;
+      /* `aria-describedby` rather than `aria-invalid`: the value is accepted,
+         and marking it invalid would tell a screen reader the save will fail. */
+      input.setAttribute("aria-describedby", hint.id);
+    } else {
+      hint.textContent = "";
+      if (input.getAttribute("aria-describedby") === hint.id) {
+        input.removeAttribute("aria-describedby");
+      }
+    }
+  }
+
+  document.addEventListener("input", function (event) {
+    var input = event.target;
+    if (input && input.matches && input.matches("input[data-datepicker]")) {
+      checkDateAge(input);
+    }
+  });
 
   function bindDatePickers(scope) {
     (scope || document).querySelectorAll("input[data-datepicker]").forEach(function (input) {

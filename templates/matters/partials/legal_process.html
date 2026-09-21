@@ -32,8 +32,18 @@ at all for the ordinary file (`app/matters/models.py` `MatterTimelineStep`).
 still this section's sibling rather than a block inside it (docs/adr/0092 §2).
 
 Rendered when there is anything to draw. A file read against no procedure that
-still has an `Alustatud` and an `Arvamuse tähtaeg` draws those: they are dates it
-recorded, not claims about a procedure.
+has recorded an `Arvamuse tähtaeg` or a `Koja arvamus` draws those: they are
+dates it recorded, not claims about a procedure.
+
+**A file with nothing on it draws nothing**, and that is new since
+docs/adr/0100 §1. Every natively filed Matter used to have one column, because
+`Alustatud` was `Matter.created_at` and every row has one — so this section was
+always present and always said something, even when the only thing it had to
+say was when somebody opened the file. With the milestone retired, a Matter
+that has chosen no `Õigusakt` and recorded no date has no road ahead to draw
+and no history to place on one, and the honest answer to «kus menetlus on» is
+that nothing here says yet. An empty heading over an empty rail would be
+dashboard decoration with no decision behind it (AGENTS.md).
 {% endcomment %}
 {% if rail_steps %}
   <section class="lprail" aria-labelledby="menetluse-kulg-heading">

@@ -130,8 +130,12 @@ while `Praegune tegevus` under it said the file was closed and every work list
 had already dropped it (QA-011).
 
 The date stays: it is part of the record, and the header goes on stating it.
-The countdown does not. `ActiveDeadline.is_active` is false on a closed Matter
-and on one whose disposition is `MONITORING_STOPPED`.
+The countdown does not. `ActiveDeadline.is_active` is false on a closed Matter,
+and `Rohkem ei tegele` needs no clause of its own: `Disposition` answers *why a
+file is closed*, and `matters_closure_fields_consistent` refuses a disposition
+on an open row — so a stood-down file is already one of the states that test
+covers, and a second comparison would read as a rule about open Matters while
+being unreachable on every one of them.
 
 The **external** procedure may well continue, and the rail goes on drawing the
 phases that may still come — `Koda ei tegele edasi` beside it says what this

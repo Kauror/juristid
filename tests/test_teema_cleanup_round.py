@@ -33,7 +33,7 @@ from app.matters.legal_process import (
     matter_rail,
     phase_context,
 )
-from app.matters.models import MatterTimelineStep
+from app.matters.models import MatterProceduralDevelopment, MatterTimelineStep
 from app.matters.process_phases import (
     PHASE_JOUSTUMINE,
     PHASE_KOOSKOLASTUS,
@@ -124,7 +124,15 @@ def test_lopeta_is_a_peer_chip_that_closes_whatever_was_open(signed_in, speciali
     """
     matter = _matter(specialist)
     page = _page(signed_in, matter)
-    zone = page[page.index('id="lisa-teemale"') : page.index('id="menetluse-kulg-heading"')]
+    # The zone ends at `Menetluse kulg` where there is one and at `Teema käik`
+    # otherwise: a file with no `Õigusakt` and nothing recorded draws no rail
+    # at all since docs/adr/0100 §1.
+    end = (
+        page.index('id="menetluse-kulg-heading"')
+        if 'id="menetluse-kulg-heading"' in page
+        else page.index('id="ajajoon"')
+    )
+    zone = page[page.index('id="lisa-teemale"') : end]
 
     assert "+ Lõpeta teema" in zone
     assert 'name="lisa-valik" id="teema-lopeta-valik"' in zone
@@ -249,11 +257,18 @@ def test_a_milestone_is_slotted_by_its_date_among_the_phases(specialist):
     )
 
     labels = _labels(matter, specialist)
-    # `Alustatud` is today; the consultation round began in January. The
-    # milestone sorts after the phase it is not earlier than.
+    # The consultation round began in January, and the rail draws the phase the
+    # file is on where the pattern puts it.
+    #
+    # **This used to assert against `Alustatud`**, which sat at today's date
+    # among the phases — and that placement is exactly what docs/adr/0100 §1
+    # retired: on a long file the column landed mid-sequence in dates running
+    # 5.3 → 2.4 → 21.9 → 3.6 → 17.6, because today is not where the procedure
+    # is. What is left is the rule the test was written for: a phase is on the
+    # rail, in the pattern's own order.
     assert "Kooskõlastusring" in labels
-    assert "Alustatud" in labels
-    assert labels.index("Kooskõlastusring") < labels.index("Alustatud")
+    assert "Alustatud" not in labels
+    assert labels.index("Algus") < labels.index("Kooskõlastusring")
 
 
 def test_dated_points_do_not_all_bunch_ahead_of_an_undated_pattern(specialist):
@@ -280,11 +295,13 @@ def test_dated_points_do_not_all_bunch_ahead_of_an_undated_pattern(specialist):
     labels = [step.label for step in steps]
     current = next(index for index, step in enumerate(steps) if step.state == "current")
 
-    # Nothing dated in the past is drawn before the first phase …
-    assert labels.index("Alustatud") > labels.index("Algus")
-    assert labels.index("Alustatud") <= current + 1
-    # … and what is still expected is past the phase the file is on, not in
+    # What is still expected is past the phase the file is on, rather than in
     # front of the whole pattern.
+    #
+    # The first half of this test asserted where `Alustatud` landed relative to
+    # `Algus`; the milestone is retired (docs/adr/0100 §1) and the conceptual
+    # beginning the rail has is the pattern's own first phase, which is what
+    # `Algus` is.
     #
     # **Immediately past it, and no further.** The follow-up round corrected
     # where an unanchored future point lands: it used to fall to the end of the
@@ -350,12 +367,23 @@ def test_a_date_can_be_put_on_a_phase_and_reads_on_the_rail(specialist):
     assert step.sort_on == expected
 
 
-def test_a_recorded_phase_is_dated_by_its_record_and_not_by_an_expectation(specialist):
-    """§G. Reuse rather than duplicate, and the fact wins over the plan.
+def test_a_phase_is_dated_by_the_roadmap_and_not_by_the_step_filed_under_it(specialist):
+    """§G, **reversed by docs/adr/0100 §2.**
 
-    A phase the file has recorded is dated by the `Menetluse areng` filed in it —
-    the same record the chronology groups on. An expectation somebody typed
-    earlier does not overwrite it and is simply no longer interesting.
+    This test used to assert the opposite: that a `Menetluse areng` filed in a
+    phase dated that phase's node, and that an expectation somebody typed
+    earlier was «no longer interesting». Two rounds of use showed what that
+    produces. A file consulted twice read `Kooskõlastusring 2.4.2026` on the
+    rail — the *first* occurrence — an inch above a `Teema käik` whose current
+    section said `alates 20.08.2026`: two answers to «since when is this file
+    on the coordination round», on one screen (QA-007). Borrowing history in
+    pattern order also made the dates non-monotonic, because a file that goes
+    forward and comes back is a loop and a rail is a line (QA-006).
+
+    `Menetluse kulg` is where the file is *going*; `Teema käik` is what
+    happened, and it already answers repetition properly — a section per
+    occurrence, in date order, under its own `alates` heading. So a node
+    carries the explicit `MatterTimelineStep` date and nothing else.
     """
     matter = _matter(specialist, instruments=("seadus",))
     set_timeline_steps(
@@ -373,14 +401,20 @@ def test_a_recorded_phase_is_dated_by_its_record_and_not_by_an_expectation(speci
     )
 
     step = next(s for s in _rail(matter, specialist) if s.label == "Kooskõlastusring")
-    assert step.display_date == "9.1.2026"
-    assert step.sort_on == date(2026, 1, 9)
+    assert step.display_date == "1.6.2027"
+    # And the record itself is untouched: it is still the `Teema käik` entry it
+    # always was, on the day it happened.
+    assert MatterProceduralDevelopment.objects.get(matter=matter).occurred_on == date(2026, 1, 9)
 
 
-def test_the_editor_offers_no_date_box_for_a_recorded_phase(signed_in, specialist):
-    """The other half of the same rule, in the panel.
+def test_the_editor_offers_a_date_box_on_every_phase(signed_in, specialist):
+    """The other half of the same rule, in the panel, **and it turned over too.**
 
-    A box over a day the record already proves is a second place to type it.
+    The panel used to withhold the box wherever a `Märge` already dated the
+    phase, on the reasoning that a box over a day the record proves is a second
+    place to type it. That was correct while the rail borrowed that date and is
+    wrong now that it does not: withholding it would leave a phase with no date
+    and no way to give it one (docs/adr/0100 §2).
     """
     matter = _matter(specialist, instruments=("seadus",))
     add_procedural_development(
@@ -396,9 +430,7 @@ def test_the_editor_offers_no_date_box_for_a_recorded_phase(signed_in, specialis
         reverse("matters:timeline_steps", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert "9.1.2026 · kirja pandud" in panel
-    assert f'name="{PHASE_KOOSKOLASTUS}__date"' not in panel
-    # A phase with nothing recorded still gets its box.
+    assert f'name="{PHASE_KOOSKOLASTUS}__date"' in panel
     assert f'name="{PHASE_JOUSTUMINE}__date"' in panel
 
 
@@ -421,7 +453,14 @@ def test_the_box_means_show_rather_than_hide(signed_in, specialist):
     Posted with the box absent — which is what an unticked checkbox sends — the
     phase comes off the rail.
     """
-    matter = _matter(specialist, instruments=("vtk", "seadus"))
+    # The deadline is what the last assertion is about, and it has to be a
+    # recorded one: every file used to carry `Alustatud` for free, and it was
+    # `Matter.created_at` (docs/adr/0100 §1).
+    matter = _matter(
+        specialist,
+        instruments=("vtk", "seadus"),
+        response_deadline=timezone.localdate() + timedelta(days=30),
+    )
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
     before = [step.label for step in _rail(matter, specialist) if step.kind == KIND_PHASE]
@@ -431,8 +470,16 @@ def test_the_box_means_show_rather_than_hide(signed_in, specialist):
     # them shown» — the strongest form of the claim.
     signed_in.post(reverse("matters:timeline_steps", kwargs={"pk": matter.pk}), {})
 
-    assert MatterTimelineStep.objects.filter(matter=matter, hidden=True).count() == len(before)
-    assert [step.label for step in _rail(matter, specialist) if step.kind == KIND_PHASE] == []
+    # **All but the current one.** Hiding the phase the file is *on* left the
+    # header saying `Kooskõlastusringil` while the rail no longer drew that
+    # phase at all, so the control is disabled in the panel and the rule is
+    # re-asserted where the service call is built — «the control was not
+    # rendered» is never how a rule is kept here (docs/adr/0100 §4).
+    kept = [step.label for step in _rail(matter, specialist) if step.kind == KIND_PHASE]
+    assert kept == ["Kooskõlastusring"]
+    assert MatterTimelineStep.objects.filter(matter=matter, hidden=True).count() == len(
+        before
+    ) - len(kept)
     # The dated points are not phases and are untouched by the panel.
     assert any(step.kind == KIND_MILESTONE for step in _rail(matter, specialist))
 

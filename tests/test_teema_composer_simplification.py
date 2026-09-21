@@ -31,7 +31,6 @@ from app.matters.enums import (
 from app.matters.models import MatterExternalPosition, MatterWebsiteOverview
 from app.matters.services import (
     EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY,
-    EXTERNAL_POSITION_NEEDS_ORGANISATION,
     WEBSITE_OVERVIEW_NEEDS_LINK,
     add_engagement,
     record_external_position,
@@ -709,8 +708,22 @@ def test_received_feedback_no_longer_offers_allikas(signed_in, normal_matter):
     assert "jäta organisatsioon valimata" not in body
 
 
-def test_received_feedback_now_requires_an_institution(signed_in, normal_matter):
-    """The authorship rule is *met*, not relaxed, now that no label is offered."""
+def test_received_feedback_may_name_nobody(signed_in, normal_matter):
+    """**Reversed by docs/adr/0101.**
+
+    This round removed the `Allikas` box and recorded that the authorship rule
+    was therefore *met* rather than relaxed: with no label to offer, every
+    received position named an organisation. The owner met the other half of
+    that in ordinary use — a lawyer writing down what a member said on the
+    telephone has neither a catalogue row nor a collection to name, and a panel
+    that will not save until one of them exists is what makes people invent one
+    (OWNER-01).
+
+    So the record may name nobody, and the absence is the truth rather than a
+    gap to fill. What is unchanged is that the record can never be *empty*:
+    `EXTERNAL_POSITION_NEEDS_SOURCE` still means a position, a link or a file
+    is there, and a `DISCOVERED` opinion still requires its author.
+    """
     response = _post(
         signed_in,
         "add_received_feedback",
@@ -718,9 +731,11 @@ def test_received_feedback_now_requires_an_institution(signed_in, normal_matter)
         {"summary": "Toetame eelnõu.", "stated_on": "14.03.2026"},
     )
 
-    assert response.status_code == 400
-    assert EXTERNAL_POSITION_NEEDS_ORGANISATION in response.content.decode()
-    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+    assert response.status_code == 200
+    position = MatterExternalPosition.objects.get(matter=normal_matter)
+    assert position.organisation_id is None
+    assert position.source_label == ""
+    assert position.summary == "Toetame eelnõu."
 
 
 def test_a_historical_row_with_a_source_label_still_reads_and_is_still_correctable(

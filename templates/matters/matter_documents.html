@@ -345,6 +345,30 @@ finds again (§23.5).
                             <span class="doctable__filename">{{ document.current_version.original_filename }}</span>
                           {% endif %}
                         {% endif %}
+                        {% comment %}
+                          What tells this row from the other one with the same
+                          name on the same day.
+
+                          Two different files both called `dup.txt` rendered as
+                          four cells identical in every visible column — name,
+                          role, date, person — while the stored bytes were
+                          correct and distinct all along. The defect was display
+                          ambiguity, so this is display: the upload's own clock
+                          time and the file's size, which are what a person
+                          recognises from their mail client and their download
+                          folder, and an ordinal only where two rows are
+                          identical down to the minute (QA-016,
+                          `_mark_duplicate_names`).
+
+                          **Only on rows that need it.** A name that appears
+                          once on the page carries nothing extra, so the
+                          ordinary list reads exactly as it did. And nothing
+                          internal is printed — no storage key, no identifier,
+                          no path.
+                        {% endcomment %}
+                        {% if document.duplicate_hint %}
+                          <span class="doctable__filename">{{ document.duplicate_hint }}</span>
+                        {% endif %}
                         {% if document.opinion_send %}
                           {% comment %}
                             Two facts and no more: when it went out and who to.

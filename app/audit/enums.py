@@ -84,6 +84,16 @@ class ChangeEventType(models.TextChoices):
     SUBMISSION_CREATED = "SUBMISSION_CREATED", "Arvamus loodud"
     SUBMISSION_SENT = "SUBMISSION_SENT", "Arvamus välja saadetud"
     SUBMISSION_WITHDRAWN = "SUBMISSION_WITHDRAWN", "Arvamus tagasi võetud"
+    # A recorded send whose *stated facts* were wrong: the day, the summary, the
+    # kind. Its own event rather than a `SUBMISSION_SENT` written twice, which
+    # would make the file read as two letters, and rather than a silent `UPDATE`,
+    # which is the shape the chronology had no answer for at all — `Arvamus
+    # välja` was the one row on `Teema käik` with no correction control, on the
+    # record where a wrong date or recipient matters most (QA-023).
+    #
+    # **Not a withdrawal and not a supersession.** Both of those say something
+    # about the letter; this says something about what we wrote down about it.
+    SUBMISSION_CORRECTED = "SUBMISSION_CORRECTED", "Arvamuse andmeid parandatud"
     SUBMISSION_SUPERSEDED = "SUBMISSION_SUPERSEDED", "Arvamus asendatud"
     SUBMISSION_RECIPIENTS_CHANGED = "SUBMISSION_RECIPIENTS_CHANGED", "Arvamuse saajad muudetud"
     # -- docs/adr/0093: what one letter argued about, and where it was written up
@@ -360,6 +370,35 @@ class ChangeEventType(models.TextChoices):
         "PROCEDURAL_DEVELOPMENT_DOCUMENT_LINKED",
         "Märke fail lisatud",
     )
+
+    # -- removal from the active file --------------------------------------
+    #
+    # **One value per record kind, not one `RECORD_REMOVED` for all of them.**
+    # This enum is read by a person on `Kõik muudatused`, and that page's whole
+    # value is that each line says what actually happened — the reason
+    # `WEBSITE_OVERVIEW_PLANNED` is not an `ENGAGEMENT_ADDED` and
+    # `PROCEDURAL_DEVELOPMENT_RECORDED` is not an `ENTRY_ADDED`. A shared
+    # removal event would print «Kirje eemaldatud» eight different ways and
+    # leave the reader to guess which record left the file.
+    #
+    # The act these name is **removal, not cancellation**: the record should
+    # never have been on this file, so there is nothing to say in `Teema käik`
+    # and the row leaves it. `IMPORTANT_DATE_CANCELLED` and
+    # `WEBSITE_OVERVIEW_CANCELLED` are the other act — a real plan somebody
+    # called off — and both are still raised, still by their own services, and
+    # still leave their row on the page saying `Tühistatud`
+    # (OWNER-04, docs/adr/0102).
+    ENTRY_REMOVED = "ENTRY_REMOVED", "Sissekanne eemaldatud"
+    PROCEDURAL_DEVELOPMENT_REMOVED = (
+        "PROCEDURAL_DEVELOPMENT_REMOVED",
+        "Märge eemaldatud",
+    )
+    ENGAGEMENT_REMOVED = "ENGAGEMENT_REMOVED", "Kaasamine eemaldatud"
+    EXTERNAL_POSITION_REMOVED = "EXTERNAL_POSITION_REMOVED", "Väline seisukoht eemaldatud"
+    WEBSITE_OVERVIEW_REMOVED = "WEBSITE_OVERVIEW_REMOVED", "Ülevaade / uudis eemaldatud"
+    IMPORTANT_DATE_REMOVED = "IMPORTANT_DATE_REMOVED", "Oluline tähtaeg eemaldatud"
+    EFFECTIVE_DATE_REMOVED = "EFFECTIVE_DATE_REMOVED", "Jõustumine eemaldatud"
+    WORK_VICTORY_REMOVED = "WORK_VICTORY_REMOVED", "Töövõidu kirje eemaldatud"
 
 
 class SecurityEventType(models.TextChoices):
