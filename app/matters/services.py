@@ -8,6 +8,7 @@ later from an importer or a scheduled job (master specification 12.4).
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -984,6 +985,70 @@ def set_brief_summary(*, matter: Matter, value: str, actor: Any = None) -> Matte
     return matter
 
 
+#: What a stale whole-record save of `Muuda teemat` is told. The sibling of
+#: `ENTRY_EDIT_CONFLICT` and `ENGAGEMENT_EDIT_CONFLICT`, and deliberately the
+#: same shape of sentence: the page names the record, not the field, because a
+#: stale copy of this form is stale about all of them at once.
+MATTER_EDIT_CONFLICT = "Teemat on vahepeal mujal muudetud."
+
+
+class MatterEditConflict(DomainError):
+    """The Matter changed elsewhere between rendering an edit form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see
+    the other side of is a conflict they cannot resolve — the same reasoning,
+    and deliberately the same shape, as :class:`EntryEditConflict`.
+    """
+
+    def __init__(self, current: Matter) -> None:
+        super().__init__(MATTER_EDIT_CONFLICT)
+        self.current = current
+
+
+def matter_revision_token(matter: Matter) -> str:
+    """Which version of a Matter a rendered whole-record form was filled from.
+
+    ``updated_at``, rather than a column of its own — the token
+    `entry_revision_token` uses, for the same reasons: `auto_now` sets it on
+    every write, PostgreSQL stores it to the microsecond so two saves cannot
+    share one, and having it costs no migration.
+
+    **It moves for the facts this form owns and for nothing else.** Every
+    service `matter_edit` calls saves the Matter row, including the three that
+    write only a join table — `set_organisations` already carried `updated_at`
+    for exactly this reason, and `set_policy_areas` and `set_legal_instruments`
+    now do too. A `Märge`, an opinion or a file does *not* touch it, so adding
+    content to a Matter never makes somebody's open edit page stale. That is
+    the granularity a whole-record token wants: guard the record the form
+    posts, and leave the rest of the file alone.
+    """
+    return matter.updated_at.isoformat()
+
+
+def guard_matter_revision(*, matter: Matter, expected_revision: str | None) -> Matter:
+    """Lock the Matter and refuse a whole-record save filled from an older one.
+
+    The same discipline as `edit_entry`: take the row, then read the version
+    *from the locked row* rather than from the instance the caller arrived
+    with, so the comparison is against what is committed rather than against
+    what was on screen. Must be called inside `transaction.atomic`.
+
+    ``FOR NO KEY UPDATE`` — the same row at the same strength as
+    `lock_matter_for_evidence_integrity` and `lock_open_matter_for_business_write`
+    take it, so this adds no new lock and does not change the global order
+    (`app/matters/locks.py`).
+
+    An absent ``expected_revision`` is not a conflict. A caller that has no
+    token is a caller that never rendered one — an inline header control, a
+    service call, a test — and refusing those would make the guard a rule about
+    who may write rather than about which version they wrote against.
+    """
+    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    if expected_revision and matter_revision_token(locked) != expected_revision:
+        raise MatterEditConflict(locked)
+    return locked
+
+
 @transaction.atomic
 def set_matter_title(*, matter: Matter, value: str, actor: Any = None) -> Matter:
     """Rename a Matter.
@@ -1225,6 +1290,14 @@ def set_policy_areas(*, matter: Matter, policy_areas: Sequence[Any], actor: Any 
         return matter
 
     matter.policy_areas.set(chosen)
+    # `.set()` writes the join table and nothing else, so without this the
+    # Matter that just changed would still claim it had not been touched since
+    # whenever somebody last edited a scalar field. `set_organisations` has
+    # carried `updated_at` for that reason since brief 22; a whole-record
+    # revision token makes it load-bearing here too, because a stale copy of
+    # `Muuda teemat` must not be accepted as current after somebody else
+    # changed exactly these (`matter_revision_token`).
+    matter.save(update_fields=["updated_at"])
     record_change_event(
         event_type=ChangeEventType.MATTER_POLICY_AREAS_CHANGED,
         matter=matter,
@@ -1298,6 +1371,14 @@ def set_legal_instruments(
         return matter
 
     matter.legal_instruments.set(chosen)
+    # `.set()` writes the join table and nothing else, so without this the
+    # Matter that just changed would still claim it had not been touched since
+    # whenever somebody last edited a scalar field. `set_organisations` has
+    # carried `updated_at` for that reason since brief 22; a whole-record
+    # revision token makes it load-bearing here too, because a stale copy of
+    # `Muuda teemat` must not be accepted as current after somebody else
+    # changed exactly these (`matter_revision_token`).
+    matter.save(update_fields=["updated_at"])
     record_change_event(
         event_type=ChangeEventType.MATTER_LEGAL_INSTRUMENTS_CHANGED,
         matter=matter,
@@ -4006,12 +4087,55 @@ def _development_phase(value: Any) -> str:
     return phase if phase in PHASE_KEYS else ""
 
 
+#: What a stale `Muuda kulgu` save is told. The sibling of
+#: `MATTER_EDIT_CONFLICT`, and the same shape of sentence for the same reason:
+#: the panel posts every phase at once, so a stale copy of it is stale about
+#: all of them.
+TIMELINE_STEPS_CONFLICT = "Menetluse kulgu on vahepeal mujal muudetud."
+
+
+class TimelineStepsConflict(DomainError):
+    """The rail's stored steps changed between the panel opening and saving."""
+
+
+def timeline_steps_revision_token(matter: Matter) -> str:
+    """Which version of the stored rail a rendered `Muuda kulgu` panel holds.
+
+    A digest of the rows themselves rather than a timestamp, because the
+    ordinary answer here *is the absence of a row*: a phase that is shown and
+    undated stores nothing, so a save that restores a default deletes rows, and
+    there is no `updated_at` left behind to compare against. `MAX(updated_at)`
+    would go backwards on such a save and `COUNT` would collide across
+    different states; the state itself does neither.
+
+    Two identical states therefore share a token, and that is correct rather
+    than the weakness `entry_revision_token` warns about in `edit_count`: a
+    panel filled from a state indistinguishable from the committed one is not
+    proposing to undo anything. What it excludes is the case this guard exists
+    for — somebody else moved a date or hid a phase, and a panel that never saw
+    it posts the whole set back.
+    """
+    from app.matters.models import MatterTimelineStep
+
+    rows = (
+        MatterTimelineStep.objects.filter(matter=matter)
+        .order_by("phase_key")
+        .values_list("phase_key", "hidden", "occurs_on", "occurs_on_precision")
+    )
+    state = "\n".join(
+        f"{phase_key}|{int(hidden)}|{occurs_on.isoformat() if occurs_on else ''}|{precision}"
+        for phase_key, hidden, occurs_on, precision in rows
+    )
+    return hashlib.sha256(state.encode("utf-8")).hexdigest()
+
+
 @transaction.atomic
 def set_timeline_steps(
     *,
     matter: Matter,
     steps: Any,
     actor: Any = None,
+    expected_revision: str | None = None,
 ) -> int:
     """`Muuda kulgu` — which phases this file's rail shows, and when.
 
@@ -4039,6 +4163,12 @@ def set_timeline_steps(
     from app.matters.process_phases import PHASE_KEYS
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    # Read *after* the Matter row lock, so the version compared against is the
+    # one that is committed rather than the one that was on screen — the
+    # discipline `guard_matter_revision` and `edit_entry` follow. An absent
+    # token is not a conflict, for the reason given there.
+    if expected_revision and timeline_steps_revision_token(locked_matter) != expected_revision:
+        raise TimelineStepsConflict(TIMELINE_STEPS_CONFLICT)
     existing = {
         row.phase_key: row
         for row in MatterTimelineStep.objects.select_for_update(no_key=True).filter(

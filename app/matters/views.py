@@ -128,6 +128,7 @@ from app.matters.forms import (
     development_period_initial,
     edit_initial,
     external_position_period_initial,
+    matter_edit_conflict_changes,
     period_initial,
     read_organisation_choices,
     visible_engagements_of,
@@ -169,9 +170,11 @@ from app.matters.services import (
     EngagementEditConflict,
     EntryEditConflict,
     ExternalPositionConflict,
+    MatterEditConflict,
     PersonalNoteConflict,
     ProceduralDevelopmentConflict,
     ProceduralLinkConflict,
+    TimelineStepsConflict,
     WebsiteOverviewConflict,
     acknowledge_assignment_notice,
     assign_matter,
@@ -186,6 +189,8 @@ from app.matters.services import (
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
+    guard_matter_revision,
+    matter_revision_token,
     open_engagement_feedback_wait,
     personal_note_record,
     personal_note_revision,
@@ -206,6 +211,7 @@ from app.matters.services import (
     set_policy_areas,
     set_position,
     set_timeline_steps,
+    timeline_steps_revision_token,
 )
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
@@ -4321,6 +4327,13 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     data = form.cleaned_data
     try:
         with transaction.atomic():
+            # First, and inside the transaction: this page posts every field it
+            # holds, so a copy filled before somebody else's save would
+            # otherwise write thirteen stale values over thirteen fresh ones
+            # and call it an edit. The guard takes the Matter row and compares
+            # the committed version, never the instance this request arrived
+            # with (QA-002, `guard_matter_revision`).
+            guard_matter_revision(matter=matter, expected_revision=data.get("revision") or None)
             set_matter_title(matter=matter, value=data["title"], actor=request.user)
             set_brief_summary(
                 matter=matter, value=data.get("brief_summary") or "", actor=request.user
@@ -4387,6 +4400,32 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # and a Matter's tags and its visibility survive every save of this
             # form untouched (docs/adr/0096 §3, docs/adr/0097 §2).
             _save_procedural_link(matter=matter, form=link_form, actor=request.user)
+    except MatterEditConflict as conflict:
+        # Somebody else changed this Matter between the page opening and this
+        # save. Refused rather than applied, and the page comes back with every
+        # value this person typed still in it, so the two versions are
+        # reconciled by a person rather than by whoever pressed `Salvesta` last.
+        #
+        # The token is refreshed to the version the refusal was measured
+        # against, so a second press — by somebody who has now read the other
+        # side — saves against what is stored rather than bouncing forever.
+        #
+        # Caught before `DomainError`, which it subclasses: the generic handler
+        # would answer 400 and lose the status this deserves.
+        retry = request.POST.copy()
+        retry["revision"] = matter_revision_token(conflict.current)
+        form = MatterEditForm(retry, matter=matter, viewer=request.user)
+        form.is_valid()
+        form.add_error(None, str(conflict))
+        # What actually moved, stated beside the refusal. Without it the page
+        # comes back showing this person's own stale values, and the only
+        # obvious next action is to press `Salvesta` again — which is the
+        # silent revert the guard exists to prevent, performed by hand.
+        changes = matter_edit_conflict_changes(current=conflict.current, submitted=data)
+        matter.refresh_from_db()
+        context = _edit_context(request, matter, form, link_form)
+        context["conflict_changes"] = changes
+        return render(request, "matters/matter_edit.html", context, status=409)
     except ProceduralLinkConflict as conflict:
         # Somebody else corrected the same address between this page being
         # opened and being saved. Refused rather than overwritten, and the
@@ -7002,7 +7041,47 @@ def _timeline_steps_form(
             matter=matter, user=request.user, phase_keys=keys
         ).items():
             recorded[key] = format_at_precision(when, precision)
-    return TimelineStepsForm(data, phases=phases, rows=rows, recorded=recorded)
+    return TimelineStepsForm(
+        data,
+        phases=phases,
+        rows=rows,
+        recorded=recorded,
+        revision=timeline_steps_revision_token(matter),
+    )
+
+
+def _timeline_steps_refusal(
+    request: HttpRequest,
+    matter: Matter,
+    form: Any,
+    *,
+    status: int,
+    error: str = "",
+) -> HttpResponse:
+    """Put a refused `Muuda kulgu` back where the person is looking.
+
+    **The success path and the refusal path have different targets, and that is
+    not a detail.** A saved panel re-renders the whole Teema view, because
+    hiding a phase changes the rail and dating one changes what the rail says
+    about every other — so the form declares `hx-target="#teema-vaade"`. A
+    *refusal* re-renders the panel, and swapping a panel into that target
+    replaces the entire page with a bare form: the rail, the chronology and the
+    launcher all gone, and the only way back a manual reload.
+
+    `HX-Retarget` says so per response rather than per form, which is the only
+    place the distinction exists. Without it the 400 path had been quietly
+    doing the same thing since it was written; the conflict path would have
+    joined it.
+    """
+    response = render(
+        request,
+        "matters/partials/timeline_steps_form.html",
+        {"matter": matter, "timeline_steps_form": form, "timeline_steps_error": error},
+        status=status,
+    )
+    response["HX-Retarget"] = "#menetluse-kulg-muuda"
+    response["HX-Reswap"] = "innerHTML"
+    return response
 
 
 @login_required
@@ -7025,25 +7104,34 @@ def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     form = _timeline_steps_form(request, matter, request.POST)
     if not form.is_valid():
-        return render(
-            request,
-            "matters/partials/timeline_steps_form.html",
-            {"matter": matter, "timeline_steps_form": form},
-            status=400,
-        )
+        return _timeline_steps_refusal(request, matter, form, status=400)
     try:
-        set_timeline_steps(matter=matter, steps=form.steps(), actor=request.user)
-    except DomainError as error:
-        return render(
-            request,
-            "matters/partials/timeline_steps_form.html",
-            {
-                "matter": matter,
-                "timeline_steps_form": form,
-                "timeline_steps_error": str(error),
-            },
-            status=400,
+        set_timeline_steps(
+            matter=matter,
+            steps=form.steps(),
+            actor=request.user,
+            # What the panel was opened on. Checked under the Matter's row lock
+            # inside the service, so two panels open on the same rail cannot
+            # both post the whole set and have the second one win silently
+            # (QA-004, `timeline_steps_revision_token`).
+            expected_revision=form.cleaned_data.get("revision") or None,
         )
+    except TimelineStepsConflict as conflict:
+        # Refused rather than overwritten, and the panel comes back holding
+        # what this person typed: a conflict somebody cannot see their own side
+        # of is a conflict they cannot resolve. 409 rather than 400 — the shape
+        # `matter_edit` uses for the same situation — because nothing about
+        # what they submitted was wrong.
+        #
+        # Caught before `DomainError`, which it subclasses, so neither the
+        # status nor the place is lost to the generic handler below.
+        retry = request.POST.copy()
+        retry["revision"] = timeline_steps_revision_token(matter)
+        form = _timeline_steps_form(request, matter, retry)
+        form.is_valid()
+        return _timeline_steps_refusal(request, matter, form, status=409, error=str(conflict))
+    except DomainError as error:
+        return _timeline_steps_refusal(request, matter, form, status=400, error=str(error))
     return _render_overview(request, matter)
 
 

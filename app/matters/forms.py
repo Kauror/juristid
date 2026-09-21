@@ -1337,6 +1337,14 @@ class MatterEditForm(
     the audit trail does not know about (this module's opening rule).
     """
 
+    #: Which version of the record this page was filled from, carried through
+    #: the round trip so the save can refuse a copy that is behind
+    #: (`matter_revision_token`). `required=False` for the reason every other
+    #: revision field on this module gives: an absent token means «no opinion»
+    #: — a form posted by a test or by an older cached page — and the guard
+    #: treats it as such rather than as a conflict.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
     title = forms.CharField(
         label="Pealkiri",
         max_length=1000,
@@ -1668,7 +1676,10 @@ class MatterEditForm(
 
 def edit_initial(matter: Matter) -> dict[str, Any]:
     """The Matter's current values, in the shape `MatterEditForm` reads."""
+    from app.matters.services import matter_revision_token
+
     return {
+        "revision": matter_revision_token(matter),
         "title": matter.title,
         "brief_summary": matter.brief_summary,
         "owner": matter.owner_id,
@@ -1688,6 +1699,113 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "received_date": matter.received_date,
         "response_deadline": matter.response_deadline,
     }
+
+
+def matter_edit_conflict_changes(
+    *, current: Matter, submitted: dict[str, Any]
+) -> list[dict[str, str]]:
+    """What moved under a refused `Muuda teemat`, in the page's own words.
+
+    A conflict somebody cannot see the other side of is a conflict they cannot
+    resolve. The refusal keeps every value this person typed — that is the
+    whole point of refusing rather than overwriting — but a page still showing
+    `Vastutaja: Sandra` after a colleague set it to Martin invites exactly one
+    action, and it is the silent revert the guard exists to stop. So the
+    refusal states the difference.
+
+    **Compared, never guessed.** This reads the record as it now stands against
+    the values this POST is actually carrying, both in the shape `edit_initial`
+    produces, and reports only where they differ. It does not try to work out
+    which of them the person meant to change — nothing here has that
+    information, and a merge built on assuming it would be a quieter version of
+    the same defect.
+
+    Fields the form does not carry are not compared, because a page cannot be
+    stale about something it never held.
+    """
+    labels = {
+        "title": "Pealkiri",
+        "brief_summary": "Lühikokkuvõte",
+        "owner": "Vastutaja",
+        "stage": "Hetkeseis",
+        "received_date": "Saabumise kuupäev",
+        "response_deadline": "Arvamuse tähtaeg",
+        "policy_areas": "Valdkonnad",
+        "policy_area_other": "Valdkond — muu",
+        "legal_instruments": "Õigusakt",
+        "legal_instrument_other": "Õigusakt — muu",
+        "source_organisations": "Saatja",
+    }
+    names = {
+        "owner": lambda value: _display_owner(current, value),
+        "stage": lambda value: _display_stage(value),
+        "policy_areas": lambda value: _display_many(PolicyArea, value),
+        "legal_instruments": lambda value: _display_many(LegalInstrumentType, value),
+        "source_organisations": lambda value: _display_many(Organisation, value),
+    }
+    stored = edit_initial(current)
+    changes: list[dict[str, str]] = []
+    for field, label in labels.items():
+        mine = submitted.get(field)
+        theirs = stored.get(field)
+        if _comparable(mine) == _comparable(theirs):
+            continue
+        render = names.get(field, _display_scalar)
+        changes.append({"label": label, "current": render(theirs), "submitted": render(mine)})
+    return changes
+
+
+def _comparable(value: Any) -> Any:
+    """One shape for «the same answer», across a pk, a model and a list of them."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (list, tuple, set)):
+        return frozenset(str(getattr(item, "pk", item)) for item in value)
+    return str(getattr(value, "pk", value))
+
+
+def _display_scalar(value: Any) -> str:
+    if value is None or value == "":
+        return "—"
+    return str(value)
+
+
+def _display_owner(matter: Matter, value: Any) -> str:
+    from app.accounts.models import User
+
+    if not value:
+        return "Määramata"
+    person = User.objects.filter(pk=getattr(value, "pk", value)).first()
+    return person.get_short_name() if person else "—"
+
+
+def _display_stage(value: Any) -> str:
+    from app.workflow.models import StageVocabulary
+
+    if not value:
+        return "Määramata"
+    found = StageVocabulary.objects.filter(pk=getattr(value, "pk", value)).first()
+    return found.label_et if found else "—"
+
+
+def _display_many(model: Any, value: Any) -> str:
+    if not value:
+        return "—"
+    pks = [getattr(item, "pk", item) for item in value]
+    rows = model.objects.filter(pk__in=pks)
+    # One helper for three vocabularies that spell their display name three
+    # ways: `PolicyArea.name_et`, `LegalInstrumentType.label_et` and
+    # `Organisation.name`. Asking each row rather than each model keeps the
+    # caller from having to know which is which.
+    names = sorted(
+        str(
+            getattr(row, "name_et", None)
+            or getattr(row, "label_et", None)
+            or getattr(row, "name", "")
+        )
+        for row in rows
+    )
+    return ", ".join(name for name in names if name) or "—"
 
 
 class NextActionForm(forms.Form):
@@ -6018,10 +6136,25 @@ class TimelineStepsForm(forms.Form):
 
     use_required_attribute = False
 
+    #: Which version of the stored steps this panel was opened on, carried
+    #: through the round trip so a save filled from an older one is refused
+    #: rather than posted over somebody else's (`timeline_steps_revision_token`).
+    #: `required=False` for the reason every other revision field here gives.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
     def __init__(
-        self, *args: Any, phases: Any = None, rows: Any = None, recorded: Any = None, **kwargs: Any
+        self,
+        *args: Any,
+        phases: Any = None,
+        rows: Any = None,
+        recorded: Any = None,
+        revision: str = "",
+        **kwargs: Any,
     ) -> None:
         kwargs.setdefault("auto_id", "id_kulg_%s")
+        if revision:
+            kwargs.setdefault("initial", {})
+            kwargs["initial"] = {**kwargs["initial"], "revision": revision}
         super().__init__(*args, **kwargs)
         #: The pattern's nodes, in its own order. Empty when the file is read
         #: against no procedure, and the panel then has nothing to offer.

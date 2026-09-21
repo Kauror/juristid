@@ -21,6 +21,13 @@ whose phases carry dates it changes what the rail says about all of them.
       hx-post="{% url 'matters:timeline_steps' pk=matter.pk %}"
       hx-target="#teema-vaade" hx-swap="outerHTML">
   {% csrf_token %}
+  {% comment %}
+    Which version of the stored steps this panel was opened on. The save
+    compares it under the Matter's row lock, so a panel that never saw somebody
+    else's change cannot post the whole set over it (app/matters/services.py,
+    `timeline_steps_revision_token`).
+  {% endcomment %}
+  {{ timeline_steps_form.revision }}
 
   {% if timeline_steps_error %}
     <p class="formerror" role="alert">{{ timeline_steps_error }}</p>

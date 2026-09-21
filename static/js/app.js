@@ -16,9 +16,15 @@
    * explains itself and the page silently discards the explanation — somebody
    * presses Salvesta and nothing whatsoever happens.
    *
-   * Only 400 and 422. A 404 is the authorization answer this application gives
-   * for a record somebody may not touch, and swapping Django's error page into
-   * a fragment target would be worse than ignoring it.
+   * 409 for the same reason, and it is the one that costs most when dropped.
+   * A stale whole-record save is refused with the surface re-rendered, the
+   * person's own values still in it and the conflict named on it — and a
+   * client that discards that answers a refusal with silence, which reads
+   * exactly like a save that worked (`timeline_steps_view`, QA-004).
+   *
+   * Only 400, 409 and 422. A 404 is the authorization answer this application
+   * gives for a record somebody may not touch, and swapping Django's error
+   * page into a fragment target would be worse than ignoring it.
    *
    * `defer` on both scripts, htmx first, so the global is here.
    */
@@ -26,7 +32,7 @@
     window.htmx.config.responseHandling = [
       { code: "204", swap: false },
       { code: "[23]..", swap: true },
-      { code: "4(00|22)", swap: true, error: true },
+      { code: "4(00|09|22)", swap: true, error: true },
       { code: "[45]..", swap: false, error: true },
     ];
   }

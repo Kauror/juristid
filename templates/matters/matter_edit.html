@@ -81,9 +81,43 @@
   <form class="form createform" method="post"
         action="{% url 'matters:matter_edit' pk=matter.pk %}">
     {% csrf_token %}
+    {% comment %}
+      Which version of the record this page was filled from. Rendered rather
+      than assumed: the save compares it under the Matter's row lock and
+      refuses a copy that is behind, so two tabs cannot both post every field
+      and have the second one win silently (app/matters/services.py,
+      `guard_matter_revision`).
+    {% endcomment %}
+    {{ form.revision }}
 
     {% if form.non_field_errors %}
       <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
+    {% endif %}
+
+    {% comment %}
+      What moved under a refused save, beside the refusal that reports it.
+
+      Everything this person typed is still in the boxes below — that is what
+      refusing rather than overwriting buys. But the boxes therefore show
+      *their* version of the fields somebody else changed, and a page that only
+      says «this changed elsewhere» invites one action: press Salvesta again.
+      That is the silent revert the guard exists to stop, done by hand. So the
+      difference is stated, field by field, and the second press is an informed
+      decision (app/matters/forms.py, `matter_edit_conflict_changes`).
+    {% endcomment %}
+    {% if conflict_changes %}
+      <div class="formerror formerror--detail">
+        <p>Vahepeal muutusid need väljad. Salvestamine kirjutab need üle.</p>
+        <ul class="formerror__list">
+          {% for change in conflict_changes %}
+            <li>
+              <strong>{{ change.label }}</strong>:
+              praegu salvestatud <em>{{ change.current }}</em>,
+              sinu lehel <em>{{ change.submitted }}</em>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
     {% endif %}
 
     {% if assisted %}
