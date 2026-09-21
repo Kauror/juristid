@@ -6538,6 +6538,17 @@ def _external_position_edit_form(
     An approximate date reopens on its own chip with the day box left empty: the
     stored anchor is a place in a sort, not a day to hand back to somebody to
     re-save (docs/adr/0079 §2, `external_position_period_initial`).
+
+    **Every field this form renders is opened on what the record holds.** The
+    correction writes back the whole record — `correct_external_position` is
+    handed each value, not a diff — so a box this function forgets is a box that
+    comes up empty and is *saved* empty by somebody who only came to fix a typo
+    in the summary. `Liige` was the one that mattered: the owner asked for the
+    mark to be correctable through the supported edit flow, and an editor that
+    silently clears it is the opposite of correctable (OWNER-01, QA-014).
+    `Allikas` and `Juristi märkus` are the same field on the same form and are
+    opened here for the same reason — both were reachable by this route and
+    neither survived a no-op save.
     """
     auto_id = f"id_valine_seisukoht_{position.pk}_%s"
     if data is not None:
@@ -6547,6 +6558,13 @@ def _external_position_edit_form(
             "organisation": position.organisation_id,
             "url": position.url,
             "summary": position.summary,
+            "lawyer_note": position.lawyer_note,
+            # Both are dropped from the form on a discovered position, and
+            # `initial` for a field that is not there is simply ignored — so
+            # this says «open on the record» once rather than asking the same
+            # question the form already answered in `__init__`.
+            "source_label": position.source_label,
+            "source_is_member": position.source_is_member,
             "engagement": position.engagement_id,
             **external_position_period_initial(position),
             "revision": position.revision_token,

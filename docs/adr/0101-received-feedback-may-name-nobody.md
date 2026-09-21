@@ -89,3 +89,17 @@ list is not evidence of who telephoned.
 **Relax the check for both provenances.** Rejected above: it would let an
 anonymous published opinion onto a file, which is the half of 0091 §3.3 that
 works.
+
+## Corrected before release, 2026-09-22
+
+**The box was rendered and not opened.** `ExternalPositionEditForm` grew
+`source_is_member` for QA-014 and `_external_position_edit_form` was not given
+the matching `initial`, so `Muuda` drew `Liige` unticked on a row that carried
+it. The correction writes the whole record back, so pressing `Salvesta` after
+fixing a typo took the mark off — no refusal, no message, and the row simply
+stopped saying `· Liige`. That is the opposite of the «correctable through the
+supported edit flow» half of OWNER-01, produced by the change that was meant to
+satisfy it. `Allikas` and `Juristi märkus` were the same omission on the same
+form, older than this round and reachable by the same press; all three are
+opened on the record now
+(`tests/test_teema_composer_simplification.py::test_the_correction_opens_on_what_the_record_says`).

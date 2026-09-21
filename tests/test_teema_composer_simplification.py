@@ -951,12 +951,17 @@ def test_the_database_refuses_a_member_mark_on_a_discovered_position(
 def test_a_correction_keeps_the_member_mark_it_was_not_asked_about(
     normal_matter, specialist, member_company
 ):
-    """`Muuda` does not render `Liige`, so a correction must not clear one.
+    """A caller that does not pass `Liige` must not clear one.
 
     The mark is absent from the correction service's `proposed` set entirely,
     which is what makes «not asked» mean «not moved» rather than «set to the
     default» — the failure a field added to a form but forgotten in a
     correction's field list always has.
+
+    `Muuda` does render the box since QA-014, and passes `None` only on a
+    discovered position where the field is not on the form at all. This is the
+    service's own contract; that the editor opens the box on the record is
+    `test_the_correction_opens_on_what_the_record_says`.
     """
     from app.matters.services import correct_external_position
 
@@ -985,6 +990,82 @@ def test_a_correction_keeps_the_member_mark_it_was_not_asked_about(
 
     assert corrected.source_is_member is True
     assert corrected.summary == "Toetame eelnõu, kuid palume üleminekuaega."
+
+
+def test_the_correction_opens_on_what_the_record_says(
+    signed_in, normal_matter, specialist, member_company
+):
+    """`Muuda` renders `Liige` ticked on a marked row, and the note beside it.
+
+    The form is a plain `forms.Form` and the correction writes the whole record
+    back — `correct_external_position` is handed each value, never a diff — so a
+    box the view forgets to open comes up empty and is *saved* empty. Nothing
+    refuses it, because an unticked box is a legitimate answer; the mark simply
+    goes, and the lawyer who came to fix a typo in the summary is the one who
+    took it off (OWNER-01, QA-014).
+    """
+    position = record_external_position(
+        matter=normal_matter,
+        organisation=member_company,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+        summary="Toetame eelnõu.",
+        lawyer_note="Küsida üle, kas see on ainus mure.",
+        source_is_member=True,
+        actor=specialist,
+    )
+
+    body = signed_in.get(
+        reverse(
+            "matters:update_external_position",
+            kwargs={"pk": normal_matter.pk, "position_id": position.pk},
+        )
+    ).content.decode()
+
+    assert "checked" in _tag_with(body, 'name="source_is_member"')
+    assert "Küsida üle, kas see on ainus mure." in body
+
+
+def test_a_correction_that_changes_only_the_summary_keeps_the_rest(
+    signed_in, normal_matter, specialist, member_company
+):
+    """The round trip the owner described, through the door a person uses.
+
+    Opened, one field retyped, saved — and `Liige` and `Juristi märkus` are
+    still on the record afterwards. Posted as the rendered form posts: an
+    unticked checkbox sends no key at all, so this submits what a browser would
+    submit for a form that opened on the record, which is the only way the
+    defect this pins is reachable.
+    """
+    position = record_external_position(
+        matter=normal_matter,
+        organisation=member_company,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+        summary="Toetame eelnõu.",
+        lawyer_note="Küsida üle, kas see on ainus mure.",
+        source_is_member=True,
+        actor=specialist,
+    )
+
+    saved = _post(
+        signed_in,
+        "update_external_position",
+        normal_matter,
+        {
+            "organisation": str(member_company.pk),
+            "summary": "Toetame eelnõu, kuid palume üleminekuaega.",
+            "lawyer_note": "Küsida üle, kas see on ainus mure.",
+            "source_is_member": "on",
+            "position_precision": "EXACT",
+            "revision": position.revision_token,
+        },
+        position_id=position.pk,
+    )
+
+    assert saved.status_code == 200
+    position.refresh_from_db()
+    assert position.summary == "Toetame eelnõu, kuid palume üleminekuaega."
+    assert position.source_is_member is True
+    assert position.lawyer_note == "Küsida üle, kas see on ainus mure."
 
 
 def test_a_correction_moving_provenance_off_received_refuses_a_marked_row(
