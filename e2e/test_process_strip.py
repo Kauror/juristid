@@ -63,24 +63,34 @@ OPEN_TITLE = (
 ARCHIVE_TITLE = "Arhiiviteema 2014 sünteetiline registrikirje"
 
 #: Every label the strip used to draw and no longer may. `Kooskõlastusringil` is
-#: the seeded Matter's `Hetkeseis`, `Kaasamiskutse veebis` its engagement kind,
-#: and the two `Eelnõu`/`Eeldatav` rows are its watched `MatterImportantDate`
-#: records, which stayed out when the commencements came back.
+#: the seeded Matter's `Hetkeseis` and `Kaasamiskutse veebis` its engagement
+#: kind; neither is a dated procedural act.
 #:
 #: `Jõustub` is the **chronology's** tensed wording for a commencement and is
 #: retired from the strip specifically: the column is the noun `Jõustumine`, so
-#: that a rail does not rename itself on the day a date goes past. «põhiosa» is
-#: that record's «mis jõustub» — real, and secondary, so it reads as the
-#: column's `title` and never as visible text (docs/adr/0074 §12.4).
+#: that a rail does not rename itself on the day a date goes past.
+#:
+#: **Three labels came off this list in the 2026-09-21 round, each because the
+#: thing it named is now on the strip on purpose.**
+#:
+#: `Eelnõu eeldatav kooskõlastusring` and `Eeldatav VTK avalikustamine` are the
+#: seeded Matter's watched `MatterImportantDate` records. They stayed out when
+#: the commencements came back, and what that produced was a date a lawyer
+#: recorded through `+ Märge → Oluline tähtaeg` saving with a 200, closing its
+#: panel, and appearing on the Matter nowhere at all — not here, not in `Teema
+#: käik`, not in the header (QA-001).
+#:
+#: «põhiosa» is a commencement's «mis jõustub». It used to read as the column's
+#: `title` and never as visible text, and it is a visible note on the
+#: `Jõustumine` node now: a `title` is delivered by no touch screen, no
+#: printout and no screen reader, and it was the only thing telling two
+#: commencements apart (QA-005, docs/adr/0100 §3).
 RETIRED = [
     "praegu",
     "Loodud",
     "Kooskõlastusringil",
     "Kaasamiskutse veebis",
-    "Eelnõu eeldatav kooskõlastusring",
-    "Eeldatav VTK avalikustamine",
     "Jõustub",
-    "põhiosa",
 ]
 
 
@@ -490,7 +500,7 @@ def test_a_deadline_and_a_sent_opinion_read_in_date_order(page, base_url, width)
         page.locator(".tl-step").nth(index).bounding_box()
         for index in range(page.locator(".tl-step").count())
     ]
-    assert boxes[1]["x"] < boxes[2]["x"], "the send and the deadline columns overlap"
+    assert boxes[0]["x"] < boxes[1]["x"], "the send and the deadline columns overlap"
     assert_fits(page, width)
 
 
@@ -629,12 +639,12 @@ def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
     # `tests/test_teema_approved_target.py`, where a Matter's creation can be
     # backdated far enough for two distinct send days to be realistic.
     assert labels(page) == ["Koja arvamus", "Koja arvamus"]
-    assert dates_drawn(page) == [began, began, began], dates_drawn(page)
+    assert dates_drawn(page) == [began, began], dates_drawn(page)
     boxes = [
         page.locator(".tl-step").nth(index).bounding_box()
         for index in range(page.locator(".tl-step").count())
     ]
-    assert boxes[1]["x"] < boxes[2]["x"], "the two sent-opinion columns overlap"
+    assert boxes[0]["x"] < boxes[1]["x"], "the two sent-opinion columns overlap"
     assert_fits(page, width)
 
 
@@ -715,19 +725,21 @@ def reaches(page) -> list[str]:
     )
 
 
-def test_a_new_matter_does_not_read_as_two_things_that_already_happened(page, base_url):
-    """`Alustatud` today and a deadline ahead are drawn differently.
+def test_a_new_matter_does_not_read_as_something_that_already_happened(page, base_url):
+    """A deadline ahead is drawn as ahead.
 
-    Before this, the two dots were identical and the rail between them was solid
-    accent — which says the deadline has been reached, on the day the file was
-    opened.
+    Before this amendment the two dots were identical and the rail between them
+    was solid accent — which says the deadline has been reached, on the day the
+    file was opened. One of those two dots was `Alustatud`, retired since
+    (docs/adr/0100 §1), so what is left is the half that still matters: a future
+    point claims nothing.
     """
     sign_in(page, base_url, MARTIN)
-    create_matter_with_deadline(page, base_url, "Alustatud täna, tähtaeg ees", deadline=et(18))
+    create_matter_with_deadline(page, base_url, "Tähtaeg ees", deadline=et(18))
 
     assert labels(page) == ["Arvamuse tähtaeg"]
-    assert states(page) == ["today", "future"]
-    # Nothing reached, so no accent rail between them.
+    assert states(page) == ["future"]
+    # Nothing reached, so no accent rail at all.
     assert reaches(page)[0] == "0%"
 
 
@@ -739,7 +751,13 @@ def test_a_future_column_is_visibly_quieter_than_a_reached_one(page, base_url):
     stylesheet change cannot pass by accident.
     """
     sign_in(page, base_url, MARTIN)
-    create_matter_with_deadline(page, base_url, "Saavutatud ja tulevane", deadline=et(30))
+    # A point behind the file and a point ahead of it, both recorded. The past
+    # one used to be `Alustatud`, which every Matter had for free and which is
+    # retired (docs/adr/0100 §1).
+    url = create_matter_with_deadline(page, base_url, "Saavutatud ja tulevane", deadline=et(-10))
+    add_a_commencement(page, what="põhiosa", when=et(30))
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
 
     dots = page.locator(".tl-step__dot")
     colours = dots.evaluate_all(
@@ -776,12 +794,17 @@ def test_a_column_dated_today_says_so_without_relying_on_colour(page, base_url):
     defect, for the readers least able to work around it.
     """
     sign_in(page, base_url, MARTIN)
-    create_matter_with_deadline(page, base_url, "Täna ja tulevikus", deadline=et(21))
+    # A point dated today, recorded rather than manufactured from `created_at`,
+    # which is what `Alustatud` was doing here (docs/adr/0100 §1).
+    url = create_matter_with_deadline(page, base_url, "Täna ja tulevikus", deadline=et(21))
+    add_a_commencement(page, what="põhiosa", when=et(0))
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
 
     expect(page.locator('.tl-step[aria-current="date"]')).to_have_count(1)
     expect(page.locator(".tl-step--future .visually-hidden")).to_have_text("Tulevikus")
     # And the visible labels are untouched by either.
-    assert labels(page) == ["Arvamuse tähtaeg"]
+    assert labels(page) == ["Jõustumine", "Arvamuse tähtaeg"]
 
 
 def test_the_retired_countdown_grammar_has_not_come_back_with_the_colour(page, base_url):

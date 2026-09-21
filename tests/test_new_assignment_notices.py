@@ -105,19 +105,28 @@ def test_assigning_to_a_colleague_notifies_them(specialist, other_specialist):
     assert not _active(specialist).exists()
 
 
-def test_assigning_to_yourself_notifies_you(specialist, other_specialist):
-    """B. `actor == recipient` is deliberately not excluded.
+def test_assigning_to_yourself_notifies_nobody(specialist, other_specialist):
+    """B, **reversed by the owner's 2026-09-21 round.**
 
-    Taking a file off the unassigned pile is an arrival on your own desk, and
-    the block is the record that it has not been looked at yet. This is an
-    explicit product requirement, not an accident of the implementation.
+    This said `actor == recipient` was deliberately not excluded: taking a file
+    off the unassigned pile is an arrival on your own desk, and the block is
+    the record that it has not been looked at yet.
+
+    Real use said otherwise. `Uus asi` is a *hand-over* notice — «somebody gave
+    you this» — and a lawyer who has just opened a Matter and put their own
+    name on it does not need to be told about it by the application they did it
+    in. The block sat on `Minu asjad` after every ordinary filing, which is
+    notification noise on the commonest act in the product (QA-022).
+
+    **Only the actor's own act is suppressed.** A colleague assigning the file
+    to this person still notifies them, which the two tests below assert, and a
+    transfer is still an arrival.
     """
     matter = factories.MatterFactory(owner=other_specialist)
 
     assign_matter(matter=matter, owner=specialist, actor=specialist)
 
-    notice = _active(specialist).get()
-    assert notice.recipient_id == notice.assigned_by_id == specialist.pk
+    assert not _active(specialist).exists()
 
 
 def test_creating_a_matter_for_a_colleague_notifies_them(specialist, other_specialist):
@@ -132,11 +141,16 @@ def test_creating_a_matter_for_a_colleague_notifies_them(specialist, other_speci
     assert _active(other_specialist).get().matter_id == matter.pk
 
 
-def test_creating_a_matter_for_yourself_notifies_you(specialist):
-    """D. And the same when the creator names themselves."""
-    matter = create_matter(title="Uus eelnõu endale", actor=specialist, owner=specialist)
+def test_creating_a_matter_for_yourself_notifies_nobody(specialist):
+    """D, reversed with B and for the same reason.
 
-    assert _active(specialist).get().matter_id == matter.pk
+    Filing a Teema and naming yourself is the commonest act in the product, and
+    it is the one where a `Uus asi` block says the least: the person reading it
+    typed the name into the form a second earlier (QA-022).
+    """
+    create_matter(title="Uus eelnõu endale", actor=specialist, owner=specialist)
+
+    assert not _active(specialist).exists()
 
 
 def test_creating_without_an_owner_notifies_nobody(specialist):
@@ -610,19 +624,26 @@ def test_acknowledgement_requires_a_session(client, specialist, other_specialist
 # ---------------------------------------------------------------------------
 
 
-def test_ordinary_matter_viewing_does_not_acknowledge(client, specialist):
-    """Self-assignment must survive being redirected into your own Matter.
+def test_ordinary_matter_viewing_does_not_acknowledge(client, specialist, other_specialist):
+    """A notice must survive being redirected into the Matter it is about.
 
-    Saving a new Teema with your own name on it lands you on the Matter page.
-    If that page cleared the notice, the block would be gone before its owner
-    ever reached Minu asjad — and the explicit requirement that self-assignment
-    produces a visible notice would be quietly untrue.
+    If the detail page cleared it, the block would be gone before its recipient
+    ever reached `Minu asjad` — and the whole point of the notice, that a
+    hand-over has not been looked at yet, would be quietly untrue.
+
+    **Handed over rather than self-assigned.** This used to file the Teema for
+    itself, which no longer produces a notice at all: a lawyer who names
+    themselves does not need the application to tell them about it (QA-022).
+    A colleague's hand-over is the case the notice exists for, and it is the
+    case this asserts.
 
     Written as a sequence rather than as two assertions because the ordering is
     the whole claim: unviewed *after* the detail page, still on the rail, and
     gone only after the acknowledgement.
     """
-    matter = create_matter(title="Endale määratud teema", actor=specialist, owner=specialist)
+    matter = create_matter(
+        title="Kolleegilt saadud teema", actor=other_specialist, owner=specialist
+    )
     notice = _active(specialist).get()
     client.force_login(specialist)
 
