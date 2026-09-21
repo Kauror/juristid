@@ -188,7 +188,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
     </form>
   {% elif development_evidence_form %}
     {% comment %}
-      `+ Lisa tõend`. The picker, and nothing else: this act adds a paper to a
+      `+ Lisa fail`. The picker, and nothing else: this act adds a paper to a
       step the file already records correctly, so nothing about the record is on
       the form. `Muuda` is the surface that changes what the row *says*, and the
       two share this element deliberately — a row cannot be correcting and
@@ -208,7 +208,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       sends — so there is nothing here to bring back, and a stale picker left
       open would suggest the choice survived.
     {% endcomment %}
-    <form class="uxtl__editform" aria-label="Tõendi lisamine menetluse arengule"
+    <form class="uxtl__editform" aria-label="Faili lisamine märkele"
           hx-post="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
           hx-target="#teema-vaade" hx-swap="outerHTML"
           hx-encoding="multipart/form-data">
@@ -224,7 +224,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       </p>
       {% include "matters/partials/add_files.html" with field=development_evidence_form.attachments %}
       <p class="uxtl__editactions">
-        <button class="button button--quiet button--tiny" type="submit">Lisa tõend</button>
+        <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
         {% comment %}
           `Tühista` re-fetches this element in its read state, exactly as the
           correction's does: leaving the picker is a re-read of what the record
@@ -275,7 +275,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-target="#menetluse-areng-{{ development.pk }}-sisu"
                 hx-swap="outerHTML">Muuda</button>
         {% comment %}
-          `+ Lisa tõend` — another paper supporting this step, arriving after the
+          `+ Lisa fail` — another paper supporting this step, arriving after the
           step was written up. Beside `Muuda` and not inside it: correcting what
           a development says and adding evidence to it are different acts with
           different audit trails, and a correction form that also captured bytes
@@ -284,6 +284,16 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
 
           Named by reference like its neighbour, so a chronology showing a dozen
           of these does not put «Märge: …» into the document twice.
+
+          **`fail` and not `tõend`, and that is a UX decision rather than a
+          rename.** What the lawyer is doing here is attaching a file to a step
+          they wrote up, and «tõend» is a word about what the application does
+          with it afterwards — an immutable, hashed, verifiable object. That
+          concept is real and keeps its name everywhere it belongs: the store,
+          the audit events, `check_evidence_integrity`, `DocumentVersion`. It is
+          simply not what the person pressing this button has in mind, and a
+          control named after the implementation asks them to translate before
+          they can act (the owner's round, 2026-09-21).
 
           There is deliberately no counterpart that removes one. Evidence is
           additive and immutable: a file attached to the wrong step is answered by
@@ -294,7 +304,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 aria-labelledby="menetluse-areng-{{ development.pk }}-toend menetluse-areng-{{ development.pk }}-pealkiri"
                 hx-get="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
                 hx-target="#menetluse-areng-{{ development.pk }}-sisu"
-                hx-swap="outerHTML">+ Lisa tõend</button>
+                hx-swap="outerHTML">+ Lisa fail</button>
       </p>
     {% endif %}
   {% endif %}
