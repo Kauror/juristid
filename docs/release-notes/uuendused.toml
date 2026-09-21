@@ -53,7 +53,25 @@ basis = "deployment"
 # Ükski punkt ei nimeta ekraaniosade sisemisi nimesid ega luba, et rakendus
 # ise midagi teksti või failinime järgi arvab: menetluse kulg näitab ainult
 # seda, mis on teemale kirja pandud, ja seda, mida jurist ise sinna paneb.
-prs = [269]
+#
+# Sama päeva teine väljalase: omanik kasutas hommikust menetluse kulgu ja
+# leidis ühe asja, mis oli valesti, ning kaks sõna. Punktid lisatakse sama
+# päeva kirje lõppu, sest kirje käib kalendripäeva, mitte väljalaske kohta.
+#
+# **Kümnes punkt täpsustab neljandat, mitte ei võta seda tagasi.** Neljas
+# ütles, et kuupäevad on nüüd etappide vahel; kümnes ütleb, millise etapi
+# juures lähiaja tähtaeg on. Ilma selleta luges rida nii, nagu oleks Koja enda
+# vastamise tähtaeg alles pärast seadusest jõustumist — mis on täpselt see,
+# mida omanik ekraanil nägi.
+#
+# **Üheteistkümnes punkt nimetab ka vana sõna**, sest nupp on lehel iga päev
+# ja lugeja peab teadma, et see on sama nupp. 19. septembri kirje ütleb «Lisa
+# tõend» ja jääb nii: see oli sel päeval tõesti nii
+# (docs/release-notes/README.md).
+#
+# **Kaheteistkümnes punkt ütleb, et kirjed jäid alles.** Ilma selleta loeks
+# lause nii, nagu oleks jaotisest midagi kadunud.
+prs = [269, 270, 271]
 changes = [
   "Teema kustutamine on nüüd teema lehe ülaosas «Muuda teemat» kõrval. Kustutamist küsitakse endiselt eraldi lehel üle.",
   "Teema lõpetamine on taas teemale lisamise real, viimase valikuna ja teistest veidi eemal; omaette plokki «Teema toimingud» enam ei ole.",
@@ -64,6 +82,9 @@ changes = [
   "Menetluse kulus lisatud kuupäev on märge selle teema enda rea peal: sellest ei teki tähtaega ega järgmist tegevust, ükski teema ei muutu sellest hilinenuks ja ühtegi varem kirja pandud kirjet see ei muuda.",
   "Hetkeseis on nüüd kirjas ainult teema päises; varem korrati seda ka menetluse kulu real.",
   "Liikme märkimine käib nüüd asutuse valiku juures samal real, mitte eraldi reana selle all.",
+  "Menetluse kulu real on arvamuse tähtaeg ja tagasiside tähtaeg nüüd jooksva etapi juures, kus töö parasjagu käib, mitte kogu teekonna lõpus; jõustumine ja ülevõtmise tähtaeg jäävad menetluse enda lõppu.",
+  "Teema käigus märke juurde faili lisamise nupp ütleb nüüd «Lisa fail» senise «Lisa tõend» asemel ja teeb täpselt sama, mis enne.",
+  "Teema käigu jaotise «Etapiga sidumata» alt on selgitav lõik ära võetud; kirjed ise on alles ja täpselt samas kohas.",
 ]
 
 [[day]]
