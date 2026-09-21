@@ -1107,8 +1107,21 @@ def test_a_future_transposition_deadline_is_visible_and_drawn_as_future(speciali
     assert column.display == format_estonian_date(ahead)
 
 
-def test_an_ordinary_future_deadline_still_draws_no_column(specialist):
-    """§12.1's retirement stands. Only the one kind was added back, and only ahead."""
+def test_an_ordinary_future_deadline_draws_a_column_under_its_own_name(specialist):
+    """§12.1's retirement is now narrower than it was, and deliberately.
+
+    It said a watched expectation is not a procedural act, which is true, and
+    concluded that it draws no column — with one kind added back later. The
+    conclusion held only because the sentence «and a *past* one already reads
+    in the chronology» was doing the work: a *future* one read in the
+    chronology either, so on the Matter that holds it, it read nowhere at all.
+
+    So the rule is now the one §12.1 was reaching for: a deadline that has
+    passed is history and draws no column, and one still ahead is part of what
+    this file is heading into and draws one. The transposition kind keeps its
+    short vocabulary name; every other is named by the lawyer who recorded it,
+    because on those the name is the whole of the information (QA-001).
+    """
     matter = _matter(specialist, instruments=("seadus",))
     ahead = timezone.localdate() + timedelta(days=90)
     add_important_date(
@@ -1121,7 +1134,23 @@ def test_an_ordinary_future_deadline_still_draws_no_column(specialist):
 
     labels = [step.label for step in process_steps(matter=matter, user=specialist)]
     assert TRANSPOSITION_DEADLINE_LABEL not in labels
-    assert "Komisjoni istung" not in labels
+    assert "Komisjoni istung" in labels
+
+
+def test_a_passed_ordinary_deadline_still_draws_no_column(specialist):
+    """The half of §12.1 that was always right, kept."""
+    matter = _matter(specialist, instruments=("seadus",))
+    gone = timezone.localdate() - timedelta(days=90)
+    add_important_date(
+        matter=matter,
+        title="Möödunud istung",
+        date_value=gone,
+        period_end=gone,
+        actor=specialist,
+    )
+
+    labels = [step.label for step in process_steps(matter=matter, user=specialist)]
+    assert "Möödunud istung" not in labels
 
 
 def test_a_passed_transposition_deadline_reads_in_the_chronology_and_not_on_the_strip(

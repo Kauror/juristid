@@ -229,13 +229,22 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
 
     # It landed, and the route brought the reader back to the Matter.
     assert page.url.startswith(matter_url(page))
-    # **Not onto the process strip.** That strip draws major procedural acts —
-    # `Alustatud`, `Koja arvamus`, `Lõpetatud` — and a watched date is not one
-    # of them in either direction. It reads in its own fact section, which is
-    # what the second half of this scenario opens (docs/adr/0074 §12.1).
+    # **Onto the process strip, and that is new.**
+    #
+    # This asserted the opposite: that the strip draws major procedural acts
+    # and a watched date is not one of them in either direction
+    # (docs/adr/0074 §12.1). What that produced was a date a lawyer recorded
+    # through `+ Märge → Oluline tähtaeg` saving with a 200, closing its panel,
+    # and then appearing on the Matter nowhere at all — not on the strip, not
+    # in `Teema käik`, not in the header. A date beyond `Minu asjad`' horizon
+    # was in the technical audit log and in no working surface, and the only
+    # proof the save had worked was that log (QA-001).
     expect(page.locator(".tl-strip")).to_be_visible()
-    expect(page.locator(".tl-step__what", has_text="Kooskõlastusringi lõpp")).to_have_count(0)
+    expect(page.locator(".tl-step__what", has_text="Kooskõlastusringi lõpp")).to_have_count(1)
 
+    # And still in its own fact section, which is what the rest of this
+    # scenario opens: the strip says where the file is going, the section is
+    # where the record is read and corrected.
     open_the_facts(page, base_url)
     expect(page.get_by_text("Kooskõlastusringi lõpp").first).to_be_visible()
 

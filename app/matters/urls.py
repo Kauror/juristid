@@ -209,13 +209,25 @@ urlpatterns = [
     # the same way and for the same reasons, as `kaasamine/` below
     # (app/matters/views.py, `update_external_position_view`).
     #
-    # There is deliberately **no delete route**, on an open Matter or a closed
-    # one: a mistaken position is corrected, because what the file recorded and
-    # who recorded it is part of the file (docs/adr/0084 §8).
+    # Removal is the shared `kirje/<liik>/<id>/eemalda/` route above rather than
+    # one per record type. This said there was deliberately no delete route at
+    # all — that a mistaken position is corrected, because what the file
+    # recorded and who recorded it is part of the file (docs/adr/0084 §8) —
+    # which is right about a position somebody really held and wrong about one
+    # attributed to a body that never stated it (OWNER-04, docs/adr/0102).
     path(
         "teemad/<uuid:pk>/lisa/valine-seisukoht/",
         views.add_external_position,
         name="add_external_position",
+    ),
+    # `+ Lisa fail` on a recorded `Väline seisukoht` — another paper supporting
+    # a position the file already holds. The pair `Menetluse areng` has had
+    # since docs/adr/0091 §5.4; a position had only the capture, so a position
+    # paper that arrived a week later had nowhere to go (QA-021).
+    path(
+        "teemad/<uuid:pk>/valine-seisukoht/<uuid:position_id>/lisa-fail/",
+        views.add_external_position_evidence_view,
+        name="add_external_position_evidence",
     ),
     path(
         "teemad/<uuid:pk>/valine-seisukoht/<uuid:position_id>/muuda/",
@@ -266,13 +278,54 @@ urlpatterns = [
     # on the file, and a route that spelled it as an addition would be the one
     # place somebody later moved the closed-Matter guard to (docs/adr/0089 §6).
     #
-    # There is deliberately **no delete route**, on an open Matter or a closed
-    # one: a mistaken development is corrected, because what the file recorded
-    # and who recorded it is part of the file (docs/adr/0084 §8).
+    # Removal has a route of its own, below, shared by every removable family
+    # rather than added per record type. It used to say here that there was
+    # deliberately no delete route at all — that a mistaken development is
+    # corrected, because what the file recorded and who recorded it is part of
+    # the file (docs/adr/0084 §8). That is right about a record of something
+    # that *happened* and wrong about a row filed on the wrong Teema, which is
+    # not history at all: correcting it leaves a sentence nobody wrote, dated a
+    # day nobody chose (OWNER-04, docs/adr/0102).
     path(
         "teemad/<uuid:pk>/menetluse-areng/<uuid:development_id>/muuda/",
         views.update_development_view,
         name="update_development",
+    ),
+    # `Muuda` on a recorded `Koja arvamus`, from its own chronology row.
+    #
+    # `Arvamus välja` was the one row on `Teema käik` with no correction route
+    # at all, on the record where a wrong date or recipient matters most
+    # (QA-023). Under `matters/` rather than `submissions/` because the surface
+    # it serves is the Teema page's chronology, and it answers with that row —
+    # the send workflow's own routes still land on `Dokumendid`.
+    #
+    # It takes **no** open-Matter lock, which is the existing contract:
+    # `withdraw_submission` corrects a recorded send on a closed file, and
+    # correcting what the file wrote down about a letter is not new business
+    # content (docs/adr/0075 §12, docs/adr/0093 §3).
+    path(
+        "teemad/<uuid:pk>/koja-arvamus/<uuid:submission_id>/muuda/",
+        views.update_sent_opinion_view,
+        name="update_sent_opinion",
+    ),
+    # `Kustuta` on a user-created block of `Teema käik`.
+    #
+    # **One route for eight families**, keyed by the Estonian word the row
+    # already uses — `marge`, `kaasamine`, `seisukoht`, `ulevaade`, `tahtaeg`,
+    # `joustumine`, `toovoit`, `sissekanne`. The act is one act and the table
+    # that differs is `app/matters/removal.py`'s, not this file's; eight nearly
+    # identical routes would be eight places to forget the authorization.
+    #
+    # **POST only.** The confirmation is a disclosure in the row itself, so
+    # there is nothing for a GET to render, and an address that removed a
+    # record on GET would be one a prefetcher could fire.
+    #
+    # The Matter stays in the path for the reason the correction routes give:
+    # the view proves the child belongs to it before it reads either.
+    path(
+        "teemad/<uuid:pk>/kirje/<str:kind>/<uuid:record_id>/eemalda/",
+        views.remove_record_view,
+        name="remove_record",
     ),
     # `Muuda kulgu` — which phases this file's rail shows, and when each is
     # expected. One route, GET to open the panel and POST to save it, like every

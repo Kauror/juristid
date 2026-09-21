@@ -476,6 +476,66 @@
   flex-wrap: wrap;
 }
 
+/* `Kustuta` and its confirmation.
+
+   A `<details>` so the confirmation opens in place with no second page and no
+   script (OWNER-04, docs/adr/0102).
+
+   **An ordinary flex item, not `display: contents`.** The chip has to sit on
+   the same line as `Muuda` beside it, which `display: contents` also achieves —
+   by removing the `<details>` box entirely. That is the one declaration with a
+   standing accessibility caveat: several engines drop such an element from the
+   accessibility tree along with its box, and a disclosure whose grouping
+   disappears is exactly the kind of thing that breaks quietly. A flex item that
+   grows to the full row once it is open costs nothing and asserts nothing about
+   any engine's tree. */
+.uxtl__remove {
+  flex: 0 0 auto;
+}
+
+.uxtl__remove[open] {
+  flex-basis: 100%;
+}
+
+/* What tells two same-named attachments apart, when there are two.
+
+   Quieter than the filename beside it, because the name is what somebody is
+   reading for and this is the tiebreak — printed on nothing whose name is
+   already unique under its row (QA-016, `_disambiguate_files`). */
+.uxtl__filedetail {
+  color: var(--text-muted);
+}
+
+/* The chip reads exactly like `Muuda` — same size, same muted colour, same
+   restraint — and takes the danger colour only on hover and focus, which is
+   the moment it is actually being reached for. A red word in every row of a
+   reading surface would make the chronology look like a list of problems. */
+.uxtl__remove > summary {
+  list-style: none;
+}
+
+.uxtl__remove > summary::-webkit-details-marker {
+  display: none;
+}
+
+.uxtl__remove > summary:hover,
+.uxtl__remove > summary:focus-visible {
+  color: var(--status-danger);
+}
+
+/* The confirmation itself reads under the chip that opened it, because it is a
+   sentence rather than a control and wrapping it between two buttons is how a
+   reader misses what is being removed. */
+.uxtl__removeform {
+  margin-top: 4px;
+}
+
+.uxtl__removeask {
+  margin: 0 0 4px;
+  font: 400 11.5px/1.4 var(--typography-font-sans);
+  color: var(--text-secondary);
+}
+
 /* The waiting state of a `Kaasamine`, on its own line under the milestone.
 
    Quiet, because it is a state and not an alarm: a round collecting answers
@@ -533,6 +593,19 @@
 
 .uxtl__conflictnote {
   margin: 0 0 4px;
+  font: 400 11.5px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+/* A sentence under a control in an inline editor, saying something the control
+   itself cannot.
+
+   One rule rather than the conflict note's, which is about a different thing:
+   «teadmiseks-saajad jäävad muutmata» is a fact about what the save does, and a
+   person looking at a list of addressees cannot tell it from the list
+   (matters/partials/submission_row.html, QA-023). */
+.uxtl__formhint {
+  margin: 2px 0 0;
   font: 400 11.5px/1.4 var(--typography-font-sans);
   color: var(--text-muted);
 }

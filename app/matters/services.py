@@ -8,6 +8,7 @@ later from an importer or a scheduled job (master specification 12.4).
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -499,12 +500,29 @@ def _raise_assignment_notice(*, matter: Matter, owner: Any, actor: Any) -> None:
     * ``provenance`` absent at the call site, which is how a system operation
       that *does* run under an operator's account says so (``assign_matter``).
 
-    ``actor is owner`` is not among them. Assigning a Matter to yourself
-    produces a notice like any other: the point of the block is that a person
-    returning to Minu asjad sees what has arrived, and something they filed
-    themselves an hour ago is exactly that.
+    **A fourth condition since QA-022: ``actor is owner`` is excluded.**
+
+    It used not to be, on the argument that «a person returning to Minu asjad
+    sees what has arrived, and something they filed themselves an hour ago is
+    exactly that». A working session showed what that argument misses: filing
+    your own Teema is the ordinary way work starts here, so `UUS ASI` filled up
+    with five files the reader had created themselves that morning — and a
+    block whose whole job is «look at this, it is new to you» is worth nothing
+    once most of it is not.
+
+    `Uus asi` means somebody handed you work. Handing it to yourself is not an
+    arrival; you were there when it happened.
+
+    **What still raises one is unchanged**: a colleague assigning the file to
+    you, a transfer of ownership to you by somebody else, any assignment whose
+    actor is another person. The test is on this single act, not on whether the
+    recipient has touched the Matter before — a lawyer who filed a Teema in
+    March and is handed it back in September is being handed work, and hears
+    about it.
     """
     if owner is None or not _is_human_actor(actor):
+        return
+    if actor is not None and getattr(actor, "pk", None) == getattr(owner, "pk", None):
         return
     MatterAssignmentNotice.objects.create(matter=matter, recipient=owner, assigned_by=actor)
 
@@ -984,6 +1002,70 @@ def set_brief_summary(*, matter: Matter, value: str, actor: Any = None) -> Matte
     return matter
 
 
+#: What a stale whole-record save of `Muuda teemat` is told. The sibling of
+#: `ENTRY_EDIT_CONFLICT` and `ENGAGEMENT_EDIT_CONFLICT`, and deliberately the
+#: same shape of sentence: the page names the record, not the field, because a
+#: stale copy of this form is stale about all of them at once.
+MATTER_EDIT_CONFLICT = "Teemat on vahepeal mujal muudetud."
+
+
+class MatterEditConflict(DomainError):
+    """The Matter changed elsewhere between rendering an edit form and saving it.
+
+    Carries the row as it now stands, because a conflict a person cannot see
+    the other side of is a conflict they cannot resolve — the same reasoning,
+    and deliberately the same shape, as :class:`EntryEditConflict`.
+    """
+
+    def __init__(self, current: Matter) -> None:
+        super().__init__(MATTER_EDIT_CONFLICT)
+        self.current = current
+
+
+def matter_revision_token(matter: Matter) -> str:
+    """Which version of a Matter a rendered whole-record form was filled from.
+
+    ``updated_at``, rather than a column of its own — the token
+    `entry_revision_token` uses, for the same reasons: `auto_now` sets it on
+    every write, PostgreSQL stores it to the microsecond so two saves cannot
+    share one, and having it costs no migration.
+
+    **It moves for the facts this form owns and for nothing else.** Every
+    service `matter_edit` calls saves the Matter row, including the three that
+    write only a join table — `set_organisations` already carried `updated_at`
+    for exactly this reason, and `set_policy_areas` and `set_legal_instruments`
+    now do too. A `Märge`, an opinion or a file does *not* touch it, so adding
+    content to a Matter never makes somebody's open edit page stale. That is
+    the granularity a whole-record token wants: guard the record the form
+    posts, and leave the rest of the file alone.
+    """
+    return matter.updated_at.isoformat()
+
+
+def guard_matter_revision(*, matter: Matter, expected_revision: str | None) -> Matter:
+    """Lock the Matter and refuse a whole-record save filled from an older one.
+
+    The same discipline as `edit_entry`: take the row, then read the version
+    *from the locked row* rather than from the instance the caller arrived
+    with, so the comparison is against what is committed rather than against
+    what was on screen. Must be called inside `transaction.atomic`.
+
+    ``FOR NO KEY UPDATE`` — the same row at the same strength as
+    `lock_matter_for_evidence_integrity` and `lock_open_matter_for_business_write`
+    take it, so this adds no new lock and does not change the global order
+    (`app/matters/locks.py`).
+
+    An absent ``expected_revision`` is not a conflict. A caller that has no
+    token is a caller that never rendered one — an inline header control, a
+    service call, a test — and refusing those would make the guard a rule about
+    who may write rather than about which version they wrote against.
+    """
+    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    if expected_revision and matter_revision_token(locked) != expected_revision:
+        raise MatterEditConflict(locked)
+    return locked
+
+
 @transaction.atomic
 def set_matter_title(*, matter: Matter, value: str, actor: Any = None) -> Matter:
     """Rename a Matter.
@@ -1225,6 +1307,14 @@ def set_policy_areas(*, matter: Matter, policy_areas: Sequence[Any], actor: Any 
         return matter
 
     matter.policy_areas.set(chosen)
+    # `.set()` writes the join table and nothing else, so without this the
+    # Matter that just changed would still claim it had not been touched since
+    # whenever somebody last edited a scalar field. `set_organisations` has
+    # carried `updated_at` for that reason since brief 22; a whole-record
+    # revision token makes it load-bearing here too, because a stale copy of
+    # `Muuda teemat` must not be accepted as current after somebody else
+    # changed exactly these (`matter_revision_token`).
+    matter.save(update_fields=["updated_at"])
     record_change_event(
         event_type=ChangeEventType.MATTER_POLICY_AREAS_CHANGED,
         matter=matter,
@@ -1298,6 +1388,14 @@ def set_legal_instruments(
         return matter
 
     matter.legal_instruments.set(chosen)
+    # `.set()` writes the join table and nothing else, so without this the
+    # Matter that just changed would still claim it had not been touched since
+    # whenever somebody last edited a scalar field. `set_organisations` has
+    # carried `updated_at` for that reason since brief 22; a whole-record
+    # revision token makes it load-bearing here too, because a stale copy of
+    # `Muuda teemat` must not be accepted as current after somebody else
+    # changed exactly these (`matter_revision_token`).
+    matter.save(update_fields=["updated_at"])
     record_change_event(
         event_type=ChangeEventType.MATTER_LEGAL_INSTRUMENTS_CHANGED,
         matter=matter,
@@ -3242,13 +3340,18 @@ EXTERNAL_POSITION_NEEDS_SOURCE = (
     "Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik."
 )
 EXTERNAL_POSITION_NEEDS_ORGANISATION = "Vali organisatsioon, kelle seisukoht see on."
-#: What received feedback with no author at all is told.
+#: **Retired.** Received feedback with no author at all is no longer refused.
 #:
-#: Different words from the sentence above, because the answer it asks for is
-#: different: an aggregate answer *may* have no organisation, and what it must
-#: have instead is a name for the collection of answers. Offering «vali
-#: organisatsioon» on a survey of 234 companies is the refusal that made somebody
-#: invent one (docs/adr/0091 §3.3).
+#: The sentence asked for a name for the collection of answers where there was
+#: no single author — «Liikmete küsitlus» for a survey of 234 companies. It was
+#: still one answer too many: a lawyer writing down what a member said on the
+#: telephone has neither a catalogue row nor a collection to name, and a form
+#: that will not save without one is what makes people invent one (OWNER-01,
+#: docs/adr/0101).
+#:
+#: Kept as a name rather than deleted, because tests and release notes cite it
+#: and a reader meeting the constant should find out what happened to it rather
+#: than only that it is gone. Nothing raises it.
 EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL = (
     "Vali organisatsioon või kirjuta, millisest allikast tagasiside tuli."
 )
@@ -3439,8 +3542,20 @@ def _external_position_authorship(
         if label:
             raise DomainError(EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY)
         return value, ""
-    if organisation is None and not label:
-        raise DomainError(EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL)
+    # 5. Received feedback may name nobody.
+    #
+    #    It used to require an organisation or an `Allikas`, and the refusal was
+    #    `EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL`. The rule was meant to stop a
+    #    file carrying an anonymous claim, and for `DISCOVERED` it still does
+    #    (above). For feedback somebody sent *to this office* it did the
+    #    opposite of what it intended: a lawyer writing down what a member said
+    #    on the telephone has neither a catalogue row nor a name for a
+    #    collection, and a form that will not save until one of them exists is
+    #    what makes people invent one (OWNER-01, docs/adr/0101).
+    #
+    #    The record is still never empty — `EXTERNAL_POSITION_NEEDS_SOURCE`
+    #    means a position, a link or a file is always present. What may be
+    #    absent is whose it was, and that absence is itself the honest record.
     return value, label
 
 
@@ -3642,6 +3757,7 @@ def correct_external_position(
     engagement: Any,
     provenance: Any = None,
     source_label: str = "",
+    source_is_member: Any = None,
     lawyer_note: Any = "",
     actor: Any = None,
     expected_revision: str | None = None,
@@ -3728,9 +3844,15 @@ def correct_external_position(
             # stated in this helper as well as in the database
             # (docs/adr/0095 §4).
             #
-            # Unreachable from `Muuda`, which passes `provenance=None` and never
-            # moves it. This is for the import and correction paths that can.
-            source_is_member=current.source_is_member,
+            # The mark as this save would leave it: the corrected value where
+            # the caller stated one, and the stored one where it did not.
+            # `Muuda` states one now — the box was saveable and never
+            # correctable, so a tick made by mistake was permanent and a tick
+            # made on purpose was invisible (QA-014) — and the import paths
+            # still pass nothing.
+            source_is_member=(
+                current.source_is_member if source_is_member is None else bool(source_is_member)
+            ),
         )
     clean_url = normalize_external_position_url(url)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
@@ -3763,6 +3885,12 @@ def correct_external_position(
         "lawyer_note": clean_note,
         "engagement_id": related.pk if related is not None else None,
     }
+    if source_is_member is not None:
+        # Absent unless the caller asked, so a path that does not render the
+        # box cannot clear a mark somebody set. `_external_position_authorship`
+        # above has already refused the combination this could otherwise make
+        # invalid — a member's mark on anything but received feedback.
+        proposed["source_is_member"] = bool(source_is_member)
     changed = [field for field, value in proposed.items() if getattr(current, field) != value]
     if not changed:
         # Nothing moved, so nothing is recorded. An audit row for a save that
@@ -4006,12 +4134,55 @@ def _development_phase(value: Any) -> str:
     return phase if phase in PHASE_KEYS else ""
 
 
+#: What a stale `Muuda kulgu` save is told. The sibling of
+#: `MATTER_EDIT_CONFLICT`, and the same shape of sentence for the same reason:
+#: the panel posts every phase at once, so a stale copy of it is stale about
+#: all of them.
+TIMELINE_STEPS_CONFLICT = "Menetluse kulgu on vahepeal mujal muudetud."
+
+
+class TimelineStepsConflict(DomainError):
+    """The rail's stored steps changed between the panel opening and saving."""
+
+
+def timeline_steps_revision_token(matter: Matter) -> str:
+    """Which version of the stored rail a rendered `Muuda kulgu` panel holds.
+
+    A digest of the rows themselves rather than a timestamp, because the
+    ordinary answer here *is the absence of a row*: a phase that is shown and
+    undated stores nothing, so a save that restores a default deletes rows, and
+    there is no `updated_at` left behind to compare against. `MAX(updated_at)`
+    would go backwards on such a save and `COUNT` would collide across
+    different states; the state itself does neither.
+
+    Two identical states therefore share a token, and that is correct rather
+    than the weakness `entry_revision_token` warns about in `edit_count`: a
+    panel filled from a state indistinguishable from the committed one is not
+    proposing to undo anything. What it excludes is the case this guard exists
+    for — somebody else moved a date or hid a phase, and a panel that never saw
+    it posts the whole set back.
+    """
+    from app.matters.models import MatterTimelineStep
+
+    rows = (
+        MatterTimelineStep.objects.filter(matter=matter)
+        .order_by("phase_key")
+        .values_list("phase_key", "hidden", "occurs_on", "occurs_on_precision")
+    )
+    state = "\n".join(
+        f"{phase_key}|{int(hidden)}|{occurs_on.isoformat() if occurs_on else ''}|{precision}"
+        for phase_key, hidden, occurs_on, precision in rows
+    )
+    return hashlib.sha256(state.encode("utf-8")).hexdigest()
+
+
 @transaction.atomic
 def set_timeline_steps(
     *,
     matter: Matter,
     steps: Any,
     actor: Any = None,
+    expected_revision: str | None = None,
 ) -> int:
     """`Muuda kulgu` — which phases this file's rail shows, and when.
 
@@ -4039,6 +4210,12 @@ def set_timeline_steps(
     from app.matters.process_phases import PHASE_KEYS
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    # Read *after* the Matter row lock, so the version compared against is the
+    # one that is committed rather than the one that was on screen — the
+    # discipline `guard_matter_revision` and `edit_entry` follow. An absent
+    # token is not a conflict, for the reason given there.
+    if expected_revision and timeline_steps_revision_token(locked_matter) != expected_revision:
+        raise TimelineStepsConflict(TIMELINE_STEPS_CONFLICT)
     existing = {
         row.phase_key: row
         for row in MatterTimelineStep.objects.select_for_update(no_key=True).filter(
@@ -4125,10 +4302,14 @@ def correct_procedural_development(
 ) -> MatterProceduralDevelopment:
     """`Muuda` on a recorded `Menetluse areng`, by a person, on an open Matter.
 
-    **There is no delete**, on an open Matter or a closed one. A mistaken row is
-    corrected, because what the file recorded and who recorded it is part of the
-    file — the rule `MatterEngagement` has kept since it was written and
-    `MatterExternalPosition` keeps beside it.
+    **Correcting and removing are two different acts, and this is the first.**
+    Until OWNER-04 there was no delete at all, on the reasoning that what the
+    file recorded and who recorded it is part of the file. That is right about a
+    record of something that *happened* and wrong about a row filed on the wrong
+    Teema, which is not history: correcting it leaves a sentence nobody wrote,
+    dated a day nobody chose, attributed to whoever was fixing it. Removal is
+    `remove_matter_record`, it is a column rather than a `DELETE`, and it leaves
+    the whole trail in `Kõik muudatused` (docs/adr/0102).
 
     **Refused on a closed Matter**, like a `Kaasamine` correction and unlike an
     entry's: every field on this record is substantive — what happened, when, and

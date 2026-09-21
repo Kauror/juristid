@@ -83,15 +83,16 @@ def test_a_populated_section_still_renders(signed_in, specialist):
         actor=specialist,
     )
     # **The Teema page carries no facts panel**, and a date still ahead of us
-    # is not on it at all: the process strip draws major procedural acts, not
-    # every dated fact, so this record reads in the fact section below and on
-    # the work surfaces until the day it has happened
-    # (docs/adr/0074 §12, §15).
+    # is drawn on the rail rather than in a panel of its own. It used not to be
+    # drawn anywhere: «reads on the work surfaces until the day it happened»
+    # was true only of a horizon, and a Matter whose deadline sat past that
+    # horizon showed the record on no surface at all (docs/adr/0074 §12, §15,
+    # as amended by QA-001).
     page = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
     assert 'id="teema-faktid"' not in page
     assert "tl-strip" in page
     strip = page[page.index("tl-strip") : page.index('id="ajalugu-loend"')]
-    assert "Kooskõlastusringi lõpp" not in strip
+    assert "Kooskõlastusringi lõpp" in strip
 
     # The fragment route still serves the section, with its own scoped read.
     body = _text(signed_in.get(_add_effective(matter), headers={"HX-Request": "true"}))

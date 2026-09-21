@@ -591,6 +591,66 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             procedural_development=w["development"]
         ).count(),
     ),
+    # `+ Lisa fail` on a recorded `Väline seisukoht` — the act the position did
+    # not have until QA-021: files arrived only with the capture, so a position
+    # paper that turned up a week later had nowhere to go. New business content
+    # on an open Matter like every other evidence capture, and an unauthorized
+    # caller must be refused it (docs/adr/0103 §2).
+    WriteRoute(
+        name="matters:add_external_position_evidence",
+        label="Faili lisamine seisukohale",
+        request=lambda w: ({"pk": w["matter"].pk, "position_id": w["external_position"].pk}, {}),
+        files=lambda: {"attachments": _pdf("loata-seisukoha-toend.pdf")},
+        probe=lambda w: DocumentLink.objects.filter(
+            external_position=w["external_position"]
+        ).count(),
+    ),
+    # `Muuda` on a recorded `Koja arvamus` — the four facts the chronology row
+    # prints. It corrects what the file says about a send rather than the send,
+    # and it is deliberately **not** gated on the Matter being open: correcting
+    # a recorded send on a closed file is what `withdraw_submission` already
+    # does. What it is gated on is business-write authorization, which is what
+    # this matrix asserts (docs/adr/0103 §1).
+    WriteRoute(
+        name="matters:update_sent_opinion",
+        label="Koja arvamuse andmete parandamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "submission_id": w["sent_submission"].pk},
+            {
+                "sent_on": "14.05.2026",
+                "kind": "FORMAL_OPINION",
+                "summary": "Loata parandus",
+                "recipients": [str(w["organisation"].pk)],
+                "revision": "",
+            },
+        ),
+        probe=lambda w: (
+            w["sent_submission"]
+            .__class__.objects.values_list("summary", flat=True)
+            .get(pk=w["sent_submission"].pk)
+        ),
+    ),
+    # `Kustuta` on a user-created block of `Teema käik`. One route for eight
+    # record families, so one entry here: what a forbidden actor must not be
+    # able to do is take a record off somebody else's file, and the family they
+    # aim it at changes nothing about that (OWNER-04, docs/adr/0102 §5).
+    WriteRoute(
+        name="matters:remove_record",
+        label="Kirje eemaldamine teema käigust",
+        request=lambda w: (
+            {
+                "pk": w["matter"].pk,
+                "kind": "marge",
+                "record_id": w["development"].pk,
+            },
+            {"revision": ""},
+        ),
+        probe=lambda w: (
+            w["development"]
+            .__class__.objects.filter(pk=w["development"].pk, removed_at__isnull=True)
+            .count()
+        ),
+    ),
     # `Menetluse link`, in both of its write routes. Adding one is ordinary new
     # business content on an open Matter; correcting one is allowed on a closed
     # file as well, exactly like the overview's link correction below and for

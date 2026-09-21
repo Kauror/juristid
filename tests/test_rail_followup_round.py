@@ -29,7 +29,6 @@ import pytest
 from django.utils import timezone
 
 from app.matters.legal_process import (
-    KIND_MILESTONE,
     KIND_PHASE,
     legal_process_rail,
     matter_rail,
@@ -229,11 +228,6 @@ def test_a_future_commencement_still_reads_at_the_joustumine_end(specialist):
     steps = _rail(matter, specialist)
     labels = [step.label for step in steps]
     current = _current(steps)
-    commencement = next(
-        index
-        for index, step in enumerate(steps)
-        if step.kind == KIND_MILESTONE and step.label == "Jõustumine"
-    )
     node = next(
         index
         for index, step in enumerate(steps)
@@ -241,8 +235,17 @@ def test_a_future_commencement_still_reads_at_the_joustumine_end(specialist):
     )
 
     assert labels[current] == "Kooskõlastusring"
-    assert commencement > current + 1, "a commencement is not an obligation falling due now"
-    assert commencement > node, "it reads with the end of the road, not beside the current round"
+    # **One `Jõustumine`, not two.** docs/adr/0100 §3 folds a canonical dated
+    # fact onto the phase whose name it carries: the rail used to draw the
+    # commencement as its own column beside the node, so a file read
+    # `Jõustumine · Jõustumine 1.1.2027` — two adjacent columns with one name,
+    # both saying `Tulevikus` — and a file with two commencement dates drew
+    # three (QA-005).
+    assert labels.count("Jõustumine") == 1
+    # What this test is actually for is untouched: the fact reads at the end of
+    # the road, not beside the round the file is on.
+    assert node > current + 1, "a commencement is not an obligation falling due now"
+    assert steps[node].notes, "the commencement reads as text on the node it belongs to"
 
 
 def test_a_past_dated_point_cannot_drag_a_commencement_in_front_of_the_phases(specialist):
@@ -277,11 +280,17 @@ def test_a_past_dated_point_cannot_drag_a_commencement_in_front_of_the_phases(sp
     )
 
     labels = _labels(matter, specialist)
-    commencement = len(labels) - 1 - labels[::-1].index("Jõustumine")
 
-    assert labels.index("Alustatud") < labels.index("Valitsuses"), labels
-    assert labels.index("Riigikogus") < commencement, labels
-    assert labels[commencement - 1] == "Jõustumine", "the phase, then its dated point"
+    # **`Alustatud` is gone** (docs/adr/0100 §1) and so is the shape this test
+    # was written against: it was `Matter.created_at`, so a file entered today
+    # put a *past* dated point between the current phase and everything ahead,
+    # and the backward scan then placed a 2027 commencement relative to it. The
+    # pattern's own first phase is the beginning the procedure has.
+    assert "Alustatud" not in labels
+    assert labels.index("Algus") < labels.index("Valitsuses"), labels
+    # And the commencement is still at the end of the road rather than in front
+    # of the phases, which is what the round was for.
+    assert labels.index("Riigikogus") < labels.index("Jõustumine"), labels
 
 
 def test_a_commencement_and_a_deadline_do_not_collapse_onto_each_other(specialist):
@@ -303,8 +312,12 @@ def test_a_commencement_and_a_deadline_do_not_collapse_onto_each_other(specialis
     current = _current(steps)
 
     assert labels[current + 1] == "Arvamuse tähtaeg"
-    assert labels.index("Riigikogus") < len(labels) - 1, "the commencement is past the pattern"
-    assert labels.count("Jõustumine") == 2, "the phase and the record are both drawn"
+    assert labels.index("Riigikogus") < labels.index("Jõustumine")
+    # One node carrying the fact, since docs/adr/0100 §3. It used to be two
+    # adjacent columns with one name.
+    assert labels.count("Jõustumine") == 1
+    node = next(step for step in steps if step.kind == KIND_PHASE and step.key == PHASE_JOUSTUMINE)
+    assert node.notes, "the commencement reads as text on the node it belongs to"
 
 
 def test_a_past_deadline_is_untouched_by_the_rule(specialist):
@@ -316,7 +329,10 @@ def test_a_past_deadline_is_untouched_by_the_rule(specialist):
     current = _current(steps)
 
     assert labels.index("Arvamuse tähtaeg") <= current
-    assert labels.index("Alustatud") <= current
+    # `Alustatud` used to be the other past point here and is retired
+    # (docs/adr/0100 §1). The pattern's first phase is what is behind the file
+    # now, and it is behind it for the same reason.
+    assert labels.index("Algus") <= current
 
 
 def test_the_rule_writes_nothing(specialist):

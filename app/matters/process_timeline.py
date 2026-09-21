@@ -6,10 +6,13 @@ this strip answers the third question, which is *what course is this file on* �
 the major acts it has been through, and the next dated point it is known to be
 heading for. Five of them exist today:
 
-    Alustatud · Tagasiside tähtaeg · Koja arvamus · Arvamuse tähtaeg ·
-    Jõustumine · Lõpetatud
+    Tagasiside tähtaeg · Koja arvamus · Arvamuse tähtaeg · Jõustumine ·
+    Lõpetatud
 
 and a Matter draws only the ones it really has. That is the whole vocabulary.
+There was a sixth, `Alustatud`, and the long note in `process_steps` says why
+it is gone: it was `Matter.created_at`, a fact about this database rather than
+about a procedure (docs/adr/0100 §1, OWNER-03).
 An earlier version of this module also projected the current `StageVocabulary`,
 every `MatterEngagement` and every `MatterImportantDate` — six sources, which
 made the strip a second, shorter copy of the chronology with the header's
@@ -23,14 +26,14 @@ strip: a consultation with no reply-by date draws nothing, however many rounds a
 file has run. What draws a column is the dated point the round is heading for,
 which is the *second* category below rather than the act.
 
-**A known beginning and a known destination.** A newly created Matter with a
-response deadline is not a file with only a start: where its first phase is
-heading is already recorded, on the Matter's own `response_deadline` column, and
-a strip that drew `Alustatud` alone would be withholding it. So the strip
-carries two kinds of truthful information — acts that have happened, and
-canonical dated points the file is known to be heading for:
+**A known destination, not only a history.** Where a newly created Matter's
+first phase is heading is already recorded, on the Matter's own
+`response_deadline` column, and a strip that drew only what had already happened
+would be withholding it. So the strip carries two kinds of truthful information
+— acts that have happened, and canonical dated points the file is known to be
+heading for:
 
-    Alustatud · Arvamuse tähtaeg 20.09.2026
+    Kooskõlastusring · Arvamuse tähtaeg 20.09.2026
 
 A future column claims nothing about the past. It says *this is the next dated
 point in the process*, which is exactly what the record says (docs/adr/0074
@@ -101,18 +104,12 @@ from typing import Any
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
-from app.matters.enums import MatterOrigin
 from app.matters.models import Matter
 from app.workflow.dates import format_at_precision
 
 #: The five labels this strip can draw. Each names an *act* or a *formal dated
 #: point*, never a stored title and never an outcome.
 #:
-#: `Alustatud` and not `Loodud`: the milestone is that the work started, which
-#: is what a reader placing the file in a process is looking for. The database
-#: row being written is not a procedural act.
-STARTED_LABEL = "Alustatud"
-
 #: `Koja arvamus` and not `Arvamus välja`. The chronology keeps `Arvamus välja`
 #: — there the sentence is about an event, and «välja» is what happened to the
 #: letter. Here the column names the thing itself, which is the Chamber's
@@ -199,13 +196,25 @@ CLOSED_LABEL = "Lõpetatud"
 #: read in, which `list.sort` being stable preserves and which each source fixes
 #: deterministically: sent opinions by `(sent_at, pk)` below, commencements by
 #: `MatterEffectiveDate.Meta.ordering`, which ends in `id`.
-PHASE_STARTED = 0
+#: `0` is retired rather than reused. The ordering constants are read by
+#: `legal_process._MILESTONE_PHASE`, and renumbering them to close the gap
+#: would change what every other kind means to any code — or any stored value —
+#: that still held the old number. Nothing draws a `PHASE_STARTED` any more
+#: (OWNER-03).
 PHASE_FEEDBACK = 1
 PHASE_SENT = 2
 PHASE_DEADLINE = 3
 PHASE_EFFECTIVE = 4
 PHASE_TRANSPOSITION = 5
 PHASE_CLOSED = 6
+#: A recorded `Oluline tähtaeg` that is not one of the procedure's own steps.
+#:
+#: Deliberately absent from `legal_process._MILESTONE_PHASE`, which is what
+#: makes it read beside the current phase rather than after every speculative
+#: one — the same unanchored rule `Arvamuse tähtaeg` follows, and for the same
+#: reason: a date this office is watching is not a step somebody else's
+#: procedure takes.
+PHASE_WATCHED = 7
 
 
 #: The three presentation states a column can be in, and the CSS modifier each
@@ -358,33 +367,30 @@ def process_steps(
     facts = intelligence if intelligence is not None else matter_intelligence(matter, user)
     steps: list[ProcessStep] = []
 
-    # `Alustatud`, for a Matter this system actually created.
+    # **There is no `Alustatud`, and that is the point.**
     #
-    # **Not for an imported one**, and not from `received_date` either.
-    # `created_at` on a register-archive row is the moment the importer wrote it
-    # into this database, which for a 2019 file is a fact about a migration;
-    # `Saabus` is the day Koda received something, which is a fact about the
-    # post and not about when the work started. There is no third field —
-    # `created_at`, `updated_at`, `closed_at`, `received_date` and
-    # `response_deadline` are every date `Matter` holds — so an imported Matter
-    # gets no `Alustatud` at all. An honest gap is better than the strip's one
-    # fabricated milestone standing leftmost on the page.
+    # It used to be drawn from `Matter.created_at` for a natively filed Matter,
+    # with the surrounding note explaining at length why neither `received_date`
+    # nor an importer's timestamp would do. The note was right about those two
+    # and wrong about the conclusion: `created_at` is *also* a fact about this
+    # database rather than about a procedure. Every consequence followed from
+    # that.
     #
-    # `PROMOTED_LEGACY` is imported too — an archive row somebody activated —
-    # and its `created_at` is the same import timestamp, so the test is the
-    # exact origin rather than "not LEGACY_IMPORT"
-    # (app/matters/enums.py `MatterOrigin`).
-    if matter.origin == MatterOrigin.NATIVE:
-        started = timezone.localtime(matter.created_at).date()
-        steps.append(
-            ProcessStep(
-                label=STARTED_LABEL,
-                display=format_estonian_date(started),
-                detail="",
-                sort_on=started,
-                phase=PHASE_STARTED,
-            )
-        )
+    # A file entered a month after it arrived drew `Saabus 1.9` in its header
+    # and `Alustatud 21.9` on its rail. One that recorded a backdated opinion
+    # drew `Koja arvamus 20.9` *before* `Alustatud 21.9` — the rail saying the
+    # opinion went out the day before the work began. And on a long file the
+    # column sat in the middle of dates running 5.3 → 2.4 → 21.9 → 3.6 → 17.6,
+    # because today is not where the procedure is (QA-006, QA-013).
+    #
+    # The owner's reading is shorter and is the one that decided it: `Alustatud`
+    # and `Algus` are the same conceptual beginning said twice, and the rail
+    # should say it once (OWNER-03). The pattern's own first phase is the
+    # beginning the procedure has; `Saabus` stays in the header, where it is a
+    # fact about the post and is labelled as one.
+    #
+    # Nothing replaces it. A synonym drawn from the same column would be the
+    # same fabricated milestone under a different word.
 
     # `Tagasiside tähtaeg` — one column per `Kaasamine` that carries a
     # reply-by date. Several per Matter is ordinary: a file routinely runs more
@@ -470,21 +476,26 @@ def process_steps(
     # through the record's own `visible_to` like every other source here, so a
     # restricted deadline draws no column and moves no spacing (AUTH-003).
     for record in facts.upcoming_dates:
-        if record.kind != ImportantDateKind.TRANSPOSITION_DEADLINE:
-            continue
         if record.status != FactStatus.ACTIVE:
             # A cancelled expectation is history and reads as history, in the
             # chronology. It is not somewhere this file is still heading.
             continue
+        transposition = record.kind == ImportantDateKind.TRANSPOSITION_DEADLINE
         steps.append(
             ProcessStep(
-                label=TRANSPOSITION_DEADLINE_LABEL,
+                # The transposition deadline keeps the short name a 150 px
+                # column can hold, because the vocabulary already names that
+                # act. Every other watched date is named by the lawyer who
+                # recorded it, and the name they chose is the information: a
+                # column reading `Oluline tähtaeg` would say only that one
+                # exists (QA-001).
+                label=TRANSPOSITION_DEADLINE_LABEL if transposition else record.title,
                 # The period at the precision it was recorded to. A deadline
                 # known only to a quarter prints as a quarter.
                 display=record.display_date,
                 detail=record.title,
                 sort_on=record.period_end,
-                phase=PHASE_TRANSPOSITION,
+                phase=PHASE_TRANSPOSITION if transposition else PHASE_WATCHED,
             )
         )
 

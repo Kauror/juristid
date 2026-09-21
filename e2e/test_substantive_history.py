@@ -84,6 +84,24 @@ def a_new_matter(page, base_url: str, *, stage: str | None = None) -> str:
     return create_matter(page, base_url, unique_title("Teema käik"), stage=stage)
 
 
+def a_new_matter_with_a_date(page, base_url: str) -> str:
+    """The same Matter, plus the one thing that makes it draw a rail.
+
+    Every file used to draw at least one column, because `Alustatud` was
+    `Matter.created_at`. docs/adr/0100 §1 retired it, so a file that has
+    recorded nothing has no road ahead to draw and draws none — which makes an
+    empty rail useless as the subject of an assertion about what a rail
+    contains.
+    """
+    url = create_matter(page, base_url, unique_title("Teema käik"))
+    page.goto(f"{url}muuda/")
+    page.wait_for_load_state("networkidle")
+    page.fill("#id_response_deadline", "15.11.2026")
+    page.get_by_role("button", name="Salvesta").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    return url
+
+
 def _matter_with_instrument(page, base_url: str, instrument: str, *, stage: str | None) -> str:
     """A Matter carrying one reviewed `Õigusakt`, filed through the real form.
 
@@ -410,7 +428,11 @@ def test_the_technical_log_is_one_link_away(page, base_url):
 
     page.get_by_role("link", name=re.compile("Kõik muudatused")).click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".changelog")).to_contain_text("Menetluse areng lisatud")
+    # `Märge lisatud`, not `Menetluse areng lisatud`. This page is read by a
+    # person, and it was still telling them their notes were «menetluse
+    # arengud» — a phrase the launcher has never shown them. The stored
+    # `event_type` value is untouched (QA-012).
+    expect(page.locator(".changelog")).to_contain_text("Märge lisatud")
     expect(page.locator("h1")).to_contain_text("Kõik muudatused")
 
 
@@ -526,16 +548,19 @@ def test_a_matter_with_nothing_to_place_draws_no_rail(page, base_url):
 
     **The three blocks of the section are independent since docs/adr/0098 §8.**
     A file read against no procedure draws no nodes and is promised no next
-    steps; its `Alustatud` is a date it recorded rather than a claim about a
-    procedure, and it goes on reading under `Kirjas olevad kuupäevad`.
+    steps. Its recorded dates go on reading — and since docs/adr/0100 §1 a file
+    that has recorded none draws nothing at all, because the one column every
+    Matter used to have was `Alustatud`, taken from `Matter.created_at`. So the
+    Matter here carries a deadline, which is a date somebody recorded rather
+    than a claim about a procedure.
     """
     sign_in(page, base_url, SANDRA)
-    a_new_matter(page, base_url)
+    a_new_matter_with_a_date(page, base_url)
 
     expect(rail(page).locator(".tl-step--phase")).to_have_count(0)
     expect(rail(page).locator(".lpahead")).to_have_count(0)
     expect(rail(page)).not_to_contain_text("Ees võib olla")
-    expect(rail(page)).to_contain_text("Alustatud")
+    expect(rail(page)).to_contain_text("Arvamuse tähtaeg")
     expect(page.locator("#ajajoon")).not_to_contain_text("Menetluse kulg")
 
 
@@ -747,7 +772,10 @@ def test_an_eu_regulation_is_never_offered_a_transposition(page, base_url):
 def test_the_dated_points_read_inside_menetluse_kulg_and_not_in_the_history(page, base_url):
     """§4. The strip answers «where is this going», so it moved to that section."""
     sign_in(page, base_url, SANDRA)
-    a_new_matter(page, base_url)
+    # A recorded date, because a file with none draws no rail at all since
+    # docs/adr/0100 §1 — and a rail that is absent proves nothing about where
+    # its dated points read.
+    a_new_matter_with_a_date(page, base_url)
 
     # One rail, carrying both. The separate block and its heading are gone.
     expect(rail(page)).not_to_contain_text("Kirjas olevad kuupäevad")

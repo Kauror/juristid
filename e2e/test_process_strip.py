@@ -63,24 +63,34 @@ OPEN_TITLE = (
 ARCHIVE_TITLE = "Arhiiviteema 2014 sünteetiline registrikirje"
 
 #: Every label the strip used to draw and no longer may. `Kooskõlastusringil` is
-#: the seeded Matter's `Hetkeseis`, `Kaasamiskutse veebis` its engagement kind,
-#: and the two `Eelnõu`/`Eeldatav` rows are its watched `MatterImportantDate`
-#: records, which stayed out when the commencements came back.
+#: the seeded Matter's `Hetkeseis` and `Kaasamiskutse veebis` its engagement
+#: kind; neither is a dated procedural act.
 #:
 #: `Jõustub` is the **chronology's** tensed wording for a commencement and is
 #: retired from the strip specifically: the column is the noun `Jõustumine`, so
-#: that a rail does not rename itself on the day a date goes past. «põhiosa» is
-#: that record's «mis jõustub» — real, and secondary, so it reads as the
-#: column's `title` and never as visible text (docs/adr/0074 §12.4).
+#: that a rail does not rename itself on the day a date goes past.
+#:
+#: **Three labels came off this list in the 2026-09-21 round, each because the
+#: thing it named is now on the strip on purpose.**
+#:
+#: `Eelnõu eeldatav kooskõlastusring` and `Eeldatav VTK avalikustamine` are the
+#: seeded Matter's watched `MatterImportantDate` records. They stayed out when
+#: the commencements came back, and what that produced was a date a lawyer
+#: recorded through `+ Märge → Oluline tähtaeg` saving with a 200, closing its
+#: panel, and appearing on the Matter nowhere at all — not here, not in `Teema
+#: käik`, not in the header (QA-001).
+#:
+#: «põhiosa» is a commencement's «mis jõustub». It used to read as the column's
+#: `title` and never as visible text, and it is a visible note on the
+#: `Jõustumine` node now: a `title` is delivered by no touch screen, no
+#: printout and no screen reader, and it was the only thing telling two
+#: commencements apart (QA-005, docs/adr/0100 §3).
 RETIRED = [
     "praegu",
     "Loodud",
     "Kooskõlastusringil",
     "Kaasamiskutse veebis",
-    "Eelnõu eeldatav kooskõlastusring",
-    "Eeldatav VTK avalikustamine",
     "Jõustub",
-    "põhiosa",
 ]
 
 
@@ -117,36 +127,44 @@ def dates_drawn(page) -> list[str]:
     return [text.strip() for text in page.locator(".tl-step__date").all_inner_texts()]
 
 
-def started_on(page) -> str:
+def started_on(page, matter_url: str) -> str:
     """The day the *server* believes it is, read off the Matter just created.
 
     Not `date.today()` in the test process. The `Saadetud` field is the one
     value in this file that has to be *today*: a registered send may not be in
-    the future, and a Matter this file creates is created *now*, so today is the
-    only day that puts a send after its own Matter's `Alustatud`. Anything
-    earlier is a back-fill, which is a real shape and is pinned in
-    `tests/test_teema_approved_target.py` rather than photographed here.
+    the future, and a Matter this file creates is created *now*.
 
     The application answers in `Europe/Tallinn` and the browser server is a
     different process from pytest, which on CI runs in UTC. For the three hours
     a day those two calendars disagree, a `date.today()` read here is yesterday
-    to the server — so the send lands *before* the `Alustatud` it was meant to
-    follow, the strip sorts it first, and seven tests fail over a date nobody
-    typed. Read as a module-level constant it was worse still: the import
-    happens minutes before the assertion, so the two could straddle midnight on
-    their own.
+    to the server — and a run on 2026-09-16 that began at 20:54 UTC and asserted
+    at 21:01 dated seven sends yesterday. Read as a module-level constant it was
+    worse still: the import happens minutes before the assertion, so the two
+    could straddle midnight on their own.
 
-    `Alustatud` is the Matter's own beginning as that server stamped it, in the
-    `j.n.Y` form `parse_estonian_date` accepts, and it is exactly the value the
-    send must not precede — so the comparison is between two readings of one
-    clock instead of two clocks.
+    **It is read from `Kõik muudatused` rather than from the strip**, and that
+    is new. It used to be the strip's leftmost column, `Alustatud`, which was
+    the Matter's own beginning as the server stamped it — and docs/adr/0100 §1
+    retired the milestone, because `Matter.created_at` is a fact about the
+    database rather than about a procedure. A freshly created Matter draws no
+    strip at all now, and `Teema käik` is empty on one too: `MATTER_CREATED` is
+    not in the chronology's vocabulary and never was.
+
+    The technical change log is where it still reads, stamped by that same
+    server, so the property this helper exists for is unchanged: the comparison
+    is between two readings of one clock instead of two clocks. It costs a
+    navigation, which is why the caller hands back the Matter's own address to
+    return to.
     """
-    drawn = dates_drawn(page)
-    assert drawn, "the strip drew no dated column, so there is no server day to read"
-    assert labels(page)[0] == "Alustatud", (
-        f"the leftmost column is not the beginning: {labels(page)}"
-    )
-    return drawn[0]
+    page.goto(f"{matter_url}muudatused/")
+    page.wait_for_load_state("networkidle")
+    stamps = page.locator(".changelog__when").all_inner_texts()
+    assert stamps, "the change log drew no dated row, so there is no server day to read"
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
+    # `j.n.Y H:i` — the day is what `parse_estonian_date` accepts, the clock
+    # time is not asked for and is dropped.
+    return stamps[0].strip().split()[0]
 
 
 def assert_fits(page, width: int) -> None:
@@ -343,15 +361,45 @@ def test_a_bare_imported_matter_draws_no_strip_at_all(page, base_url, width):
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_a_new_matter_draws_one_column_and_no_connector(page, base_url, width):
-    """**One milestone.** `Alustatud`, alone, and `:last-child` draws no
-    connector — so the single column is the whole grammar."""
+def test_a_new_matter_draws_no_strip_at_all(page, base_url, width):
+    """**No milestones, and therefore no section.**
+
+    This used to be the one-column case: `Alustatud` alone, drawn from
+    `Matter.created_at`, which every Matter has. docs/adr/0100 §1 retired it —
+    a database timestamp is a fact about this database rather than about a
+    procedure — so a file that has chosen no `Õigusakt` and recorded no date
+    has nothing to draw and draws nothing. An empty heading over an empty rail
+    would be dashboard decoration with no decision behind it.
+
+    The single-column grammar it was testing is asserted below, on a file that
+    has actually recorded one thing
+    (`test_one_recorded_date_draws_one_column_and_no_connector`).
+    """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    create_matter(page, base_url, f"Käiguriba üks verstapost {width}")
+    create_matter(page, base_url, f"Käiguriba ilma verstapostita {width}")
+
+    expect(strip(page)).to_have_count(0)
+    assert labels(page) == []
+    assert_fits(page, width)
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_one_recorded_date_draws_one_column_and_no_connector(page, base_url, width):
+    """**One milestone**, and `:last-child` draws no connector — so the single
+    column is the whole grammar.
+
+    The one column is a recorded deadline rather than a manufactured beginning
+    (docs/adr/0100 §1).
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    create_matter_with_deadline(
+        page, base_url, f"Käiguriba üks verstapost {width}", deadline=et(30)
+    )
 
     expect(strip(page)).to_have_count(1)
-    assert labels(page) == ["Alustatud"]
+    assert labels(page) == ["Arvamuse tähtaeg"]
     assert_fits(page, width)
     connector = page.locator(".tl-step").first.evaluate(
         "node => getComputedStyle(node, '::before').display"
@@ -368,7 +416,7 @@ def test_a_closed_matter_draws_two_columns(page, base_url, width):
     create_matter(page, base_url, f"Käiguriba kaks verstaposti {width}")
     close_the_matter(page)
 
-    assert labels(page) == ["Alustatud", "Lõpetatud"]
+    assert labels(page) == ["Lõpetatud"]
     for outcome in ("Menetlus lõppes", "Jõustus", "Loobuti"):
         expect(page.locator(".tl-step__what", has_text=outcome)).to_have_count(0)
     # The `title` carries the **stored** vocabulary's own label, which is what
@@ -387,17 +435,19 @@ def test_the_whole_vocabulary_fits_on_one_row(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     matter_url = create_matter(page, base_url, f"Käiguriba kolm verstaposti {width}")
-    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page))
+    register_a_send(
+        page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page, matter_url)
+    )
 
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
-    assert labels(page) == ["Alustatud", "Koja arvamus"], (
+    assert labels(page) == ["Koja arvamus"], (
         "an uploaded file alone must not draw a milestone, and a registered send must"
     )
 
     close_the_matter(page)
 
-    assert labels(page) == ["Alustatud", "Koja arvamus", "Lõpetatud"]
+    assert labels(page) == ["Koja arvamus", "Lõpetatud"]
     assert_fits(page, width)
 
 
@@ -419,7 +469,7 @@ def test_a_new_matter_reads_a_beginning_and_a_destination(page, base_url, width)
     page.set_viewport_size({"width": width, "height": 900})
     create_matter_with_deadline(page, base_url, f"Käiguriba tähtaeg {width}", deadline=et(21))
 
-    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
+    assert labels(page) == ["Arvamuse tähtaeg"]
     assert dates_drawn(page)[-1] == et(21), dates_drawn(page)
     # A future column claims nothing about the past and counts down to nothing.
     assert not COUNTDOWN.search(strip(page).inner_text()), "the strip still counts down"
@@ -438,17 +488,19 @@ def test_a_deadline_and_a_sent_opinion_read_in_date_order(page, base_url, width)
     matter_url = create_matter_with_deadline(
         page, base_url, f"Käiguriba tähtaeg ja arvamus {width}", deadline=et(21)
     )
-    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page))
+    register_a_send(
+        page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page, matter_url)
+    )
 
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
 
-    assert labels(page) == ["Alustatud", "Koja arvamus", "Arvamuse tähtaeg"]
+    assert labels(page) == ["Koja arvamus", "Arvamuse tähtaeg"]
     boxes = [
         page.locator(".tl-step").nth(index).bounding_box()
         for index in range(page.locator(".tl-step").count())
     ]
-    assert boxes[1]["x"] < boxes[2]["x"], "the send and the deadline columns overlap"
+    assert boxes[0]["x"] < boxes[1]["x"], "the send and the deadline columns overlap"
     assert_fits(page, width)
 
 
@@ -462,7 +514,7 @@ def test_a_commencement_is_the_rightmost_destination(page, base_url, width):
     create_matter_with_deadline(page, base_url, f"Käiguriba jõustumine {width}", deadline=et(21))
     add_a_commencement(page, what="põhiosa", when=et(400))
 
-    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg", "Jõustumine"]
+    assert labels(page) == ["Arvamuse tähtaeg", "Jõustumine"]
     expect(page.locator('.tl-step[title="põhiosa"]')).to_have_count(1)
     # The noun, never the chronology's tensed wording.
     for tensed in ("Jõustub", "Jõustus"):
@@ -493,7 +545,6 @@ def test_a_long_strip_scrolls_itself_and_never_the_page(page, base_url):
     add_a_commencement(page, what="register", when=et(800))
 
     assert labels(page) == [
-        "Alustatud",
         "Arvamuse tähtaeg",
         "Jõustumine",
         "Jõustumine",
@@ -543,14 +594,15 @@ def test_a_five_column_file_still_fits_on_one_row(page, base_url, width):
     matter_url = create_matter_with_deadline(
         page, base_url, f"Käiguriba viis verstaposti {width}", deadline=et(21)
     )
-    register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page))
+    register_a_send(
+        page, matter_url, filename="Koja-arvamus.pdf", sent_on=started_on(page, matter_url)
+    )
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
     add_a_commencement(page, what="põhiosa", when=et(400))
     close_the_matter(page)
 
     assert labels(page) == [
-        "Alustatud",
         "Koja arvamus",
         "Lõpetatud",
         "Arvamuse tähtaeg",
@@ -573,7 +625,7 @@ def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     matter_url = create_matter(page, base_url, f"Käiguriba kaks arvamust {width}")
-    began = started_on(page)
+    began = started_on(page, matter_url)
     register_a_send(page, matter_url, filename="Koja-arvamus.pdf", sent_on=began)
     register_a_send(page, matter_url, filename="Koja-taiendav-arvamus.pdf", sent_on=began)
 
@@ -586,13 +638,13 @@ def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
     # a projection question and is asserted in
     # `tests/test_teema_approved_target.py`, where a Matter's creation can be
     # backdated far enough for two distinct send days to be realistic.
-    assert labels(page) == ["Alustatud", "Koja arvamus", "Koja arvamus"]
-    assert dates_drawn(page) == [began, began, began], dates_drawn(page)
+    assert labels(page) == ["Koja arvamus", "Koja arvamus"]
+    assert dates_drawn(page) == [began, began], dates_drawn(page)
     boxes = [
         page.locator(".tl-step").nth(index).bounding_box()
         for index in range(page.locator(".tl-step").count())
     ]
-    assert boxes[1]["x"] < boxes[2]["x"], "the two sent-opinion columns overlap"
+    assert boxes[0]["x"] < boxes[1]["x"], "the two sent-opinion columns overlap"
     assert_fits(page, width)
 
 
@@ -623,7 +675,21 @@ def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
     # a statement about what is *not* known and therefore has no position on a
     # rail. The two watched dates, the engagement and the `Töövõit` draw
     # nothing, which is what this test is actually about.
-    assert dated_labels(page) == ["Alustatud", "Koja arvamus", "Jõustumine", "Jõustumine"]
+    # **The two watched dates are here now, and the commencements are not.**
+    # Both are this round's doing and both are deliberate: an `Oluline tähtaeg`
+    # recorded on a file used to appear on it nowhere at all (QA-001), and a
+    # commencement used to draw its own column beside the `Jõustumine` node,
+    # so the rail read `Jõustumine · Jõustumine 27.9.2027` — two adjacent
+    # columns with one name (QA-005, docs/adr/0100 §3). The commencements are
+    # folded onto that node as visible notes, asserted just below.
+    assert dated_labels(page) == [
+        "Koja arvamus",
+        "Eelnõu eeldatav kooskõlastusring",
+        "Eeldatav VTK avalikustamine",
+    ]
+    assert labels(page).count("Jõustumine") == 1
+    notes = page.locator(".tl-step__note").all_inner_texts()
+    assert len(notes) == 2, notes
     for gone in RETIRED:
         expect(strip(page).get_by_text(gone, exact=False)).to_have_count(0)
     # No countdown either: the `N p` suffix went with the future sources.
@@ -659,19 +725,21 @@ def reaches(page) -> list[str]:
     )
 
 
-def test_a_new_matter_does_not_read_as_two_things_that_already_happened(page, base_url):
-    """`Alustatud` today and a deadline ahead are drawn differently.
+def test_a_new_matter_does_not_read_as_something_that_already_happened(page, base_url):
+    """A deadline ahead is drawn as ahead.
 
-    Before this, the two dots were identical and the rail between them was solid
-    accent — which says the deadline has been reached, on the day the file was
-    opened.
+    Before this amendment the two dots were identical and the rail between them
+    was solid accent — which says the deadline has been reached, on the day the
+    file was opened. One of those two dots was `Alustatud`, retired since
+    (docs/adr/0100 §1), so what is left is the half that still matters: a future
+    point claims nothing.
     """
     sign_in(page, base_url, MARTIN)
-    create_matter_with_deadline(page, base_url, "Alustatud täna, tähtaeg ees", deadline=et(18))
+    create_matter_with_deadline(page, base_url, "Tähtaeg ees", deadline=et(18))
 
-    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
-    assert states(page) == ["today", "future"]
-    # Nothing reached, so no accent rail between them.
+    assert labels(page) == ["Arvamuse tähtaeg"]
+    assert states(page) == ["future"]
+    # Nothing reached, so no accent rail at all.
     assert reaches(page)[0] == "0%"
 
 
@@ -683,7 +751,13 @@ def test_a_future_column_is_visibly_quieter_than_a_reached_one(page, base_url):
     stylesheet change cannot pass by accident.
     """
     sign_in(page, base_url, MARTIN)
-    create_matter_with_deadline(page, base_url, "Saavutatud ja tulevane", deadline=et(30))
+    # A point behind the file and a point ahead of it, both recorded. The past
+    # one used to be `Alustatud`, which every Matter had for free and which is
+    # retired (docs/adr/0100 §1).
+    url = create_matter_with_deadline(page, base_url, "Saavutatud ja tulevane", deadline=et(-10))
+    add_a_commencement(page, what="põhiosa", when=et(30))
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
 
     dots = page.locator(".tl-step__dot")
     colours = dots.evaluate_all(
@@ -720,12 +794,17 @@ def test_a_column_dated_today_says_so_without_relying_on_colour(page, base_url):
     defect, for the readers least able to work around it.
     """
     sign_in(page, base_url, MARTIN)
-    create_matter_with_deadline(page, base_url, "Täna ja tulevikus", deadline=et(21))
+    # A point dated today, recorded rather than manufactured from `created_at`,
+    # which is what `Alustatud` was doing here (docs/adr/0100 §1).
+    url = create_matter_with_deadline(page, base_url, "Täna ja tulevikus", deadline=et(21))
+    add_a_commencement(page, what="põhiosa", when=et(0))
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
 
     expect(page.locator('.tl-step[aria-current="date"]')).to_have_count(1)
     expect(page.locator(".tl-step--future .visually-hidden")).to_have_text("Tulevikus")
     # And the visible labels are untouched by either.
-    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
+    assert labels(page) == ["Jõustumine", "Arvamuse tähtaeg"]
 
 
 def test_the_retired_countdown_grammar_has_not_come_back_with_the_colour(page, base_url):
@@ -761,7 +840,9 @@ def test_the_temporal_rail_survives_the_narrow_scroller(page, base_url, width):
     page.goto(url)
     page.wait_for_load_state("networkidle")
 
-    assert states(page) == ["today", "future", "future", "future"]
+    # Three future columns and no `today`: the column that used to be today was
+    # `Alustatud`, manufactured from `created_at` (docs/adr/0100 §1).
+    assert states(page) == ["future", "future", "future"]
     assert_fits(page, width)
 
     # Scrolled to the end, the last column is still drawn as a future one: the
@@ -837,7 +918,7 @@ def test_a_reply_by_date_draws_its_own_column(page, base_url, width):
     )
     record_a_round(page, matter_url, audience="liikmed", deadline=et(14))
 
-    assert labels(page) == ["Alustatud", "Tagasiside tähtaeg", "Arvamuse tähtaeg"]
+    assert labels(page) == ["Tagasiside tähtaeg", "Arvamuse tähtaeg"]
     # Two deadlines, two different words: what was asked of members, and what
     # Koda owes. A strip that merged them would promote one into the other.
     assert "Tagasiside tähtaeg" in strip(page).inner_text()
@@ -864,7 +945,6 @@ def test_several_rounds_draw_several_columns_and_still_fit(page, base_url, width
     record_a_round(page, matter_url, audience="töögrupp", deadline=et(20))
 
     assert labels(page) == [
-        "Alustatud",
         "Tagasiside tähtaeg",
         "Tagasiside tähtaeg",
         "Arvamuse tähtaeg",
@@ -899,7 +979,7 @@ def test_a_round_with_no_reply_by_date_draws_nothing(page, base_url):
     assert caught.value.status == 200
     page.wait_for_load_state("networkidle")
 
-    assert labels(page) == ["Alustatud", "Arvamuse tähtaeg"]
+    assert labels(page) == ["Arvamuse tähtaeg"]
     assert "Tagasiside tähtaeg" not in strip(page).inner_text()
 
 
@@ -937,14 +1017,19 @@ class _StubStrip:
     else, not that it quietly answers whatever it is asked.
     """
 
-    def __init__(self, columns: list[tuple[str, str]]) -> None:
-        self._columns = columns
+    def __init__(self, stamps: list[str]) -> None:
+        self._stamps = stamps
+        self.visited: list[str] = []
+
+    def goto(self, url: str) -> None:
+        self.visited.append(url)
+
+    def wait_for_load_state(self, _state: str) -> None:
+        return None
 
     def locator(self, selector: str):
-        if selector == ".tl-step__date":
-            return _Column([drawn for _, drawn in self._columns])
-        if selector == ".tl-step__what":
-            return _Column([what for what, _ in self._columns])
+        if selector == ".changelog__when":
+            return _Column(list(self._stamps))
         raise AssertionError(f"started_on read an unexpected selector: {selector}")
 
 
@@ -981,18 +1066,18 @@ def test_the_send_day_is_the_server_s_whatever_day_this_process_thinks_it_is(
     # for a helper that does read this clock, and prove nothing.
     assert et(0) == f"{process_day.day}.{process_day.month}.{process_day.year}"
 
-    page = _StubStrip([("Alustatud", "17.9.2026"), ("Arvamuse tähtaeg", "8.10.2026")])
-    assert started_on(page) == "17.9.2026"
+    page = _StubStrip(["17.9.2026 09:14", "17.9.2026 09:14"])
+    assert started_on(page, "/teemad/x/") == "17.9.2026"
+    # And it puts the reader back where it found them.
+    assert page.visited == ["/teemad/x/muudatused/", "/teemad/x/"]
 
 
-def test_a_strip_with_no_beginning_is_a_failure_rather_than_a_date():
-    """A send dated off a strip whose first column is not `Alustatud` would be
-    dated off whatever that column is — a deadline three weeks out, and a
-    refused save. The helper says so instead of guessing."""
+def test_a_change_log_with_no_dated_row_is_a_failure_rather_than_a_date():
+    """A send dated off an empty reading would be dated off nothing at all, and
+    the refusal that follows would name the `Saadetud` field rather than the
+    page this file misread. The helper says so instead of guessing."""
     with pytest.raises(AssertionError):
-        started_on(_StubStrip([("Arvamuse tähtaeg", "8.10.2026")]))
-    with pytest.raises(AssertionError):
-        started_on(_StubStrip([]))
+        started_on(_StubStrip([]), "/teemad/x/")
 
 
 def test_no_day_in_this_file_is_decided_at_import():

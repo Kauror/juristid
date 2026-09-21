@@ -37,12 +37,11 @@ this file.
 A second table, `SCENARIO_NORMALISED_TEXT`, holds the case the first cannot: a
 date slot whose *class* renders a clock value in one row and a date the fixture
 chose in the next. `.tl-step__date` and `.uxtl__msdate` are that. The seeded
-closed Matter's «Alustatud» and «Lõpetatud» are the day the run happened, and so
-are the open Matter's «Alustatud» / «Koja arvamus» and its «Teema loodud» /
-«Arvamus välja» — `created_at` and `sent_at`, stamped by the seeding
-transaction. Beside them on the same page, through the same two classes, are
-«Jõustumine 1.1.2028» and a Kaasamine in May, which `seed_e2e_data` chose and
-which belong in the baseline.
+closed Matter's «Lõpetatud» is the day the run happened, and so are the open
+Matter's «Koja arvamus» and its «Teema loodud» / «Arvamus välja» — `closed_at`,
+`sent_at` and `created_at`, stamped by the seeding transaction. Beside them on
+the same page, through the same two classes, are «Jõustumine 1.1.2028» and a
+Kaasamine in May, which `seed_e2e_data` chose and which belong in the baseline.
 
 So an entry says which capture it applies to, and — where one capture prints
 both meanings — which milestone by name. A baseline goes red for a seeded date
@@ -462,8 +461,8 @@ MONTH_VIEW_CHIP = ('.uxviews .uxchip:has-text("Tähtaeg sel kuul")',)
 CLOSED_ON = (".banner--closed .banner__text .muted",)
 
 #: The seeded closed Matter's own two days, on the two surfaces of `teema-suletud`
-#: that print them: the process strip's «Alustatud» / «Lõpetatud» dates, and the
-#: `Ajajoon` milestones «Teema suletud» and «Teema loodud».
+#: that print them: the process strip's «Lõpetatud» date, and the `Ajajoon`
+#: milestones «Teema suletud» and «Teema loodud».
 #:
 #: All four are one pair of facts. `seed_e2e_data` creates `CLOSED_TITLE` and
 #: closes it in the same transaction, so `Matter.created_at`, `Matter.closed_at`
@@ -492,18 +491,25 @@ CLOSED_ON = (".banner--closed .banner__text .muted",)
 #: instead: see `STRIP_RUN_DAY` and `CHRONOLOGY_RUN_DAY` below.
 CLOSED_MATTER_DAYS = (".tl-step__date", ".uxtl__msdate")
 
-#: The two process-strip columns whose date is the day the run happened, named
-#: by the label beside them rather than by the class they share.
+#: The process-strip column whose date is the day the run happened, named by
+#: the label beside it rather than by the class it shares.
 #:
 #: `seed_e2e_data` creates `OPEN_TITLE` and sends its one opinion in the same
-#: seeding transaction, so `Matter.created_at` and `Submission.sent_at` are both
-#: the wall clock of the run — and `Alustatud` and `Koja arvamus` are the two
-#: columns `process_steps` derives from exactly those two records. Both print
-#: through `format_estonian_date`, `j.n.Y`, which does not zero-pad: `9.9.2026`
-#: is eight characters and `12.9.2026` is nine.
+#: seeding transaction, so `Submission.sent_at` is the wall clock of the run —
+#: and `Koja arvamus` is the column `process_steps` derives from that record.
+#: It prints through `format_estonian_date`, `j.n.Y`, which does not zero-pad:
+#: `9.9.2026` is eight characters and `12.9.2026` is nine.
 #:
-#: The other two columns on this strip are **not** here and must not be. They
-#: are the Matter's two commencements — «Jõustumine 27.9.2027 / 1.1.2028», from
+#: **`Alustatud` used to be the other entry and is gone with the milestone.**
+#: It was `Matter.created_at` drawn as the file's first column — a fact about
+#: when this database was seeded rather than about a procedure — and
+#: docs/adr/0100 §1 retired it. A normalisation left behind for a milestone the
+#: page no longer draws is the exact hazard `REQUIRED_NORMALISATIONS` refuses:
+#: it rewrites nothing, stays green, and the declaration check turns it into a
+#: failed capture instead. So it goes rather than being followed.
+#:
+#: The other columns on this strip are **not** here and must not be. They are
+#: the Matter's two commencements — «Jõustumine 27.9.2027 / 1.1.2028», from
 #: `add_effective_date` — and a strip that had frozen them would stop comparing
 #: the one thing `teema-kaik` exists to compare, which is that a known future
 #: milestone is drawn exactly like a completed one (docs/adr/0074 §12.2).
@@ -512,19 +518,16 @@ CLOSED_MATTER_DAYS = (".tl-step__date", ".uxtl__msdate")
 #: date, so a fixture that gave this Matter a `Arvamuse tähtaeg` would renumber
 #: them and an `:nth-child` would quietly start holding a seeded date still; the
 #: label is what actually identifies the milestone, and `process_timeline.py`
-#: declares both of these as constants.
-STRIP_RUN_DAY = (
-    '.tl-step:has(.tl-step__what:text-is("Alustatud")) .tl-step__date',
-    '.tl-step:has(.tl-step__what:text-is("Koja arvamus")) .tl-step__date',
-)
+#: declares it as a constant.
+STRIP_RUN_DAY = ('.tl-step:has(.tl-step__what:text-is("Koja arvamus")) .tl-step__date',)
 
 #: The chronology's two run-day milestones, named the same way and for the same
-#: reason: they are the other rendering of the same two records.
+#: reason: they are stamped by the seeding run.
 #:
 #: `Teema loodud` is the `MATTER_CREATED` audit event and `Arvamus välja` is the
-#: sent `Submission`, so both are stamped by the seeding run — the strip calls
-#: them `Alustatud` and `Koja arvamus`, the chronology calls them these, and
-#: they are one pair of facts printed twice (`app/matters/timeline.py`).
+#: sent `Submission`. The strip calls the second of them `Koja arvamus`, so that
+#: one fact is printed twice; `Teema loodud` is the chronology's alone since
+#: docs/adr/0100 §1 retired the strip's `Alustatud` (`app/matters/timeline.py`).
 #:
 #: The two chronology dates that stay in the baseline are the ones a person
 #: chose: «Kaasamine … 12.5.2026», which `seed_e2e_data` passes as
@@ -687,14 +690,13 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     "teema-1024": tuple(
         (selector, CANONICAL_RUN_DAY) for selector in _STRIP_AND_CHRONOLOGY_RUN_DAYS
     ),
-    # The archive row, which has one of the four and only one. It is a
-    # register-archive record, so `process_steps` gives it no `Alustatud` — an
-    # imported row's `created_at` is a fact about a migration — and it draws no
-    # strip at all; it never sent an opinion either. What it does have is the
-    # `MATTER_CREATED` event this seeding run wrote, which prints «Teema loodud»
-    # with today's date exactly as the other two Matters do. Declaring the
-    # absent three would fail every capture, which is `REQUIRED_NORMALISATIONS`
-    # working rather than a reason to widen the entry.
+    # The archive row, which has one of the three and only one. It draws no
+    # process strip at all and it never sent an opinion, so neither strip slot
+    # is on it. What it does have is the `MATTER_CREATED` event this seeding
+    # run wrote, which prints «Teema loodud» with today's date exactly as the
+    # other two Matters do. Declaring the absent two would fail every capture,
+    # which is `REQUIRED_NORMALISATIONS` working rather than a reason to widen
+    # the entry.
     "teema-arhiiv": ((CHRONOLOGY_RUN_DAY[0], CANONICAL_RUN_DAY),),
 }
 
@@ -1821,7 +1823,7 @@ def _closed_matter_days(day: str) -> str:
 def test_the_closed_matter_days_are_the_same_width_on_any_day(page, selector):
     """The seeded closed Matter is created and closed by the run that renders it.
 
-    So `Alustatud`, `Lõpetatud`, `Teema suletud` and `Teema loodud` all print the
+    So `Lõpetatud`, `Teema suletud` and `Teema loodud` all print the
     morning CI ran, in `j.n.Y` — eight characters on `9.9.2026`, nine on
     `12.9.2026`, ten on `1.10.2026`. Nothing covers them and nothing sized them,
     which is why the committed baseline holds the digits of the day it was taken
@@ -1868,10 +1870,10 @@ def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, se
 # The closed Matter above is the easy half: every slot in both classes is a
 # run-day value, so the bare class is the right scope. The open Matter is the
 # hard half and the reason `STRIP_RUN_DAY` and `CHRONOLOGY_RUN_DAY` name
-# milestones rather than classes — its strip prints `Alustatud` and
-# `Koja arvamus` from records this run stamped, and two commencements the
-# fixture chose, through one class; its chronology does the same with
-# `Teema loodud` / `Arvamus välja` against a Kaasamine in May and a `Töövõit`.
+# milestones rather than classes — its strip prints `Koja arvamus` from a record
+# this run stamped, and two commencements the fixture chose, through one class;
+# its chronology does the same with `Teema loodud` / `Arvamus välja` against a
+# Kaasamine in May and a `Töövõit`.
 #
 # Three properties are asserted here, and all three are needed. That the
 # run-day slots come out identical on any calendar day; that they really do
@@ -1896,9 +1898,11 @@ def _open_matter_fixture(page, day: str) -> None:
     """
     page.set_content(
         f'<div id="row" style="{_ROW}">'
-        '<span class="tl-step" style="display:contents">'
-        f'<span class="tl-step__what">Alustatud</span>'
-        f'<span class="tl-step__date">{day}</span></span>'
+        # No `Alustatud`. The strip stopped drawing it (docs/adr/0100 §1), and a
+        # fixture that went on modelling it would put an unnormalised run-day
+        # value ahead of every slot under test — so the columns after it would
+        # move on a longer date and this file would be proving the scoping
+        # against a page that does not exist.
         '<span class="tl-step" style="display:contents">'
         f'<span class="tl-step__what">Koja arvamus</span>'
         f'<span class="tl-step__date">{day}</span></span>'
@@ -1937,11 +1941,10 @@ def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
     """`created_at` and `sent_at`, both stamped by the run that renders them.
 
     `seed_e2e_data` creates `OPEN_TITLE` and sends its one opinion in the same
-    transaction, so `Alustatud`, `Koja arvamus`, `Teema loodud` and
-    `Arvamus välja` all print the morning CI ran — eight characters on
-    `9.9.2026`, nine on `12.9.2026`, ten on `1.10.2026`. Nothing covers them and
-    nothing sized them, which is why a baseline adopted on one morning differs
-    from every later one.
+    transaction, so `Koja arvamus`, `Teema loodud` and `Arvamus välja` all print
+    the morning CI ran — eight characters on `9.9.2026`, nine on `12.9.2026`,
+    ten on `1.10.2026`. Nothing covers them and nothing sized them, which is why
+    a baseline adopted on one morning differs from every later one.
     """
     seen = set()
     for day in CLOSED_MATTER_DAY_VARIANTS:

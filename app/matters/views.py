@@ -107,6 +107,7 @@ from app.matters.forms import (
     EngagementWaitForm,
     EntryEditForm,
     ExternalPositionEditForm,
+    ExternalPositionEvidenceForm,
     IncomingIntakeForm,
     KodaOpinionForm,
     MatterCreateForm,
@@ -128,6 +129,7 @@ from app.matters.forms import (
     development_period_initial,
     edit_initial,
     external_position_period_initial,
+    matter_edit_conflict_changes,
     period_initial,
     read_organisation_choices,
     visible_engagements_of,
@@ -165,13 +167,20 @@ from app.matters.my_work import (
     view_from,
 )
 from app.matters.process_timeline import SENT_LABEL, process_steps
+from app.matters.removal import (
+    RecordRemovalConflict,
+    kind_for,
+    remove_matter_record,
+)
 from app.matters.services import (
     EngagementEditConflict,
     EntryEditConflict,
     ExternalPositionConflict,
+    MatterEditConflict,
     PersonalNoteConflict,
     ProceduralDevelopmentConflict,
     ProceduralLinkConflict,
+    TimelineStepsConflict,
     WebsiteOverviewConflict,
     acknowledge_assignment_notice,
     assign_matter,
@@ -186,6 +195,8 @@ from app.matters.services import (
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
+    guard_matter_revision,
+    matter_revision_token,
     open_engagement_feedback_wait,
     personal_note_record,
     personal_note_revision,
@@ -206,6 +217,7 @@ from app.matters.services import (
     set_policy_areas,
     set_position,
     set_timeline_steps,
+    timeline_steps_revision_token,
 )
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
@@ -223,6 +235,7 @@ from app.submissions.forms import (
     CREATE_PREFIX,
     REGISTER_PREFIX,
     RegisterSentOpinionForm,
+    SentOpinionEditForm,
     SubmissionCreateForm,
 )
 from app.submissions.opinions import (
@@ -1331,6 +1344,52 @@ def _wants_fragment(request: HttpRequest) -> bool:
     )
 
 
+#: What the empty register offers when the matches are simply somewhere else.
+#:
+#: `/teemad/?q=QA hiline` answered `0 teemat otsingule „QA hiline”` while the
+#: filter chips on the same page read `Avatud · 17 · Suletud · 1 · Arhiiv · 1`
+#: and the global search found the file immediately. The scoping is right — the
+#: register opens on open work and must not silently widen itself — but a
+#: dead-end empty state on a page that already knows the answer is not
+#: (QA-019).
+ELSEWHERE_HINT = "Vasteid leidub ka teistes olekutes."
+
+#: The label on the link that widens the status filter. `Kõik`, because that is
+#: the segment it switches to and the word already on the chip beside it — a
+#: second name for one destination is a second thing to learn.
+ELSEWHERE_LINK = "Kuva kõik olekud"
+
+
+def _matches_elsewhere(request: HttpRequest, params: Any, queryset: Any) -> dict[str, Any] | None:
+    """Whether this same search finds anything under a wider status, and where.
+
+    **Only on an empty page, and only when a status filter is narrowing.** The
+    count is one extra `COUNT(*)` over a queryset that is already built, run at
+    most once per request and never when there are rows to show — so the
+    ordinary register pays nothing for it.
+
+    **Scoped before counted, like every other figure here.** ``queryset``
+    arrives from `matter_list_queryset` through `visible_to` and through the
+    free-text projection, so a restricted Matter cannot make the sentence
+    appear. A count computed before authorization would be exactly the leak
+    `_segment_queryset` is careful about: «there is something you cannot see»
+    is a disclosure.
+
+    It does **not** widen the filter on the reader's behalf. It says a wider
+    view has matches and offers the address; pressing it is their decision.
+    """
+    if params.get("olek", "avatud") == "koik":
+        return None
+    widened = params.copy()
+    widened["olek"] = "koik"
+    widened.pop("leht", None)
+    total = register_filters.apply_register_filters(queryset, request.user, widened)[0]
+    count = total.distinct().count()
+    if not count:
+        return None
+    return {"count": count, "query": widened.urlencode(), "label": ELSEWHERE_LINK}
+
+
 @login_required
 def matter_list(request: HttpRequest) -> HttpResponse:
     """The register. Dense, filtered through the URL, paginated server-side.
@@ -1358,6 +1417,10 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     # (app/matters/register_filters.py).
     status = params.get("olek", "avatud")
     scope = params.get("ulatus", "koik")
+    # Held before the status filter narrows it, so an empty answer can ask the
+    # one further question that is worth asking: «are the matches simply in
+    # another status» (`_matches_elsewhere`, QA-019). Nothing is evaluated here.
+    before_status = queryset
     queryset, date_echo = register_filters.apply_register_filters(queryset, request.user, params)
 
     # The database orders, and it orders before the page boundary is drawn. A
@@ -1411,6 +1474,13 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "page_size": page_size_key,
         "page_size_options": _page_size_options(params, page_size_key),
         "status_options": _status_options(request, params),
+        # `None` unless the page is empty *and* a status filter is narrowing —
+        # the one case where the register knows something useful it was not
+        # asked. One extra `COUNT(*)`, never on a page with rows.
+        "matches_elsewhere": (
+            _matches_elsewhere(request, params, before_status) if not page.object_list else None
+        ),
+        "elsewhere_hint": ELSEWHERE_HINT,
         "active_filters": chips,
         # Offered in the narrowing panel as well as reachable from a link: a
         # dimension a figure can set and the panel cannot is one somebody can
@@ -2574,11 +2644,14 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
         # `Teema käik` — the file's course above the chronology that explains
-        # it: `Alustatud`, `Koja arvamus`, `Arvamuse tähtaeg`, `Jõustumine`,
-        # `Lõpetatud`, and nothing else. The same `intelligence` the chronology
-        # reads is handed over rather than re-read, because `Jõustumine` is a
-        # structured fact with its own visibility and the two surfaces must not
-        # ask differently scoped questions about one Matter. `Oluline tähtaeg`
+        # it: `Tagasiside tähtaeg`, `Koja arvamus`, `Arvamuse tähtaeg`,
+        # `Jõustumine`, `Lõpetatud`, the pattern's own phases, and nothing else.
+        # `Alustatud` was the sixth until docs/adr/0100 §1 retired it.
+        #
+        # The same `intelligence` the chronology reads is handed over rather
+        # than re-read, because `Jõustumine` is a structured fact with its own
+        # visibility and the two surfaces must not ask differently scoped
+        # questions about one Matter. `Oluline tähtaeg`
         # is deliberately not among them and keeps its own section
         # (app/matters/process_timeline.py, docs/adr/0074 §12).
         "process_steps": steps,
@@ -3085,6 +3158,61 @@ def _upload_role_choices() -> list[tuple[str, str]]:
     ]
 
 
+def _document_display_name(document: Any) -> str:
+    """What the row prints as the file's name — the title, or the filename.
+
+    The same choice the template makes, made once here so the duplicate check
+    and the rendering cannot disagree about which string is on the page.
+    """
+    if document.title:
+        return str(document.title)
+    version = document.current_version
+    return str(version.original_filename) if version is not None else ""
+
+
+def _mark_duplicate_names(documents: Sequence[Any]) -> None:
+    """Give rows that print the same name something that tells them apart.
+
+    Two different files both called `dup.txt` rendered as four cells identical
+    in every visible column — name, role, date, person — and the stored bytes
+    were correct and distinct all along. The defect was display ambiguity, so
+    the fix is display (QA-016).
+
+    **Nothing is rejected.** Identical filenames and identical bytes are both
+    legitimate evidence acts: a ministry sends the same annex twice, a
+    colleague files a copy under a second step. This only makes them
+    distinguishable.
+
+    **Human-readable, and nothing internal.** The upload's own clock time, which
+    a person recognises from their mail client and their download folder, and
+    the file's size — never a storage key, a UUID or a path. An ordinal is the
+    last resort and is used only where two rows are otherwise identical down to
+    the minute, because «(1)» says nothing about the file and is worth printing
+    only when the alternative is silence.
+
+    Set on rows the page already holds, so it costs no query: the duplicate
+    check reads the same list that is about to be rendered.
+    """
+    seen: dict[str, list[Any]] = {}
+    for document in documents:
+        seen.setdefault(_document_display_name(document), []).append(document)
+
+    for rows in seen.values():
+        if len(rows) < 2:
+            continue
+        marks: list[str] = []
+        for document in rows:
+            parts = [timezone.localtime(document.created_at).strftime("%H:%M")]
+            version = document.current_version
+            if version is not None and version.size_bytes:
+                parts.append(human_size(version.size_bytes))
+            marks.append(" · ".join(parts))
+        for index, (document, mark) in enumerate(zip(rows, marks, strict=True), start=1):
+            # An ordinal only where the mark itself repeats — two files of the
+            # same size uploaded in the same minute.
+            document.duplicate_hint = mark if marks.count(mark) == 1 else f"{mark} · {index}."
+
+
 @login_required
 def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     """The file workspace: immutable evidence, then living working references.
@@ -3176,6 +3304,7 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             if document.role == DocumentRole.KODA_SUBMISSION_FINAL
             else document.get_role_display()
         )
+    _mark_duplicate_names(visible_evidence)
 
     # Opinion files this Matter holds that no Submission accounts for at all.
     # They are the candidates for «Registreeri saatmine», and the reason that
@@ -3664,7 +3793,10 @@ def _engagement_row(
 @business_write_required
 @require_http_methods(["GET", "POST"])
 def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) -> HttpResponse:
-    """`Muuda` on a `Kaasamine`. There is no delete; a wrong row is corrected.
+    """`Muuda` on a `Kaasamine` — a wrong value on a round that really happened.
+
+    A round that never happened at all is `Kustuta`, which is a different act
+    with its own route and its own audit event (`remove_record_view`).
 
     GET opens the form in the chronology row; POST saves it. One route, because
     they are one interaction and the second is only reachable from the first —
@@ -4321,6 +4453,13 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     data = form.cleaned_data
     try:
         with transaction.atomic():
+            # First, and inside the transaction: this page posts every field it
+            # holds, so a copy filled before somebody else's save would
+            # otherwise write thirteen stale values over thirteen fresh ones
+            # and call it an edit. The guard takes the Matter row and compares
+            # the committed version, never the instance this request arrived
+            # with (QA-002, `guard_matter_revision`).
+            guard_matter_revision(matter=matter, expected_revision=data.get("revision") or None)
             set_matter_title(matter=matter, value=data["title"], actor=request.user)
             set_brief_summary(
                 matter=matter, value=data.get("brief_summary") or "", actor=request.user
@@ -4387,6 +4526,32 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # and a Matter's tags and its visibility survive every save of this
             # form untouched (docs/adr/0096 §3, docs/adr/0097 §2).
             _save_procedural_link(matter=matter, form=link_form, actor=request.user)
+    except MatterEditConflict as conflict:
+        # Somebody else changed this Matter between the page opening and this
+        # save. Refused rather than applied, and the page comes back with every
+        # value this person typed still in it, so the two versions are
+        # reconciled by a person rather than by whoever pressed `Salvesta` last.
+        #
+        # The token is refreshed to the version the refusal was measured
+        # against, so a second press — by somebody who has now read the other
+        # side — saves against what is stored rather than bouncing forever.
+        #
+        # Caught before `DomainError`, which it subclasses: the generic handler
+        # would answer 400 and lose the status this deserves.
+        retry = request.POST.copy()
+        retry["revision"] = matter_revision_token(conflict.current)
+        form = MatterEditForm(retry, matter=matter, viewer=request.user)
+        form.is_valid()
+        form.add_error(None, str(conflict))
+        # What actually moved, stated beside the refusal. Without it the page
+        # comes back showing this person's own stale values, and the only
+        # obvious next action is to press `Salvesta` again — which is the
+        # silent revert the guard exists to prevent, performed by hand.
+        changes = matter_edit_conflict_changes(current=conflict.current, submitted=data)
+        matter.refresh_from_db()
+        context = _edit_context(request, matter, form, link_form)
+        context["conflict_changes"] = changes
+        return render(request, "matters/matter_edit.html", context, status=409)
     except ProceduralLinkConflict as conflict:
         # Somebody else corrected the same address between this page being
         # opened and being saved. Refused rather than overwritten, and the
@@ -4581,7 +4746,11 @@ DELETION_SUMMARY_ROWS: tuple[tuple[str, str], ...] = (
     ("järgmist tegevust", "workflow.NextAction"),
     ("kaasamist", "matters.MatterEngagement"),
     ("välist seisukohta", "matters.MatterExternalPosition"),
-    ("menetluse arengut", "matters.MatterProceduralDevelopment"),
+    # `märget`, not «menetluse arengut». The launcher calls this record a
+    # `Märge` and has never called it anything else to a lawyer; the
+    # confirmation screen for a destructive act is the last place to introduce
+    # a second name for the thing being destroyed (QA-012).
+    ("märget", "matters.MatterProceduralDevelopment"),
     ("ülevaadet või uudist", "matters.MatterWebsiteOverview"),
     ("arvamust", "submissions.Submission"),
     ("dokumenti", "documents.Document"),
@@ -6369,6 +6538,17 @@ def _external_position_edit_form(
     An approximate date reopens on its own chip with the day box left empty: the
     stored anchor is a place in a sort, not a day to hand back to somebody to
     re-save (docs/adr/0079 §2, `external_position_period_initial`).
+
+    **Every field this form renders is opened on what the record holds.** The
+    correction writes back the whole record — `correct_external_position` is
+    handed each value, not a diff — so a box this function forgets is a box that
+    comes up empty and is *saved* empty by somebody who only came to fix a typo
+    in the summary. `Liige` was the one that mattered: the owner asked for the
+    mark to be correctable through the supported edit flow, and an editor that
+    silently clears it is the opposite of correctable (OWNER-01, QA-014).
+    `Allikas` and `Juristi märkus` are the same field on the same form and are
+    opened here for the same reason — both were reachable by this route and
+    neither survived a no-op save.
     """
     auto_id = f"id_valine_seisukoht_{position.pk}_%s"
     if data is not None:
@@ -6378,6 +6558,13 @@ def _external_position_edit_form(
             "organisation": position.organisation_id,
             "url": position.url,
             "summary": position.summary,
+            "lawyer_note": position.lawyer_note,
+            # Both are dropped from the form on a discovered position, and
+            # `initial` for a field that is not there is simply ignored — so
+            # this says «open on the record» once rather than asking the same
+            # question the form already answered in `__init__`.
+            "source_label": position.source_label,
+            "source_is_member": position.source_is_member,
             "engagement": position.engagement_id,
             **external_position_period_initial(position),
             "revision": position.revision_token,
@@ -6394,11 +6581,12 @@ def _external_position_row(
     position: MatterExternalPosition,
     *,
     form: ExternalPositionEditForm | None = None,
+    evidence_form: ExternalPositionEvidenceForm | None = None,
     error: str = "",
     conflict: MatterExternalPosition | None = None,
     status: int = 200,
 ) -> HttpResponse:
-    """The corrected position back in place, or the form that could not save.
+    """The corrected position back in place, the form that failed, or the picker.
 
     One renderer for both, because they swap the same element: `Muuda` replaces
     the milestone's text region with the form, and every answer replaces it
@@ -6411,6 +6599,16 @@ def _external_position_row(
     The milestone is rebuilt through `external_position_milestone`, the same
     function the chronology itself renders from, so a corrected row cannot come
     back worded differently from the way it will read on the next page load.
+
+    ``evidence_form`` is the third thing this region can hold: the `+ Lisa fail`
+    picker, which a position did not have at all until QA-021 — files could only
+    arrive with the capture, so a position paper that turned up a week later had
+    nowhere on the file to go. It is a separate argument rather than a mode flag
+    for the reason `_development_row` gives: the two forms are two acts, and a
+    single «the row is in edit mode» is the shape in which somebody later gives
+    the correction an upload field. Only one is ever passed. A successful
+    capture does not come back through here — the file it added is rendered by
+    the chronology around this element, so that answer is the whole column.
     """
     return render(
         request,
@@ -6420,6 +6618,7 @@ def _external_position_row(
             "position": position,
             "milestone": external_position_milestone(position),
             "external_position_edit_form": form,
+            "external_position_evidence_form": evidence_form,
             "external_position_edit_error": error,
             "external_position_conflict_milestone": (
                 external_position_milestone(conflict) if conflict is not None else None
@@ -6493,8 +6692,12 @@ def _record_external_position(
             matter=matter,
             author=request.user,
             # `None` where neither half of the picker was answered. The form has
-            # already refused that on `+ Teiste arvamus`, so reaching here with
-            # nothing means received feedback carrying an `Allikas` instead.
+            # already refused that on `+ Teiste arvamus` — a published opinion
+            # with no author is an anonymous claim — so reaching here with
+            # nothing is received feedback that names nobody, which since
+            # docs/adr/0101 is a record rather than a gap: a lawyer writing down
+            # what a member said on the telephone has neither a catalogue row
+            # nor a collection to name (OWNER-01).
             organisation=(
                 resolve_addressee(chosen=chosen, typed_name=typed)
                 if (chosen is not None or typed)
@@ -6680,7 +6883,11 @@ def add_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["GET", "POST"])
 def update_external_position_view(request: HttpRequest, pk: Any, position_id: Any) -> HttpResponse:
-    """`Muuda` on a `Väline seisukoht`. There is no delete; a wrong row is corrected.
+    """`Muuda` on a `Väline seisukoht` — a wrong value on a position really held.
+
+    A position this file should never have carried is `Kustuta`, which is a
+    different act with its own route and its own audit event
+    (`remove_record_view`).
 
     GET opens the form in the chronology row; POST saves it. One route, because
     they are one interaction and the second is only reachable from the first —
@@ -6732,6 +6939,15 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
             # the form otherwise, and passing a value the record's provenance
             # forbids is what `_external_position_authorship` refuses.
             source_label=form.cleaned_data.get("source_label") or "",
+            # `Liige`, on the same terms. `None` where the form does not render
+            # the box, so a correction through that shape cannot clear a mark;
+            # `bool(...)` where it does, because an unticked box is a decision
+            # and not an absence (QA-014).
+            source_is_member=(
+                bool(form.cleaned_data.get("source_is_member"))
+                if "source_is_member" in form.fields
+                else None
+            ),
             # **Not asked and not moved.** `None` is the sentinel for «this form
             # did not render the control», which is what keeps a `LEGACY` row's
             # unspecified provenance through a correction and what stops one press
@@ -6983,26 +7199,141 @@ def _timeline_steps_form(
 ) -> TimelineStepsForm:
     """The `Muuda kulgu` panel, opened on what this file actually says.
 
-    The pattern, the stored rows and the phases a `Menetluse areng` already
-    dates, all read once and handed to the form — so the panel offers this file's
-    own procedure and never a box over a day the record already proves.
+    The pattern, the stored rows, which phase the file is standing on and which
+    phases carry a canonical dated fact — read once and handed to the form, so
+    the panel offers this file's own procedure and refuses the two removals
+    that would leave the rail saying something untrue.
+
+    **A date box on every phase now.** The panel used to withhold one wherever a
+    `Märge` already dated the phase, because the rail borrowed that date. It no
+    longer does — the rail is the roadmap and `Teema käik` is the history — so
+    withholding the box would leave a phase with no date and no way to give it
+    one (QA-006, QA-007).
     """
     from app.matters.models import MatterTimelineStep
-    from app.workflow.dates import format_at_precision
 
     phases = legal_process.phase_context(matter=matter)
     rows = {
         row.phase_key: row
         for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(request.user)
     }
-    recorded = {}
-    if phases.pattern is not None:
-        keys = frozenset(node.phase_key for node in phases.pattern.nodes)
-        for key, (when, precision) in legal_process.recorded_phase_dates(
-            matter=matter, user=request.user, phase_keys=keys
-        ).items():
-            recorded[key] = format_at_precision(when, precision)
-    return TimelineStepsForm(data, phases=phases, rows=rows, recorded=recorded)
+    return TimelineStepsForm(
+        data,
+        phases=phases,
+        rows=rows,
+        current_phase=phases.current_phase,
+        anchored=legal_process.anchored_phase_keys(matter=matter, user=request.user),
+        revision=timeline_steps_revision_token(matter),
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def remove_record_view(request: HttpRequest, pk: Any, kind: str, record_id: Any) -> HttpResponse:
+    """`Kustuta` on a user-created block of `Teema käik`.
+
+    One route for all eight removable families, because the act is one act: two
+    columns are set on the canonical record, one audit event is written in that
+    family's own words, and the projection follows. What differs between them —
+    the model, the event, the word the confirmation uses — is `removal.REMOVABLE`
+    rather than eight copies of this function (OWNER-04, docs/adr/0102).
+
+    **POST only, and the record is fetched through its own `visible_to`.** A
+    reader never reaches here at all (`business_write_required`), and a writer
+    who may open the Matter but not the child gets the same 404 a guessed
+    identifier gets — the rule `_development_for_correction` states, for the
+    reason it states it: a distinguishable refusal is how somebody learns that
+    a restricted row is there.
+
+    **No GET, and therefore no confirmation page.** The confirmation is a
+    native disclosure in the row — it names what is going and offers `Loobu` —
+    so there is nothing for a GET to render and no second address a stale tab
+    can sit on (`templates/matters/partials/row_remove.html`).
+
+    **The whole Teema view is re-rendered, header included.** Taking a row off
+    the file can change the rail, the phase a later row is grouped under, the
+    `Järgmiseks` beside it and — for an `Oluline tähtaeg` — the deadline the
+    header states. Swapping only the row would leave four surfaces describing a
+    record that is not there.
+    """
+    matter = get_visible_matter(request, pk)
+    try:
+        removable = kind_for(kind)
+    except DomainError:
+        raise Http404 from None
+    # Through the child's own chokepoint, so a restricted row inside a Matter
+    # this writer may see is indistinguishable from one that does not exist.
+    record = get_object_or_404(
+        removable.rows.visible_to(request.user).filter(matter=matter), pk=record_id
+    )
+
+    try:
+        remove_matter_record(
+            matter_id=matter.pk,
+            kind_key=kind,
+            record_id=record.pk,
+            actor=request.user,
+            expected_revision=request.POST.get("revision") or None,
+        )
+    except RecordRemovalConflict as conflict:
+        return _removal_refusal(request, matter, str(conflict), status=409)
+    except DomainError as error:
+        # A closed Matter lands here, and so does any refusal the service makes.
+        return _removal_refusal(request, matter, str(error), status=400)
+
+    matter.refresh_from_db()
+    return _render_overview(request, matter, header_out_of_band=True)
+
+
+def _removal_refusal(
+    request: HttpRequest, matter: Matter, error: str, *, status: int
+) -> HttpResponse:
+    """Say why the row is still there, on the page the row is on.
+
+    The refusal reuses the workspace's own unowned-error line rather than
+    inventing a banner for this one act: it is the slot that exists for exactly
+    this — a server refusal no open panel owns — and the disclosure the button
+    sat in has closed by the time the answer arrives.
+    """
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context["composer_error"] = error
+    return render(request, "matters/partials/overview.html", context, status=status)
+
+
+def _timeline_steps_refusal(
+    request: HttpRequest,
+    matter: Matter,
+    form: Any,
+    *,
+    status: int,
+    error: str = "",
+) -> HttpResponse:
+    """Put a refused `Muuda kulgu` back where the person is looking.
+
+    **The success path and the refusal path have different targets, and that is
+    not a detail.** A saved panel re-renders the whole Teema view, because
+    hiding a phase changes the rail and dating one changes what the rail says
+    about every other — so the form declares `hx-target="#teema-vaade"`. A
+    *refusal* re-renders the panel, and swapping a panel into that target
+    replaces the entire page with a bare form: the rail, the chronology and the
+    launcher all gone, and the only way back a manual reload.
+
+    `HX-Retarget` says so per response rather than per form, which is the only
+    place the distinction exists. Without it the 400 path had been quietly
+    doing the same thing since it was written; the conflict path would have
+    joined it.
+    """
+    response = render(
+        request,
+        "matters/partials/timeline_steps_form.html",
+        {"matter": matter, "timeline_steps_form": form, "timeline_steps_error": error},
+        status=status,
+    )
+    response["HX-Retarget"] = "#menetluse-kulg-muuda"
+    response["HX-Reswap"] = "innerHTML"
+    return response
 
 
 @login_required
@@ -7025,25 +7356,34 @@ def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     form = _timeline_steps_form(request, matter, request.POST)
     if not form.is_valid():
-        return render(
-            request,
-            "matters/partials/timeline_steps_form.html",
-            {"matter": matter, "timeline_steps_form": form},
-            status=400,
-        )
+        return _timeline_steps_refusal(request, matter, form, status=400)
     try:
-        set_timeline_steps(matter=matter, steps=form.steps(), actor=request.user)
-    except DomainError as error:
-        return render(
-            request,
-            "matters/partials/timeline_steps_form.html",
-            {
-                "matter": matter,
-                "timeline_steps_form": form,
-                "timeline_steps_error": str(error),
-            },
-            status=400,
+        set_timeline_steps(
+            matter=matter,
+            steps=form.steps(),
+            actor=request.user,
+            # What the panel was opened on. Checked under the Matter's row lock
+            # inside the service, so two panels open on the same rail cannot
+            # both post the whole set and have the second one win silently
+            # (QA-004, `timeline_steps_revision_token`).
+            expected_revision=form.cleaned_data.get("revision") or None,
         )
+    except TimelineStepsConflict as conflict:
+        # Refused rather than overwritten, and the panel comes back holding
+        # what this person typed: a conflict somebody cannot see their own side
+        # of is a conflict they cannot resolve. 409 rather than 400 — the shape
+        # `matter_edit` uses for the same situation — because nothing about
+        # what they submitted was wrong.
+        #
+        # Caught before `DomainError`, which it subclasses, so neither the
+        # status nor the place is lost to the generic handler below.
+        retry = request.POST.copy()
+        retry["revision"] = timeline_steps_revision_token(matter)
+        form = _timeline_steps_form(request, matter, retry)
+        form.is_valid()
+        return _timeline_steps_refusal(request, matter, form, status=409, error=str(conflict))
+    except DomainError as error:
+        return _timeline_steps_refusal(request, matter, form, status=400, error=str(error))
     return _render_overview(request, matter)
 
 
@@ -7051,7 +7391,10 @@ def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["GET", "POST"])
 def update_development_view(request: HttpRequest, pk: Any, development_id: Any) -> HttpResponse:
-    """`Muuda` on a `Menetluse areng`. There is no delete; a wrong row is corrected.
+    """`Muuda` on a `Menetluse areng` — a wrong value on a step that happened.
+
+    A step that never happened on this file is `Kustuta`, which is a different
+    act with its own route and its own audit event (`remove_record_view`).
 
     GET opens the form in the chronology row; POST saves it. One route, because
     they are one interaction and the second is only reachable from the first —
@@ -7233,6 +7576,264 @@ def add_development_evidence_view(
         )
 
     return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def add_external_position_evidence_view(
+    request: HttpRequest, pk: Any, position_id: Any
+) -> HttpResponse:
+    """`+ Lisa fail` — another paper supporting a position the file already holds.
+
+    The act `add_development_evidence_view` performs, on the other record that
+    carries evidence, and it exists for the reason QA-021 found: the position
+    panel took files only at the moment of capture, and `Muuda` deliberately
+    does not take bytes — so an association that sent its position paper a week
+    after somebody wrote down what it said on the telephone had nowhere on the
+    file to put it.
+
+    GET opens the picker in the chronology row; POST captures what was chosen.
+    One route, because they are one interaction and the second is only reachable
+    from the first. The picker replaces the same region `Muuda` does, so a row
+    cannot be correcting and capturing at once.
+
+    **The answer is the whole column, not the row.** A correction changes words
+    inside the row; an addition puts a *file* under it, and the file list is
+    rendered by the chronology around the row. Coming back with the row alone
+    would answer a successful upload with a row that looks exactly as it did
+    before. A refusal takes the same route through `_workspace_refusal`: a
+    browser will not repopulate a file picker whatever the server sends, so
+    there is nothing to preserve and a stale picker left open would suggest the
+    choice survived.
+
+    Every rule is the service's, taken under the Matter's row lock rather than
+    decided by whether this page drew a button, and the position is resolved
+    through its **own** `visible_to` scope first — so a restricted position
+    inside a Matter this reader may see is indistinguishable from one that does
+    not exist (AUTH-003, `_external_position_for_correction`).
+    """
+    matter = get_visible_matter(request, pk)
+    position = _external_position_for_correction(request, matter, position_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving the picker is a re-read rather than a client-side
+        # hide, exactly as it is for the correction beside it.
+        if request.GET.get(ENGAGEMENT_READ_PARAM) == ENGAGEMENT_READ_VALUE:
+            return _external_position_row(request, matter, position)
+        return _external_position_row(
+            request,
+            matter,
+            position,
+            evidence_form=ExternalPositionEvidenceForm(record=position),
+        )
+
+    form = ExternalPositionEvidenceForm(request.POST, request.FILES, record=position)
+    if not form.is_valid():
+        return _workspace_refusal(
+            request,
+            matter,
+            key="external_position_evidence_form",
+            form=form,
+            # The field's own sentence: this form has exactly one field, and a
+            # bare «parandage vead» over an empty picker says nothing a person
+            # can act on.
+            error=str(next(iter(form.errors.get("attachments", [])), "")),
+        )
+
+    try:
+        workspace.add_external_position_evidence(
+            position=position,
+            author=request.user,
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="external_position_evidence_form", form=form, error=str(error)
+        )
+
+    return _render_overview(request, matter)
+
+
+def _sent_opinion_for_correction(request: HttpRequest, matter: Matter, submission_id: Any) -> Any:
+    """The recorded send this request may correct, or a 404.
+
+    Scoped through the submission's own `visible_to` and not fetched by id off
+    the Matter: a `Submission` may carry a stricter visibility override than its
+    parent, and reading it any other way would bypass that. Restricted to the
+    rows the chronology actually draws — `historically_sent()` — so the address
+    of a draft is a 404 rather than a form whose every save the service would
+    refuse (`_external_position_for_correction`, docs/adr/0092 §3).
+    """
+    from app.submissions.models import Submission
+
+    return get_object_or_404(
+        Submission.objects.visible_to(request.user)
+        .historically_sent()
+        .filter(matter=matter)
+        .select_related("matter"),
+        pk=submission_id,
+    )
+
+
+def _sent_opinion_row(
+    request: HttpRequest,
+    matter: Matter,
+    submission: Any,
+    *,
+    form: SentOpinionEditForm | None = None,
+    error: str = "",
+    conflict: Any = None,
+    status: int = 200,
+) -> HttpResponse:
+    """The corrected opinion back in place, or the form that could not save.
+
+    One renderer for both, because they swap the same element — the shape
+    `_external_position_row` and `_development_row` already use, and the reason
+    a correction cannot move the row or turn into a second line in the
+    chronology.
+
+    The milestone is rebuilt through `submission_milestone`, the same function
+    the chronology itself renders from, so a corrected row cannot come back
+    worded differently from the way it will read on the next page load.
+    """
+    from app.matters.timeline import submission_milestone
+    from app.submissions.services import addressees_of
+
+    def milestone_of(record: Any) -> Any:
+        return submission_milestone(
+            record, [organisation.name for organisation in addressees_of(record)]
+        )
+
+    return render(
+        request,
+        "matters/partials/submission_row.html",
+        {
+            "matter": matter,
+            "submission": submission,
+            "milestone": milestone_of(submission),
+            "sent_opinion_edit_form": form,
+            "sent_opinion_edit_error": error,
+            "sent_opinion_conflict_milestone": (
+                milestone_of(conflict) if conflict is not None else None
+            ),
+            "sent_opinion_read_query": ENGAGEMENT_READ_QUERY,
+            # `can_write_business_content` is not set here: it is a context
+            # processor, so every render with a request already carries it —
+            # and the three sibling row renderers rely on the same thing
+            # (`app/core/context_processors.py`).
+        },
+        status=status,
+    )
+
+
+def _sent_opinion_edit_form(
+    request: HttpRequest, submission: Any, data: Any = None
+) -> SentOpinionEditForm:
+    """The correction form for one recorded send, opened on what the record says.
+
+    The organisation catalogue is the field's **queryset**, which is what
+    validates a posted id — so a crafted POST naming a body the catalogue does
+    not hold is refused by the field itself, before the service is reached.
+    """
+    from app.organisations.models import Organisation
+    from app.submissions.services import addressees_of, sent_opinion_revision
+
+    if data is not None:
+        return SentOpinionEditForm(
+            data, organisations=Organisation.objects.all(), record=submission
+        )
+    return SentOpinionEditForm(
+        organisations=Organisation.objects.all(),
+        record=submission,
+        initial={
+            "sent_on": timezone.localtime(submission.sent_at).date(),
+            "kind": submission.kind,
+            "summary": submission.summary,
+            "recipients": addressees_of(submission),
+            "revision": sent_opinion_revision(submission),
+        },
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) -> HttpResponse:
+    """`Muuda` on a recorded `Koja arvamus` — the row that had no correction.
+
+    GET opens the form in the chronology row; POST saves it. One route, because
+    they are one interaction and the second is only reachable from the first —
+    the shape `update_external_position_view` and `update_development_view`
+    already use.
+
+    **It corrects what the file says about a send, never the send.** The
+    evidence, the status and `sent_by` are not on the form and cannot be
+    reached: a letter whose text was wrong is a new letter, and un-sending or
+    withdrawing are acts with their own services and their own meaning
+    (`correct_sent_opinion`, docs/adr/0084 §8).
+
+    **No open-Matter requirement**, which is the existing contract rather than
+    an exception invented here: `withdraw_submission` corrects a recorded send
+    on a closed file, and `SubmissionMetadataForm` edits an opinion's own
+    metadata on one. Every rule is still the service's, taken under the
+    Matter's lock.
+    """
+    from app.submissions.enums import SentAtPrecision
+    from app.submissions.services import SentOpinionConflict, correct_sent_opinion
+    from app.submissions.views import as_midnight
+
+    matter = get_visible_matter(request, pk)
+    submission = _sent_opinion_for_correction(request, matter, submission_id)
+
+    if request.method == "GET":
+        # `Tühista`. Leaving edit mode is a re-read rather than a client-side
+        # hide: the boxes may be holding values that were never saved.
+        if request.GET.get(ENGAGEMENT_READ_PARAM) == ENGAGEMENT_READ_VALUE:
+            return _sent_opinion_row(request, matter, submission)
+        return _sent_opinion_row(
+            request, matter, submission, form=_sent_opinion_edit_form(request, submission)
+        )
+
+    form = _sent_opinion_edit_form(request, submission, request.POST)
+    if not form.is_valid():
+        return _sent_opinion_row(request, matter, submission, form=form, status=400)
+
+    try:
+        correct_sent_opinion(
+            submission=submission,
+            # A day, stored as aware midnight with `DATE` precision, so the UI
+            # never reads the anchor back as «00:00» — the rule
+            # `RegisterSentOpinionForm` established for the same field.
+            sent_at=as_midnight(form.cleaned_data["sent_on"]),
+            sent_at_precision=SentAtPrecision.DATE,
+            summary=form.cleaned_data.get("summary") or "",
+            kind=form.cleaned_data["kind"],
+            addressees=list(form.cleaned_data["recipients"]),
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or "",
+        )
+    except SentOpinionConflict as conflict:
+        # 409, and nothing was written. The form stays open holding this
+        # person's values and the version that beat them arrives beside it to
+        # read; neither is chosen for them, and the hidden token is not
+        # advanced.
+        return _sent_opinion_row(
+            request,
+            matter,
+            submission,
+            form=form,
+            error=str(conflict),
+            conflict=conflict.current,
+            status=409,
+        )
+    except DomainError as error:
+        return _sent_opinion_row(
+            request, matter, submission, form=form, error=str(error), status=400
+        )
+
+    submission.refresh_from_db()
+    return _sent_opinion_row(request, matter, submission)
 
 
 @login_required

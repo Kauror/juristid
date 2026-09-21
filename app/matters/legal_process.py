@@ -80,7 +80,7 @@ would leave a reader working out whether those are the same thing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
@@ -97,7 +97,6 @@ from app.matters.process_phases import (
     pattern_for,
 )
 from app.matters.process_timeline import PHASE_EFFECTIVE, PHASE_TRANSPOSITION
-from app.workflow.dates import format_at_precision
 from app.workflow.enums import Disposition
 
 # ---------------------------------------------------------------------------
@@ -556,11 +555,21 @@ class RailStep:
     display_date: str = ""
     sort_on: date | None = None
     #: Secondary information, read as the item's `title`: a closure's
-    #: `Disposition`, a commencement's «mis jõustub». It is what tells two
-    #: `Jõustumine` columns apart, and it is not a second visible line because
-    #: «Vastus esitatud ja järeltegevus tehtud» under a 150px column wraps to
-    #: three and pushes its neighbours' dates out of alignment.
+    #: `Disposition`. Short and supplementary; a 150px column cannot carry a
+    #: sentence without pushing its neighbours' dates out of alignment.
     detail: str = ""
+    #: The canonical facts folded onto a phase node, as lines a reader can see.
+    #:
+    #: A commencement used to be drawn as a *second* node beside the
+    #: `Jõustumine` phase, so the rail read `Jõustumine · Jõustumine 1.1.2027`
+    #: — two adjacent columns with one name, both saying `Tulevikus` — and on a
+    #: file with two commencement dates it read three times. The description
+    #: that told them apart lived only in a `title` tooltip, which a touch
+    #: screen, a printout and a screen reader all fail to deliver (QA-005).
+    #:
+    #: Folded onto the phase they belong to, they are one column with its dates
+    #: under it, and the text is text (docs/adr/0100 §3).
+    notes: tuple[str, ...] = ()
     #: How much of the connector running from this item to the next is behind
     #: us. A milestone measures it against today; a phase has no measurement
     #: because it is not a date, and takes what its state implies.
@@ -591,6 +600,40 @@ def _step_rows(*, matter: Matter, user: Any) -> dict[str, Any]:
         row.phase_key: row
         for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(user)
     }
+
+
+def anchored_phase_keys(*, matter: Matter, user: Any) -> frozenset[str]:
+    """Phases this file has pinned a canonical dated fact to.
+
+    A commencement is the `Jõustumine` part of the procedure and a transposition
+    deadline is the `Ülevõtmine` part — the same two kinds `_MILESTONE_PHASE`
+    names, read from the same place, so the rail and the panel cannot disagree
+    about which phases carry one.
+
+    Hiding such a phase used to be allowed, and the fact did not go with it: the
+    commencement became an unanchored point and re-sorted to wherever its date
+    fell among the remaining columns, so `Jõustumine 1.1.2027` drew *before*
+    `Valitsuses` and `Riigikogus` — a rail claiming the act enters into force
+    before the bill reaches government (QA-008). A phase holding a real fact is
+    not an optional roadmap step, so the panel refuses to take it off.
+
+    Scoped through each record's own `visible_to`, like everything else here: a
+    restricted commencement pins nothing for a reader who may not see it.
+    """
+    from app.intelligence.enums import FactStatus, ImportantDateKind
+    from app.intelligence.selectors import matter_intelligence
+
+    facts = matter_intelligence(matter, user)
+    keys: set[str] = set()
+    if any(record.date_value is not None for record in facts.effective_dates):
+        keys.add(PHASE_JOUSTUMINE)
+    if any(
+        record.kind == ImportantDateKind.TRANSPOSITION_DEADLINE
+        and record.status == FactStatus.ACTIVE
+        for record in facts.upcoming_dates
+    ):
+        keys.add(PHASE_ULEVOTMINE)
+    return frozenset(keys)
 
 
 def recorded_phase_dates(
@@ -669,21 +712,29 @@ def matter_rail(
     steps: list[RailStep] = []
 
     if rail is not None:
-        keys = frozenset(node.key for node in rail.nodes)
-        recorded = recorded_phase_dates(matter=matter, user=user, phase_keys=keys)
         for node in rail.nodes:
             row = rows.get(node.key)
             if row is not None and row.hidden:
                 continue
-            # **What the phase happened on, before what somebody expects.** A
-            # recorded step is a fact and an expectation is a plan; where the
-            # file has both, the fact wins and the plan is simply no longer
-            # interesting.
+            # **A phase node is dated by the roadmap, and by nothing else.**
+            #
+            # It used to take the date of the *first* recorded step filed under
+            # that phase. On a file that had gone out for consultation twice,
+            # the node then read `Kooskõlastusring 2.4.2026` an inch above a
+            # `Teema käik` whose current section said `alates 20.08.2026` — two
+            # answers to «since when is this file on the coordination round» on
+            # one screen (QA-007). Worse, borrowing history in pattern order
+            # made the dates non-monotonic: 5.3 → 2.4 → 3.6 → 17.6 read
+            # left-to-right across a file that had gone forward and come back,
+            # and the rail cannot draw a loop (QA-006).
+            #
+            # So the rail stops trying to answer historical repetition. That is
+            # `Teema käik`'s question and `Teema käik` answers it properly, with
+            # a section per occurrence. What this node carries is what somebody
+            # deliberately put on the roadmap: an explicit `MatterTimelineStep`
+            # date, and otherwise nothing.
             when, display = None, ""
-            if node.key in recorded:
-                when, precision = recorded[node.key]
-                display = format_at_precision(when, precision)
-            elif row is not None and row.occurs_on is not None:
+            if row is not None and row.occurs_on is not None:
                 when, display = row.occurs_on, row.display_date
             steps.append(
                 RailStep(
@@ -704,6 +755,20 @@ def matter_rail(
 
     today = timezone.localdate()
     for milestone in sorted(milestones, key=lambda one: one.sort_on):
+        # **A fact whose phase is drawn is folded onto that phase, not beside
+        # it.** A commencement used to be inserted as its own column next to
+        # `Jõustumine`, so the rail read `Jõustumine · Jõustumine 1.1.2027` —
+        # two adjacent columns with the same name and the same `Tulevikus`
+        # under them — and a file with two commencement dates drew three. The
+        # sentence telling them apart was in a `title` tooltip, which a touch
+        # screen, a printout and a screen reader all fail to deliver (QA-005).
+        #
+        # Folded, it is one column carrying its own dates as visible lines.
+        # Hiding the phase cannot strand the fact either, because
+        # `anchored_phase_keys` is what stops the phase being hidden at all.
+        folded = _fold_into_phase(steps, milestone)
+        if folded:
+            continue
         step = RailStep(
             key=f"milestone:{milestone.label}:{milestone.sort_on.isoformat()}",
             label=milestone.label,
@@ -782,6 +847,35 @@ _MILESTONE_PHASE: dict[int, str] = {
 }
 
 
+def _fold_into_phase(steps: list[RailStep], milestone: Any) -> bool:
+    """Put a dated fact onto the phase node it belongs to, if that node is drawn.
+
+    Returns whether it was folded. A kind that names no phase, or whose phase
+    this pattern does not have — an `Ülevõtmise tähtaeg` on an `EL määrus` —
+    goes on reading as a point of its own, which is what an unanchored point
+    is.
+
+    The node keeps the *earliest* fact as its own date, because that is when
+    the phase begins to be true, and lists every one of them as a line beneath.
+    Each line carries its description where there is one: «põhiosa 27.9.2027»
+    tells a reader what a bare second date cannot.
+    """
+    index = _phase_slot(steps, milestone)
+    if index is None:
+        return False
+    node = steps[index]
+    line = (
+        f"{milestone.detail} {milestone.display}".strip() if milestone.detail else milestone.display
+    )
+    steps[index] = replace(
+        node,
+        display_date=node.display_date or milestone.display,
+        sort_on=node.sort_on or milestone.sort_on,
+        notes=(*node.notes, line),
+    )
+    return True
+
+
 def _phase_slot(steps: list[RailStep], milestone: Any) -> int | None:
     """Where this milestone's own phase is drawn, or ``None`` for no phase.
 
@@ -845,6 +939,7 @@ __all__ = [
     "PhaseContext",
     "ProcessNode",
     "RailStep",
+    "anchored_phase_keys",
     "legal_process_rail",
     "matter_rail",
     "phase_context",

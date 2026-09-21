@@ -366,6 +366,14 @@ class ChronologyFile:
 
     label: str
     url: str
+    #: What tells this file from another with the same name under the same row.
+    #:
+    #: Empty on every file whose name is unique where it is printed, which is
+    #: nearly all of them. Two different papers both called `lisa.pdf` attached
+    #: to one step used to render as `lisa.pdf lisa.pdf` with nothing between
+    #: them, while the stored bytes were correct and distinct all along —
+    #: display ambiguity, fixed in the display (QA-016, `_disambiguate_files`).
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -495,6 +503,57 @@ class TimelineItem:
         comparison somebody renames a model out from under.
         """
         return isinstance(self.record, MatterEngagement)
+
+    @property
+    def removable(self) -> str:
+        """The URL key for `Kustuta` on this row, or `""` where there is none.
+
+        A named property rather than eight `isinstance` branches in the
+        template, and resolved through `app.matters.removal`'s own table rather
+        than through a second list here — so the families a lawyer may take off
+        the file are written down exactly once, beside the models they name
+        (OWNER-04, docs/adr/0102).
+
+        **A grouped or system row is never removable through this.** Those are
+        projected from `ChangeEvent`s, which are append-only by database
+        trigger; there is no canonical business record under them to take off
+        the file, and `Teema loodud` is not a mistake anybody made. An `Entry`
+        row is removable and carries its record in `entry` rather than in
+        `record`, which is why both are consulted.
+        """
+        from app.matters.removal import kind_of
+
+        record = self.record if self.record is not None else self.entry
+        if record is None:
+            return ""
+        kind = kind_of(record)
+        return kind.key if kind is not None else ""
+
+    @property
+    def removable_label(self) -> str:
+        """What kind of record this is, nominative, for the button's own name."""
+        from app.matters.removal import kind_of
+
+        record = self.record if self.record is not None else self.entry
+        kind = kind_of(record) if record is not None else None
+        return kind.label if kind is not None else ""
+
+    @property
+    def removable_genitive(self) -> str:
+        """The same word in the case the confirmation sentence needs."""
+        from app.matters.removal import kind_of
+
+        record = self.record if self.record is not None else self.entry
+        kind = kind_of(record) if record is not None else None
+        return kind.genitive if kind is not None else ""
+
+    @property
+    def removal_revision(self) -> str:
+        """The version of the record the drawn button is holding."""
+        from app.matters.removal import record_revision
+
+        record = self.record if self.record is not None else self.entry
+        return record_revision(record) if record is not None else ""
 
     @property
     def marker(self) -> str:
@@ -986,6 +1045,19 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     # (docs/adr/0091 §3.3, §3.4).
     author = position.author_label
     headline = f"{position.kind_label}: {author}" if author else position.kind_label
+    # **`Liige` is stated, because a fact nobody can see is a fact nobody can
+    # check.** The box has always been saved and has never been shown: a lawyer
+    # who ticked it had no way to confirm it, and no way to notice one ticked by
+    # mistake. Appended rather than given a line — «whose» is one question, and
+    # «a member's» is the rest of that answer (QA-014).
+    #
+    # Stated on an unattributed row too, and especially there: since
+    # docs/adr/0101 a received position may name nobody, and on such a row the
+    # mark is the *only* thing known about the source. «Meile saadetud
+    # tagasiside · Liige» — no empty punctuation where the author would have
+    # been, because `headline` above already dropped the separator with it.
+    if position.source_is_member:
+        headline = f"{headline} · Liige"
     return ChronologyMilestone(
         what=headline,
         # The date as it was actually known, or the words «kuupäev teadmata» —
@@ -1077,6 +1149,11 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
 #: «when did Koda ask», «when did they say it», «when did the procedure move»
 #: and «when was this won».
 WORK_VICTORY_DATE_UNKNOWN = "Kuupäev teadmata"
+
+#: What a chronology row for a deadline that has not arrived yet says about
+#: itself. `Eesolev` is the department page's own word for the same thing, so
+#: the two surfaces name it alike rather than inventing a second vocabulary.
+UPCOMING_DATE_LABEL = "Eesolev tähtaeg"
 
 #: What the chronology calls a confirmed advocacy win.
 WORK_VICTORY_MILESTONE = "Töövõit"
@@ -1287,6 +1364,30 @@ def projected_milestones(
             )
             continue
         if not record.has_passed(day):
+            # **An expectation still ahead reads here too, and says so.**
+            #
+            # It used not to. `Teema käik` projects what has happened, the
+            # process strip had dropped `MatterImportantDate` altogether, and
+            # `Minu asjad` shows a bounded horizon — so a deadline a lawyer
+            # recorded through `+ Märge → Oluline tähtaeg` saved with a 200,
+            # closed its panel, and then appeared on the Matter nowhere at all.
+            # A date beyond the horizon appeared nowhere in the working UI, and
+            # the only proof the save had worked was the technical audit log
+            # (QA-001).
+            #
+            # It is marked rather than merged into the record of what happened:
+            # `Eesolev tähtaeg` is the department's own word for a deadline
+            # ahead, and the row states it so the chronology is not read as
+            # claiming this already occurred.
+            add(
+                record,
+                _end_of_day(record.period_end),
+                ChronologyMilestone(
+                    what=record.title,
+                    display_date=record.display_date,
+                    sub=UPCOMING_DATE_LABEL,
+                ),
+            )
             continue
         add(
             record,
@@ -1861,7 +1962,9 @@ def matter_timeline(
         ]
     return (
         TimelinePage(
-            _with_linked_files(_with_files(_with_next_steps(page, user), user), user),
+            _disambiguate_files(
+                _with_linked_files(_with_files(_with_next_steps(page, user), user), user)
+            ),
             history=history,
         ),
         has_more,
@@ -1912,6 +2015,7 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
         version.pk: ChronologyFile(
             label=version.original_filename,
             url=reverse("documents:download", kwargs={"pk": version.pk}),
+            detail=_file_size(version),
         )
         for version in DocumentVersion.objects.filter(
             pk__in=wanted, document__in=Document.objects.visible_to(user)
@@ -1924,6 +2028,52 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     for item in page:
         files = tuple(found[key] for key in versions_of(item) if key in found)
         resolved.append(replace(item, files=files) if files else item)
+    return resolved
+
+
+def _file_size(version: Any) -> str:
+    """One file's size, as a person reads it. Empty where there is none."""
+    from app.documents.pending import human_size
+
+    return human_size(version.size_bytes) if version.size_bytes else ""
+
+
+def _disambiguate_files(page: list[TimelineItem]) -> list[TimelineItem]:
+    """Keep the size only where two files under one row share a name.
+
+    `detail` is carried on every file because the size is free where the row is
+    built, and printed on almost none: a size beside every attachment is a
+    technical fact on a line somebody is reading for a document's name, which
+    is the reason the `Dokumendid` table dropped its own `Maht` column.
+
+    It earns its place exactly when the name stops being an answer — two
+    different papers both called `lisa.pdf` under one step, which rendered as
+    `lisa.pdf lisa.pdf` with nothing between them (QA-016).
+
+    An ordinal is the last resort, for two files of the same name *and* the same
+    size: it says nothing about a file and is worth printing only when the
+    alternative is two identical links.
+    """
+    resolved = []
+    for item in page:
+        names = [file.label for file in item.files]
+        if len(set(names)) == len(names):
+            resolved.append(
+                replace(item, files=tuple(replace(file, detail="") for file in item.files))
+                if any(file.detail for file in item.files)
+                else item
+            )
+            continue
+        sizes = [file.detail for file in item.files]
+        files = []
+        for index, file in enumerate(item.files, start=1):
+            if names.count(file.label) == 1:
+                files.append(replace(file, detail=""))
+            elif file.detail and sizes.count(file.detail) == 1:
+                files.append(file)
+            else:
+                files.append(replace(file, detail=f"{index}."))
+        resolved.append(replace(item, files=tuple(files)))
     return resolved
 
 
@@ -2070,6 +2220,7 @@ def _with_linked_files(page: list[TimelineItem], user: Any) -> list[TimelineItem
             ChronologyFile(
                 label=version.original_filename,
                 url=reverse("documents:download", kwargs={"pk": version.pk}),
+                detail=_file_size(version),
             )
         )
     if not found:

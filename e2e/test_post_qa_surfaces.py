@@ -654,12 +654,13 @@ def test_the_confirmation_is_a_page_that_names_the_teema(page, base_url, size):
     expect(page.get_by_role("link", name="Loobu")).to_be_visible()
     no_horizontal_overflow(page)
 
-    # And `Loobu` really is the way back, with the record untouched.
+    # And `Loobu` really is the way back — to the Teema, with the record
+    # untouched. It used to land on `Muuda teemat`, which put a reader who had
+    # just declined to delete anything into a form they never asked for
+    # (QA-017).
     page.get_by_role("link", name="Loobu").click()
     page.wait_for_load_state("networkidle")
-    assert page.url.rstrip("/").endswith("/muuda")
-    page.goto(detail)
-    page.wait_for_load_state("networkidle")
+    assert page.url.rstrip("/") == detail.rstrip("/"), page.url
     expect(page.locator("#teema-pais")).to_contain_text(title)
 
 
@@ -670,6 +671,12 @@ def test_deleting_a_teema_removes_it_from_the_register(page, base_url):
     depends on that one surviving, and a browser suite that deleted a row other
     scenarios read would fail somewhere else entirely — which is the worst
     shape a failure can take in a suite that shares one world.
+
+    **Half of QA-017 was disproved before it was fixed.** The finding reported
+    the delete as landing on the register «without feedback». It did not: this
+    test's own `Teema kustutati.` assertion is on `a46fa5a` unchanged, and
+    running it against that revision passes. The half that was true was
+    `Loobu`, and only that moved — the test above reads its new destination.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size(VIEWPORTS["wide"])

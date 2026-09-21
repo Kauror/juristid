@@ -163,6 +163,20 @@ record, not professional chronology (master specification 16.5).
             matters/partials/development_row.html).
           {% endcomment %}
           {% include "matters/partials/development_row.html" with development=item.record milestone=item.milestone matter=matter development_edit_form=None %}
+        {% elif item.submission %}
+          {% comment %}
+            A sent `Koja arvamus` is the fourth milestone a person can correct
+            in place. It rendered through the generic block below and had no
+            correction route at all until QA-023 — the one chronology row
+            without one, on the record where a wrong date or recipient matters
+            most.
+
+            The branch is chosen on `item.submission`, the typed property,
+            rather than on a string comparison against a class name: a rename
+            would silently offer `Muuda` on none of these rows
+            (matters/partials/submission_row.html).
+          {% endcomment %}
+          {% include "matters/partials/submission_row.html" with submission=item.record milestone=item.milestone matter=matter sent_opinion_edit_form=None %}
         {% else %}
           <p class="uxtl__ms">
             <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
@@ -285,8 +299,44 @@ record, not professional chronology (master specification 16.5).
           (app/matters/timeline.py `_with_linked_files`, brief §25).
         {% endcomment %}
         {% for file in item.files %}
-          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}</a>
+          {% comment %}
+            `file.detail` is set on nothing whose name is unique under this row
+            and carries the size — or, for two files of one name *and* one size,
+            an ordinal — on the ones that are otherwise indistinguishable. Two
+            papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
+            (QA-016, `_disambiguate_files`).
+          {% endcomment %}
+          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+            class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
         {% endfor %}
+        {% comment %}
+          `Kustuta` on the milestone rows that have no correction element of
+          their own: an `Oluline tähtaeg`, a `Jõustumine`, a `Töövõidu kirje`,
+          an `Ülevaade / uudis`. A `Kaasamine`, a `Väline seisukoht` and a
+          `Märge` render through their own swap targets above and carry the
+          same control beside their `Muuda`.
+
+          `item.removable` is the whole condition, and it is empty on every row
+          this act does not apply to — a grouped save, a system transition,
+          `Teema loodud`, a sent `Koja arvamus`. It is resolved from
+          `app/matters/removal.py`'s own table rather than by this template
+          asking what kind of record it is holding, so the families a lawyer
+          may take off the file are written down exactly once (OWNER-04,
+          docs/adr/0102).
+
+          The three kinds that *are* rendered by their own element are excluded
+          here by name. `removable` answers «may this record be taken off the
+          file», which is a fact about the record and true of all eight; where
+          the chip is *drawn* is a fact about this template, and spelling it
+          here keeps the property from having to know which branch rendered its
+          row. Without the exclusion a `Märge` would carry two `Kustuta` chips,
+          one inside its swap target and one outside it.
+        {% endcomment %}
+        {% if item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
+          <div class="uxtl__editactions">
+            {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="" %}
+          </div>
+        {% endif %}
       {% else %}
         {% comment %}
           The meta line is one baseline-aligned row: who, what they did, and
@@ -345,7 +395,15 @@ record, not professional chronology (master specification 16.5).
           (app/matters/timeline.py `_with_files`).
         {% endcomment %}
         {% for file in item.files %}
-          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}</a>
+          {% comment %}
+            `file.detail` is set on nothing whose name is unique under this row
+            and carries the size — or, for two files of one name *and* one size,
+            an ordinal — on the ones that are otherwise indistinguishable. Two
+            papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
+            (QA-016, `_disambiguate_files`).
+          {% endcomment %}
+          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+            class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
         {% endfor %}
       {% endif %}
       {% comment %}

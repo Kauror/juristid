@@ -16,9 +16,15 @@
    * explains itself and the page silently discards the explanation — somebody
    * presses Salvesta and nothing whatsoever happens.
    *
-   * Only 400 and 422. A 404 is the authorization answer this application gives
-   * for a record somebody may not touch, and swapping Django's error page into
-   * a fragment target would be worse than ignoring it.
+   * 409 for the same reason, and it is the one that costs most when dropped.
+   * A stale whole-record save is refused with the surface re-rendered, the
+   * person's own values still in it and the conflict named on it — and a
+   * client that discards that answers a refusal with silence, which reads
+   * exactly like a save that worked (`timeline_steps_view`, QA-004).
+   *
+   * Only 400, 409 and 422. A 404 is the authorization answer this application
+   * gives for a record somebody may not touch, and swapping Django's error
+   * page into a fragment target would be worse than ignoring it.
    *
    * `defer` on both scripts, htmx first, so the global is here.
    */
@@ -26,10 +32,92 @@
     window.htmx.config.responseHandling = [
       { code: "204", swap: false },
       { code: "[23]..", swap: true },
-      { code: "4(00|22)", swap: true, error: true },
+      { code: "4(00|09|22)", swap: true, error: true },
       { code: "[45]..", swap: false, error: true },
     ];
   }
+
+  /* ---- A save must not throw the keyboard back to the top ---------------
+   * Every capture on a Teema is an htmx swap, and a swap destroys the element
+   * that had focus. The browser's answer to that is `document.body`, so a
+   * keyboard user who saved a Märge on a file with thirty rows was returned to
+   * the skip link and had to tab back down through the whole page — after
+   * every single save, on the product's main loop (QA-018).
+   *
+   * One rule, applied where the swap happens, rather than a focus call written
+   * into every form:
+   *
+   *   1. only when focus was actually lost. A swap that left focus inside a
+   *      surviving element is already correct and must not be overridden;
+   *   2. the swapped region's own landing mark where it declares one
+   *      (`data-focus-after-save` — `Lisa teemale`, so the next action is one
+   *      Tab away from where the last one was);
+   *   3. otherwise the swapped element itself, which for a corrected
+   *      chronology row is exactly the row that changed — and nothing at all
+   *      when the swap replaced the element and the page declares no landing
+   *      mark, because guessing would be worse than leaving focus alone.
+   *
+   * `preventScroll`, because the page has not moved and a browser scrolling to
+   * "reveal" an element already on screen is the jump this is meant to avoid.
+   *
+   * A refusal is deliberately untouched: `_workspace_refusal` and its siblings
+   * already put focus on the field that was wrong, which is more specific than
+   * anything this could do.
+   *
+   * `afterSettle` rather than `afterSwap`. On `afterSwap` the replaced node is
+   * still being torn down, and the browser resets focus to `body` *after* the
+   * handler has run — so focusing there is immediately undone and the symptom
+   * looks exactly like no handler at all.
+   *
+   * **Capture phase**, and that is not a detail either. An `outerHTML` swap
+   * replaces the element the event is dispatched on, so by settle time it is
+   * detached and the event has no path to bubble along — a listener on `body`
+   * in the bubble phase never runs. Capture reaches it; measured, not assumed.
+   */
+  document.body.addEventListener("htmx:afterSettle", function (event) {
+    var target = event.detail && event.detail.target;
+    if (!target || !target.querySelector) {
+      return;
+    }
+    /* Focus counts as lost when it is on nothing, on the document, or on an
+     * element the swap has just detached. The last case is the common one and
+     * was missed at first: the browser moves focus to `body` only *after* the
+     * removed node is gone, so at `afterSwap` the old button is often still
+     * `document.activeElement` while no longer being in the document. */
+    var active = document.activeElement;
+    var lost =
+      !active ||
+      active === document.body ||
+      active === document.documentElement ||
+      !document.contains(active);
+    if (!lost) {
+      return;
+    }
+    /* **Search the live document where the swapped element is gone.**
+     *
+     * An `outerHTML` swap replaces the element the event carries, so
+     * `detail.target` is the *old* node: detached, still answering
+     * `querySelector`, and still holding a stale copy of everything inside it.
+     * Focusing something found in there does nothing at all — the symptom is
+     * a handler that demonstrably runs and demonstrably has no effect.
+     */
+    var root = document.contains(target) ? target : document;
+    var landing = root.querySelector("[data-focus-after-save]");
+    if (!landing && root !== document) {
+      landing = root;
+    }
+    if (!landing) {
+      return;
+    }
+    if (!landing.hasAttribute("tabindex")) {
+      landing.setAttribute("tabindex", "-1");
+    }
+    try {
+      landing.focus({ preventScroll: true });
+    } catch (error) {
+      landing.focus();
+    }
+  }, true);
 
   "use strict";
 
@@ -914,6 +1002,37 @@
           trigger.classList.remove("is-active");
         }
       });
+    }
+  });
+
+  /* ---- `Loobu` inside a disclosure ---------------------------------------
+   * The click equivalent of the `Esc` the handler below already answers, for
+   * the one editor where leaving is the *expected* outcome rather than the
+   * exception: a removal confirmation is opened far more often than it is
+   * confirmed, and a reader who opened it to read what it says needs a way out
+   * that is on the screen (AGENTS.md: every keyboard shortcut has an obvious
+   * click equivalent — and this is the click half).
+   *
+   * Delegated and declarative, so a second confirmation anywhere on the
+   * product gets it by writing the attribute rather than by writing script.
+   */
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest) {
+      return;
+    }
+    var button = event.target.closest("[data-close-disclosure]");
+    if (!button) {
+      return;
+    }
+    var holder = button.closest("details");
+    if (!holder) {
+      return;
+    }
+    event.preventDefault();
+    holder.open = false;
+    var trigger = holder.querySelector("summary");
+    if (trigger) {
+      trigger.focus();
     }
   });
 
@@ -1995,6 +2114,81 @@
 
     panel.appendChild(grid);
   }
+
+  /* ---- An implausibly old date says so, and saves anyway ----------------
+   * A `Märge` dated `01.01.1900` saved without comment and rendered as
+   * `Märge: … 1.1.1900`. Future dates *are* refused and malformed ones are
+   * refused cleanly, so the silence on the other end was inconsistent — and a
+   * slipped digit (`2026` → `1026`) wrecks a chronology quietly, because the
+   * row sorts to the far end of the file where nobody looks (QA-015).
+   *
+   * **A warning, never a refusal.** A genuinely historical fact is a thing this
+   * product exists to hold: the register archive goes back to 2011, an
+   * imported row may be older, and a hard cutoff would block exactly the
+   * material the migration is for. The purpose is typo detection.
+   *
+   * **At input time only**, which is what keeps it out of everything the brief
+   * excludes: nothing rendered from the corpus is touched, no stored record is
+   * re-examined, and no ordinary multi-year proceeding comes near the
+   * threshold. A date somebody is typing is the one moment a typo can still be
+   * cheap to fix.
+   *
+   * The threshold is **25 years**, rolling. It sits well outside any Estonian
+   * legislative file a lawyer is working on — those run years, not decades —
+   * and comfortably inside the century a mistyped leading digit lands in.
+   */
+  var IMPLAUSIBLE_YEARS_AGO = 25;
+  var IMPLAUSIBLE_DATE_HINT = "Kuupäev on ebatavaliselt vana. Kontrolli, kas aasta on õige.";
+
+  function ageHintFor(input) {
+    var id = input.id ? input.id + "-vanus" : null;
+    if (!id) {
+      return null;
+    }
+    var hint = document.getElementById(id);
+    if (!hint) {
+      hint = document.createElement("span");
+      hint.id = id;
+      hint.className = "field__hint field__hint--check";
+      hint.setAttribute("role", "status");
+      /* After the control, and after the calendar trigger that wraps it, so the
+         sentence reads under the box rather than between the box and its
+         button. */
+      var wrap = input.closest(".datepicker") || input;
+      if (wrap.parentNode) {
+        wrap.parentNode.insertBefore(hint, wrap.nextSibling);
+      }
+    }
+    return hint;
+  }
+
+  function checkDateAge(input) {
+    var hint = ageHintFor(input);
+    if (!hint) {
+      return;
+    }
+    var parsed = parseEstonian(input.value);
+    var floor = new Date();
+    floor.setFullYear(floor.getFullYear() - IMPLAUSIBLE_YEARS_AGO);
+    if (parsed && parsed < floor) {
+      hint.textContent = IMPLAUSIBLE_DATE_HINT;
+      /* `aria-describedby` rather than `aria-invalid`: the value is accepted,
+         and marking it invalid would tell a screen reader the save will fail. */
+      input.setAttribute("aria-describedby", hint.id);
+    } else {
+      hint.textContent = "";
+      if (input.getAttribute("aria-describedby") === hint.id) {
+        input.removeAttribute("aria-describedby");
+      }
+    }
+  }
+
+  document.addEventListener("input", function (event) {
+    var input = event.target;
+    if (input && input.matches && input.matches("input[data-datepicker]")) {
+      checkDateAge(input);
+    }
+  });
 
   function bindDatePickers(scope) {
     (scope || document).querySelectorAll("input[data-datepicker]").forEach(function (input) {

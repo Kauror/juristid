@@ -21,7 +21,12 @@ from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
-from app.core.models import AppendOnlyModel, BaseModel, VisibilityInheritingModel
+from app.core.models import (
+    AppendOnlyModel,
+    BaseModel,
+    RemovableRecord,
+    VisibilityInheritingModel,
+)
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     DataQualityTier,
@@ -686,7 +691,21 @@ class TagAssignment(BaseModel):
 
 class EntryQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> EntryQuerySet:
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        """The only supported entry point for reading entries.
+
+        Scoped **and** de-removed here rather than at the call sites, for the
+        reason docs/adr/0102 gives: a row a lawyer took off the file must be
+        absent from every list, count, projection and export, and a filter
+        written at a call site is a filter the next call site forgets.
+
+        An `Entry` is the one removable record whose *correction history* is
+        append-only — `EntryRevision` carries a database trigger — which is
+        exactly why removal is a column rather than a `DELETE`. The revisions
+        stay; the row leaves the active file (docs/adr/0096 §4 names the same
+        constraint as a blocker for whole-Matter deletion).
+        """
+        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return scoped.filter(removed_at__isnull=True)
 
     def chronological(self) -> EntryQuerySet:
         """Newest first, with a deterministic tie break.
@@ -699,7 +718,7 @@ class EntryQuerySet(models.QuerySet):
         return self.order_by("-occurred_at", "-created_at", "-id")
 
 
-class Entry(VisibilityInheritingModel):
+class Entry(VisibilityInheritingModel, RemovableRecord):
     """`Sissekanne` — the authored professional chronology.
 
     This is what replaces the OneNote page: a fast, dated, attributable note
@@ -906,11 +925,19 @@ DEVELOPMENT_TITLE_MAX_LENGTH = 500
 
 class MatterEngagementQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterEngagementQuerySet:
-        """The only supported entry point for reading engagements."""
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        """The only supported entry point for reading engagements.
+
+        Scoped **and** de-removed here rather than at the call sites, because
+        removal is a business-visibility decision in exactly the sense
+        authorization is: a row a lawyer took off the file must be absent from
+        every list, count, projection and export, and a filter written at a call
+        site is a filter the next call site forgets (docs/adr/0102).
+        """
+        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return scoped.filter(removed_at__isnull=True)
 
 
-class MatterEngagement(VisibilityInheritingModel):
+class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
     """`Kaasamine` — how Koda asked members and stakeholders for input.
 
     A consultation request published on koda.ee, a mailing sent through whatever
@@ -1362,8 +1389,16 @@ class MatterEngagement(VisibilityInheritingModel):
 
 class MatterWebsiteOverviewQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterWebsiteOverviewQuerySet:
-        """The only supported entry point for reading website overviews."""
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        """The only supported entry point for reading website overviews.
+
+        Scoped **and** de-removed here rather than at the call sites, because
+        removal is a business-visibility decision in exactly the sense
+        authorization is: a row a lawyer took off the file must be absent from
+        every list, count, projection and export, and a filter written at a call
+        site is a filter the next call site forgets (docs/adr/0102).
+        """
+        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return scoped.filter(removed_at__isnull=True)
 
     def planned(self) -> MatterWebsiteOverviewQuerySet:
         return self.filter(status=WebsiteOverviewStatus.PLANNED)
@@ -1372,7 +1407,7 @@ class MatterWebsiteOverviewQuerySet(models.QuerySet):
         return self.filter(status=WebsiteOverviewStatus.PUBLISHED)
 
 
-class MatterWebsiteOverview(VisibilityInheritingModel):
+class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
     """`Ülevaade / uudis` — this Matter, written up somewhere the public can read it.
 
     A lawyer finishing a round of work frequently decides that it should be
@@ -1661,11 +1696,19 @@ class MatterWebsiteOverview(VisibilityInheritingModel):
 
 class MatterExternalPositionQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterExternalPositionQuerySet:
-        """The only supported entry point for reading external positions."""
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        """The only supported entry point for reading external positions.
+
+        Scoped **and** de-removed here rather than at the call sites, because
+        removal is a business-visibility decision in exactly the sense
+        authorization is: a row a lawyer took off the file must be absent from
+        every list, count, projection and export, and a filter written at a call
+        site is a filter the next call site forgets (docs/adr/0102).
+        """
+        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return scoped.filter(removed_at__isnull=True)
 
 
-class MatterExternalPosition(VisibilityInheritingModel):
+class MatterExternalPosition(VisibilityInheritingModel, RemovableRecord):
     """`Väline seisukoht` — what somebody else said about this Matter, on file.
 
     A ministry publishes a press release, an association sends its position
@@ -1745,17 +1788,23 @@ class MatterExternalPosition(VisibilityInheritingModel):
     #: answers `Saatja` and `Adressaat` (docs/adr/0063, docs/adr/0073).
     #:
     #: **Required for a discovered position and optional for received
-    #: feedback**, which is the one asymmetry :attr:`provenance` introduces and
-    #: the whole of docs/adr/0091 §3.3. A ministry's published opinion with no
-    #: author is an anonymous claim on a professional file and stays refused. A
-    #: survey of 234 industrial companies that produced 58 answers has no single
-    #: author, and the two things this column could have been given for it were
-    #: an invented organisation called «234 ettevõtet» or one arbitrary
-    #: respondent standing for the rest — both of which put a fact on the file
-    #: that nobody stated. So the column is nullable and
-    #: `matters_external_position_author_or_label` is what keeps the rule: a
-    #: position must name an organisation, and received feedback may name a
-    #: :attr:`source_label` instead.
+    #: feedback**, which is the one asymmetry :attr:`provenance` introduces
+    #: (docs/adr/0091 §3.3, as relaxed by docs/adr/0101). A ministry's published
+    #: opinion with no author is an anonymous claim on a professional file and
+    #: stays refused.
+    #:
+    #: Received feedback is the other case, and it started out allowing a
+    #: :attr:`source_label` instead — «Liikmete küsitlus» for a survey of 234
+    #: companies that has no single author. Real use showed that was still one
+    #: answer too many: a lawyer writing down what somebody told them on the
+    #: phone has neither a catalogue row nor a name for a collection, and the
+    #: form refusing to save until one of them was invented is what put invented
+    #: names on files. So for `RECEIVED` the record may name nobody, and the
+    #: absence is the truth rather than a gap to fill.
+    #:
+    #: The record still cannot be empty: `EXTERNAL_POSITION_NEEDS_SOURCE` means
+    #: a position, a link or a file is always there. What is optional is *whose*
+    #: it was.
     #:
     #: Nothing about a *named* position is weakened. The ordinary record still
     #: carries the catalogue's own row, `PROTECT` still refuses to lose an
@@ -1992,10 +2041,7 @@ class MatterExternalPosition(VisibilityInheritingModel):
             models.CheckConstraint(
                 condition=(
                     models.Q(organisation__isnull=False)
-                    | (
-                        models.Q(provenance=ExternalPositionProvenance.RECEIVED)
-                        & ~models.Q(source_label="")
-                    )
+                    | models.Q(provenance=ExternalPositionProvenance.RECEIVED)
                 ),
                 name="matters_external_position_author_or_label",
             ),
@@ -2161,11 +2207,19 @@ EXTERNAL_POSITION_LINK_FALLBACK = "Ava seisukoht"
 
 class MatterProceduralDevelopmentQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterProceduralDevelopmentQuerySet:
-        """The only supported entry point for reading procedural developments."""
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        """The only supported entry point for reading procedural developments.
+
+        Scoped **and** de-removed here rather than at the call sites, because
+        removal is a business-visibility decision in exactly the sense
+        authorization is: a row a lawyer took off the file must be absent from
+        every list, count, projection and export, and a filter written at a call
+        site is a filter the next call site forgets (docs/adr/0102).
+        """
+        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return scoped.filter(removed_at__isnull=True)
 
 
-class MatterProceduralDevelopment(VisibilityInheritingModel):
+class MatterProceduralDevelopment(VisibilityInheritingModel, RemovableRecord):
     """`Menetluse areng` — one step the external procedure took.
 
     «Ministeerium saatis eelnõu uue versiooni», «Eelnõu läks

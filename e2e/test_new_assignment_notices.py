@@ -26,7 +26,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, SANDRA, sign_in, sign_out
+from e2e.conftest import MARTIN, SANDRA, sign_in, sign_out, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -152,23 +152,30 @@ def test_an_assigned_matter_appears_opens_and_disappears(page, base_url):
     expect(page.locator(MARKMED)).to_have_count(1)
 
 
-def test_assigning_a_matter_to_yourself_still_notifies_you(page, base_url):
-    """The requirement that makes the acknowledgement endpoint necessary.
+def test_assigning_a_matter_to_yourself_notifies_nobody(page, base_url):
+    """**Reversed by QA-022**, which this test used to assert the other way.
 
-    Saving the form lands Martin *inside* the Matter he just filed. If ordinary
-    Matter viewing counted as having seen the notice, this block would already
-    be gone by the time he reached Minu asjad — and it must not be.
+    Filing a Teema and naming yourself is the commonest act in the product, and
+    the notice it wrote told a lawyer something they had just done. A block
+    that is mostly one's own filing is a block nobody reads, so the hand-over
+    it exists to announce stops being visible.
+
+    `actor == owner` on the actor's own save now writes nothing. Read in a
+    browser because the suppression has to hold for the real save path — the
+    `Uus teema` form, posted by the person who will own the result.
     """
-    title = "Brauserikatse: uus asi iseendale"
+    title = unique_title("Brauserikatse: uus asi iseendale")
 
     sign_in(page, base_url, MARTIN)
+    # Nothing of Martin's is waiting, so the absence below is this save's.
+    _clear_the_block(page, base_url)
     _assign_new_matter(page, base_url, title, MARTIN.short_name)
 
-    # He is on the Matter page right now, having just rendered it.
     page.goto(f"{base_url}{MY_WORK}")
     page.wait_for_load_state("networkidle")
 
-    expect(_block(page)).to_have_count(1)
-    expect(_block(page).get_by_role("button", name=title)).to_be_visible()
-
-    _clear_the_block(page, base_url)
+    expect(_block(page)).to_have_count(0)
+    # The rail is still a rail: nothing was reserved for the absent block. That
+    # the save itself happened is settled by `_assign_new_matter`, which does
+    # not return until the browser is standing on the new Teema.
+    expect(page.locator(MARKMED)).to_have_count(1)

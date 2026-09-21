@@ -136,7 +136,18 @@ SHARED_FACTS = (
 )
 
 CREATE_ONLY = {"notes", "uploads", "suggestion_state"}
-EDIT_ONLY: set[str] = set()
+#: `revision` is the version of the record the correction form was filled from.
+#:
+#: It is a field on `Muuda teemat` and not on `Uus teema` because there is
+#: nothing to be stale about before the record exists: the first form creates,
+#: the second overwrites. Without it a second tab posted every field it held
+#: and silently reverted whatever had been saved meanwhile — an ownership
+#: handover among them, with nothing in either tab saying so, and one lawyer
+#: with the file open twice is enough (QA-002).
+#:
+#: It is not a question either form asks a person, which is what §1's contract
+#: is about; it is a hidden token the page carries.
+EDIT_ONLY: set[str] = {"revision"}
 
 
 def test_every_shared_fact_is_on_both_forms(specialist):

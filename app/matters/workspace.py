@@ -885,6 +885,67 @@ def add_development_evidence(
 
 
 @transaction.atomic
+def add_external_position_evidence(
+    *,
+    position: Any,
+    author: Any,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Lisa fail` — another paper supporting a position the file already holds.
+
+    The act `add_development_evidence` performs, on the other record that
+    carries evidence, with the same reasoning and the same refusals. It exists
+    because the position panel captured files only at the moment of capture:
+    an association that sends its position paper a week after somebody wrote
+    down what it said on the telephone had nowhere on the file to put it, and
+    `Muuda` deliberately does not take bytes (QA-021, docs/adr/0084 §8).
+
+    **Additive, and that is the whole of it.** The organisation, the date, the
+    `Seisukoht`, the address, `Juristi märkus` and `Liige` are untouched: those
+    are separately correctable facts with their own surface. The files the
+    position already carries are not read here, so nothing can detach one, and
+    no `DocumentVersion` is superseded — a revised paper is *new* bytes on a new
+    document, which is what makes the evidence store immutable rather than
+    append-mostly.
+
+    **No revision token**, for `add_development_evidence`'s reason: two people
+    attaching two different papers to one position is not a lost update, both
+    links are wanted, and there is no earlier value for a later writer to
+    overwrite.
+
+    **Refused on a closed Matter**, under the Matter's row lock rather than by
+    whether a page drew a button. All or none: a second file being refused
+    unwinds the first with this transaction.
+    """
+    from app.matters.models import MatterExternalPosition
+    from app.matters.services import record_external_position_document
+
+    locked_matter = lock_open_matter_for_business_write(position.matter_id)
+    # Re-read under the lock and against the locked Matter: the instance this
+    # arrived with was fetched before the lock, and «this position is on this
+    # Teema» is the one claim the link below cannot make for itself.
+    try:
+        current = MatterExternalPosition.objects.select_for_update(no_key=True).get(
+            pk=position.pk, matter=locked_matter
+        )
+    except MatterExternalPosition.DoesNotExist:
+        raise DomainError("Seda välist seisukohta ei ole sellel teemal.") from None
+
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = current
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=current,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        for document in result.documents:
+            record_external_position_document(position=current, document=document, actor=author)
+        return result
+
+
+@transaction.atomic
 def add_matter_website_overview(
     *,
     matter: Matter,

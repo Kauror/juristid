@@ -60,10 +60,19 @@ because what the file recorded and who recorded it is part of the file
       <div class="proclink" id="menetluse-link-{{ link.pk }}">
         <div class="railcard__row">
           <span class="railcard__key">{{ link.get_kind_display }}</span>
-          <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
-            {{ link.display_label }}<span class="visually-hidden"> — avaneb uues aknas</span>
-          </a>
-        </div>
+          {% comment %}
+            The address and the control that edits it, on one line.
+
+            `Muuda` sat on a line of its own under the row, which read as a
+            control belonging to the card rather than to the link — on a Matter
+            with three links, three identical chips stacked under three
+            addresses. Beside the thing it edits, it needs no other explanation
+            (OWNER-02).
+          {% endcomment %}
+          <span class="proclink__value">
+            <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+              {{ link.display_label }}<span class="visually-hidden"> — avaneb uues aknas</span>
+            </a>
         {% if can_write %}
           {% comment %}
             A native disclosure rather than a launcher radio: it belongs to this
@@ -74,7 +83,15 @@ because what the file recorded and who recorded it is part of the file
           {% endcomment %}
           <details class="proclink__fix"
                    {% if procedural_link_open == link.pk|stringformat:"s" %}open{% endif %}>
-            <summary class="disclosure-chip">Paranda</summary>
+            {% comment %}
+              `Muuda`, not `Paranda`. Every other correction on this page is a
+              `Muuda` — the Matter's header, a `Märge`, an opinion, the rail —
+              and one card calling the same act something else reads as a
+              different, narrower act: «paranda» is what you do to a mistake,
+              and an address changes because the proceeding moved just as often
+              (OWNER-02).
+            {% endcomment %}
+            <summary class="disclosure-chip">Muuda</summary>
             <div class="proclink__form">
               {% if procedural_link_open == link.pk|stringformat:"s" and procedural_link_error %}
                 <p class="formerror" role="alert">{{ procedural_link_error }}</p>
@@ -123,6 +140,8 @@ because what the file recorded and who recorded it is part of the file
             </div>
           </details>
         {% endif %}
+          </span>
+        </div>
       </div>
       {% endfor %}
       {% comment %}

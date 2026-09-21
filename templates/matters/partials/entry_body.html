@@ -81,12 +81,29 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
     {% endcomment %}
     <div class="richtext">{{ entry.body|safe }}</div>
     {% if can_write_business_content %}
-      <p class="uxtl__editactions">
+      <div class="uxtl__editactions">
         <button class="uxtl__edit" type="button"
                 hx-get="{% url 'matters:edit_entry' pk=matter.pk entry_id=entry.pk %}"
                 hx-target="#sissekanne-{{ entry.pk }}-sisu"
                 hx-swap="outerHTML">Muuda</button>
-      </p>
+        {% comment %}
+          `Kustuta`, beside `Muuda` and gated on `matter.is_open` where `Muuda`
+          is not.
+
+          That asymmetry is the existing rule rather than an oversight: an
+          entry's *text* may be corrected on a closed file, because a typo in
+          what somebody wrote is not new business content (docs/adr/0076 §2).
+          Taking the whole row off the file is, so it takes the same lock every
+          other interactive write takes and a finished file refuses it;
+          reopening is the way out and leaves somebody's name on both
+          decisions. The chip is hidden here *and* the rule is enforced under
+          the Matter's row lock, because a control that was not rendered is
+          never how a rule is kept (OWNER-04, docs/adr/0102).
+        {% endcomment %}
+        {% if matter.is_open %}
+          {% include "matters/partials/row_remove.html" with record=entry remove_kind="sissekanne" remove_label="sissekanne" remove_genitive="sissekande" remove_revision=entry.updated_at.isoformat remove_named_by="" %}
+        {% endif %}
+      </div>
     {% endif %}
   {% endif %}
 </div>

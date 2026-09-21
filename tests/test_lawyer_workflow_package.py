@@ -56,7 +56,6 @@ from app.matters.services import (
     DEVELOPMENT_CANNOT_BE_FUTURE,
     DEVELOPMENT_NEEDS_TITLE,
     EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY,
-    EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL,
     EXTERNAL_POSITION_NEEDS_ORGANISATION,
     EXTERNAL_POSITION_NEEDS_SOURCE,
     EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE,
@@ -762,12 +761,26 @@ def test_a_file_only_record_is_named_by_its_filename(normal_matter, specialist, 
     assert document.current_version.original_filename == "Kaasamise vastused.xlsx"
 
 
-def test_received_feedback_with_neither_author_nor_label_is_refused(normal_matter, specialist):
-    with pytest.raises(DomainError) as refusal:
-        _received(normal_matter, specialist, summary="Keegi ütles midagi.")
+def test_received_feedback_with_neither_author_nor_label_is_accepted(normal_matter, specialist):
+    """**Reversed by docs/adr/0101.**
 
-    assert str(refusal.value) == EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL
-    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+    This asserted `EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL`, the refusal
+    docs/adr/0091 §3.3 put in front of a received position naming nobody. The
+    owner met the other half of it in ordinary use: a lawyer writing down what
+    a member said on the telephone has neither a catalogue row nor a collection
+    to name, and a panel that will not save until one of them exists is what
+    makes people invent one (OWNER-01).
+
+    So the absence is the record. What is unchanged is that the record can
+    never be *empty* — `EXTERNAL_POSITION_NEEDS_SOURCE` still means a position,
+    a link or a file is there — and that a `DISCOVERED` opinion still requires
+    its author, which the test below still asserts.
+    """
+    position = _received(normal_matter, specialist, summary="Keegi ütles midagi.")
+
+    assert position.organisation_id is None
+    assert position.source_label == ""
+    assert position.summary == "Keegi ütles midagi."
 
 
 def test_a_discovered_opinion_without_an_organisation_is_refused(normal_matter, specialist):
@@ -811,16 +824,35 @@ def test_legacy_is_refused_as_an_answer(normal_matter, specialist, ministry):
     assert str(refusal.value) == EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE
 
 
-def test_the_database_refuses_an_unauthored_row(normal_matter, ministry):
-    """`matters_external_position_author_or_label`, under the service."""
+def test_the_database_refuses_an_unauthored_discovered_row(normal_matter, ministry):
+    """`matters_external_position_author_or_label`, as relaxed by docs/adr/0101.
+
+    The check now reads `organisation_id IS NOT NULL OR provenance =
+    'received'`. The half that protects the file is untouched and is what this
+    asserts: a *published* opinion with no author is an anonymous claim on a
+    professional file, and the database refuses it under the service as well as
+    in it.
+    """
     with pytest.raises(IntegrityError), transaction.atomic():
         MatterExternalPosition.objects.create(
             matter=normal_matter,
             organisation=None,
-            provenance=ExternalPositionProvenance.RECEIVED,
+            provenance=ExternalPositionProvenance.DISCOVERED,
             summary="Midagi.",
         )
     connection.close()
+
+
+def test_the_database_accepts_an_unauthored_received_row(normal_matter):
+    """The other half, which docs/adr/0101 opened deliberately."""
+    position = MatterExternalPosition.objects.create(
+        matter=normal_matter,
+        organisation=None,
+        provenance=ExternalPositionProvenance.RECEIVED,
+        summary="Midagi.",
+    )
+
+    assert position.pk
 
 
 def test_the_database_refuses_a_label_on_a_discovered_row(normal_matter, ministry):

@@ -406,10 +406,16 @@ rather than read.
       Four readings of one date, decided in `selectors.response_deadline_of` and
       never here (UX-010):
 
+        closed or stood down   the date alone
         today                  · täna
         ahead, within 60 days  · N p
         behind and outstanding · N p üle
         behind and discharged  the date alone
+
+      The first is QA-011. A file archived this morning read `Tähtaeg
+      15.10.2026 · 24 p` in the header while `Praegune tegevus` under it said
+      the Matter was closed and every work list had dropped it. The date stays;
+      the clock stops.
 
       The last one is the whole of CUR-001. A passed Arvamuse tähtaeg whose
       opinion work the register records as finished — sent, or decided against —
@@ -422,7 +428,7 @@ rather than read.
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
             <span class="metaline__value metaline__value--deadline"
-                  title="{{ response_deadline.label }}">{{ response_deadline.display }}{% if response_deadline.is_today %} · täna{% elif response_deadline.is_overdue %} · {{ response_deadline.days_late }} p üle{% elif not response_deadline.is_past and response_deadline.days_remaining <= 60 %} · {{ response_deadline.days_remaining }} p{% endif %}</span>
+                  title="{{ response_deadline.label }}">{{ response_deadline.display }}{% if not response_deadline.is_active %}{% elif response_deadline.is_today %} · täna{% elif response_deadline.is_overdue %} · {{ response_deadline.days_late }} p üle{% elif not response_deadline.is_past and response_deadline.days_remaining <= 60 %} · {{ response_deadline.days_remaining }} p{% endif %}</span>
           </summary>
           <form class="inlineedit__form inlineform"
                 hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"

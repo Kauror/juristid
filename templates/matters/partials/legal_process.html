@@ -32,8 +32,18 @@ at all for the ordinary file (`app/matters/models.py` `MatterTimelineStep`).
 still this section's sibling rather than a block inside it (docs/adr/0092 §2).
 
 Rendered when there is anything to draw. A file read against no procedure that
-still has an `Alustatud` and an `Arvamuse tähtaeg` draws those: they are dates it
-recorded, not claims about a procedure.
+has recorded an `Arvamuse tähtaeg` or a `Koja arvamus` draws those: they are
+dates it recorded, not claims about a procedure.
+
+**A file with nothing on it draws nothing**, and that is new since
+docs/adr/0100 §1. Every natively filed Matter used to have one column, because
+`Alustatud` was `Matter.created_at` and every row has one — so this section was
+always present and always said something, even when the only thing it had to
+say was when somebody opened the file. With the milestone retired, a Matter
+that has chosen no `Õigusakt` and recorded no date has no road ahead to draw
+and no history to place on one, and the honest answer to «kus menetlus on» is
+that nothing here says yet. An empty heading over an empty rail would be
+dashboard decoration with no decision behind it (AGENTS.md).
 {% endcomment %}
 {% if rail_steps %}
   <section class="lprail" aria-labelledby="menetluse-kulg-heading">
@@ -87,7 +97,24 @@ recorded, not claims about a procedure.
           {% if step.state == "future" or step.state == "possible" %}
             <span class="visually-hidden">Tulevikus</span>
           {% endif %}
-          {% if step.display_date %}
+          {% comment %}
+            One date line, from whichever source this node has.
+
+            A phase carrying canonical facts prints them as its lines —
+            «põhiosa 27.9.2027», «osad sätted 1.1.2028» — and does not also
+            print the first one bare above them, which would be the same date
+            twice. A phase carrying only a roadmap date prints that.
+
+            These used to be separate columns: `Jõustumine · Jõustumine
+            1.1.2027`, two adjacent names reading alike, with the sentence that
+            told them apart in a `title` tooltip — which is to say nowhere, for
+            a touch screen, a printout or a screen reader (QA-005).
+          {% endcomment %}
+          {% if step.notes %}
+            {% for note in step.notes %}
+              <span class="tl-step__note">{{ note }}</span>
+            {% endfor %}
+          {% elif step.display_date %}
             <span class="tl-step__date">{{ step.display_date }}</span>
           {% endif %}
           {% comment %}

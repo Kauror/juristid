@@ -91,7 +91,23 @@
             action="{% url 'matters:matter_delete' pk=matter.pk %}">
         {% csrf_token %}
         <button class="button button--danger button--danger-strong" type="submit">Kustuta teema</button>
-        <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Loobu</a>
+        {% comment %}
+          `Loobu` returns to the Teema, which is where somebody deciding not to
+          delete it wants to be.
+
+          It used to return to `Muuda teemat`, the page this one is reached
+          from. That is where the reader was, but it is not where they were
+          going: they opened the edit form, followed a destructive offer out of
+          it, and answered «no» — and landing back in a half-filled form makes
+          the answer look like a step in an edit rather than the end of the
+          question. A destructive question answered «no» should leave nothing
+          behind, the form included (QA-017).
+
+          The back-link at the top of this page still reads «← Muuda teemat»,
+          for the reader who did mean to go on editing.
+        {% endcomment %}
+        <a class="button button--quiet"
+           href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
       </form>
     {% endif %}
   </div>

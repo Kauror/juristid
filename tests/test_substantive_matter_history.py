@@ -937,7 +937,12 @@ def test_the_change_log_shows_the_writes_the_history_leaves_out(
     ).content.decode()
 
     assert "Hetkeseis muudetud" in body
-    assert "Menetluse areng lisatud" in body
+    # **`Märge lisatud`, not `Menetluse areng lisatud`.** `Menetluse areng` was
+    # retired as a user-facing concept when `+ Märge` became the one panel that
+    # records one, and this page is read by a person — so it was still telling
+    # them their notes were «menetluse arengud», a phrase the launcher has
+    # never shown them. The stored `event_type` value is untouched (QA-012).
+    assert "Märge lisatud" in body
 
 
 def test_the_change_log_shows_no_payload_no_identifier_and_no_operation(
@@ -986,13 +991,13 @@ def test_the_change_log_hides_a_row_about_a_restricted_child(
     body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
 
     assert "salajase" not in body
-    assert "Menetluse areng lisatud" not in body
+    assert "Märge lisatud" not in body
     # And the reader who may see it does.
     client.force_login(specialist)
     allowed = client.get(
         reverse("matters:matter_changes", kwargs={"pk": matter.pk})
     ).content.decode()
-    assert "Menetluse areng lisatud" in allowed
+    assert "Märge lisatud" in allowed
 
 
 def test_the_change_log_refuses_a_matter_this_reader_may_not_open(client, reader, specialist):
@@ -1182,21 +1187,61 @@ def test_the_change_log_vocabulary_is_a_subset_of_what_somebody_classified():
         ChangeEventType.MATTER_RELATION_REMOVED,
         ChangeEventType.BACKGROUND_MATERIAL_ADDED,
         ChangeEventType.BACKGROUND_MATERIAL_REMOVED,
-        ChangeEventType.WEBSITE_OVERVIEW_PLANNED,
-        ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
-        ChangeEventType.WEBSITE_OVERVIEW_CANCELLED,
-        ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
     ],
 )
 def test_an_unclassified_family_is_absent_rather_than_allowed(event_type):
     """The families the review proved leak, named one by one.
 
     Each summary or event label names an object carrying its own
-    `visibility_override`, and none of them has a classifier in
+    `visibility_override`, and neither of the two has a classifier in
     `_child_families` yet. Classifying them is the right fix and belongs in that
     map; until somebody makes it, they are off this page.
+
+    **The four `WEBSITE_OVERVIEW_` types were here and are not any more**, and
+    that is the fix arriving rather than the rule weakening. `Ülevaade / uudis`
+    now has a classifier — `MatterWebsiteOverview` in `_child_families`, scoped
+    through its own `visibility_override` like every other child — so the
+    events are *allowed because they are scoped*, which is exactly what this
+    test's own docstring said the right answer was. The test below asserts the
+    scoping rather than trusting the classification (OWNER-04,
+    docs/adr/0102 §2).
     """
     assert event_type not in change_log_event_types()
+
+
+def test_a_classified_family_is_allowed_because_it_is_scoped(specialist, reader, client):
+    """`Ülevaade / uudis`, the family that came off the list above.
+
+    A reader may open this Matter; the write-up is restricted below it. The
+    change log must name neither the act nor what the record holds — which is
+    what «allowed» buys only because the classifier is there.
+    """
+    from app.audit.visibility import child_event_types
+    from app.core.enums import Visibility
+    from app.matters.models import MatterWebsiteOverview
+    from app.matters.services import plan_website_overview
+
+    for event_type in (
+        ChangeEventType.WEBSITE_OVERVIEW_PLANNED,
+        ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
+        ChangeEventType.WEBSITE_OVERVIEW_CANCELLED,
+        ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
+    ):
+        assert event_type in change_log_event_types()
+        # Allowed *and* classified: an allowed type with no classifier passes
+        # `scope_change_events` untouched, which is the leak.
+        assert event_type in child_event_types()
+
+    matter = factories.MatterFactory(owner=specialist)
+    overview = plan_website_overview(matter=matter, actor=specialist)
+    MatterWebsiteOverview.objects.filter(pk=overview.pk).update(
+        visibility_override=Visibility.RESTRICTED
+    )
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "Ülevaade / uudis plaanis" not in body
 
 
 def test_a_restricted_related_matters_title_is_not_in_the_change_log(client, specialist, reader):
@@ -1282,7 +1327,7 @@ def test_an_already_classified_restricted_development_is_still_hidden(client, sp
     client.force_login(reader)
     body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
     assert "salajase" not in body
-    assert "Menetluse areng lisatud" not in body
+    assert "Märge lisatud" not in body
 
 
 def test_the_matter_level_writes_the_page_exists_for_are_all_still_there(

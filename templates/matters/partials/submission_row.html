@@ -1,0 +1,167 @@
+{% comment %}
+One sent `Koja arvamus`'s chronology row, and the way to correct what the file
+says about it.
+
+**This element is the whole swap target.** `Muuda` replaces it with itself
+carrying the form; saving replaces it again with the corrected record. The
+`<article>` around it — the accent dot, the spine, the attached files — is never
+in the response, so a correction cannot move the row, cannot add a second line
+to the chronology and cannot turn a milestone into a work entry. Deliberately
+the same shape as `external_position_row.html` and `development_row.html`,
+because it is the same interaction on a sibling record.
+
+**Why this row had none until now.** `Arvamus välja` was the only chronology row
+with no correction control at all — `Meile saadetud tagasiside`, `Teiste
+arvamus`, `Kaasamine`, `Märge` and `Ülevaade / uudis` all carry one — on the
+record where a wrong date or a wrong recipient matters most: a letter registered
+with the day mistyped reported that date to the outbound register, the process
+rail and every report that counts advocacy, and the only repair was to ask an
+administrator (QA-023).
+
+**It corrects what we wrote down, never what happened.** The form asks four
+things — the day, the `Liik`, the `Kokkuvõte`, the addressees — and can reach
+nothing else. The evidence is immutable and is not on the form: a letter whose
+*text* was wrong is a new letter, which is what supersession is for. The status
+is not on the form either: un-sending, withdrawing and superseding are acts with
+their own meaning and their own audit events, and a spelling fix may not become
+one of them (`correct_sent_opinion`, docs/adr/0084 §8).
+
+**`Muuda` needs a writer, and does not need an open Teema.** Correcting what a
+closed file recorded about a letter it sent is the same kind of act as
+correcting an entry's text on one, and `withdraw_submission` already works on a
+closed Matter (docs/adr/0075 §12, docs/adr/0093 §3). The flag hides the button
+and decides nothing: the service takes the Matter's lock and makes every rule
+itself, because the browser that posts may be holding a page from before
+anything changed.
+{% endcomment %}
+<div class="uxtl__ms-body" id="koja-arvamus-{{ submission.pk }}-sisu">
+  {% if sent_opinion_edit_form %}
+    <form class="uxtl__editform" aria-label="Koja arvamuse andmete parandamine"
+          hx-post="{% url 'matters:update_sent_opinion' pk=matter.pk submission_id=submission.pk %}"
+          hx-target="#koja-arvamus-{{ submission.pk }}-sisu"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      {% comment %}
+        Which record is being corrected, in the words the row was reading a
+        moment ago, so a person who opened the wrong one of three sent opinions
+        sees it before they type.
+      {% endcomment %}
+      <p class="uxtl__ms">
+        <span class="uxtl__mswhat">{{ milestone.what }}</span>
+      </p>
+      {% if sent_opinion_edit_error %}
+        <p class="formerror" role="alert">{{ sent_opinion_edit_error }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ sent_opinion_edit_form.sent_on.id_for_label }}">
+        <span class="cx-f__lab">{{ sent_opinion_edit_form.sent_on.label }}</span>
+        {{ sent_opinion_edit_form.sent_on }}
+      </label>
+      {% if sent_opinion_edit_form.sent_on.errors %}
+        <p class="field__error">{{ sent_opinion_edit_form.sent_on.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ sent_opinion_edit_form.kind.id_for_label }}">
+        <span class="cx-f__lab">{{ sent_opinion_edit_form.kind.label }}</span>
+        {{ sent_opinion_edit_form.kind }}
+      </label>
+      {% if sent_opinion_edit_form.kind.errors %}
+        <p class="field__error">{{ sent_opinion_edit_form.kind.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ sent_opinion_edit_form.summary.id_for_label }}">
+        <span class="cx-f__lab">{{ sent_opinion_edit_form.summary.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ sent_opinion_edit_form.summary }}
+      </label>
+      {% if sent_opinion_edit_form.summary.errors %}
+        <p class="field__error">{{ sent_opinion_edit_form.summary.errors|first }}</p>
+      {% endif %}
+
+      <label class="cx-f" for="{{ sent_opinion_edit_form.recipients.id_for_label }}">
+        <span class="cx-f__lab">{{ sent_opinion_edit_form.recipients.label }}</span>
+        {{ sent_opinion_edit_form.recipients }}
+      </label>
+      {% comment %}
+        Said in the form, because `set_recipients` replaces the whole set and a
+        person looking at a list of addressees cannot tell from it that the
+        copied-in committees are safe.
+      {% endcomment %}
+      <p class="uxtl__formhint"
+         id="{{ sent_opinion_edit_form.recipients.auto_id }}_helptext">{{ sent_opinion_edit_form.recipients.help_text }}</p>
+      {% if sent_opinion_edit_form.recipients.errors %}
+        <p class="field__error">{{ sent_opinion_edit_form.recipients.errors|first }}</p>
+      {% endif %}
+
+      {{ sent_opinion_edit_form.revision }}
+
+      {% if sent_opinion_conflict_milestone %}
+        {% comment %}
+          The version that beat this one, to read beside what is still typed
+          above. Neither is chosen for the person: the shape every other
+          conflicting editor on this page uses.
+        {% endcomment %}
+        <div class="uxtl__conflict">
+          <p class="uxtl__conflictnote">Praegune kirje:</p>
+          <p class="uxtl__ms">
+            <span class="uxtl__mswhat">{{ sent_opinion_conflict_milestone.what }}</span>
+            <span class="uxtl__msdate">{{ sent_opinion_conflict_milestone.display_date }}</span>
+          </p>
+          {% if sent_opinion_conflict_milestone.sub %}
+            <span class="uxtl__mssub">{{ sent_opinion_conflict_milestone.sub }}</span>
+          {% endif %}
+          <p class="uxtl__conflictnote">
+            Võrdle oma parandust praeguse kirjega või laadi leht uuesti, et
+            praeguse versiooniga jätkata. Sinu sisestus on ülal alles.
+          </p>
+        </div>
+      {% endif %}
+
+      <p class="uxtl__editactions">
+        <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+        {% comment %}
+          `Tühista` re-fetches this element in its read state: the boxes may be
+          holding values that were never saved, and the only honest way out of
+          them is to read what the record actually says.
+        {% endcomment %}
+        <button class="button button--quiet button--tiny" type="button"
+                hx-get="{% url 'matters:update_sent_opinion' pk=matter.pk submission_id=submission.pk %}{{ sent_opinion_read_query }}"
+                hx-target="#koja-arvamus-{{ submission.pk }}-sisu"
+                hx-swap="outerHTML">Tühista</button>
+      </p>
+    </form>
+  {% else %}
+    <p class="uxtl__ms">
+      <span class="uxtl__mswhat" id="koja-arvamus-{{ submission.pk }}-pealkiri">{{ milestone.what }}</span>
+      <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+    </p>
+    {% if milestone.sub %}
+      <span class="uxtl__mssub">{{ milestone.sub }}</span>
+    {% endif %}
+    {% if can_write_business_content %}
+      <p class="uxtl__editactions">
+        {% comment %}
+          Named by reference — the button's own word, then the headline element
+          above it — rather than by repeating the headline into a
+          visually-hidden span, which would put «Arvamus välja» into the
+          document twice on a file with three sent opinions.
+        {% endcomment %}
+        <button class="uxtl__edit" type="button"
+                id="koja-arvamus-{{ submission.pk }}-muuda"
+                aria-labelledby="koja-arvamus-{{ submission.pk }}-muuda koja-arvamus-{{ submission.pk }}-pealkiri"
+                hx-get="{% url 'matters:update_sent_opinion' pk=matter.pk submission_id=submission.pk %}"
+                hx-target="#koja-arvamus-{{ submission.pk }}-sisu"
+                hx-swap="outerHTML">Muuda</button>
+        {% comment %}
+          There is deliberately **no `Kustuta`** here, and it is the one
+          user-created chronology row without one. A sent opinion is a letter
+          that left this office: taking it off the file would be the record
+          claiming it never went, and the domain already has the true sentence
+          for «we took it back» — `SubmissionStatus.WITHDRAWN`, which says
+          something different and is reached from the opinion's own surface
+          (docs/adr/0102 §4).
+        {% endcomment %}
+      </p>
+    {% endif %}
+  {% endif %}
+</div>

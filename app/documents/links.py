@@ -134,6 +134,23 @@ class DocumentLinkQuerySet(models.QuerySet):
             if not clause:
                 continue
             condition &= models.Q(**{f"{field}__isnull": True}) | clause
+        # **A link to a record that was taken off the file goes with it.**
+        #
+        # The `Document` stays — bytes that arrived on a Matter are evidence of
+        # the Matter, and removing a mistaken `Märge` does not unsend the
+        # ministry's draft. What must not survive is the *claim of belonging*:
+        # a file row still reading «kuulub: Ministeerium saatis uue versiooni»
+        # under a note nobody can see is the page pointing at a record that is
+        # not there. Active reference and retained evidence are two different
+        # things, and this is the line between them (OWNER-04, docs/adr/0102).
+        #
+        # Unconditional, unlike the visibility clauses above: every target
+        # column names a removable model, so there is no reader for whom the
+        # filter is empty and no `Q()` to collapse.
+        for field in TARGET_FIELDS:
+            condition &= models.Q(**{f"{field}__isnull": True}) | models.Q(
+                **{f"{field}__removed_at__isnull": True}
+            )
         return apply_scope(self, condition)
 
 

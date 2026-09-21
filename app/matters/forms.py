@@ -1337,6 +1337,14 @@ class MatterEditForm(
     the audit trail does not know about (this module's opening rule).
     """
 
+    #: Which version of the record this page was filled from, carried through
+    #: the round trip so the save can refuse a copy that is behind
+    #: (`matter_revision_token`). `required=False` for the reason every other
+    #: revision field on this module gives: an absent token means «no opinion»
+    #: — a form posted by a test or by an older cached page — and the guard
+    #: treats it as such rather than as a conflict.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
     title = forms.CharField(
         label="Pealkiri",
         max_length=1000,
@@ -1668,7 +1676,10 @@ class MatterEditForm(
 
 def edit_initial(matter: Matter) -> dict[str, Any]:
     """The Matter's current values, in the shape `MatterEditForm` reads."""
+    from app.matters.services import matter_revision_token
+
     return {
+        "revision": matter_revision_token(matter),
         "title": matter.title,
         "brief_summary": matter.brief_summary,
         "owner": matter.owner_id,
@@ -1688,6 +1699,113 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "received_date": matter.received_date,
         "response_deadline": matter.response_deadline,
     }
+
+
+def matter_edit_conflict_changes(
+    *, current: Matter, submitted: dict[str, Any]
+) -> list[dict[str, str]]:
+    """What moved under a refused `Muuda teemat`, in the page's own words.
+
+    A conflict somebody cannot see the other side of is a conflict they cannot
+    resolve. The refusal keeps every value this person typed — that is the
+    whole point of refusing rather than overwriting — but a page still showing
+    `Vastutaja: Sandra` after a colleague set it to Martin invites exactly one
+    action, and it is the silent revert the guard exists to stop. So the
+    refusal states the difference.
+
+    **Compared, never guessed.** This reads the record as it now stands against
+    the values this POST is actually carrying, both in the shape `edit_initial`
+    produces, and reports only where they differ. It does not try to work out
+    which of them the person meant to change — nothing here has that
+    information, and a merge built on assuming it would be a quieter version of
+    the same defect.
+
+    Fields the form does not carry are not compared, because a page cannot be
+    stale about something it never held.
+    """
+    labels = {
+        "title": "Pealkiri",
+        "brief_summary": "Lühikokkuvõte",
+        "owner": "Vastutaja",
+        "stage": "Hetkeseis",
+        "received_date": "Saabumise kuupäev",
+        "response_deadline": "Arvamuse tähtaeg",
+        "policy_areas": "Valdkonnad",
+        "policy_area_other": "Valdkond — muu",
+        "legal_instruments": "Õigusakt",
+        "legal_instrument_other": "Õigusakt — muu",
+        "source_organisations": "Saatja",
+    }
+    names = {
+        "owner": lambda value: _display_owner(current, value),
+        "stage": lambda value: _display_stage(value),
+        "policy_areas": lambda value: _display_many(PolicyArea, value),
+        "legal_instruments": lambda value: _display_many(LegalInstrumentType, value),
+        "source_organisations": lambda value: _display_many(Organisation, value),
+    }
+    stored = edit_initial(current)
+    changes: list[dict[str, str]] = []
+    for field, label in labels.items():
+        mine = submitted.get(field)
+        theirs = stored.get(field)
+        if _comparable(mine) == _comparable(theirs):
+            continue
+        render = names.get(field, _display_scalar)
+        changes.append({"label": label, "current": render(theirs), "submitted": render(mine)})
+    return changes
+
+
+def _comparable(value: Any) -> Any:
+    """One shape for «the same answer», across a pk, a model and a list of them."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (list, tuple, set)):
+        return frozenset(str(getattr(item, "pk", item)) for item in value)
+    return str(getattr(value, "pk", value))
+
+
+def _display_scalar(value: Any) -> str:
+    if value is None or value == "":
+        return "—"
+    return str(value)
+
+
+def _display_owner(matter: Matter, value: Any) -> str:
+    from app.accounts.models import User
+
+    if not value:
+        return "Määramata"
+    person = User.objects.filter(pk=getattr(value, "pk", value)).first()
+    return person.get_short_name() if person else "—"
+
+
+def _display_stage(value: Any) -> str:
+    from app.workflow.models import StageVocabulary
+
+    if not value:
+        return "Määramata"
+    found = StageVocabulary.objects.filter(pk=getattr(value, "pk", value)).first()
+    return found.label_et if found else "—"
+
+
+def _display_many(model: Any, value: Any) -> str:
+    if not value:
+        return "—"
+    pks = [getattr(item, "pk", item) for item in value]
+    rows = model.objects.filter(pk__in=pks)
+    # One helper for three vocabularies that spell their display name three
+    # ways: `PolicyArea.name_et`, `LegalInstrumentType.label_et` and
+    # `Organisation.name`. Asking each row rather than each model keeps the
+    # caller from having to know which is which.
+    names = sorted(
+        str(
+            getattr(row, "name_et", None)
+            or getattr(row, "label_et", None)
+            or getattr(row, "name", "")
+        )
+        for row in rows
+    )
+    return ", ".join(name for name in names if name) or "—"
 
 
 class NextActionForm(forms.Form):
@@ -5152,6 +5270,15 @@ class ExternalPositionFieldsMixin:
     #: service refuses it again under the row lock, because a form is not a
     #: boundary (docs/adr/0091 §3.3).
     allows_source_label: bool = False
+    #: Whether this surface records feedback somebody sent **to this office**,
+    #: and may therefore name nobody.
+    #:
+    #: Deliberately not `allows_source_label`. That flag answers «does this
+    #: panel offer an `Allikas` box», which docs/adr/0095 §4 turned off for both
+    #: capture panels — and reading it as «may the author be absent» is what
+    #: made the received-feedback panel go on demanding an organisation after
+    #: the rule changed. Two questions, two flags (OWNER-01, docs/adr/0101).
+    author_is_optional: bool = False
 
     #: Whether this surface asks the date at a precision, or asks for one day.
     #:
@@ -5212,7 +5339,6 @@ class ExternalPositionFieldsMixin:
         the other ones (docs/adr/0084 §3).
         """
         from app.matters.services import (
-            EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL,
             EXTERNAL_POSITION_NEEDS_ORGANISATION,
             EXTERNAL_POSITION_NEEDS_SOURCE,
             normalize_external_position_url,
@@ -5231,10 +5357,13 @@ class ExternalPositionFieldsMixin:
         )
         label = (cleaned.get("source_label") or "").strip()
         cleaned["source_label"] = label
-        if self.allows_source_label:
-            if not named and not label:
-                self.add_error("organisation_name", EXTERNAL_POSITION_NEEDS_AUTHOR_OR_LABEL)
-        elif not named:
+        # Received feedback may name nobody at all: neither an organisation nor
+        # an `Allikas`. A lawyer writing down what a member said on the phone
+        # has neither, and a form that refuses to save until one of them exists
+        # is what puts invented names on files (OWNER-01, docs/adr/0101). A
+        # *discovered* position still needs an author, because an unattributed
+        # published opinion is an anonymous claim (docs/adr/0091 §3.3).
+        if not self.author_is_optional and not named:
             self.add_error("organisation_name", EXTERNAL_POSITION_NEEDS_ORGANISATION)
 
         # The lawyer's own note, trimmed the way the service trims it — and
@@ -5506,6 +5635,15 @@ class ReceivedFeedbackForm(CompactExternalPositionForm):
     #: refusal — the database constraint is met the way it has always been met and
     #: is not weakened to let an anonymous new row through.
     allows_source_label = False
+    #: Feedback somebody sent to this office may name nobody.
+    #:
+    #: A lawyer writing down what a member said on the telephone has neither a
+    #: catalogue row nor a name for a collection of answers, and a panel that
+    #: refuses to save until one of them exists is what puts invented names on
+    #: files. The record is still never empty: a position, a link or a file is
+    #: always there — what may be absent is whose it was
+    #: (OWNER-01, docs/adr/0101).
+    author_is_optional = True
     panel_slug = "tagasiside"
 
     #: `Liige` — this feedback came from a Chamber member.
@@ -5579,6 +5717,22 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
     summary = _external_position_summary_field()
     lawyer_note = _external_position_lawyer_note_field()
     source_label = _external_position_source_label_field()
+    #: `Liige`, correctable where it is answerable.
+    #:
+    #: The box was on the capture form and on no other surface: a tick was
+    #: saved, never displayed and never editable, so one made by mistake was
+    #: permanent and one made on purpose could not be confirmed. It is shown on
+    #: the row now and it is corrected here (QA-014).
+    #:
+    #: Removed below on anything that is not received feedback, for the reason
+    #: `source_label` is: «this came from a member» answers *who wrote to us*,
+    #: and a position found published somewhere was not written to us at all
+    #: (docs/adr/0095 §4).
+    source_is_member = forms.BooleanField(
+        label="Liige",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
+    )
     engagement = _external_position_engagement_field()
     stated_on = EstonianDateField(
         label="Seisukoha kuupäev",
@@ -5611,8 +5765,12 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         # The rule is `EngagementForm`'s, read the other way round: an editor must
         # not be able to write a shape its creating surface cannot.
         self.allows_source_label = bool(record is not None and record.is_received)
+        # Per record, like the label: a correction may leave received feedback
+        # naming nobody, and may not do that to a discovered position.
+        self.author_is_optional = self.allows_source_label
         if not self.allows_source_label:
             del self.fields["source_label"]
+            del self.fields["source_is_member"]
         attach_external_position_precision(self, record=record)
         attach_organisation_picker(self, viewer=viewer, choices=choices)
         set_external_position_engagements(
@@ -6018,16 +6176,38 @@ class TimelineStepsForm(forms.Form):
 
     use_required_attribute = False
 
+    #: Which version of the stored steps this panel was opened on, carried
+    #: through the round trip so a save filled from an older one is refused
+    #: rather than posted over somebody else's (`timeline_steps_revision_token`).
+    #: `required=False` for the reason every other revision field here gives.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
     def __init__(
-        self, *args: Any, phases: Any = None, rows: Any = None, recorded: Any = None, **kwargs: Any
+        self,
+        *args: Any,
+        phases: Any = None,
+        rows: Any = None,
+        current_phase: str = "",
+        anchored: Any = None,
+        revision: str = "",
+        **kwargs: Any,
     ) -> None:
         kwargs.setdefault("auto_id", "id_kulg_%s")
+        if revision:
+            kwargs.setdefault("initial", {})
+            kwargs["initial"] = {**kwargs["initial"], "revision": revision}
         super().__init__(*args, **kwargs)
         #: The pattern's nodes, in its own order. Empty when the file is read
         #: against no procedure, and the panel then has nothing to offer.
         self.nodes = list(phases.pattern.nodes) if phases and phases.pattern else []
-        #: Phases dated by a record the file already holds.
-        self.recorded = dict(recorded or {})
+        #: The phase the file's `Hetkeseis` places it on. It cannot be taken
+        #: off the rail: the header would go on saying `Kooskõlastusringil`
+        #: while the rail no longer drew that phase at all, and the unanchored
+        #: deadline — which reads *beside the current phase* — would fall back
+        #: to sorting after every undated future one (QA-009).
+        self.current_phase = current_phase or ""
+        #: Phases pinned by a canonical dated fact (`anchored_phase_keys`).
+        self.anchored = frozenset(anchored or ())
         stored = dict(rows or {})
         for node in self.nodes:
             key = node.phase_key
@@ -6038,21 +6218,38 @@ class TimelineStepsForm(forms.Form):
             # a phase silently off the rail. The column stores `hidden` — the
             # absence of a row is the default — and `steps()` inverts once,
             # here, where both spellings are visible together.
-            self.fields[f"{key}__shown"] = forms.BooleanField(
+            protected = self._protection(key)
+            field = forms.BooleanField(
                 label=node.label,
                 required=False,
-                initial=not row.hidden if row is not None else True,
+                initial=True if protected else (not row.hidden if row is not None else True),
             )
-            if key in self.recorded:
-                # Dated by a `Menetluse areng`. No box, so there is nothing to
-                # save over a fact.
-                continue
+            if protected:
+                # Disabled rather than merely unticked: a disabled field takes
+                # its value from `initial` and ignores the POST entirely, so a
+                # crafted one cannot remove it either. The panel says why in a
+                # word beside the chip rather than in a dialog.
+                field.disabled = True
+                field.help_text = protected
+            self.fields[f"{key}__shown"] = field
             self.fields[f"{key}__date"] = EstonianDateField(
                 label="Kuupäev",
                 required=False,
                 widget=EstonianDateInput(),
                 initial=row.occurs_on if row is not None else None,
             )
+
+    #: Why a phase cannot be taken off this file's rail, in the panel's words.
+    CURRENT_PHASE_REASON = "praegune etapp"
+    ANCHORED_PHASE_REASON = "kirjas olev kuupäev"
+
+    def _protection(self, key: str) -> str:
+        """Why this phase may not be removed, or "" when it may."""
+        if key and key == self.current_phase:
+            return self.CURRENT_PHASE_REASON
+        if key in self.anchored:
+            return self.ANCHORED_PHASE_REASON
+        return ""
 
     @property
     def rows(self) -> list[dict[str, Any]]:
@@ -6065,11 +6262,46 @@ class TimelineStepsForm(forms.Form):
                     "key": key,
                     "label": node.label,
                     "shown_field": self[f"{key}__shown"],
-                    "date_field": self[f"{key}__date"] if f"{key}__date" in self.fields else None,
-                    "recorded_date": self.recorded.get(key, ""),
+                    "date_field": self[f"{key}__date"],
+                    "protected": self._protection(key),
                 }
             )
         return drawn
+
+    def clean(self) -> dict[str, Any]:
+        """Explicit roadmap dates must run in the procedure's own order.
+
+        A lawyer could set `Kooskõlastusring 01.12` and `Valitsuses 25.09` and
+        get a left-to-right time rail reading December before September. The
+        rail does not reorder the phases — a legal process has the order it has
+        — so the drawing was simply false, and nothing said so (QA-010).
+
+        Only *explicit* dates are compared, and only against each other. A
+        phase somebody has not dated makes no claim, and a file that went back
+        to an earlier phase is not describing its roadmap out of order: that is
+        history, it belongs in `Teema käik`, and these boxes are not where it is
+        recorded.
+
+        The error lands on the box that is out of order and the rest of the
+        panel comes back as it was typed, so nothing has to be re-entered.
+        """
+        cleaned = super().clean() or self.cleaned_data
+        seen: list[tuple[str, Any]] = []
+        for node in self.nodes:
+            key = node.phase_key
+            when = cleaned.get(f"{key}__date")
+            if when is None:
+                continue
+            for earlier_label, earlier in seen:
+                if when < earlier:
+                    self.add_error(
+                        f"{key}__date",
+                        f"{node.label} ei saa olla varem kui {earlier_label}.",
+                    )
+                    break
+            else:
+                seen.append((node.label, when))
+        return cleaned
 
     def steps(self) -> list[tuple[str, bool, Any, str]]:
         """The cleaned answers, as `set_timeline_steps` takes them.
@@ -6083,8 +6315,12 @@ class TimelineStepsForm(forms.Form):
         answers: list[tuple[str, bool, Any, str]] = []
         for node in self.nodes:
             key = node.phase_key
-            hidden = not self.cleaned_data.get(f"{key}__shown")
-            when = self.cleaned_data.get(f"{key}__date") if key not in self.recorded else None
+            # A protected phase is shown whatever arrived. The disabled field
+            # already ignores the POST; this says it a second time at the one
+            # seam that builds the service call, because «the control was not
+            # rendered» is never how a rule is kept here.
+            hidden = not self._protection(key) and not self.cleaned_data.get(f"{key}__shown")
+            when = self.cleaned_data.get(f"{key}__date")
             answers.append((key, hidden, when, DatePrecision.EXACT.value))
         return answers
 
@@ -6250,8 +6486,8 @@ class ProceduralDevelopmentEditForm(forms.Form):
         return cleaned
 
 
-class DevelopmentEvidenceForm(forms.Form):
-    """`+ Lisa fail` on a recorded `Menetluse areng`. Files, and nothing else.
+class RecordEvidenceForm(forms.Form):
+    """`+ Lisa fail` on a record the file already holds. Files, and nothing else.
 
     **One question, because only one thing is being added.** A ministry sends the
     revised draft a fortnight after the step was written up, and the file learns
@@ -6283,7 +6519,13 @@ class DevelopmentEvidenceForm(forms.Form):
 
     use_required_attribute = False
 
-    attachments = workspace_attachments("id_menetluse_areng_toend_failid")
+    #: Which record family this picker belongs to, for the control's `id` only.
+    #: A class attribute rather than an argument, so the two subclasses below
+    #: are the whole list of surfaces that offer this act and a third is a
+    #: deliberate line of code.
+    slug = "kirje"
+
+    attachments = workspace_attachments("id_kirje_toend_failid")
 
     def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
         self.record = record
@@ -6293,7 +6535,7 @@ class DevelopmentEvidenceForm(forms.Form):
             # where the per-record one has to go too — `auto_id` would not reach
             # it (`ExternalPositionEditForm`).
             cast(Any, self.fields["attachments"].widget).attrs["id"] = (
-                f"id_menetluse_areng_{record.pk}_toend_failid"
+                f"id_{self.slug}_{record.pk}_toend_failid"
             )
 
     def clean_attachments(self) -> list[Any]:
@@ -6301,6 +6543,26 @@ class DevelopmentEvidenceForm(forms.Form):
         if not files:
             raise forms.ValidationError("Vali vähemalt üks fail.")
         return list(files)
+
+
+class DevelopmentEvidenceForm(RecordEvidenceForm):
+    """`+ Lisa fail` on a recorded `Menetluse areng`."""
+
+    slug = "menetluse_areng"
+
+
+class ExternalPositionEvidenceForm(RecordEvidenceForm):
+    """`+ Lisa fail` on a recorded `Väline seisukoht`.
+
+    The position panel captured files only at the moment of capture, so an
+    association that sends its position paper a week after somebody wrote down
+    what it said on the telephone had nowhere on the file to put it: `Muuda`
+    deliberately does not take bytes, and there was no second act. This is that
+    act, and it is the same one `Menetluse areng` has had since docs/adr/0091
+    §5.4 (QA-021).
+    """
+
+    slug = "valine_seisukoht"
 
 
 class CompactClosureForm(ChipChoices, forms.Form):

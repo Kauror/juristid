@@ -467,7 +467,7 @@ before the closure.
       </details>
     {% endif %}
     {% if can_write_business_content and matter.is_open %}
-      <p class="uxtl__editactions">
+      <div class="uxtl__editactions">
         {% comment %}
           «Muuda» on its own says which verb and not which record, and a
           chronology may show a dozen of these. The accessible name is
@@ -484,7 +484,15 @@ before the closure.
                 hx-get="{% url 'matters:update_engagement' pk=matter.pk engagement_id=engagement.pk %}"
                 hx-target="#kaasamine-{{ engagement.pk }}-sisu"
                 hx-swap="outerHTML">Muuda</button>
-      </p>
+        {% comment %}
+          `Kustuta`, beside `Muuda`. The same consultation recorded twice is the
+          ordinary mistake here, and correcting the second copy into something
+          else leaves a round nobody ran (OWNER-04, docs/adr/0102).
+        {% endcomment %}
+        {% with head_id=engagement.pk|stringformat:"s" %}
+          {% include "matters/partials/row_remove.html" with record=engagement remove_kind="kaasamine" remove_label="kaasamine" remove_genitive="kaasamise" remove_revision=engagement.updated_at.isoformat remove_named_by="kaasamine-"|add:head_id|add:"-pealkiri" %}
+        {% endwith %}
+      </div>
     {% endif %}
   {% endif %}
 </div>

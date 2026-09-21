@@ -19,6 +19,8 @@ whole design is about what it is not allowed to say while answering:
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from django.urls import reverse
 
@@ -723,12 +725,17 @@ def test_the_rail_is_absent_rather_than_empty(signed_in, specialist):
     nodes and is promised no next steps: six «Teadmata» nodes is a heading spent
     announcing that the application knows nothing.
 
-    Its `Alustatud` is not a claim about a procedure, though — it is a date the
-    file recorded — and it goes on reading. Withdrawing it because the file is
-    unclassified would lose recorded information in what is otherwise a layout
-    change.
+    **What it draws instead is whatever the file has written down.** That used
+    to include `Alustatud`, which every Matter had because it was
+    `Matter.created_at` — so this section was never actually empty. It is now
+    (docs/adr/0100 §1), and the recorded half of the claim is asserted with a
+    date the file really recorded: a deadline somebody typed is not a claim
+    about a procedure, and withdrawing it because the file is unclassified
+    would lose recorded information in what is otherwise a layout change.
     """
-    matter = factories.MatterFactory(owner=specialist, track="")
+    matter = factories.MatterFactory(
+        owner=specialist, track="", response_deadline=date(2026, 11, 5)
+    )
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
@@ -736,4 +743,4 @@ def test_the_rail_is_absent_rather_than_empty(signed_in, specialist):
     assert "lprail__node" not in body
     assert "lprail__now" not in body
     assert "Ees võib olla" not in body
-    assert "Alustatud" in body
+    assert "Arvamuse tähtaeg" in body

@@ -393,6 +393,52 @@ def test_every_button_states_its_type() -> None:
     assert not offenders, "button with no type:\n" + "\n".join(offenders)
 
 
+DJANGO_COMMENT = re.compile(r"\{%\s*comment\s*%\}.*?\{%\s*endcomment\s*%\}|\{#.*?#\}", re.S)
+
+#: `<p>` … `</p>`, non-greedy, with no nested paragraph tag allowed inside.
+PARAGRAPH = re.compile(r"<p\b[^>]*>(?:(?!</?p\b).)*</p>", re.S | re.I)
+
+#: A `<details>` written into a template, or the partial that renders one.
+DISCLOSURE = re.compile(r"<details\b|row_remove\.html", re.I)
+
+
+def test_no_paragraph_encloses_a_disclosure() -> None:
+    """A `<p>` cannot hold a `<details>`, and the template never says so.
+
+    The HTML tree builder closes an open `p` at a `<details>` start tag, so
+    `<p class="row"><button>Muuda</button><details>…</details></p>` is parsed
+    into three boxes: the paragraph with the button in it, the disclosure as the
+    paragraph's *sibling*, and an empty paragraph behind it. In a flex row that
+    is a control dropping onto a line of its own — which is exactly how
+    `Kustuta` came to sit under `Muuda` instead of beside it in every removable
+    row of `Teema käik`, against what the owner asked for (OWNER-04,
+    docs/adr/0102), and what the facts rail met before it
+    (`tests/test_teema_rail.py`).
+
+    Nothing else catches it. The template reads correct, the response body
+    carries exactly what was written, every other contract test passes, and a
+    screenshot is merely taller. Only the DOM disagrees — so the rule is kept
+    here, on the source, where it costs nothing and cannot be missed.
+
+    Django comments are stripped first: the partials explain this defect in
+    prose and would otherwise report themselves.
+    """
+    offenders: list[str] = []
+    for template in TEMPLATES:
+        text = DJANGO_COMMENT.sub("", template.read_text(encoding="utf-8"))
+        for match in PARAGRAPH.finditer(text):
+            if DISCLOSURE.search(match.group(0)):
+                line = text[: match.start()].count(chr(10)) + 1
+                offenders.append(
+                    f"{template.relative_to(TEMPLATE_DIR)}:{line}: "
+                    f"{' '.join(match.group(0).split())[:100]}"
+                )
+    assert not offenders, (
+        "a <p> that contains a <details> is split by the parser; use a <div>:\n"
+        + "\n".join(offenders)
+    )
+
+
 def test_paragraphs_are_not_used_as_flex_or_grid_containers_by_accident() -> None:
     """The prose measure in base.css must not reach component paragraphs.
 

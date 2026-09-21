@@ -143,6 +143,11 @@ SOURCE_LABELS: dict[str, str] = {
     # by the visual regression the moment SEARCH-001 made a recorded
     # `Kaasamine` findable.
     SearchSourceKind.ENGAGEMENT.value: "Kaasamine",
+    # Added with the kinds themselves, and for the reason the note above gives:
+    # the template prints `source_label` into a badge, and a kind missing from
+    # this map renders one that is empty (QA-003, QA-020).
+    SearchSourceKind.PROCEDURAL_DEVELOPMENT.value: "Märge",
+    SearchSourceKind.EXTERNAL_POSITION.value: "Arvamus või tagasiside",
 }
 
 #: Deterministic tiers. Higher wins, and the gaps are wide so that a strong
@@ -270,6 +275,8 @@ OPAQUE_LOCATOR_KINDS: frozenset[str] = frozenset(
     {
         SearchSourceKind.ENGAGEMENT.value,
         SearchSourceKind.ENTRY.value,
+        SearchSourceKind.EXTERNAL_POSITION.value,
+        SearchSourceKind.PROCEDURAL_DEVELOPMENT.value,
         SearchSourceKind.SUBMISSION.value,
     }
 )

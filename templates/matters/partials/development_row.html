@@ -260,7 +260,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       </span>
     {% endif %}
     {% if can_write_business_content and matter.is_open %}
-      <p class="uxtl__editactions">
+      <div class="uxtl__editactions">
         {% comment %}
           «Muuda» on its own says which verb and not which record, and a
           chronology may show a dozen of these. The accessible name is built by
@@ -305,7 +305,18 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-get="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
                 hx-target="#menetluse-areng-{{ development.pk }}-sisu"
                 hx-swap="outerHTML">+ Lisa fail</button>
-      </p>
+        {% comment %}
+          `Kustuta`, beside the two chips and last of the three.
+
+          A `Märge` filed on the wrong Teema is not history and correcting it
+          leaves a sentence nobody wrote; this takes it off the active file and
+          leaves it in `Kõik muudatused` with the name of whoever removed it
+          (OWNER-04, docs/adr/0102).
+        {% endcomment %}
+        {% with head_id=development.pk|stringformat:"s" %}
+          {% include "matters/partials/row_remove.html" with record=development remove_kind="marge" remove_label="märge" remove_genitive="märke" remove_revision=development.updated_at.isoformat remove_named_by="menetluse-areng-"|add:head_id|add:"-pealkiri" %}
+        {% endwith %}
+      </div>
     {% endif %}
   {% endif %}
 </div>

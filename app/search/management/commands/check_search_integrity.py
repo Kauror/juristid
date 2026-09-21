@@ -56,7 +56,13 @@ from django.db.models import Count, F, Q
 from app.documents.enums import DerivativeStatus
 from app.documents.models import DocumentTextFragment
 from app.legacy_import.source_pages import MatterSourcePage
-from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.models import (
+    Entry,
+    Matter,
+    MatterEngagement,
+    MatterExternalPosition,
+    MatterProceduralDevelopment,
+)
 from app.search.freshness import FreshnessStatus
 from app.search.freshness import status as freshness_status
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
@@ -88,10 +94,17 @@ def _expected_populations() -> list[tuple[str, str, int]]:
     The fragment count is restricted to ACTIVE derivatives because that is what
     ``indexable_fragments`` projects: the pages of a superseded parse are kept
     as evidence and deliberately not searchable.
+
+    Removed records are excluded for the same reason, one level up: a row a
+    lawyer took off the file projects nothing, so counting it here would report
+    a permanent shortfall on every Matter anybody has ever corrected — the
+    check crying wolf about content that is absent on purpose
+    (docs/adr/0102).
     """
+    live = {"removed_at__isnull": True}
     return [
         ("Teemad", SearchSourceKind.MATTER.value, Matter.objects.count()),
-        ("Sissekanded", SearchSourceKind.ENTRY.value, Entry.objects.count()),
+        ("Sissekanded", SearchSourceKind.ENTRY.value, Entry.objects.filter(**live).count()),
         ("Arvamused", SearchSourceKind.SUBMISSION.value, Submission.objects.count()),
         (
             "Dokumendi tekstiosad",
@@ -109,7 +122,25 @@ def _expected_populations() -> list[tuple[str, str, int]]:
         # said the index was healthy while content sat outside the corpus.
         # A kind that is projected and not counted here is a kind nothing
         # watches.
-        ("Kaasamised", SearchSourceKind.ENGAGEMENT.value, MatterEngagement.objects.count()),
+        (
+            "Kaasamised",
+            SearchSourceKind.ENGAGEMENT.value,
+            MatterEngagement.objects.filter(**live).count(),
+        ),
+        # And the two the composer simplification left outside the corpus for
+        # longer than AUTH-003 left `Kaasamine` there: `+ Märge` is the
+        # product's main capture action and nothing it wrote was ever indexed,
+        # and a recorded opinion was not either (QA-003).
+        (
+            "Märked",
+            SearchSourceKind.PROCEDURAL_DEVELOPMENT.value,
+            MatterProceduralDevelopment.objects.filter(**live).count(),
+        ),
+        (
+            "Arvamused ja tagasiside",
+            SearchSourceKind.EXTERNAL_POSITION.value,
+            MatterExternalPosition.objects.filter(**live).count(),
+        ),
     ]
 
 
