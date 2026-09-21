@@ -839,9 +839,12 @@ def test_an_unplaced_row_stays_visible_and_says_it_is_not_a_defect(page, base_ur
     # is what is grouped under it (`timeline_items.html`, `phase_history.py`).
     unplaced = history(page).locator(".uxtl__phase--unplaced ~ article.uxtl__item")
     assert unplaced.count() >= 1, "the entries are still under the heading"
-    # … and no longer explains itself.
+    # … and no longer explains itself. The paragraph is *gone*, not emptied:
+    # an element left behind with no text would keep its own margins and leave
+    # the group standing in dead whitespace.
     expect(history(page)).not_to_contain_text("Etapp selgub")
     expect(history(page)).not_to_contain_text("ei saa neid kindlalt siduda")
+    expect(history(page).locator(".uxtl__phase--unplaced + .uxtl__phasenote")).to_have_count(0)
     # Not red, not a count, not an icon.
     expect(history(page).locator(".uxtl__phase--unplaced")).not_to_contain_text("!")
 

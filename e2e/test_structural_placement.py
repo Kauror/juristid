@@ -466,3 +466,56 @@ def test_the_rail_with_a_deadline_beside_the_phase_does_not_overflow(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )
     assert not overflows, f"the document scrolls sideways at {width}px"
+
+    # **The strip absorbs it, and that is the contract rather than «it fits».**
+    # A rail of seven columns does not fit a phone and is not meant to: it
+    # scrolls itself, which is why the document does not. Asserted as the
+    # relationship between the two — the strip is a scroll container, and at a
+    # width where it has more columns than room it really is scrolled — and not
+    # as a pixel count, because how many columns fit is a font and a locale
+    # (docs/adr/0074 §12.2).
+    strip = page.evaluate(
+        """() => {
+            const el = document.querySelector('.tl-strip');
+            return {overflowX: getComputedStyle(el).overflowX,
+                    scrollable: el.scrollWidth > el.clientWidth + 1};
+        }"""
+    )
+    # Below the stylesheet's own 720px breakpoint the strip is a scroll
+    # container; above it the row has room and does not need to be one. The
+    # breakpoint is read from the rule rather than guessed, and the widths
+    # either side of it are what this parametrisation is for
+    # (static/css/app.css, `@media (max-width: 720px)`).
+    if width <= 720:
+        assert strip["overflowX"] in ("auto", "scroll"), strip
+        assert strip["scrollable"], f"the rail should scroll itself at {width}px, not clip"
+
+
+@pytest.mark.parametrize("width", [375, 420])
+def test_the_chronology_row_with_lisa_fail_does_not_overflow(page, base_url: str, width: int):
+    """The other half of §E's narrow-width question, on the row that changed.
+
+    `Lisa fail` is shorter than the words it replaces, so the risk is not that
+    it grew — it is that a row carrying two actions beside a headline is the
+    narrowest thing on the page. Measured as document overflow, which is a real
+    contract, rather than as a wrap count, which is a font.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    sign_in(page, base_url, MARTIN)
+    _matter(page, base_url)
+    headline = "Ministeerium saatis eelnõu"
+
+    open_add_panel(page, "marge-tavaline")
+    form = page.locator("#marge-tavaline")
+    form.locator("[name=title]").fill(headline)
+    form.locator("[name=occurred_on]").fill(_estonian(date.today() - timedelta(days=2)))
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    page.get_by_text(headline).first.wait_for()
+
+    row = page.locator("article.uxtl__item").filter(has_text=headline)
+    expect(row.locator("button.uxtl__edit[id$='-toend']")).to_have_text("+ Lisa fail")
+    overflows = page.evaluate(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
+    )
+    assert not overflows, f"the chronology row scrolls the document sideways at {width}px"
