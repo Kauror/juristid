@@ -296,7 +296,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       </span>
     {% endif %}
     {% if can_write_business_content and matter.is_open %}
-      <p class="uxtl__editactions">
+      <div class="uxtl__editactions">
         {% comment %}
           «Muuda» on its own says which verb and not which record, and a
           chronology may show a dozen of these. The accessible name is built by
@@ -337,7 +337,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {% with head_id=position.pk|stringformat:"s" %}
           {% include "matters/partials/row_remove.html" with record=position remove_kind="seisukoht" remove_label="seisukoht" remove_genitive="seisukoha" remove_revision=position.updated_at.isoformat remove_named_by="valine-seisukoht-"|add:head_id|add:"-pealkiri" %}
         {% endwith %}
-      </p>
+      </div>
     {% endif %}
   {% endif %}
 </div>

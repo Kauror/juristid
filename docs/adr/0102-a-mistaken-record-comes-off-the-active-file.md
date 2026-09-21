@@ -187,3 +187,22 @@ Three, all additive and none with a backfill:
 Every existing row is `NULL`, which reads as «still on the file», which is what
 every existing row is. There is nothing to backfill: removal is a decision a
 person makes, and no column in this schema records a past one.
+
+## Corrected before release, 2026-09-22
+
+**`Kustuta` was written into a `<p>`, and a `<p>` cannot hold a `<details>`.**
+Every removable row put the include inside `<p class="uxtl__editactions">`, and
+the HTML tree builder closes an open `p` at a `<details>` start tag — so the
+disclosure was parsed as the paragraph's *sibling*, outside the flex row, with
+an empty paragraph behind it. `flex: 0 0 auto` on `.uxtl__remove` was correct
+and reached nothing, because the element was no longer a flex item. The chip
+therefore sat on a line of its own under `Muuda`, in every row of `Teema käik`,
+which is the placement this record set out to give it.
+
+Nothing in the ordinary loop shows this: the template reads correct, the
+response body carries exactly what was written, the contract and template suites
+pass, and the visual candidate is merely taller. The five callers are `<div>`s
+now, `tests/test_ui_contract.py::test_no_paragraph_encloses_a_disclosure` refuses
+the shape on the source, and
+`e2e/test_correction_round_surfaces.py::test_kustuta_sits_beside_muuda_in_the_chronology`
+measures the laid-out line.

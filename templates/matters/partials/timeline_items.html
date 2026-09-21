@@ -333,9 +333,9 @@ record, not professional chronology (master specification 16.5).
           one inside its swap target and one outside it.
         {% endcomment %}
         {% if item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
-          <p class="uxtl__editactions">
+          <div class="uxtl__editactions">
             {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="" %}
-          </p>
+          </div>
         {% endif %}
       {% else %}
         {% comment %}

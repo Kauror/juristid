@@ -26,6 +26,17 @@ control that would refuse them. The server does not trust either of those: it
 checks the role, the Matter's closure and the record's own visibility again
 (`remove_record_view`).
 
+**The row of controls that holds this must be a `<div>`, never a `<p>`.** The
+HTML tree builder closes an open `p` at a `<details>` start tag, so a `<p>`
+carrying `Muuda` and this include is parsed into three boxes — the paragraph
+with `Muuda` in it, this disclosure as its *sibling*, and an empty paragraph
+after it. Nothing about the template looks wrong and the response body carries
+exactly what was written; only the DOM disagrees, and the visible symptom is
+`Kustuta` dropping onto a line of its own under `Muuda` because it is no longer
+a child of the flex row — the placement the owner asked against (OWNER-04).
+`tests/test_ui_contract.py` refuses a paragraph holding a disclosure, because
+the template reads correct either way.
+
 **It swaps `#teema-vaade`.** Taking a row off the file changes the rail, the
 phase later rows are grouped under, and — for an `Oluline tähtaeg` — what the
 header says. Swapping this row alone would leave four surfaces describing a

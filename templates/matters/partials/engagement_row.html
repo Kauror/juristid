@@ -467,7 +467,7 @@ before the closure.
       </details>
     {% endif %}
     {% if can_write_business_content and matter.is_open %}
-      <p class="uxtl__editactions">
+      <div class="uxtl__editactions">
         {% comment %}
           «Muuda» on its own says which verb and not which record, and a
           chronology may show a dozen of these. The accessible name is
@@ -492,7 +492,7 @@ before the closure.
         {% with head_id=engagement.pk|stringformat:"s" %}
           {% include "matters/partials/row_remove.html" with record=engagement remove_kind="kaasamine" remove_label="kaasamine" remove_genitive="kaasamise" remove_revision=engagement.updated_at.isoformat remove_named_by="kaasamine-"|add:head_id|add:"-pealkiri" %}
         {% endwith %}
-      </p>
+      </div>
     {% endif %}
   {% endif %}
 </div>

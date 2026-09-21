@@ -512,3 +512,140 @@ def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_
     picker.locator("[data-orgfind-input]").fill(name)
     page.wait_for_timeout(400)
     assert name in picker.inner_text()
+
+
+# ---------------------------------------------------------------------------
+# The owner's round, re-verified in the laid-out page
+# ---------------------------------------------------------------------------
+
+
+def _boxes(locator_a, locator_b) -> tuple[dict, dict]:
+    """Two bounding boxes, or a failure that says which control was missing."""
+    first = locator_a.bounding_box()
+    second = locator_b.bounding_box()
+    assert first is not None and second is not None, "a control under test is not laid out"
+    return first, second
+
+
+def _on_one_line(first: dict, second: dict) -> bool:
+    """Whether two inline controls share a line, allowing for differing heights.
+
+    Their tops differ by a few pixels even when they are on one line — a 24px
+    chip beside a 16px anchor is centred against it — so the test is vertical
+    overlap rather than equal `y`.
+    """
+    return (
+        first["y"] < second["y"] + second["height"] and second["y"] < first["y"] + first["height"]
+    )
+
+
+def test_muuda_sits_on_the_line_of_the_address_it_edits(page, base_url):
+    """OWNER-02's second half, measured rather than inferred from the markup.
+
+    `procedural_links.html` puts the anchor and the disclosure in one value
+    region, which is necessary and was not sufficient: the rail's value cell is
+    155px, and a bordered chip measuring 56px beside an unlabelled link's parsed
+    host measuring 104px wrapped onto a line of its own. That is the placement
+    the owner reported, produced by the fix for it.
+
+    **A link with no label**, because that is the shape that overflows — a short
+    label such as «EIS 26-0994» fits either way and would pass this test against
+    the defect.
+    """
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA lingi rida"), owner=SANDRA)
+    address = "https://eelnoud.valitsus.ee/main/mount/docList/qa-2?activity=1"
+
+    page.goto(f"{url}muuda/")
+    page.wait_for_load_state("networkidle")
+    page.fill("input[name='menetlus-url']", address)
+    page.get_by_role("button", name="Salvesta").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+
+    card = page.locator("#menetluse-lingid")
+    link = card.locator(".proclink__value > a").first
+    control = card.locator(".proclink__fix > summary").first
+    assert link.inner_text().startswith("eelnoud.valitsus.ee")
+
+    link_box, control_box = _boxes(link, control)
+    assert _on_one_line(link_box, control_box), (
+        f"Muuda wrapped below the link: link {link_box}, control {control_box}"
+    )
+    assert control_box["x"] >= link_box["x"] + link_box["width"] - 1
+
+
+def test_kustuta_sits_beside_muuda_in_the_chronology(page, base_url):
+    """OWNER-04's placement, which the markup alone cannot show.
+
+    `Kustuta` is a `<details>`, and the HTML tree builder closes an open `p` at
+    a `<details>` start tag. Written into `<p class="uxtl__editactions">` it
+    left the flex row entirely — a sibling of the paragraph, on a line of its
+    own under `Muuda`, with an empty paragraph behind it. The template read
+    correct and the response body carried exactly what was written; only the
+    laid-out page disagreed, which is why this is measured here and guarded on
+    the source by `tests/test_ui_contract.py`.
+    """
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA nuppude rida"), owner=SANDRA)
+
+    page.goto(url)
+    page.get_by_text("+ Märge", exact=True).click()
+    page.fill("#id_marge_title", "Märge, mille nupud peavad ühel real olema")
+    page.get_by_role("button", name="Salvesta").first.click()
+    page.wait_for_selector("text=Märge, mille nupud peavad")
+
+    row = page.locator("#ajalugu-loend .uxtl__item", has_text="Märge, mille nupud peavad").first
+    actions = row.locator(".uxtl__editactions").first
+    # The disclosure is a child of the row of controls, not its sibling.
+    assert actions.locator("> details.uxtl__remove").count() == 1
+
+    muuda_box, kustuta_box = _boxes(
+        actions.get_by_role("button", name=re.compile("^Muuda")).first,
+        actions.locator("details.uxtl__remove > summary").first,
+    )
+    assert _on_one_line(muuda_box, kustuta_box), (
+        f"Kustuta wrapped below Muuda: Muuda {muuda_box}, Kustuta {kustuta_box}"
+    )
+    assert kustuta_box["x"] > muuda_box["x"]
+
+
+def test_a_correction_opened_and_saved_keeps_the_member_mark(page, base_url):
+    """OWNER-01's «correctable» half, through `Muuda` and a plain `Salvesta`.
+
+    The editor writes the whole record back, so a box it opens empty is saved
+    empty. `Liige` was rendered on the correction form and not opened on the
+    record: a lawyer fixing a typo in the summary took the mark off without
+    touching it, and the row lost its «· Liige» with no message anywhere.
+    """
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA liikme parandus"), owner=SANDRA)
+
+    page.goto(url)
+    _open_feedback(page)
+    page.locator("#id_tagasiside_source_is_member").check()
+    page.fill("#id_tagasiside_summary", "Liikme tagasiside, mis vajab pisiparandust.")
+    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.wait_for_selector("text=Liikme tagasiside, mis vajab")
+
+    row = page.locator("#ajalugu-loend .uxtl__item", has_text="Liikme tagasiside, mis vajab").first
+    assert "· Liige" in row.inner_text()
+
+    row.get_by_role("button", name=re.compile("^Muuda")).first.click()
+    # Scoped to the row: the `+ Arvamus / tagasiside` launcher further up the
+    # page holds a `summary` box of its own, permanently in the document and
+    # hidden by its radio, so an unscoped wait resolves to that one and never
+    # sees this form arrive.
+    editor = row.locator("form.uxtl__editform")
+    editor.locator("textarea[name='summary']").wait_for(state="visible")
+    assert editor.locator("input[name='source_is_member']").is_checked()
+    editor.get_by_role("button", name="Salvesta", exact=True).first.click()
+    page.wait_for_timeout(1000)
+
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    assert (
+        "· Liige"
+        in page.locator(
+            "#ajalugu-loend .uxtl__item", has_text="Liikme tagasiside, mis vajab"
+        ).first.inner_text()
+    )
