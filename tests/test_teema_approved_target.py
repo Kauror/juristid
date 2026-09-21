@@ -1002,10 +1002,22 @@ def test_the_strip_never_says_praegu(signed_in, specialist, stage):
 # -- F, G: the structured facts ---------------------------------------------
 
 
-def test_an_important_date_draws_no_milestone(signed_in, normal_matter, specialist):
-    """**F.** `Oluline tähtaeg` stays canonical and keeps its fact section, its
-    chronology row once it has passed, and every work surface — it is not a
-    major procedural act and no longer draws a column, in either direction."""
+def test_an_important_date_draws_a_milestone_only_while_it_is_ahead(
+    signed_in, normal_matter, specialist
+):
+    """**F**, as amended by QA-001.
+
+    `Oluline tähtaeg` stays canonical and keeps its fact section, its
+    chronology row and every work surface. It is still not a major procedural
+    act — a deadline that has *passed* draws no column, which is what F was
+    protecting: the chronology already carries it and two drawings of one fact
+    is the duplication docs/adr/0074 §12.1 removed.
+
+    What F got wrong was the other direction. A deadline still ahead had no
+    chronology row either, so «no column» meant the record was invisible on its
+    own Matter — saved, audited, and nowhere a lawyer looks. It draws a column
+    while it is ahead, and the chronology now carries it marked as still ahead.
+    """
     ahead = timezone.localdate() + timedelta(days=21)
     behind = timezone.localdate() - timedelta(days=21)
     for title, when in (("Tulevane tähtaeg", ahead), ("Möödunud tähtaeg", behind)):
@@ -1020,17 +1032,20 @@ def test_an_important_date_draws_no_milestone(signed_in, normal_matter, speciali
         )
 
     assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
-        "Alustatud"
+        "Alustatud",
+        "Tulevane tähtaeg",
     ]
 
     body = _detail(signed_in, normal_matter)
     strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
-    assert "Tulevane tähtaeg" not in strip
+    assert "Tulevane tähtaeg" in strip
     assert "Möödunud tähtaeg" not in strip
-    # Not deleted: both rows are still there, and the one that has happened
-    # still reads in the chronology.
+    # Not deleted, and both read in the chronology: the one that has happened
+    # as history, the one still ahead marked as still ahead.
     assert MatterImportantDate.objects.filter(matter=normal_matter).count() == 2
-    assert "Möödunud tähtaeg" in body[body.index('id="ajalugu-loend"') :]
+    history = body[body.index('id="ajalugu-loend"') :]
+    assert "Möödunud tähtaeg" in history
+    assert "Tulevane tähtaeg" in history
 
 
 def test_an_effective_date_is_joustumine(signed_in, normal_matter, specialist):
@@ -2262,14 +2277,19 @@ def test_the_chronology_is_newest_first(signed_in, normal_matter, specialist):
 def test_a_dated_fact_reaches_the_chronology_only_once_it_has_happened(
     signed_in, normal_matter, specialist
 ):
-    """The chronology answers what has *happened*, and that rule is unchanged.
+    """The chronology answers what has happened, and says so where it does not.
 
-    What changed around it is that the strip no longer answers «where is this
-    going»: it is a sparse list of major procedural acts, all of them
-    historical. So an `Oluline tähtaeg` still ahead of us is on neither surface
-    of the Teema tab — it reads in its own fact section and on the work
-    surfaces, which is where a date somebody is waiting for belongs
-    (docs/adr/0074 §12, §15).
+    The rule it was written for — a row that has not happened is not silently
+    mixed into the record of what did — is unchanged, and the assertions below
+    still hold it: the past deadline reads as an ordinary row.
+
+    What changed is the conclusion drawn from it. «On neither surface of the
+    Teema tab» left a future deadline invisible on its own Matter, because the
+    fact section went with the approved target and the work surfaces show a
+    bounded horizon. So a future one now reads on both surfaces and is marked
+    on each: a roadmap column ahead of the current phase, and a chronology row
+    that names itself `Eesolev tähtaeg` rather than pretending to be history
+    (docs/adr/0074 §12, §15, as amended by QA-001).
     """
     ahead = timezone.localdate() + timedelta(days=30)
     behind = timezone.localdate() - timedelta(days=30)
@@ -2288,8 +2308,11 @@ def test_a_dated_fact_reaches_the_chronology_only_once_it_has_happened(
     chronology = body[body.index('id="ajalugu-loend"') :]
     strip = body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
 
-    assert "Riigikogu I lugemine" not in strip
-    assert "Riigikogu I lugemine" not in chronology
+    assert "Riigikogu I lugemine" in strip
+    assert "Riigikogu I lugemine" in chronology
+    # And it is marked as still ahead rather than read as something that
+    # happened, which is the distinction this test was written to protect.
+    assert "Eesolev tähtaeg" in chronology
     assert "Kooskõlastusring" not in strip
     assert "Kooskõlastusring" in chronology
 

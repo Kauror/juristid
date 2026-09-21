@@ -206,6 +206,14 @@ PHASE_DEADLINE = 3
 PHASE_EFFECTIVE = 4
 PHASE_TRANSPOSITION = 5
 PHASE_CLOSED = 6
+#: A recorded `Oluline tähtaeg` that is not one of the procedure's own steps.
+#:
+#: Deliberately absent from `legal_process._MILESTONE_PHASE`, which is what
+#: makes it read beside the current phase rather than after every speculative
+#: one — the same unanchored rule `Arvamuse tähtaeg` follows, and for the same
+#: reason: a date this office is watching is not a step somebody else's
+#: procedure takes.
+PHASE_WATCHED = 7
 
 
 #: The three presentation states a column can be in, and the CSS modifier each
@@ -470,21 +478,26 @@ def process_steps(
     # through the record's own `visible_to` like every other source here, so a
     # restricted deadline draws no column and moves no spacing (AUTH-003).
     for record in facts.upcoming_dates:
-        if record.kind != ImportantDateKind.TRANSPOSITION_DEADLINE:
-            continue
         if record.status != FactStatus.ACTIVE:
             # A cancelled expectation is history and reads as history, in the
             # chronology. It is not somewhere this file is still heading.
             continue
+        transposition = record.kind == ImportantDateKind.TRANSPOSITION_DEADLINE
         steps.append(
             ProcessStep(
-                label=TRANSPOSITION_DEADLINE_LABEL,
+                # The transposition deadline keeps the short name a 150 px
+                # column can hold, because the vocabulary already names that
+                # act. Every other watched date is named by the lawyer who
+                # recorded it, and the name they chose is the information: a
+                # column reading `Oluline tähtaeg` would say only that one
+                # exists (QA-001).
+                label=TRANSPOSITION_DEADLINE_LABEL if transposition else record.title,
                 # The period at the precision it was recorded to. A deadline
                 # known only to a quarter prints as a quarter.
                 display=record.display_date,
                 detail=record.title,
                 sort_on=record.period_end,
-                phase=PHASE_TRANSPOSITION,
+                phase=PHASE_TRANSPOSITION if transposition else PHASE_WATCHED,
             )
         )
 

@@ -1078,6 +1078,11 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
 #: and «when was this won».
 WORK_VICTORY_DATE_UNKNOWN = "Kuupäev teadmata"
 
+#: What a chronology row for a deadline that has not arrived yet says about
+#: itself. `Eesolev` is the department page's own word for the same thing, so
+#: the two surfaces name it alike rather than inventing a second vocabulary.
+UPCOMING_DATE_LABEL = "Eesolev tähtaeg"
+
 #: What the chronology calls a confirmed advocacy win.
 WORK_VICTORY_MILESTONE = "Töövõit"
 
@@ -1287,6 +1292,30 @@ def projected_milestones(
             )
             continue
         if not record.has_passed(day):
+            # **An expectation still ahead reads here too, and says so.**
+            #
+            # It used not to. `Teema käik` projects what has happened, the
+            # process strip had dropped `MatterImportantDate` altogether, and
+            # `Minu asjad` shows a bounded horizon — so a deadline a lawyer
+            # recorded through `+ Märge → Oluline tähtaeg` saved with a 200,
+            # closed its panel, and then appeared on the Matter nowhere at all.
+            # A date beyond the horizon appeared nowhere in the working UI, and
+            # the only proof the save had worked was the technical audit log
+            # (QA-001).
+            #
+            # It is marked rather than merged into the record of what happened:
+            # `Eesolev tähtaeg` is the department's own word for a deadline
+            # ahead, and the row states it so the chronology is not read as
+            # claiming this already occurred.
+            add(
+                record,
+                _end_of_day(record.period_end),
+                ChronologyMilestone(
+                    what=record.title,
+                    display_date=record.display_date,
+                    sub=UPCOMING_DATE_LABEL,
+                ),
+            )
             continue
         add(
             record,
