@@ -1,4 +1,4 @@
-"""`+ Lisa tõend` on a `Menetluse areng`, in a real browser.
+"""`+ Lisa fail` on a `Menetluse areng`, in a real browser.
 
 `tests/test_development_evidence.py` holds the rules and runs everywhere
 cheaply. This file holds the ones only a rendered page can settle:
@@ -11,7 +11,7 @@ cheaply. This file holds the ones only a rendered page can settle:
 * that the file a person chooses appears **under that step** when the answer
   comes back, rather than somewhere in the Matter's general document list;
 * that the paper already on the step is still there beside it;
-* and that a second `+ Lisa tõend` on the same row works, because a proceeding
+* and that a second `+ Lisa fail` on the same row works, because a proceeding
   produces paper for months.
 
 **Everything here happens on a Matter the test creates**, for the reason
@@ -74,21 +74,21 @@ def _action(page, suffix: str):
     Both are named **by reference** — the button's own word, then the headline
     element above it — so a chronology showing a dozen of these does not put
     «Märge: …» into the document twice. That makes the accessible name
-    «+ Lisa tõend Märge: …», which is right for a screen reader and
+    «+ Lisa fail Märge: …», which is right for a screen reader and
     useless as a locator. The id is what identifies the control
     (`development_row.html`).
     """
     return _row(page).locator(f"button.uxtl__edit[id$='-{suffix}']")
 
 
-def test_the_row_offers_lisa_toend_beside_muuda(page, base_url: str):
+def test_the_row_offers_lisa_fail_beside_muuda(page, base_url: str):
     """Two acts, two controls. Neither is reachable from inside the other."""
     _file_a_development(page, base_url)
 
     expect(_action(page, "muuda")).to_have_count(1)
     expect(_action(page, "muuda")).to_have_text("Muuda")
     expect(_action(page, "toend")).to_have_count(1)
-    expect(_action(page, "toend")).to_have_text("+ Lisa tõend")
+    expect(_action(page, "toend")).to_have_text("+ Lisa fail")
 
 
 def test_the_picker_asks_for_files_and_nothing_about_the_record(page, base_url: str):
@@ -101,7 +101,7 @@ def test_the_picker_asks_for_files_and_nothing_about_the_record(page, base_url: 
     _file_a_development(page, base_url)
 
     _action(page, "toend").click()
-    form = page.locator("form[aria-label='Tõendi lisamine menetluse arengule']")
+    form = page.locator("form[aria-label='Faili lisamine märkele']")
     form.wait_for()
 
     expect(form.locator("input[type=file]")).to_have_count(1)
@@ -117,11 +117,11 @@ def test_cancelling_the_picker_leaves_the_row_as_it_was(page, base_url: str):
     _file_a_development(page, base_url)
 
     _action(page, "toend").click()
-    form = page.locator("form[aria-label='Tõendi lisamine menetluse arengule']")
+    form = page.locator("form[aria-label='Faili lisamine märkele']")
     form.wait_for()
     form.get_by_role("button", name="Tühista", exact=True).click()
 
-    expect(page.locator("form[aria-label='Tõendi lisamine menetluse arengule']")).to_have_count(0)
+    expect(page.locator("form[aria-label='Faili lisamine märkele']")).to_have_count(0)
     row = _row(page)
     expect(row).to_contain_text(HEADLINE)
     expect(row.get_by_role("link", name=FIRST_FILE)).to_have_count(1)
@@ -140,10 +140,10 @@ def test_a_chosen_file_comes_back_under_the_step_it_supports(page, base_url: str
     _file_a_development(page, base_url)
 
     _action(page, "toend").click()
-    form = page.locator("form[aria-label='Tõendi lisamine menetluse arengule']")
+    form = page.locator("form[aria-label='Faili lisamine märkele']")
     form.wait_for()
     form.locator("input[type=file]").set_input_files(_pdf(LATER_FILE))
-    form.get_by_role("button", name="Lisa tõend", exact=True).click()
+    form.get_by_role("button", name="Lisa fail", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     row = _row(page)
@@ -162,10 +162,10 @@ def test_a_second_paper_can_be_added_to_the_same_step(page, base_url: str):
 
     for name in (LATER_FILE, THIRD_FILE):
         _action(page, "toend").click()
-        form = page.locator("form[aria-label='Tõendi lisamine menetluse arengule']")
+        form = page.locator("form[aria-label='Faili lisamine märkele']")
         form.wait_for()
         form.locator("input[type=file]").set_input_files(_pdf(name))
-        form.get_by_role("button", name="Lisa tõend", exact=True).click()
+        form.get_by_role("button", name="Lisa fail", exact=True).click()
         page.wait_for_load_state("networkidle")
         _row(page).get_by_role("link", name=name).first.wait_for()
 
@@ -179,5 +179,5 @@ def test_the_row_offers_no_way_to_remove_a_paper(page, base_url: str):
     _file_a_development(page, base_url)
 
     row = _row(page)
-    for word in ("Eemalda", "Kustuta", "Eemalda tõend"):
+    for word in ("Eemalda", "Kustuta", "Eemalda fail", "Eemalda tõend"):
         expect(row.get_by_role("button", name=word, exact=False)).to_have_count(0)

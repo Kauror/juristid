@@ -6251,7 +6251,7 @@ class ProceduralDevelopmentEditForm(forms.Form):
 
 
 class DevelopmentEvidenceForm(forms.Form):
-    """`+ Lisa tõend` on a recorded `Menetluse areng`. Files, and nothing else.
+    """`+ Lisa fail` on a recorded `Menetluse areng`. Files, and nothing else.
 
     **One question, because only one thing is being added.** A ministry sends the
     revised draft a fortnight after the step was written up, and the file learns

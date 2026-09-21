@@ -223,3 +223,109 @@ position under that rule, and phases with no date are the ordinary case.
 High. The table is additive and optional; dropping the editor leaves rows nothing
 reads. Restoring the two rails means restoring one template and one partial —
 both are in this commit's parent.
+
+---
+
+## Amendment, 2026-09-21 — a dated point reads where its date is owed
+
+The owner used the merged rail and found one thing wrong with it, plus two words.
+Nothing above is reversed; §1's ordering rule is made specific.
+
+### A1 — an unanchored future point reads beside the current phase
+
+The rule this ADR shipped was «what has happened reads up to the current phase,
+what is expected reads past it», and *past it* was implemented as the end of the
+list. On the ordinary file that is the whole rest of the pattern, because the
+ordinary file dates **no** phase — so a domestic bill out for consultation drew
+
+```
+Kooskõlastusring → Valitsuses → Riigikogus → Jõustumine → Arvamuse tähtaeg 30.09
+```
+
+and this office's own answer fell due, visibly, after the act came into force.
+
+A dated point is now placed against **the phase it belongs to**, and only falls
+back to the current phase when it belongs to none:
+
+* `Arvamuse tähtaeg` and `Tagasiside tähtaeg` belong to no phase. They are not
+  steps of the ministry's procedure at all — they are what this office owes and
+  is owed, during whichever round the file happens to be on — so they read
+  immediately after the current phase.
+* `Jõustumine` belongs to the `Jõustumine` phase and `Ülevõtmise tähtaeg` to
+  `Ülevõtmine`. A commencement two years out reads at the end of the road, where
+  a reader looks for it, and not beside the round the file is on now.
+
+**Decided on the milestone's stable kind and never on its label.** `Jõustumine`
+is both a phase and a commencement record, one letter identical, so no list of
+words can tell them apart; the map is keyed on
+`app/matters/process_timeline.py`'s own `PHASE_*` constants
+(`app/matters/legal_process.py` `_MILESTONE_PHASE`).
+
+**An undated phase still anchors nothing, and a dated one still does.** The
+scan that orders dated points against each other is unchanged — it simply runs
+from the point's own phase rather than from the current one. So a
+`Valitsuses 15.10` somebody recorded orders a deadline on the 30th before it,
+and `Valitsuses 25.09` orders it after: the rail follows what a person wrote
+down, which is the whole of §4.
+
+The narrowed window is the part that makes the anchor real rather than
+decorative. Run from the current phase, the scan reaches the file's *past*
+dated points — `Alustatud`, a sent opinion — and anchored a 2027 commencement to
+whichever of those it was not earlier than, drawing it before `Valitsuses` and
+`Riigikogus`. That was the same defect as the deadline's, on the other kind of
+milestone, and both are closed by one rule.
+
+**Still a projection.** Nothing here writes, and no `Hetkeseis`, `NextAction` or
+`MatterTimelineStep` moves because a rail was drawn.
+
+### A2 — `Lisa tõend` becomes `Lisa fail`
+
+A **UX vocabulary correction and not a domain rename.** The person attaching a
+paper to a `Märge` is adding a file; «tõend» describes what the application does
+with it afterwards, which is real and keeps its name everywhere it belongs — the
+immutable store, `DocumentVersion`, the audit events, `check_evidence_integrity`
+and every ADR that reasons about evidence integrity. A control named after the
+implementation asks a lawyer to translate before they can act.
+
+The route, the view, the form class and the service keep their names. Renaming
+`add_development_evidence` to match a button would be churn with no reader.
+
+### A3 — `Etapiga sidumata` loses its explanatory paragraph
+
+The heading already says it. Two sentences explaining that these records were
+fine were two sentences insisting they might not be, and a group that has to
+reassure a reader reads like a queue somebody is expected to clear. §6 of the
+0098 brief — unplaced is an ordinary answer, no colour, no count, no icon — is
+kept by saying **less**, not more. The grouping, the heading and the records
+under it are untouched.
+
+### A4 — the placements are asserted structurally, not photographed
+
+This round's own lesson, and the reason it is in the ADR. Four of the five
+changes above were *moves*, and a move can sit under the visual suite's
+tolerance while changing what the page means — which is why the screenshots
+stayed green through changes nobody had asked for.
+
+`e2e/test_structural_placement.py` now asserts the placements as document
+facts: which region a control is in, what it is a sibling of, what order the
+rail draws, which words are absent from which section. The visual tolerance is
+**unchanged**; the two lanes answer different questions and neither replaces the
+other. No assertion in that file is a guessed pixel offset — the only
+measurement it makes is the one that is genuinely geometric, that the document
+does not scroll sideways.
+
+### Consequences of the amendment
+
+- No migration, no schema change, no new model field, no search or index change.
+- **No visual baseline moves**, which is worth recording because it was
+  predicted wrongly first. The commencement defect needs a *dated* current
+  phase to show — that is what puts a past dated point between the current
+  phase and everything ahead — and the photographed Matter's
+  `Kooskõlastusring` carries no `Menetluse areng`, so its two commencements
+  already read at the end. The rail that appeared to move locally had been
+  given a development by another browser file writing onto the seeded Matter.
+  `tests/test_rail_followup_round.py` builds the shape deliberately instead.
+- `docs/release-notes/uuendused.toml` keeps its earlier note naming
+  `Lisa tõend`. A release note records what shipped on the day it shipped, and
+  rewriting it would be the one place in this repository that lies about its
+  own history; the new note says the name changed.

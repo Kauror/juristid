@@ -6949,7 +6949,7 @@ def _development_row(
     that `Juristi märkus` keeps its own label and its own attribution after a
     correction exactly as it has after an initial save (docs/adr/0091 §4).
 
-    ``evidence_form`` is the third thing this region can hold: the `+ Lisa tõend`
+    ``evidence_form`` is the third thing this region can hold: the `+ Lisa fail`
     picker. It is a separate argument rather than a mode flag because the two
     forms are two acts — one changes what the row says and one adds a paper to
     what it says — and a single «the row is in edit mode» would be the shape in
@@ -7146,7 +7146,7 @@ def update_development_view(request: HttpRequest, pk: Any, development_id: Any) 
 def add_development_evidence_view(
     request: HttpRequest, pk: Any, development_id: Any
 ) -> HttpResponse:
-    """`+ Lisa tõend` — another paper supporting a step the file already records.
+    """`+ Lisa fail` — another paper supporting a step the file already records.
 
     GET opens the picker in the chronology row; POST captures what was chosen.
     One route, because they are one interaction and the second is only reachable

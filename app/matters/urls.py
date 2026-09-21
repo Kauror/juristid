@@ -287,8 +287,11 @@ urlpatterns = [
         views.timeline_steps_view,
         name="timeline_steps",
     ),
-    # `+ Lisa tõend` on a filed `Menetluse areng`: another paper supporting a step
-    # the file already records, arriving after the step was written up.
+    # `+ Lisa fail` on a filed `Menetluse areng`: another paper supporting a step
+    # the file already records, arriving after the step was written up. The route
+    # keeps the domain's own word — the immutable store really does hold
+    # evidence — while the control a lawyer presses says what they are doing,
+    # which is attaching a file.
     #
     # **`lisa-` in the final segment, and not under the Teema's own `lisa/`.** It
     # is new business content, which is what `lisa/` says everywhere else on this

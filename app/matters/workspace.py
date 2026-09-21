@@ -808,7 +808,7 @@ def add_development_evidence(
     author: Any,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
-    """`+ Lisa tõend` — more evidence for a step the file already records.
+    """`+ Lisa fail` — more evidence for a step the file already records.
 
     **Additive, and that is the whole of it.** A ministry sends the revised draft
     a fortnight after the development was written up; a colleague finds the

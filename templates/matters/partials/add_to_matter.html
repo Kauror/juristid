@@ -36,9 +36,13 @@ underneath — a structured model is never replaced to shorten a row of chips
 **Three things left this launcher and did not go into a sub-choice**, because
 they are not content at all:
 
-* `Lõpeta teema` and `Kustuta teema` are operations on the Matter, not things
-  added to it, and they render under `TEEMA TOIMINGUD` in their own section
-  (`teema_toimingud.html`, docs/adr/0097 §9);
+* `Kustuta` is an operation on the Matter, not a thing added to it, and it
+  renders beside `Muuda teemat` in the header — the two answers to «this record
+  is wrong», in one place (`header.html`, docs/adr/0099 §5). `Lõpeta teema` was
+  moved out beside it under docs/adr/0097 §9 and came **back** into this row as
+  the last chip: closure is not capture, but a section holding one control under
+  a heading of its own cost more than the distinction was worth. There is no
+  `TEEMA TOIMINGUD` section and no `teema_toimingud.html` any more;
 * `Menetluse link` is a fact *about* the Matter — where the proceeding is
   happening — and is asked on `Uus teema`, corrected on `Muuda teemat` and read
   on the rail (docs/adr/0097 §5);

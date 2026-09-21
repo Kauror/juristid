@@ -90,7 +90,13 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.matters.models import Matter
-from app.matters.process_phases import ProcessPattern, pattern_for
+from app.matters.process_phases import (
+    PHASE_JOUSTUMINE,
+    PHASE_ULEVOTMINE,
+    ProcessPattern,
+    pattern_for,
+)
+from app.matters.process_timeline import PHASE_EFFECTIVE, PHASE_TRANSPOSITION
 from app.workflow.dates import format_at_precision
 from app.workflow.enums import Disposition
 
@@ -646,6 +652,15 @@ def matter_rail(
     opened in September read in the order they happened rather than in the order
     the pattern lists them.
 
+    **Where a future point lands when nothing dates it** is the one rule that
+    round got wrong. A phase nobody has dated is not a point in time, so a
+    deadline placed *after* the undated rest of the pattern was being ordered by
+    the pattern's shape rather than by anything about the file: `Arvamuse
+    tähtaeg 30.09` read after `Valitsuses`, `Riigikogus` and `Jõustumine` on a
+    bill still out for consultation. An unanchored future point now reads beside
+    the phase the file is on, where the obligation actually falls due; one whose
+    kind names a phase goes on reading with that phase (:data:`_MILESTONE_PHASE`).
+
     **Hidden steps are gone from the result, not marked.** A row a person removed
     from this file's rail is not a row drawn in grey — that would be the clutter
     they were removing.
@@ -709,9 +724,84 @@ def matter_rail(
         if milestone.sort_on <= today:
             window, default = (0, min(current + 1, len(steps))), current
         else:
-            window, default = (current, len(steps)), len(steps)
+            # **A future point with no phase of its own belongs beside the
+            # current one, not at the end of the road.**
+            #
+            # The default used to be `len(steps)`, which on the ordinary file —
+            # where no future phase carries a date — put an `Arvamuse tähtaeg`
+            # three weeks out *after* `Valitsuses`, `Riigikogus` and
+            # `Jõustumine`. A lawyer reading the rail saw this office's own
+            # deadline drawn as the last thing that happens to a bill still out
+            # for consultation, which is the opposite of what it is: an
+            # obligation falling due during the round the file is on now.
+            #
+            # A milestone whose kind *does* name a phase keeps reading with that
+            # phase — a commencement belongs with `Jõustumine` and a
+            # transposition deadline with `Ülevõtmine`, however far off they
+            # are. Decided on the milestone's stable kind
+            # (`app/matters/process_timeline.py` `PHASE_*`) and never on its
+            # translated label: `Jõustumine` is both a phase and a commencement,
+            # and no list of words can tell those apart.
+            #
+            # Either way it is only the *default*. An explicitly dated future
+            # phase is a real anchor and `_slot_for` still sorts against it, so
+            # `Valitsuses 15.10` and a deadline on the 30th read in the order
+            # somebody actually recorded.
+            #
+            # **The window starts at whichever phase the point belongs beside**,
+            # and that is what makes the anchor do anything at all. `_slot_for`
+            # scans backwards over every dated step in its window, and the
+            # window running from the current phase holds the file's *past*
+            # dated points — `Alustatud`, a sent opinion. A commencement in 2027
+            # then anchored to whichever of those it was not earlier than, which
+            # on the ordinary open file drew it between `Alustatud` and
+            # `Valitsuses`: a date two years out, before two phases nobody has
+            # reached. Narrowed to its own phase, the only things it can sort
+            # against are that phase and the commencements already beside it.
+            anchor = _phase_slot(steps, milestone)
+            beside = current if anchor is None else max(anchor, current)
+            window, default = (beside, len(steps)), min(beside + 1, len(steps))
         steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
     return steps
+
+
+#: Which phase of the pattern each *kind* of dated point belongs to.
+#:
+#: Keyed on `app/matters/process_timeline.py`'s own `PHASE_*` constants, which
+#: are stable domain kinds rather than the labels a reader sees. Only two kinds
+#: name a phase at all: a commencement is the `Jõustumine` part of the
+#: procedure, and a transposition deadline is the `Ülevõtmine` part.
+#:
+#: `Arvamuse tähtaeg` and `Tagasiside tähtaeg` are deliberately absent. Neither
+#: is a step of somebody else's procedure — they are dates this office owes and
+#: is owed, during whichever phase the file happens to be on — so there is no
+#: phase to put them beside and they read beside the current one.
+_MILESTONE_PHASE: dict[int, str] = {
+    PHASE_EFFECTIVE: PHASE_JOUSTUMINE,
+    PHASE_TRANSPOSITION: PHASE_ULEVOTMINE,
+}
+
+
+def _phase_slot(steps: list[RailStep], milestone: Any) -> int | None:
+    """Where this milestone's own phase is drawn, or ``None`` for no phase.
+
+    ``None`` both for a kind that names no phase and for one whose phase this
+    file does not draw — an `Ülevõtmise tähtaeg` on an `EL määrus`, whose
+    pattern has no `Ülevõtmine` node at all, or a phase somebody took off this
+    file's rail. A dated point is never dropped for want of an anchor; it simply
+    has none, and reads where an unanchored point reads.
+    """
+    phase_key = _MILESTONE_PHASE.get(milestone.phase)
+    if phase_key is None:
+        return None
+    return next(
+        (
+            index
+            for index, placed in enumerate(steps)
+            if placed.is_phase and placed.key == phase_key
+        ),
+        None,
+    )
 
 
 def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], default: int) -> int:
@@ -721,7 +811,12 @@ def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], defaul
     about what preceded it, and on the ordinary file *no phase has one*. So the
     scan runs backwards over the dated steps in the window only — after the last
     one that is not later, before the first one that is — and a window holding no
-    dated step at all falls back to ``default``, which is the current phase.
+    dated step at all falls back to ``default``.
+
+    ``default`` is the caller's answer to «and where does it go when nothing in
+    the window dates anything»: the current phase for a point already behind us,
+    and the slot just past the current phase — or just past the point's own
+    phase, where its kind names one — for a point still ahead.
     """
     low, high = window
     position = default

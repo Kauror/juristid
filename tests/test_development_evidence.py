@@ -668,7 +668,7 @@ def test_n_the_workspace_exposes_no_remover(development):
 def test_p_the_row_offers_the_action_and_the_get_opens_the_picker(
     signed_in, normal_matter, development
 ):
-    """The surface: `+ Lisa tõend` beside `Muuda`, opening in the same region."""
+    """The surface: `+ Lisa fail` beside `Muuda`, opening in the same region."""
     detail = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()

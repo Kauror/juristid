@@ -577,14 +577,14 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             MatterTimelineStep.objects.filter(matter=w["matter"]).values_list("phase_key", "hidden")
         ),
     ),
-    # `+ Lisa tõend` — another paper supporting a step already on the file. New
+    # `+ Lisa fail` — another paper supporting a step already on the file. New
     # business content on an open Matter like every other evidence capture, and
     # deliberately separate from the correction above: one changes what the row
     # says, the other adds a document to what it says, and an unauthorized caller
     # must be refused both (docs/adr/0084 §8).
     WriteRoute(
         name="matters:add_development_evidence",
-        label="Tõendi lisamine menetluse arengule",
+        label="Faili lisamine märkele",
         request=lambda w: ({"pk": w["matter"].pk, "development_id": w["development"].pk}, {}),
         files=lambda: {"attachments": _pdf("loata-menetluse-toend.pdf")},
         probe=lambda w: DocumentLink.objects.filter(
