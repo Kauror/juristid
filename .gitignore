@@ -19,6 +19,14 @@ build/
 media/
 staticfiles/
 evidence/
+# A second evidence root, for a second local database.
+#
+# Telling a regression from a polluted fixture needs a database with nothing in
+# it but `seed_e2e_data`, and a second `EVIDENCE_ROOT` beside it — an evidence
+# store is keyed to the rows that reference it, so pointing two databases at
+# one directory makes the second one's checksums answer for the first one's
+# files. Same bytes, same reason to stay out of Git.
+evidence-*/
 .uv/
 
 # Real source material and import output never enter Git.
