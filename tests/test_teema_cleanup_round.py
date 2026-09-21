@@ -285,8 +285,14 @@ def test_dated_points_do_not_all_bunch_ahead_of_an_undated_pattern(specialist):
     assert labels.index("Alustatud") <= current + 1
     # … and what is still expected is past the phase the file is on, not in
     # front of the whole pattern.
-    assert labels.index("Arvamuse tähtaeg") > current
-    assert labels[-1] == "Arvamuse tähtaeg"
+    #
+    # **Immediately past it, and no further.** The follow-up round corrected
+    # where an unanchored future point lands: it used to fall to the end of the
+    # whole pattern, which drew this office's own deadline after `Valitsuses`,
+    # `Riigikogus` and `Jõustumine` on a bill still out for consultation
+    # (tests/test_rail_followup_round.py).
+    assert labels.index("Arvamuse tähtaeg") == current + 1
+    assert labels[-1] == "Jõustumine"
     # The pattern keeps its own order throughout.
     phases = [step.label for step in steps if step.kind == KIND_PHASE]
     assert phases == ["Algus", "Kooskõlastusring", "Valitsuses", "Riigikogus", "Jõustumine"]
