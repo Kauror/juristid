@@ -96,6 +96,26 @@ jobs:
           E2E_GATE_BASE_URL: http://127.0.0.1:8001
         run: uv run python scripts/ci/assert_shard_completeness.py
 
+      # The gauge beside that proof, and the reason nobody has to notice drift
+      # by hand. `ci/shard-timings.json` decays quietly — no test stops running,
+      # nothing goes red, the shards just drift apart until one runner carries
+      # the suite. This prints the numbers every build and says
+      # `CI SHARD TIMINGS NEED REFRESH` when they cross thresholds taken from
+      # the 2026-08-30 table's own decay.
+      #
+      # `continue-on-error` as well as an exit code of 0, because a report is
+      # not a gate: hosted runners have slow days, and a build that went red
+      # over a three-week-old table would teach people to ignore the words.
+      - name: Shard timings are still current
+        continue-on-error: true
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: localhost
+          E2E_BASE_URL: http://127.0.0.1:8000
+          E2E_GATE_BASE_URL: http://127.0.0.1:8001
+        run: uv run python scripts/ci/report_shard_health.py
+
   postgres-safety:
     name: PostgreSQL migration and runtime safety
     runs-on: ubuntu-latest
@@ -107,8 +127,8 @@ jobs:
     # It moved because it is not per-shard work. Migrating from zero, stepping a
     # deployment's state backwards and forwards, and asserting that the OCR
     # engine is really installed are claims about the repository, not about a
-    # subset of it — running them again in each of the 5 shards would
-    # multiply a minute of setup by 5 and prove nothing further. Nothing here
+    # subset of it — running them again in each of the 6 shards would
+    # multiply a minute of setup by 6 and prove nothing further. Nothing here
     # was removed, weakened or reordered; the steps are the ones that stood in
     # the `tests` job, with their reasoning intact.
     services:
@@ -239,9 +259,9 @@ jobs:
           rm -f isolation.log
 
   tests:
-    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 5"
+    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 6"
     runs-on: ubuntu-latest
-    # Was 25 for the whole serial suite. A shard is roughly a 5th of it, and
+    # Was 25 for the whole serial suite. A shard is roughly a 6th of it, and
     # the same reasoning applies at the smaller size: generous slack so that a
     # slow runner is never mistaken for a broken branch, and a number that gets
     # noticed if the suite ever grows into it.
@@ -253,13 +273,13 @@ jobs:
       # re-runs.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6]
 
     # A whole PostgreSQL of its own per shard, which is the point of sharding
     # here rather than reaching for `pytest -n`. Each runner gets its own
     # database server, its own filesystem, its own process environment and its
     # own port space, so the isolation the suite already relies on is not
-    # weakened by running it in 5 places at once — and the assignment is a
+    # weakened by running it in 6 places at once — and the assignment is a
     # pure function of the collected files rather than of which worker happened
     # to be free (ci_sharding.py, docs/ci-architecture.md).
     services:
@@ -323,7 +343,7 @@ jobs:
         # number (docs/ci-architecture.md).
         run: >-
           uv run pytest
-          --shard-count=5 --shard-index=${{ matrix.shard }}
+          --shard-count=6 --shard-index=${{ matrix.shard }}
           --cov --cov-report=
           --junitxml=artifacts/junit-tests-${{ matrix.shard }}.xml
 
@@ -373,7 +393,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 5 shards and the safety checks passed"
+          echo "all 6 shards and the safety checks passed"
 
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -426,14 +446,14 @@ jobs:
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
   browser:
-    name: "Browser, shard ${{ matrix.shard }} of 6"
+    name: "Browser, shard ${{ matrix.shard }} of 7"
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7]
 
     services:
       postgres:
@@ -560,7 +580,7 @@ jobs:
       - name: Browser workflow
         run: >-
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
-          --shard-count=6 --shard-index=${{ matrix.shard }}
+          --shard-count=7 --shard-index=${{ matrix.shard }}
           --browser chromium
           --tracing retain-on-failure
           --output artifacts/playwright
@@ -762,7 +782,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 6 browser shards and the visual suite passed"
+          echo "all 7 browser shards and the visual suite passed"
 
   recovery:
     name: Backup and restore rehearsal

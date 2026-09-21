@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import datetime
 import json
 import pathlib
 import sys
@@ -88,6 +89,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reports", type=pathlib.Path, help="directory of downloaded JUnit XML")
     parser.add_argument("--run", required=True, help="the CI run id these numbers came from")
+    parser.add_argument(
+        "--measured-at",
+        default=datetime.date.today().isoformat(),
+        help=(
+            "the date that run happened, ISO 8601. Defaults to today, which is right "
+            "when you refresh from a run you have just downloaded, and is what "
+            "scripts/ci/report_shard_health.py ages the table against."
+        ),
+    )
     parser.add_argument("--out", type=pathlib.Path, default=OUTPUT)
     arguments = parser.parse_args()
 
@@ -100,6 +110,7 @@ def main() -> int:
 
     document = {
         "measured_from": f"https://github.com/Kauror/juristid/actions/runs/{arguments.run}",
+        "measured_at": arguments.measured_at,
         "note": (
             "Balance input for ci_sharding.py, regenerated with "
             "scripts/ci/update_shard_timings.py. Nothing about which tests run "

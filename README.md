@@ -442,12 +442,12 @@ browser. The test suite needs a PostgreSQL 18 database; set `POSTGRES_*` or
 
 **It is not the whole of what CI runs, and a green run here is not a green
 build.** `pyproject.toml` sets `testpaths = ["tests"]`, so a bare `pytest` does
-not touch `e2e/` at all — 32 browser files and 35 visual baselines. CI also
-shards the suite five ways and the browser suite six, and adds the jobs a single
+not touch `e2e/` at all — 69 browser files and 36 visual baselines. CI also
+shards the suite six ways and the browser suite seven, and adds the jobs a single
 machine cannot usefully repeat: visual regression, the compose smoke test, the
 backup-and-restore rehearsal, migration safety, `check_era_contracts`,
 `check_search_capabilities`, `check_ocr_runtime`, `manage.py check --deploy`,
-shellcheck and `assert_shard_completeness.py`.
+shellcheck, `assert_shard_completeness.py` and `report_shard_health.py`.
 [`docs/ci-architecture.md`](docs/ci-architecture.md) says what each one proves.
 CI remains the only full verifier.
 
