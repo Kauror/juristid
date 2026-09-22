@@ -194,6 +194,20 @@ class NextActionQuerySet(models.QuerySet):
         )
 
 
+#: What a step with no recorded day prints where its date would go.
+#:
+#: A `NextAction` may carry no `target_date` at all since docs/adr/0106 — the
+#: lawyer knows what happens next before knowing when — and every surface that
+#: shows one step has to be able to say so in words. The same construction as
+#: `Etapp määramata`, `Vastutaja määramata` and `Hetkeseis määramata`.
+#:
+#: **Not «Tähtaeg määramata».** This product already has two things called a
+#: tähtaeg — `Arvamuse tähtaeg` and `Oluline tähtaeg`, both owed to somebody
+#: outside — and a day a lawyer picks for their own step is neither, which is
+#: the distinction `date_label` keeps by printing «Plaanis» (docs/adr/0054).
+NO_DATE_LABEL = "Kuupäev määramata"
+
+
 class NextAction(VisibilityInheritingModel):
     """`Järgmiseks` — the one prominent instruction for a Matter.
 
@@ -296,16 +310,21 @@ class NextAction(VisibilityInheritingModel):
                 condition=~models.Q(text=""),
                 name="workflow_next_action_text_required",
             ),
-            # The rule the work queue rests on: a deadline with no date cannot
-            # be met, missed or planned against. WAIT and MONITOR may be
-            # dateless, because "no idea when" is an honest state.
-            models.CheckConstraint(
-                condition=(
-                    ~models.Q(kind=ActionKind.DO, date_semantics=DateSemantics.DEADLINE)
-                    | models.Q(target_date__isnull=False)
-                ),
-                name="workflow_deadline_requires_a_date",
-            ),
+            # **There is deliberately no «a DEADLINE needs a date» constraint.**
+            #
+            # `workflow_deadline_requires_a_date` stood here until docs/adr/0106.
+            # It read the absence of a date as an incomplete record; what it
+            # actually refused was a complete one. «Vaatan ministeeriumi vastuse
+            # üle» is a whole instruction, and the day it happens is a second
+            # fact the lawyer frequently does not have yet — so the rule made the
+            # form either lose the sentence or invent a day, and an invented day
+            # is a false statement the work queue then reports on.
+            #
+            # `text` is still required, because an action with no text is not a
+            # record of anything. A NULL `target_date` means «no deadline has
+            # been recorded yet» and never today, approximate, waiting or
+            # overdue: every read of it guards the None, and `overdue_date_q`
+            # excludes it in SQL.
             models.CheckConstraint(
                 condition=models.Q(
                     visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
@@ -382,6 +401,24 @@ class NextAction(VisibilityInheritingModel):
         if not self.is_overdue(today) or self.target_date is None:
             return 0
         return days_past_period(self.target_date, self.date_precision, today)
+
+    @property
+    def date_display(self) -> str:
+        """The date, or the words that say there is not one yet.
+
+        `display_date` answers `""` on a `None`, which is right for a caller
+        deciding whether to draw a date cell at all and wrong for the two
+        surfaces that have to draw *something*: `PRAEGUNE TEGEVUS` and the
+        portfolio row each show one open step, and a blank where the day goes
+        reads as a rendering fault rather than as a fact about the record
+        (docs/adr/0106).
+
+        :data:`NO_DATE_LABEL` rather than a dash or `None`: «Kuupäev määramata»
+        is the same construction `Etapp määramata`, `Vastutaja määramata` and
+        `Hetkeseis määramata` already use, so a reader meets one pattern for
+        «this is not recorded» across the product.
+        """
+        return self.display_date or NO_DATE_LABEL
 
     @property
     def display_date(self) -> str:

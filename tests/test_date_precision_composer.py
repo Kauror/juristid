@@ -810,8 +810,15 @@ def test_uus_teema_keeps_the_narrower_contract_it_had(signed_in):
         prefix="next",
     )
 
-    assert crafted.is_valid() is False
-    assert "target_date" in crafted.errors
+    # **The crafted keys reach nothing, which is still the whole claim.** What
+    # the assertion can no longer be is «the form refuses»: since docs/adr/0106 a
+    # step with no day is an ordinary save, so this POST is valid *and* stores
+    # nothing the crafted fields named. That is the stronger reading of ADR 0052
+    # §4's rule — a control the page does not have is not merely refused, it is
+    # absent — and it is what a `hidden` field would have failed.
+    assert crafted.is_valid() is True, crafted.errors
+    assert crafted.as_service_kwargs()["target_date"] is None
+    assert crafted.as_service_kwargs()["date_precision"] == DatePrecision.EXACT
 
 
 def test_the_quick_spans_belong_to_the_next_step_and_to_nothing_else(signed_in, normal_matter):

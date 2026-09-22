@@ -514,15 +514,33 @@ def test_a_next_action_is_created_with_what_and_when_and_nothing_else(signed_in,
     assert action.date_precision == DatePrecision.EXACT
 
 
-def test_a_next_action_without_a_date_is_refused_on_the_date(signed_in, normal_matter):
+def test_a_next_action_without_a_date_is_saved(signed_in, normal_matter):
+    """docs/adr/0106. «Kontrollida, kas ministeerium vastas» is a whole step."""
     response = signed_in.post(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
         {"text": "Kontrollida", "target_date": ""},
         headers={"HX-Request": "true"},
     )
 
+    assert response.status_code == 200
+    action = NextAction.objects.get(matter=normal_matter)
+    assert action.text == "Kontrollida"
+    assert action.target_date is None
+    assert action.kind == ActionKind.DO
+    assert action.date_semantics == DateSemantics.DEADLINE
+    # The page says so in words rather than leaving the cell blank.
+    assert "Kuupäev määramata" in response.content.decode()
+
+
+def test_a_date_with_no_next_action_is_refused_on_the_sentence(signed_in, normal_matter):
+    response = signed_in.post(
+        reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
+        {"text": "", "target_date": "20.10.2026"},
+        headers={"HX-Request": "true"},
+    )
+
     assert response.status_code == 400
-    assert "Vali järgmise tegevuse kuupäev" in response.content.decode()
+    assert "Kirjuta järgmine tegevus." in response.content.decode()
     assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 

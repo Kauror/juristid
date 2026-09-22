@@ -640,17 +640,30 @@ def test_a_closure_without_a_sent_opinion_is_accepted(normal_matter, specialist)
     assert form.is_valid(), form.errors
 
 
-def test_a_next_step_without_a_date_is_still_refused(normal_matter):
-    """And what the `next_date` default broke.
+def test_a_next_step_without_a_date_is_accepted(normal_matter):
+    """docs/adr/0106. The refusal this replaced was «this next step needs a date».
 
-    The composer stopped asking for a kind (ADR 0052), so the shape of the
-    refusal moved: it is no longer «a TEEN needs a date» but «this next step
-    needs a date», raised on the empty control. The rule it protects is the
-    same one, and the reason `next_date` keeps no default is unchanged.
+    The reason `next_date` keeps no default is unchanged and is in fact the same
+    reason this is now accepted: the application does not decide when a lawyer
+    will do their own work. It used to refuse the save instead, which left the
+    person typing a day to get past it.
     """
     form = ComposerForm({"body": "Koosta arvamus", "next_text": "Koosta arvamus"})
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["next_action_kwargs"]["target_date"] is None
+
+
+def test_a_date_with_no_next_step_is_still_refused_on_the_sentence(normal_matter):
+    """The refusal that stays, and the control it belongs to.
+
+    Somebody who pressed `Homme` and then wrote nothing did ask for a step, so
+    they are told which half is missing rather than getting a save with no step
+    in it — and the message points at the box they left empty.
+    """
+    form = ComposerForm({"body": "Koosta arvamus", "next_date": "30.09.2026"})
     assert not form.is_valid()
-    assert form.errors["next_date"] == ["Vali järgmise tegevuse kuupäev."]
+    assert form.errors["next_text"] == ["Kirjuta järgmine tegevus."]
+    assert "next_date" not in form.errors
 
 
 def test_the_edit_page_invents_no_date_for_a_matter_that_has_none(specialist):

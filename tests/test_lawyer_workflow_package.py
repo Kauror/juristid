@@ -1496,7 +1496,12 @@ def test_the_development_route_records_everything_in_one_post(client, specialist
     assert NextAction.objects.get(matter=normal_matter).text == "Vaatan uue teksti läbi"
 
 
-def test_a_half_filled_next_step_is_refused_on_the_empty_control(client, specialist, normal_matter):
+def test_a_next_step_with_no_date_saves_the_whole_marge(client, specialist, normal_matter):
+    """docs/adr/0106, which reverses what 0105 §4 decided about this control.
+
+    The `Märge` and the step are one transaction either way; what changed is
+    that the step no longer needs a day for the transaction to be allowed.
+    """
     client.force_login(specialist)
     response = client.post(
         _development_url(normal_matter),
@@ -1507,8 +1512,29 @@ def test_a_half_filled_next_step_is_refused_on_the_empty_control(client, special
         },
     )
 
+    assert response.status_code == 200
+    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
+    action = NextAction.objects.get(matter=normal_matter, status=ActionStatus.OPEN)
+    assert action.text == "Vaatan uue teksti läbi"
+    assert action.target_date is None
+
+
+def test_a_next_step_date_with_no_sentence_is_refused_on_the_sentence(
+    client, specialist, normal_matter
+):
+    """And nothing is written — the `Märge` and the step share one transaction."""
+    client.force_login(specialist)
+    response = client.post(
+        _development_url(normal_matter),
+        {
+            "title": "Eelnõu jõudis Riigikokku",
+            "occurred_on": _estonian(_happened()),
+            "next_date": _estonian(_happened() + dt.timedelta(days=30)),
+        },
+    )
+
     assert response.status_code == 400
-    assert "Vali järgmise tegevuse kuupäev." in response.content.decode()
+    assert "Kirjuta järgmine tegevus." in response.content.decode()
     assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
 
 

@@ -332,22 +332,27 @@ def test_a_marge_carrying_nothing_is_refused_with_one_sentence(signed_in, specia
     assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
 
 
-def test_a_half_filled_next_step_is_still_refused_on_the_empty_half(signed_in, specialist, stage):
-    """The one date that stays paired, and the refusal lands where it belongs.
+def test_a_next_step_with_no_day_saves(signed_in, specialist, stage):
+    """docs/adr/0106 reverses the one refusal this round kept.
 
-    A step with no day appears in nobody's `Tähtajad` and in nobody's `Minu asjad`
-    — `set_next_action` refuses `DO`/`DEADLINE` with no date — so this is not made
-    optional with the rest. «Vali kuupäev» is pinned to the date box, not to the
-    sentence somebody did write (ADR 0052 §5).
+    The reasoning for keeping it was that a dateless step appears in nobody's
+    `Tähtajad` and in nobody's `Minu asjad`. The first is true and correct — a
+    list of dates is not where an undated step belongs. The second was wrong:
+    `my_work.undated_items` has rendered a `Kuupäevata` block since the page was
+    built, and simply had only WAIT and MONITOR rows to put in it.
+
+    `tests/test_undated_next_actions.py` owns the whole new contract; this holds
+    the `+ Märge` half of it, on the route this file is about.
     """
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(_add_note(matter), {"next_text": "Vaatan uue versiooni üle"})
 
-    assert response.status_code == 400
-    assert "Vali järgmise tegevuse kuupäev." in response.content.decode()
-    assert not NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).exists()
-    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    assert response.status_code == 200
+    action = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    assert action.text == "Vaatan uue versiooni üle"
+    assert action.target_date is None
+    assert MatterProceduralDevelopment.objects.filter(matter=matter).exists()
 
 
 def test_a_date_with_no_next_step_is_refused_on_the_sentence(signed_in, specialist, stage):
