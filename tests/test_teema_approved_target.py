@@ -278,6 +278,15 @@ def test_the_current_action_is_answerable_on_an_initial_get(signed_in, normal_ma
 
 
 def test_a_refused_save_comes_back_with_what_was_typed(signed_in, normal_matter, specialist):
+    """The refusal is «write something», since docs/adr/0105 §4 made the title optional.
+
+    What this test is about is unchanged: the panel that failed is the panel that
+    comes back open, with its sentence in it. Only the sentence moved — from «write
+    what happened» on one box to «write something, or attach, or move the stage, or
+    set a step», which names the four ways to answer rather than one of them.
+    """
+    from app.matters.services import DEVELOPMENT_NEEDS_SOMETHING
+
     action = _action(normal_matter, specialist)
     response = signed_in.post(
         reverse("matters:add_note", kwargs={"pk": normal_matter.pk}),
@@ -287,12 +296,12 @@ def test_a_refused_save_comes_back_with_what_was_typed(signed_in, normal_matter,
     html = response.content.decode()
 
     assert response.status_code == 400
-    # Its own panel, open, with its own refusal beside its own field — and the
-    # sub-choice inside it reopened too, or the sentence would be printed in a
-    # panel nobody can see (docs/adr/0097 §8).
+    # Its own panel, open, with its own refusal inside it — and the sub-choice
+    # reopened too, or the sentence would be printed in a panel nobody can see
+    # (docs/adr/0097 §8).
     assert 'id="lisa-marge"' in html
     assert 'id="marge-tavaline-valik"' in html
-    assert "Kirjuta, mis juhtus." in html
+    assert DEVELOPMENT_NEEDS_SOMETHING in html
     # And the current action is untouched by a refused note.
     action.refresh_from_db()
     assert action.status == ActionStatus.OPEN

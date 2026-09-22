@@ -38,7 +38,7 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.dates import format_estonian_date
-from app.matters import legal_process, phase_history, selectors
+from app.matters import selectors
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind
 from app.matters.models import (
@@ -49,7 +49,6 @@ from app.matters.models import (
     MatterProceduralDevelopment,
     MatterWebsiteOverview,
 )
-from app.matters.process_phases import PHASE_KEYS
 from app.submissions.enums import RecipientRole
 from app.submissions.links import linked_submissions_by_overview
 from app.submissions.models import Submission, SubmissionRecipient
@@ -195,17 +194,18 @@ _MILESTONE_LABELS: dict[str, str] = {
 #: not what it is called (app/matters/process_timeline.py `SENT_LABEL`).
 SUBMISSION_MILESTONE = "Arvamus välja"
 
-#: What a published or cancelled `Ülevaade / uudis` is called on the chronology,
-#: and what its link says.
+#: What a published or cancelled `Ülevaade / uudis` is called on the chronology.
 #:
 #: Named here rather than written into `projected_milestones` twice, because the
 #: published row and the cancelled one have to agree — a rename that reached one
-#: and not the other would put two names for one activity on one page. The link
-#: says `Ava ülevaade või uudis` rather than naming a site: since docs/adr/0085
-#: §2 the address may be anywhere on the public web, and `Ava kodulehel` would
-#: have promised a page on koda.ee that the row no longer guarantees.
+#: and not the other would put two names for one activity on one page.
+#:
+#: **The link beside it carries the address and no label.** `Ava ülevaade või
+#: uudis` stood there until docs/adr/0105 §3, on the argument that a raw URL is a
+#: line a reader has to parse; what it cost was the one thing a reader of this row
+#: wants — *which page* — in exchange for a sentence saying what a link is for.
+#: `MatterWebsiteOverview.link_display` decides how the address prints.
 WEBSITE_OVERVIEW_MILESTONE = "Ülevaade / uudis"
-WEBSITE_OVERVIEW_LINK_LABEL = "Ava ülevaade või uudis"
 
 #: What a published row prints where its publication date would go, when nobody
 #: knows what that date is.
@@ -419,25 +419,6 @@ class TimelineItem:
     #: what this row happened to do to it. Empty on every row whose operation
     #: moved no stage, which is nearly all of them (docs/adr/0092 §6).
     stage_effect: str = ""
-    #: Which phase occurrence this row was grouped into, once it has been.
-    #:
-    #: Attached by `app.matters.phase_history` after the whole list is built and
-    #: before it is paginated, so a phase opened by a development on page three
-    #: still places the rows on page one. `None` on every row of a file that
-    #: supports no phases, which is when the chronology renders flat exactly as
-    #: it always has.
-    phase: Any = None
-    #: Whether this row is the first of its occurrence *on this page*, and
-    #: therefore the row the section heading is drawn above.
-    #:
-    #: Page-relative on purpose. A section longer than one page continues after
-    #: «Näita varasemaid», and the continuation has to carry its own heading or
-    #: the rows below the fold would sit under whatever heading happened to be
-    #: last — which on a grouped history is a different phase.
-    opens_phase: bool = False
-    #: Whether the heading this row opens is a *continuation* of a section that
-    #: began on an earlier page, rather than the start of a new one.
-    phase_continues: bool = False
 
     @property
     def is_milestone(self) -> bool:
@@ -951,6 +932,13 @@ EXTERNAL_POSITION_DATE_UNKNOWN = "Kuupäev teadmata"
 #: is the same two vocabularies with the seam moved one screen along. The
 #: **record** is untouched: same table, same rows, same events, same historical
 #: values, and every stored title reads exactly as it was written.
+#:
+#: **It is also the whole headline on a record with no title**, which `+ Märge`
+#: has been able to write since docs/adr/0105 §4 — a file, a stage change or a
+#: next step is a complete record of something and needs no sentence over it. The
+#: fallback is here, in the presentation layer, and nothing is stored: a headline
+#: derived from the note, the filename or the stage would be the guessing this
+#: repository refuses (`MatterProceduralDevelopment.title`).
 DEVELOPMENT_HEADLINE = "Märge"
 
 
@@ -1125,13 +1113,23 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
     steps, and folding the lawyer's assessment into that line would make one line
     say two things with two authors.
 
+    **A record with no title reads `Märge`, and nothing is invented to fill the
+    line.** `+ Märge` may be a file, a stage change or a next step with no
+    sentence over it (docs/adr/0105 §4), and the row is then the word, the day and
+    whatever is under it. A headline derived from the note's first sentence or
+    from a filename would be the prose-matching this repository refuses.
+
     **What happened and what this office makes of it are two lines.** The `note`
     is :attr:`own_note` and renders under its own label, exactly as a
     `Väline seisukoht`'s does — the same separation, for the same reason
     (docs/adr/0091 §4, §5).
     """
     return ChronologyMilestone(
-        what=f"{DEVELOPMENT_HEADLINE}: {development.title}",
+        what=(
+            f"{DEVELOPMENT_HEADLINE}: {development.title}"
+            if development.title
+            else DEVELOPMENT_HEADLINE
+        ),
         # The date as it was actually known, or the words «kuupäev teadmata» —
         # never the day the row happens to sit on, and never the anchor of a
         # period (docs/adr/0079 §3).
@@ -1573,17 +1571,18 @@ def projected_milestones(
                         if published_on is not None
                         else WEBSITE_OVERVIEW_DATE_UNKNOWN
                     ),
-                    sub=str(overview.get_status_display()),
-                    # **The label, never the address.** A raw URL as the row's
-                    # own text is a line a reader has to parse instead of read,
-                    # and it is the one shape in which a look-alike address would
-                    # be believed. `Ava ülevaade või uudis` says what the link is
-                    # for without claiming which site it is on, which the address
-                    # no longer promises (docs/adr/0085 §2); the template gives
-                    # it `target="_blank"`, `rel="noopener noreferrer"` and a
+                    # **No `sub`, and `Avaldatud` is what it used to hold.** The
+                    # chronology means «this has happened», so a published row
+                    # saying so is a line restating its own section; the one state
+                    # worth a word is the cancelled plan below, which says
+                    # `Tühistatud` because nothing else on the row would
+                    # (docs/adr/0105 §3).
+                    #
+                    # **The address, not a label.** The template gives it
+                    # `target="_blank"`, `rel="noopener noreferrer"` and a
                     # visually-hidden «avaneb uues aknas»
-                    # (templates/matters/partials/timeline_items.html).
-                    links=(ChronologyLink(label=WEBSITE_OVERVIEW_LINK_LABEL, url=overview.url),),
+                    # (`matters/partials/website_overview_link.html`).
+                    links=(ChronologyLink(label=overview.link_display, url=overview.url),),
                 ),
             )
             continue
@@ -1608,26 +1607,6 @@ def projected_milestones(
     return rows
 
 
-class TimelinePage(list):
-    """One page of chronology rows, plus how they are grouped into phases.
-
-    **A list, so that every existing reader is unaffected.** `matter_timeline`
-    has returned ``(rows, has_more)`` since it was written and fifty call sites
-    unpack exactly that; widening the tuple would have rewritten all of them to
-    say nothing new. The grouping is a property *of the page* — which occurrence
-    each row is in, and which section headings the page needs — so it travels
-    with the page rather than beside it.
-
-    ``history`` is empty rather than absent on a file that supports no phases,
-    and :attr:`PhaseHistory.grouped` is then false: the chronology renders flat,
-    exactly as it always has.
-    """
-
-    def __init__(self, rows: Any, *, history: phase_history.PhaseHistory) -> None:
-        super().__init__(rows)
-        self.history = history
-
-
 #: Sentinel for "this caller has not answered the question", so that `None` can
 #: keep meaning «this Matter has no open step» rather than «nobody said».
 _UNREAD = object()
@@ -1643,18 +1622,33 @@ def matter_timeline(
     intelligence: Any = None,
     today: date | None = None,
     current_action: Any = _UNREAD,
-    phases: Any = None,
-) -> tuple[TimelinePage, bool]:
-    """Return one page of the timeline, grouped into phases, newest first.
+) -> tuple[list[TimelineItem], bool]:
+    """Return one page of the timeline — one list, newest first.
+
+    **One chronological list, and no sections.** `Teema käik` grouped these rows
+    into the phases the procedure recorded for one round, which put a heading
+    above each run and `Etapiga sidumata` at the foot holding everything nobody
+    had placed. Two costs, and the second is the one that decided it: the list
+    stopped being chronological, so a reader scrolling for «what happened in
+    September» met the newest phase, then an older one, then a group of rows
+    filed under no phase at all — and the phases were already drawn, in order and
+    with their dates, in `Menetluse kulg` inches above. Where the procedure
+    stands is that section's question and this one answers «what happened», in
+    the order it happened (docs/adr/0105 §1).
+
+    The association itself is untouched: `MatterProceduralDevelopment.
+    process_phase` is still asked on `+ Märge`, still corrected on the row, and
+    is still what marks a node `Kirjas` on the rail
+    (`app.matters.legal_process.recorded_phases`).
 
     Entries are filtered through their own visibility so a restricted entry
     inside an otherwise visible Matter stays hidden. The change-event stream is
     scoped to this Matter, which the caller has already proven the user may
     read.
 
-    ``only`` filters what is *shown*, never what is grouped: a save that wrote
-    a note and set the next step is one action, and the entry filter shows it
-    with its facts rather than tearing it in half.
+    ``only`` filters what is *shown*: a save that wrote a note and set the next
+    step is one action, and the entry filter shows it with its facts rather than
+    tearing it in half.
 
     ``current_action`` is the step this reader may see as open, passed in by the
     Matter page so that the history and `PRAEGUNE TEGEVUS` cannot ask two
@@ -1666,19 +1660,8 @@ def matter_timeline(
     copy first. The row comes back the moment the step is finished or
     superseded, because then it is history (docs/adr/0092 §8).
 
-    ``phases`` is the file's `Menetluse kulg` context — the pattern its `Õigusakt`
-    and `Menetlusliik` place it on, and the `Hetkeseis` key it currently holds —
-    passed in by the Matter page so the rail and the history cannot read two
-    differently-resolved answers about one file. It is resolved here for callers
-    that have none, which costs the one small `values_list` the rail already pays
-    for (`app.matters.legal_process.phase_context`).
-
-    Returns the page and whether more items exist. The page also carries
-    :attr:`TimelinePage.history` — how it is grouped — so that adding the grouping
-    did not change what fifty existing call sites unpack.
+    Returns the page and whether more items exist.
     """
-    if phases is None:
-        phases = legal_process.phase_context(matter=matter)
     # Fetch one extra of each so "is there more" needs no second count query.
     window = offset + limit + 1
 
@@ -1927,45 +1910,17 @@ def matter_timeline(
     if only == TIMELINE_FILTER_ENTRIES:
         items = [item for item in items if item.is_entry]
 
+    # **One order, and it is the only one.** The visible time first, then when it
+    # was recorded, then the time-sortable id — so «Näita varasemaid» continues
+    # the same list rather than opening a section, and a row's neighbours are the
+    # rows either side of it in time (docs/adr/0105 §1).
     items.sort(key=lambda item: (item.occurred_at, item.created_at, item.sort_key), reverse=True)
-
-    # **Grouped before it is paginated, and never after.** A phase is opened by a
-    # development that may itself be forty rows down; grouping one page at a time
-    # would place the same opinion differently depending on which page it landed
-    # on. `phase_history.build` reads the whole scoped list, assigns every row its
-    # occurrence and hands back the same rows in reading order — no query, no
-    # second projection and no row gained or lost (app/matters/phase_history.py).
-    items, history = phase_history.build(
-        items,
-        pattern=phases.pattern,
-        stage_key=phases.stage_key,
-        phase_keys=frozenset(PHASE_KEYS),
-        local_day=_local_day,
-    )
 
     page = items[offset : offset + limit]
     has_more = len(items) > offset + limit
-    # A section that runs past the fold carries its own heading on the next page,
-    # marked as a continuation: «Kooskõlastusring · jätkub». Without it the rows
-    # below would read under whichever heading happened to be last on the page
-    # above, which on a grouped history is a different phase.
-    if page and history.grouped:
-        carried = items[offset - 1].phase if offset else None
-        first = page[0]
-        page = [
-            replace(
-                first,
-                opens_phase=True,
-                phase_continues=carried is not None and carried is first.phase,
-            ),
-            *page[1:],
-        ]
     return (
-        TimelinePage(
-            _disambiguate_files(
-                _with_linked_files(_with_files(_with_next_steps(page, user), user), user)
-            ),
-            history=history,
+        _disambiguate_files(
+            _with_linked_files(_with_files(_with_next_steps(page, user), user), user)
         ),
         has_more,
     )

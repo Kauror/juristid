@@ -17,11 +17,17 @@ and says nothing about the Matter's state — deliberately, because
 controls that would publish or cancel a plan (docs/adr/0075 §12,
 docs/adr/0081 §5).
 
-**The link is labelled and never printed.** `Ava ülevaade või uudis` says what
-the link is for without naming a site the address no longer promises (docs/adr/
-0085 §2); a raw URL as the row's own text is a line a reader has to parse
-instead of read, and it is the one shape in which a look-alike address would be
-believed.
+**The link is the address, and the row says nothing else about it**
+(docs/adr/0105 §3). It read `Avaldatud` on one line and `Ava ülevaade või uudis`
+on the next until this round: a status the chronology already implies, and a
+label naming what a link is for in place of the one thing a reader of the row
+wants, which is *which page*. `MatterWebsiteOverview.link_display` decides how
+the address prints — no scheme, no userinfo, no trailing slash, cut at 72
+characters and marked when it is cut.
+
+**`Muuda`, like every other correction on this page.** `Paranda link` was its own
+verb for the same act, on the one row that had one.
+
 It opens in a new tab because the reader is in the middle of a file and should
 come back to it, with `rel="noopener noreferrer"` and a visually hidden sentence
 saying so, which is the same treatment every external link on this page gets.
@@ -106,14 +112,23 @@ saying so, which is the same treatment every external link on this page gets.
       </p>
     </form>
   {% else %}
-    <a class="uxtl__link" href="{{ overview.url }}"
-       target="_blank" rel="noopener noreferrer">Ava ülevaade või uudis<span
+    <a class="uxtl__link" id="kodulehe-ulevaade-{{ overview.pk }}-aadress"
+       href="{{ overview.url }}"
+       target="_blank" rel="noopener noreferrer">{{ overview.link_display }}<span
        class="visually-hidden"> — avaneb uues aknas</span></a>
     {% if can_write_business_content %}
+      {% comment %}
+        Named by reference — the button's own word, then the address beside it —
+        because a file written up three times shows three of these and «Muuda»
+        alone says which verb and not which record. The address is what tells
+        them apart, which is the whole reason it is now on the page.
+      {% endcomment %}
       <button class="uxtl__edit" type="button"
+              id="kodulehe-ulevaade-{{ overview.pk }}-muuda"
+              aria-labelledby="kodulehe-ulevaade-{{ overview.pk }}-muuda kodulehe-ulevaade-{{ overview.pk }}-aadress"
               hx-get="{% url 'matters:correct_website_overview' pk=matter.pk overview_id=overview.pk %}"
               hx-target="#kodulehe-ulevaade-{{ overview.pk }}-link"
-              hx-swap="outerHTML">Paranda link</button>
+              hx-swap="outerHTML">Muuda</button>
     {% endif %}
   {% endif %}
 </div>

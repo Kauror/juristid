@@ -833,65 +833,6 @@
     });
   }
 
-  /* Collapsing one phase of `Teema käik`.
-   *
-   * **Why this is script rather than a `<details>`.** «Näita varasemaid» swaps
-   * its own button for the next batch *in place* inside `#ajalugu-loend`, so a
-   * phase longer than one page arrives as further siblings of the rows above
-   * it. A wrapper per section would have to be opened on one page and closed on
-   * the next, and the vertical spine running down the left of the list — which
-   * is the grid, not the rows — would break into one piece per section. So the
-   * headings are siblings of the rows, and collapsing is done by hiding the
-   * rows between one heading and the next.
-   *
-   * **Expanded is the state the server sends.** Nothing here decides what a
-   * reader sees on arrival: with script off, or before this runs, every phase is
-   * open and the whole history reads. The button is an affordance added to a
-   * page that is already complete, which is this file's standing rule.
-   *
-   * `aria-expanded` on the button says the state, `hidden` on each row carries
-   * it, and the rows that arrive later inside an open section arrive visible —
-   * they are appended after the button's own section, so nothing has to be
-   * re-hidden after a swap.
-   */
-  function phaseRows(heading) {
-    var rows = [];
-    var node = heading.nextElementSibling;
-    while (node && node.tagName !== "H3") {
-      /* The note under `Etapiga sidumata` belongs to the section and hides with
-         it; the «Näita varasemaid» button does not — it is how the next page is
-         asked for, and a collapsed section must not take it off the page. */
-      if (!node.classList.contains("uxtl__older")) {
-        rows.push(node);
-      }
-      node = node.nextElementSibling;
-    }
-    return rows;
-  }
-
-  function bindPhaseToggles(scope) {
-    var headings = scope.querySelectorAll("#ajalugu-loend h3.uxtl__phase");
-    Array.prototype.forEach.call(headings, function (heading) {
-      if (!once(heading, "phase")) {
-        return;
-      }
-      var button = heading.querySelector(".uxtl__phasetoggle");
-      if (!button) {
-        return;
-      }
-      button.hidden = false;
-      button.setAttribute("aria-expanded", "true");
-      button.addEventListener("click", function () {
-        var open = button.getAttribute("aria-expanded") === "true";
-        button.setAttribute("aria-expanded", open ? "false" : "true");
-        heading.classList.toggle("uxtl__phase--collapsed", open);
-        phaseRows(heading).forEach(function (row) {
-          row.hidden = open;
-        });
-      });
-    });
-  }
-
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     bindQuickDates(root);
@@ -903,7 +844,6 @@
     bindExclusivePopovers(root);
     bindCopyLink(root);
     bindRowFilter(root);
-    bindPhaseToggles(root);
   }
 
   document.addEventListener("DOMContentLoaded", function () {

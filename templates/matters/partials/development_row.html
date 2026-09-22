@@ -237,10 +237,71 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       </p>
     </form>
   {% else %}
-    <p class="uxtl__ms">
-      <span class="uxtl__mswhat" id="menetluse-areng-{{ development.pk }}-pealkiri">{{ milestone.what }}</span>
-      <span class="uxtl__msdate">{{ milestone.display_date }}</span>
-    </p>
+    <div class="uxtl__head">
+      <p class="uxtl__ms">
+        <span class="uxtl__mswhat" id="menetluse-areng-{{ development.pk }}-pealkiri">{{ milestone.what }}</span>
+        <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+      </p>
+      {% if can_write_business_content and matter.is_open %}
+        <div class="uxtl__editactions">
+          {% comment %}
+            «Muuda» on its own says which verb and not which record, and a
+            chronology may show a dozen of these. The accessible name is built by
+            reference — the button's own word, then the headline element above it
+            — rather than by repeating the headline into a visually-hidden span,
+            which would put «Märge: …» into the document twice.
+          {% endcomment %}
+          <button class="uxtl__edit" type="button"
+                  id="menetluse-areng-{{ development.pk }}-muuda"
+                  aria-labelledby="menetluse-areng-{{ development.pk }}-muuda menetluse-areng-{{ development.pk }}-pealkiri"
+                  hx-get="{% url 'matters:update_development' pk=matter.pk development_id=development.pk %}"
+                  hx-target="#menetluse-areng-{{ development.pk }}-sisu"
+                  hx-swap="outerHTML">Muuda</button>
+          {% comment %}
+            `+ Lisa fail` — another paper supporting this step, arriving after the
+            step was written up. Beside `Muuda` and not inside it: correcting what
+            a development says and adding evidence to it are different acts with
+            different audit trails, and a correction form that also captured bytes
+            would make «what changed» unanswerable from one event
+            (docs/adr/0084 §8).
+
+            Named by reference like its neighbour, so a chronology showing a dozen
+            of these does not put «Märge: …» into the document twice.
+
+            **`fail` and not `tõend`, and that is a UX decision rather than a
+            rename.** What the lawyer is doing here is attaching a file to a step
+            they wrote up, and «tõend» is a word about what the application does
+            with it afterwards — an immutable, hashed, verifiable object. That
+            concept is real and keeps its name everywhere it belongs: the store,
+            the audit events, `check_evidence_integrity`, `DocumentVersion`. It is
+            simply not what the person pressing this button has in mind, and a
+            control named after the implementation asks them to translate before
+            they can act (the owner's round, 2026-09-21).
+
+            There is deliberately no counterpart that removes one. Evidence is
+            additive and immutable: a file attached to the wrong step is answered by
+            attaching it to the right one.
+          {% endcomment %}
+          <button class="uxtl__edit" type="button"
+                  id="menetluse-areng-{{ development.pk }}-toend"
+                  aria-labelledby="menetluse-areng-{{ development.pk }}-toend menetluse-areng-{{ development.pk }}-pealkiri"
+                  hx-get="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
+                  hx-target="#menetluse-areng-{{ development.pk }}-sisu"
+                  hx-swap="outerHTML">+ Lisa fail</button>
+          {% comment %}
+            `Kustuta`, beside the two chips and last of the three.
+
+            A `Märge` filed on the wrong Teema is not history and correcting it
+            leaves a sentence nobody wrote; this takes it off the active file and
+            leaves it in `Kõik muudatused` with the name of whoever removed it
+            (OWNER-04, docs/adr/0102).
+          {% endcomment %}
+          {% with head_id=development.pk|stringformat:"s" %}
+            {% include "matters/partials/row_remove.html" with record=development remove_kind="marge" remove_label="märge" remove_genitive="märke" remove_revision=development.updated_at.isoformat remove_named_by="menetluse-areng-"|add:head_id|add:"-pealkiri" %}
+          {% endwith %}
+        </div>
+      {% endif %}
+    </div>
     {% if milestone.sub %}
       <span class="uxtl__mssub">{{ milestone.sub }}</span>
     {% endif %}
@@ -258,65 +319,6 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
              class="visually-hidden"> — avaneb uues aknas</span></a>
         {% endfor %}
       </span>
-    {% endif %}
-    {% if can_write_business_content and matter.is_open %}
-      <div class="uxtl__editactions">
-        {% comment %}
-          «Muuda» on its own says which verb and not which record, and a
-          chronology may show a dozen of these. The accessible name is built by
-          reference — the button's own word, then the headline element above it
-          — rather than by repeating the headline into a visually-hidden span,
-          which would put «Märge: …» into the document twice.
-        {% endcomment %}
-        <button class="uxtl__edit" type="button"
-                id="menetluse-areng-{{ development.pk }}-muuda"
-                aria-labelledby="menetluse-areng-{{ development.pk }}-muuda menetluse-areng-{{ development.pk }}-pealkiri"
-                hx-get="{% url 'matters:update_development' pk=matter.pk development_id=development.pk %}"
-                hx-target="#menetluse-areng-{{ development.pk }}-sisu"
-                hx-swap="outerHTML">Muuda</button>
-        {% comment %}
-          `+ Lisa fail` — another paper supporting this step, arriving after the
-          step was written up. Beside `Muuda` and not inside it: correcting what
-          a development says and adding evidence to it are different acts with
-          different audit trails, and a correction form that also captured bytes
-          would make «what changed» unanswerable from one event
-          (docs/adr/0084 §8).
-
-          Named by reference like its neighbour, so a chronology showing a dozen
-          of these does not put «Märge: …» into the document twice.
-
-          **`fail` and not `tõend`, and that is a UX decision rather than a
-          rename.** What the lawyer is doing here is attaching a file to a step
-          they wrote up, and «tõend» is a word about what the application does
-          with it afterwards — an immutable, hashed, verifiable object. That
-          concept is real and keeps its name everywhere it belongs: the store,
-          the audit events, `check_evidence_integrity`, `DocumentVersion`. It is
-          simply not what the person pressing this button has in mind, and a
-          control named after the implementation asks them to translate before
-          they can act (the owner's round, 2026-09-21).
-
-          There is deliberately no counterpart that removes one. Evidence is
-          additive and immutable: a file attached to the wrong step is answered by
-          attaching it to the right one.
-        {% endcomment %}
-        <button class="uxtl__edit" type="button"
-                id="menetluse-areng-{{ development.pk }}-toend"
-                aria-labelledby="menetluse-areng-{{ development.pk }}-toend menetluse-areng-{{ development.pk }}-pealkiri"
-                hx-get="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
-                hx-target="#menetluse-areng-{{ development.pk }}-sisu"
-                hx-swap="outerHTML">+ Lisa fail</button>
-        {% comment %}
-          `Kustuta`, beside the two chips and last of the three.
-
-          A `Märge` filed on the wrong Teema is not history and correcting it
-          leaves a sentence nobody wrote; this takes it off the active file and
-          leaves it in `Kõik muudatused` with the name of whoever removed it
-          (OWNER-04, docs/adr/0102).
-        {% endcomment %}
-        {% with head_id=development.pk|stringformat:"s" %}
-          {% include "matters/partials/row_remove.html" with record=development remove_kind="marge" remove_label="märge" remove_genitive="märke" remove_revision=development.updated_at.isoformat remove_named_by="menetluse-areng-"|add:head_id|add:"-pealkiri" %}
-        {% endwith %}
-      </div>
     {% endif %}
   {% endif %}
 </div>

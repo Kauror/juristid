@@ -6373,8 +6373,22 @@ class ProceduralDevelopmentEditForm(forms.Form):
 
     use_required_attribute = False
 
+    #: `Mis juhtus?`, and it may be emptied.
+    #:
+    #: **The label is the panel's own**, so somebody correcting what they typed
+    #: reads the same question they answered. It said `Mis menetluses juhtus`,
+    #: which is the narrower wording `+ Märge` stopped using in docs/adr/0097 §6
+    #: — a correction form asking a different question from the capture form is
+    #: two vocabularies for one column.
+    #:
+    #: Optional since docs/adr/0105 §4, and that is what makes this a correction
+    #: rather than a one-way door: `+ Märge` writes titleless records, a record
+    #: must be correctable into every shape it could have been created in, and a
+    #: sentence somebody decides was only restating the file under it has to have
+    #: a way out. The row then reads `Märge` and the day, exactly as a titleless
+    #: capture does.
     title = forms.CharField(
-        label="Mis menetluses juhtus",
+        label="Mis juhtus?",
         required=False,
         max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
         widget=forms.TextInput(attrs={"class": "field__input field__input--compact"}),
@@ -6437,12 +6451,7 @@ class ProceduralDevelopmentEditForm(forms.Form):
         return _precision_chips(self, f"{DEVELOPMENT_PREFIX}_precision")
 
     def clean_title(self) -> str:
-        from app.matters.services import DEVELOPMENT_NEEDS_TITLE
-
-        title = (self.cleaned_data.get("title") or "").strip()
-        if not title:
-            raise forms.ValidationError(DEVELOPMENT_NEEDS_TITLE)
-        return title
+        return (self.cleaned_data.get("title") or "").strip()
 
     def clean(self) -> dict[str, Any]:
         """The period, and the one refusal a correction may raise about it.
@@ -7041,10 +7050,31 @@ class MatterLinkForm(ProceduralLinkCreateForm):
 class MatterProgressForm(forms.Form):
     """`+ Märge · Tavaline` — something happened on this file, and this says what.
 
-    The ordinary note, and the one control a lawyer reaches for most. It asks
-    what happened, on what day, optionally moves `Hetkeseis`, optionally sets
-    the next step, and takes files — six controls for what is nearly always
-    three.
+    The ordinary note, and the one control a lawyer reaches for most. Four
+    questions, in the order somebody answers them: **what did I do, did I attach
+    a file, has the state changed, what is next and by when.**
+
+    **Every one of them is optional, and any one of them is a whole save**
+    (docs/adr/0105 §4). `Mis juhtus?` was required, so a lawyer whose whole answer
+    was the paper that had just arrived — or the file reaching the Riigikogu, or
+    «vaatan uue versiooni üle, 25.09» — was refused until they wrote a sentence
+    restating it. Each of those is a complete record of something and none of them
+    needs a headline over it, so a `Märge` saves with a comment, or a file, or a
+    stage, or a step, or any combination.
+
+    What is still refused is a press carrying **nothing at all**, and it is
+    refused as one sentence naming the four ways to answer rather than as «this
+    field is required» under a box nobody touched. The rule itself belongs to
+    `app.matters.workspace.add_procedural_development`, where the four can be seen
+    together; this form repeats it so a person reads it beside the controls
+    (`DEVELOPMENT_NEEDS_SOMETHING`).
+
+    **The one date that stays paired is the next step's.** `Kuupäev` clears to
+    «kuupäev teadmata» and `Järgmine tegevus` still needs its day, because a
+    dateless step appears in nobody's `Tähtajad` and in nobody's `Minu asjad` —
+    `set_next_action` refuses `DO`/`DEADLINE` with no date for that reason, and a
+    panel that quietly wrote one shape of step the rest of the product cannot show
+    would be worse than the refusal (ADR 0052 §5, `app/workflow/services.py`).
 
     Why this is a `MatterProceduralDevelopment` and not an `Entry`
     -------------------------------------------------------------
@@ -7140,6 +7170,11 @@ class MatterProgressForm(forms.Form):
     #: The label is `Mis juhtus?` rather than `Mis menetluses juhtus` — this
     #: panel is no longer only about the procedure, and the narrower wording
     #: would now be refusing sentences it accepts.
+    #:
+    #: **Optional, and genuinely so since docs/adr/0105 §4.** It was declared
+    #: `required=False` and then refused in `clean_title`, which is how a field
+    #: ends up optional in the contract and required in the product; the refusal
+    #: is gone and `MatterProceduralDevelopment.title` takes the empty string.
     title = forms.CharField(
         label="Mis juhtus?",
         required=False,
@@ -7247,15 +7282,18 @@ class MatterProgressForm(forms.Form):
         attach_phase_choices(self, phases=phases)
 
     def clean_title(self) -> str:
-        from app.matters.services import DEVELOPMENT_NEEDS_TITLE
-
-        title = (self.cleaned_data.get("title") or "").strip()
-        if not title:
-            raise forms.ValidationError(DEVELOPMENT_NEEDS_TITLE)
-        return title
+        return (self.cleaned_data.get("title") or "").strip()
 
     def clean(self) -> dict[str, Any]:
-        """The day may not be ahead, and the next step is answered whole or not at all.
+        """Something has to be answered, the day may not be ahead, and the step is whole.
+
+        **Something, and it may be any of four things.** A `Märge` is saved by a
+        sentence, by a file, by a new `Hetkeseis` or by a next step, and by any
+        combination of them — so the refusal is one sentence naming all four
+        rather than «this field is required» under whichever box the form happened
+        to check first. `add_procedural_development` raises the same sentence from
+        the same constant, because a form is not a boundary
+        (docs/adr/0105 §4, `DEVELOPMENT_NEEDS_SOMETHING`).
 
         **The future-date refusal is the service's**, repeated here so a person
         sees it beside the control they typed into rather than as a panel-level
@@ -7266,9 +7304,13 @@ class MatterProgressForm(forms.Form):
 
         **The half-filled next step is refused on the *empty* control**, which
         is ADR 0052 §5's rule and its wording: «vali kuupäev» pinned to the
-        sentence box points at the wrong field.
+        sentence box points at the wrong field. Both halves are still asked
+        together: an undated step is one the rest of the product cannot show.
         """
-        from app.matters.services import DEVELOPMENT_CANNOT_BE_FUTURE
+        from app.matters.services import (
+            DEVELOPMENT_CANNOT_BE_FUTURE,
+            DEVELOPMENT_NEEDS_SOMETHING,
+        )
 
         cleaned = super().clean() or {}
 
@@ -7288,4 +7330,22 @@ class MatterProgressForm(forms.Form):
             self.add_error("next_date", "Vali järgmise tegevuse kuupäev.")
         elif next_when is not None and not text:
             self.add_error("next_text", "Kirjuta järgmine tegevus.")
+
+        # **Answered last, and only when nothing else has failed.** A save that
+        # already carries a field error has something in it, and adding «write
+        # something» beside that error would be the panel telling somebody their
+        # answer is both wrong and missing.
+        #
+        # `attachments` is read off `cleaned_data` rather than off `self.files`,
+        # so a picker whose files the field itself refused does not count as
+        # content and the person is told about the file rather than about this.
+        if not self.errors and not any(
+            (
+                (cleaned.get("title") or "").strip(),
+                cleaned.get("attachments") or (),
+                cleaned.get("stage") is not None,
+                text,
+            )
+        ):
+            self.add_error(None, DEVELOPMENT_NEEDS_SOMETHING)
         return cleaned

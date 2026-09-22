@@ -5,8 +5,9 @@ The rules this file is here for are the ones only a running page can settle:
 * that the eighth launcher choice opens, saves through HTMX, and puts the
   planned strip on the page without a reload;
 * that publishing a plan moves it off the strip and onto the chronology in the
-  same swap, as a labelled `Ava ülevaade või uudis` that opens in a new tab —
-  never as a printed address;
+  same swap, as the **address itself** opening in a new tab — the label
+  `Ava ülevaade või uudis` and the `Avaldatud` sub-line are both gone, and so is
+  the separate verb `Paranda link` (docs/adr/0105 §3);
 * that a refused address comes back with what was typed still in the box;
 * that nothing *reacts* to a paste — the island ADR 0085 §3 added is still gone
   (docs/adr/0089 §8) — while the box itself opens on today, and a cleared box
@@ -44,6 +45,11 @@ from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_
 pytestmark = pytest.mark.e2e
 
 KODA_URL = "https://koda.ee/uudised/e2e-ulevaade"
+#: How that address prints on the row: no scheme, no trailing slash
+#: (`MatterWebsiteOverview.link_display`, docs/adr/0105 §3). Used as the
+#: link's accessible name, which is what makes three write-ups on one file
+#: tellable apart — the whole reason the address is on the page.
+KODA_LINK_TEXT = "koda.ee/uudised/e2e-ulevaade"
 
 
 def a_new_matter(page, base_url: str) -> str:
@@ -192,7 +198,7 @@ def test_the_panel_asks_a_day_and_an_address_and_nothing_else(page, base_url):
     expect(panel.locator("input[type=file]")).to_have_count(0)
 
 
-def test_publishing_moves_the_row_onto_the_chronology_as_a_labelled_link(page, base_url):
+def test_publishing_moves_the_row_onto_the_chronology_as_its_address(page, base_url):
     sign_in(page, base_url, SANDRA)
     plan_one(page, base_url)
 
@@ -204,14 +210,18 @@ def test_publishing_moves_the_row_onto_the_chronology_as_a_labelled_link(page, b
     # The plan is discharged, so the strip goes with it.
     expect(strip(page)).to_have_count(0)
 
-    link = chronology(page).get_by_role("link", name="Ava ülevaade või uudis")
+    link = chronology(page).get_by_role("link", name=KODA_LINK_TEXT)
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", KODA_URL)
     expect(link).to_have_attribute("target", "_blank")
     expect(link).to_have_attribute("rel", "noopener noreferrer")
-    # The address is where the link goes, never what the row says.
-    expect(chronology(page)).not_to_contain_text(KODA_URL)
-    expect(chronology(page)).to_contain_text("Avaldatud")
+    # The row is the address and nothing else about it: the whole stored URL is
+    # the destination, the printed text drops the scheme, and the `Avaldatud`
+    # sub-line is gone (docs/adr/0105 §3).
+    expect(chronology(page)).to_contain_text(KODA_LINK_TEXT)
+    expect(chronology(page)).not_to_contain_text("https://koda.ee")
+    expect(chronology(page)).not_to_contain_text("Avaldatud")
+    expect(chronology(page)).not_to_contain_text("Ava ülevaade või uudis")
 
 
 def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
@@ -223,11 +233,11 @@ def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
     disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
-    chronology(page).get_by_role("link", name="Ava ülevaade või uudis").wait_for()
+    chronology(page).get_by_role("link", name=KODA_LINK_TEXT).wait_for()
 
     name = (
         chronology(page)
-        .get_by_role("link", name="Ava ülevaade või uudis")
+        .get_by_role("link", name=KODA_LINK_TEXT)
         .evaluate("node => node.textContent.replace(/\\s+/g, ' ').trim()")
     )
 
@@ -269,17 +279,17 @@ def test_cancelling_a_plan_leaves_it_on_the_chronology(page, base_url):
 
 
 def test_a_published_address_can_be_corrected_from_its_own_row(page, base_url):
-    """The row around the form never moves: `Paranda link` swaps the link region
-    and nothing else (docs/adr/0081 §5)."""
+    """The row around the form never moves: `Muuda` swaps the link region and
+    nothing else (docs/adr/0081 §5, renamed by docs/adr/0105 §3)."""
     sign_in(page, base_url, SANDRA)
     plan_one(page, base_url)
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
     disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
-    chronology(page).get_by_role("link", name="Ava ülevaade või uudis").wait_for()
+    chronology(page).get_by_role("link", name=KODA_LINK_TEXT).wait_for()
 
-    chronology(page).get_by_role("button", name="Paranda link").click()
+    chronology(page).locator(".uxtl__weblink").get_by_role("button", name="Muuda").click()
     region = chronology(page).locator(".uxtl__weblink")
     region.locator("[name=url]").wait_for(state="visible")
     expect(region.locator("[name=url]")).to_have_value(KODA_URL)
@@ -289,7 +299,7 @@ def test_a_published_address_can_be_corrected_from_its_own_row(page, base_url):
     # this row has already made (docs/adr/0081 §5).
     region.get_by_role("button", name="Salvesta", exact=True).click()
 
-    link = chronology(page).get_by_role("link", name="Ava ülevaade või uudis")
+    link = chronology(page).get_by_role("link", name=KODA_LINK_TEXT)
     expect(link).to_have_attribute("href", f"{KODA_URL}-parandatud")
 
 
@@ -322,7 +332,7 @@ def test_the_chip_and_the_publish_disclosure_work_from_the_keyboard(page, base_u
     page.keyboard.type(KODA_URL)
     page.locator("#lisa-koduleht").get_by_role("button", name=PLAN_BUTTON).focus()
     page.keyboard.press("Enter")
-    chronology(page).get_by_role("link", name="Ava ülevaade või uudis").wait_for()
+    chronology(page).get_by_role("link", name=KODA_LINK_TEXT).wait_for()
 
 
 def test_the_publish_disclosure_opens_from_the_keyboard(page, base_url):
@@ -379,10 +389,11 @@ def test_the_panel_can_record_a_page_that_is_already_up(page, base_url):
     chronology(page).wait_for(state="visible")
 
     # Straight onto the chronology as a published overview, and no planned row
-    # left behind on the strip.
-    expect(chronology(page)).to_contain_text("Avaldatud")
+    # left behind on the strip. A published row is one carrying an address —
+    # `Avaldatud` was the sub-line that said so and is gone (docs/adr/0105 §3).
+    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
     expect(strip(page)).to_have_count(0)
-    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
+    expect(chronology(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
 
 
 def test_half_a_publication_is_refused_and_keeps_what_was_typed(page, base_url):
@@ -439,8 +450,7 @@ def test_typing_only_an_address_now_records_a_publication(page, base_url):
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 
-    expect(chronology(page)).to_contain_text("Avaldatud")
-    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
+    expect(chronology(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
     expect(strip(page)).to_have_count(0)
 
 
@@ -569,9 +579,9 @@ def test_an_address_with_no_date_is_filed_as_a_publication(page, base_url):
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 
-    expect(chronology(page)).to_contain_text("Avaldatud")
+    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
     expect(chronology(page)).to_contain_text("Kuupäev teadmata")
-    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
+    expect(chronology(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
     # And no plan is left behind claiming the write-up is still owed.
     expect(strip(page)).to_have_count(0)
 
@@ -590,14 +600,14 @@ def test_a_date_typed_by_hand_is_what_gets_stored(page, base_url):
 
     expect(chronology(page)).to_contain_text("14.3.2026")
     expect(chronology(page)).not_to_contain_text("Kuupäev teadmata")
-    expect(chronology(page).get_by_role("link", name="Ava ülevaade või uudis")).to_be_visible()
+    expect(chronology(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
 
 
 def test_a_recorded_date_can_be_cleared_from_the_row_and_stays_cleared(page, base_url):
     """Scenario G, in a browser: the gesture the lawyer feedback asked for.
 
-    `Paranda link` opens on the row's own date, the box is emptied, and the row
-    goes on being a publication — reading «Kuupäev teadmata» rather than today.
+    `Muuda` opens on the row's own date, the box is emptied, and the row goes on
+    being a publication — reading «Kuupäev teadmata» rather than today.
     Reopening the form afterwards shows the box still empty, which is the half
     that would catch an `initial` creeping back in.
     """
@@ -611,8 +621,12 @@ def test_a_recorded_date_can_be_cleared_from_the_row_and_stays_cleared(page, bas
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).get_by_text("14.3.2026").first.wait_for()
 
-    chronology(page).get_by_role("button", name="Paranda link").first.click()
-    form = chronology(page).locator("form").first
+    chronology(page).locator(".uxtl__weblink").get_by_role("button", name="Muuda").first.click()
+    # **Scoped to the link region, not «the first form in the chronology».** Since
+    # docs/adr/0105 §2 the row's `Kustuta` chip sits in the headline's own element
+    # *above* this region, and its confirmation is a `<form>` inside a closed
+    # `<details>` — so «the first form» resolves to something permanently hidden.
+    form = chronology(page).locator(".uxtl__weblink form").first
     form.wait_for(state="visible")
     # The correction form redisplays the stored value in the repository's own
     # short Estonian form, `j.n.Y`, not the zero-padded form somebody typed.
@@ -621,11 +635,12 @@ def test_a_recorded_date_can_be_cleared_from_the_row_and_stays_cleared(page, bas
     form.get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("Kuupäev teadmata").first.wait_for()
 
-    expect(chronology(page)).to_contain_text("Avaldatud")
+    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
+    expect(chronology(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
     expect(chronology(page)).not_to_contain_text("14.3.2026")
 
-    chronology(page).get_by_role("button", name="Paranda link").first.click()
-    reopened = chronology(page).locator("form").first
+    chronology(page).locator(".uxtl__weblink").get_by_role("button", name="Muuda").first.click()
+    reopened = chronology(page).locator(".uxtl__weblink form").first
     reopened.wait_for(state="visible")
     expect(reopened.locator("[name=published_on]")).to_have_value("")
 
@@ -650,7 +665,7 @@ def test_an_untouched_panel_is_refused_rather_than_filing_a_plan(page, base_url)
     expect(reopened.locator(".field__error").first).to_be_visible()
     expect(reopened.locator("[name=published_on]")).to_have_value(opened_on)
     expect(strip(page)).to_have_count(0)
-    expect(chronology(page)).not_to_contain_text("Avaldatud")
+    expect(chronology(page)).not_to_contain_text("Ülevaade / uudis")
 
 
 def test_a_news_item_on_somebody_elses_site_is_recorded(page, base_url):
@@ -666,11 +681,15 @@ def test_a_news_item_on_somebody_elses_site_is_recorded(page, base_url):
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 
-    link = chronology(page).get_by_role("link", name="Ava ülevaade või uudis")
+    link = chronology(page).get_by_role(
+        "link", name="uudised.example/2026/03/kaubanduskoda-hoiatab"
+    )
     expect(link).to_have_attribute("href", news)
     expect(link).to_have_attribute("rel", "noopener noreferrer")
-    # Labelled, never printed — which matters more now that the host is not fixed.
-    expect(chronology(page)).not_to_contain_text(news)
+    # The address is the row's text, and that is what tells a trade paper's
+    # write-up from koda.ee's without following either (docs/adr/0105 §3).
+    expect(chronology(page)).to_contain_text("uudised.example/2026/03/kaubanduskoda-hoiatab")
+    expect(chronology(page)).not_to_contain_text("https://uudised.example")
 
 
 def test_a_refusal_keeps_a_typed_date_and_an_empty_address(page, base_url):

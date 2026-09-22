@@ -158,21 +158,28 @@ def test_the_planned_strip_reads_in_the_neutral_wording(signed_in, normal_matter
     assert "Kodulehe" not in strip
 
 
-def test_the_chronology_names_the_activity_and_labels_the_link(
+def test_the_chronology_names_the_activity_and_shows_the_address(
     signed_in, normal_matter, specialist
 ):
-    """§2. `Ava ülevaade või uudis` promises no particular site, because the row
-    no longer guarantees one — and the address is still never the row's text."""
+    """§2, as docs/adr/0105 §3 leaves it: the row is the activity and its address.
+
+    `Avaldatud` and `Ava ülevaade või uudis` are both gone — a status the
+    chronology already implies, and a label naming what a link is for in place of
+    the one thing a reader of the row wants, which is *which page*. The address
+    prints without its scheme; the `href` is the whole stored URL.
+    """
     _published(normal_matter, specialist, url=NEWS_HTTPS_URL)
 
     body = _detail(signed_in, normal_matter)
     row = body[body.index('id="ajajoon"') :]
 
     assert "Ülevaade / uudis" in row
-    assert "Ava ülevaade või uudis" in row
+    assert "Ava ülevaade või uudis" not in row
     assert "Ava kodulehel" not in row
+    # `Avaldatud` was the sub-line on every published row.
+    assert "Avaldatud" not in row
     assert f'href="{NEWS_HTTPS_URL}"' in row
-    assert f">{NEWS_HTTPS_URL}<" not in row
+    assert ">uudised.example/2026/03/kaubanduskoda-hoiatab<" in row
     assert 'target="_blank"' in row
     assert 'rel="noopener noreferrer"' in row
     assert "avaneb uues aknas" in row

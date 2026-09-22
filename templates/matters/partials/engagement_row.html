@@ -251,10 +251,44 @@ before the closure.
       </p>
     </form>
   {% else %}
-    <p class="uxtl__ms">
-      <span class="uxtl__mswhat" id="kaasamine-{{ engagement.pk }}-pealkiri">{{ milestone.what }}</span>
-      <span class="uxtl__msdate">{{ milestone.display_date }}</span>
-    </p>
+    {% comment %}
+      The headline, the day and the row's own controls, on **one line**
+      (docs/adr/0105 §2, `static/css/ux.css` `.uxtl__head`).
+    {% endcomment %}
+    <div class="uxtl__head">
+      <p class="uxtl__ms">
+        <span class="uxtl__mswhat" id="kaasamine-{{ engagement.pk }}-pealkiri">{{ milestone.what }}</span>
+        <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+      </p>
+      {% if can_write_business_content and matter.is_open %}
+        <div class="uxtl__editactions">
+          {% comment %}
+            «Muuda» on its own says which verb and not which record, and a
+            chronology may show a dozen of these. The accessible name is
+            therefore built by reference — the button's own word, then the
+            headline element above it — rather than by repeating the headline
+            into a visually-hidden span. Repeating it would put «Kaasamine:
+            liikmed» into the document twice, which is a second mention for
+            anything reading the page as text and, measured, for the tests that
+            hold one act to one line (tests/test_matter_engagement.py).
+          {% endcomment %}
+          <button class="uxtl__edit" type="button"
+                  id="kaasamine-{{ engagement.pk }}-muuda"
+                  aria-labelledby="kaasamine-{{ engagement.pk }}-muuda kaasamine-{{ engagement.pk }}-pealkiri"
+                  hx-get="{% url 'matters:update_engagement' pk=matter.pk engagement_id=engagement.pk %}"
+                  hx-target="#kaasamine-{{ engagement.pk }}-sisu"
+                  hx-swap="outerHTML">Muuda</button>
+          {% comment %}
+            `Kustuta`, beside `Muuda`. The same consultation recorded twice is the
+            ordinary mistake here, and correcting the second copy into something
+            else leaves a round nobody ran (OWNER-04, docs/adr/0102).
+          {% endcomment %}
+          {% with head_id=engagement.pk|stringformat:"s" %}
+            {% include "matters/partials/row_remove.html" with record=engagement remove_kind="kaasamine" remove_label="kaasamine" remove_genitive="kaasamise" remove_revision=engagement.updated_at.isoformat remove_named_by="kaasamine-"|add:head_id|add:"-pealkiri" %}
+          {% endwith %}
+        </div>
+      {% endif %}
+    </div>
     {% if milestone.sub %}
       <span class="uxtl__mssub">{{ milestone.sub }}</span>
     {% endif %}
@@ -465,34 +499,6 @@ before the closure.
           </form>
         </div>
       </details>
-    {% endif %}
-    {% if can_write_business_content and matter.is_open %}
-      <div class="uxtl__editactions">
-        {% comment %}
-          «Muuda» on its own says which verb and not which record, and a
-          chronology may show a dozen of these. The accessible name is
-          therefore built by reference — the button's own word, then the
-          headline element above it — rather than by repeating the headline
-          into a visually-hidden span. Repeating it would put «Kaasamine:
-          liikmed» into the document twice, which is a second mention for
-          anything reading the page as text and, measured, for the tests that
-          hold one act to one line (tests/test_matter_engagement.py).
-        {% endcomment %}
-        <button class="uxtl__edit" type="button"
-                id="kaasamine-{{ engagement.pk }}-muuda"
-                aria-labelledby="kaasamine-{{ engagement.pk }}-muuda kaasamine-{{ engagement.pk }}-pealkiri"
-                hx-get="{% url 'matters:update_engagement' pk=matter.pk engagement_id=engagement.pk %}"
-                hx-target="#kaasamine-{{ engagement.pk }}-sisu"
-                hx-swap="outerHTML">Muuda</button>
-        {% comment %}
-          `Kustuta`, beside `Muuda`. The same consultation recorded twice is the
-          ordinary mistake here, and correcting the second copy into something
-          else leaves a round nobody ran (OWNER-04, docs/adr/0102).
-        {% endcomment %}
-        {% with head_id=engagement.pk|stringformat:"s" %}
-          {% include "matters/partials/row_remove.html" with record=engagement remove_kind="kaasamine" remove_label="kaasamine" remove_genitive="kaasamise" remove_revision=engagement.updated_at.isoformat remove_named_by="kaasamine-"|add:head_id|add:"-pealkiri" %}
-        {% endwith %}
-      </div>
     {% endif %}
   {% endif %}
 </div>

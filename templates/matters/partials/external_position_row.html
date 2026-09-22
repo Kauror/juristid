@@ -261,10 +261,60 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       </p>
     </form>
   {% else %}
-    <p class="uxtl__ms">
-      <span class="uxtl__mswhat" id="valine-seisukoht-{{ position.pk }}-pealkiri">{{ milestone.what }}</span>
-      <span class="uxtl__msdate">{{ milestone.display_date }}</span>
-    </p>
+    {% comment %}
+      The headline, the day and the row's own controls, on **one line**
+      (docs/adr/0105 §2, `static/css/ux.css` `.uxtl__head`).
+    {% endcomment %}
+    <div class="uxtl__head">
+      <p class="uxtl__ms">
+        <span class="uxtl__mswhat" id="valine-seisukoht-{{ position.pk }}-pealkiri">{{ milestone.what }}</span>
+        <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+      </p>
+      {% if can_write_business_content and matter.is_open %}
+        <div class="uxtl__editactions">
+          {% comment %}
+            «Muuda» on its own says which verb and not which record, and a
+            chronology may show a dozen of these. The accessible name is built by
+            reference — the button's own word, then the headline element above it
+            — rather than by repeating the headline into a visually-hidden span,
+            which would put «Väline seisukoht: …» into the document twice.
+          {% endcomment %}
+          <button class="uxtl__edit" type="button"
+                  id="valine-seisukoht-{{ position.pk }}-muuda"
+                  aria-labelledby="valine-seisukoht-{{ position.pk }}-muuda valine-seisukoht-{{ position.pk }}-pealkiri"
+                  hx-get="{% url 'matters:update_external_position' pk=matter.pk position_id=position.pk %}"
+                  hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
+                  hx-swap="outerHTML">Muuda</button>
+          {% comment %}
+            `+ Lisa fail` — the position paper that arrives after somebody wrote
+            down what was said. Beside `Muuda` and not inside it: correcting what
+            a position says and adding evidence to it are different acts with
+            different audit trails, and a correction form that also captured bytes
+            would make «what changed» unanswerable from one event (QA-021,
+            docs/adr/0084 §8).
+
+            There is deliberately no counterpart that removes one. Evidence is
+            additive and immutable: a file attached to the wrong position is
+            answered by attaching it to the right one.
+          {% endcomment %}
+          <button class="uxtl__edit" type="button"
+                  id="valine-seisukoht-{{ position.pk }}-toend"
+                  aria-labelledby="valine-seisukoht-{{ position.pk }}-toend valine-seisukoht-{{ position.pk }}-pealkiri"
+                  hx-get="{% url 'matters:add_external_position_evidence' pk=matter.pk position_id=position.pk %}"
+                  hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
+                  hx-swap="outerHTML">+ Lisa fail</button>
+          {% comment %}
+            `Kustuta`, beside `Muuda`. A position attributed to the wrong body is
+            the mistake that matters most on this record — it is a claim about
+            what somebody else thinks — and rewriting it into a different
+            organisation's opinion is not a repair (OWNER-04, docs/adr/0102).
+          {% endcomment %}
+          {% with head_id=position.pk|stringformat:"s" %}
+            {% include "matters/partials/row_remove.html" with record=position remove_kind="seisukoht" remove_label="seisukoht" remove_genitive="seisukoha" remove_revision=position.updated_at.isoformat remove_named_by="valine-seisukoht-"|add:head_id|add:"-pealkiri" %}
+          {% endwith %}
+        </div>
+      {% endif %}
+    </div>
     {% if milestone.sub %}
       <span class="uxtl__mssub">{{ milestone.sub }}</span>
     {% endif %}
@@ -294,50 +344,6 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
              class="visually-hidden"> — avaneb uues aknas</span></a>
         {% endfor %}
       </span>
-    {% endif %}
-    {% if can_write_business_content and matter.is_open %}
-      <div class="uxtl__editactions">
-        {% comment %}
-          «Muuda» on its own says which verb and not which record, and a
-          chronology may show a dozen of these. The accessible name is built by
-          reference — the button's own word, then the headline element above it
-          — rather than by repeating the headline into a visually-hidden span,
-          which would put «Väline seisukoht: …» into the document twice.
-        {% endcomment %}
-        <button class="uxtl__edit" type="button"
-                id="valine-seisukoht-{{ position.pk }}-muuda"
-                aria-labelledby="valine-seisukoht-{{ position.pk }}-muuda valine-seisukoht-{{ position.pk }}-pealkiri"
-                hx-get="{% url 'matters:update_external_position' pk=matter.pk position_id=position.pk %}"
-                hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
-                hx-swap="outerHTML">Muuda</button>
-        {% comment %}
-          `+ Lisa fail` — the position paper that arrives after somebody wrote
-          down what was said. Beside `Muuda` and not inside it: correcting what
-          a position says and adding evidence to it are different acts with
-          different audit trails, and a correction form that also captured bytes
-          would make «what changed» unanswerable from one event (QA-021,
-          docs/adr/0084 §8).
-
-          There is deliberately no counterpart that removes one. Evidence is
-          additive and immutable: a file attached to the wrong position is
-          answered by attaching it to the right one.
-        {% endcomment %}
-        <button class="uxtl__edit" type="button"
-                id="valine-seisukoht-{{ position.pk }}-toend"
-                aria-labelledby="valine-seisukoht-{{ position.pk }}-toend valine-seisukoht-{{ position.pk }}-pealkiri"
-                hx-get="{% url 'matters:add_external_position_evidence' pk=matter.pk position_id=position.pk %}"
-                hx-target="#valine-seisukoht-{{ position.pk }}-sisu"
-                hx-swap="outerHTML">+ Lisa fail</button>
-        {% comment %}
-          `Kustuta`, beside `Muuda`. A position attributed to the wrong body is
-          the mistake that matters most on this record — it is a claim about
-          what somebody else thinks — and rewriting it into a different
-          organisation's opinion is not a repair (OWNER-04, docs/adr/0102).
-        {% endcomment %}
-        {% with head_id=position.pk|stringformat:"s" %}
-          {% include "matters/partials/row_remove.html" with record=position remove_kind="seisukoht" remove_label="seisukoht" remove_genitive="seisukoha" remove_revision=position.updated_at.isoformat remove_named_by="valine-seisukoht-"|add:head_id|add:"-pealkiri" %}
-        {% endwith %}
-      </div>
     {% endif %}
   {% endif %}
 </div>

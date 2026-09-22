@@ -2582,12 +2582,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # vanishing for reasons a reader could not see (docs/adr/0092 §8).
     current_action = selectors.current_action_of(matter, request.user)
     # The file's pattern and current stage, resolved **once** for both surfaces.
-    #
-    # `Menetluse kulg` and the phase headings inside `Teema käik` are the same
-    # vocabulary answering the same question about one file, and they sit inches
-    # apart. Two reads is two chances to disagree — and the disagreement would be
-    # a rail saying `Riigikogus` above a history whose newest section says
-    # `Kooskõlastusring` (app/matters/legal_process.py `PhaseContext`).
     phases = legal_process.phase_context(matter=matter)
     items, has_more = matter_timeline(
         matter=matter,
@@ -2596,7 +2590,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         only=timeline_only,
         intelligence=intelligence,
         current_action=current_action,
-        phases=phases,
     )
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
@@ -2633,11 +2626,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # read by `process_timeline.process_steps` and handed over rather than
         # read again (app/matters/legal_process.py `matter_rail`).
         "rail_steps": matter_rail(matter=matter, user=request.user, rail=rail, milestones=steps),
-        # How `Teema käik` below is grouped: which phase occurrences it draws
-        # headings for, and the current phase when the file records nothing in it
-        # yet. Carried on the page itself, because which occurrence a row belongs
-        # to is a property of that row (app/matters/phase_history.py).
-        "timeline_phases": items.history,
         "matter": matter,
         "current_action": current_action,
         "source_instruction": source_instruction,
@@ -5255,11 +5243,6 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
             "timeline_only": only,
-            # The phase headings travel on the rows, so an older page carries its
-            # own — and a section that runs past the fold says «jätkub» rather than
-            # letting its rows read under whichever heading was last on the page
-            # above (app/matters/timeline.py `TimelineItem.phase_continues`).
-            "timeline_phases": items.history,
         },
     )
 
@@ -6372,8 +6355,9 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
             # person left it in the select. Pre-selected from the file's own
             # `Hetkeseis` and visible beside the date box, so a step being filed
             # from 2019 is not silently taking today's phase; empty is an ordinary
-            # answer and the row reads under `Etapiga sidumata`
-            # (app/matters/phase_history.py).
+            # answer and the row reads in the chronology exactly the same way.
+            # What the value places is a node on `Menetluse kulg`
+            # (`app.matters.legal_process.recorded_phases`, docs/adr/0105 §1).
             process_phase=form.cleaned_data.get("process_phase") or "",
             stage=form.cleaned_data.get("stage"),
             next_text=form.cleaned_data.get("next_text") or "",

@@ -476,6 +476,49 @@
   flex-wrap: wrap;
 }
 
+/* One milestone's headline, its date and the controls that correct it — on one
+   line.
+
+   `Muuda`, `+ Lisa fail` and `Kustuta` used to be a row of their own under the
+   record, so an ordinary `Arvamus välja` read as four lines: the headline, the
+   sub-line, a line holding one quiet word, and the file. Three of those four
+   were content and the third was chrome, and a chronology is read far more
+   often than it is corrected — so the chrome joins the line it belongs to and
+   the row is three lines again (docs/adr/0105 §2).
+
+   **A wrapper rather than putting the chips inside `.uxtl__ms`.** That element
+   is a `<p>`, and the HTML tree builder closes an open `p` at a `<details>`
+   start tag — so a paragraph carrying `Muuda` and `Kustuta`'s disclosure is
+   parsed into three boxes with the disclosure as a *sibling*. The same defect
+   `row_remove.html` documents, one level out (`tests/test_ui_contract.py`).
+
+   `flex-wrap`, so a long headline keeps the controls rather than squeezing
+   them: at 375px «Märge: Ministeerium saatis uue eelnõu versiooni» takes the
+   first line and the chips wrap under it, which is the same place they used to
+   be and costs nothing that was not already spent. */
+.uxtl__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.uxtl__head > .uxtl__ms {
+  min-width: 0;
+}
+
+/* No top margin on this one: it is beside the headline, not under it. */
+.uxtl__head > .uxtl__editactions {
+  margin: 0;
+}
+
+/* Except while `Kustuta`'s confirmation is open — then it needs the width to
+   ask the question in, and the headline keeps the line above it. */
+.uxtl__head > .uxtl__editactions:has(.uxtl__remove[open]) {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
 /* `Kustuta` and its confirmation.
 
    A `<details>` so the confirmation opens in place with no second page and no

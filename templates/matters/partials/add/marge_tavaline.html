@@ -15,15 +15,30 @@ anybody asked for — it is an implementation abstraction that reached the scree
 — so it is gone from the screen, and what is left is the question:
 **mis juhtus?** (docs/adr/0097 §6).
 
+**Four questions, in the order somebody answers them** (docs/adr/0105 §4):
+
+    Mis juhtus?                 what did I do
+    Lisa failid                 did I attach a file
+    Uus hetkeseis               has the state changed
+    Järgmine tegevus · Millal?  what is next, and by when
+
+`Mis juhtus?` leads, because it is the answer on nearly every save and because a
+panel opening on a date box asks for bookkeeping before it asks what happened.
+`Kuupäev` and `Etapp` follow the sentence rather than preceding it: the day
+arrives filled with today and needs no answer at all on the ordinary save.
+
+**Every control is optional, and any one of them is a whole save.** A file that
+just arrived, the file reaching the Riigikogu, «vaatan uue versiooni üle, 25.09»
+— each is a complete record of something, and `Mis juhtus?` being required made
+the panel refuse a save whose content was already there. What is refused is a
+press carrying nothing at all, as one sentence naming the four ways to answer
+(`MatterProgressForm.clean`, `DEVELOPMENT_NEEDS_SOMETHING`).
+
 **One record type underneath, and it is the structured one.**
 `MatterProgressForm` carries the argument at length; the short version is that
 `MatterProceduralDevelopment` exists because a projection needs a title it did
 not have to parse, and that reason is untouched by anything in this round.
 `title` is «what happened», stated. `Entry.body` is prose.
-
-**Five controls, of which two are usually all anybody touches.** The date opens
-on today and clears; the sentence is required; the files, the stage and the
-next step are optional and, left alone, write nothing at all.
 
 **`Täpsus` is not here**, and neither is `Juristi märkus`. Both are deleted from
 this form rather than hidden — see `MatterProgressForm` for what each one cost
@@ -34,6 +49,50 @@ and what still offers it (`Muuda` on the record, which decides per row).
       hx-target="#teema-vaade" hx-swap="outerHTML"
       hx-encoding="multipart/form-data">
   {% csrf_token %}
+  {% comment %}
+    **What did I do.** Optional, and the box a lawyer types into first — which is
+    why `data-composer-focus` is named on it rather than found by type: the `L`
+    shortcut opens this panel and puts the cursor here (static/js/ux.js,
+    `openComposer`).
+  {% endcomment %}
+  <label class="cx-f" for="{{ progress_form.title.id_for_label }}">
+    <span class="cx-f__lab">{{ progress_form.title.label }}
+      <span class="cx-f__opt">valikuline</span></span>
+    {{ progress_form.title }}
+    {% if progress_form.title.errors %}
+      <p class="field__error" id="{{ progress_form.title.auto_id }}_error">
+        {{ progress_form.title.errors|first }}</p>
+    {% endif %}
+  </label>
+  {% comment %}
+    **Did I attach a file.** A `Märge` that is only a file is an ordinary save:
+    the paper is what happened, and nothing has to be written above it.
+  {% endcomment %}
+  {% include "matters/partials/add_files.html" with field=progress_form.attachments %}
+  {% comment %}
+    **When, and which part of the procedure** — under the sentence they describe.
+
+    The date opens on today, in the box where it can be read, changed and
+    emptied, which is the one shape docs/adr/0078 §2 allows a date default to
+    take. An emptied box stores `NULL` and the row reads «Kuupäev teadmata».
+
+    `Etapp` is **beside the date box** and that is the whole reason it is honest:
+    somebody filing a step from 2019 is looking at the word «Kooskõlastusring»
+    while they type the year, which is a proposal on screen rather than an
+    invisible guess about a backdated record. It arrives pre-selected on the
+    phase the file's own `Hetkeseis` already places it on, so the ordinary save
+    needs no answer, and «Etapp määramata» is one click away.
+
+    It is what marks a node `Kirjas` on `Menetluse kulg` above — which is now the
+    only place the phases are drawn, since `Teema käik` stopped grouping itself
+    into them (docs/adr/0105 §1, `app.matters.legal_process.recorded_phases`).
+
+    Rendered only when this file's `Õigusakt` or `Menetlusliik` chooses a
+    procedure. Without one there is no vocabulary to answer from and the field
+    does not exist on the form at all — a generic list of eleven phases would
+    invite somebody to record one the procedure never had
+    (`app/matters/process_phases.py`).
+  {% endcomment %}
   <div class="cx-grid cx-grid--links">
     <label class="cx-f cx-f--date" for="{{ progress_form.occurred_on.id_for_label }}">
       <span class="cx-f__lab">{{ progress_form.occurred_on.label }}</span>
@@ -44,23 +103,6 @@ and what still offers it (`Muuda` on the record, which decides per row).
       {% endif %}
     </label>
     {% if progress_form.process_phase %}
-      {% comment %}
-        `Etapp`, **beside the date box and not below the form**.
-
-        It arrives pre-selected on the phase the file's own `Hetkeseis` already
-        places it on, so the ordinary save — writing up this morning on a file
-        that is where it says it is — needs no answer. Its position is the whole
-        reason it is honest: somebody filing a step from 2019 is looking at the
-        word «Kooskõlastusring» while they type the year, which is a proposal on
-        screen rather than an invisible guess about a backdated record. «Etapp
-        määramata» is one click away and is an ordinary answer.
-
-        Rendered only when this file's `Õigusakt` or `Menetlusliik` chooses a
-        procedure. Without one there is no vocabulary to answer from and the
-        field does not exist on the form at all — a generic list of eleven
-        phases would invite somebody to record one the procedure never had
-        (`app/matters/process_phases.py`).
-      {% endcomment %}
       <label class="cx-f" for="{{ progress_form.process_phase.id_for_label }}">
         <span class="cx-f__lab">{{ progress_form.process_phase.label }}
           <span class="cx-f__opt">valikuline</span></span>
@@ -72,29 +114,14 @@ and what still offers it (`Muuda` on the record, which decides per row).
       </label>
     {% endif %}
   </div>
-  <label class="cx-f" for="{{ progress_form.title.id_for_label }}">
-    <span class="cx-f__lab">{{ progress_form.title.label }}</span>
-    {{ progress_form.title }}
-    {% if progress_form.title.errors %}
-      <p class="field__error" id="{{ progress_form.title.auto_id }}_error">
-        {{ progress_form.title.errors|first }}</p>
-    {% endif %}
-  </label>
-  {% include "matters/partials/add_files.html" with field=progress_form.attachments %}
   {% comment %}
-    The two optional halves, on one row and under the sentence they belong to.
+    **Has the state changed.**
 
-    **`Uus hetkeseis` moves the file in the same transaction as the note.**
-    «Eelnõu saadeti Riigikokku» and `Hetkeseis → Riigikogus` are one act, and
-    two saves would be two facts that can disagree. Left on «Jätan muutmata»
-    nothing moves — no stage is inferred from the sentence, ever
-    (docs/adr/0097 §6.1).
-
-    **`Järgmine tegevus` goes through the canonical `NextAction` service**, the
-    same one `PRAEGUNE TEGEVUS` uses, so a Matter cannot end up with two ideas
-    of what happens next. Left empty it creates nothing and supersedes nothing:
-    a record of something that happened is not an instruction to a person
-    (docs/adr/0078 §3, docs/adr/0084 §1).
+    `Uus hetkeseis` moves the file in the **same transaction** as the note.
+    «Eelnõu saadeti Riigikokku» and `Hetkeseis → Riigikogus` are one act, and two
+    saves would be two facts that can disagree. Left on «Jätan muutmata» nothing
+    moves — no stage is inferred from the sentence, ever (docs/adr/0097 §6.1) —
+    and a `Märge` that is *only* a stage change is a whole save.
   {% endcomment %}
   <div class="cx-grid">
     <label class="cx-f" for="{{ progress_form.stage.id_for_label }}">
@@ -107,6 +134,22 @@ and what still offers it (`Muuda` on the record, which decides per row).
       {% endif %}
     </label>
   </div>
+  {% comment %}
+    **What is next, and by when.**
+
+    `Järgmine tegevus` goes through the canonical `NextAction` service, the same
+    one `PRAEGUNE TEGEVUS` uses, so a Matter cannot end up with two ideas of what
+    happens next. Left empty it creates nothing and supersedes nothing: a record
+    of something that happened is not an instruction to a person
+    (docs/adr/0078 §3, docs/adr/0084 §1).
+
+    **The two halves are still asked together**, and it is the one date on this
+    panel that is not optional. A step with no day appears in nobody's
+    `Tähtajad` and in nobody's `Minu asjad` — `set_next_action` refuses
+    `DO`/`DEADLINE` with no date for exactly that reason — so the refusal lands on
+    the empty half rather than the panel quietly writing a step the rest of the
+    product cannot show (ADR 0052 §5).
+  {% endcomment %}
   <div class="cx-grid cx-grid--links">
     <label class="cx-f" for="{{ progress_form.next_text.id_for_label }}">
       <span class="cx-f__lab">{{ progress_form.next_text.label }}
@@ -126,6 +169,16 @@ and what still offers it (`Muuda` on the record, which decides per row).
       {% endif %}
     </label>
   </div>
+  {% comment %}
+    The refusal that belongs to the whole panel rather than to any one box: a
+    press carrying no sentence, no file, no stage and no step. `add_to_matter.html`
+    prints `workspace_error` above this form for the service's own refusals; this
+    one is the form's, and it reads where the `Salvesta` that raised it is
+    (`MatterProgressForm.clean`).
+  {% endcomment %}
+  {% if progress_form.non_field_errors %}
+    <p class="formerror" role="alert">{{ progress_form.non_field_errors|first }}</p>
+  {% endif %}
   <div class="addform__actions">
     <button class="button button--primary" type="submit">Salvesta</button>
   </div>

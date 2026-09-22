@@ -128,16 +128,6 @@ def phase_label(key: str) -> str:
     return phase.label if phase is not None else ""
 
 
-#: The heading an act reads under when no phase can be established for it.
-#:
-#: **Unplaced is not erroneous**, and the word has to say so. These are ordinary
-#: records — an opinion sent before the file recorded its first procedural step,
-#: a note with no date, a whole archive Matter nobody will ever reconstruct — and
-#: a heading like «Määramata» or «Puudulik» would read as a queue of defects
-#: somebody is expected to clear. Nothing here asks for historical cleanup.
-UNPLACED_LABEL = "Etapiga sidumata"
-
-
 # ---------------------------------------------------------------------------
 # The patterns
 # ---------------------------------------------------------------------------
@@ -544,7 +534,6 @@ __all__ = [
     "PHASE_ULEVOTMINE",
     "PHASE_VALITSUS",
     "PHASE_VTK",
-    "UNPLACED_LABEL",
     "VTK_PATTERN",
     "PatternNode",
     "ProcessPattern",

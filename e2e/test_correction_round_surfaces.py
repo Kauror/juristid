@@ -293,18 +293,47 @@ def test_a_save_leaves_the_keyboard_somewhere_useful(page, base_url):
 
 
 def test_a_refusal_still_focuses_the_field_that_was_wrong(page, base_url):
-    """The behaviour the round must not have traded away."""
+    """The behaviour the round must not have traded away.
+
+    The refusal this used was «Kirjuta, mis juhtus.» on an empty `Mis juhtus?`,
+    which docs/adr/0105 §4 retired — a sentence is optional, and a save with
+    nothing in it at all is now refused at the *panel* rather than at a box. So
+    the field-scoped refusal here is the half-filled next step, whose message is
+    pinned to the empty date and not to the sentence somebody did write.
+    """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA keeldumise fookus"), owner=SANDRA)
 
     page.goto(url)
     page.get_by_text("+ Märge", exact=True).click()
-    page.fill("#id_marge_title", "")
+    page.fill("#id_marge_title", "Ministeerium saatis uue versiooni")
+    page.fill("#id_marge_next_text", "Vaatan uue versiooni üle")
     page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_selector("text=Kirjuta, mis juhtus.")
+    page.wait_for_selector("text=Vali järgmise tegevuse kuupäev.")
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.id")
-    assert focused == "id_marge_title"
+    assert focused == "id_marge_next_date"
+
+
+def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url):
+    """docs/adr/0105 §4's refusal, and the focus rule it lands on.
+
+    A `Märge` with no sentence, no file, no stage and no step names no box, so
+    `focusFirstRefusal` takes the summary itself rather than guessing a field —
+    putting the cursor in `Mis juhtus?` would say the sentence is the missing
+    answer when any of four would do (static/js/ux.js).
+    """
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA tühi märge"), owner=SANDRA)
+
+    page.goto(url)
+    page.get_by_text("+ Märge", exact=True).click()
+    page.fill("#id_marge_title", "")
+    page.get_by_role("button", name="Salvesta").first.click()
+    page.wait_for_selector("text=või lisa fail, uus hetkeseis või järgmine tegevus")
+
+    focused = page.evaluate("() => document.activeElement && document.activeElement.className")
+    assert "formerror" in (focused or ""), focused
 
 
 # ---------------------------------------------------------------------------
