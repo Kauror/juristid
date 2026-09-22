@@ -62,11 +62,21 @@ task above it is a form asking about work nobody has named. The route to work is
         rather than standing alone — a number of days is only readable once you
         know what it is counting from (app/workflow/models.py).
       {% endcomment %}
-      {% if current_action.target_date %}
-        <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% endif %}">
-          {{ current_action.display_date }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
-        </span>
-      {% endif %}
+      {% comment %}
+        **A step with no day says so, in the same cell.** `date_display` is the
+        date or «Kuupäev määramata», and a lawyer may record one without the
+        other since docs/adr/0106 — «vaatan ministeeriumi vastuse üle» is a
+        whole instruction, and the day is a second fact.
+
+        Rendered `--unset`, which is the muted grammar and deliberately **not**
+        `--overdue`: a step with no deadline recorded cannot be late, and a
+        warning colour here would be the page inventing a problem out of a
+        blank. `is_overdue` is `False` on a `None` date, so the number of days
+        never appears either (app/workflow/models.py).
+      {% endcomment %}
+      <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% elif not current_action.target_date %} curact__date--unset{% endif %}">
+        {{ current_action.date_display }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
+      </span>
 
       {% if can_write %}
         {% comment %}

@@ -700,18 +700,23 @@ def test_a_refused_save_comes_back_in_its_own_open_panel(client, specialist) -> 
     assert "Koosta arvamus" in body, "the open step reads on the page"
     assert not _panel_is_open(body, "lisa-jargmine"), "the editor is shut until it is opened"
 
-    # A next step with no date: refused, and its own panel must come back open
-    # with the sentence still in it (ADR 0052 §5).
+    # A date with no sentence: refused, and its own panel must come back open
+    # with what was typed still in it.
+    #
+    # This used to post the other half — a sentence with no date — which
+    # docs/adr/0106 made an ordinary save. The refusal being exercised is the one
+    # that survives, and the claim under test is unchanged: *one* refusal opens
+    # *one* panel.
     refused = client.post(
         reverse("matters:set_action", kwargs={"pk": matter.pk}),
-        {"text": "Saada arvamus", "target_date": ""},
+        {"text": "", "target_date": "30.09.2026"},
     )
     html = refused.content.decode()
     assert refused.status_code == 400
     assert _panel_is_open(html, "lisa-jargmine"), (
         "a refused save must not fold the reason away with what was typed"
     )
-    assert "Saada arvamus" in html
+    assert "Kirjuta järgmine tegevus." in html
     # And no other panel was opened on its behalf.
     for other in ("lisa-marge", "lisa-kaasamine", "marge-toovoit", "teema-lopeta"):
         assert not _panel_is_open(html, other), other

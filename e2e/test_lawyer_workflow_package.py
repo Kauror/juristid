@@ -518,7 +518,12 @@ def test_a_development_records_the_step_the_stage_and_the_next_action(page, base
     expect(current).to_contain_text(_future(4))
 
 
-def test_a_half_filled_next_step_is_refused_on_the_empty_control(page, base_url):
+def test_a_next_step_with_no_date_saves_the_whole_marge(page, base_url):
+    """docs/adr/0106. The `Märge` and the step are still one transaction.
+
+    What changed is that the transaction is now allowed: the step no longer needs
+    a day for the save to go through.
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "marge-tavaline")
@@ -528,8 +533,24 @@ def test_a_half_filled_next_step_is_refused_on_the_empty_control(page, base_url)
     form.locator("[name=next_text]").fill("Vaatan uue teksti läbi")
     form.get_by_role("button", name="Salvesta", exact=True).click()
 
-    expect(page.locator("#marge-tavaline")).to_contain_text("Vali järgmise tegevuse kuupäev.")
-    # Nothing was written: the whole save is one transaction.
+    expect(chronology(page)).to_contain_text("Eelnõu jõudis Riigikokku")
+    current = page.locator("#praegune-tegevus")
+    expect(current).to_contain_text("Vaatan uue teksti läbi")
+    expect(current).to_contain_text("Kuupäev määramata")
+
+
+def test_a_next_step_date_with_no_sentence_is_refused_on_the_sentence(page, base_url):
+    """The refusal that stays, and nothing is written — one transaction."""
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    open_add_panel(page, "marge-tavaline")
+
+    form = panel(page, "marge-tavaline")
+    form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
+    form.locator("[name=next_date]").fill(_future(9))
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+
+    expect(page.locator("#marge-tavaline")).to_contain_text("Kirjuta järgmine tegevus.")
     expect(chronology(page)).not_to_contain_text("Eelnõu jõudis Riigikokku")
 
 

@@ -180,37 +180,80 @@ def test_a_do_deadline_in_the_future_is_not_overdue(normal_matter, specialist):
     assert action.is_overdue() is False
 
 
-def test_the_service_refuses_a_deadline_without_a_date(normal_matter, specialist):
-    """A deadline with no date cannot be met, missed or planned against."""
-    with pytest.raises(DomainError):
-        set_next_action(
-            matter=normal_matter,
-            text="Millalgi",
-            kind=ActionKind.DO,
-            date_semantics=DateSemantics.DEADLINE,
-            target_date=None,
-            actor=specialist,
-        )
+def test_the_service_accepts_a_deadline_without_a_date(normal_matter, specialist):
+    """docs/adr/0106. «A deadline with no date cannot be met» was the wrong rule.
+
+    It is true of a *deadline* and it was not what the column held. «Vaatan
+    ministeeriumi vastuse üle» is a whole instruction and the day it happens is a
+    second fact, so refusing the pair made the only way to record the sentence be
+    to type a day nobody had chosen.
+
+    `tests/test_undated_next_actions.py` owns the full contract; this file keeps
+    the service-level shape beside the WAIT case below it.
+    """
+    action = set_next_action(
+        matter=normal_matter,
+        text="Millalgi",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=None,
+        actor=specialist,
+    )
+
+    assert action.target_date is None
+    assert action.status == ActionStatus.OPEN
+    assert action.is_overdue() is False
 
 
-def test_the_database_refuses_a_deadline_without_a_date(normal_matter, specialist):
-    """The service is not the only way in; an importer bypasses it."""
-    with pytest.raises(IntegrityError), transaction.atomic():
-        NextAction.objects.create(
-            matter=normal_matter,
-            text="Otse loodud",
-            kind=ActionKind.DO,
-            date_semantics=DateSemantics.DEADLINE,
-            target_date=None,
-        )
+def test_the_database_accepts_a_deadline_without_a_date(normal_matter, specialist):
+    """The constraint is gone, not merely unreached by the service.
+
+    `workflow/0008` drops `workflow_deadline_requires_a_date`. Asserted through
+    `objects.create` rather than the service, because that is the path the old
+    constraint existed for — an importer, a shell, a data fix.
+    """
+    action = NextAction.objects.create(
+        matter=normal_matter,
+        text="Otse loodud",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=None,
+    )
+
+    assert NextAction.objects.get(pk=action.pk).target_date is None
 
 
-def test_a_bulk_update_cannot_clear_a_deadline_date(normal_matter, specialist):
+def test_a_bulk_update_may_now_clear_a_deadline_date(normal_matter, specialist):
+    """The protection that went with the constraint, stated rather than left implicit.
+
+    `.update()` runs no service and no `full_clean`, so this *was* caught by the
+    database and now is not. That is the honest consequence of docs/adr/0106 and
+    not an oversight: clearing a date is a legitimate plan change, and a `CHECK`
+    that allowed it through the ordinary route and refused it here would be
+    protecting nothing the product still believes.
+
+    What is *not* reachable this way is a textless action — that constraint
+    stands, and `test_the_text_constraint_still_holds_against_a_bulk_update`
+    below is its half of this pair.
+    """
+    action = set_next_action(
+        matter=normal_matter, text="Koosta arvamus", actor=specialist, target_date=_tomorrow()
+    )
+
+    NextAction.objects.filter(pk=action.pk).update(target_date=None)
+
+    action.refresh_from_db()
+    assert action.target_date is None
+    assert action.is_overdue() is False
+
+
+def test_the_text_constraint_still_holds_against_a_bulk_update(normal_matter, specialist):
+    """What docs/adr/0106 did not relax, on the path that bypasses every service."""
     action = set_next_action(
         matter=normal_matter, text="Koosta arvamus", actor=specialist, target_date=_tomorrow()
     )
     with pytest.raises(IntegrityError), transaction.atomic():
-        NextAction.objects.filter(pk=action.pk).update(target_date=None)
+        NextAction.objects.filter(pk=action.pk).update(text="")
 
 
 def test_wait_without_a_date_remains_valid(normal_matter, specialist):

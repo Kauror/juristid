@@ -167,6 +167,23 @@ def set_next_action(
 ) -> NextAction:
     """Set the current action, superseding whatever it replaces.
 
+    **The text and the date are two facts, and only the first is required**
+    (docs/adr/0106). Four shapes, of which three are valid:
+
+    ===================  ==============  =========================================
+    ``text``             ``target_date``  outcome
+    ===================  ==============  =========================================
+    present              present          the ordinary dated step
+    present              ``None``         a step whose day nobody knows **yet**
+    blank                present          refused, on the text
+    blank                ``None``         refused, on the text
+    ===================  ==============  =========================================
+
+    A ``None`` date is *no deadline recorded yet* and is never filled in: not
+    with today, not with the end of the month, not with an approximate period.
+    Adding one later is an ordinary replacement through this same function, and
+    so is clearing one.
+
     Responsibility defaults to the Matter owner: in practice the person who
     owns the file is the person who acts on it, and forcing that choice on every
     routine update would slow the composer down for no gain.
@@ -187,11 +204,18 @@ def set_next_action(
     if date_semantics not in DateSemantics.values:
         raise DomainError(f"Tundmatu kuupäeva tähendus {date_semantics!r}.")
 
-    # A deadline with no date cannot be met, missed, planned against or
-    # reported on. The form says so first for the user's sake, but the rule
-    # belongs here, where an importer or an integration also has to obey it.
-    if kind == ActionKind.DO and date_semantics == DateSemantics.DEADLINE and target_date is None:
-        raise DomainError("Tähtajaline tegevus vajab kuupäeva.")
+    # **A next action may have no date at all**, and that is not an incomplete
+    # record (docs/adr/0106). «Vaatan ministeeriumi vastuse üle» is a whole
+    # instruction; the day it happens is a second fact, and one the lawyer
+    # frequently does not have yet. This refused that pair until now, so the
+    # only way to record the sentence was to invent a day — and an invented day
+    # is a false statement the work queue then reports on.
+    #
+    # `target_date is None` means **no deadline has been recorded yet**. It is
+    # never read as today, as approximate, as waiting or as overdue: `is_overdue`
+    # and `days_late` both return early on it, and `overdue_date_q` excludes it
+    # in SQL. `text` is still required below, because an action with no text is
+    # not a record of anything.
 
     # Lock the Matter, not just the action row. Closure and next-action changes
     # both depend on the Matter's lifecycle state, so the Matter row is the

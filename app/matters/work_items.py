@@ -307,6 +307,19 @@ class WorkItem:
     today: date
 
     @property
+    def date_display(self) -> str:
+        """The date, or the words that say there is not one yet.
+
+        The `WorkItem` half of `NextAction.date_display`, read by the portfolio
+        row — which draws one step per Matter and would otherwise print the
+        sentence with nothing after it where every dated row has a day
+        (docs/adr/0106).
+        """
+        from app.workflow.models import NO_DATE_LABEL
+
+        return self.display_date or NO_DATE_LABEL
+
+    @property
     def is_action(self) -> bool:
         return self.source_type == SOURCE_NEXT_ACTION
 

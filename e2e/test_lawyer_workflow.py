@@ -516,32 +516,33 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_placeholder("Otsi teemat, viidet, asutust…")).to_be_focused()
 
 
-def test_a_next_step_without_a_date_is_refused_without_losing_what_was_typed(page, base_url):
-    """A refused save must not half-apply, and must not discard what was typed."""
+def test_a_next_step_without_a_date_is_saved_and_says_so(page, base_url):
+    """docs/adr/0106, through `Muuda` on a step that already has a date.
+
+    This was a refusal test. The box still never pre-fills with *today* — a
+    default would decide on a lawyer's behalf when they are going to do their own
+    work (ADR 0052 §4) — and what changed is that leaving it empty is now an
+    answer rather than a mistake. On a Matter that already has a step this form is
+    `Muuda` and carries that step's own date, so clearing it is the gesture that
+    takes a day back off.
+    """
     sign_in(page, base_url, MARTIN)
     open_register(page, base_url)
     register_row(page, "Tavaline avatud teema kõigile nähtav").click()
 
     open_next_action_form(page)
-    # A next step and no date. The box never pre-fills with *today*: a default
-    # would answer the refusal with a day nobody chose, and would decide on a
-    # lawyer's behalf when they are going to do their own work (ADR 0052 §4,
-    # §5). On a Matter that already has a step this form is `Muuda` and carries
-    # that step's own date, which is an editor showing what is recorded — so
-    # clearing it is what puts this back in the state being tested.
     page.locator("#lisa-jargmine [name='text']").fill("Küsida ministeeriumilt selgitust")
     page.locator("#id_target_date").fill("")
     expect(page.locator("#id_target_date")).to_have_value("")
     page.locator("#lisa-jargmine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.get_by_text("Vali järgmise tegevuse kuupäev.")).to_be_visible()
-    # Nothing was applied, and the sentence came back in its own open panel.
-    expect(page.locator("#lisa-jargmine")).to_be_visible()
-    expect(page.locator("#lisa-jargmine [name='text']")).to_have_value(
-        "Küsida ministeeriumilt selgitust"
-    )
-    expect(page.locator("#praegune-tegevus").get_by_text("Jälgi menetluse käiku")).to_be_visible()
+    current = page.locator("#praegune-tegevus")
+    expect(current).to_contain_text("Küsida ministeeriumilt selgitust")
+    # The row says the day is not recorded rather than trailing off after the
+    # sentence, and it is not the overdue grammar: no deadline cannot be late.
+    expect(current).to_contain_text("Kuupäev määramata")
+    expect(current.locator(".curact__date--overdue")).to_have_count(0)
 
 
 class TestRestrictedMatterIsUnreachable:

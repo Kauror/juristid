@@ -296,10 +296,11 @@ def test_a_refusal_still_focuses_the_field_that_was_wrong(page, base_url):
     """The behaviour the round must not have traded away.
 
     The refusal this used was «Kirjuta, mis juhtus.» on an empty `Mis juhtus?`,
-    which docs/adr/0105 §4 retired — a sentence is optional, and a save with
-    nothing in it at all is now refused at the *panel* rather than at a box. So
-    the field-scoped refusal here is the half-filled next step, whose message is
-    pinned to the empty date and not to the sentence somebody did write.
+    which docs/adr/0105 §4 retired; the one it used next was «Vali järgmise
+    tegevuse kuupäev.» on an empty day, which docs/adr/0106 retired in turn — a
+    step with no day is an ordinary save now. What is left, and is the honest
+    field-scoped refusal, is the other direction: a day with nothing to do on it,
+    pinned to the sentence somebody did *not* write.
     """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA keeldumise fookus"), owner=SANDRA)
@@ -307,12 +308,12 @@ def test_a_refusal_still_focuses_the_field_that_was_wrong(page, base_url):
     page.goto(url)
     page.get_by_text("+ Märge", exact=True).click()
     page.fill("#id_marge_title", "Ministeerium saatis uue versiooni")
-    page.fill("#id_marge_next_text", "Vaatan uue versiooni üle")
+    page.fill("#id_marge_next_date", "30.09.2026")
     page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_selector("text=Vali järgmise tegevuse kuupäev.")
+    page.wait_for_selector("text=Kirjuta järgmine tegevus.")
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.id")
-    assert focused == "id_marge_next_date"
+    assert focused == "id_marge_next_text"
 
 
 def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url):

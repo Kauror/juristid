@@ -50,7 +50,21 @@ basis = "deployment"
 #
 # Ükski punkt ei luba, et rakendus midagi teksti, lingi või failinime järgi
 # arvab. Kuupäeva hoiatus on kirjutamise hetkel antud vihje, mitte keeld.
-prs = [274]
+#
+# **Sama päeva teine väljalase lisab neli viimast punkti**, ja need on üks
+# ring: teema käik loeb ühe nimekirjana, märke saab salvestada sellega, mis
+# päriselt teada on, ja järgmine tegevus ei nõua enam väljamõeldud kuupäeva.
+# Üks kirje päeva kohta, nii et need on siin eelmiste kõrval, mitte omaette.
+#
+# **Esimene neist on «Etapiga sidumata» kadumine**, ja punkt ütleb ka selle,
+# mis *ei* kadunud: etapid on endiselt näha, menetluse kulus. Ilma selleta
+# loeks see etappide kaotusena.
+#
+# **Kolmas punkt on selle ringi kõige otsesem kasutajavõit.** Jurist teab
+# sageli, mida ta teeb, enne kui ta teab, millal — ja siiani pidi ta kuupäeva
+# välja mõtlema. Punkt ütleb ka, kus selline tegevus paistab ja kus mitte,
+# sest muidu jääks mulje, et kuupäevata töö kaob silmist.
+prs = [274, 275, 276]
 changes = [
   "Kui teema andmeid või menetluse kulgu on vahepeal teises aknas muudetud, siis salvestus ei kirjuta seda enam vaikselt üle: salvestamine peatub, sisestatu jääb ekraanile ja kõrvale tuleb näha, mis vahepeal muutus.",
   "Otsing leiab nüüd ka selle, mis on kirjutatud märkmesse ning arvamusse ja tagasisidesse — nii teksti kui ka organisatsiooni nime järgi. Varem leidis otsing ainult teema enda välju.",
@@ -75,6 +89,10 @@ changes = [
   "Ebatavaliselt vana kuupäeva sisestamisel ütleb väli seda kohe — salvestamist see ei takista, sest vanad kirjed on päris kirjed.",
   "Kui teemal on kaks ühenimelist faili, siis nende juures on nüüd ka üleslaadimise kellaaeg ja faili suurus, et neid saaks eristada.",
   "«Praegune tegevus» salvestusnupp ütleb nüüd «Salvesta tegevus», et see ei oleks segi aetav kõrvalolevatega.",
+  "Teema käik on nüüd üks nimekiri: kõik kirjed ajalises järjekorras, ilma etappide vahepealkirjadeta ja ilma «Etapiga sidumata» plokita. Etapid on endiselt näha menetluse kulus, kus on ka nende kuupäevad.",
+  "Teema käigu read on lühemad: pealkiri, kuupäev ja «Muuda» on nüüd ühel real, ja «Ülevaade / uudis» rea juures on kirjas aadress ise, mitte «Ava ülevaade või uudis».",
+  "Järgmine tegevus ei nõua enam kuupäeva. Kui on teada, mida teha, aga mitte millal, siis saab selle nii kirja panna — tegevus on «Praeguse tegevuse» all ja «Minu asjades» kuupäevata tööde all, tähtaegade ja hilinemiste hulka see ei lähe. Kuupäeva saab hiljem lisada või ära võtta.",
+  "«Märke» saab salvestada sellega, mis teada on: ainult kommentaar, ainult fail, ainult uus hetkeseis või ainult järgmine tegevus — või neist mitu korraga. Tühja märget salvestada ei saa.",
 ]
 
 [[day]]

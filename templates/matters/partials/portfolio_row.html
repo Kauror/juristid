@@ -30,7 +30,17 @@ than showing an empty cell somebody has to interpret.
         the step itself, which is the sentence a lawyer wrote
         (e2e/test_ui_regression.py CLOCK_DEPENDENT).
       {% endcomment %}
-      {{ row.next_action.text }}{% if row.action %} · {{ row.action.meaning|lower }} <span data-clock>{{ row.action.day_month }}{% if row.action.is_overdue or row.action.is_review_ripe %} · {{ row.action.short_date }}{% endif %}</span>{% endif %}
+      {% comment %}
+        A step with no day is a real step, and the row says which it is rather
+        than trailing off after the sentence: every dated row here reads
+        «tekst · tähtaeg 14.3», so one ending at the text alone reads as a row
+        whose date failed to render. «kuupäev määramata» is the same words
+        `PRAEGUNE TEGEVUS` uses (docs/adr/0106, `NextAction.NO_DATE_LABEL`).
+
+        Outside `data-clock`, because it is not a clock value — it is the
+        absence of one, and it does not move overnight.
+      {% endcomment %}
+      {{ row.next_action.text }}{% if row.action %} · {{ row.action.meaning|lower }} <span data-clock>{{ row.action.day_month }}{% if row.action.is_overdue or row.action.is_review_ripe %} · {{ row.action.short_date }}{% endif %}</span>{% else %} · <span class="pw-matter__undated">{{ row.next_action.date_display|lower }}</span>{% endif %}
     </span>
   {% else %}
     <span class="pw-matter__next pw-matter__next--none">

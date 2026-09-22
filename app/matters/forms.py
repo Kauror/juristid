@@ -1964,23 +1964,28 @@ class NextActionForm(forms.Form):
         return _precision_chips(self, "next_precision")
 
     def clean(self) -> dict[str, Any]:
-        """`Järgmiseks` + `Millal?`, together or not at all.
+        """`Järgmiseks` is required. `Millal?` is not (docs/adr/0106).
 
-        The same three outcomes as the Teema composer, and deliberately the
-        same wording: one half filled is refused **on the empty control**,
-        because "vali kuupäev" pinned to the sentence box points at the wrong
-        field (ADR 0052 §5).
+        **The sentence and the day are two facts.** A lawyer routinely knows
+        «vaatan ministeeriumi vastuse üle» before knowing when, and this form
+        refused that pair until docs/adr/0106 — so the only way to record the
+        sentence was to type a day nobody had chosen. An invented day is a false
+        statement, and the work queue then reports on it.
 
-        Nothing is defaulted. An undated step is never quietly filed for today,
-        and a dated step with no sentence is never quietly discarded — somebody
-        who pressed `Homme` and then wrote nothing did ask for a next action,
-        and gets told which half is missing rather than getting a Teema with no
-        step in it.
+        The refusal that stays is the other direction: a date with no sentence,
+        pinned **to the sentence**, because somebody who pressed `Homme` and
+        then wrote nothing did ask for a next action and gets told which half is
+        missing rather than getting a Teema with no step in it.
 
-        This form is bound only when one of the two halves carries something,
-        so both arriving empty means an empty POST to `set_action` rather than
-        a title-only Teema. That is a refusal too, and it belongs on the
-        sentence.
+        A malformed period — `Kuu` chosen with a month nobody picked — is still
+        refused, and `_period_anchor` has already put that error on the control
+        it belongs to. What is no longer refused is the control being *left
+        alone*, which is the person saying «I do not know yet».
+
+        Nothing is defaulted, in either direction. An undated step is never
+        quietly filed for today, and the precision travelling with a missing
+        date is the field's own `EXACT` — a value nothing renders, because
+        `display_date` answers `""` and `date_label` answers `""` on a `None`.
         """
         cleaned = super().clean() or {}
         text = (cleaned.get("text") or "").strip()
@@ -1991,17 +1996,13 @@ class NextActionForm(forms.Form):
 
         anchor, precision = self._chosen_period()
         if anchor is None:
-            # The refusal lands on whichever control the chosen precision asks
-            # for — `_period_anchor` has already put one there when a month or a
-            # year was malformed, and this is the remaining case: the chosen
-            # precision's field was simply left alone.
-            if not self.errors:
-                self.add_error(
-                    _precision_answer_field("next", precision)
-                    if self.periods and precision in _PRECISION_FIELD_SUFFIX
-                    else "target_date",
-                    "Vali järgmise tegevuse kuupäev.",
-                )
+            # Two different situations reach here and only one is a mistake.
+            #
+            # `self.errors` already carries something when the chosen precision
+            # *was* answered and the answer was malformed — a `Kuu` with no month
+            # picked, say — and that error is on the control it belongs to. The
+            # remaining case is an untouched date control, which is now an
+            # ordinary answer: no deadline recorded yet.
             return cleaned
         cleaned["next_anchor"] = anchor
         cleaned["next_precision_value"] = precision
@@ -3381,17 +3382,20 @@ class ComposerForm(forms.Form):
         return cleaned
 
     def _clean_next_action(self, cleaned: dict[str, Any]) -> None:
-        """`Järgmiseks` + `Millal?`, together or not at all.
+        """`Järgmiseks` is the step. `Millal?` is optional (docs/adr/0106).
 
         Two boxes, one record, and three outcomes. Both empty is the ordinary
         save: an entry is written and whatever step is already open stays open,
-        untouched. Both filled writes the step. One filled is refused **on the
-        empty control**, because "vali kuupäev" pinned to the sentence box is an
-        error message pointing at the wrong field (ADR 0052 §5).
+        untouched. A sentence writes the step, with or without a day — «vaatan
+        uue versiooni üle» is a whole instruction and the day is a second fact.
+        A day with no sentence is refused **on the sentence**, because somebody
+        who typed one did ask for a step and gets told which half is missing.
 
-        Nothing is defaulted here. Quietly filing an undated step for today
-        would be the application deciding when a lawyer is going to do their
-        own work.
+        Nothing is defaulted here, and that is unchanged. Quietly filing an
+        undated step for today would be the application deciding when a lawyer
+        is going to do their own work; what is new is that it no longer has to
+        decide anything, because `target_date=NULL` is now a thing the record
+        can hold.
         """
         text = (cleaned.get("next_text") or "").strip()
         target_date = cleaned.get("next_date")
@@ -3402,9 +3406,6 @@ class ComposerForm(forms.Form):
 
         if not text:
             self.add_error("next_text", "Kirjuta järgmine tegevus.")
-            return
-        if target_date is None:
-            self.add_error("next_date", "Vali järgmise tegevuse kuupäev.")
             return
 
         # The canonical compatibility values, and internal to this surface.
@@ -7069,12 +7070,12 @@ class MatterProgressForm(forms.Form):
     together; this form repeats it so a person reads it beside the controls
     (`DEVELOPMENT_NEEDS_SOMETHING`).
 
-    **The one date that stays paired is the next step's.** `Kuupäev` clears to
-    «kuupäev teadmata» and `Järgmine tegevus` still needs its day, because a
-    dateless step appears in nobody's `Tähtajad` and in nobody's `Minu asjad` —
-    `set_next_action` refuses `DO`/`DEADLINE` with no date for that reason, and a
-    panel that quietly wrote one shape of step the rest of the product cannot show
-    would be worse than the refusal (ADR 0052 §5, `app/workflow/services.py`).
+    **Both dates are optional too** (docs/adr/0106). `Kuupäev` clears to «kuupäev
+    teadmata», and so does `Millal?`: a step recorded with no day is
+    `DO`/`DEADLINE`/`target_date=NULL`, which reads as *no deadline yet*, shows
+    in `PRAEGUNE TEGEVUS` and in `Minu asjad`, and stays out of every deadline and
+    overdue surface until somebody adds the day. What is still refused is a day
+    with no sentence, on the sentence.
 
     Why this is a `MatterProceduralDevelopment` and not an `Entry`
     -------------------------------------------------------------
@@ -7302,10 +7303,19 @@ class MatterProgressForm(forms.Form):
         guards — every date here is a day or nothing, so the comparison is the
         plain one rather than `period_starts_after`.
 
-        **The half-filled next step is refused on the *empty* control**, which
-        is ADR 0052 §5's rule and its wording: «vali kuupäev» pinned to the
-        sentence box points at the wrong field. Both halves are still asked
-        together: an undated step is one the rest of the product cannot show.
+        **A next step needs its sentence and not its day** (docs/adr/0106). A
+        date with nothing to do on it is refused, on the sentence, because
+        somebody who typed a day did ask for a step and gets told which half is
+        missing. A sentence with no day is an ordinary save: «vaatan uue
+        versiooni üle» is a whole instruction, and the day is a second fact the
+        lawyer frequently does not have yet.
+
+        This reverses what docs/adr/0105 §4 decided about this one control. The
+        reasoning then was that a dateless step appears in nobody's `Tähtajad`
+        or `Minu asjad` — true of `Tähtajad`, which is a list of dates and
+        correctly leaves it out, and **wrong about `Minu asjad`**, which has
+        rendered undated work in its own block since it was built (`my_work.
+        undated_items`).
         """
         from app.matters.services import (
             DEVELOPMENT_CANNOT_BE_FUTURE,
@@ -7326,9 +7336,7 @@ class MatterProgressForm(forms.Form):
         text = (cleaned.get("next_text") or "").strip()
         cleaned["next_text"] = text
         next_when = cleaned.get("next_date")
-        if text and next_when is None:
-            self.add_error("next_date", "Vali järgmise tegevuse kuupäev.")
-        elif next_when is not None and not text:
+        if next_when is not None and not text:
             self.add_error("next_text", "Kirjuta järgmine tegevus.")
 
         # **Answered last, and only when nothing else has failed.** A save that

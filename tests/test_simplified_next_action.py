@@ -168,8 +168,15 @@ def test_a_body_and_a_next_action_are_two_different_records(signed_in, normal_ma
 # ---------------------------------------------------------------------------
 
 
-def test_a_next_action_without_a_date_is_refused_on_the_date(signed_in, normal_matter):
-    """D. And never quietly filed for today."""
+def test_a_next_action_without_a_date_is_saved_and_never_filed_for_today(signed_in, normal_matter):
+    """D, reversed by docs/adr/0106. The sentence is the step; the day is extra.
+
+    This was «refused on the date», on the reasoning that a deadline with no
+    date cannot be planned against. What it refused was a complete instruction,
+    and the only way past it was to type a day nobody had chosen — so the entry
+    and the step are both written now, and the date stays `NULL` rather than
+    becoming today.
+    """
     response = _post(
         signed_in,
         normal_matter,
@@ -177,14 +184,17 @@ def test_a_next_action_without_a_date_is_refused_on_the_date(signed_in, normal_m
         next_text="Vaadata uus versioon üle",
         next_date="",
     )
-    assert response.status_code == 400
+    assert response.status_code == 200, response.content.decode()[:2000]
 
-    form = response.context["composer_form"]
-    assert "next_date" in form.errors
-    assert form.errors["next_date"] == ["Vali järgmise tegevuse kuupäev."]
-    assert "next_text" not in form.errors
-    assert not NextAction.objects.filter(matter=normal_matter).exists()
-    assert not Entry.objects.filter(matter=normal_matter).exists()
+    action = NextAction.objects.get(matter=normal_matter)
+    assert action.text == "Vaadata uus versioon üle"
+    assert action.target_date is None
+    assert action.kind == ActionKind.DO
+    assert action.date_semantics == DateSemantics.DEADLINE
+    assert action.status == ActionStatus.OPEN
+    # Nothing was invented, on either side of the save.
+    assert action.target_date != timezone.localdate()
+    assert Entry.objects.filter(matter=normal_matter).exists()
 
 
 def test_a_date_without_a_next_action_is_refused_on_the_text(signed_in, normal_matter):

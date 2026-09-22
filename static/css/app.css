@@ -9534,6 +9534,17 @@ button.accordion__action:focus-visible {
   font-weight: var(--typography-weight-semibold);
 }
 
+/* «kuupäev määramata» on a portfolio row whose step carries no day.
+ *
+ * Muted, like the row's own `when` column, and deliberately not
+ * `.pw-matter__next--none`'s warning colour: that one means *there is no step
+ * at all*, which is a gap somebody may want to close. A step with no date is
+ * not a gap — the lawyer said what happens next and has not said when
+ * (docs/adr/0106). */
+.pw-matter__undated {
+  color: var(--text-muted);
+}
+
 .pw-matter__when {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
@@ -12081,6 +12092,20 @@ section:has(.pw-more[open]) tbody.uxextra {
 .curact__date--overdue {
   color: var(--status-danger);
   font-weight: var(--typography-weight-semibold);
+}
+
+/* «Kuupäev määramata» — a step whose day nobody has recorded yet.
+ *
+ * Quieter than a date and **not** a warning. A step with no deadline recorded
+ * cannot be late, and the two obvious alternatives both say something untrue:
+ * `--overdue`'s red calls it a problem, and leaving the cell out entirely
+ * leaves the row reading as though its date failed to render. Muted text is the
+ * grammar this page already uses for «not recorded» (docs/adr/0106).
+ *
+ * `tabular-nums` is inherited from `.curact__date` and does nothing to a line
+ * with no digits in it, which is why this rule does not turn it off. */
+.curact__date--unset {
+  color: var(--text-muted);
 }
 
 /* The outstanding official `Arvamuse tähtaeg`, under the task rather than in

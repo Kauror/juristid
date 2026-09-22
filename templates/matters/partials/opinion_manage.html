@@ -84,6 +84,16 @@ what somebody managing an opinion is asking about (§12, §28, §29).
             docs/adr/0081 §1 refuses. A published row's address is a real link,
             with the same `target`, `rel` and hidden «avaneb uues aknas» every
             other outbound link in this product carries.
+
+            **The link is the address**, through the same `link_display`
+            `Teema käik` reads — no scheme, no userinfo, no trailing slash, cut
+            at 72 characters and marked when it is cut. `Ava ülevaade või uudis`
+            stood here after docs/adr/0105 §3 changed the chronology row and
+            deliberately left this one, which meant a lawyer met two
+            presentations of one link on one file. The label named what a link
+            is for; the address names *which page*, which is what tells three
+            write-ups apart (docs/adr/0106 §2). The stored `url` is untouched
+            and is still the whole `href`.
           {% endcomment %}
           <div>
             <dt>Seotud ülevaated / uudised</dt>
@@ -95,7 +105,7 @@ what somebody managing an opinion is asking about (§12, §28, §29).
                     · {{ overview.chronology_date }}
                     {% if overview.url %}
                       · <a class="quietlink" href="{{ overview.url }}"
-                           target="_blank" rel="noopener noreferrer">Ava ülevaade või uudis<span
+                           target="_blank" rel="noopener noreferrer">{{ overview.link_display }}<span
                            class="visually-hidden"> — avaneb uues aknas</span></a>
                     {% endif %}
                   {% endif %}
