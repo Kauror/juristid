@@ -54,7 +54,7 @@ from app.matters.models import (
 )
 from app.matters.services import (
     DEVELOPMENT_CANNOT_BE_FUTURE,
-    DEVELOPMENT_NEEDS_TITLE,
+    DEVELOPMENT_NEEDS_SOMETHING,
     EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY,
     EXTERNAL_POSITION_NEEDS_ORGANISATION,
     EXTERNAL_POSITION_NEEDS_SOURCE,
@@ -1205,14 +1205,64 @@ def test_a_development_keeps_the_lawyer_note_out_of_the_event(normal_matter, spe
     assert event.summary == "Ministeerium saatis uue eelnõu versiooni"
 
 
-def test_a_development_without_a_title_is_refused(normal_matter, specialist):
+def test_a_marge_carrying_nothing_at_all_is_refused(normal_matter, specialist):
+    """No sentence, no file, no stage and no step — a press that records nothing.
+
+    The one refusal about content this operation makes. The *title* stopped being
+    required in docs/adr/0105 §4, so the refusal moved from «write what happened»
+    to «write something», and it is raised here because this is where the four
+    ways to answer can be seen together.
+    """
     with pytest.raises(DomainError) as refusal:
         add_procedural_development(
             matter=normal_matter, author=specialist, title="   ", occurred_on=_happened()
         )
 
-    assert str(refusal.value) == DEVELOPMENT_NEEDS_TITLE
+    assert str(refusal.value) == DEVELOPMENT_NEEDS_SOMETHING
     assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
+
+
+def test_a_marge_with_no_title_but_a_file_is_a_whole_record(
+    normal_matter, specialist, evidence_root
+):
+    """docs/adr/0105 §4. The paper that arrived is what happened.
+
+    The record stores an empty title — nothing is derived from the filename — and
+    the chronology row reads the word `Märge` and the day, with the file under it.
+    """
+    result = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="",
+        occurred_on=_happened(),
+        uploads=[_pdf("ministeeriumi_kiri.pdf")],
+    )
+
+    assert result.record.title == ""
+    assert len(result.documents) == 1
+    assert development_milestone(result.record).what == "Märge"
+    # And the audit row is a named line rather than an empty one.
+    event = _events(normal_matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED).get()
+    assert event.summary == "Märge"
+
+
+def test_a_marge_with_no_title_but_a_stage_is_a_whole_record(normal_matter, specialist):
+    """The file moved, and that is the whole content of the save."""
+    from app.workflow.models import StageVocabulary
+
+    stage = StageVocabulary.objects.filter(is_active=True).first()
+    assert stage is not None
+    result = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="",
+        occurred_on=_happened(),
+        stage=stage,
+    )
+
+    assert result.record.title == ""
+    normal_matter.refresh_from_db()
+    assert normal_matter.stage_id == stage.pk
 
 
 def test_a_development_may_carry_its_files(normal_matter, specialist, evidence_root):

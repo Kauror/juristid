@@ -46,7 +46,6 @@ from app.matters.models import MatterProceduralDevelopment
 from app.matters.services import (
     DEVELOPMENT_CANNOT_BE_FUTURE,
     DEVELOPMENT_EDIT_CONFLICT,
-    DEVELOPMENT_NEEDS_TITLE,
     close_matter,
     record_procedural_development,
 )
@@ -266,14 +265,20 @@ def test_d_clear_a_lawyer_note(signed_in, normal_matter, development):
     assert development.title == HEADLINE
 
 
-def test_an_empty_title_is_refused(signed_in, normal_matter, development):
-    """A development that does not say what happened is not a record of anything."""
+def test_a_title_may_be_cleared(signed_in, normal_matter, specialist, development):
+    """docs/adr/0105 §4. A sentence that only restated the file under it comes off.
+
+    `+ Märge` writes titleless records, so a record must be correctable into that
+    shape: a record that could be created one way and not corrected into it is a
+    one-way door. The row then reads the word `Märge` and the day, which is exactly
+    what a titleless capture reads.
+    """
     response = _save(signed_in, normal_matter, development, title="   ")
 
-    assert response.status_code == 400
-    assert DEVELOPMENT_NEEDS_TITLE in response.content.decode()
+    assert response.status_code == 200
     development.refresh_from_db()
-    assert development.title == HEADLINE
+    assert development.title == ""
+    assert _milestone(normal_matter, specialist, development).what == "Märge"
 
 
 # -- §C. the period, at every precision --------------------------------------

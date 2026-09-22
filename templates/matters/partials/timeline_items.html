@@ -19,6 +19,12 @@ act, one line (app/matters/timeline.py `projected_milestones`).
 **No folded system runs.** «3 süsteemimuudatust — näita ▸» was a third row style
 for events that are now either milestones in their own right or ordinary work.
 
+**And no sections.** For one round this fragment drew an `h3` per recorded phase,
+inside the row stream, with `Etapiga sidumata` at the foot holding everything
+nobody had placed — which stopped the list being chronological. The phases are
+drawn in `Menetluse kulg` above, in order and with their dates; this is one list,
+newest first (docs/adr/0105 §1, `app/matters/timeline.py`).
+
 Security audit events never appear here: who downloaded what is a compliance
 record, not professional chronology (master specification 16.5).
 {% endcomment %}
@@ -29,81 +35,6 @@ record, not professional chronology (master specification 16.5).
   spine into two (app/matters/views.py, `timeline_page`).
 {% endcomment %}
 {% for item in timeline_items %}
-  {% if item.opens_phase %}
-    {% comment %}
-      A phase heading, inside the row stream rather than around it.
-
-      **A sibling of the rows, not a wrapper.** «Näita varasemaid» swaps its own
-      button for the next batch *in place* inside `#ajalugu-loend`, so the older
-      rows arrive as siblings of these; a `<details>` or a `<section>` per phase
-      would have to be opened on one page and closed on the next, and the spine
-      running down the left of the list would break into one piece per section.
-
-      `h3`, under the section's own `h2`. The history is one section with parts,
-      and a reader tabbing headings should be able to get from `Teema käik` to
-      `Riigikogus` without leaving it (docs/adr/0092 §2).
-
-      **`Praegu` is a state, said in a word.** A phase that is where the file
-      stands now says so; every other heading is just the phase and the day it
-      began. Nothing is ticked, nothing is numbered and no heading claims a phase
-      is finished — a later phase existing is not evidence that an earlier one
-      completed (app/matters/phase_history.py).
-    {% endcomment %}
-    <h3 class="uxtl__phase{% if item.phase.is_unplaced %} uxtl__phase--unplaced{% endif %}"
-        id="{{ item.phase.anchor }}">
-      <span class="uxtl__phasename">{{ item.phase.label }}</span>
-      {% if item.phase.is_current %}
-        <span class="uxtl__phasenow">Praegu</span>
-      {% endif %}
-      {% if item.phase.started_on %}
-        {% comment %}
-          The day the phase began — the business date of the `Menetluse areng`
-          that opened it, and never a `created_at`, an audit timestamp or today.
-          A phase whose beginning nobody recorded prints no date at all rather
-          than borrowing one (docs/adr/0092 §4).
-        {% endcomment %}
-        <span class="uxtl__phasefrom">alates {{ item.phase.started_on|date:"d.m.Y" }}</span>
-      {% endif %}
-      {% if item.phase_continues %}
-        {% comment %}
-          This section began on an earlier page and runs on here. Said in words
-          rather than left to the reader, because the alternative is the same
-          heading appearing twice with nothing to explain it.
-        {% endcomment %}
-        <span class="uxtl__phasemore">jätkub</span>
-      {% endif %}
-      {% comment %}
-        Collapse this phase — for the three-year file, where the question is
-        what happened in the Riigikogu and the answer is under nine months of
-        consultation round.
-
-        **Rendered `hidden`, and shown by the script that makes it work.** A
-        button that did nothing without JavaScript would be worse than no button:
-        the whole history reads with script off, because every row is on the page
-        and expanded is the state the server sends. `aria-expanded` is the state,
-        and there is nothing here that is not reachable from the keyboard — it
-        is an ordinary button element in the tab order (static/js/ux.js).
-      {% endcomment %}
-      <button type="button" class="uxtl__phasetoggle" hidden
-              aria-expanded="true">
-        <span class="uxtl__phasecaret" aria-hidden="true"></span>
-        <span class="visually-hidden">Ava või sulge etapp {{ item.phase.label }}</span>
-      </button>
-    </h3>
-    {% comment %}
-      **`Etapiga sidumata` says it by itself, and the paragraph under it is
-      gone.** Two sentences explaining that these records are fine were two
-      sentences insisting they might not be — a reader who has just read a
-      heading meaning «not tied to a phase» does not need to be told that the
-      phase is unknown, and being told twice is what made an ordinary group
-      look like a queue somebody is expected to clear.
-
-      The grouping is unchanged: the heading is still :data:`UNPLACED_LABEL`,
-      the records under it are still whole, and none of them is coloured,
-      counted or marked as a defect (`app/matters/process_phases.py`, the
-      owner's round 2026-09-21).
-    {% endcomment %}
-  {% endif %}
   {% comment %}
     The id is what a search result for an entry scrolls to. Server-rendered
     anchor, no router: the timeline is already one page (Stage-2B brief 77).
@@ -178,24 +109,60 @@ record, not professional chronology (master specification 16.5).
           {% endcomment %}
           {% include "matters/partials/submission_row.html" with submission=item.record milestone=item.milestone matter=matter sent_opinion_edit_form=None %}
         {% else %}
-          <p class="uxtl__ms">
-            <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
+          {% comment %}
+            The headline, the day and — where this row has one — `Kustuta`, on
+            **one line**. The chip row used to stand on its own under the files,
+            which cost a whole line to hold one quiet word (docs/adr/0105 §2,
+            `static/css/ux.css` `.uxtl__head`).
+          {% endcomment %}
+          <div class="uxtl__head">
+            <p class="uxtl__ms">
+              <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
+              {% comment %}
+                An `Ülevaade / uudis` row names its date cell, and nothing else
+                does. `Muuda` swaps only the link region — deliberately, so a
+                correction cannot move the row — but since docs/adr/0089 §8 a
+                correction may *clear* the publication date, and a cell left
+                saying `14.3.2026` beside a record that now says «unknown» is the
+                page contradicting the file. The correction's answer carries this
+                one cell out of band (`website_overview_link.html`).
+              {% endcomment %}
+              {% if item.website_overview %}
+                <span class="uxtl__msdate"
+                      id="kodulehe-ulevaade-{{ item.website_overview.pk }}-kuupaev">{{ item.milestone.display_date }}</span>
+              {% else %}
+                <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
+              {% endif %}
+            </p>
             {% comment %}
-              An `Ülevaade / uudis` row names its date cell, and nothing else
-              does. `Paranda link` swaps only the link region — deliberately, so
-              a correction cannot move the row — but since docs/adr/0089 §8 a
-              correction may *clear* the publication date, and a cell left
-              saying `14.3.2026` beside a record that now says «unknown» is the
-              page contradicting the file. The correction's answer carries this
-              one cell out of band (`website_overview_link.html`).
+              `Kustuta` on the milestone rows that have no correction element of
+              their own: an `Oluline tähtaeg`, a `Jõustumine`, a `Töövõidu kirje`,
+              an `Ülevaade / uudis`. A `Kaasamine`, a `Väline seisukoht` and a
+              `Märge` render through their own swap targets above and carry the
+              same control beside their `Muuda`.
+
+              `item.removable` is the whole condition, and it is empty on every row
+              this act does not apply to — a grouped save, a system transition,
+              `Teema loodud`, a sent `Koja arvamus`. It is resolved from
+              `app/matters/removal.py`'s own table rather than by this template
+              asking what kind of record it is holding, so the families a lawyer
+              may take off the file are written down exactly once (OWNER-04,
+              docs/adr/0102).
+
+              The three kinds that *are* rendered by their own element are excluded
+              here by name. `removable` answers «may this record be taken off the
+              file», which is a fact about the record and true of all eight; where
+              the chip is *drawn* is a fact about this template, and spelling it
+              here keeps the property from having to know which branch rendered its
+              row. Without the exclusion a `Märge` would carry two `Kustuta` chips,
+              one inside its swap target and one outside it.
             {% endcomment %}
-            {% if item.website_overview %}
-              <span class="uxtl__msdate"
-                    id="kodulehe-ulevaade-{{ item.website_overview.pk }}-kuupaev">{{ item.milestone.display_date }}</span>
-            {% else %}
-              <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
+            {% if item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
+              <div class="uxtl__editactions">
+                {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="" %}
+              </div>
             {% endif %}
-          </p>
+          </div>
           {% if item.milestone.sub %}
             <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
           {% endif %}
@@ -309,34 +276,6 @@ record, not professional chronology (master specification 16.5).
           <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
             class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
         {% endfor %}
-        {% comment %}
-          `Kustuta` on the milestone rows that have no correction element of
-          their own: an `Oluline tähtaeg`, a `Jõustumine`, a `Töövõidu kirje`,
-          an `Ülevaade / uudis`. A `Kaasamine`, a `Väline seisukoht` and a
-          `Märge` render through their own swap targets above and carry the
-          same control beside their `Muuda`.
-
-          `item.removable` is the whole condition, and it is empty on every row
-          this act does not apply to — a grouped save, a system transition,
-          `Teema loodud`, a sent `Koja arvamus`. It is resolved from
-          `app/matters/removal.py`'s own table rather than by this template
-          asking what kind of record it is holding, so the families a lawyer
-          may take off the file are written down exactly once (OWNER-04,
-          docs/adr/0102).
-
-          The three kinds that *are* rendered by their own element are excluded
-          here by name. `removable` answers «may this record be taken off the
-          file», which is a fact about the record and true of all eight; where
-          the chip is *drawn* is a fact about this template, and spelling it
-          here keeps the property from having to know which branch rendered its
-          row. Without the exclusion a `Märge` would carry two `Kustuta` chips,
-          one inside its swap target and one outside it.
-        {% endcomment %}
-        {% if item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
-          <div class="uxtl__editactions">
-            {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="" %}
-          </div>
-        {% endif %}
       {% else %}
         {% comment %}
           The meta line is one baseline-aligned row: who, what they did, and

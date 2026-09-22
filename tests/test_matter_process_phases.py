@@ -1,4 +1,4 @@
-"""The lawyers' eight worked examples, and the claims the grouping must refuse.
+"""The lawyers' eight worked examples, read off `Menetluse kulg` and one list.
 
 Sections 3 and 13 of the brief. Every scenario here is one the department wrote
 down, rebuilt from canonical records through the ordinary services, and read back
@@ -6,16 +6,26 @@ through the ordinary projection. The dates are this file's own — the source's
 were illustrative, and copying an accidentally reversed pair and then teaching
 the renderer to reproduce it would be encoding a typo as a requirement.
 
+**`Teema käik` no longer groups itself into phases** (docs/adr/0105 §1). It drew a
+heading per recorded phase, with `Etapiga sidumata` at its foot holding everything
+nobody had placed, and the cost was that the list stopped being chronological —
+the newest phase, then an older one, then a group filed under no phase at all. The
+phases were already drawn, in order and with their dates, in `Menetluse kulg`
+inches above. So the scenarios below are read where each answer now lives: the
+rail says where the procedure is and which phases the file recorded, and the
+chronology says what happened, in the order it happened.
+
 What is being protected, in one list:
 
-* history shows **only what the records support** — no empty earlier sections, no
-  phase ticked because a later one exists, no event dated by a system clock;
+* the rail shows **only what the records support** — no phase marked because a
+  later one exists, and no phase marked by a bare `Hetkeseis` edit;
 * guidance may show **unrecorded future phases**, undated and labelled possible,
   and writes nothing;
-* a phase **occurs more than once**, and two consultation rounds a year apart are
-  two sections;
-* an ambiguous interval is **unplaced**, which is an ordinary answer;
-* a restricted record leaks **no heading, no date, no count and no gap**.
+* a phase **occurs more than once**, and the rail says so once rather than
+  claiming two different states for one node;
+* `Teema käik` is **one chronological list** — every row in business-date order,
+  no headings, no `Etapiga sidumata`, and the same list after «Näita varasemaid»;
+* a restricted record leaks **no row, no date, no count and no gap**.
 """
 
 from __future__ import annotations
@@ -32,8 +42,11 @@ from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.intelligence.enums import ImportantDateKind
 from app.intelligence.services import add_effective_date, add_important_date
-from app.matters.legal_process import legal_process_rail, phase_context
-from app.matters.phase_history import UNPLACED_KEY
+from app.matters.legal_process import (
+    legal_process_rail,
+    phase_context,
+    recorded_phase_keys,
+)
 from app.matters.process_phases import (
     PATTERN_DIRECTIVE,
     PATTERN_EU_REGULATION,
@@ -113,70 +126,76 @@ def _opinion(matter, actor, organisation, on: date, title: str = "Koja arvamus")
     ).record
 
 
-def _sections(matter, user) -> list[tuple[str, date | None]]:
-    """The phase sections a reader sees, in reading order, as (label, start)."""
+def _rail_states(matter, user) -> dict[str, str]:
+    """Each rail node's state, keyed by its label.
+
+    The rail is where a phase is read now, so most of the scenarios below assert
+    here rather than on the chronology (docs/adr/0105 §1).
+    """
+    rail = legal_process_rail(matter=matter, user=user)
+    assert rail is not None, "this file's instruments should choose a pattern"
+    return {node.label: node.state for node in rail.nodes}
+
+
+def _recorded(matter, user) -> list[str]:
+    """The phase keys this file recorded a step in, as this reader may see them.
+
+    The canonical column rather than a node *state*: the node the file is standing
+    on reads `Praegu`, which answers a different question — a phase can be both
+    recorded and current, and asking the rail's state would call that one «not
+    recorded» (`app.matters.legal_process.recorded_phase_keys`).
+    """
+    return sorted(recorded_phase_keys(matter=matter, user=user))
+
+
+def _node_labels(matter, user) -> list[str]:
+    """Every node the rail draws, in order."""
+    rail = legal_process_rail(matter=matter, user=user)
+    assert rail is not None, "this file's instruments should choose a pattern"
+    return [node.label for node in rail.nodes]
+
+
+def _record_rows(matter, user) -> list[object]:
+    """The chronology rows standing for a canonical record, in reading order.
+
+    Filtered to the records the scenario wrote, so an assertion about ordering is
+    not also an assertion about which audit events happen to project a row.
+    """
     items, _more = matter_timeline(matter=matter, user=user, limit=200)
-    seen: list[tuple[str, date | None]] = []
-    for item in items:
-        if item.opens_phase and item.phase is not None:
-            seen.append((item.phase.label, item.phase.started_on))
-    history = items.history
-    if history.current_without_rows is not None:
-        seen.insert(0, (history.current_without_rows.label, None))
-    return seen
+    return [item for item in items if item.record is not None]
 
 
-def _labels(matter, user) -> list[str]:
-    return [label for label, _start in _sections(matter, user)]
+def _headlines(matter, user) -> list[str]:
+    """What each canonical row's headline says, in the order the page reads them."""
+    return [row.milestone.what for row in _record_rows(matter, user) if row.milestone is not None]
 
 
-def _grouped(matter, user) -> dict[str, list[str]]:
-    """Section label -> the headlines under it, for the placed sections."""
+def _is_chronological(matter, user) -> bool:
+    """Whether every row on the page sits after the row below it in time.
+
+    The claim docs/adr/0105 §1 makes about this list, and the one the grouping
+    could not keep: rows arrived newest-*phase* first, so a September row could
+    read above a row from the following spring.
+    """
     items, _more = matter_timeline(matter=matter, user=user, limit=200)
-    out: dict[str, list[str]] = {}
-    for item in items:
-        if item.phase is None:
-            continue
-        what = item.milestone.what if item.milestone is not None else (item.summary_sentence or "")
-        out.setdefault(item.phase.label, []).append(what)
-    return out
+    stamps = [(item.occurred_at, item.created_at, item.sort_key) for item in items]
+    return stamps == sorted(stamps, reverse=True)
 
 
 def _rendered_for(matter, user) -> str:
-    """Everything a reader could read off the grouped page, as one string.
+    """Everything a reader could read off the chronology, as one string.
 
     The permission assertions have to prove a *negative* — that no headline, no
-    sub-line, no date, no phase heading and no phase start date anywhere on the
-    page mentions the record this reader may not see.
+    sub-line and no date anywhere on the page mentions the record this reader may
+    not see.
     """
     items, _more = matter_timeline(matter=matter, user=user, limit=200)
     parts: list[str] = []
     for item in items:
         if item.milestone is not None:
             parts += [item.milestone.what, item.milestone.display_date, item.milestone.sub]
-        if item.phase is not None:
-            parts.append(item.phase.label)
-            if item.phase.started_on is not None:
-                parts += [
-                    item.phase.started_on.isoformat(),
-                    item.phase.started_on.strftime("%d.%m.%Y"),
-                ]
         parts.append(item.summary_sentence or "")
     return " ".join(part for part in parts if part)
-
-
-def _phase_of(matter, user, record) -> str:
-    """Which phase one canonical record's own row was grouped into.
-
-    Matched on the record rather than on a headline: a sent opinion's chronology
-    row is headed «Arvamus välja», which is what happened to the letter, and a
-    test asserting on those words would break the first time they are reworded.
-    """
-    items, _more = matter_timeline(matter=matter, user=user, limit=200)
-    for item in items:
-        if item.record is not None and item.record.pk == record.pk:
-            return item.phase.phase_key if item.phase is not None else ""
-    raise AssertionError(f"no row for {record!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -185,12 +204,12 @@ def _phase_of(matter, user, record) -> str:
 
 
 def test_scenario_a_a_vtk_followed_by_a_bill(specialist, organisation):
-    """The full example, and the one it was written to prove: **two consultation
-    rounds, a year apart, are two sections and not one.**
+    """The full example, read where each of its two questions now lives.
 
-    Grouping by phase *key* would have put the bill's round inside the VTK's,
-    which is the defect that makes «which round did we answer» unanswerable on
-    exactly the files a lawyer needs it for.
+    `Menetluse kulg` says the file recorded four phases and is in the Riigikogu;
+    `Teema käik` says what happened, all six rows, newest first and nothing
+    between them. Neither of them answers the other's question, which is what
+    docs/adr/0105 §1 settled after a round of the history trying to answer both.
     """
     matter = _matter(specialist, instruments=("vtk", "seadus"))
     _step(matter, specialist, "VTK saadeti kooskõlastusringile", date(2025, 2, 10), PHASE_VTK)
@@ -219,40 +238,55 @@ def test_scenario_a_a_vtk_followed_by_a_bill(specialist, organisation):
         stage="parliament",
     )
 
-    # Newest phase first, and the lawyers' own words.
-    assert _labels(matter, specialist) == [
-        "Riigikogus",
-        "Valitsuses",
-        "Kooskõlastusring",
-        "VTK",
+    # The rail: four phases the file can prove it was in, and where it is now.
+    states = _rail_states(matter, specialist)
+    assert states["VTK"] == "recorded"
+    assert states["Kooskõlastusring"] == "recorded"
+    assert states["Valitsuses"] == "recorded"
+    # `Riigikogus` is both recorded *and* where the file is, and the node says the
+    # second: `Praegu` is the more specific answer and the one a reader needs.
+    assert states["Riigikogus"] == "current"
+    assert _recorded(matter, specialist) == sorted(
+        [PHASE_VTK, PHASE_KOOSKOLASTUS, PHASE_VALITSUS, PHASE_RIIGIKOGU]
+    )
+
+    # The chronology: one list, newest first, both opinions in their own place in
+    # time rather than in a bucket under a heading.
+    assert _is_chronological(matter, specialist)
+    assert _headlines(matter, specialist) == [
+        "Märge: Riigikogu võttis seaduse vastu",
+        "Märge: Valitsus saatis eelnõu Riigikogule",
+        "Arvamus välja",
+        "Märge: Eelnõu saadeti kooskõlastusringile",
+        "Arvamus välja",
+        "Märge: VTK saadeti kooskõlastusringile",
     ]
+    rows = {row.record.pk: index for index, row in enumerate(_record_rows(matter, specialist))}
+    # The VTK round's answer reads below the bill's, because it is older — and
+    # the file's own `Hetkeseis` moved neither of them.
+    assert rows[bill_opinion.pk] < rows[vtk_opinion.pk]
 
-    # The two opinions belong to the rounds they answered, and neither was
-    # grouped by the file's *current* `Hetkeseis`, which is `Riigikogus`.
-    assert _phase_of(matter, specialist, vtk_opinion) == PHASE_VTK
-    assert _phase_of(matter, specialist, bill_opinion) == PHASE_KOOSKOLASTUS
 
+def test_a_repeated_phase_keeps_both_rounds_readable(specialist):
+    """§8. Kooskõlastusring → Valitsuses → Kooskõlastusring, and neither is lost.
 
-def test_a_repeated_phase_is_a_second_occurrence_and_not_a_merge(specialist):
-    """§8. Kooskõlastusring → Valitsuses → Kooskõlastusring, all three drawn.
-
-    The rounds are not reordered into one earlier bucket because their keys
-    match, and the second one is not swallowed by the first.
+    The rail is a pattern and has one node per phase, so a round that happened
+    twice marks that node once — a second `Kooskõlastusring` node would be the
+    rail claiming the procedure has two of them. What must survive is the pair of
+    *rounds*, and they survive where rounds are: two rows in the chronology, in
+    the order they happened, with the Government step between them.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Esimene kooskõlastusring", date(2026, 1, 10), PHASE_KOOSKOLASTUS)
     _step(matter, specialist, "Valitsus arutas", date(2026, 3, 1), PHASE_VALITSUS)
     _step(matter, specialist, "Teine kooskõlastusring", date(2026, 5, 4), PHASE_KOOSKOLASTUS)
 
-    sections = _sections(matter, specialist)
-    assert [label for label, _start in sections] == [
-        "Kooskõlastusring",
-        "Valitsuses",
-        "Kooskõlastusring",
+    assert _recorded(matter, specialist) == sorted([PHASE_KOOSKOLASTUS, PHASE_VALITSUS])
+    assert _headlines(matter, specialist) == [
+        "Märge: Teine kooskõlastusring",
+        "Märge: Valitsus arutas",
+        "Märge: Esimene kooskõlastusring",
     ]
-    # Two occurrences, two different beginnings — the later one is the later run.
-    starts = [start for label, start in sections if label == "Kooskõlastusring"]
-    assert starts == [date(2026, 5, 4), date(2026, 1, 10)]
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +305,10 @@ def test_scenario_b_a_bill_with_no_vtk_invents_no_vtk_section(specialist):
     )
     _step(matter, specialist, "Valitsus kiitis heaks", date(2026, 5, 6), PHASE_VALITSUS)
 
-    assert _labels(matter, specialist) == ["Valitsuses", "Kooskõlastusring"]
-    assert "VTK" not in _labels(matter, specialist)
+    assert _recorded(matter, specialist) == sorted([PHASE_KOOSKOLASTUS, PHASE_VALITSUS])
+    # A bill with no `VTK` instrument is not offered a VTK node at all: the
+    # pattern is the road this file could take, and that one is not on it.
+    assert "VTK" not in _node_labels(matter, specialist)
 
 
 def test_scenario_c_a_late_entry_shows_no_earlier_history(specialist, organisation):
@@ -293,9 +329,12 @@ def test_scenario_c_a_late_entry_shows_no_earlier_history(specialist, organisati
     )
     _opinion(matter, specialist, organisation, date(2026, 6, 20), title="Koja arvamus Riigikogule")
 
-    assert _labels(matter, specialist) == ["Riigikogus"]
-    for absent in ("VTK", "Kooskõlastusring", "Valitsuses"):
-        assert absent not in _labels(matter, specialist)
+    assert _recorded(matter, specialist) == [PHASE_RIIGIKOGU]
+    # Nothing earlier is claimed, and nothing earlier is *ticked*: `Teadmata` is
+    # the honest answer for a phase Koda either did not see or nobody wrote down.
+    states = _rail_states(matter, specialist)
+    for absent in ("Kooskõlastusring", "Valitsuses"):
+        assert states[absent] == "unknown"
 
     # And what may still follow reads from where the file actually is, rather
     # than from the beginning of a procedure Koda never saw: the rail draws
@@ -343,8 +382,8 @@ def test_scenarios_d_and_e_render_from_their_facts_without_guessing_whose(specia
         stage="in_force",
     )
 
-    assert _labels(government, specialist) == ["Valitsuses", "Kooskõlastusring"]
-    assert _labels(ministerial, specialist) == ["Jõustumine", "Kooskõlastusring"]
+    assert _recorded(government, specialist) == sorted([PHASE_KOOSKOLASTUS, PHASE_VALITSUS])
+    assert _recorded(ministerial, specialist) == sorted([PHASE_JOUSTUMINE, PHASE_KOOSKOLASTUS])
     # Neither file was given a Parliament anywhere: a regulation is not adopted
     # by the Riigikogu, and suggesting it would teach a reader something false.
     for matter in (government, ministerial):
@@ -378,10 +417,16 @@ def test_scenario_f_a_proposal_that_progresses(specialist):
         stage="consultation",
     )
 
-    assert _labels(matter, specialist) == ["Kooskõlastusring", "Koja ettepanek"]
-    # The ministry's answer sits in the proposal's own phase, not in the round
-    # that came afterwards.
-    assert _phase_of(matter, specialist, vastus) == PHASE_KOJA_ETTEPANEK
+    assert _recorded(matter, specialist) == sorted([PHASE_KOJA_ETTEPANEK, PHASE_KOOSKOLASTUS])
+    # The ministry's answer is filed under the proposal's own phase, which is what
+    # marks that node — and it reads in the chronology between the two steps
+    # either side of it, because that is when it happened.
+    assert vastus.process_phase == PHASE_KOJA_ETTEPANEK
+    assert _headlines(matter, specialist) == [
+        "Märge: Kooskõlastusringile tuli eelnõu, kus ettepanekut käsitletakse",
+        "Märge: Ministeeriumi vastus",
+        "Märge: Koja ettepanek",
+    ]
 
 
 def test_scenario_g_koda_stopping_is_not_the_procedure_stopping(specialist):
@@ -593,16 +638,12 @@ def test_a_standalone_stage_edit_places_nothing_and_dates_nothing(specialist, or
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
-    # No `Jõustumine` section was created by the mistake. The two bare stage
-    # edits read under `Etapiga sidumata`, which is exactly what they are: proof
-    # that a value was recorded, dated by nothing but this application's own
-    # clock, and therefore placing nothing.
-    assert _labels(matter, specialist) == ["Kooskõlastusring", "Etapiga sidumata"]
-    assert "Jõustumine" not in _labels(matter, specialist)
-    # … and the rail does not leave `Jõustumine` reading as a completed step.
-    rail = legal_process_rail(matter=matter, user=specialist)
-    joustumine = next(node for node in rail.nodes if node.label == "Jõustumine")
-    assert joustumine.state == "possible"
+    # The mistake marked no node. `Jõustumine` reads as something that may still
+    # happen, not as something that did — a bare `Hetkeseis` edit proves a value
+    # was recorded, and its only date is this application's own clock.
+    states = _rail_states(matter, specialist)
+    assert states["Jõustumine"] == "possible"
+    assert _recorded(matter, specialist) == [PHASE_KOOSKOLASTUS]
 
     # The audit history still holds both writes; nothing was deleted to achieve
     # any of the above.
@@ -617,11 +658,12 @@ def test_a_standalone_stage_edit_places_nothing_and_dates_nothing(specialist, or
     )
 
 
-def test_a_backdated_opinion_is_placed_by_its_own_date(specialist, organisation):
+def test_a_backdated_opinion_reads_on_its_own_date(specialist, organisation):
     """Test 8. Entry time places nothing.
 
     An opinion sent during the consultation round and typed up months later, once
-    the file has moved on, belongs to the round it answered.
+    the file has moved on, reads **where its own date puts it** — between the two
+    steps either side of it — and not at the top of the list where it was typed.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(
@@ -642,40 +684,51 @@ def test_a_backdated_opinion_is_placed_by_its_own_date(specialist, organisation)
     # Written up today, dated February.
     opinion = _opinion(matter, specialist, organisation, date(2026, 2, 14))
 
-    assert _phase_of(matter, specialist, opinion) == PHASE_KOOSKOLASTUS
+    assert _is_chronological(matter, specialist)
+    assert _headlines(matter, specialist) == [
+        "Märge: Eelnõu jõudis Riigikokku",
+        "Arvamus välja",
+        "Märge: Eelnõu kooskõlastusringile",
+    ]
+    assert _record_rows(matter, specialist)[1].record.pk == opinion.pk
 
 
-def test_same_day_records_do_not_manufacture_membership_from_entry_order(specialist, organisation):
-    """Test 12. The interval is decided on business dates and nothing else.
+def test_same_day_records_read_the_same_way_whatever_order_they_were_typed(
+    specialist, organisation
+):
+    """Test 12. The list is ordered on business dates, and typing order breaks no tie.
 
-    Two records written on the same afternoon, in either order, group the same
-    way — and a record that merely shares a *recording* day with a phase change
-    gains nothing from it.
+    Two records sharing a day, entered in either order, reach the same reading
+    order — and the whole list is still descending, so neither of them jumps
+    above a newer row for having been typed later.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
     _step(matter, specialist, "Valitsus arutas", date(2026, 4, 1), PHASE_VALITSUS)
-    # Dated the day the Government phase opened: the boundary is `[start, next)`,
-    # so it is in the phase that began that day, whatever order things were typed.
-    opinion = _opinion(matter, specialist, organisation, date(2026, 4, 1))
+    # Dated the same day as the Government step above it.
+    _opinion(matter, specialist, organisation, date(2026, 4, 1))
 
-    assert _phase_of(matter, specialist, opinion) == PHASE_VALITSUS
+    assert _is_chronological(matter, specialist)
+    forward = _headlines(matter, specialist)
 
-    # The same facts recorded in the other order reach the same answer.
+    # The same facts recorded in the other order reach the same reading order.
     mirror = _matter(specialist, instruments=("seadus",))
-    mirrored = _opinion(mirror, specialist, organisation, date(2026, 4, 1))
+    _opinion(mirror, specialist, organisation, date(2026, 4, 1))
     _step(mirror, specialist, "Valitsus arutas", date(2026, 4, 1), PHASE_VALITSUS)
     _step(mirror, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
 
-    assert _phase_of(mirror, specialist, mirrored) == PHASE_VALITSUS
+    assert _is_chronological(mirror, specialist)
+    assert sorted(_headlines(mirror, specialist)) == sorted(forward)
+    assert _headlines(mirror, specialist)[-1] == "Märge: Eelnõu kooskõlastusringile"
 
 
-def test_an_undated_record_is_unplaced_and_still_visible(specialist):
+def test_an_undated_record_reads_in_full_and_says_the_day_is_unknown(specialist):
     """Test 9 and test 13. «Kuupäev teadmata» is not «file it under today».
 
-    A development whose date nobody knows opens no interval — there is no day for
-    one to begin on. It is placed by its own explicit phase, because somebody
-    said so; a record with neither reads under `Etapiga sidumata`, in full.
+    A development whose date nobody knows still reads, in full, with its own
+    headline — and the date cell says the day is unknown rather than printing the
+    day somebody typed it in. There is nowhere for such a row to be filed *away*
+    to any more, which is one of the things docs/adr/0105 §1 removed.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
@@ -687,10 +740,16 @@ def test_an_undated_record_is_unplaced_and_still_visible(specialist):
         process_phase="",
     )
 
-    labels = _labels(matter, specialist)
-    assert "Etapiga sidumata" in labels
-    grouped = _grouped(matter, specialist)
-    assert any("uue versiooni" in what for what in grouped["Etapiga sidumata"])
+    headlines = _headlines(matter, specialist)
+    assert "Märge: Ministeerium saatis uue versiooni" in headlines
+    row = next(
+        item
+        for item in _record_rows(matter, specialist)
+        if item.milestone is not None and "uue versiooni" in item.milestone.what
+    )
+    assert row.milestone.display_date == "Kuupäev teadmata"
+    # And it marked no node: a step nobody placed is evidence of nothing.
+    assert _recorded(matter, specialist) == [PHASE_KOOSKOLASTUS]
 
 
 def test_an_approximate_date_places_a_row_on_its_anchor_and_still_prints_the_period(
@@ -710,71 +769,108 @@ def test_an_approximate_date_places_a_row_on_its_anchor_and_still_prints_the_per
 
     items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
     row = next(item for item in items if item.milestone and "Valitsus" in item.milestone.what)
-    assert row.phase.phase_key == PHASE_VALITSUS
     assert "aprill" in row.milestone.display_date
+    # The anchor sorts the row; the period is what it prints. `Valitsuses` is
+    # marked on the rail from the record's own column either way.
+    assert _recorded(matter, specialist) == sorted([PHASE_KOOSKOLASTUS, PHASE_VALITSUS])
 
 
 # ---------------------------------------------------------------------------
-# The contested tail — §7's «unambiguous, or it does not exist»
+# One list — docs/adr/0105 §1
 # ---------------------------------------------------------------------------
 
 
-def test_a_current_stage_that_contradicts_the_last_phase_leaves_the_tail_unplaced(
-    specialist, organisation
+def test_the_chronology_is_one_chronological_list_whatever_the_phases_say(specialist, organisation):
+    """The claim the grouping could not keep.
+
+    A file with a recorded round, a `Hetkeseis` that moved without a step to date
+    it, and an opinion sent afterwards. Under the grouping the opinion fell into
+    `Etapiga sidumata` and read at the **foot** of the page, below the January
+    step that happened four months before it. Now every row sits where its date
+    puts it and the list is one list.
+    """
+    matter = _matter(specialist, instruments=("seadus",))
+    _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
+    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
+    _opinion(matter, specialist, organisation, date(2026, 5, 20))
+
+    assert _is_chronological(matter, specialist)
+    assert _headlines(matter, specialist) == [
+        "Arvamus välja",
+        "Märge: Eelnõu kooskõlastusringile",
+    ]
+    # The file's own phase is still readable — on the rail, which is where the
+    # question «where is this procedure» belongs.
+    assert _rail_states(matter, specialist)["Riigikogus"] == "current"
+
+
+def test_no_phase_heading_and_no_etapiga_sidumata_reach_the_page(
+    signed_in, specialist, organisation
 ):
-    """The file left the phase; nothing dated says when, so nothing is claimed.
+    """Read off the rendered page, because that is where the headings used to be.
 
-    The interval after the last recorded step runs to the present only while
-    nothing contradicts it. A `Hetkeseis` naming a different phase does: it proves
-    the file moved on without saying on what day, so an opinion sent afterwards
-    could belong to either. §7 answers that with «unplaced», not with a guess.
+    Both halves matter. `Etapiga sidumata` is gone as a word — it was the heading
+    a reader took for a queue of records somebody owed work on — and so is the
+    markup that drew any phase heading at all, so a file with several recorded
+    rounds gets one list rather than a stack of sections.
+    """
+    matter = _matter(specialist, instruments=("vtk", "seadus"))
+    _step(matter, specialist, "VTK kooskõlastusringile", date(2025, 2, 10), PHASE_VTK)
+    _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2025, 9, 1), PHASE_KOOSKOLASTUS)
+    _opinion(matter, specialist, organisation, date(2025, 9, 30))
+    add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Midagi juhtus, kuupäev teadmata",
+        occurred_on=None,
+        process_phase="",
+    )
+
+    response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
+    assert response.status_code == 200
+    body = response.content.decode()
+
+    assert "Etapiga sidumata" not in body
+    assert "uxtl__phase" not in body
+    # Every row is still there, the undated one included.
+    assert "Midagi juhtus, kuupäev teadmata" in body
+    assert "VTK kooskõlastusringile" in body
+    # And the phases are drawn where they belong, one section up.
+    assert "Menetluse kulg" in body
+
+
+def test_recording_the_missing_step_marks_the_node_it_proves(specialist, organisation):
+    """Test 13's other half, on the surface that still answers it.
+
+    A `Hetkeseis` naming `Riigikogus` with no step behind it marks nothing: the
+    file demonstrably moved and nothing says when or on whose record. One
+    `+ Märge` filed under that phase is the statement by a person that marks it.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
     change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
-    opinion = _opinion(matter, specialist, organisation, date(2026, 5, 20))
+    _opinion(matter, specialist, organisation, date(2026, 5, 20))
 
-    assert _phase_of(matter, specialist, opinion) == UNPLACED_KEY
-    # And the phase the file *is* on reads as a section of its own, with no date
-    # and no invented event in it.
-    items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
-    current = items.history.current_without_rows
-    assert current is not None
-    assert current.label == "Riigikogus"
-    assert current.started_on is None
-
-
-def test_recording_the_missing_step_places_the_tail(specialist, organisation):
-    """Test 13's other half: an unplaced row is **correctable**.
-
-    The correction is the one that fixes a section rather than a row — recording
-    the step that moved the file dates the phase, and everything inside it groups.
-    """
-    matter = _matter(specialist, instruments=("seadus",))
-    _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
-    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
-    opinion = _opinion(matter, specialist, organisation, date(2026, 5, 20))
-    assert _phase_of(matter, specialist, opinion) == UNPLACED_KEY
+    assert _recorded(matter, specialist) == [PHASE_KOOSKOLASTUS]
 
     _step(matter, specialist, "Eelnõu jõudis Riigikokku", date(2026, 4, 1), PHASE_RIIGIKOGU)
 
-    assert _phase_of(matter, specialist, opinion) == PHASE_RIIGIKOGU
+    assert _recorded(matter, specialist) == sorted([PHASE_KOOSKOLASTUS, PHASE_RIIGIKOGU])
 
 
-def test_a_file_with_no_phase_anywhere_reads_exactly_as_it_always_has(specialist, organisation):
-    """The whole register on the day this ships: no phases, and no headings.
+def test_a_file_with_no_phase_anywhere_reads_as_one_list(specialist, organisation):
+    """The whole register on the day this ships: no recorded phase anywhere.
 
-    Nothing is backfilled, so every existing Matter has no placed row. A heading
-    saying «none of this could be placed» above every row of every file would be
-    the application announcing a gap nobody can close.
+    Nothing is backfilled, so most Matters have no placed row at all — and the
+    chronology reads exactly the same for them as for a file with four recorded
+    rounds, because it no longer asks.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _opinion(matter, specialist, organisation, date(2026, 5, 20))
 
-    items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
-    assert items.history.grouped is False
-    assert all(item.phase is None for item in items)
-    assert all(item.opens_phase is False for item in items)
+    assert _is_chronological(matter, specialist)
+    assert _headlines(matter, specialist) == ["Arvamus välja"]
+    assert _recorded(matter, specialist) == []
 
 
 # ---------------------------------------------------------------------------
@@ -838,20 +934,20 @@ def test_a_recorded_phase_is_never_drawn_as_one_that_may_be_ahead(specialist):
 
 
 # ---------------------------------------------------------------------------
-# §12 — permission before grouping, and no leak through a heading
+# §12 — permission before everything, and no leak through the rail
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_step_leaks_no_heading_date_count_or_gap(specialist, reader, organisation):
+def test_a_restricted_step_leaks_no_row_date_count_or_node(specialist, reader, organisation):
     """Test 14, and the rule the whole module is scoped for.
 
-    A `Menetluse areng` restricted below its Matter is the **anchor** of a phase,
-    so it is the one record whose leakage would be structural rather than
-    textual: a reader who may not see it must not learn of it from a section
-    heading, from the day that heading is dated to, from a row count, or from a
-    hole in the list where a section would have been.
+    A `Menetluse areng` is what marks a node on `Menetluse kulg`, so it is the one
+    record whose leakage would be structural rather than textual: a reader who may
+    not see it must not learn of it from a marked node, from its headline, from
+    its date, from a row count, or from a hole in the list where a row would have
+    been.
 
-    They see fewer sections, and nothing anywhere says that a section is missing.
+    They see one row fewer and one node fewer, and nothing anywhere says so.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
@@ -862,16 +958,16 @@ def test_a_restricted_step_leaks_no_heading_date_count_or_gap(specialist, reader
     secret.save(update_fields=["visibility_override"])
     opinion = _opinion(matter, specialist, organisation, date(2026, 5, 2))
 
-    # The owner sees the `Valitsuses` section the restricted step opened, and the
-    # opinion sent after it belongs there.
-    assert _labels(matter, specialist) == ["Valitsuses", "Kooskõlastusring"]
-    assert _phase_of(matter, specialist, opinion) == PHASE_VALITSUS
+    # The owner sees the restricted step, its row and the node it marks.
+    assert _recorded(matter, specialist) == sorted([PHASE_KOOSKOLASTUS, PHASE_VALITSUS])
+    assert "Märge: Valitsus arutas salajast versiooni" in _headlines(matter, specialist)
 
-    # The reader sees neither the step nor the section it opened — and the
-    # opinion reads under the phase their own evidence supports, with no gap, no
-    # `Valitsuses` heading and no 01.04 anywhere.
-    assert "Valitsuses" not in _labels(matter, reader)
-    assert _phase_of(matter, reader, opinion) == PHASE_KOOSKOLASTUS
+    # The reader sees neither the step nor its node — and the opinion still reads
+    # where its own date puts it, with no gap, no `Valitsuses` marked and no 01.04
+    # anywhere.
+    assert _recorded(matter, reader) == [PHASE_KOOSKOLASTUS]
+    assert _headlines(matter, reader) == ["Arvamus välja", "Märge: Eelnõu kooskõlastusringile"]
+    assert _record_rows(matter, reader)[0].record.pk == opinion.pk
     assert "salajast" not in _rendered_for(matter, reader)
     assert "2026-04-01" not in _rendered_for(matter, reader)
     assert "01.04.2026" not in _rendered_for(matter, reader)
@@ -882,8 +978,8 @@ def test_the_visible_current_stage_does_not_expose_the_record_that_caused_it(spe
 
     A restricted development that also moved the file leaves the Matter openly on
     `Riigikogus` — that column is the Matter's own and is not restricted. What
-    must not follow it is the step's headline, its date, or a dated section
-    announcing when the file got there.
+    must not follow it is the step's headline, its date, or a `Kirjas` marking
+    saying the file's arrival there is on the record.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
@@ -900,17 +996,16 @@ def test_the_visible_current_stage_does_not_expose_the_record_that_caused_it(spe
 
     rail = legal_process_rail(matter=matter, user=reader)
     assert rail.current_label == "Riigikogus"
-    # For this reader the section exists only as «where the file is now», with no
-    # date and no rows — never as a dated `Riigikogus` beginning on 01.06.
-    items, _more = matter_timeline(matter=matter, user=reader, limit=200)
-    current = items.history.current_without_rows
-    assert current is not None
-    assert current.label == "Riigikogus"
-    assert current.started_on is None
+    # For this reader `Riigikogus` is only «where the file is now». It is not
+    # `Kirjas`, because the record that would prove it is one they may not see —
+    # and neither the step's headline nor its date reaches the page.
+    assert _rail_states(matter, reader)["Riigikogus"] == "current"
+    assert _recorded(matter, reader) == [PHASE_KOOSKOLASTUS]
     assert "Riigikokku" not in _rendered_for(matter, reader)
+    assert "01.06.2026" not in _rendered_for(matter, reader)
 
 
-def test_a_deleted_matter_leaves_no_grouped_history_behind(specialist, signed_in):
+def test_a_deleted_matter_leaves_no_history_behind(specialist, signed_in):
     """Test 15. A tombstoned Matter's roadmap goes with the rest of it."""
     from app.matters.deletion import delete_matter
 
@@ -926,17 +1021,17 @@ def test_a_deleted_matter_leaves_no_grouped_history_behind(specialist, signed_in
 
 
 # ---------------------------------------------------------------------------
-# §14 — the grouping costs no queries of its own
+# §14 — a long history costs no query per row
 # ---------------------------------------------------------------------------
 
 
-def test_a_long_grouped_history_costs_no_query_per_row(specialist, organisation):
-    """Test 20 and §14. Thirty-plus activities, repeated phases, flat cost.
+def test_a_long_history_costs_no_query_per_row(specialist, organisation):
+    """Test 20 and §14. Thirty-plus activities, flat cost.
 
-    The grouping reads the list the projection has already built, so it must add
-    no query at all — and a file with many times the history must not cost many
-    times the queries. A phase heading that asked the database which phase it was
-    would be one query per row by another name.
+    A file with many times the history must not cost many times the queries: a row
+    that asked the database anything of its own would be an N+1 by another name.
+    The budget is asserted against a short file rather than against a number, so it
+    holds while the page's own fixed cost changes.
     """
     small = _matter(specialist, instruments=("seadus",))
     _step(small, specialist, "Kooskõlastusring", date(2024, 2, 1), PHASE_KOOSKOLASTUS)
@@ -957,23 +1052,19 @@ def test_a_long_grouped_history_costs_no_query_per_row(specialist, organisation)
         page, more = matter_timeline(matter=big, user=specialist, limit=30)
 
     assert len(page) == 30 and more is True
-    assert page.history.grouped is True
-    # Five recorded occurrences at least, and the repeated `Kooskõlastusring` is
-    # two of them rather than one merged bucket.
-    assert len({occurrence.index for occurrence in page.history.occurrences}) >= 5
     assert len(many.captured_queries) == len(few.captured_queries), (
-        "grouping a long history must cost exactly what grouping a short one does"
+        "a long history must cost exactly what a short one does"
     )
 
 
-def test_a_section_running_past_the_fold_carries_its_own_heading(specialist):
-    """§6. Pagination is unchanged, and a split section says so.
+def test_the_next_page_continues_the_same_list(specialist):
+    """§6. «Näita varasemaid» carries on down one list, with nothing between.
 
-    «Näita varasemaid» swaps its own button for the next batch in place, so a
-    phase longer than one page continues as siblings of the rows above it. The
-    continuation carries the heading again, marked `jätkub`, because the
-    alternative is rows reading under whichever heading happened to be last on
-    the page above — which on a grouped history is a different phase.
+    The continuation swaps its own button for the next batch *in place* inside
+    `#ajalugu-loend`, so the older rows arrive as siblings of the ones above them.
+    That used to mean a phase heading had to be repeated on the next page, marked
+    `jätkub`; with one list there is nothing to repeat, and what has to hold is
+    that the pages do not overlap, skip or reorder (docs/adr/0105 §1).
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Kooskõlastusring algas", date(2024, 1, 2), PHASE_KOOSKOLASTUS)
@@ -984,13 +1075,15 @@ def test_a_section_running_past_the_fold_carries_its_own_heading(specialist):
 
     first, more = matter_timeline(matter=matter, user=specialist, limit=10)
     assert more is True
-    assert first[0].opens_phase is True
-    assert first[0].phase_continues is False
-
     second, _more = matter_timeline(matter=matter, user=specialist, limit=10, offset=10)
-    assert second[0].opens_phase is True
-    assert second[0].phase_continues is True
-    assert second[0].phase.label == "Kooskõlastusring"
+
+    def keys(page):
+        return [(item.occurred_at, item.created_at, item.sort_key) for item in page]
+
+    # One descending run across the fold, and no row on both pages.
+    joined = keys(first) + keys(second)
+    assert joined == sorted(joined, reverse=True)
+    assert len(set(joined)) == len(joined)
 
 
 def test_a_recorded_step_marks_its_node_kirjas_even_with_no_stage_key(specialist):
@@ -1016,12 +1109,12 @@ def test_a_recorded_step_marks_its_node_kirjas_even_with_no_stage_key(specialist
         stage="parliament",
     )
 
-    rail = legal_process_rail(matter=matter, user=specialist)
-    states = {node.label: node.state for node in rail.nodes}
+    states = _rail_states(matter, specialist)
     assert states["VTK"] == "recorded"
     assert states["Riigikogus"] == "current"
-    # And the history says the same thing, which is the whole point.
-    assert "VTK" in _labels(matter, specialist)
+    # And the step it is marked from reads in the chronology, which is the whole
+    # point: one screen, two sections, no contradiction.
+    assert "Märge: VTK saadeti kooskõlastusringile" in _headlines(matter, specialist)
 
 
 def test_an_unplaced_step_marks_no_node(specialist):
@@ -1251,13 +1344,12 @@ def test_a_recorded_step_ahead_of_the_current_stage_stays_kirjas(specialist):
         stage="idea",
     )
 
-    rail = legal_process_rail(matter=matter, user=specialist)
-    states = {node.label: node.state for node in rail.nodes}
+    states = _rail_states(matter, specialist)
     assert states["Algus"] == "current"
     assert states["VTK"] == "recorded"
     assert states["Kooskõlastusring"] == "possible"
-    # And the history agrees: a `VTK` section holding the step.
-    assert "VTK" in _labels(matter, specialist)
+    # And the step it is marked from reads in the chronology.
+    assert "Märge: VTK saadeti kooskõlastusringile" in _headlines(matter, specialist)
 
 
 def test_a_stage_recorded_ahead_and_then_corrected_is_still_demoted(specialist):
@@ -1377,13 +1469,19 @@ def test_a_crafted_phase_outside_the_vocabulary_stores_nothing(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_grouping_reorders_the_history_and_never_loses_a_row(specialist, organisation):
-    """§6. Every kind of chronology content survives being grouped.
+def test_every_kind_of_content_reads_in_one_date_order(specialist, organisation):
+    """§6. One list, over a Matter carrying one of everything the chronology draws.
 
-    Grouping lifts the flat list one level; it adds nothing, drops nothing and
-    de-duplicates nothing. A grouping that lost a row would be a history that
-    lost a fact — so the grouped page is asserted to be a **permutation** of the
-    ungrouped one, over a Matter carrying one of everything the chronology draws.
+    A step, a sent opinion, a consultation, somebody else's position, a reached
+    deadline and a commencement — six different tables projecting six rows, and the
+    order across all of them is the one order there is. This is the assertion the
+    grouping made impossible to state: the rows used to arrive newest-phase-first,
+    so «is the whole list descending» had no answer (docs/adr/0105 §1).
+
+    It also guards what the grouping's own permutation test guarded — that the
+    phase a record carries changes nothing about *whether* its row is drawn. The
+    list is read twice, once with the explicit phase set and once with it cleared,
+    and it has to be the same list.
     """
     from app.matters.workspace import add_matter_engagement, add_matter_external_position
 
@@ -1411,23 +1509,22 @@ def test_grouping_reorders_the_history_and_never_loses_a_row(specialist, organis
         matter=matter, date_value=gone, period_end=gone, description="Põhiosa", actor=specialist
     )
 
-    grouped, _more = matter_timeline(matter=matter, user=specialist, limit=200)
+    placed, _more = matter_timeline(matter=matter, user=specialist, limit=200)
 
-    # The same Matter with its one explicit phase cleared, which is the state
-    # every file in the register is in on the day this ships — and therefore the
-    # flat list this has to be a permutation of. The same Matter rather than a
-    # second one, because `sort_key` is the record's own primary key.
+    # The same Matter with its one explicit phase cleared, which is the state every
+    # file in the register is in on the day this ships. The same Matter rather than
+    # a second one, because `sort_key` is the record's own primary key.
     matter.procedural_developments.update(process_phase="")
-    ungrouped, _more = matter_timeline(matter=matter, user=specialist, limit=200)
-
-    assert grouped.history.grouped is True
-    assert ungrouped.history.grouped is False
+    unplaced, _more = matter_timeline(matter=matter, user=specialist, limit=200)
 
     def identity(page):
-        return sorted((item.item_type, item.sort_key) for item in page)
+        return [(item.item_type, item.sort_key) for item in page]
 
-    assert identity(grouped) == identity(ungrouped)
-    assert len(grouped) == len(ungrouped)
+    # Same rows, same order, whatever the phase column says.
+    assert identity(placed) == identity(unplaced)
+    assert _is_chronological(matter, specialist)
+    # And all six kinds are there, none of them folded into another.
+    assert len(placed) >= 6
 
 
 def test_correcting_a_phase_changes_the_phase_and_nothing_else(specialist, organisation):
@@ -1477,50 +1574,26 @@ def test_correcting_a_phase_changes_the_phase_and_nothing_else(specialist, organ
     # … and no step was created, completed or superseded.
     assert list(NextAction.objects.filter(matter=matter).values_list("pk", "status")) == actions
 
-    # And the history moved, which is the one thing the correction was for.
-    assert _phase_of(matter, specialist, step) == PHASE_KOOSKOLASTUS
+    # And the rail moved, which is the one thing the correction was for: `VTK` is
+    # no longer `Kirjas` and `Kooskõlastusring` is.
+    assert _recorded(matter, specialist) == [PHASE_KOOSKOLASTUS]
 
 
-def test_the_ordinary_register_row_gets_no_heading_at_all(specialist, organisation):
-    """The commonest file in the register, and the one this got wrong first.
+def test_the_ordinary_register_row_reads_as_one_list_and_a_current_node(specialist, organisation):
+    """The commonest file in the register, and the one the grouping got wrong first.
 
     A Matter carrying an `Õigusakt` **and** a `Hetkeseis` and no recorded step is
     not a special case — it is nearly every row. For a while the current phase
-    alone made the page grouped, so every one of those files put its whole
-    history under an `Etapiga sidumata` heading with a sentence explaining
-    itself. A heading needs something to contrast with, and «where the file is
-    now» with no rows in it is not that: it is what the header band has always
-    said.
-
-    Caught by the visual lane — `teema-ajajoon` grew 65 px on the seeded world —
-    rather than by any of the assertions above, every one of which happened to
-    build its file without a stage.
+    alone made the page grouped, so every one of those files put its whole history
+    under an `Etapiga sidumata` heading with a sentence explaining itself, and
+    `teema-ajajoon` grew 65 px on the seeded world. There is no heading to get
+    wrong now: `Hetkeseis` is answered by the rail's current node, and the
+    chronology is the rows.
     """
     matter = _matter(specialist, instruments=("seadus",))
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
     _opinion(matter, specialist, organisation, date(2026, 5, 20))
 
-    items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
-    assert items.history.grouped is False
-    assert items.history.current_without_rows is None
-    assert items.history.occurrences == ()
-    assert all(item.phase is None for item in items)
-    assert all(item.opens_phase is False for item in items)
-
-
-def test_the_current_phase_reads_once_something_else_is_placed(specialist, organisation):
-    """And the moment one step is recorded, the section it is missing appears.
-
-    The same file, one `+ Märge` later: `Kooskõlastusring` is placed, so
-    `Riigikogus` — where the file says it is, with nothing recorded in it — has
-    something to contrast with and reads as its own dateless section.
-    """
-    matter = _matter(specialist, instruments=("seadus",))
-    _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
-    change_stage(matter=matter, stage=_stage("parliament"), actor=specialist)
-
-    items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
-    assert items.history.grouped is True
-    current = items.history.current_without_rows
-    assert current is not None
-    assert (current.label, current.started_on) == ("Riigikogus", None)
+    assert _headlines(matter, specialist) == ["Arvamus välja"]
+    assert _recorded(matter, specialist) == []
+    assert _rail_states(matter, specialist)["Kooskõlastusring"] == "current"

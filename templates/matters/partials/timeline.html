@@ -63,33 +63,14 @@ when somebody asks for it.
       docs/adr/0092 §2: collapsing `Teema käik` must not take the answer to the
       other question away with it.
 
-      What this section gained instead is **phase headings** — the history reads
-      as `VTK`, then `Kooskõlastusring`, then `Riigikogus`, in the file's own
-      recorded order. The headings are drawn inside the row stream below rather
-      than around it, so «Näita varasemaid» goes on swapping itself in place
-      (app/matters/phase_history.py).
+      **And neither are phase headings, since docs/adr/0105 §1.** For one round
+      this section drew a heading per recorded phase and `Etapiga sidumata` at
+      its foot, which stopped the list being chronological: the rows arrived
+      newest-phase-first, and everything nobody had placed sat in a group at the
+      end. The phases are already drawn, in order and with their dates, in
+      `Menetluse kulg` inches above — so this section is one list again, newest
+      first, and answers only «what happened» (`app/matters/timeline.py`).
     {% endcomment %}
-
-    {% if timeline_phases.current_without_rows %}
-      {% comment %}
-        The phase the file is on **with nothing recorded in it yet**.
-
-        «The bill is in the Riigikogu and nothing has happened there so far» is a
-        real and ordinary state, and the section exists to say it. It carries no
-        date, because nothing dated says when the file arrived — and it carries no
-        rows, because **nothing invents an event to fill it**. A fabricated
-        «Jõudis Riigikokku» here would be exactly the manufactured milestone the
-        late-entry rule refuses one section above (§6 of the brief).
-
-        At the top rather than in date order: it has no date to sort by, and it is
-        the present.
-      {% endcomment %}
-      <h3 class="uxtl__phase uxtl__phase--empty" id="{{ timeline_phases.current_without_rows.anchor }}">
-        <span class="uxtl__phasename">{{ timeline_phases.current_without_rows.label }}</span>
-        <span class="uxtl__phasenow">Praegu</span>
-      </h3>
-      <p class="uxtl__phasenote">Selles etapis ei ole veel midagi kirja pandud.</p>
-    {% endif %}
 
     {% comment %}
       The spine is this element, not the fragment inside it. «Näita varasemaid»

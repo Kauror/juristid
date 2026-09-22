@@ -758,12 +758,34 @@ def add_procedural_development(
     departed-owner rule applies exactly as it does on `+ Järgmine tegevus`. A step
     written here supersedes whatever was open, which is `NextAction`'s one-open
     invariant and not a decision this function makes.
+
+    **What this refuses is an empty operation, and that is the only thing it
+    refuses about content.** ``title`` is optional since docs/adr/0105 §4 — a
+    paper that arrived, the file moving to `Riigikogus`, «vaatan uue versiooni
+    üle, 25.09» are each a whole record and none of them needs a headline — but a
+    press that carries no sentence, no file, no stage *and* no step would leave a
+    dated row on the file saying nothing at all. This is where the four can be
+    seen together, which is why the rule is here rather than on any one of the
+    services below, and it is raised **before** the Matter is locked: refusing a
+    save that was never going to write anything should not queue behind a row
+    lock.
     """
     from app.matters.services import (
+        DEVELOPMENT_NEEDS_SOMETHING,
         change_stage,
         record_procedural_development,
         record_procedural_development_document,
     )
+
+    if not any(
+        (
+            (title or "").strip(),
+            _uploads(uploads),
+            stage is not None,
+            (next_text or "").strip(),
+        )
+    ):
+        raise DomainError(DEVELOPMENT_NEEDS_SOMETHING)
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:

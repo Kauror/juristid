@@ -708,24 +708,26 @@ def test_a_missing_date_publishes_the_row_rather_than_refusing_it(
     assert overview.published_on is None
 
 
-def test_the_chronology_shows_a_labelled_link_and_never_the_address(
-    signed_in, normal_matter, specialist
-):
-    """§4. `Ava ülevaade või uudis`, in a new tab, said out loud for a screen
-    reader — and the URL itself is in the `href` and nowhere a reader has to
-    parse it."""
+def test_the_chronology_shows_the_address_in_a_new_tab(signed_in, normal_matter, specialist):
+    """§4, as docs/adr/0105 §3 leaves it: the link is the address.
+
+    In a new tab, said out loud for a screen reader, with the whole stored URL in
+    the `href` — and the text is the address without its scheme, so a reader can
+    tell one of three write-ups apart without following any of them. `Muuda` is
+    the correction, named by reference to that address.
+    """
     _published(normal_matter, specialist)
 
     body = _detail(signed_in, normal_matter)
     row = body[body.index('id="ajajoon"') :]
 
-    assert "Ava ülevaade või uudis" in row
+    assert "Ava ülevaade või uudis" not in row
+    assert "Paranda link" not in row
     assert 'target="_blank"' in row
     assert 'rel="noopener noreferrer"' in row
     assert "avaneb uues aknas" in row
     assert f'href="{KODA_URL}"' in row
-    # The address is the link's destination, never its text.
-    assert f">{KODA_URL}<" not in row
+    assert ">koda.ee/uudised/pakendiseaduse-ulevaade<" in row
 
 
 def test_the_chronology_records_published_and_cancelled_and_not_planned(normal_matter, specialist):

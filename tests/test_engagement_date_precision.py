@@ -156,10 +156,18 @@ def _panel(body: str) -> str:
 
 
 def _chronology_line(client, matter, engagement) -> str:
-    """The one chronology row this engagement renders, as text."""
+    """The one chronology row this engagement renders, as text.
+
+    Cut at the row's own `</article>` rather than at the first `</div>`. The
+    element this starts at holds nested `<div>`s — since docs/adr/0105 §2 the
+    very first thing inside it is `.uxtl__head` — so «up to the next `</div>`»
+    stopped one line in, and the assertions about what the row *says* were
+    reading a slice that no longer contained the sub-line, the wait or the
+    files. The article is the row, which is what this helper claims to return.
+    """
     body = _detail(client, matter)
     start = body.index(f'id="kaasamine-{engagement.pk}-sisu"')
-    return body[start : body.index("</div>", start)]
+    return body[start : body.index("</article>", start)]
 
 
 def _fact(matter: Matter, user):

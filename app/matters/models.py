@@ -1693,6 +1693,68 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
             return WEBSITE_OVERVIEW_DATE_UNKNOWN
         return format_estonian_date(self.published_on)
 
+    #: How long the printed address may run before it is cut.
+    #:
+    #: A published page's address is usually short — `koda.ee/uudised/<slug>` —
+    #: and a few carry a query string that doubles it. The cut is a *display*
+    #: bound and never touches `url`, which is what the link actually follows.
+    LINK_DISPLAY_MAX = 72
+
+    @property
+    def link_display(self) -> str:
+        """The address itself, as the chronology prints it.
+
+        **The link is the link, and the row says nothing else about it**
+        (docs/adr/0105 §3). This row used to read `Avaldatud` on one line and
+        `Ava ülevaade või uudis` on the next: a status that the chronology
+        already implies — a cancelled plan is the only one that says its state
+        out loud — and a label naming what a link is for, in place of the one
+        thing a reader wants, which is where it goes.
+
+        Three parts of the stored string are left out and each for its own
+        reason:
+
+        * **the scheme.** `https://` is on every one of them and tells a reader
+          nothing about which page this is;
+        * **any userinfo.** `normalize_website_overview_url` has refused
+          `user:pw@host` on the way in since docs/adr/0081 §3, so this is for a
+          historical row alone — and a credential printed on a page and copied
+          into everybody's browser history is exactly what red-team finding F-2
+          closed on `MatterEngagement._hostname`;
+        * **a trailing slash**, which is punctuation rather than address.
+
+        Everything else is printed as stored, host and path and query: a
+        displayed address a reader cannot match against the page they land on is
+        a worse answer than a long line. Over :data:`LINK_DISPLAY_MAX` it is cut
+        and marked `…`, so the *cut* is visible rather than silent.
+
+        A record with no address answers with the empty string, and the template
+        renders no link at all — a `Plaanis` or `Tühistatud` overview has none.
+        """
+        url = (self.url or "").strip()
+        if not url:
+            return ""
+        from urllib.parse import urlsplit
+
+        try:
+            parts = urlsplit(url)
+            host = parts.hostname or ""
+        except ValueError:
+            # A malformed authority. Unparseable is not a crash on a read path,
+            # and the fallback prints nothing that could be credentials.
+            return ""
+        if not host:
+            return ""
+        shown = host + parts.path
+        if parts.query:
+            shown = f"{shown}?{parts.query}"
+        if parts.fragment:
+            shown = f"{shown}#{parts.fragment}"
+        shown = shown.rstrip("/") or host
+        if len(shown) > self.LINK_DISPLAY_MAX:
+            return shown[: self.LINK_DISPLAY_MAX - 1] + "…"
+        return shown
+
 
 class MatterExternalPositionQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterExternalPositionQuerySet:
@@ -2302,12 +2364,31 @@ class MatterProceduralDevelopment(VisibilityInheritingModel, RemovableRecord):
     )
     #: `Mis juhtus` — one line naming the step the procedure took.
     #:
-    #: Required, and the only required field: a development that does not say
-    #: what happened is not a record of anything. Bounded rather than free prose,
-    #: because this is the line a reader scans a year of chronology by and the
-    #: line Package D will project into one substantive history — the detail goes
-    #: in :attr:`note` and the paper goes in the attachments.
-    title = models.CharField(max_length=500, verbose_name="sündmus")
+    #: Bounded rather than free prose, because this is the line a reader scans a
+    #: year of chronology by and the line Package D projects into one substantive
+    #: history — the detail goes in :attr:`note` and the paper goes in the
+    #: attachments.
+    #:
+    #: **Optional since docs/adr/0105 §4, and it was the one required field.**
+    #: `+ Märge` is the control a lawyer reaches for most, and what they reach for
+    #: it with is not always a sentence: sometimes it is the paper that just
+    #: arrived, sometimes the file moving to `Riigikogus`, sometimes only «vaatan
+    #: uue versiooni üle, 25.09». Each of those is a whole record of something,
+    #: and requiring a headline for it made the form refuse a save whose content
+    #: was complete — so the person typed a sentence restating the file they had
+    #: just attached.
+    #:
+    #: **A blank title is nothing, and the row says so rather than inventing
+    #: one.** The chronology headline falls back to the word `Märge` in the
+    #: *presentation* layer (`app.matters.timeline.development_milestone`);
+    #: nothing derives a title from the note, the filename, the stage or the next
+    #: step, which is the prose-matching this repository refuses everywhere.
+    #:
+    #: What still cannot be saved is a `Märge` holding **nothing at all** — no
+    #: sentence, no file, no stage and no next step. That rule belongs to the
+    #: operation rather than to this column, because it spans four services
+    #: (`app.matters.workspace.add_procedural_development`).
+    title = models.CharField(max_length=500, blank=True, verbose_name="sündmus")
     #: When it happened, as far as anybody knows.
     #:
     #: **Optional, and that is the whole reason this is not an `Entry`.** A
@@ -2401,10 +2482,14 @@ class MatterProceduralDevelopment(VisibilityInheritingModel, RemovableRecord):
         # `MatterExternalPosition` both keep, for the same reason.
         ordering = [models.F("occurred_on").desc(nulls_last=True), "-created_at", "-id"]
         constraints = [
-            models.CheckConstraint(
-                condition=~models.Q(title=""),
-                name="matters_development_title_required",
-            ),
+            # **There is deliberately no `title != ""` constraint.** There was one,
+            # `matters_development_title_required`, and docs/adr/0105 §4 dropped it
+            # with the requirement: `+ Märge` writes records whose whole content is
+            # a file, a stage change or a next step, and the chronology headline
+            # falls back to the word `Märge` in the presentation layer. What may
+            # not be empty is the whole *operation*, which spans four services and
+            # is therefore not a column constraint
+            # (`app.matters.workspace.add_procedural_development`).
             models.CheckConstraint(
                 condition=models.Q(occurred_on_precision__in=DatePrecision.values),
                 name="matters_development_precision_vocabulary",

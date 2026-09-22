@@ -3963,15 +3963,23 @@ def correct_external_position(
     return current
 
 
-#: What a development with nothing said about it is told.
+#: What a `Märge` holding nothing at all is told.
 #:
-#: «Kirjuta, mis juhtus.» rather than «mis menetluses juhtus», because the one
+#: **Not «the title is missing».** A title is optional since docs/adr/0105 §4,
+#: and what this refuses is a save with no sentence, no file, no stage *and* no
+#: next step — a press that would leave a dated row on the file saying nothing.
+#: So the sentence names the four ways to answer rather than one of them, and it
+#: is raised where the four can be seen together: the operation
+#: (`app.matters.workspace.add_procedural_development`), repeated by the panel
+#: beside the controls (`MatterProgressForm.clean`).
+#:
+#: «Kirjuta, mis juhtus» rather than «mis menetluses juhtus», because the one
 #: control that writes these asks `Mis juhtus?` and is no longer only about the
 #: procedure: `+ Märge` absorbed `+ Menetluse areng` on 2026-09-20, and
-#: «Rääkisin Justiitsministeeriumiga» is a sentence it accepts. A refusal that
-#: named a narrower question than the box above it would be telling somebody
-#: they answered the wrong thing (docs/adr/0097 §6).
-DEVELOPMENT_NEEDS_TITLE = "Kirjuta, mis juhtus."
+#: «Rääkisin Justiitsministeeriumiga» is a sentence it accepts (docs/adr/0097 §6).
+DEVELOPMENT_NEEDS_SOMETHING = (
+    "Kirjuta, mis juhtus, või lisa fail, uus hetkeseis või järgmine tegevus."
+)
 #: What somebody filing next month's committee sitting as a development is told.
 #:
 #: `Menetluse areng` records something that **has happened** (docs/adr/0092 §3,
@@ -4063,15 +4071,29 @@ def record_procedural_development(
     product. An unknown date is normalised back to `EXACT`: absence has no
     precision (docs/adr/0079 §2).
 
+    ``title`` is **optional too, since docs/adr/0105 §4**, and an empty one is
+    stored as the empty string rather than derived from anything: not from the
+    note, not from a filename, not from the stage saved beside it. The chronology
+    headline falls back to the word `Märge`, in the presentation layer, on a row
+    whose content is the file or the step under it
+    (`app.matters.timeline.development_milestone`).
+
+    **What may not be empty is the whole operation**, and that rule is one level
+    up: this function writes one record and cannot see the file, the stage or the
+    next step that may be arriving with it
+    (`app.matters.workspace.add_procedural_development`).
+
     **Takes no closed-Matter lock of its own.** The person's door is
     `app.matters.workspace.add_procedural_development`, which locks the Matter and
     refuses a closed one before it calls this — the shape `record_external_position`
     already has, and the reason is the same one R2-02 states: a page is not a
     boundary.
     """
+    # Imported here rather than at module scope: `app.matters.timeline` reads this
+    # module's records, so a top-level import would close the cycle.
+    from app.matters.timeline import DEVELOPMENT_HEADLINE
+
     clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
-    if not clean_title:
-        raise DomainError(DEVELOPMENT_NEEDS_TITLE)
     clean_note = (note or "").strip()
     precision = _development_precision(occurred_on, occurred_on_precision)
     # **The invariant, here rather than on the form.** This is the one seam every
@@ -4099,7 +4121,10 @@ def record_procedural_development(
         matter=matter,
         actor=actor,
         obj=development,
-        summary=clean_title[:200],
+        # The headline the row will read, so a titleless `Märge` is a named line
+        # in `Kõik muudatused` rather than an empty one. The same word the
+        # chronology falls back to, from the same constant.
+        summary=(clean_title or DEVELOPMENT_HEADLINE)[:200],
         payload={
             # The date and its precision together, never the anchor on its own: a
             # payload carrying `2026-10-01` and nothing else says «1 October» to
@@ -4337,9 +4362,11 @@ def correct_procedural_development(
     if expected_revision is not None and development_revision(current) != expected_revision:
         raise ProceduralDevelopmentConflict(current)
 
+    # **A title may be cleared, since docs/adr/0105 §4.** A record must be
+    # correctable into every shape it could have been created in, and `+ Märge`
+    # creates titleless ones — a sentence somebody typed and then decided was
+    # restating the file under it has to have a way out.
     clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
-    if not clean_title:
-        raise DomainError(DEVELOPMENT_NEEDS_TITLE)
     precision = _development_precision(occurred_on, occurred_on_precision)
 
     proposed: dict[str, Any] = {
