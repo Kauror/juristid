@@ -153,7 +153,10 @@ def _attachments(message: object) -> list[ParsedAttachment]:
     found: list[ParsedAttachment] = []
     for index, attachment in enumerate(getattr(message, "attachments", []) or []):
         data = getattr(attachment, "data", None)
-        if data is None:
+        if data is None or data == b"":
+            # `extract-msg` answers `b""` for an empty stream where the `.eml`
+            # parser skips the part. An empty attachment is nothing anybody
+            # sent, and passing it on failed the whole message (ENG-033).
             continue
         if not isinstance(data, bytes | bytearray):
             # A nested `.msg` arrives as a parsed message object rather than
@@ -168,7 +171,7 @@ def _attachments(message: object) -> list[ParsedAttachment]:
             except Exception:
                 logger.info("Nested message attachment #%d could not be exported", index + 1)
                 continue
-            if not isinstance(data, bytes | bytearray):
+            if not isinstance(data, bytes | bytearray) or not data:
                 continue
 
         name = (

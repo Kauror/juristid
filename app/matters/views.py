@@ -15,6 +15,7 @@ Two conventions worth knowing:
 
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from collections.abc import Sequence
 from datetime import date, timedelta
@@ -61,6 +62,7 @@ from app.core.errors import DomainError
 from app.core.request_params import bounded_int, safe_local_path
 from app.documents import pending as pending_uploads
 from app.documents.enums import DocumentRole, ExtractionState
+from app.documents.filenames import NFC
 from app.documents.models import Document
 from app.documents.pending import human_size
 from app.documents.services import link_working_document
@@ -3254,7 +3256,11 @@ def _mark_duplicate_names(documents: Sequence[Any]) -> None:
     """
     seen: dict[str, list[Any]] = {}
     for document in documents:
-        seen.setdefault(_document_display_name(document), []).append(document)
+        # Keyed in NFC: the same name spelled with decomposed letters is the
+        # same name on the page, and exactly the twin this exists to mark
+        # (ENG-088).
+        key = unicodedata.normalize("NFC", _document_display_name(document))
+        seen.setdefault(key, []).append(document)
 
     for rows in seen.values():
         if len(rows) < 2:
@@ -3328,9 +3334,14 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
         role = OPINION_ROLE_FILTER
 
     if term:
-        documents = documents.filter(
-            Q(title__icontains=term) | Q(current_version__original_filename__icontains=term)
-        )
+        # Both sides in NFC (ENG-088). The term as typed, and the stored names
+        # at read time: a file named on a Mac holds `õ` as two code points, and
+        # that row cannot be rewritten.
+        needle = unicodedata.normalize("NFC", term)
+        documents = documents.annotate(
+            title_nfc=NFC("title"),
+            filename_nfc=NFC("current_version__original_filename"),
+        ).filter(Q(title_nfc__icontains=needle) | Q(filename_nfc__icontains=needle))
     if role == OPINION_ROLE_FILTER:
         documents = documents.filter(pk__in=opinion_ids)
     elif role in DocumentRole.values:

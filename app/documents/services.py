@@ -33,6 +33,7 @@ from app.core.enums import validate_visibility_override
 from app.core.errors import DomainError
 from app.core.ids import uuid7
 from app.documents.enums import DocumentRole, ExtractionState
+from app.documents.filenames import canonical_filename
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 from app.documents.models import Document, DocumentVersion
 from app.matters.locks import lock_open_matter_for_business_write
@@ -282,7 +283,7 @@ def add_evidence_version(
             document=locked,
             version_number=next_number,
             storage_key=stored_key,
-            original_filename=original_filename[:400],
+            original_filename=canonical_filename(original_filename),
             mime_type=mime_type,
             size_bytes=len(content),
             sha256=digest,
@@ -438,11 +439,16 @@ def capture_supporting_evidence(
     ``DocumentVersion``, and the ``DocumentLink`` that says which fact these
     bytes are the evidence for.
 
-    **All or none.** The second of three files being refused must not leave a
-    fact standing that claims evidence and holds one file — so nothing here is
-    caught. Validation raises ``UploadRejected``, capture raises ``DomainError``,
-    and either one unwinds the caller's transaction along with the record it was
-    writing (docs/adr/0075 §8).
+    **All or none — for the bytes as well as the rows.** The second of three
+    files being refused must not leave a fact standing that claims evidence and
+    holds one file, so nothing here is caught: ``UploadRejected`` and
+    ``DomainError`` unwind the caller's transaction along with the record it was
+    writing (docs/adr/0075 §8). And every file is validated *before the first
+    one is written*. Validating inside the writing loop rolled the rows back but
+    left the earlier files' bytes in the evidence store with no row naming them
+    — an orphan per refused mixed selection, which `check_evidence_integrity`
+    reports as damage (ENG-086). The refusal names every unusable file at once,
+    the way `Uus teema` does, rather than one per attempt.
 
     ``role`` stays ``OTHER`` for every caller on the Teema workspace. The button
     a file arrived through is not a business role — a PDF attached to a work
@@ -452,11 +458,22 @@ def capture_supporting_evidence(
     # Imported here rather than at module scope: `app.documents.uploads` reads
     # `ALLOWED_EVIDENCE_MIME_TYPES` from this module, so the two may not import
     # each other on the way in.
-    from app.documents.uploads import read_upload
+    from app.documents.uploads import UploadRejected, read_upload
+
+    accepted_files = []
+    refusals: list[str] = []
+    for upload in uploads:
+        try:
+            accepted_files.append(read_upload(upload))
+        except UploadRejected as error:
+            # Named only when there is more than one file to tell apart.
+            name = getattr(upload, "name", "") if len(uploads) > 1 else ""
+            refusals.append(f"{name} — {error}" if name else str(error))
+    if refusals:
+        raise UploadRejected(" ".join(refusals))
 
     captured: list[Document] = []
-    for upload in uploads:
-        accepted = read_upload(upload)
+    for accepted in accepted_files:
         document = create_document(
             matter=matter,
             title=accepted.filename,
