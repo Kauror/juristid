@@ -289,14 +289,17 @@ def test_the_csv_export_still_carries_the_reference(signed_in, specialist):
     department hands to somebody else.
 
     Its own Matter, with a reporting year, because the export is scoped to the
-    reporting period and `marked_matter` deliberately has none.
+    reporting period and `marked_matter` deliberately has none. The running
+    year, because that is the period the export defaults to
+    (`app/reporting/context.py`); a fixed 2026 fell out of it on 1 January 2027
+    (ENG-002).
     """
     exported = factories.MatterFactory(
         owner=specialist,
         title="Ekspordi kaudu kontrollitav teema",
         reference_year=2098,
         reference_number=765,
-        reporting_year=2026,
+        reporting_year=timezone.localdate().year,
     )
 
     response = signed_in.get(reverse("reporting:export", kwargs={"slug": "teemad"}))

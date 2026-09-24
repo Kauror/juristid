@@ -102,10 +102,15 @@ def test_a_factory_matter_and_a_created_matter_do_not_collide(specialist):
 
 
 def test_the_factory_draws_from_the_authoritative_sequence(specialist):
-    """Not «a number nobody else will use» — *the* next number."""
-    made = factories.MatterFactory(owner=specialist, reference_year=2026)
+    """Not «a number nobody else will use» — *the* next number.
 
-    sequence = MatterReferenceSequence.objects.get(pk=2026)
+    In the year `create_matter` allocates in — the running one. A fixed 2026
+    here was a second sequence from 1 January 2027 on (ENG-002).
+    """
+    year = timezone.localdate().year
+    made = factories.MatterFactory(owner=specialist, reference_year=year)
+
+    sequence = MatterReferenceSequence.objects.get(pk=year)
     assert made.reference_number == sequence.last_number
 
     created = create_matter(title="Järgmine", actor=specialist)

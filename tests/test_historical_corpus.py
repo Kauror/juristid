@@ -555,7 +555,9 @@ def test_an_attachment_says_which_of_four_things_happened_to_it(applied, archive
     LegacySourceResource.objects.filter(resource_key="r-exact-1").update(size_bytes=0)
 
     report = materialise_resources(archive=archive, batch=applied[1])
-    assert any("r-exact-1" in failure for failure in report.failures)
+    # Reported as what it is, and not as a failure of the run (ENG-007).
+    assert any("r-exact-1" in label for label in report.empty_at_source)
+    assert not any("r-exact-1" in failure for failure in report.failures)
 
     link = MatterSourcePage.objects.get(source_page__page_key="p-exact")
     page = link.source_page
@@ -602,3 +604,192 @@ def test_an_attachment_nobody_has_copied_yet_reads_as_pending(applied):
         block for block in _rendered_blocks(page, resources, {}) if block["kind"] == "file"
     )
     assert attachment["state"] == "pending"
+
+
+# -- the completeness gate (ENG-007) -----------------------------------------
+#
+# A FAILED row is bookkeeping about a file that is not in. Until 2026-09 it was
+# also what made the file count as done: it was never tried again, `status`
+# counted it as materialised, `verify` passed, and `materialise` and `apply`
+# exited 0 over failures. The runbook backs up on the strength of `verify`, so
+# every one of these is asserted through the real command and its exit status.
+
+
+MISSING_ORIGINAL = "pages/p-exact/resources/r-exact-1/original"
+
+
+def _run(*args: str) -> tuple[int, str]:
+    """The command's exit status and everything it said, as an operator sees it."""
+    out = StringIO()
+    try:
+        call_command("historical_import", *args, stdout=out)
+    except CommandError as error:
+        return 1, f"{out.getvalue()}\n{error}"
+    return 0, out.getvalue()
+
+
+def _materialise(corpus: dict, *extra: str) -> tuple[int, str]:
+    return _run("materialise", "--archive", str(corpus["archive_root"]), *extra)
+
+
+@pytest.fixture
+def one_original_failed(applied, corpus):
+    """r-exact-1's original is unreadable during the first run, then comes back."""
+    original = corpus["archive_root"] / MISSING_ORIGINAL
+    aside = corpus["archive_root"].parent / "aside"
+    shutil.move(original, aside)
+    rc, out = _materialise(corpus)
+    shutil.move(aside, original)
+    return rc, out
+
+
+def test_a_run_that_fails_a_file_exits_non_zero_and_names_it(one_original_failed):
+    rc, out = one_original_failed
+
+    assert rc == 1
+    assert "p-exact/r-exact-1" in out
+    assert "--retry-failed" in out
+    assert "Every file is in." not in out
+
+
+def test_a_failed_file_is_not_tried_again_unless_asked(one_original_failed, corpus):
+    """No silent retry loop: a failure is somebody's to look at first."""
+    rc, out = _materialise(corpus)
+
+    assert rc == 1, "nothing is waiting, but a file is not in: that is not success"
+    assert "0 file(s) waiting" in out
+    assert "Every file is in." not in out
+    record = LegacySourceResourceImport.objects.get(resource__resource_key="r-exact-1")
+    assert record.state == ResourceImportState.FAILED
+    assert record.document is None
+
+
+def test_retry_failed_brings_the_file_in_once_its_cause_is_fixed(one_original_failed, corpus):
+    rc, out = _materialise(corpus, "--retry-failed")
+
+    assert rc == 0, out
+    assert "1 file(s) waiting (failed ones included)" in out
+    assert "Every file is in." in out
+    record = LegacySourceResourceImport.objects.get(resource__resource_key="r-exact-1")
+    assert record.state == ResourceImportState.IMPORTED
+    assert record.error_code == ""
+    assert record.document_version.sha256 == record.resource.sha256
+
+
+def test_a_retry_that_fails_again_says_so_and_stops(applied, corpus):
+    """One attempt per run, even when asked to retry: the command never loops."""
+    shutil.rmtree(corpus["archive_root"] / MISSING_ORIGINAL)
+    assert _materialise(corpus)[0] == 1
+
+    rc, out = _materialise(corpus, "--retry-failed")
+
+    assert rc == 1
+    assert "p-exact/r-exact-1" in out
+    assert (
+        LegacySourceResourceImport.objects.filter(resource__resource_key="r-exact-1").count() == 1
+    )
+
+
+def test_status_counts_only_imported_files_as_materialised(one_original_failed):
+    imported = LegacySourceResourceImport.objects.filter(state=ResourceImportState.IMPORTED).count()
+
+    rc, out = _run("status")
+
+    assert rc == 0
+    lines = {
+        line.rsplit(None, 1)[0].strip(): line.rsplit(None, 1)[1]
+        for line in out.splitlines()
+        if line.startswith("  ") and line.split()[-1].replace(",", "").isdigit()
+    }
+    assert lines["materialised documents"] == str(imported)
+    assert lines["failed, not in"] == "1"
+    assert lines["still to materialise"] == "0"
+    assert "p-exact/r-exact-1" in out
+
+
+def test_verify_fails_while_a_file_is_not_in_and_passes_once_it_is(one_original_failed, corpus):
+    rc, out = _run("verify")
+    assert rc == 1
+    assert "failed to copy and are not in" in out
+    assert "p-exact/r-exact-1" in out
+
+    assert _materialise(corpus, "--retry-failed")[0] == 0
+
+    rc, out = _run("verify")
+    assert rc == 0, out
+    assert "every check passed" in out
+
+
+def test_verify_fails_while_originals_have_not_been_copied_at_all(applied):
+    rc, out = _run("verify")
+
+    assert rc == 1
+    assert "not materialised yet" in out
+
+
+def test_an_attachment_empty_in_the_source_is_reported_and_never_retried(applied, corpus):
+    """The six zero-byte OneNote attachments: a fact about the source, not a failure.
+
+    They can never be stored (`add_evidence_version` refuses an empty file), so
+    a run neither turns red over them nor tries them again — not even when
+    asked to retry — and the completeness gate reports them rather than
+    failing on them for ever.
+    """
+    (corpus["archive_root"] / MISSING_ORIGINAL / "ettepanek.pdf").write_bytes(b"")
+    LegacySourceResource.objects.filter(resource_key="r-exact-1").update(size_bytes=0)
+
+    rc, out = _materialise(corpus)
+    assert rc == 0, out
+    assert "empty in the source, nothing to copy: p-exact/r-exact-1" in out
+    assert "1 attachment(s) are empty in the source" in out
+
+    rc, out = _materialise(corpus, "--retry-failed")
+    assert rc == 0, out
+    assert "0 file(s) waiting (failed ones included)" in out
+
+    rc, out = _run("status")
+    assert "empty in the source" in out
+    rc, out = _run("verify")
+    assert rc == 0, out
+    assert "p-exact/r-exact-1" in out
+
+
+def test_apply_exits_non_zero_when_a_page_fails(corpus, settings, register, monkeypatch):
+    """What did import stays committed; what did not is named, and the run is red."""
+    from app.legacy_import import historical_apply
+
+    settings.REAL_DATA_ALLOWED = True
+    real = historical_apply._upsert_source_page
+
+    def fails_one_page(page_plan, **kwargs):
+        if page_plan.page.page_key == "p-exact":
+            raise OSError("synthetic")
+        return real(page_plan, **kwargs)
+
+    monkeypatch.setattr(historical_apply, "_upsert_source_page", fails_one_page)
+    rc, out = _run("apply", *_command_paths(corpus))
+
+    assert rc == 1
+    assert "p-exact: OSError" in out
+    assert "Structure imported." not in out
+    assert LegacySourcePage.objects.exists()
+    assert not LegacySourcePage.objects.filter(page_key="p-exact").exists()
+
+
+def test_a_dry_run_that_meets_failures_exits_non_zero(corpus, settings, register, monkeypatch):
+    from app.legacy_import import historical_apply
+
+    settings.REAL_DATA_ALLOWED = True
+    real = historical_apply._upsert_source_page
+
+    def fails_one_page(page_plan, **kwargs):
+        if page_plan.page.page_key == "p-exact":
+            raise OSError("synthetic")
+        return real(page_plan, **kwargs)
+
+    monkeypatch.setattr(historical_apply, "_upsert_source_page", fails_one_page)
+    rc, out = _run("dry-run", *_command_paths(corpus))
+
+    assert rc == 1
+    assert "p-exact: OSError" in out
+    assert LegacySourcePage.objects.count() == 0

@@ -103,6 +103,17 @@ while migrations run, so there is a window of **old application, new schema**.
 That window is safe when migrations are additive and unsafe when they are not.
 Rather than assume additivity, the plan says which it is, before it is applied.
 
+**Additive means the previous release can read *and write* the new schema**
+(2026-09-24, ENG-014). The list above judged by operation class alone, and so
+called a NOT NULL `AddField` additive: Django applies a field's `default` itself
+and drops it from the column afterwards, so the previous release's INSERT — which
+does not name the new column — fails, in the window and after a code-only
+rollback. The classifier now also flags a NOT NULL `AddField` with no
+`db_default` on an existing table, an `AlterField` that changes the column (a
+`choices`-only edit does not), `AddConstraint` and `RemoveConstraint`, and any
+operation it does not know. Only an operation it can show to be safe is called
+additive.
+
 **When a migration is not additive, the deployment takes a maintenance window.**
 Six users and an announced ten minutes is better than a silent compatibility
 gamble, and this system has no architecture that would make zero downtime true.

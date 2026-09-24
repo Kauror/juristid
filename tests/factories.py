@@ -110,7 +110,13 @@ class MatterFactory(factory.django.DjangoModelFactory):
     record_mode = RecordMode.FULL
     origin = MatterOrigin.NATIVE
     visibility = Visibility.NORMAL
-    reference_year = 2026
+    #: The year `create_matter` itself would use (`localdate().year`), not a
+    #: fixed one. A factory pinned to 2026 and a service reading the clock
+    #: draw from two different sequences the day the calendar turns, and a
+    #: test that mixes them fails on 1 January for a reason that has nothing
+    #: to do with what it tests (ENG-002). A caller that means a particular
+    #: year still passes one.
+    reference_year = factory.LazyFunction(lambda: timezone.localdate().year)
     #: Left unset, and filled by :meth:`_create` from the **real allocator**.
     #:
     #: This was ``factory.Sequence(lambda n: n + 1)``, and that is the defect.

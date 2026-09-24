@@ -101,6 +101,8 @@ class ApplyReport:
     document_bytes: int = 0
     materialisations_skipped: int = 0
     failures: list[str] = field(default_factory=list)
+    #: Attachments OneNote itself holds as zero bytes (`is_empty_at_source`).
+    empty_at_source: list[str] = field(default_factory=list)
 
     def as_text(self) -> str:
         return "\n".join(
@@ -119,6 +121,7 @@ class ApplyReport:
                 f"  documents materialised {self.documents_created} "
                 f"({self.document_bytes:,} bytes)",
                 f"  already present       {self.materialisations_skipped}",
+                f"  empty in the source   {len(self.empty_at_source)}",
                 f"  failures              {len(self.failures)}",
             ]
         )
@@ -431,25 +434,103 @@ def _record_candidates(plan: HistoricalPlan, *, batch: ImportBatch, report: Appl
 # -- materials -------------------------------------------------------------
 
 
-def pending_materialisations() -> list[tuple[MatterSourcePage, LegacySourceResource]]:
-    """Every (link, resource) pair that has no Document yet.
+def is_empty_at_source(resource: LegacySourceResource | None) -> bool:
+    """An attachment OneNote itself holds as zero bytes.
+
+    It will never arrive: `add_evidence_version` refuses an empty file, rightly,
+    because an empty file is not evidence. So it is reported as what it is, and
+    never retried — retrying it cannot succeed, and a retry that cannot succeed
+    is a loop (ENG-007). The first real import found six. The case file says
+    the same thing about the same attachment (`historical_views._file_state`).
+    """
+    return resource is not None and resource.size_bytes == 0
+
+
+def pending_materialisations(
+    *, retry_failed: bool = False
+) -> list[tuple[MatterSourcePage, LegacySourceResource]]:
+    """Every (link, resource) pair that is not in yet and may be tried now.
 
     Computed rather than remembered, so a run interrupted anywhere resumes by
     asking the database what is still missing instead of trusting a cursor.
+
+    **A FAILED row is not a Document.** It is bookkeeping that says what went
+    wrong, and until 2026-09 it was also what made the pair count as done — so a
+    file that failed once was never tried again, and every report downstream
+    called the corpus complete (ENG-007). It is still not retried *by default*:
+    a failure is somebody's to look at, and a resumed run that quietly repeats
+    it is a loop. ``retry_failed`` is the deliberate second attempt, and even it
+    leaves a source that is empty in OneNote alone (`is_empty_at_source`).
     """
     links = list(
         MatterSourcePage.objects.select_related("matter", "source_page").order_by("created_at")
     )
-    done = {
-        (row["matter_source_page_id"], row["resource_id"])
-        for row in LegacySourceResourceImport.objects.values("matter_source_page_id", "resource_id")
-    }
+    rows = LegacySourceResourceImport.objects.select_related("resource")
+    settled = set()
+    for row in rows:
+        if row.state == ResourceImportState.FAILED and retry_failed:
+            if not is_empty_at_source(row.resource):
+                continue
+        settled.add((row.matter_source_page_id, row.resource_id))
     pending = []
     for link in links:
         for resource in link.source_page.resources.order_by("source_block_ordinal"):
-            if (link.pk, resource.pk) not in done:
+            if (link.pk, resource.pk) not in settled:
                 pending.append((link, resource))
     return pending
+
+
+@dataclass(frozen=True)
+class MaterialisationState:
+    """Where every catalogued original stands, in the terms an operator acts on.
+
+    Only IMPORTED is in. The other three are not, for three different reasons,
+    and they are kept apart because what to do about each is different.
+    """
+
+    imported: int
+    #: Not tried yet. `materialise` picks these up.
+    pending: int
+    #: Tried and failed, with a source that has bytes: somebody's to look at,
+    #: then `materialise --retry-failed`. ``page_key/resource_key: error``.
+    failed: tuple[str, ...]
+    #: Zero bytes in OneNote itself. Nothing to copy, nothing to retry.
+    empty_at_source: tuple[str, ...]
+    #: Deliberately not materialised.
+    skipped: int
+
+
+def materialisation_state() -> MaterialisationState:
+    imported = skipped = 0
+    failed: list[str] = []
+    empty: list[str] = []
+    for row in LegacySourceResourceImport.objects.select_related(
+        "resource", "matter_source_page__source_page"
+    ).order_by("created_at"):
+        if row.state == ResourceImportState.IMPORTED:
+            imported += 1
+        elif row.state == ResourceImportState.SKIPPED:
+            skipped += 1
+        elif is_empty_at_source(row.resource):
+            empty.append(_resource_label(row.matter_source_page, row.resource))
+        else:
+            failed.append(
+                f"{_resource_label(row.matter_source_page, row.resource)}: "
+                f"{row.error_code or 'FAILED'}"
+            )
+    return MaterialisationState(
+        imported=imported,
+        pending=len(pending_materialisations()),
+        failed=tuple(failed),
+        empty_at_source=tuple(empty),
+        skipped=skipped,
+    )
+
+
+def _resource_label(link: MatterSourcePage, resource: LegacySourceResource) -> str:
+    """Enough to find the file: the page it sits on and its own key."""
+    page = link.source_page
+    return f"{page.page_key if page is not None else '?'}/{resource.resource_key}"
 
 
 def materialise_resources(
@@ -458,6 +539,7 @@ def materialise_resources(
     batch: ImportBatch | None = None,
     limit: int | None = None,
     report: ApplyReport | None = None,
+    retry_failed: bool = False,
 ) -> ApplyReport:
     """Copy originals into evidence, one (link, resource) pair at a time.
 
@@ -466,9 +548,12 @@ def materialise_resources(
     relationship is worth more than the bytes — and every copy records the same
     ``resource_key`` and the same source SHA-256, so the duplication reads as
     duplication rather than as different files (Stage-2D brief 28).
+
+    ``retry_failed`` also tries the pairs an earlier run recorded as FAILED —
+    never the ones that are empty at the source (`pending_materialisations`).
     """
     report = report or ApplyReport(batch_id=batch.pk if batch else None)
-    pending = pending_materialisations()
+    pending = pending_materialisations(retry_failed=retry_failed)
     if limit is not None:
         pending = pending[:limit]
 
@@ -479,7 +564,13 @@ def materialise_resources(
             # One file must not cost the other 10,915. Recorded against the
             # exact pair so a retry knows what to do again.
             logger.exception("Materialising %s failed", resource.resource_key)
-            report.failures.append(f"{resource.resource_key}: {type(error).__name__}")
+            label = f"{_resource_label(link, resource)}: {type(error).__name__}"
+            if is_empty_at_source(resource):
+                # Not a failure of this run: there was nothing to copy. Said,
+                # and kept apart, so it never turns a run red or into a retry.
+                report.empty_at_source.append(label)
+            else:
+                report.failures.append(label)
             LegacySourceResourceImport.objects.update_or_create(
                 matter_source_page=link,
                 resource=resource,

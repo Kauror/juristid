@@ -22,6 +22,7 @@ live between layers (docs/adr/0010).
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import expect
@@ -223,7 +224,11 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
 
     form = open_fact_form(page, "+ Lisa oluline tähtaeg")
     form.get_by_label("Mis on oodata", exact=True).fill("Kooskõlastusringi lõpp")
-    form.get_by_label("Kuupäev", exact=True).fill("30.09.2026")
+    # A month from today, never a literal. The strip draws watched dates that
+    # are still ahead (`facts.upcoming_dates`), and the `30.09.2026` this used
+    # to type stopped being one on 1 October 2026 (ENG-002).
+    ahead = date.today() + timedelta(days=30)
+    form.get_by_label("Kuupäev", exact=True).fill(f"{ahead.day:02d}.{ahead.month:02d}.{ahead.year}")
     form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 

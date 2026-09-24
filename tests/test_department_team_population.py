@@ -523,6 +523,11 @@ def every_column(specialist, outsider, send_opinion, midweek) -> date:
     """
     week_start = midweek - timedelta(days=midweek.weekday())
     last_week = week_start - timedelta(days=4)
+    # The year column counts from 1 January (`dd.reporting_year`). In the first
+    # days of January last week was last year, and a letter sent then is not
+    # this year's work — so that week the year column gets a letter of its own,
+    # on New Year's Day, instead of sharing last week's (ENG-002).
+    this_year = last_week if last_week.year == midweek.year else date(midweek.year, 1, 1)
 
     for owner in (specialist, outsider):
         deadline_on(open_matter(owner), midweek - timedelta(days=7), specialist)
@@ -533,6 +538,8 @@ def every_column(specialist, outsider, send_opinion, midweek) -> date:
         drafting(open_matter(owner))
         touched_on(open_matter(owner), last_week, specialist)
         send_opinion(open_matter(owner), when=at_ten(last_week))
+        if this_year != last_week:
+            send_opinion(open_matter(owner), when=at_ten(this_year))
 
     # And one Matter nobody carries, so the third bucket is never empty either.
     factories.MatterFactory(owner=None)

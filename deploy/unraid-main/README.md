@@ -290,6 +290,21 @@ asking the database what is still missing, so interrupting it costs nothing:
 re-run the same command. `--limit N` stops after N files, which is the right way
 to watch the first few before committing to the rest.
 
+**A file that failed is not in, and every phase says so.** `apply`, `dry-run` and
+`materialise` exit non-zero when a run met a failure, and name each page or file
+(`page_key/resource_key: error`). `materialise` never tries a failed file again
+on its own — find out why it failed, fix that, then:
+
+```bash
+$C historical_import materialise --retry-failed
+```
+
+`status` counts only imported files as materialised and lists the failed ones;
+`verify` fails while any original is failed or not yet copied. The exception is
+an attachment that is **empty in OneNote itself** (the corpus has six): there is
+nothing to copy, so it is reported as `empty in the source`, never retried, and
+does not fail `verify` (ENG-007).
+
 Back up before `apply` and after `verify`. Not with a `pg_dump` pipeline — see
 [`RECOVERY.md`](RECOVERY.md) for why that line could produce a truncated dump
 and report success:
@@ -1120,7 +1135,10 @@ target code — against the running database. That is the pair the question is
 about: **new code, current schema.** It reports and never migrates.
 
 If everything is additive, the old web process keeps working against the new
-schema while it is replaced, which is what makes the sequence below safe.
+schema while it is replaced — reading it and writing to it — which is what makes
+the sequence below safe. A NOT NULL column without a database default is
+flagged rather than called additive, because the old process's INSERT does not
+name it.
 
 If anything is not additive, this is not a rolling deployment. Decide first
 whether the release now serving survives the new schema; if it does not, tell

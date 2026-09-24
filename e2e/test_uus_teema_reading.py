@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 import uuid
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -821,8 +822,13 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
     choose(page, [annex_pdf])
     read_staged_files()
     page.locator("#id_title").fill(title)
-    page.locator("#id_response_deadline").fill("1.10.2026")
+    # The deadline this Teema is given is the one `name_a_next_step` types: a
+    # week from today. A literal typed first was overwritten by it, and the
+    # assertion below then held only on the days today + 7 happened to contain
+    # the literal (ENG-002).
     name_a_next_step(page)
+    ahead = date.today() + timedelta(days=7)
+    typed_deadline = f"{ahead.day}.{ahead.month}.{ahead.year}"
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     matter_url = page.url
@@ -852,7 +858,7 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
     # it asks the control that holds a Matter's deadline.
     page.goto(matter_url)
     deadline = page.locator(".metaline__value--deadline")
-    expect(deadline).to_have_text(re.compile(r"1\.10\.2026"))
+    expect(deadline).to_have_text(re.compile(rf"(?<!\d){re.escape(typed_deadline)}"))
     expect(deadline).not_to_contain_text("18.9.2026")
     expect(page.locator("#intake-panel")).to_have_count(0)
     expect(page.get_by_role("heading", name="Failist leitud")).to_have_count(0)

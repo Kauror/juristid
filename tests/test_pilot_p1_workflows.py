@@ -23,7 +23,7 @@ than to the date on the step.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -348,28 +348,43 @@ def test_an_overdue_step_is_deferred_from_today(signed_in, normal_matter, specia
     assert _open_action(normal_matter).target_date == timezone.localdate() + timedelta(days=7)
 
 
+def _last_day_of_month(day: date) -> date:
+    return (day.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+
 def test_a_defer_crosses_a_month_boundary_from_the_steps_own_date(
     signed_in, normal_matter, specialist
 ):
+    """The last day of a month that is not over yet, so never a past date.
+
+    The contract is relative, so the dates are too. A step dated in the past is
+    deferred from today (`defer_base`), and the 2026-09-30 this used to pin
+    became exactly that on 2026-10-01 (ENG-002). December is stepped over so
+    the boundary crossed stays a month's and not also a year's.
+    """
+    today = timezone.localdate()
+    step_date = _last_day_of_month(today if today.month != 12 else today + timedelta(days=31))
     action = _action(normal_matter, specialist, days=30)
-    action.target_date = timezone.localdate().replace(month=9, day=30, year=2026)
+    action.target_date = step_date
     action.save(update_fields=["target_date"])
 
     _defer(signed_in, normal_matter, action, paevad="1")
 
-    assert _open_action(normal_matter).target_date.isoformat() == "2026-10-01"
+    assert _open_action(normal_matter).target_date == date(step_date.year, step_date.month + 1, 1)
 
 
 def test_a_defer_crosses_a_year_boundary_from_the_steps_own_date(
     signed_in, normal_matter, specialist
 ):
+    """31 December of the year that is running, which is never in the past."""
+    today = timezone.localdate()
     action = _action(normal_matter, specialist, days=30)
-    action.target_date = timezone.localdate().replace(month=12, day=31, year=2026)
+    action.target_date = date(today.year, 12, 31)
     action.save(update_fields=["target_date"])
 
     _defer(signed_in, normal_matter, action, paevad="1")
 
-    assert _open_action(normal_matter).target_date.isoformat() == "2027-01-01"
+    assert _open_action(normal_matter).target_date == date(today.year + 1, 1, 1)
 
 
 def test_deferring_a_review_moves_its_own_review_date(signed_in, normal_matter, specialist):
