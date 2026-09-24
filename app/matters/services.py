@@ -2539,6 +2539,50 @@ WEBSITE_OVERVIEW_CONFLICT = (
     "Seda ülevaadet või uudist on vahepeal mujal muudetud. "
     "Värskenda lehte ja vaata, mis seal nüüd kirjas on."
 )
+WEBSITE_OVERVIEW_ADDRESS_TAKEN = (
+    "Selle aadressiga ülevaade või uudis on sellel teemal juba kirjas. "
+    "Sama lehte ei salvestata kaks korda."
+)
+#: The one uniqueness rule on this table: one live published row per address
+#: per Matter (`MatterWebsiteOverview.Meta`, docs/adr/0081).
+WEBSITE_OVERVIEW_ADDRESS_CONSTRAINT = "matters_website_overview_one_row_per_published_link"
+
+
+def _save_published_address(locked: MatterWebsiteOverview, *, update_fields: list[str]) -> None:
+    """Save a row that now holds a published address, or refuse the address.
+
+    One live published row per address on a Matter is a deliberate rule
+    (docs/adr/0081). It is asked twice. First as a question, under the lock the
+    caller holds, so the ordinary case — a second tab, a double submit, a
+    correction onto an address another row already holds — gets a sentence
+    beside what was typed. Then by the database, inside a savepoint, because a
+    question asked before a write races whatever commits in between: the
+    constraint is the last line, and its refusal is turned into the same
+    sentence rather than a 500 out of an aborted transaction (ENG-025, the
+    pattern `record_procedural_link` uses).
+
+    A row taken off the file holds no address (docs/adr/0102): it is excluded
+    here and by the constraint, so recording a removed page again works.
+    """
+    taken = (
+        MatterWebsiteOverview.objects.filter(
+            matter_id=locked.matter_id,
+            status=WebsiteOverviewStatus.PUBLISHED,
+            removed_at__isnull=True,
+            url=locked.url,
+        )
+        .exclude(pk=locked.pk)
+        .exists()
+    )
+    if taken:
+        raise DomainError(WEBSITE_OVERVIEW_ADDRESS_TAKEN)
+    try:
+        with transaction.atomic():
+            locked.save(update_fields=update_fields)
+    except IntegrityError as error:
+        if WEBSITE_OVERVIEW_ADDRESS_CONSTRAINT in str(error):
+            raise DomainError(WEBSITE_OVERVIEW_ADDRESS_TAKEN) from error
+        raise
 
 
 def normalize_overview_news_url(value: str | None) -> str:
@@ -2764,7 +2808,8 @@ def publish_website_overview(
     locked.published_by = actor
     locked.published_at = now
     locked.status_changed_at = now
-    locked.save(
+    _save_published_address(
+        locked,
         update_fields=[
             "status",
             "url",
@@ -2773,7 +2818,7 @@ def publish_website_overview(
             "published_at",
             "status_changed_at",
             "updated_at",
-        ]
+        ],
     )
     record_change_event(
         event_type=ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
@@ -2876,7 +2921,7 @@ def correct_website_overview_link(
 
     locked.url = clean_url
     locked.published_on = day
-    locked.save(update_fields=["url", "published_on", "updated_at"])
+    _save_published_address(locked, update_fields=["url", "published_on", "updated_at"])
     record_change_event(
         event_type=ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
         matter=locked.matter,

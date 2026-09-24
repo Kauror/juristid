@@ -34,6 +34,7 @@ from app.matters.enums import WebsiteOverviewStatus
 from app.matters.models import Entry, MatterWebsiteOverview
 from app.matters.my_work import build_my_work
 from app.matters.services import (
+    WEBSITE_OVERVIEW_ADDRESS_TAKEN,
     WEBSITE_OVERVIEW_NEEDS_LINK,
     WebsiteOverviewConflict,
     cancel_website_overview,
@@ -400,10 +401,13 @@ def test_one_published_address_is_filed_at_most_once_per_matter(normal_matter, s
     _published(normal_matter, specialist, url=KODA_URL)
     second = plan_website_overview(matter=normal_matter, actor=specialist)
 
-    with pytest.raises(IntegrityError), transaction.atomic():
+    # A sentence from the service, not the database's `IntegrityError`
+    # (ENG-025). The rule is unchanged: one live published row per address.
+    with pytest.raises(DomainError, match=WEBSITE_OVERVIEW_ADDRESS_TAKEN):
         publish_website_overview(
             overview=second, url=KODA_URL, published_on=PUBLISHED_ON, actor=specialist
         )
+    assert MatterWebsiteOverview.objects.filter(matter=normal_matter, url=KODA_URL).count() == 1
 
 
 def test_the_same_address_on_two_matters_is_two_legitimate_records(specialist):

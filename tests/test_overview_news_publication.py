@@ -354,16 +354,24 @@ def test_several_publications_on_one_matter_on_several_hosts(normal_matter, spec
 
 
 def test_the_same_address_is_still_filed_at_most_once_per_matter(normal_matter, specialist):
-    """§4. The one uniqueness there is, unchanged by the widening."""
-    from django.db import IntegrityError, transaction
+    """§4. The one uniqueness there is, unchanged by the widening.
+
+    Refused by the service with a sentence now rather than surfacing the
+    database's `IntegrityError` (ENG-025); the constraint behind it is asserted
+    directly in `test_correction_is_only_what_moved`.
+    """
+    from app.matters.services import WEBSITE_OVERVIEW_ADDRESS_TAKEN
 
     _published(normal_matter, specialist, url=NEWS_HTTPS_URL)
     second = plan_website_overview(matter=normal_matter, actor=specialist)
 
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with pytest.raises(DomainError, match=WEBSITE_OVERVIEW_ADDRESS_TAKEN):
         publish_website_overview(
             overview=second, url=NEWS_HTTPS_URL, published_on=PUBLISHED_ON, actor=specialist
         )
+    assert (
+        MatterWebsiteOverview.objects.filter(matter=normal_matter, url=NEWS_HTTPS_URL).count() == 1
+    )
 
 
 # ---------------------------------------------------------------------------

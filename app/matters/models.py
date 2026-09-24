@@ -1613,9 +1613,15 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
             # overview but the same one recorded twice — and it is scoped to
             # PUBLISHED rows because every other row has an empty `url`, and
             # three plans on one Matter are three legitimate rows.
+            #
+            # **Live** published rows: a row taken off the file (`removed_at`)
+            # holds no address, because recording the same page again is the
+            # documented repair for a removal made in error (docs/adr/0102 §2).
+            # Removal kept the slot until ENG-025, so the address could never be
+            # recorded on that Matter again.
             models.UniqueConstraint(
                 fields=["matter", "url"],
-                condition=models.Q(status=WebsiteOverviewStatus.PUBLISHED),
+                condition=models.Q(status=WebsiteOverviewStatus.PUBLISHED, removed_at__isnull=True),
                 name="matters_website_overview_one_row_per_published_link",
             ),
             models.CheckConstraint(
