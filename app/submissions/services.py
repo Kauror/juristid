@@ -467,24 +467,27 @@ def correct_sent_opinion(
     if kind not in SubmissionKind.values:
         raise DomainError(f"Tundmatu arvamuse liik {kind!r}.")
 
+    # Compared as values, not as their serialisations. The stored instant is
+    # read back in UTC and a posted one arrives in Europe/Tallinn, so the same
+    # moment has two ISO spellings — and comparing the strings wrote a
+    # correction for every save that changed nothing (ENG-024, docs/adr/0103).
     before = {
-        "sent_at": locked.sent_at.isoformat(),
+        "sent_at": locked.sent_at,
         "sent_at_precision": locked.sent_at_precision,
         "summary": locked.summary,
         "kind": locked.kind,
     }
-    locked.sent_at = sent_at
-    locked.sent_at_precision = sent_at_precision
-    locked.summary = (summary or "").strip()
-    locked.kind = kind
-    locked.save(update_fields=["sent_at", "sent_at_precision", "summary", "kind", "updated_at"])
     after = {
-        "sent_at": locked.sent_at.isoformat(),
-        "sent_at_precision": locked.sent_at_precision,
-        "summary": locked.summary,
-        "kind": locked.kind,
+        "sent_at": sent_at,
+        "sent_at_precision": sent_at_precision,
+        "summary": (summary or "").strip(),
+        "kind": kind,
     }
-    changed = {field: value for field, value in after.items() if before[field] != value}
+    changed = [field for field in after if before[field] != after[field]]
+    if changed:
+        for field in changed:
+            setattr(locked, field, after[field])
+        locked.save(update_fields=[*changed, "updated_at"])
 
     if addressees is not None:
         # Through the canonical service, so the addressee/teadmiseks
@@ -511,7 +514,10 @@ def correct_sent_opinion(
             actor=actor,
             obj=locked,
             summary=locked.title[:200],
-            payload={"from": {field: before[field] for field in changed}, "to": changed},
+            payload={
+                "from": {field: _audit_value(before[field]) for field in changed},
+                "to": {field: _audit_value(after[field]) for field in changed},
+            },
         )
 
     submission.refresh_from_db()
@@ -575,6 +581,11 @@ def supersede_submission(*, submission: Submission, actor: Any = None) -> Submis
 
 
 @transaction.atomic
+def _audit_value(value: Any) -> Any:
+    """A value as an audit payload stores it: JSON, and a datetime as ISO."""
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
 def set_recipients(
     *,
     submission: Submission,
@@ -583,10 +594,18 @@ def set_recipients(
     actor: Any = None,
     audit: bool = True,
 ) -> Submission:
-    """Replace the recipient set, keeping the addressee/teadmiseks distinction.
+    """Make the recipient set this one, keeping the addressee/teadmiseks distinction.
 
     Only addressees answer the question a reporting count asks — who Koda
     formally wrote to. Copying a committee in is not the same act.
+
+    **Reconciled, not replaced.** A recipient who stays, in the same role, keeps
+    its row — its id, its `created_at` and its `note`, which is where the
+    importers keep the register's own KELLELE text. Only rows that leave are
+    deleted and only new ones are created, and a set that did not change
+    writes nothing and records nothing: every correction used to delete and
+    re-create every row, emptying that provenance and logging
+    «Arvamuse saajad muudetud» for a save that changed nobody (ENG-024).
     """
     for_information = for_information or []
     overlap = {organisation.pk for organisation in addressees} & {
@@ -595,19 +614,33 @@ def set_recipients(
     if overlap:
         raise DomainError("Sama organisatsioon ei saa olla korraga adressaat ja teadmiseks saaja.")
 
-    SubmissionRecipient.objects.filter(submission=submission).delete()
-    rows = [
-        SubmissionRecipient(
-            submission=submission, organisation=organisation, role=RecipientRole.ADDRESSEE
-        )
+    wanted = {
+        (organisation.pk, RecipientRole.ADDRESSEE.value): organisation
         for organisation in addressees
-    ] + [
-        SubmissionRecipient(
-            submission=submission, organisation=organisation, role=RecipientRole.FOR_INFORMATION
-        )
-        for organisation in for_information
+    }
+    wanted.update(
+        {
+            (organisation.pk, RecipientRole.FOR_INFORMATION.value): organisation
+            for organisation in for_information
+        }
+    )
+    current = {
+        (row.organisation_id, row.role): row
+        for row in SubmissionRecipient.objects.filter(submission=submission)
+    }
+    leaving = [row.pk for key, row in current.items() if key not in wanted]
+    arriving = [
+        SubmissionRecipient(submission=submission, organisation=organisation, role=role)
+        for (organisation_pk, role), organisation in wanted.items()
+        if (organisation_pk, role) not in current
     ]
-    SubmissionRecipient.objects.bulk_create(rows)
+    if not leaving and not arriving:
+        return submission
+
+    if leaving:
+        SubmissionRecipient.objects.filter(pk__in=leaving).delete()
+    SubmissionRecipient.objects.bulk_create(arriving)
+    rows = list(wanted)
     # `bulk_create` sends no `post_save`, so the search handler that keeps
     # recipient names in the index never fires for the write that adds them —
     # while the `delete()` above does fire, and reindexes the submission with no

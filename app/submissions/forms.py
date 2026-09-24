@@ -9,7 +9,7 @@ from django.utils.formats import date_format
 
 from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.matters.forms import set_choices
-from app.matters.models import MatterWebsiteOverview
+from app.matters.models import EXTERNAL_POSITION_SUMMARY_MAX_LENGTH, MatterWebsiteOverview
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind
 from app.submissions.links import selectable_tags, selectable_website_overviews
@@ -368,9 +368,12 @@ class SentOpinionEditForm(forms.Form):
         choices=SubmissionKind.choices,
         widget=forms.Select(attrs={"class": "field__input"}),
     )
+    #: The capture form's own bound (`RegisterSentOpinionForm`): a correction
+    #: must not store a Kokkuvõte that recording the send would refuse (ENG-024).
     summary = forms.CharField(
         label="Kokkuvõte",
         required=False,
+        max_length=EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
         help_text="Mida kiri ütles. Seda loeb teema käik.",
     )

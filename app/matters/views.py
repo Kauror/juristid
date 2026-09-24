@@ -7856,14 +7856,26 @@ def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) 
     if not form.is_valid():
         return _sent_opinion_row(request, matter, submission, form=form, status=400)
 
+    # The box shows the stored send as a local day. Where the day that comes
+    # back is that same day, the send time is not what this save is about: the
+    # stored instant and its precision stay exactly as recorded. `Märgi
+    # saadetuks` records the moment with TIMESTAMP precision, and every
+    # unrelated correction used to overwrite it with local midnight at DATE
+    # precision (ENG-024). Only a day the person actually changed is re-anchored.
+    if form.cleaned_data["sent_on"] == timezone.localtime(submission.sent_at).date():
+        sent_at, sent_at_precision = submission.sent_at, submission.sent_at_precision
+    else:
+        # A day, stored as aware midnight with `DATE` precision, so the UI
+        # never reads the anchor back as «00:00» — the rule
+        # `RegisterSentOpinionForm` established for the same field.
+        sent_at = as_midnight(form.cleaned_data["sent_on"])
+        sent_at_precision = SentAtPrecision.DATE
+
     try:
         correct_sent_opinion(
             submission=submission,
-            # A day, stored as aware midnight with `DATE` precision, so the UI
-            # never reads the anchor back as «00:00» — the rule
-            # `RegisterSentOpinionForm` established for the same field.
-            sent_at=as_midnight(form.cleaned_data["sent_on"]),
-            sent_at_precision=SentAtPrecision.DATE,
+            sent_at=sent_at,
+            sent_at_precision=sent_at_precision,
             summary=form.cleaned_data.get("summary") or "",
             kind=form.cleaned_data["kind"],
             addressees=list(form.cleaned_data["recipients"]),
