@@ -35,6 +35,33 @@
       { code: "4(00|09|22)", swap: true, error: true },
       { code: "[45]..", swap: false, error: true },
     ];
+
+    /* ---- Nothing a page showed is kept in the browser -------------------
+     * htmx 2.0.x copies every page it pushes into history — the whole
+     * <body>, register rows and restricted titles included — into
+     * localStorage, where it outlives signing out, a restart and the next
+     * person to use the profile (ENG-009). A signed-in page must not be
+     * stored by anything (app/core/middleware.py), and the browser's own
+     * storage is not an exception.
+     *
+     * So no snapshots at all, and Back/Forward loads the page again, as
+     * whoever is signed in now, instead of resurrecting what an earlier
+     * session was shown. A reload rather than htmx's own restore request:
+     * a reload runs every binding on the page from the start, where a
+     * restored copy came back carrying the `data-bound*` markers of the
+     * page it was taken from and with its controls dead.
+     */
+    window.htmx.config.historyCacheSize = 0;
+    window.htmx.config.refreshOnHistoryMiss = true;
+  }
+
+  /* And whatever an earlier version left behind. A zero cache size removes
+   * the key only the next time htmx would have saved one, so it is removed
+   * here, on every page — including the one signing out lands on. */
+  try {
+    window.localStorage.removeItem("htmx-history-cache");
+  } catch (error) {
+    /* Storage is blocked, so nothing was stored in it either. */
   }
 
   /* ---- A save must not throw the keyboard back to the top ---------------

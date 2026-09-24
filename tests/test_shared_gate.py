@@ -521,6 +521,33 @@ def test_a_page_for_a_selected_persona_is_never_stored(behind_the_gate):
     assert "no-store" in behind_the_gate.get("/minu-asjad/")["Cache-Control"]
 
 
+def test_signing_out_clears_what_the_browser_kept(behind_the_gate):
+    """`no-store` keeps pages out of the HTTP cache; it says nothing to storage.
+
+    htmx 2.0.4 kept copies of the register in localStorage, restricted titles
+    included, and they outlived the session (ENG-009). Signing out clears the
+    origin's storage — and only that: cookies are the session's own business
+    and a `no-store` page is not in the HTTP cache to clear.
+    """
+    response = behind_the_gate.post(reverse("accounts:sign_out"))
+
+    assert response.status_code == 302
+    assert response["Clear-Site-Data"] == '"storage"'
+
+
+def test_the_client_keeps_no_history_snapshots():
+    """The browser half of the same rule, held where a reviewer will see it.
+
+    What the browser does with it is proved in `e2e/test_history_privacy.py`.
+    """
+    from django.conf import settings
+
+    script = (settings.BASE_DIR / "static" / "js" / "app.js").read_text(encoding="utf-8")
+    assert "window.htmx.config.historyCacheSize = 0;" in script
+    assert "window.htmx.config.refreshOnHistoryMiss = true;" in script
+    assert 'window.localStorage.removeItem("htmx-history-cache");' in script
+
+
 def test_the_gate_page_itself_may_be_cached(client, gate_url):
     """It is the same bytes for everybody and holds nothing worth protecting."""
     assert "no-store" not in client.get(gate_url).get("Cache-Control", "")
