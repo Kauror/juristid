@@ -131,7 +131,7 @@ def test_the_opinion_queue_cost_does_not_grow_with_the_backlog(
         response = client.get(url, {"olek": OpinionCandidateState.DEFERRED})
 
     assert response.status_code == 200
-    assert len(response.context["candidates"]) == ROWS
+    assert len(response.context["rows"]) == ROWS
 
 
 def test_the_historical_queue_cost_does_not_grow_with_the_backlog(

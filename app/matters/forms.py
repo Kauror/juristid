@@ -5213,6 +5213,29 @@ def _external_position_source_label_field() -> forms.CharField:
     )
 
 
+#: What `Seotud kaasamine` posts when it is left on «jääb samaks» — the option a
+#: correction form offers only when the position answers a round this reader
+#: may not see (restricted below the Matter, or taken off the file). The form
+#: cannot name that round, and without this a correction of the date or the text
+#: would post the empty choice and clear a relation the person never touched
+#: (ENG-047).
+ENGAGEMENT_UNCHANGED = "jaab-samaks"
+
+
+class _EngagementChoiceField(forms.ModelChoiceField):
+    """A `Kaasamine` from the reader's own list, or «leave the stored one alone»."""
+
+    def to_python(self, value: Any) -> Any:
+        if value == ENGAGEMENT_UNCHANGED:
+            return ENGAGEMENT_UNCHANGED
+        return super().to_python(value)
+
+    def validate(self, value: Any) -> None:
+        if value == ENGAGEMENT_UNCHANGED:
+            return
+        super().validate(value)
+
+
 def _external_position_engagement_field() -> forms.ModelChoiceField:
     """`Seotud kaasamine` — the round this position answered, where it answered one.
 
@@ -5230,7 +5253,7 @@ def _external_position_engagement_field() -> forms.ModelChoiceField:
     """
     from app.matters.models import MatterEngagement
 
-    return forms.ModelChoiceField(
+    return _EngagementChoiceField(
         label="Seotud kaasamine",
         queryset=MatterEngagement.objects.none(),
         required=False,
@@ -5777,6 +5800,40 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         set_external_position_engagements(
             self, matter=getattr(record, "matter", None), viewer=viewer
         )
+        self._offer_the_unseen_engagement(record)
+
+    def _offer_the_unseen_engagement(self, record: Any) -> None:
+        """Keep a stored round this reader cannot see, unless they choose otherwise.
+
+        The list holds the rounds this reader may see. A position answering one
+        they may not — restricted below the Matter, or taken off the file — would
+        open on «Ei ole seotud kaasamisega», and saving a corrected date would
+        clear the relation as a side effect. So such a form opens on one more
+        option, «jääb samaks», which names nothing about the round and keeps it;
+        choosing «Ei ole seotud» or a visible round is still a real choice
+        (ENG-047).
+        """
+        stored = getattr(record, "engagement_id", None)
+        field = cast(Any, self.fields["engagement"])
+        self.keeps_unseen_engagement = bool(
+            stored and not field.queryset.filter(pk=stored).exists()
+        )
+        if not self.keeps_unseen_engagement:
+            return
+        field.choices = [
+            (ENGAGEMENT_UNCHANGED, "Seotud kaasamine jääb samaks (seda siin ei kuvata)"),
+            *list(field.choices),
+        ]
+        if not self.is_bound:
+            self.initial["engagement"] = ENGAGEMENT_UNCHANGED
+
+    def clean_engagement(self) -> Any:
+        value = self.cleaned_data.get("engagement")
+        if value == ENGAGEMENT_UNCHANGED and not self.keeps_unseen_engagement:
+            # Offered only where a stored round is hidden from this reader; a
+            # crafted post of the word anywhere else is not a choice the form made.
+            raise forms.ValidationError("Valige korrektne väärtus.")
+        return value
 
     @property
     def shows_source_label(self) -> bool:
