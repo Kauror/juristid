@@ -745,10 +745,15 @@ untouched. This is the ordinary case and it is cheap — see `README.md`.
 ### The code is wrong; migrations were applied and they were additive
 
 Usually still just a code rollback: the previous release does not know about the
-new columns and does not select them. `manage.py migration_plan`, run from the
-target image before the migration, said whether they were additive — which is
-when that question is answerable cheaply, and why the deployment sequence asks
-it there rather than here.
+new columns, does not select them, and can still insert rows without them.
+`manage.py migration_plan`, run from the target image before the migration, said
+whether they were additive — which is when that question is answerable cheaply,
+and why the deployment sequence asks it there rather than here.
+
+"Additive" there means exactly that: the previous release can read **and
+write** the new schema. A NOT NULL column with no database default is not
+additive, because the previous release's INSERT does not name it and fails on
+it — after this rollback as much as during the deployment (ENG-014).
 
 ### The migrations were not additive
 

@@ -9,9 +9,11 @@ Reports, and does not migrate. Exit 0 means the report was produced, not that
 the plan is safe — that judgement is the operator's, which is the point.
 
 `--fail-on-consequential` turns it into a gate for a script: non-zero when the
-plan contains an operation that removes or rewrites something, so an unattended
-deployment stops and asks rather than proceeding on the assumption that every
-migration is additive (docs/adr/0022).
+plan contains an operation that removes or rewrites something, or adds something
+the release now serving could not write around, so an unattended deployment
+stops and asks rather than proceeding on the assumption that every migration is
+additive (docs/adr/0022). Additive means the release now serving can read **and
+write** the new schema (`app/core/deployment.py`, ENG-014).
 """
 
 from __future__ import annotations

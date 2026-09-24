@@ -1135,7 +1135,10 @@ target code — against the running database. That is the pair the question is
 about: **new code, current schema.** It reports and never migrates.
 
 If everything is additive, the old web process keeps working against the new
-schema while it is replaced, which is what makes the sequence below safe.
+schema while it is replaced — reading it and writing to it — which is what makes
+the sequence below safe. A NOT NULL column without a database default is
+flagged rather than called additive, because the old process's INSERT does not
+name it.
 
 If anything is not additive, this is not a rolling deployment. Decide first
 whether the release now serving survives the new schema; if it does not, tell

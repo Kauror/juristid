@@ -39,10 +39,15 @@ def _migration(*operations: object) -> migrations.Migration:
 
 
 def test_an_additive_migration_needs_no_decision() -> None:
+    """Additive means the release still serving can read **and write** the result."""
     planned = deployment.consequential_operations(
         _migration(
-            migrations.AddField("matter", "extra", models.CharField(max_length=10, default="")),
+            migrations.AddField("matter", "extra", models.CharField(max_length=10, null=True)),
+            migrations.AddField(
+                "matter", "flag", models.BooleanField(default=False, db_default=False)
+            ),
             migrations.AddIndex("matter", models.Index(fields=["title"], name="synthetic")),
+            migrations.RemoveIndex("matter", "synthetic_old"),
         )
     )
     assert planned == {}
@@ -55,6 +60,10 @@ def test_an_additive_migration_needs_no_decision() -> None:
         migrations.DeleteModel("Matter"),
         migrations.RenameField("matter", "title", "pealkiri"),
         migrations.RenameModel("Matter", "Teema"),
+        migrations.AddConstraint(
+            "matter", models.CheckConstraint(condition=models.Q(id__isnull=False), name="c")
+        ),
+        migrations.RemoveConstraint("matter", "c"),
         migrations.RunPython(migrations.RunPython.noop),
         migrations.RunSQL("SELECT 1"),
     ],
@@ -71,6 +80,145 @@ def test_an_operation_that_removes_or_rewrites_is_flagged(operation: object) -> 
     planned = deployment.consequential_operations(_migration(operation))
     assert list(planned) == [type(operation).__name__]
     assert planned[type(operation).__name__]
+
+
+# -- AddField: judged by the field, not by the operation's name (ENG-014) -----
+#
+# Django applies a field's `default` itself: the migration sets it on the
+# column, fills the existing rows and drops it again. So a NOT NULL column with
+# only a Python default has no default in the database, and the release still
+# serving — whose INSERT does not name the column — fails on it. That is the
+# window between `migrate` and `up -d`, and every day after a code-only
+# rollback. The 2026-09-20 `process_phase` column was exactly this, and the
+# classifier called it additive.
+
+
+def test_a_not_null_column_without_a_database_default_is_flagged() -> None:
+    planned = deployment.consequential_operations(
+        _migration(
+            migrations.AddField(
+                "matterproceduraldevelopment",
+                "process_phase",
+                models.CharField(max_length=32, blank=True, default=""),
+            )
+        )
+    )
+    assert list(planned) == ["AddField"]
+    assert "matterproceduraldevelopment.process_phase" in planned["AddField"]
+    assert "cannot insert" in planned["AddField"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        models.CharField(max_length=32, null=True),
+        models.CharField(max_length=32, default="", db_default=""),
+        models.ManyToManyField("organisations.Organisation"),
+        models.ForeignKey("accounts.User", null=True, on_delete=models.SET_NULL),
+    ],
+    ids=["nullable", "database-default", "many-to-many", "nullable-foreign-key"],
+)
+def test_a_column_old_code_can_still_insert_around_is_additive(field: models.Field) -> None:
+    assert (
+        deployment.consequential_operations(_migration(migrations.AddField("matter", "x", field)))
+        == {}
+    )
+
+
+def test_a_not_null_foreign_key_without_a_database_default_is_flagged() -> None:
+    planned = deployment.consequential_operations(
+        _migration(
+            migrations.AddField(
+                "matter", "owner", models.ForeignKey("accounts.User", on_delete=models.PROTECT)
+            )
+        )
+    )
+    assert list(planned) == ["AddField"]
+
+
+def test_a_column_on_a_table_the_same_migration_creates_is_additive() -> None:
+    """Nothing old writes to a table that did not exist."""
+    planned = deployment.consequential_operations(
+        _migration(
+            migrations.CreateModel("Uus", fields=[("id", models.BigAutoField(primary_key=True))]),
+            migrations.AddField("uus", "title", models.CharField(max_length=10, default="")),
+        )
+    )
+    assert planned == {}
+
+
+def test_every_offending_column_is_named() -> None:
+    planned = deployment.consequential_operations(
+        _migration(
+            migrations.AddField("matter", "a", models.IntegerField(default=0)),
+            migrations.AddField("matter", "b", models.IntegerField(null=True)),
+            migrations.AddField("matter", "c", models.IntegerField(default=0)),
+        )
+    )
+    assert "matter.a" in planned["AddField"]
+    assert "matter.b" not in planned["AddField"]
+    assert "matter.c" in planned["AddField"]
+
+
+# -- AlterField: additive only when the column does not change --------------
+
+
+def _state_before(app_label: str, name: str):
+    from django.db import connection
+    from django.db.migrations.loader import MigrationLoader
+
+    loader = MigrationLoader(connection)
+    return loader, loader.project_state((app_label, name), at_end=False)
+
+
+def test_a_choices_only_alter_field_is_additive_with_the_state_before_it() -> None:
+    """Most AlterFields here add a ChangeEventType value, which reaches no SQL."""
+    loader, before = _state_before("audit", "0029_submission_corrected_event")
+    migration = loader.get_migration("audit", "0029_submission_corrected_event")
+
+    assert deployment.consequential_operations(migration, state=before) == {}
+
+
+def test_an_alter_field_that_changes_the_column_is_flagged() -> None:
+    _loader, before = _state_before("audit", "0029_submission_corrected_event")
+    narrower = migrations.AlterField("changeevent", "event_type", models.CharField(max_length=8))
+
+    planned = deployment.consequential_operations(_migration_in("audit", narrower), state=before)
+
+    assert list(planned) == ["AlterField"]
+    assert "changeevent.event_type" in planned["AlterField"]
+
+
+def test_an_alter_field_that_cannot_be_compared_is_flagged() -> None:
+    """No state before it, no way to tell a choices edit from a type change."""
+    planned = deployment.consequential_operations(
+        _migration(migrations.AlterField("matter", "title", models.CharField(max_length=10)))
+    )
+    assert list(planned) == ["AlterField"]
+
+
+def test_an_operation_the_gate_does_not_know_is_flagged() -> None:
+    planned = deployment.consequential_operations(
+        _migration(migrations.AlterOrderWithRespectTo("matter", "owner"))
+    )
+    assert planned == {"AlterOrderWithRespectTo": deployment.UNCLASSIFIED}
+
+
+def test_the_migration_that_carried_process_phase_is_not_additive() -> None:
+    """The case the audit reproduced, read from the repository's own migration."""
+    loader, before = _state_before("matters", "0033_development_process_phase")
+    migration = loader.get_migration("matters", "0033_development_process_phase")
+
+    planned = deployment.consequential_operations(migration, state=before)
+
+    assert sorted(planned) == ["AddConstraint", "AddField"]
+    assert "matterproceduraldevelopment.process_phase" in planned["AddField"]
+
+
+def _migration_in(app_label: str, *operations: object) -> migrations.Migration:
+    built = migrations.Migration("0999_synthetic", app_label)
+    built.operations = list(operations)
+    return built
 
 
 def test_a_migrated_database_has_nothing_pending_and_nothing_unknown() -> None:
