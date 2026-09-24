@@ -230,6 +230,62 @@ def status() -> FreshnessStatus:
 
 
 @dataclass(frozen=True)
+class SearchIndexState:
+    """Whether the search projection is built under the running code's contract."""
+
+    index_version: str
+    current_rows: int
+    stale_rows: int
+    matters: int
+    current_matter_rows: int
+
+    @property
+    def problem(self) -> str:
+        """Why search cannot answer as this build expects, or ``""``."""
+        if self.stale_rows:
+            return (
+                f"{self.stale_rows} search row(s) were built under an older index version; "
+                f"this build reads only {self.index_version}, so search ignores them. "
+                "Run `rebuild_search_index` (runbook step 11), then this check again."
+            )
+        if self.matters and not self.current_matter_rows:
+            return (
+                f"{self.matters} Matter(s) exist and no search row is built under "
+                f"{self.index_version}: search answers nothing. Run `rebuild_search_index`."
+            )
+        return ""
+
+
+def search_index_state() -> SearchIndexState:
+    """Whether the projection is built under the running code's contract.
+
+    One aggregate and a count. Reads; never rebuilds. Here rather than in
+    `app.core.deployment`, which asks it, because nothing outside the search
+    app may read the projection (tests/test_search_reliability.py).
+    """
+    from django.db.models import Q
+
+    from app.matters.models import Matter
+    from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
+
+    totals = SearchDocument.objects.aggregate(
+        current=Count("id", filter=Q(index_version=INDEX_VERSION)),
+        stale=Count("id", filter=~Q(index_version=INDEX_VERSION)),
+        current_matters=Count(
+            "id",
+            filter=Q(index_version=INDEX_VERSION, source_kind=SearchSourceKind.MATTER),
+        ),
+    )
+    return SearchIndexState(
+        index_version=INDEX_VERSION,
+        current_rows=totals["current"],
+        stale_rows=totals["stale"],
+        matters=Matter.objects.count(),
+        current_matter_rows=totals["current_matters"],
+    )
+
+
+@dataclass(frozen=True)
 class ConsumeResult:
     rebuilt: bool
     cleared: int
@@ -367,6 +423,7 @@ __all__ = [
     "mark_rebuild_owed",
     "outstanding",
     "rebuild_and_discharge",
+    "search_index_state",
     "status",
     "worker_pass",
 ]

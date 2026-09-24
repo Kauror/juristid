@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.apps import apps
 from django.conf import settings
@@ -579,6 +579,10 @@ def unparseable_boolean_variables(environ: dict[str, str] | None = None) -> dict
 # --------------------------------------------------------------------------
 
 
+if TYPE_CHECKING:
+    from app.search.freshness import SearchIndexState
+
+
 #: The two moments `deployment_readiness` can be asked about a search index.
 #:
 #: A release that moves `INDEX_VERSION` is *supposed* to start serving on rows
@@ -591,57 +595,6 @@ def unparseable_boolean_variables(environ: dict[str, str] | None = None) -> dict
 SEARCH_PHASE_FINAL = "final"
 SEARCH_PHASE_PRE_REBUILD = "pre-rebuild"
 SEARCH_PHASES = (SEARCH_PHASE_FINAL, SEARCH_PHASE_PRE_REBUILD)
-
-
-@dataclass(frozen=True)
-class SearchIndexState:
-    """Whether the search projection is built under the running code's contract."""
-
-    index_version: str
-    current_rows: int
-    stale_rows: int
-    matters: int
-    current_matter_rows: int
-
-    @property
-    def problem(self) -> str:
-        """Why search cannot answer as this build expects, or ``""``."""
-        if self.stale_rows:
-            return (
-                f"{self.stale_rows} search row(s) were built under an older index version; "
-                f"this build reads only {self.index_version}, so search ignores them. "
-                "Run `rebuild_search_index` (runbook step 11), then this check again."
-            )
-        if self.matters and not self.current_matter_rows:
-            return (
-                f"{self.matters} Matter(s) exist and no search row is built under "
-                f"{self.index_version}: search answers nothing. Run `rebuild_search_index`."
-            )
-        return ""
-
-
-def search_index_state() -> SearchIndexState:
-    """Two small aggregates and a count. Reads; never rebuilds."""
-    from django.db.models import Count, Q
-
-    from app.matters.models import Matter
-    from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
-
-    totals = SearchDocument.objects.aggregate(
-        current=Count("id", filter=Q(index_version=INDEX_VERSION)),
-        stale=Count("id", filter=~Q(index_version=INDEX_VERSION)),
-        current_matters=Count(
-            "id",
-            filter=Q(index_version=INDEX_VERSION, source_kind=SearchSourceKind.MATTER),
-        ),
-    )
-    return SearchIndexState(
-        index_version=INDEX_VERSION,
-        current_rows=totals["current"],
-        stale_rows=totals["stale"],
-        matters=Matter.objects.count(),
-        current_matter_rows=totals["current_matters"],
-    )
 
 
 @dataclass(frozen=True)
@@ -736,6 +689,8 @@ def readiness_report(*, search_phase: str = SEARCH_PHASE_FINAL) -> ReadinessRepo
     if not state.pending:
         # Only once the schema is this build's: an unapplied migration is
         # already the problem, and the search tables may not match the model.
+        from app.search.freshness import search_index_state
+
         search = search_index_state()
         if search.problem:
             if search_phase == SEARCH_PHASE_PRE_REBUILD:

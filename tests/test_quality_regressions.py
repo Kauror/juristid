@@ -416,7 +416,9 @@ def test_renaming_an_organisation_is_reported_as_stale_index(db, specialist):
 
     report = build_report()
     assert not report.ok
-    assert any(finding.label == "Vananenud tekst" for finding in report.findings)
+    # Named by kind since ENG-080: the check now recomputes every kind, so it
+    # says which one drifted.
+    assert any(finding.label == "Teemad: vananenud tekst" for finding in report.findings)
 
 
 def test_a_rebuild_clears_the_staleness(db, specialist):
