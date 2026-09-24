@@ -562,6 +562,10 @@ def acknowledge_assignment_notice(*, notice: MatterAssignmentNotice, actor: Any)
     return bool(updated)
 
 
+#: What an owner change that arrived after the Matter was deleted is told.
+ASSIGNMENT_ON_DELETED_MATTER = "Teemat ei ole enam olemas, seega ei saa sellele vastutajat määrata."
+
+
 @transaction.atomic
 def assign_matter(
     *, matter: Matter, owner: Any, actor: Any = None, provenance: dict[str, Any] | None = None
@@ -582,8 +586,28 @@ def assign_matter(
     a person performed does both. The early return below is what makes a no-op
     POST — the same owner submitted again — produce no second notice, because
     nothing was assigned (docs/adr/0051).
+
+    **The Matter is locked first, and everything is read from the locked row**
+    (ENG-075). This was the one Matter write that did not start with the Matter
+    lock: it retired notices and then saved, while `delete_matter` locks the
+    Matter and then deletes the notices — the opposite order, so the two could
+    deadlock, or a stale assignment committed after the deletion and left an
+    owner, a live notice and a MATTER_ASSIGNED event on a tombstone. Now the
+    Matter row is taken at `FOR NO KEY UPDATE` before anything else, a deleted
+    one is refused, and the audit's `from` is the owner the row holds under the
+    lock rather than the one the request started with.
+
+    **A closed Matter may still change hands.** That has always been allowed —
+    correcting who owned a finished file is ordinary — so this refuses only a
+    deleted Matter, never a closed one.
     """
-    previous = matter.owner
+    locked = Matter.all_objects.select_for_update(no_key=True).get(pk=matter.pk)
+    if locked.deleted_at is not None:
+        raise DomainError(ASSIGNMENT_ON_DELETED_MATTER)
+    previous = locked.owner
+    # The caller's instance learns the current owner either way, so a no-op
+    # answer does not leave it believing in an owner the row no longer has.
+    matter.owner = previous
     if previous == owner:
         return matter
 

@@ -99,6 +99,11 @@ refusal comes back with the fresh workspace state.
 A double submit is the same case and gets the same answer: the second POST finds
 the action COMPLETED rather than OPEN, and exactly one result survives.
 
+> **Amended by ADR 0110 §1 (2026-09-24).** This held for the composer path and
+> not for `complete_next_action`, `cancel_next_action` and `acknowledge_review`
+> called from anywhere else, which decided on an unlocked copy (ENG-072). All
+> three now lock the Matter and re-read the action before deciding.
+
 ## 5. After a completion, and when there is nothing to complete
 
 A successful save leaves the Entry in the chronology, the action COMPLETED, and

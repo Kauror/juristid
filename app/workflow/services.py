@@ -383,11 +383,47 @@ def establish_opinion_preparation_action(
     )
 
 
+def _lock_for_transition(action: NextAction, refusal: str) -> NextAction:
+    """The Matter, then the action, and the action as it is under both locks.
+
+    **A terminal transition is decided on the current row, never on the
+    caller's instance** (ENG-072). The view fetched that instance before this
+    transaction began; between then and now a replacement may have superseded
+    it, a closure cancelled it, or a second click completed it. Deciding on the
+    stale copy is how an action ended COMPLETED with `replaced_by` set, a
+    completion was written after MATTER_CLOSED, and one task collected two
+    completion events.
+
+    Same order as `set_next_action` and `close_matter`: the Matter first, then
+    the action (app/matters/locks.py). `FOR NO KEY UPDATE` on both, because the
+    transaction goes on to insert a `ChangeEvent` referencing each; it still
+    conflicts with the `FOR UPDATE` `set_next_action` takes and with itself, so
+    every transition on one Matter takes its turn.
+
+    ``refusal`` is the sentence the transition already uses for an action that
+    is not open. A row that no longer exists — its Matter deleted meanwhile —
+    gets the same one: there is nothing current to act on.
+    """
+    matter_model = apps.get_model("matters", "Matter")
+    try:
+        matter_model.objects.select_for_update(no_key=True).get(pk=action.matter_id)
+        return NextAction.objects.select_for_update(no_key=True).get(pk=action.pk)
+    except (matter_model.DoesNotExist, NextAction.DoesNotExist) as error:
+        raise DomainError(refusal) from error
+
+
 @transaction.atomic
 def complete_next_action(*, action: NextAction, actor: Any = None) -> NextAction:
-    """Mark the current action done. It stays in the history."""
+    """Mark the current action done. It stays in the history.
+
+    Decided on the locked row (`_lock_for_transition`), so a second click, a
+    replacement or a closure that landed first makes this refuse instead of
+    writing a second terminal state (ENG-072, docs/adr/0075 §4).
+    """
+    refusal = "Ainult kehtivat tegevust saab lõpetada."
+    action = _lock_for_transition(action, refusal)
     if action.status != ActionStatus.OPEN:
-        raise DomainError("Ainult kehtivat tegevust saab lõpetada.")
+        raise DomainError(refusal)
 
     action.status = ActionStatus.COMPLETED
     action.ended_at = timezone.now()
@@ -426,8 +462,10 @@ def cancel_next_action(
     Matter at all — so the reason it was null has to be recorded beside it
     rather than inferred from its absence (brief 19).
     """
+    refusal = "Ainult kehtivat tegevust saab tühistada."
+    action = _lock_for_transition(action, refusal)
     if action.status != ActionStatus.OPEN:
-        raise DomainError("Ainult kehtivat tegevust saab tühistada.")
+        raise DomainError(refusal)
 
     action.status = ActionStatus.CANCELLED
     action.ended_at = timezone.now()
@@ -480,9 +518,15 @@ def acknowledge_review(
     changing the plan rather than doing the work of checking. Reviewing is not
     completing — the Matter is still waiting on the same thing — so the action
     stays open and keeps its identity.
+
+    On the locked row, like completing and cancelling: a review recorded on an
+    action that a replacement has just superseded would be a REVIEWED event on a
+    step nobody is following any more (ENG-072).
     """
+    refusal = "Ainult kehtivat tegevust saab üle vaadata."
+    action = _lock_for_transition(action, refusal)
     if action.status != ActionStatus.OPEN:
-        raise DomainError("Ainult kehtivat tegevust saab üle vaadata.")
+        raise DomainError(refusal)
     if action.kind not in REVIEW_KINDS:
         raise DomainError("Üle vaadata saab ainult ootamist või jälgimist.")
 
