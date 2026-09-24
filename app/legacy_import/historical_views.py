@@ -30,7 +30,7 @@ from app.core.authorization import matter_visibility_q, scope_for_user
 from app.core.http import content_disposition
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
-from app.legacy_import.historical_apply import index_source_link
+from app.legacy_import.historical_apply import index_source_link, is_empty_at_source
 from app.legacy_import.source_pages import (
     CandidateClass,
     CandidateState,
@@ -170,7 +170,7 @@ def _file_state(resource: Any, record: Any) -> str:
         return "pending"
     if record.document is not None:
         return "imported"
-    if resource is not None and resource.size_bytes == 0:
+    if is_empty_at_source(resource):
         return "empty"
     return "unavailable"
 

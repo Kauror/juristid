@@ -4,7 +4,7 @@
     manage.py historical_import plan
     manage.py historical_import dry-run
     manage.py historical_import apply
-    manage.py historical_import materialise [--limit N]
+    manage.py historical_import materialise [--limit N] [--retry-failed]
     manage.py historical_import status
     manage.py historical_import verify
 
@@ -13,6 +13,13 @@ genuinely different consequences and a flag is easy to mistype. `plan` reads and
 writes nothing. `dry-run` executes the real plan against the real schema and
 rolls it back. `apply` commits. `materialise` streams 4.14 GiB of originals and
 is resumable.
+
+**Only IMPORTED is in.** A file that failed is recorded as FAILED so the case
+file can say so, and that row is not a Document: `status` counts it apart,
+`verify` fails on it, and `materialise` and `apply` exit non-zero when a run
+could not do what it was asked (ENG-007). A failed file is tried again only
+when somebody asks, with `materialise --retry-failed`, and an attachment that
+is empty in OneNote itself is never tried again — it cannot succeed.
 
 **The apply gate is not advisory.** Source hashes must match, the audit baseline
 must reconcile, and the plan must carry no fatal finding. If any of those fails,
@@ -52,6 +59,14 @@ class Command(BaseCommand):
         parser.add_argument("--expect-manifest-sha256", default="")
         parser.add_argument(
             "--limit", type=int, default=None, help="materialise: stop after this many files."
+        )
+        parser.add_argument(
+            "--retry-failed",
+            action="store_true",
+            help=(
+                "materialise: also try again the files an earlier run recorded as failed. "
+                "Never an attachment that is empty in the source."
+            ),
         )
         parser.add_argument("--report", type=Path, help="Write a JSON summary here.")
 
@@ -152,6 +167,12 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Rolled back. Nothing was written."))
         if options.get("report"):
             self._write_report(options["report"], {"dry_run": report.__dict__ | {"batch_id": None}})
+        # The rehearsal of apply answers the way apply would: a dry run that
+        # met failures and exited 0 would be the green light for an apply that
+        # then leaves pages out.
+        self._fail_on(
+            report.failures, "the dry run met", remedy="apply would leave these pages out."
+        )
 
     def _apply(self, plan: Any, options: dict) -> None:
         from app.legacy_import.historical_apply import apply_structure, open_batch
@@ -176,17 +197,26 @@ class Command(BaseCommand):
                     "register. Run the Excel import first if that is unexpected."
                 )
             )
+        if options.get("report"):
+            self._write_report(options["report"], report.__dict__ | {"batch_id": str(batch.pk)})
+        # Each page commits on its own, so what did import stays imported and a
+        # second apply picks up the rest. What it must not do is announce the
+        # structure as imported over pages that are not (ENG-007).
+        self._fail_on(
+            report.failures,
+            "apply met",
+            remedy="The pages that did import are committed; fix the cause and run apply again.",
+        )
         self.stdout.write(
             self.style.SUCCESS(
                 "\nStructure imported. Run `historical_import materialise` to copy the "
                 "originals; the corpus is readable in the meantime."
             )
         )
-        if options.get("report"):
-            self._write_report(options["report"], report.__dict__ | {"batch_id": str(batch.pk)})
 
     def _materialise(self, options: dict) -> None:
         from app.legacy_import.historical_apply import (
+            materialisation_state,
             materialise_resources,
             pending_materialisations,
         )
@@ -196,31 +226,68 @@ class Command(BaseCommand):
         if archive_root is None:
             raise CommandError("No archive path. Pass --archive or set HISTORICAL_SOURCE_ROOT.")
         archive = OneNoteArchive(Path(archive_root))
-        waiting = len(pending_materialisations())
+        retry_failed = bool(options.get("retry_failed"))
+        waiting = len(pending_materialisations(retry_failed=retry_failed))
         limit = options.get("limit")
-        self.stdout.write(f"{waiting} file(s) waiting. Copying {limit or 'all'}.")
+        self.stdout.write(
+            f"{waiting} file(s) waiting{' (failed ones included)' if retry_failed else ''}. "
+            f"Copying {limit or 'all'}."
+        )
 
-        report = materialise_resources(archive=archive, limit=limit)
+        report = materialise_resources(archive=archive, limit=limit, retry_failed=retry_failed)
         self.stdout.write(report.as_text())
-        remaining = len(pending_materialisations())
-        if remaining:
-            self.stdout.write(f"\n{remaining} still waiting. Re-run to continue.")
-        else:
-            self.stdout.write(self.style.SUCCESS("\nEvery file is in."))
+        for label in report.empty_at_source:
+            self.stdout.write(f"  empty in the source, nothing to copy: {label}")
+        self._fail_on(
+            report.failures,
+            "this run met",
+            remedy="Fix the cause, then run `historical_import materialise --retry-failed`.",
+        )
+
+        state = materialisation_state()
+        if state.pending:
+            self.stdout.write(f"\n{state.pending} still waiting. Re-run to continue.")
+            if state.failed:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"{len(state.failed)} file(s) failed in an earlier run and are not "
+                        "in; `status` lists them."
+                    )
+                )
+            return
+        # Nothing is waiting. That is "every file is in" only if nothing failed
+        # — a FAILED row is not a Document, and the runbook backs up on the
+        # strength of what this says.
+        self._fail_on(
+            list(state.failed),
+            "earlier runs left",
+            remedy="Fix the cause, then run `historical_import materialise --retry-failed`.",
+        )
+        empty = len(state.empty_at_source)
+        self.stdout.write(
+            self.style.SUCCESS(
+                "\nEvery file is in."
+                + (
+                    f" {empty} attachment(s) are empty in the source; nothing to copy."
+                    if empty
+                    else ""
+                )
+            )
+        )
 
     def _status(self) -> None:
         from app.documents.models import DocumentVersion
-        from app.legacy_import.historical_apply import pending_materialisations
+        from app.legacy_import.historical_apply import materialisation_state
         from app.legacy_import.source_pages import (
             HistoricalMatchCandidate,
             LegacySourcePage,
             LegacySourceResource,
-            LegacySourceResourceImport,
             MatterSourcePage,
         )
         from app.matters.enums import MatterOrigin
         from app.matters.models import Matter
 
+        files = materialisation_state()
         rows = [
             ("Excel Matters", Matter.objects.filter(origin=MatterOrigin.LEGACY_IMPORT).count()),
             (
@@ -230,19 +297,39 @@ class Command(BaseCommand):
             ("source pages", LegacySourcePage.objects.count()),
             ("Matter ↔ page links", MatterSourcePage.objects.count()),
             ("catalogued resources", LegacySourceResource.objects.count()),
-            ("materialised documents", LegacySourceResourceImport.objects.count()),
-            ("still to materialise", len(pending_materialisations())),
+            # IMPORTED only. Every other row is bookkeeping about a file that is
+            # not in, and counting it here is what let a failed file read as a
+            # materialised one (ENG-007).
+            ("materialised documents", files.imported),
+            ("failed, not in", len(files.failed)),
+            ("empty in the source", len(files.empty_at_source)),
+            ("still to materialise", files.pending),
             ("pending review", HistoricalMatchCandidate.objects.filter(state="PENDING").count()),
             (
                 "awaiting extraction",
                 DocumentVersion.objects.filter(extraction_state="PENDING").count(),
             ),
         ]
+        if files.skipped:
+            rows.append(("skipped", files.skipped))
         for label, value in rows:
             self.stdout.write(f"  {label:<24} {value:>8,}")
+        if files.failed:
+            self.stdout.write("")
+            self.stdout.write(self.style.WARNING("Failed, not in:"))
+            for label in files.failed:
+                self.stdout.write(f"  {label}")
 
     def _verify(self) -> None:
-        """Check what the import claims against what the database holds."""
+        """Check what the import claims against what the database holds.
+
+        Including whether it holds all of it. The runbook takes the post-import
+        backup when this passes, so an original that failed to copy, or was
+        never copied, is a problem here and not a footnote (ENG-007). An
+        attachment that is empty in OneNote itself is not: there is nothing of
+        it to hold, and it is reported as such.
+        """
+        from app.legacy_import.historical_apply import materialisation_state
         from app.legacy_import.source_pages import (
             LegacySourcePage,
             LegacySourceResourceImport,
@@ -288,6 +375,20 @@ class Command(BaseCommand):
         if orphan_links:
             problems.append(f"{orphan_links} link(s) with no source page")
 
+        files = materialisation_state()
+        if files.failed:
+            problems.append(
+                f"{len(files.failed)} original(s) failed to copy and are not in: "
+                + ", ".join(files.failed)
+            )
+        if files.pending:
+            problems.append(f"{files.pending} original(s) not materialised yet")
+        if files.empty_at_source:
+            self.stdout.write(
+                f"  {len(files.empty_at_source)} attachment(s) are empty in the source and "
+                "have no document, as OneNote holds them: " + ", ".join(files.empty_at_source)
+            )
+
         if problems:
             for problem in problems:
                 self.stdout.write(self.style.ERROR(f"  {problem}"))
@@ -295,6 +396,18 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("  every check passed"))
 
     # -- helpers -----------------------------------------------------------
+
+    def _fail_on(self, failures: list[str], what: str, *, remedy: str = "") -> None:
+        """Exit non-zero, naming every failure, when there were any.
+
+        An exit status is what a script and a tired operator both read. A run
+        that printed «failures 3» and exited 0 was a success to both.
+        """
+        if not failures:
+            return
+        for failure in failures:
+            self.stdout.write(self.style.ERROR(f"  {failure}"))
+        raise CommandError(f"{len(failures)} failure(s) {what}." + (f" {remedy}" if remedy else ""))
 
     def _paths(self, options: dict) -> tuple[Path, Path, Path]:
         resolved: dict[str, Path] = {}
