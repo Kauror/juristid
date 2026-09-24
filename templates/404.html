@@ -1,0 +1,14 @@
+{% extends "error_page.html" %}
+{% comment %}
+  One sentence for every 404, whatever caused it. This application answers
+  «you may not see this» with a 404 as well as «this does not exist», and the
+  page must not tell the two apart (`business_write_required`, ENG-012). The requested
+  address is deliberately not echoed.
+{% endcomment %}
+{% block title %}Lehte ei leitud{% endblock %}
+{% block heading %}Lehte ei leitud{% endblock %}
+{% block body %}
+  <p class="lead">
+    Seda lehte ei ole või see pole sulle nähtav. Kontrolli aadressi või alusta avalehelt.
+  </p>
+{% endblock %}

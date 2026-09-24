@@ -13,6 +13,7 @@ from django.templatetags.static import static
 
 from app.core.authorization import is_department_head
 from app.core.development_status import ITEMS as DEVELOPMENT_STATUS_ITEMS
+from app.core.middleware import FAILURE_HEADER, NO_STORE, is_htmx
 from app.core.release_notes import load_release_notes
 
 
@@ -169,3 +170,33 @@ def development_status(request: HttpRequest) -> HttpResponse:
         "core/development_status.html",
         {"items": DEVELOPMENT_STATUS_ITEMS, "nav_active": "haldus"},
     )
+
+
+def csrf_failure(request: HttpRequest, reason: str = "") -> HttpResponse:
+    """What a refused CSRF check looks like (`CSRF_FAILURE_VIEW`).
+
+    The check is Django's own and is not touched: this runs only after it has
+    already refused, and it decides nothing but the answer's shape. Two shapes,
+    because there are two kinds of caller.
+
+    **An htmx request gets an empty 403 marked as a CSRF refusal.** The page
+    that sent it is still on screen with the text in it, and `static/js/app.js`
+    turns the marker into an Estonian sentence beside the form — the page is out
+    of date, copy what you typed and reload. It used to get Django's English
+    debug-or-plain 403, which htmx discarded, so `Salvesta` did nothing at all
+    (ENG-012). It is not re-sent with a fresh token, and the page is not
+    reloaded for the person: the usual cause is a persona chosen in another
+    tab, and a quiet retry would save this tab's text under somebody else's
+    name.
+
+    **A navigation gets the same explanation as a page** (`403_csrf.html`).
+
+    ``reason`` is Django's diagnostic. It is already in the security log that
+    `django.security.csrf` writes, and it is shown to nobody.
+    """
+    if is_htmx(request):
+        response = HttpResponse(status=403)
+        response[FAILURE_HEADER] = "csrf"
+        response["Cache-Control"] = NO_STORE
+        return response
+    return render(request, "403_csrf.html", status=403)
