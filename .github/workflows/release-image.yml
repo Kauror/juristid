@@ -20,6 +20,16 @@ name: Release image
 # after the transfer: it is the only thing that proves the bytes the host loads
 # are the bytes this job built.
 #
+# **Only an accepted revision of main, with main's CI green on it, is built**
+# (ENG-015). Before anything else the job proves both: that the commit is on
+# main's first-parent history — the merge commits main recorded, not a merged
+# pull request's own head, which is an ancestor with the same tree and green
+# checks of its own and is still not what main accepted (2026-09-09) — and that
+# the latest `ci.yml` run for a push to main at exactly that commit completed
+# with every job green. The decision is `scripts/ci/assert_release_provenance.py`,
+# read from this workflow's own revision of main rather than from the commit
+# being judged, and it fails closed.
+#
 # `previous_sha` is what makes this a release rather than a build: the two
 # commits bound the payload that reaches the Chamber's lawyers, and the gate
 # below refuses a payload they will notice that has no entry on /uuendused/.
@@ -51,6 +61,8 @@ on:
 
 permissions:
   contents: read
+  # Reading main's CI result for the commit (ENG-015). Nothing else.
+  actions: read
 
 jobs:
   build:
@@ -78,6 +90,33 @@ jobs:
           test -z "$(git status --porcelain)" || { echo "the tree is dirty"; git status --porcelain; exit 1; }
           echo "SHORT=${head:0:12}" >> "$GITHUB_ENV"
           echo "FULL=$head" >> "$GITHUB_ENV"
+
+      # Main's own, and green on main (ENG-015). Before the release note and
+      # long before a layer is built.
+      #
+      # The gate's code comes from this workflow's own commit — main, checked
+      # just below — and not from the checked-out tree: the commit being judged
+      # must not be able to bring its own judge. Written to RUNNER_TEMP, so the
+      # checkout stays exactly the requested commit and nothing extra can reach
+      # the build context.
+      - name: The commit is main's own, and main's CI passed on it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.sha }}
+          WORKFLOW_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "$WORKFLOW_REF" = "refs/heads/main" || { echo "run release-image.yml from main, not $WORKFLOW_REF: a release is judged by main's own gate"; exit 1; }
+          git fetch --quiet --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git show "$WORKFLOW_SHA:scripts/ci/assert_release_provenance.py" > "$RUNNER_TEMP/assert_release_provenance.py"
+          python3 "$RUNNER_TEMP/assert_release_provenance.py" \
+            --target "$TARGET" \
+            --repository "$REPOSITORY" \
+            --main-ref origin/main \
+            --git-dir "$GITHUB_WORKSPACE" \
+            --env-file "$GITHUB_ENV"
 
       # The release carries its release note — or is internal only, or says
       # why not. Decided over the paths between what production runs and what
@@ -156,6 +195,7 @@ jobs:
           {
             echo "revision:      $FULL"
             echo "previous:      $PREVIOUS"
+            echo "provenance:    $PROVENANCE"
             echo "release_note:  $RELEASE_NOTE${RELEASE_NOTE_DETAIL:+ — $RELEASE_NOTE_DETAIL}"
             echo "image_tag:     juristid-main-web:$SHORT"
             echo "image_id:      $image_id"

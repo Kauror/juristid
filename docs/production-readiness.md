@@ -22,7 +22,7 @@ deliberately not written down here — the last section says how to ask it.
 
 | | Check | How |
 | --- | --- | --- |
-| 0.1 | The commit is reviewed and green | `gh pr checks` on the merge commit; CI is the only full verifier |
+| 0.1 | The commit is reviewed and green | Enforced by `release-image.yml`, which builds only a commit on main's first-parent history whose own push-to-main `ci.yml` run passed in every job; the preflight repeats the history half on the host (ENG-015). A PR's checks are not main's |
 | 0.2 | The commit id is known and written down | Deploy a commit, never a branch (`scripts/deploy/juristid-deploy-preflight.sh`) |
 | 0.3 | The migration plan has been read | `manage.py migration_plan`, from the target image, before applying rather than after |
 | 0.4 | The running build is what you think it is | `manage.py deployment_readiness` |

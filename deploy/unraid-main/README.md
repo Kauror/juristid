@@ -979,7 +979,10 @@ operator's memory, is what keeps the contract.
 
 `.github/workflows/release-image.yml` is the build. It takes two commits — the
 full 40-character one to build, and the full 40-character one production runs
-now — checks out exactly the first, refuses a dirty tree, refuses a payload the
+now — checks out exactly the first, refuses a dirty tree, refuses a commit that
+is not one of main's own revisions (on main's first-parent history: the merge
+commit, never the pull request's head) or whose own push-to-main CI run has not
+passed in every job (ENG-015), refuses a payload the
 Chamber's lawyers will notice that has no entry in
 `docs/release-notes/uuendused.toml` (see `docs/release-notes/README.md` for the
 rule and the waiver), builds `linux/amd64` with `GIT_SHA` baked in, asks the
