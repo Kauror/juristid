@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 
 import pytest
@@ -81,23 +80,53 @@ def test_a_missing_e2e_variable_fails_in_ci_and_skips_locally(monkeypatch):
         browser._missing("E2E_BASE_URL is not set")
 
 
-def _run_probe(source: str, *, enforce: bool) -> subprocess.CompletedProcess[str]:
-    """Run a throwaway test file through the real root conftest."""
-    probe = ROOT / "tests" / f"test_zz_skip_probe_{uuid.uuid4().hex}.py"
-    probe.write_text(source, encoding="utf-8")
-    environment = {**os.environ, "JURISTID_ENFORCE_EXPECTED_SKIPS": "1" if enforce else "0"}
+#: The probe's conftest takes the two skip hooks from the real root conftest, so
+#: the run exercises them without the probe file ever entering the repository,
+#: where a test that scans the tree could read it half-written or already gone.
+PROBE_CONFTEST = f"""
+import importlib.util
+
+_spec = importlib.util.spec_from_file_location(
+    "juristid_root_conftest", {str(ROOT / "conftest.py")!r}
+)
+_root = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_root)
+
+pytest_runtest_logreport = _root.pytest_runtest_logreport
+pytest_sessionfinish = _root.pytest_sessionfinish
+"""
+
+
+def _run_probe(source: str, tmp_path: Path, *, enforce: bool) -> subprocess.CompletedProcess[str]:
+    """Run a throwaway test file, outside the repository, through the root skip hooks."""
+    (tmp_path / "conftest.py").write_text(PROBE_CONFTEST, encoding="utf-8")
+    (tmp_path / "test_skip_probe.py").write_text(source, encoding="utf-8")
+    environment = {
+        **os.environ,
+        "JURISTID_ENFORCE_EXPECTED_SKIPS": "1" if enforce else "0",
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(ROOT), os.environ.get("PYTHONPATH")])),
+    }
     environment.pop("GITHUB_ACTIONS", None)
-    try:
-        return subprocess.run(  # noqa: S603 - our own interpreter and a file we wrote
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(probe)],
-            cwd=ROOT,
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    finally:
-        probe.unlink(missing_ok=True)
+    return subprocess.run(  # noqa: S603 - our own interpreter and files we wrote
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:django",
+            "--rootdir",
+            str(tmp_path),
+            str(tmp_path / "test_skip_probe.py"),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 SKIPPING = """
@@ -111,20 +140,20 @@ def test_waits_for_a_seed_that_never_comes():
 """
 
 
-def test_an_unexpected_skip_fails_the_run_when_enforced():
-    result = _run_probe(SKIPPING, enforce=True)
+def test_an_unexpected_skip_fails_the_run_when_enforced(tmp_path):
+    result = _run_probe(SKIPPING, tmp_path, enforce=True)
 
     assert result.returncode == 1, result.stdout
     assert "unexpected skips" in result.stdout
     assert "this world has no such row" in result.stdout
 
 
-def test_the_same_skip_is_only_a_skip_locally():
-    result = _run_probe(SKIPPING, enforce=False)
+def test_the_same_skip_is_only_a_skip_locally(tmp_path):
+    result = _run_probe(SKIPPING, tmp_path, enforce=False)
     assert result.returncode == 0, result.stdout
 
 
-def test_an_expected_failure_is_not_a_skip():
+def test_an_expected_failure_is_not_a_skip(tmp_path):
     result = _run_probe(
         """
 import pytest
@@ -133,6 +162,7 @@ import pytest
 def test_known():
     assert False
 """,
+        tmp_path,
         enforce=True,
     )
     assert result.returncode == 0, result.stdout
