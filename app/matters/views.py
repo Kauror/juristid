@@ -1919,7 +1919,10 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     form,
                     procedural_form=procedural_form,
                     held_keys=held_keys,
-                    intake_session=intake_session,
+                    # Always a token on the re-rendered form, so the corrected
+                    # save is protected like the first one (ENG-074).
+                    intake_session=intake_session
+                    or intake_staging.open_session(owner=request.user),
                 ),
                 status=400,
             )
@@ -1929,6 +1932,21 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         promoted: list[Any] = []
         try:
             with transaction.atomic():
+                # **This form, exactly once** (ENG-074). The form's session is
+                # its one-time token, consumed here — first, before any row is
+                # written or any reference number allocated — by one
+                # conditional UPDATE. A second submission of the same form
+                # waits for the first on that row, finds it consumed, and is
+                # answered below with the Teema the first one created: no
+                # second Teema, no second reference, no file promoted twice.
+                # A POST naming no session of this person's carries no token
+                # and is not a replay of anything (app/matters/intake_staging.py).
+                claim = intake_staging.claim_for_create(
+                    owner=request.user, session_id=request.POST.get("intake")
+                )
+                if claim.replayed:
+                    raise _FormAlreadySubmitted(claim.session)
+
                 # Resolved *inside* the transaction, and before the Matter, so a
                 # brand-new institution and the Teema that names it are one
                 # write. A rejected attachment, a refused next action or any
@@ -1993,6 +2011,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # browser sent, verified against the checksum recorded when
                 # they arrived — nothing is re-uploaded and nothing is rebuilt
                 # from extracted text (`promote_intake_files`).
+                if claim.session is not None:
+                    intake_staging.record_created_matter(session=claim.session, matter=matter)
                 if intake_session is not None:
                     promoted = intake_staging.promote_intake_files(
                         session=intake_session, matter=matter, actor=request.user
@@ -2082,6 +2102,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                         responsible=data.get("owner"),
                     )
 
+        except _FormAlreadySubmitted as replay:
+            return _answer_repeated_create(request, replay.session)
         except DomainError as error:
             # An ambiguous typed sender or addressee, or any other rule the
             # services refuse. The transaction is already rolled back by the
@@ -2102,7 +2124,10 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     form,
                     procedural_form=procedural_form,
                     held_keys=[*held_keys, *(item.key for item in newly_held)],
-                    intake_session=intake_session,
+                    # Always a token on the re-rendered form, so the corrected
+                    # save is protected like the first one (ENG-074).
+                    intake_session=intake_session
+                    or intake_staging.open_session(owner=request.user),
                 ),
                 status=400,
             )
@@ -2134,6 +2159,9 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     # branch that holds their files, and a successful one redirects. A refusal
     # answering 200 used to make the three refusals on this page
     # indistinguishable to anything reading the status rather than the HTML.
+    #
+    # Each rendered form carries its own session: the staging for its files and
+    # its one-time submission token (ENG-074, `intake_staging.open_session`).
     return render(
         request,
         "matters/matter_create.html",
@@ -2141,9 +2169,40 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             request,
             form,
             procedural_form=procedural_form,
+            intake_session=intake_staging.open_session(owner=request.user),
         ),
         status=200,
     )
+
+
+class _FormAlreadySubmitted(Exception):
+    """Raised inside `matter_create`'s transaction to leave it writing nothing."""
+
+    def __init__(self, session: Any) -> None:
+        super().__init__("form already submitted")
+        self.session = session
+
+
+#: What a repeated submission of an already saved `Uus teema` form is told.
+CREATE_FORM_ALREADY_SUBMITTED = "See vorm on juba salvestatud — teist teemat ei loodud."
+
+
+def _answer_repeated_create(request: HttpRequest, session: Any) -> HttpResponse:
+    """The Teema the first submission created, not a second one.
+
+    Where the first submission's Teema is still readable to this person, the
+    answer is the page the first submission would have landed on, with a
+    sentence saying why; otherwise the register. Never an error page — a
+    retried request is an ordinary event, and what the person wanted exists.
+    """
+    messages.info(request, CREATE_FORM_ALREADY_SUBMITTED)
+    matter_id = getattr(session, "matter_id", None)
+    if (
+        matter_id is not None
+        and Matter.objects.visible_to(request.user).filter(pk=matter_id).exists()
+    ):
+        return redirect("matters:matter_detail", pk=matter_id)
+    return redirect("matters:matter_list")
 
 
 def _create_context(

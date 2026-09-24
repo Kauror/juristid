@@ -107,6 +107,19 @@ class MatterIntakeSession(BaseModel):
     #: it is kept only until the sweeper comes past, so that a double submit
     #: finds a closed door rather than an empty one.
     consumed_at = models.DateTimeField(null=True, blank=True, verbose_name="kasutatud")
+    #: The Teema this form created, set in the same transaction that consumed it.
+    #: Read by a repeated submission of the same form, which is answered with
+    #: that Teema rather than with a second one (ENG-074). `SET_NULL` because a
+    #: session outlives nothing it points at: deleting the Teema must not be
+    #: refused by a row that exists only until the sweeper comes past.
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="loodud teema",
+    )
 
     objects = MatterIntakeSessionQuerySet.as_manager()
 
