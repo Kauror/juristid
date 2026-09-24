@@ -1,6 +1,7 @@
 # ADR 0087 — The similar-Matter finder extends one engine, and reaches `Uus teema`
 
-- Status: accepted
+- Status: accepted; §4's GET and the rejected «post the draft form» alternative
+  amended by [ADR 0108](0108-similar-matters-asks-by-post-with-only-its-deciding-fields.md)
 - Date: 2026-09-16
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0062 (`Seotud materjalid`: derived suggestions, human-confirmed

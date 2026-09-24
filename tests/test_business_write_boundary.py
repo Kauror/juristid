@@ -1349,6 +1349,13 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "intelligence:edit_work_victory": "A: gated; sibling of add_work_victory",
     "submissions:attach_evidence": "A: gated; needs a bound evidence version",
     "documents:add_version": "A: gated; needs an existing document",
+    # F — a read that travels by POST. `Sarnased teemad` answers the half-filled
+    # `Uus teema` form, and a GET put that form — the private `Märkmed` among it
+    # — into the address and every log that records one (docs/adr/0108,
+    # ENG-026). It writes nothing: `tests/test_similar_matters.py` counts every
+    # statement it runs. Anybody who may read Matters may ask it, exactly as
+    # before, and what it answers is scoped by `visible_to`.
+    "related_materials:draft_suggestions": "F: a read sent by POST; writes nothing",
 }
 
 

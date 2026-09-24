@@ -29,7 +29,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_GET, require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from app.core.authorization import may_write_business_content
 from app.core.decorators import business_write_required
@@ -395,16 +395,25 @@ def _uuid_list(values: list[str], *, limit: int = 40) -> list[uuid.UUID]:
 
 
 @login_required
-@require_GET
+@require_POST
 def draft_suggestions(request: HttpRequest) -> HttpResponse:
     """Earlier Matters resembling the `Uus teema` form as it stands. Read only.
 
-    **GET, and it writes nothing** — no draft Matter, no dismissal, no audit
-    event, no `last_recommended_at`. The form's current answers arrive as query
-    parameters, the engine reads them, and the answer is a fragment of cards.
-    Nothing about this request touches the form: the fragment replaces one
-    region and names no control, so a value being typed cannot be swapped out
-    from under the person typing it (docs/adr/0087 §4).
+    **POST, and it still writes nothing** — no draft Matter, no dismissal, no
+    audit event, no `last_recommended_at`. The five fields that decide the
+    answer arrive in the body, the engine reads them, and the answer is a
+    fragment of cards. Nothing about this request touches the form: the
+    fragment replaces one region and names no control, so a value being typed
+    cannot be swapped out from under the person typing it (docs/adr/0087 §4).
+
+    It was a GET, and a GET puts its parameters in the address — which every
+    access log, proxy and browser history writes down. The page sent the whole
+    form that way, the private `Märkmed` and the CSRF token among it, and a long
+    `Lühikokkuvõte` made the address longer than the server accepts (ENG-026).
+    The method is POST so the form stays in the body, and the page names the
+    five parameters it may send (docs/adr/0108). The only thing POST changes
+    here is where the values travel: this route writes nothing, and a test
+    counts every statement it runs.
 
     Not `business_write_required`, unlike `picker`. This proposes nothing to
     write — there is no `Lisa` here and no Matter to add anything to — so it is
@@ -418,14 +427,15 @@ def draft_suggestions(request: HttpRequest) -> HttpResponse:
     route cannot be used to reflect content, and the parameters it does read are
     resolved against reference vocabularies rather than trusted.
     """
+    answers = request.POST
     profile = engine.build_draft_profile(
-        title=request.GET.get("title") or "",
-        summary=request.GET.get("brief_summary") or "",
-        area_ids=_uuid_list(request.GET.getlist("policy_areas")),
-        instrument_ids=_uuid_list(request.GET.getlist("legal_instruments")),
+        title=answers.get("title") or "",
+        summary=answers.get("brief_summary") or "",
+        area_ids=_uuid_list(answers.getlist("policy_areas")),
+        instrument_ids=_uuid_list(answers.getlist("legal_instruments")),
         organisation_ids=[
-            *_uuid_list(request.GET.getlist("source_organisations")),
-            *_uuid_list([request.GET.get("addressee_organisation") or ""]),
+            *_uuid_list(answers.getlist("source_organisations")),
+            *_uuid_list([answers.get("addressee_organisation") or ""]),
         ],
     )
     suggestions = engine.suggestions_for_draft(profile, request.user)
