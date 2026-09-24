@@ -41,6 +41,7 @@ links could take opposite ways.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from django.db import transaction
@@ -52,7 +53,11 @@ from app.audit.services import record_change_event
 from app.core.errors import DomainError
 from app.legacy_import.opinion_binary import OpinionArchiveBinary
 from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
-from app.matters.locks import lock_open_matter_for_business_write
+from app.matters.locks import (
+    CLOSED_MATTER_REFUSAL,
+    lock_matters_in_order,
+    lock_open_matter_for_business_write,
+)
 from app.matters.models import Matter
 from app.related_materials.models import (
     MatterBackgroundMaterial,
@@ -60,6 +65,12 @@ from app.related_materials.models import (
     RelatedSuggestionDismissal,
 )
 from app.submissions.models import Submission
+
+#: What a relation to a Matter that has since been deleted is told (ENG-073).
+RELATED_MATTER_GONE = "Seotavat teemat ei ole enam olemas."
+
+#: What a background citation of an opinion whose Matter was deleted is told.
+BACKGROUND_SOURCE_GONE = "Valitud arvamust ei ole enam olemas."
 
 SOURCE_SUBMISSION = "SUBMISSION"
 SOURCE_ARCHIVE = "ARCHIVE"
@@ -96,6 +107,36 @@ def _matter_label(matter: Matter) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _lock_pair(
+    matter: Matter, other_id: Any, *, gone: str, require_open: bool = True
+) -> tuple[Matter, Matter]:
+    """This Matter and the other one, both locked, in the global order.
+
+    **Both, because the row being written points at both** (ENG-073).
+    `delete_matter` decides whether anything points at a Matter under that
+    Matter's lock; a writer holding only its own Matter's lock could commit the
+    pointer while the deletion committed the tombstone, and a live relation was
+    left naming a deleted file. `lock_matters_in_order` takes the two rows in
+    ascending-id order so two such writers cannot deadlock on each other.
+
+    The Matter this is written on must still be open — the rule
+    `lock_open_matter_for_business_write` applied before — unless the caller
+    never required that (``require_open=False``: a dismissal, which took no
+    lock at all before this and is not new business content). The other one
+    must still exist; ``gone`` is what a deleted counterpart is told.
+    """
+    rows = lock_matters_in_order(matter.pk, other_id)
+    locked = rows[uuid.UUID(str(matter.pk))]
+    other = rows[uuid.UUID(str(other_id))]
+    if locked.deleted_at is not None:
+        raise Matter.DoesNotExist(matter.pk)
+    if require_open and not locked.is_open:
+        raise DomainError(CLOSED_MATTER_REFUSAL)
+    if other.deleted_at is not None:
+        raise DomainError(gone)
+    return locked, other
+
+
 @transaction.atomic
 def link_related_matters(
     *, matter: Matter, other: Matter, actor: Any, note: str = ""
@@ -107,7 +148,9 @@ def link_related_matters(
     direction is cleared: the person has just said the opposite.
     """
     person = _require_person(actor)
-    matter = lock_open_matter_for_business_write(matter.pk)
+    if other.pk == matter.pk:
+        raise DomainError("Teemat ei saa siduda iseendaga.")
+    matter, other = _lock_pair(matter, other.pk, gone=RELATED_MATTER_GONE)
     first, second = canonical_pair(matter, other)
     relation, created = MatterRelation.objects.get_or_create(
         matter_a=first,
@@ -191,9 +234,14 @@ def add_background_submission(
     recipients, its evidence and its status are exactly what they were.
     """
     person = _require_person(actor)
-    matter = lock_open_matter_for_business_write(matter.pk)
     if submission.matter_id == matter.pk:
         raise DomainError("Teema enda arvamus ei ole selle teema taustmaterjal.")
+    # The cited opinion's Matter too: citing it makes a row that `delete_matter`
+    # counts as a reason to refuse deleting that Matter (ENG-042), and the
+    # count must not be taken while this row is on its way in (ENG-073).
+    matter, _source = _lock_pair(matter, submission.matter_id, gone=BACKGROUND_SOURCE_GONE)
+    if not Submission.objects.filter(pk=submission.pk).exists():
+        raise DomainError(BACKGROUND_SOURCE_GONE)
     row, created = MatterBackgroundMaterial.objects.get_or_create(
         matter=matter,
         submission=submission,
@@ -343,6 +391,13 @@ def dismiss_related_suggestion(
     )
     if candidate_matter is not None and candidate_matter.pk == matter.pk:
         raise DomainError("Teema ei saa olla iseenda soovitus.")
+    if candidate_matter is not None:
+        # A dismissal names a second Matter as well, so it takes both locks for
+        # the reason `link_related_matters` does (ENG-073).
+        matter, candidate_matter = _lock_pair(
+            matter, candidate_matter.pk, gone=RELATED_MATTER_GONE, require_open=False
+        )
+        candidate = {**candidate, "candidate_matter": candidate_matter}
     return RelatedSuggestionDismissal.objects.get_or_create(
         matter=matter,
         **candidate,
