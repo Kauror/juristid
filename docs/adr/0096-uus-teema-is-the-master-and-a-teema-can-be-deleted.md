@@ -268,6 +268,12 @@ writer that arrives afterwards asks `Matter.objects` for a row the default
 manager no longer returns and is refused by the surface it arrived at. A second
 delete of the same Matter is a no-op rather than an error.
 
+> **Amended by ADR 0111 (2026-09-24).** That held for writers of *this* Matter,
+> not for writers of another Matter creating a pointer at it — a `Järglane`, a
+> relation, a dismissal, a background citation — which locked only their own
+> Matter and could commit alongside the deletion (ENG-073). Those writers now
+> lock both Matters in ascending-id order and refuse a deleted counterpart.
+
 **Evidence bytes are not deleted inside the transaction.** They live outside
 PostgreSQL and cannot be rolled back, so removing them before the commit would
 destroy evidence a rollback then claims still exists. After the commit the

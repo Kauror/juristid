@@ -59,6 +59,7 @@ through.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.core.errors import DomainError
@@ -110,6 +111,35 @@ def lock_matter_for_write(matter_id: Any) -> Matter:
     `Matter.DoesNotExist`, which every view already answers with its 404.
     """
     return Matter.objects.select_for_update(no_key=True).get(pk=matter_id)
+
+
+def lock_matters_in_order(*matter_ids: Any) -> dict[Any, Matter]:
+    """Several Matters, each at `FOR NO KEY UPDATE`, in one global order.
+
+    For the writes that create a live relationship between two Matters — a
+    `Järglane`, a `Seotud teema`, a dismissed suggestion, a background citation
+    of another Matter's opinion (ENG-073). Each of them used to lock only the
+    Matter it was written on, so `delete_matter`, which locks only the Matter
+    being deleted, could evaluate "does anything point at me?" while a writer
+    holding the *other* Matter's lock was committing exactly such a pointer.
+    Both committed, and a live Matter pointed at a tombstone. Locking both makes
+    the deletion and the relationship take turns on the same row.
+
+    **Ascending primary key, always,** so two writers that need the same two
+    Matters take them in the same order and cannot deadlock on each other; one
+    row at a time rather than one `IN (...)` query, because the order a single
+    statement locks rows in is the plan's business, not ours. The UUIDs are
+    compared as integers, which is PostgreSQL's order for the type.
+
+    Tombstones are returned, not hidden: whether a deleted Matter is a refusal
+    or a no-op is the caller's decision, and the caller has to be able to see it
+    to make it. Keys are the ids as `uuid.UUID`.
+    """
+    ordered = sorted({uuid.UUID(str(matter_id)) for matter_id in matter_ids})
+    return {
+        matter_id: Matter.all_objects.select_for_update(no_key=True).get(pk=matter_id)
+        for matter_id in ordered
+    }
 
 
 def lock_submission_for_evidence_integrity(submission_pk: Any) -> Submission:

@@ -42,6 +42,7 @@ from app.matters.enums import (
 from app.matters.locks import (
     lock_matter_for_evidence_integrity,
     lock_matter_for_write,
+    lock_matters_in_order,
     lock_open_matter_for_business_write,
 )
 from app.matters.models import (
@@ -4651,7 +4652,24 @@ def close_matter(
     # PostgreSQL kills one of the two. The weaker mode still conflicts with
     # itself and with `FOR UPDATE`, so two closures, a closure and a reopen, and
     # a closure and a business write still take turns (app/matters/locks.py).
-    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    if successor is None:
+        locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    else:
+        # **Both Matters, in the global order** (ENG-073). A `Järglane` is a
+        # live pointer at another Matter, and `delete_matter` refuses to delete
+        # a Matter something points at — but it decides that under the lock of
+        # the Matter being deleted. Locking only this one let a deletion of the
+        # successor and this closure each pass their check and both commit,
+        # leaving a closed file whose continuation is a tombstone. With the
+        # successor locked too, one of them waits for the other, and the
+        # successor is re-read here after any deletion that won.
+        rows = lock_matters_in_order(matter.pk, successor.pk)
+        locked = rows[matter.pk]
+        successor = rows[successor.pk]
+        if locked.deleted_at is not None:
+            raise Matter.DoesNotExist(matter.pk)
+        if successor.deleted_at is not None:
+            raise DomainError(SUCCESSOR_DELETED_REFUSAL)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
 
@@ -4705,6 +4723,13 @@ def close_matter(
         },
     )
     return matter
+
+
+#: What a closure naming a successor that has since been deleted is told.
+SUCCESSOR_DELETED_REFUSAL = (
+    "Järglaseks valitud teemat ei ole enam olemas. "
+    "Vali järglane uuesti või sulge teema ilma selleta."
+)
 
 
 @transaction.atomic
