@@ -8,14 +8,15 @@
 #            Catches truncation, silent corruption on the disk, and a set that
 #            was copied off the host badly. Costs seconds. This script.
 #
-#   LEVEL 2  the dump is a PostgreSQL archive and its table of contents lists
-#            the schema that should be in it, **and** every object this set
-#            names is present in the shared byte pool at the size it was sealed
-#            against. Catches a dump taken against the wrong database or
-#            truncated before the data, and a member that has been removed,
-#            truncated or never copied. Needs a PostgreSQL 18 `pg_restore`,
-#            which is why it borrows the deployment's own db container. This
-#            script, by default.
+#   LEVEL 2  the dump is a PostgreSQL archive whose table of contents lists
+#            the schema that should be in it **and whose every data block reads
+#            to the end**, and every object this set names is present in the
+#            shared byte pool at the size it was sealed against. Catches a dump
+#            taken against the wrong database, truncated anywhere — in its
+#            table of contents or inside its data — and a member that has been
+#            removed, truncated or never copied. Needs a PostgreSQL 18
+#            `pg_restore`, which is why it borrows the deployment's own db
+#            container. Writes nothing to any database. This script, by default.
 #
 #   LEVEL 3  the set restores into a disposable database and the application
 #            can read the register back out of it. Catches everything the first
@@ -380,6 +381,21 @@ entries="$(grep -c -v '^;' <<<"$TOC" || true)"
 note "  pg_restore read $entries archive entries"
 note "  every required table is present"
 
+step "Level 2 — every data block in the archive reads to the end"
+
+# `--list` reads the table of contents and nothing else, and this dump is
+# written through a pipe, so its TOC carries no data offsets and says nothing
+# about whether the data behind it is all there. A dump cut inside its data
+# listed perfectly and failed only mid-restore (ENG-141). This renders the whole
+# archive to a script and throws the script away: every block is read and
+# decompressed, and no database is touched. One more sequential read of the
+# file; the restore rehearsal (level 3) is still what proves it comes back.
+if ! read_error="$(juristid_compose exec -T db pg_restore --file=/dev/null "$CONTAINER_PATH" 2>&1)"; then
+  printf '%s\n' "$read_error" >&2
+  die "pg_restore could not read the archive's data to the end. It is not restorable, whatever its checksum and its table of contents say."
+fi
+note "  the whole archive read cleanly"
+
 note ""
-note "Levels 1 and 2 passed: this file is intact and contains the right schema."
+note "Levels 1 and 2 passed: this file is intact, reads to the end and contains the right schema."
 note "Neither proves it restores. That is the rehearsal — see RECOVERY.md."

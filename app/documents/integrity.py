@@ -18,7 +18,7 @@ That is what this module is for: the questions an operator has to be able to
 answer without opening a database session, and which the schema cannot answer
 for them.
 
-* Is there a version row whose object is gone?
+* Is there a row — of any holder in `EVIDENCE_REFERENCES` — whose object is gone?
 * Is there an object whose size disagrees with the row?
 * Is there an object whose bytes disagree with the recorded checksum?
 * Is there a stored object nothing refers to?
@@ -55,7 +55,7 @@ from django.utils import timezone
 from app.core.enums import Visibility, most_restrictive
 from app.documents.enums import ExtractionState
 from app.documents.models import Document, DocumentVersion
-from app.documents.references import referenced_storage_keys
+from app.documents.references import EVIDENCE_REFERENCES, referenced_storage_keys
 from app.documents.services import evidence_storage
 
 #: Bytes per read when verifying a checksum. Large enough that the syscall
@@ -130,7 +130,12 @@ class Finding:
 
 @dataclass
 class IntegrityReport:
+    #: `DocumentVersion` rows checked — the number `recovery_fingerprint`
+    #: reconciles against. Every holder, this one included, is in
+    #: ``objects_checked``.
     versions_checked: int = 0
+    #: Rows checked per holder in `EVIDENCE_REFERENCES`, keyed by its label.
+    objects_checked: dict[str, int] = field(default_factory=dict)
     bytes_hashed: int = 0
     objects_seen: int = 0
     sha_verified: bool = False
@@ -200,66 +205,99 @@ def check_evidence(*, verify_sha: bool = False, scan_storage: bool = True) -> In
 
 
 def _check_versions(storage: Any, report: IntegrityReport, *, verify_sha: bool) -> None:
-    """Every version row, against the object it claims.
+    """Every row of every evidence holder, against the object it claims.
+
+    Driven by `EVIDENCE_REFERENCES`, the one list of models that keep
+    canonical bytes in this store. It used to query `DocumentVersion` alone
+    while the orphan half read the registry, so the opinion archive's letters
+    were counted as referenced and never checked: a missing, truncated or
+    altered archive object reported clean, even with ``--verify-sha``
+    (ENG-049). A holder added to the registry is now checked the moment it is
+    added.
 
     Iterated in chunks and with only the four columns this needs, because the
     corpus this is written for is tens of thousands of rows and the ones it
     would otherwise drag in — provenance text, source paths — are the wide ones.
     """
-    rows = DocumentVersion.objects.order_by("pk").values_list(
-        "pk", "storage_key", "size_bytes", "sha256"
-    )
-    for version_id, key, size_bytes, sha256 in rows.iterator(chunk_size=500):
-        report.versions_checked += 1
-        try:
-            if not storage.exists(key):
-                report.findings.append(
-                    Finding(MISSING_OBJECT, str(version_id), f"storage_key={key}")
-                )
-                continue
-        except Exception as error:
-            report.findings.append(
-                Finding(
-                    UNREADABLE_OBJECT, str(version_id), f"exists() raised {type(error).__name__}"
-                )
+    for reference in EVIDENCE_REFERENCES:
+        report.objects_checked.setdefault(reference.label, 0)
+        # The holder is named in every finding except `DocumentVersion`'s,
+        # whose wording predates the registry and is what operators grep for.
+        holder = "" if reference.label == "DocumentVersion" else f"{reference.label} "
+        for row_id, key, sha256, size_bytes in reference.identified_rows():
+            report.objects_checked[reference.label] += 1
+            if reference.label == "DocumentVersion":
+                report.versions_checked += 1
+            _check_one_object(
+                storage,
+                report,
+                subject=str(row_id),
+                holder=holder,
+                key=key,
+                size_bytes=size_bytes,
+                sha256=sha256,
+                verify_sha=verify_sha,
             )
-            continue
 
-        try:
-            stored_size = storage.size(key)
-        except Exception:
-            stored_size = None
-        if stored_size is not None and stored_size != size_bytes:
-            report.findings.append(
-                Finding(
-                    SIZE_MISMATCH,
-                    str(version_id),
-                    f"row says {size_bytes} bytes, store holds {stored_size}",
-                )
-            )
-            # Deliberately no `continue`. A size that disagrees is already
-            # enough to know the bytes are not the recorded ones, but a run that
-            # asked for checksums asked for them on everything.
 
-        if not verify_sha:
-            continue
+def _check_one_object(
+    storage: Any,
+    report: IntegrityReport,
+    *,
+    subject: str,
+    holder: str,
+    key: str,
+    size_bytes: int,
+    sha256: str,
+    verify_sha: bool,
+) -> None:
+    try:
+        if not storage.exists(key):
+            report.findings.append(Finding(MISSING_OBJECT, subject, f"{holder}storage_key={key}"))
+            return
+    except Exception as error:
+        report.findings.append(
+            Finding(UNREADABLE_OBJECT, subject, f"{holder}exists() raised {type(error).__name__}")
+        )
+        return
 
-        digest, read = _digest_of(storage, key)
-        if digest is None:
-            report.findings.append(
-                Finding(UNREADABLE_OBJECT, str(version_id), "object could not be read")
+    try:
+        stored_size = storage.size(key)
+    except Exception:
+        stored_size = None
+    if stored_size is not None and stored_size != size_bytes:
+        report.findings.append(
+            Finding(
+                SIZE_MISMATCH,
+                subject,
+                f"{holder}row says {size_bytes} bytes, store holds {stored_size}",
             )
-            continue
-        report.bytes_hashed += read
-        if digest != sha256:
-            # The stored digest is not repeated in the message. Printing both
-            # invites somebody to "fix" the row to match the bytes, which is
-            # the one repair that turns a detected corruption into a clean one.
-            report.findings.append(
-                Finding(
-                    SHA_MISMATCH, str(version_id), "stored bytes do not match the recorded SHA-256"
-                )
+        )
+        # Deliberately no `return`. A size that disagrees is already enough to
+        # know the bytes are not the recorded ones, but a run that asked for
+        # checksums asked for them on everything.
+
+    if not verify_sha:
+        return
+
+    digest, read = _digest_of(storage, key)
+    if digest is None:
+        report.findings.append(
+            Finding(UNREADABLE_OBJECT, subject, f"{holder}object could not be read")
+        )
+        return
+    report.bytes_hashed += read
+    if digest != sha256:
+        # The stored digest is not repeated in the message. Printing both
+        # invites somebody to "fix" the row to match the bytes, which is the
+        # one repair that turns a detected corruption into a clean one.
+        report.findings.append(
+            Finding(
+                SHA_MISMATCH,
+                subject,
+                f"{holder}stored bytes do not match the recorded SHA-256",
             )
+        )
 
 
 def _digest_of(storage: Any, key: str) -> tuple[str | None, int]:

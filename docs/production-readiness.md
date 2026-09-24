@@ -81,7 +81,7 @@ already exists, and refuses outright on any conflict (ADR 0029).
 | | Check | How |
 | --- | --- | --- |
 | 2.1 | A fresh set exists | `scripts/deploy/juristid-backup.sh` |
-| 2.2 | It is a set, not a directory of hopes | `scripts/deploy/juristid-verify-backup.sh --set DIR --level 2 --compose-file …` (level 1 is checksums only) |
+| 2.2 | It is a set, not a directory of hopes | `scripts/deploy/juristid-verify-backup.sh --set DIR --level 2 --compose-file …` (level 1 is checksums only; level 2 also reads every data block of the dump to the end) |
 | 2.3 | The evidence tree is in it | The backup refuses a data root with no evidence tree — that refusal is the check |
 | 2.4 | The set says which objects are its own | Manifest version 3 and later writes `evidence.files0` / `legacy-source.files0`; level 2 proves every path in them is still in the shared pool |
 | 2.5 | Canonical state is recorded | `manage.py recovery_fingerprint --out before.json` |
@@ -166,7 +166,7 @@ takes to notice.
 | | Check | Command |
 | --- | --- | --- |
 | 4.1 | Counts reconcile | the operation's own `status` / `verify` phase |
-| 4.2 | Evidence is present and is what was hashed | `manage.py check_evidence_integrity --verify-sha` |
+| 4.2 | Evidence is present and is what was hashed | `manage.py check_evidence_integrity --verify-sha` — every holder in `EVIDENCE_REFERENCES`: document versions and the opinion archive's letters |
 | 4.3 | Nothing is holding bytes nobody references | `manage.py prune_orphaned_evidence` (no `--delete`) |
 | 4.4 | Search is complete, current and not stale | `manage.py check_search_integrity` |
 | 4.4a | Nothing is owed to the search index | `manage.py check_search_freshness` |

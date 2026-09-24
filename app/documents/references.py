@@ -67,6 +67,20 @@ class EvidenceReference:
         for key, digest, size in queryset.iterator(chunk_size=500):
             yield key, digest, size or 0
 
+    def identified_rows(self) -> Iterator[tuple[Any, str, str, int]]:
+        """(row id, storage key, recorded digest, recorded size), in id order.
+
+        What the byte-integrity check walks: the id is what a finding names, so
+        an operator can go from a report to the one row it is about.
+        """
+        queryset = (
+            self.model()
+            .objects.order_by("pk")
+            .values_list("pk", self.field, self.digest_field, self.size_field)
+        )
+        for pk, key, digest, size in queryset.iterator(chunk_size=500):
+            yield pk, key, digest, size or 0
+
 
 #: Every canonical holder of evidence bytes. Order is only for readable output.
 EVIDENCE_REFERENCES: tuple[EvidenceReference, ...] = (

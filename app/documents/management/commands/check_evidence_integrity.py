@@ -20,8 +20,10 @@ Two depths::
     manage.py check_evidence_integrity --verify-sha # reads every stored byte
 
 The structural pass is a handful of queries plus an existence and size check per
-version. The deep pass hashes the whole store, which is a maintenance window on
-a multi-gigabyte corpus, so it is never implied.
+stored object — for every holder in `EVIDENCE_REFERENCES`, the opinion archive's
+letters as well as document versions (ENG-049). The deep pass hashes the whole
+store, which is a maintenance window on a multi-gigabyte corpus, so it is never
+implied.
 
 Exit 0 when nothing was found, 1 when something was. Safe to run from cron: the
 output is aggregate counts plus UUIDs and storage keys, and never a document
@@ -47,7 +49,10 @@ DEFAULT_SAMPLE = 20
 
 
 class Command(BaseCommand):
-    help = "Check that every DocumentVersion's bytes exist, and report what does not."
+    help = (
+        "Check that the bytes of every evidence holder (DocumentVersion, OpinionArchiveBinary) "
+        "exist, and report what does not."
+    )
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
@@ -77,6 +82,9 @@ class Command(BaseCommand):
         )
 
         self.stdout.write(f"Versions checked:      {report.versions_checked}")
+        for label, count in report.objects_checked.items():
+            if label != "DocumentVersion":
+                self.stdout.write(f"{label + ' checked:':<23}{count}")
         if not options["skip_storage_scan"]:
             self.stdout.write(f"Stored objects seen:   {report.objects_seen}")
         if report.sha_verified:
