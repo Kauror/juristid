@@ -29,7 +29,7 @@ controls and every write route still refuses it under the row lock
     <h2 class="rowlabel" id="kodulehe-ulevaated-heading">Ülevaated / uudised</h2>
     <ul class="webrow__list">
       {% for overview, publish_form in planned_website_overviews %}
-        <li class="webrow__item" id="kodulehe-ulevaade-{{ overview.pk }}">
+        <li class="webrow__item" id="kodulehe-ulevaade-{{ overview.pk }}" data-draft-host>
           {% comment %}
             The state in words. «Plaanis» alone would be a label a reader has to
             interpret; this says what is outstanding and what has not happened

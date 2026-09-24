@@ -27,7 +27,7 @@ nothing — `correct_engagement` takes the Matter's row lock and refuses a close
 one on its own, because the browser that posts may be holding a page from
 before the closure.
 {% endcomment %}
-<div class="uxtl__ms-body" id="kaasamine-{{ engagement.pk }}-sisu">
+<div class="uxtl__ms-body" id="kaasamine-{{ engagement.pk }}-sisu" data-draft-host>
   {% if engagement_edit_form %}
     {% comment %}
       Edit mode. The form posts to the same address that opened it and swaps

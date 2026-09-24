@@ -12534,3 +12534,50 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-top: var(--spacing-3);
   border-top: 1px solid var(--border-subtle);
 }
+
+/* A request that failed for a reason the server did not render: the network,
+ * a 5xx, an expired session, a stale CSRF token (static/js/app.js, «Workspace
+ * failures», ENG-012).
+ *
+ * The same danger inset as a field refusal, so it reads as «this did not
+ * happen» without a new visual language — and a text lead, not only a colour,
+ * so it says so to somebody who cannot tell the colours apart. It sits in the
+ * flow at the end of the form that failed and never over it: the point is
+ * that the text above it is still there to copy. In a flex or grid form it
+ * takes a whole row of its own. */
+.reqfail {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: var(--spacing-2) 0 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--status-danger-border);
+  background: var(--status-danger-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--typography-size-meta);
+  overflow-wrap: anywhere;
+}
+
+.reqfail__text {
+  margin: 0;
+  flex: 1 1 16rem;
+}
+
+.reqfail__lead {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.reqfail__action {
+  flex: none;
+}
+
+/* The note's own status line after a save that did not land: it must stop
+ * saying «Salvestatud», and it says so in words as well as in colour. */
+.railcard__hint.is-unsaved {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}

@@ -34,7 +34,7 @@ reopening is the way out. The flag hides the button and decides nothing —
 on its own, because the browser that posts may be holding a page from before the
 closure (docs/adr/0076 §2, docs/adr/0084 §8).
 {% endcomment %}
-<div class="uxtl__ms-body" id="valine-seisukoht-{{ position.pk }}-sisu">
+<div class="uxtl__ms-body" id="valine-seisukoht-{{ position.pk }}-sisu" data-draft-host>
   {% if external_position_edit_form %}
     {% comment %}
       Edit mode. The form posts to the same address that opened it and swaps

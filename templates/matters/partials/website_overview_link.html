@@ -32,7 +32,7 @@ It opens in a new tab because the reader is in the middle of a file and should
 come back to it, with `rel="noopener noreferrer"` and a visually hidden sentence
 saying so, which is the same treatment every external link on this page gets.
 {% endcomment %}
-<div class="uxtl__weblink" id="kodulehe-ulevaade-{{ overview.pk }}-link">
+<div class="uxtl__weblink" id="kodulehe-ulevaade-{{ overview.pk }}-link" data-draft-host>
   {% if website_overview_link_form %}
     <form class="uxtl__editform"
           hx-post="{% url 'matters:correct_website_overview' pk=matter.pk overview_id=overview.pk %}"

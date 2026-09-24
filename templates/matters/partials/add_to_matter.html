@@ -142,7 +142,7 @@ row of controls that refuse (brief §30, §31).
                  data-addpick aria-controls="marge-tavaline"
                  {% if marge_choice == "marge-tavaline" %}checked{% endif %}>
           <label class="disclosure-chip" for="marge-tavaline-valik">Tavaline</label>
-          <div class="cx-panel" id="marge-tavaline" data-addpanel>
+          <div class="cx-panel" id="marge-tavaline" data-addpanel data-draft-host>
             <div class="cx-panel__body">
               {% if open_choice == "marge-tavaline" and workspace_error %}
                 <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -155,7 +155,7 @@ row of controls that refuse (brief §30, §31).
                  data-addpick aria-controls="marge-tahtaeg"
                  {% if marge_choice == "marge-tahtaeg" %}checked{% endif %}>
           <label class="disclosure-chip" for="marge-tahtaeg-valik">Oluline tähtaeg</label>
-          <div class="cx-panel" id="marge-tahtaeg" data-addpanel>
+          <div class="cx-panel" id="marge-tahtaeg" data-addpanel data-draft-host>
             <div class="cx-panel__body">
               {% include "matters/partials/add/tahtaeg.html" %}
             </div>
@@ -165,7 +165,7 @@ row of controls that refuse (brief §30, §31).
                  data-addpick aria-controls="marge-joustumine"
                  {% if marge_choice == "marge-joustumine" %}checked{% endif %}>
           <label class="disclosure-chip" for="marge-joustumine-valik">Jõustumine</label>
-          <div class="cx-panel" id="marge-joustumine" data-addpanel>
+          <div class="cx-panel" id="marge-joustumine" data-addpanel data-draft-host>
             <div class="cx-panel__body">
               {% include "matters/partials/add/joustumine.html" %}
             </div>
@@ -175,7 +175,7 @@ row of controls that refuse (brief §30, §31).
                  data-addpick aria-controls="marge-toovoit"
                  {% if marge_choice == "marge-toovoit" %}checked{% endif %}>
           <label class="disclosure-chip" for="marge-toovoit-valik">Töövõit</label>
-          <div class="cx-panel" id="marge-toovoit" data-addpanel>
+          <div class="cx-panel" id="marge-toovoit" data-addpanel data-draft-host>
             <div class="cx-panel__body">
               {% include "matters/partials/add/toovoit.html" %}
             </div>
@@ -243,7 +243,7 @@ row of controls that refuse (brief §30, §31).
                  data-addpick aria-controls="arvamus-koja"
                  {% if arvamus_choice == "arvamus-koja" %}checked{% endif %}>
           <label class="disclosure-chip" for="arvamus-koja-valik">Koja arvamus</label>
-          <div class="cx-panel" id="arvamus-koja" data-addpanel>
+          <div class="cx-panel" id="arvamus-koja" data-addpanel data-draft-host>
             <div class="cx-panel__body">
               {% include "matters/partials/add/koja-arvamus.html" %}
             </div>

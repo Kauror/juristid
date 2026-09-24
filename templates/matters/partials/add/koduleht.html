@@ -40,7 +40,7 @@
            data-addpick aria-controls="lisa-koduleht"
            {% if open_panel == "lisa-koduleht" %}checked{% endif %}>
     <label class="disclosure-chip" for="lisa-koduleht-valik">+ Ülevaade / uudis</label>
-    <div class="cx-panel" id="lisa-koduleht" data-addpanel>
+    <div class="cx-panel" id="lisa-koduleht" data-addpanel data-draft-host>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-koduleht" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>
