@@ -976,6 +976,55 @@ jobs:
             echo "verification passed a truncated archive"; exit 1
           fi
 
+      - name: An archive cut inside its data and re-sealed fails level 2
+        run: |
+          set -euo pipefail
+          # The truncation above cuts to 512 bytes and leaves SHA256SUMS alone,
+          # so level 1 catches it and level 2 never has to. This is the case
+          # level 2 exists for (ENG-141): a dump cut inside its data *before*
+          # the set was sealed, so every checksum and the manifest agree with
+          # the damaged file and its table of contents is still whole.
+          resealed=/tmp/juristid-rehearsal/resealed-set
+          cp -a "$SET_DIR" "$resealed"
+          full="$(stat -c %s "$SET_DIR/database.dump")"
+          head -c "$(( full * 95 / 100 ))" "$SET_DIR/database.dump" > "$resealed/database.dump"
+          size="$(stat -c %s "$resealed/database.dump")"
+          digest="$(sha256sum "$resealed/database.dump" | cut -d' ' -f1)"
+          sed -i \
+            -e "/\"database\"/,/}/ s/\"size_bytes\": [0-9]*/\"size_bytes\": $size/" \
+            -e "/\"database\"/,/}/ s/\"sha256\": \"[0-9a-f]*\"/\"sha256\": \"$digest\"/" \
+            "$resealed/manifest.json"
+          ( cd "$resealed" && sha256sum $(awk '{print $2}' SHA256SUMS) > SHA256SUMS.new && mv SHA256SUMS.new SHA256SUMS )
+
+          # Sealed consistently: level 1 is satisfied by the damaged set.
+          scripts/deploy/juristid-verify-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --set "$resealed" --backup-root "$BACKUP_ROOT" --level 1
+          # And its table of contents still lists — which is all level 2 used
+          # to read, so this is the state it used to pass.
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" cp "$resealed/database.dump" db:/tmp/resealed.dump
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db pg_restore --list /tmp/resealed.dump > /dev/null \
+            || { echo "the cut reached the table of contents; this step tests nothing"; exit 1; }
+
+          # The pools are named, so reading the data is the only thing left
+          # that can fail.
+          if scripts/deploy/juristid-verify-backup.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --set "$resealed" --backup-root "$BACKUP_ROOT" --level 2; then
+            echo "level 2 passed an archive truncated inside its data"; exit 1
+          fi
+
+      - name: Level 2 reads the whole intact archive, and says how long it took
+        run: |
+          set -euo pipefail
+          started="$(date +%s%N)"
+          scripts/deploy/juristid-verify-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" --set "$SET_DIR" --level 2 \
+            | tee /tmp/juristid-rehearsal/level2.log
+          echo "level 2 took $(( ($(date +%s%N) - started) / 1000000 )) ms for $(stat -c %s "$SET_DIR/database.dump") bytes"
+          grep -q "the whole archive read cleanly" /tmp/juristid-rehearsal/level2.log \
+            || { echo "level 2 did not read the archive's data"; exit 1; }
+
       # -- exact membership -------------------------------------------------
       #
       # A backup root's evidence/ and legacy-source/ are a shared byte pool:
@@ -1161,6 +1210,51 @@ jobs:
           # Put it back: later steps share this pool.
           printf 'new-ccc' > "$root/backups/evidence/aa/new-c.bin"
           rm "$root/backups/evidence/aa/historic-z.bin"
+
+      - name: A set moved away from its pools is verified against the pools it restores from
+        run: |
+          set -euo pipefail
+          # A set fetched back from an off-host copy lives wherever it was
+          # fetched to, and nothing two directories above it is a pool. The
+          # restore was given the right pools and verified against the wrong
+          # place, so it failed closed before writing anything (ENG-054).
+          root=/tmp/juristid-rehearsal/membership
+          staged="/tmp/juristid-rehearsal/staged/incoming/$(basename "$MEMBERSHIP_SET_C")"
+          mkdir -p "$(dirname "$staged")"
+          cp -a "$MEMBERSHIP_SET_C" "$staged"
+          test ! -e /tmp/juristid-rehearsal/staged/evidence \
+            || { echo "a pool sits where the default would find it; this step tests nothing"; exit 1; }
+
+          scripts/deploy/juristid-verify-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --set "$staged" --backup-root "$root/backups" --level 2
+
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d postgres -c 'CREATE DATABASE membership_moved OWNER juristid'
+          mkdir -p "$root/restored-moved/evidence" "$root/restored-moved/legacy-source"
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --db-name membership_moved \
+            --set "$staged" --backup-root "$root/backups" --data-root "$root/restored-moved"
+
+          test -s "$root/restored-moved/evidence/aa/new-c.bin" || { echo "the member was not restored"; exit 1; }
+          test "$(find "$root/restored-moved/evidence" -type f | wc -l)" = 1 \
+            || { echo "the moved set restored something it never named"; exit 1; }
+
+      - name: A moved set restores its database alone without asking for any pool
+        run: |
+          set -euo pipefail
+          staged="/tmp/juristid-rehearsal/staged/incoming/$(basename "$MEMBERSHIP_SET_C")"
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d postgres -c 'CREATE DATABASE membership_database_only OWNER juristid'
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --db-name membership_database_only \
+            --set "$staged" --database-only
+          tables="$(docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d membership_database_only -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'" | tr -d '\r\n ')"
+          test "$tables" -gt 0 || { echo "the database-only restore restored nothing"; exit 1; }
 
       # -- the destructive part --------------------------------------------
 

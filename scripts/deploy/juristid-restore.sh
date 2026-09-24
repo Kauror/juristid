@@ -246,10 +246,23 @@ require_command docker "the database is restored inside the deployment's own con
 # --------------------------------------------------------------------------
 
 step "Verifying the set before restoring from it"
-"$SCRIPT_DIR/juristid-verify-backup.sh" \
-  --project "$JURISTID_PROJECT" \
-  --compose-file "$JURISTID_COMPOSE_FILE" \
+# The pools verified are the pools restored from. Without `--backup-root` the
+# verifier looked two directories above the set, so a set fetched back from an
+# off-host copy or staged anywhere else failed its own verification — or, if
+# some other pool happened to sit there, was verified against that one while
+# rsync restored from this one (ENG-054). A database-only restore touches no
+# pool, so it does not ask whether one is there.
+verify_arguments=(
+  --project "$JURISTID_PROJECT"
+  --compose-file "$JURISTID_COMPOSE_FILE"
   --set "$SET_DIR"
+)
+if [ "$DATABASE_ONLY" -eq 1 ]; then
+  verify_arguments+=(--no-mirror-check)
+else
+  verify_arguments+=(--backup-root "$BACKUP_ROOT")
+fi
+"$SCRIPT_DIR/juristid-verify-backup.sh" "${verify_arguments[@]}"
 
 # --------------------------------------------------------------------------
 # 3. Refuse a database that still holds something

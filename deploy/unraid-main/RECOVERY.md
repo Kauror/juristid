@@ -193,7 +193,11 @@ The custom format removes the pipeline rather than guarding it: `pg_dump`
 compresses on its own, so there is no second process whose success can stand in
 for the first one failing. It also buys `pg_restore --list`, which is the
 difference between "this file decompresses" and "this file contains the tables
-it should".
+it should" — and `pg_restore --file=/dev/null`, which level 2 now runs as well:
+it reads and decompresses every data block and restores nothing, so a dump cut
+inside its data fails verification rather than a restore (ENG-141). `--list`
+alone reads only the table of contents, and a dump written through a pipe has
+no data offsets in it.
 
 Older `.sql.gz` backups remain restorable and are not invalidated — restore one
 with `psql` as the rehearsal runbook describes. New sets are custom format.
@@ -290,6 +294,11 @@ to make somebody start a container to be told the evidence is missing. Pass
 `--backup-root` if a set has been moved away from its pools, and
 `--no-mirror-check` to verify a set as a file rather than as a backup — which is
 what a set copied without its pools is.
+
+`juristid-restore.sh` passes its own `--backup-root` to this verification, so a
+set fetched back from an off-host copy is verified against the same pools it is
+about to be restored from; with `--database-only` it passes `--no-mirror-check`,
+because that restore reads no pool (ENG-054).
 
 **A set at manifest version 1 or 2 records no membership**, and nothing can
 invent one for it after the fact. Those sets stay verifiable on pool counts, and
