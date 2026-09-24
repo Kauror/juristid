@@ -59,8 +59,9 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"Indexed {result.matters} matters, {result.entries} entries, "
-                f"{result.submissions} submissions and {result.fragments} document "
-                f"fragments into {result.documents} rows in {result.seconds:.2f}s "
+                f"{result.submissions} submissions, {result.document_rows} documents and "
+                f"{result.fragments} document fragments into {result.documents} rows in "
+                f"{result.seconds:.2f}s "
                 f"(index version {result.index_version})."
             )
         )

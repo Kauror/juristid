@@ -1,4 +1,4 @@
-"""Projecting child content: entries, submissions and document fragments.
+"""Projecting child content: entries, submissions, documents and their fragments.
 
 Stage 2A indexed Matter-level content only, and said why: indexing a child
 safely needs the child's *current* restriction to participate in the query
@@ -29,7 +29,7 @@ from django.utils import timezone
 
 from app.core.richtext import plain_text
 from app.documents.enums import DerivativeStatus
-from app.documents.models import DocumentTextFragment, DocumentVersion
+from app.documents.models import Document, DocumentTextFragment, DocumentVersion
 from app.matters.models import (
     Entry,
     MatterEngagement,
@@ -44,6 +44,20 @@ from app.submissions.models import Submission
 #: does not lose evidence — the fragment keeps the whole text and the original
 #: keeps the bytes — so this is a bound on the projection, not on the record.
 MAX_INDEXED_FRAGMENT_CHARACTERS = 200_000
+
+
+def bounded_body(text: str) -> str:
+    """Authored or extracted text, bounded for the projection only.
+
+    PostgreSQL refuses a tsvector over 1 MiB, and the vectors are computed
+    inside the business write that changed the text — so an unbounded body
+    made a save of about a megabyte of unique words fail with a 500 and roll
+    back, the text with it (ENG-084). The record keeps every character; the
+    index keeps the first :data:`MAX_INDEXED_FRAGMENT_CHARACTERS`, which is the
+    bound fragments and historical pages already had. Cut by character, so
+    never inside a UTF-8 sequence.
+    """
+    return (text or "")[:MAX_INDEXED_FRAGMENT_CHARACTERS]
 
 
 def indexable_entries() -> QuerySet[Entry]:
@@ -90,7 +104,7 @@ def _engagement_values(engagement, now: object) -> dict[str, object]:
         "title": engagement.title,
         "identifiers": "",
         "alias_text": " ".join(dict.fromkeys(engagement.link_search_terms)),
-        "body_text": engagement.note or "",
+        "body_text": bounded_body(engagement.note or ""),
         # No locator. `source_locator` says *where a result opens from when
         # the source is not the Teema itself* — a page number, an archive
         # section. A Kaasamine has no such place, and what used to be written
@@ -156,7 +170,7 @@ def _development_values(development, now: object) -> dict[str, object]:
         "title": development.title,
         "identifiers": "",
         "alias_text": "",
-        "body_text": plain_text(development.note or ""),
+        "body_text": bounded_body(plain_text(development.note or "")),
         # No locator, for `_engagement_values`' reason: a `Märge` opens on its
         # Teema and has no place inside anything.
         "source_locator": "",
@@ -300,7 +314,7 @@ def _entry_values(entry: Entry, now: object) -> dict[str, object]:
             )
             if part
         ),
-        "body_text": body,
+        "body_text": bounded_body(body),
         # As above: an entry opens at its own anchor on the Teema page, which
         # `_target_url` builds from `entry_id`. The locator was a primary key.
         "source_locator": "",
@@ -344,7 +358,9 @@ def _submission_values(submission: Submission, now: object) -> dict[str, object]
         # indexed through their own DocumentVersion, so a match can say which
         # file and which page it came from instead of attributing a whole
         # document to a Submission row (Stage-2B brief 38).
-        "body_text": "\n".join(part for part in (submission.summary, submission.notes) if part),
+        "body_text": bounded_body(
+            "\n".join(part for part in (submission.summary, submission.notes) if part)
+        ),
         # As above. `_target_url` builds the anchor from `submission_id`.
         "source_locator": "",
         "index_version": INDEX_VERSION,
@@ -367,11 +383,80 @@ def fragment_values(fragment: DocumentTextFragment, now: object) -> dict[str, ob
         "title": document.title,
         "identifiers": version.original_filename,
         "alias_text": "",
-        "body_text": fragment.text[:MAX_INDEXED_FRAGMENT_CHARACTERS],
+        "body_text": bounded_body(fragment.text),
         "source_locator": fragment.locator_label,
         "index_version": INDEX_VERSION,
         "indexed_at": now,
     }
+
+
+def indexable_documents() -> QuerySet[Document]:
+    """Every Document on a Matter that exists, with what its row names.
+
+    Whatever its extraction state — never run, not applicable, failed, read
+    only at intake — because a file is findable by its name whether or not
+    anybody has read its contents (ENG-030). Unfiltered by visibility, like
+    every builder here: reading is authorized against the Document's own
+    current override at query time.
+    """
+    return (
+        Document.objects.filter(matter__deleted_at__isnull=True)
+        .select_related("matter", "current_version")
+        .prefetch_related("versions")
+    )
+
+
+def _document_filenames(document: Document) -> str:
+    """Every name the document's bytes were stored under, current first.
+
+    Historical versions' names are identifiers too: somebody who remembers
+    `eelnou_v1.docx` is looking for this document even after `eelnou_v2.docx`
+    replaced it. Never a storage key and never an id — those are not names
+    anybody types, and a key is an internal path.
+    """
+    current = document.current_version
+    names = [current.original_filename] if current is not None else []
+    for version in sorted(document.versions.all(), key=lambda row: -row.version_number):
+        names.append(version.original_filename)
+    return " ".join(dict.fromkeys(name for name in names if name))
+
+
+def document_values(document: Document, now: object) -> dict[str, object]:
+    """One Document as a search row: its title and its filenames.
+
+    Metadata only. Content stays with `DOCUMENT_FRAGMENT` rows, which exist
+    only where a derivative does (docs/adr/0072). The row opens on the
+    document's own page, which is what a fragment row opens on too.
+    """
+    return {
+        "matter": document.matter,
+        "source_kind": SearchSourceKind.DOCUMENT,
+        "source_object_id": document.pk,
+        "document": document,
+        "document_version": document.current_version,
+        "title": document.title,
+        "identifiers": bounded_body(_document_filenames(document)),
+        "alias_text": "",
+        "body_text": "",
+        "source_locator": "",
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_documents(documents: QuerySet[Document]) -> int:
+    rows = list(documents)
+    if not rows:
+        return 0
+    now = timezone.now()
+    SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.DOCUMENT,
+        source_object_id__in=[document.pk for document in rows],
+    ).delete()
+    SearchDocument.objects.bulk_create(
+        [SearchDocument(**document_values(document, now)) for document in rows]
+    )
+    return len(rows)
 
 
 def indexable_source_links() -> QuerySet:
@@ -403,7 +488,7 @@ def source_link_values(link, now: object) -> dict[str, object]:
             for part in (page.source_section, page.source_section_group, page.source_parent_page)
             if part
         ),
-        "body_text": page.derived_text[:MAX_INDEXED_FRAGMENT_CHARACTERS],
+        "body_text": bounded_body(page.derived_text),
         "source_locator": location[:200],
         "index_version": INDEX_VERSION,
         "indexed_at": now,

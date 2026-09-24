@@ -79,6 +79,7 @@ from app.search.indexing import (
     indexable_matters,
     indexing_is_suspended,
     refresh_development,
+    refresh_document,
     refresh_document_version,
     refresh_engagement,
     refresh_entry,
@@ -427,6 +428,9 @@ def refresh_on_document_change(sender: type[Document], instance: Document, **kwa
     """
     if indexing_is_suspended():
         return
+    # The document's own row first: its title and filenames, which make it
+    # findable by name whether or not anything was ever extracted (ENG-030).
+    refresh_document(instance)
     # Only versions that actually have extracted content. Every evidence upload
     # saves its Document once to move the current-version pointer, and without
     # this guard that would issue a delete-and-reinsert for a version whose
@@ -436,6 +440,23 @@ def refresh_on_document_change(sender: type[Document], instance: Document, **kwa
     ).distinct()
     for version in versions:
         refresh_document_version(version)
+
+
+@receiver(post_save, sender=DocumentVersion, dispatch_uid="search_refresh_document_filenames")
+def refresh_on_version_added(
+    sender: type[DocumentVersion], instance: DocumentVersion, created: bool, **kwargs: Any
+) -> None:
+    """A new version adds a filename the document's row has to carry.
+
+    Only on creation: the columns that describe a version's bytes are immutable
+    (a trigger says so), so a later save of the row — extraction bookkeeping —
+    cannot change a name, and reprojecting on every one of those would be work
+    for nothing. A version stored without becoming current saves no Document,
+    which is why this is its own receiver.
+    """
+    if indexing_is_suspended() or not created:
+        return
+    refresh_document(instance.document)
 
 
 # -- SEARCH-001: high fanout becomes durable debt ---------------------------

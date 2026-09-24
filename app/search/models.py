@@ -57,7 +57,15 @@ from app.core.models import BaseModel
 #: not rebuilt is a deployment whose search still answers against the older
 #: capture model — which is exactly the state QA-003 found, and exactly what a
 #: fail-closed version is for (`check_search_integrity`).
-INDEX_VERSION = "TEEMA.1"
+#:
+#: Bumped from `TEEMA.1` when every Document gained a row of its own (the
+#: `DOCUMENT` kind below, ENG-030), authored body text stopped carrying
+#: HTML-escaped entities and fused block boundaries (ENG-082), and authored
+#: bodies became bounded in the projection (ENG-084). Rows built by the older
+#: indexer lack every unextracted document's name and hold `&amp;` where the
+#: current code writes `&`, so they are made ineligible exactly as before — too
+#: little until the one-time rebuild, never something confidential.
+INDEX_VERSION = "DOKUMENT.1"
 
 
 class SearchSourceKind(models.TextChoices):
@@ -110,6 +118,16 @@ class SearchSourceKind(models.TextChoices):
     # provenances, and neither was indexed. Same rule, same reason: a
     # `MatterExternalPosition` carries its own override.
     EXTERNAL_POSITION = "EXTERNAL_POSITION", "Arvamus või tagasiside"
+    # One row per Document, carrying its title and every filename its versions
+    # were stored under. `DOCUMENT_FRAGMENT` rows carry those too, but only for
+    # a document with an ACTIVE derivative — and since docs/adr/0072 nothing
+    # extracts an ordinary upload, so a file was findable by name only if an
+    # operator had happened to run the corpus extractor on it. ADR 0072 gave up
+    # searching *inside* documents, not finding them by name (ENG-030).
+    #
+    # Authorized like a fragment: through the Document's own override, which
+    # may be stricter than its Matter's.
+    DOCUMENT = "DOCUMENT", "Dokument"
 
 
 #: Which live column carries each kind's own restriction, for the authorization
@@ -125,6 +143,7 @@ SOURCE_OVERRIDE_FIELDS: dict[str, str | None] = {
     SearchSourceKind.ENTRY.value: "entry__visibility_override",
     SearchSourceKind.SUBMISSION.value: "submission__visibility_override",
     SearchSourceKind.DOCUMENT_FRAGMENT.value: "document__visibility_override",
+    SearchSourceKind.DOCUMENT.value: "document__visibility_override",
     SearchSourceKind.ENGAGEMENT.value: "engagement__visibility_override",
     SearchSourceKind.PROCEDURAL_DEVELOPMENT.value: "development__visibility_override",
     SearchSourceKind.EXTERNAL_POSITION.value: "external_position__visibility_override",

@@ -30,7 +30,7 @@ from django.db.models import QuerySet
 from django.utils import timezone
 
 from app.core.text import normalize_for_matching
-from app.documents.models import DocumentVersion
+from app.documents.models import Document, DocumentVersion
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters.models import (
     Entry,
@@ -39,6 +39,7 @@ from app.matters.models import (
     MatterExternalPosition,
     MatterProceduralDevelopment,
 )
+from app.search.child_indexing import bounded_body
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
 
@@ -143,6 +144,7 @@ class RebuildResult:
     engagements: int = 0
     developments: int = 0
     positions: int = 0
+    document_rows: int = 0
 
 
 def indexable_matters() -> QuerySet[Matter]:
@@ -248,22 +250,28 @@ def indexed_text_for(matter: Matter) -> dict[str, str]:
         # engagement has no row of its own in the projection — it is a pointer,
         # not a document — so its text belongs on the Matter, which is the
         # thing a reader is looking for when they type a campaign's name.
-        "body_text": " ".join(
-            part
-            for part in (
-                # The plain-language summary first. It is what somebody who
-                # remembers a Matter by what it *was about* rather than by its
-                # formal title will type, and it is frequently the only text on
-                # the record written in those words (Teema redesign §6.2).
-                matter.brief_summary,
-                matter.position_summary,
-                matter.rationale_summary,
-                # `Kaasamine` is deliberately absent. It has its own row kind
-                # now, because it has its own visibility and this row does not
-                # (app/search/child_indexing.py, AUTH-003). A MATTER row may
-                # only carry content the Matter itself governs.
+        # Bounded for the projection only, like every authored body: three
+        # summaries of a few hundred thousand unique words each would exceed
+        # PostgreSQL's 1 MiB tsvector limit inside the lawyer's own save
+        # (ENG-084). The Matter keeps every character.
+        "body_text": bounded_body(
+            " ".join(
+                part
+                for part in (
+                    # The plain-language summary first. It is what somebody who
+                    # remembers a Matter by what it *was about* rather than by its
+                    # formal title will type, and it is frequently the only text on
+                    # the record written in those words (Teema redesign §6.2).
+                    matter.brief_summary,
+                    matter.position_summary,
+                    matter.rationale_summary,
+                    # `Kaasamine` is deliberately absent. It has its own row kind
+                    # now, because it has its own visibility and this row does not
+                    # (app/search/child_indexing.py, AUTH-003). A MATTER row may
+                    # only carry content the Matter itself governs.
+                )
+                if part
             )
-            if part
         ),
     }
 
@@ -500,6 +508,33 @@ def refresh_source_link(link: MatterSourcePage) -> int:
 
 
 @transaction.atomic
+def refresh_document(document: Document) -> int:
+    """Reproject one Document's own row: its title and its filenames (ENG-030).
+
+    Called when the document is saved — created, renamed, moved, its current
+    version changed — and when a version is added to it. One row, so it is
+    cheap enough to run inside the write that caused it, which is what keeps a
+    new upload findable by its name the moment its transaction commits.
+    """
+    from app.search.child_indexing import indexable_documents, refresh_documents
+
+    _hold_off_a_rebuild()
+    count = refresh_documents(indexable_documents().filter(pk=document.pk))
+    if not count:
+        # A document on a deleted Matter projects nothing; a row it had goes.
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.DOCUMENT, source_object_id=document.pk
+        ).delete()
+        return 0
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.DOCUMENT, source_object_id=document.pk
+        )
+    )
+    return count
+
+
+@transaction.atomic
 def refresh_document_version(version: DocumentVersion) -> int:
     """Reproject one version's extracted content.
 
@@ -587,6 +622,7 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
             engagements,
             developments,
             positions,
+            document_rows,
         ) = _rebuild_children(batch_size=batch_size)
         documents = SearchDocument.objects.count()
 
@@ -600,12 +636,13 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
         engagements=engagements,
         developments=developments,
         positions=positions,
+        document_rows=document_rows,
         seconds=(timezone.now() - started).total_seconds(),
         index_version=INDEX_VERSION,
     )
 
 
-def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int, int, int]:
+def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int, int, int, int]:
     """Entries, submissions and document fragments, inside the caller's
     transaction.
 
@@ -617,6 +654,7 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int, int,
     """
     from app.search.child_indexing import (
         indexable_developments,
+        indexable_documents,
         indexable_engagements,
         indexable_entries,
         indexable_fragments,
@@ -624,6 +662,7 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int, int,
         indexable_source_links,
         indexable_submissions,
         refresh_developments,
+        refresh_documents,
         refresh_engagements,
         refresh_entries,
         refresh_fragments,
@@ -639,12 +678,22 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int, int,
     engagements = _in_batches(indexable_engagements(), refresh_engagements, batch_size)
     developments = _in_batches(indexable_developments(), refresh_developments, batch_size)
     positions = _in_batches(indexable_positions(), refresh_positions, batch_size)
+    document_rows = _in_batches(indexable_documents(), refresh_documents, batch_size)
 
     # One statement for every child row, rather than one per batch. The vectors
     # are computed in the database either way; doing it once means PostgreSQL
     # plans it once.
     _recompute_vectors(SearchDocument.objects.exclude(source_kind=SearchSourceKind.MATTER))
-    return entries, submissions, fragments, source_pages, engagements, developments, positions
+    return (
+        entries,
+        submissions,
+        fragments,
+        source_pages,
+        engagements,
+        developments,
+        positions,
+        document_rows,
+    )
 
 
 def _in_batches(queryset: QuerySet, refresh: object, batch_size: int) -> int:
