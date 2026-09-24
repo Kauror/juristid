@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.apps import apps
 from django.conf import settings
@@ -579,6 +579,24 @@ def unparseable_boolean_variables(environ: dict[str, str] | None = None) -> dict
 # --------------------------------------------------------------------------
 
 
+if TYPE_CHECKING:
+    from app.search.freshness import SearchIndexState
+
+
+#: The two moments `deployment_readiness` can be asked about a search index.
+#:
+#: A release that moves `INDEX_VERSION` is *supposed* to start serving on rows
+#: of the old version: the query chokepoint ignores them and search returns too
+#: little until step 11 of the runbook rebuilds the index. So a readiness check
+#: run before that rebuild must be able to say "stale, as expected" without
+#: failing — or every such release would be undeployable — and the check run
+#: after it must fail on exactly the same state, because then it means the
+#: rebuild was skipped and every search answers nothing (ENG-142).
+SEARCH_PHASE_FINAL = "final"
+SEARCH_PHASE_PRE_REBUILD = "pre-rebuild"
+SEARCH_PHASES = (SEARCH_PHASE_FINAL, SEARCH_PHASE_PRE_REBUILD)
+
+
 @dataclass(frozen=True)
 class ReadinessReport:
     """Everything ``deployment_readiness`` asks, separated from how it prints.
@@ -600,6 +618,8 @@ class ReadinessReport:
     reference: Any
     problems: tuple[str, ...]
     warnings: tuple[str, ...]
+    search_index: SearchIndexState | None = None
+    search_phase: str = SEARCH_PHASE_FINAL
 
     @property
     def ok(self) -> bool:
@@ -607,8 +627,13 @@ class ReadinessReport:
         return not self.problems
 
 
-def readiness_report() -> ReadinessReport:
+def readiness_report(*, search_phase: str = SEARCH_PHASE_FINAL) -> ReadinessReport:
     """Ask this build about itself. Reads; never migrates and never writes.
+
+    ``search_phase`` says which moment of a deployment this is (see
+    `SEARCH_PHASES`). The default is the final one, so a search index left on an
+    older version is a problem — which is what makes a skipped rebuild visible
+    — and only a caller that names ``pre-rebuild`` gets it as a warning.
 
     Raises :class:`django.db.DatabaseError` when the database cannot be reached
     at all, which is the one condition that cannot be reported as a finding
@@ -658,6 +683,24 @@ def readiness_report() -> ReadinessReport:
         for name, value in sorted(unparseable_boolean_variables().items())
     ]
 
+    if search_phase not in SEARCH_PHASES:
+        raise ValueError(f"unknown search phase {search_phase!r}")
+    search = None
+    if not state.pending:
+        # Only once the schema is this build's: an unapplied migration is
+        # already the problem, and the search tables may not match the model.
+        from app.search.freshness import search_index_state
+
+        search = search_index_state()
+        if search.problem:
+            if search_phase == SEARCH_PHASE_PRE_REBUILD:
+                warnings.append(
+                    f"{search.problem} Expected before the rebuild of a release that "
+                    "changes INDEX_VERSION; the final check (no --search-phase) fails on it."
+                )
+            else:
+                problems.append(search.problem)
+
     return ReadinessReport(
         identity=identity,
         postgresql=(major, minor),
@@ -666,4 +709,6 @@ def readiness_report() -> ReadinessReport:
         reference=baseline,
         problems=tuple(problems),
         warnings=tuple(warnings),
+        search_index=search,
+        search_phase=search_phase,
     )
