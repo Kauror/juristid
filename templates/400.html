@@ -1,0 +1,15 @@
+{% extends "error_page.html" %}
+{% comment %}
+  A request Django or this application refused before any view ran: a NUL byte
+  in an address or a form (`RefuseNulMiddleware`, ENG-046), an oversized form,
+  a malformed host. Rendered like 500.html, with no context to depend on, and
+  without echoing what was sent.
+{% endcomment %}
+{% block title %}Vigane päring{% endblock %}
+{% block heading %}Päringut ei saa lugeda{% endblock %}
+{% block body %}
+  <p class="lead">
+    Aadressis või vormis oli midagi, mida rakendus ei saa lugeda. Midagi ei salvestatud.
+    Ava leht uuesti lingist või alusta avalehelt.
+  </p>
+{% endblock %}

@@ -272,13 +272,20 @@ def test_a_malformed_query_never_becomes_a_server_error(signed_in, query) -> Non
     """Anything that reaches the query string has to produce a page.
 
     NUL is the one that actually crashed: psycopg refuses to send it, so a
-    hand-built ``?q=%00`` was an unhandled exception where "no results" was the
-    truthful answer. The rest are here because a search box is the most
-    poked-at input in the product and a 500 is never the right reply to a
-    person typing.
+    hand-built ``?q=%00`` was an unhandled exception. It is now refused for
+    every page at once, as a 400, rather than by each view that reads text.
+    The rest are here because a search box is the most poked-at input in the
+    product and a 500 is never the right reply to a person typing.
     """
     response = signed_in.get("/otsing/", {"q": query})
-    assert response.status_code == 200
+    if "\x00" in query:
+        # Refused for the whole application before the search view runs, with
+        # the Estonian 400 page and nothing echoed (`RefuseNulMiddleware`,
+        # ENG-046). Still never a 500.
+        assert response.status_code == 400
+        assert "Päringut ei saa lugeda" in response.content.decode()
+    else:
+        assert response.status_code == 200
 
 
 def test_an_over_long_query_says_it_was_not_run(signed_in) -> None:

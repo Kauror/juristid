@@ -384,6 +384,24 @@ def submissions_list(request: HttpRequest) -> HttpResponse:
     )
 
 
+def _materials_selection(request: HttpRequest) -> dict[str, str]:
+    """`failityyp` and `seisund`, each one this report knows, or a 404.
+
+    One reader for the list and its CSV. The list refused an unknown state and
+    the export did not, and neither refused an unknown file type: both reached
+    a lookup table with the typed value and were a 500 (ENG-046).
+    """
+    selection = {
+        "file_type": request.GET.get("failityyp", "").strip().upper(),
+        "state": request.GET.get("seisund", "").strip(),
+    }
+    if selection["state"] and selection["state"] not in historical.MATERIALISATION_LABELS:
+        raise Http404("Tundmatu seisund.")
+    if selection["file_type"] and selection["file_type"] not in historical.FILE_TYPE_KEYS:
+        raise Http404("Tundmatu failitüüp.")
+    return selection
+
+
 @gate_required
 def materials_list(request: HttpRequest) -> HttpResponse:
     """Historical resource occurrences, filtered exactly as the chart was."""
@@ -391,12 +409,7 @@ def materials_list(request: HttpRequest) -> HttpResponse:
     # `sektsioon` is deliberately absent: it is a context dimension and reaches
     # the population through `visible_pages`, so the list and the tab's numbers
     # cannot be narrowed differently.
-    selection = {
-        "file_type": request.GET.get("failityyp", "").strip().upper(),
-        "state": request.GET.get("seisund", "").strip(),
-    }
-    if selection["state"] and selection["state"] not in historical.MATERIALISATION_LABELS:
-        raise Http404("Tundmatu seisund.")
+    selection = _materials_selection(request)
 
     rows = historical.list_rows(context, **selection)
     paginator = Paginator(rows, PAGE_SIZE)
@@ -466,11 +479,7 @@ def export(request: HttpRequest, slug: str) -> StreamingHttpResponse:
             kind=request.GET.get("arvamus", "").strip(),
         )
     if slug == "materjalid":
-        return exports.materials_csv(
-            context,
-            file_type=request.GET.get("failityyp", "").strip().upper(),
-            state=request.GET.get("seisund", "").strip(),
-        )
+        return exports.materials_csv(context, **_materials_selection(request))
     if slug == "andmekvaliteet":
         return exports.quality_csv(context)
     raise Http404("Tundmatu eksport.")

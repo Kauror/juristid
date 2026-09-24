@@ -82,6 +82,10 @@ MIDDLEWARE = [
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    # After the CSRF check, so a forged request is still refused as one; before
+    # anything that reads a parameter. A NUL byte is a 400 here rather than a
+    # 500 in whichever view first compares it with a text column (ENG-046).
+    "app.core.middleware.RefuseNulMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # Before anything that reads business content, and it wraps the rest of the
     # stack so its `finally` runs even when a view raises. It holds one

@@ -237,13 +237,16 @@ class RegisterFacts:
         )
 
 
-def register_facts_for(matter: Any) -> RegisterFacts | None:
+def register_facts_for(matter: Any, viewer: Any) -> RegisterFacts | None:
     """The derived register observations for one Matter, or ``None``.
 
     Two extra queries at most: the continuation link, asked for only when the
     register actually named a successor, and one ``exists`` for the canonical
     Submission — which decides whether the register's own send date is worth
     stating at all, and is an indexed lookup on a column the page reads anyway.
+
+    ``viewer`` because the continuation is a link to *another* Matter, and a
+    link is only offered to one this reader may open (ENG-057).
     """
     state = getattr(matter, "current_register_state", None)
     if state is None:
@@ -260,12 +263,21 @@ def register_facts_for(matter: Any) -> RegisterFacts | None:
     if state.continues_under_reference:
         from app.matters.models import Matter
 
-        successor_id = (
-            Matter.objects.filter(reference_number__isnull=False)
-            .filter(reference_number=_reference_number(state.continues_under_reference))
-            .values_list("pk", flat=True)
-            .first()
-        )
+        # The whole reference, year and number, through the reader's own
+        # visibility. The number alone matched `2024_999` for a register that
+        # wrote `2026_999`, and the unfiltered manager linked a RESTRICTED
+        # Matter's id to a reader who would get a 404 behind it (ENG-057).
+        # Anything that does not resolve to exactly one readable Matter is
+        # plain text — the template's existing branch.
+        reference = Matter.parse_reference(state.continues_under_reference)
+        if reference is not None:
+            year, number = reference
+            successor_id = (
+                Matter.objects.visible_to(viewer)
+                .filter(reference_year=year, reference_number=number)
+                .values_list("pk", flat=True)
+                .first()
+            )
 
     return RegisterFacts(
         feedback=MemberFeedback(
@@ -281,14 +293,3 @@ def register_facts_for(matter: Any) -> RegisterFacts | None:
         continues_under_id=successor_id,
         has_sent_submission=has_sent_submission,
     )
-
-
-def _reference_number(reference: str) -> int:
-    """The numeric half of ``YYYY_N``, or ``-1`` when it is not one.
-
-    ``-1`` rather than ``None`` so the caller's filter matches nothing instead
-    of matching every Matter without a number, which is what a ``None`` would
-    quietly do.
-    """
-    _, _, number = (reference or "").partition("_")
-    return int(number) if number.isdigit() else -1
