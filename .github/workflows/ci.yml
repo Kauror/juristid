@@ -29,6 +29,17 @@ jobs:
 
       - run: uv sync --frozen
 
+      # Every install in this workflow, the pip-audit export and both image
+      # installs use `--frozen`, which trusts `uv.lock` without comparing it
+      # with `pyproject.toml`. So a raised floor (`pyjwt>=2.14`) or a removed
+      # dependency edited into pyproject alone was silently ignored: CI tested,
+      # the image shipped and pip-audit audited the old set (ENG-053). This is
+      # the comparison `--frozen` switches off, run once, failing rather than
+      # re-locking. `UV_FROZEN` is unset for it because uv refuses `--check`
+      # alongside frozen mode.
+      - name: The lockfile agrees with pyproject.toml
+        run: env -u UV_FROZEN uv lock --check
+
       - name: Formatting
         run: uv run ruff format --check .
 
@@ -179,15 +190,28 @@ jobs:
       - name: A fresh database migrates from zero
         run: uv run python manage.py migrate --noinput
 
+      # Rows, before anything steps backwards. The step-back below used to run
+      # on an empty schema, so every RunPython migration it reversed and
+      # re-applied did so over no data, and a data migration whose reverse or
+      # forward breaks on real rows passed CI (ENG-052). The seed runs at the
+      # leaf — it uses today's models and services, so it cannot run against an
+      # older schema — and the step-back then carries those rows backwards and
+      # forwards through every migration in its range.
+      - name: A populated database to step back from
+        run: uv run python manage.py seed_e2e_data
+
       # From zero is the easy direction. A deployment migrates from wherever it
       # already is, and the migrations that carry a release are the ones nobody
       # has run against a populated database yet — so the state a deployment
       # actually starts from is named here and stepped forward.
       #
       # `migrate <app> <number>` backwards, then forwards, which exercises the
-      # reverse each data migration claims to have as well as the forward path.
-      # A data migration whose reverse was never run is a rollback plan nobody
-      # has tested.
+      # reverse each data migration claims to have as well as the forward path —
+      # on the seeded rows above, so the RunPython code runs over data rather
+      # than an empty table. A data migration whose reverse was never run is a
+      # rollback plan nobody has tested. A RunPython migration this range does
+      # not reach must name its own populated test
+      # (tests/test_migration_data_proof.py), or the build is red.
       #
       # The targets are the last migration in each app on `main` that a release
       # steps past. When a release adds another, move them: leaving them behind

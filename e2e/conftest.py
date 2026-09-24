@@ -20,6 +20,8 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
+import ci_skip_policy
+
 # Re-exported: every browser file already says `from e2e.conftest import
 # unique_title`, and the function moved out only so that a test with no browser
 # can hold it to its own rule (`e2e/titles.py`).
@@ -72,18 +74,30 @@ ADMIN = Persona("admin@example.invalid", "Testadministraator")
 READER = Persona("lugeja@example.invalid", "Testlugeja")
 
 
+def _missing(message: str) -> None:
+    """A skip on a laptop, and a failure in CI.
+
+    In CI a missing variable is a broken workflow, and a skip would have turned
+    the whole browser gate green (ENG-051). Locally it means no server was
+    started, which is not a defect.
+    """
+    if ci_skip_policy.enforced():
+        pytest.fail(f"{message}: the browser suite cannot run in CI without it", pytrace=False)
+    pytest.skip(message)
+
+
 @pytest.fixture(scope="session")
 def base_url() -> str:
     if not BASE_URL:
-        pytest.skip("E2E_BASE_URL is not set")
+        _missing("E2E_BASE_URL is not set")
     return BASE_URL.rstrip("/")
 
 
 @pytest.fixture(scope="session")
 def gate_base_url() -> str:
-    """The shared-gate server, or a skip that names what is missing."""
+    """The shared-gate server, or a skip (a failure in CI) that names what is missing."""
     if not GATE_BASE_URL or not GATE_PASSWORD:
-        pytest.skip("E2E_GATE_BASE_URL and E2E_GATE_PASSWORD are not both set")
+        _missing("E2E_GATE_BASE_URL and E2E_GATE_PASSWORD are not both set")
     return GATE_BASE_URL.rstrip("/")
 
 

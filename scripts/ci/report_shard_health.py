@@ -53,12 +53,16 @@ import ci_sharding  # noqa: E402  (after sys.path, so this runs from anywhere)
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 TIMINGS = ROOT / "ci" / "shard-timings.json"
 
+import ci_workflow_selection  # noqa: E402  (after sys.path, like ci_sharding)
+
 #: The suites the workflow shards, and the pytest arguments that define each —
-#: the same pair ``scripts/ci/assert_shard_completeness.py`` works from, so the
-#: two scripts cannot disagree about what a suite is.
+#: read from the workflow's own commands by `ci_workflow_selection`, the one
+#: definition ``scripts/ci/assert_shard_completeness.py`` also works from. This
+#: used to be a second hand-copied list that nothing tied to either (ENG-110).
 SUITES: dict[str, tuple[str, list[str]]] = {
-    "tests": ("PostgreSQL", ["tests"]),
-    "browser": ("Browser", ["e2e", "--ignore=e2e/test_ui_regression.py"]),
+    name: (suite.label, list(suite.selection))
+    for name, suite in ci_workflow_selection.suites(WORKFLOW).items()
+    if name in ("tests", "browser")
 }
 
 # ---------------------------------------------------------------------------

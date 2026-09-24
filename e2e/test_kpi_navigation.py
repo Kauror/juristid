@@ -272,14 +272,21 @@ def test_the_unowned_areas_rail_lists_the_areas_and_not_the_files(page, base_url
 
     block = page.locator("#vastutajata-valdkonnad")
     expect(block).to_be_visible()
-    rows = block.locator(".railrow")
-    if not rows.count():
-        pytest.skip("every area with open work has an owner in the seeded world")
 
-    first = rows.first
-    href = first.get_attribute("href") or ""
-    assert "valdkond=" in href, href
-    assert "vastutaja=puudub" in href, href
+    # What holds whatever the seed contains: nothing in the block sends the
+    # reader to the whole ownerless register.
+    for link in block.locator("a[href*='vastutaja=puudub']").all():
+        assert "valdkond=" in (link.get_attribute("href") or "")
+
+    # Each row that is there links to its own area. The seeded world has no
+    # unowned area, so this ran on nothing and the test used to skip on every
+    # run (ENG-051); the rows themselves are asserted on the server-rendered
+    # page with a world that has one (tests/test_overview_scopes.py,
+    # `test_the_unowned_areas_rail_links_each_area_to_its_ownerless_files`).
+    for row in block.locator(".railrow").all():
+        href = row.get_attribute("href") or ""
+        assert "valdkond=" in href, href
+        assert "vastutaja=puudub" in href, href
 
 
 def test_the_seven_day_opinion_figure_states_a_number_it_cannot_open(page, base_url):

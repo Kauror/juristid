@@ -273,6 +273,40 @@ def test_an_area_is_unowned_only_when_nobody_owns_any_of_its_work(
     assert [row.key for row in page.unowned_areas] == [unwatched.key]
 
 
+def test_the_unowned_areas_rail_links_each_area_to_its_ownerless_files(
+    client, department_head, specialist
+):
+    """The rendered rail: one row per unowned area, linking to that area's
+    ownerless Matters and never to the whole ownerless register.
+
+    This is the assertion `e2e/test_kpi_navigation.py` could never make: the
+    seeded browser world has no unowned area, so it skipped on every run
+    (ENG-051). It is made here, on the server-rendered page, with a world that
+    has one.
+    """
+    import html
+    import re
+
+    orphan_area = PolicyArea.objects.filter(is_active=True).order_by("sort_order")[1]
+    orphan = create_matter(title="Kellegi pole", reference_year=2026, actor=specialist)
+    orphan.policy_areas.add(orphan_area)
+    client.force_login(department_head)
+
+    body = client.get(reverse(OVERVIEW) + "?vaade=valdkonniti").content.decode()
+
+    block = body[body.index('id="vastutajata-valdkonnad"') :]
+    block = block[: block.find("</section>") if "</section>" in block else len(block)]
+    links = [
+        html.unescape(href)
+        for href in re.findall(r'<a[^>]*class="[^"]*railrow[^"]*"[^>]*href="([^"]+)"', block)
+        + re.findall(r'<a[^>]*href="([^"]+)"[^>]*class="[^"]*railrow[^"]*"', block)
+    ]
+    assert links, "the rail rendered no row for an area nobody owns"
+    for href in links:
+        assert "valdkond=" in href, href
+        assert "vastutaja=puudub" in href, href
+
+
 def test_an_owner_is_named_once_per_area_however_many_files_they_hold(
     department_head, specialist, other_specialist, today
 ):
