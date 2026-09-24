@@ -236,6 +236,42 @@ class ConsumeResult:
     result: RebuildResult | None = None
 
 
+def rebuild_and_discharge(*, batch_size: int | None = None, clear: bool = True) -> ConsumeResult:
+    """Rebuild the whole projection and pay off the debt that rebuild covers.
+
+    The one repair, whoever asks for it. `rebuild_search_index` used to call
+    `rebuild_all` directly and leave every `SearchRebuildDebt` row where it
+    was: the index was correct, `check_search_freshness` — the container
+    healthcheck — stayed red with the old error, and the worker later rebuilt
+    the whole corpus again to clear a debt that was already paid (ENG-085).
+
+    **Claim first, rebuild, then delete only what was claimed.** A row written
+    while the rebuild runs is a change the rebuild may not have seen, so it
+    survives and the next pass pays it. A rebuild that fails deletes nothing
+    and records the attempt on the claimed rows, so freshness stays red and
+    says why. The delete runs after `rebuild_all`'s own transaction has
+    committed — see `consume_once` for why inside would be wrong.
+
+    Rebuilds even when nothing is owed, because an operator asking for a
+    rebuild is asking for one.
+    """
+    claimed = list(outstanding().order_by("created_at").values_list("pk", flat=True))
+    arguments: dict[str, Any] = {"clear": clear}
+    if batch_size is not None:
+        arguments["batch_size"] = batch_size
+    try:
+        result = rebuild_all(**arguments)
+    except Exception as error:
+        if claimed:
+            _record_attempt(claimed, error)
+        raise
+
+    cleared = 0
+    if claimed:
+        cleared, _ = SearchRebuildDebt.objects.filter(pk__in=claimed).delete()
+    return ConsumeResult(rebuilt=True, cleared=cleared, result=result)
+
+
 def consume_once() -> ConsumeResult:
     """Claim every outstanding obligation, rebuild once, clear what was claimed.
 
@@ -253,20 +289,11 @@ def consume_once() -> ConsumeResult:
     Re-raises what the rebuild raised, after recording the attempt. The caller
     decides whether that is fatal; for the worker it is one bad pass.
     """
-    claimed = list(outstanding().order_by("created_at").values_list("pk", flat=True))
-    if not claimed:
+    if not outstanding().exists():
         return ConsumeResult(rebuilt=False, cleared=0)
-
-    try:
-        result = rebuild_all()
-    except Exception as error:
-        _record_attempt(claimed, error)
-        raise
-
-    # Only the rows claimed before the rebuild began. Anything marked while it
-    # ran survives and is paid off by the next pass.
-    cleared, _ = SearchRebuildDebt.objects.filter(pk__in=claimed).delete()
-    return ConsumeResult(rebuilt=True, cleared=cleared, result=result)
+    # Only the rows claimed before the rebuild began are cleared. Anything
+    # marked while it ran survives and is paid off by the next pass.
+    return rebuild_and_discharge()
 
 
 def _record_attempt(claimed: list[Any], error: BaseException) -> None:
@@ -339,6 +366,7 @@ __all__ = [
     "describe_failure",
     "mark_rebuild_owed",
     "outstanding",
+    "rebuild_and_discharge",
     "status",
     "worker_pass",
 ]

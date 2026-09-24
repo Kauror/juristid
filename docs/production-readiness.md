@@ -39,8 +39,8 @@ back independently.
 | 1.2 | Verify and load the off-host-built release image, then read its migration plan | `deploy/unraid-main/README.md` §"Deploying a release" |
 | 1.3 | Back up, immediately before the schema moves | `scripts/deploy/juristid-backup.sh` |
 | 1.4 | Migrate, then replace | the same README section, same exported identity |
-| 1.5 | Post-flight | `manage.py deployment_readiness`, then the A–M browser list in the same README |
-| 1.5a | **If the release moves `INDEX_VERSION`** — one rebuild, then prove it | `manage.py rebuild_search_index`, then `manage.py check_search_integrity` — `deploy/unraid-main/README.md` §11 |
+| 1.5 | Post-flight | `manage.py deployment_readiness`, then the A–M browser list in the same README. **When the release manifest says `search_rebuild_required: YES`**, this first post-flight is `deployment_readiness --search-phase=pre-rebuild` |
+| 1.5a | **If the release moves `INDEX_VERSION`** — one rebuild, then prove it | `manage.py rebuild_search_index`, then `manage.py check_search_integrity --full`, then the **final** `manage.py deployment_readiness` (no flag), which fails while any row is on an older version — `deploy/unraid-main/README.md` §11 |
 
 **1.5a is not part of every release, and it is not optional on the ones it
 belongs to.** The query chokepoint reads only rows carrying the current
@@ -49,9 +49,14 @@ ineligible the moment it starts serving. Nothing converges that on its own: the
 `searchindex` worker discharges `SearchRebuildDebt`, every row of which is
 written by a *vocabulary edit*, and a deploy is not one — so the worker is
 healthy, `check_search_freshness` is clear, and search answers nothing. All
-three are true together and none of them is lying. Only
-`check_search_integrity` distinguishes them, and any finding it reports stops
-the release.
+three are true together and none of them is lying. `check_search_integrity`
+distinguishes them, and any finding it reports stops the release — and since
+ENG-142 so does the final `deployment_readiness`: it fails on search rows built
+under an older `INDEX_VERSION` (or on Matters with no current row at all), so a
+skipped rebuild cannot end the deployment green. Whether a release needs 1.5a is
+no longer a matter of memory either: the release manifest states
+`index_version: OLD -> NEW` and `search_rebuild_required: YES/NO`, derived from
+the two commits by `scripts/ci/index_version_change.py`.
 
 The build sits ahead of the backup on purpose: the migration plan is a question
 about the *target* image, so that image has to exist before it can be asked, and
@@ -168,7 +173,7 @@ takes to notice.
 | 4.1 | Counts reconcile | the operation's own `status` / `verify` phase |
 | 4.2 | Evidence is present and is what was hashed | `manage.py check_evidence_integrity --verify-sha` — every holder in `EVIDENCE_REFERENCES`: document versions and the opinion archive's letters |
 | 4.3 | Nothing is holding bytes nobody references | `manage.py prune_orphaned_evidence` (no `--delete`) |
-| 4.4 | Search is complete, current and not stale | `manage.py check_search_integrity` |
+| 4.4 | Search is complete, current and not stale | `manage.py check_search_integrity --full` — the default samples each kind's text; only `--full` recomputes every row and can prove "current" |
 | 4.4a | Nothing is owed to the search index | `manage.py check_search_freshness` |
 | 4.5 | Archive search matches what is held | `manage.py opinion_archive_search verify` |
 | 4.6 | Era contracts still describe the workbook | `manage.py check_era_contracts` |
@@ -185,7 +190,10 @@ and has it been owed too long"), and is the container's healthcheck.
 `check_search_integrity` reports the same debt in context and consumes none of
 it. If the debt is old, the first thing to check is whether
 `run_search_refresh_worker` is running; `rebuild_search_index` remains the
-manual answer and is always safe.
+manual answer and is always safe — and since ENG-085 it also clears the debt
+rows that existed when it started, so freshness goes green with the index. Debt
+recorded while it ran is left for the worker, and a failed rebuild clears
+nothing.
 
 ### An optional roll-up: `production_status`
 

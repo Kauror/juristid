@@ -1,6 +1,7 @@
 """Is the search projection structurally sound, and does it need rebuilding?
 
-    python manage.py check_search_integrity
+    python manage.py check_search_integrity          # structure + a text sample per kind
+    python manage.py check_search_integrity --full   # structure + every row's text
 
 **Read-only, always.** It never writes a row and never repairs anything, because
 the repair already exists and is a different decision: ``rebuild_search_index``
@@ -17,15 +18,20 @@ by row:
   versions and the ranking differs by row;
 * does any row have a null vector, which is a row that exists and can never
   match;
-* does any row claim a Matter its own source does not belong to;
+* does any row claim a Matter its own source does not belong to — for every
+  kind with a source of its own;
+* does any row hold text its source would no longer produce — every kind,
+  recomputed through the indexer's own builders, author names included;
 * is a rebuild currently owed, since when, and has paying it off failed.
 
-Every check is a ``COUNT`` or a small ``GROUP BY``. None of them reads document
-text, none walks the corpus row by row, and the whole command is a handful of
-statements — so it is safe to run on a schedule and safe to run while people are
-working. The deep, row-by-row comparison it deliberately is not: reconciling
-every fragment against its source is what a rebuild does, and a rebuild is
-cheaper than a report saying a rebuild is needed.
+**What it proves depends on the mode, and it says which it ran.** The
+structural checks are ``COUNT``s and small ``GROUP BY``s. The text comparison
+recomputes a deterministic, corpus-wide sample of each kind by default — enough
+to answer "is a rebuild owed" cheaply and on a schedule — and every row with
+``--full``, which is the only mode that can say the projection is current. A
+deployment's proof runs ``--full`` (ENG-080). Which kinds exist, how each one's
+Matter is reached and how its text is rebuilt live in one registry
+(`kind_contracts`) that a test holds complete against `SearchSourceKind`.
 
 The last of those is new in SEARCH-001 and is deliberately only a *report*.
 `app/search/freshness.py` records the obligation and
@@ -51,7 +57,8 @@ from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandParser
-from django.db.models import Count, F, Q
+from django.db.models import CharField, Count, F, Q
+from django.db.models.functions import MD5, Cast
 
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentTextFragment
@@ -77,6 +84,10 @@ class Finding:
 
 @dataclass
 class IntegrityReport:
+    #: Whether every row's text was recomputed, or a sample of each kind.
+    full: bool = False
+    #: Rows whose text was recomputed, per source kind.
+    drift_checked: dict[str, int] = field(default_factory=dict)
     counts: list[tuple[str, int, int]] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     index_versions: dict[str, int] = field(default_factory=dict)
@@ -151,14 +162,132 @@ def _expected_populations() -> list[tuple[str, str, int]]:
     ]
 
 
-#: How many Matter rows the text-drift check recomputes. A rename invalidates
-#: the whole corpus at once, so a sample answers "is a rebuild owed" as reliably
-#: as a full pass and keeps a read-only report cheap enough to run often.
+#: How many rows *of each source kind* the default text-drift check recomputes.
+#: `--full` recomputes every row instead, and that is the mode a deployment's
+#: proof uses: a sample says "a rebuild is probably owed"; only a full pass can
+#: say "every row is current" (ENG-080).
 DRIFT_SAMPLE = 250
 
 
-def build_report(*, sample: int = DRIFT_SAMPLE) -> IntegrityReport:
+@dataclass(frozen=True)
+class KindContract:
+    """What the integrity check knows about one source kind, in one place.
+
+    Three questions per kind, and every kind must answer all three — a guard
+    test fails if a `SearchSourceKind` exists without an entry here, which is
+    how the next kind cannot be added with the check aware of only the old ones
+    (ENG-080; the populations list already had such a guard, the crossing and
+    drift lists did not, and each missed kinds).
+
+    * ``source_matter`` — the path from a row to the Matter its *source*
+      belongs to, compared with the row's own `matter`. ``None`` only for
+      `MATTER`, whose source is the Matter.
+    * ``rebuild`` — the indexer's own builder: given source ids, what each row
+      should hold. Recomputing through the same functions the refresh uses is
+      what makes this a check of the indexer rather than a second opinion.
+    * ``repair`` — the command that repairs this kind's drift. Only `MATTER`
+      rows can be refreshed one Matter at a time; every child kind is repaired
+      by a full rebuild, and saying otherwise sent operators to a command that
+      rewrote the wrong rows.
+    """
+
+    label: str
+    source_matter: str | None
+    rebuild: Any
+    repair: str
+
+
+#: The four columns a row's searchable text lives in.
+TEXT_COLUMNS = ("title", "identifiers", "alias_text", "body_text")
+
+REPAIR_ALL = "`rebuild_search_index`"
+REPAIR_MATTERS = "`refresh_matter_search <viide>` (üksik teema) või `rebuild_search_index`"
+
+
+def _matter_texts(ids: list[Any], now: Any) -> dict[Any, dict[str, Any]]:
+    from app.search.indexing import indexable_matters, indexed_text_for
+
+    return {
+        matter.pk: indexed_text_for(matter) for matter in indexable_matters().filter(pk__in=ids)
+    }
+
+
+def _child_texts(indexable: Any, values: Any, *, removable: bool = False) -> Any:
+    def build(ids: list[Any], now: Any) -> dict[Any, dict[str, Any] | None]:
+        expected: dict[Any, dict[str, Any] | None] = {}
+        for source in indexable().filter(pk__in=ids):
+            # A removed record projects nothing (docs/adr/0102): a row for it
+            # is stale, exactly like a row whose text has changed.
+            if removable and source.is_removed:
+                expected[source.pk] = None
+                continue
+            row = values(source, now)
+            expected[source.pk] = {column: row[column] for column in TEXT_COLUMNS}
+        return expected
+
+    return build
+
+
+def kind_contracts() -> dict[str, KindContract]:
+    from app.search import child_indexing as child
+
+    return {
+        SearchSourceKind.MATTER.value: KindContract("Teemad", None, _matter_texts, REPAIR_MATTERS),
+        SearchSourceKind.ENTRY.value: KindContract(
+            "Sissekanded",
+            "entry__matter_id",
+            _child_texts(child.indexable_entries, child._entry_values, removable=True),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.SUBMISSION.value: KindContract(
+            "Arvamused",
+            "submission__matter_id",
+            _child_texts(child.indexable_submissions, child._submission_values),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.DOCUMENT_FRAGMENT.value: KindContract(
+            "Dokumendi tekstiosad",
+            "document__matter_id",
+            _child_texts(child.indexable_fragments, child.fragment_values),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.LEGACY_SOURCE_PAGE.value: KindContract(
+            "Ajaloolised lehed",
+            "matter_source_page__matter_id",
+            _child_texts(child.indexable_source_links, child.source_link_values),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.ENGAGEMENT.value: KindContract(
+            "Kaasamised",
+            "engagement__matter_id",
+            _child_texts(child.indexable_engagements, child._engagement_values, removable=True),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.PROCEDURAL_DEVELOPMENT.value: KindContract(
+            "Märked",
+            "development__matter_id",
+            _child_texts(child.indexable_developments, child._development_values, removable=True),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.EXTERNAL_POSITION.value: KindContract(
+            "Arvamused ja tagasiside",
+            "external_position__matter_id",
+            _child_texts(child.indexable_positions, child._position_values, removable=True),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.DOCUMENT.value: KindContract(
+            "Dokumendid",
+            "document__matter_id",
+            _child_texts(child.indexable_documents, child.document_values),
+            REPAIR_ALL,
+        ),
+    }
+
+
+def build_report(*, sample: int = DRIFT_SAMPLE, full: bool = False) -> IntegrityReport:
+    """``sample`` rows per kind are recomputed, or every row with ``full``."""
     report = IntegrityReport()
+    report.full = full
     report.total_rows = SearchDocument.objects.count()
 
     projected = dict(
@@ -243,7 +372,7 @@ def build_report(*, sample: int = DRIFT_SAMPLE) -> IntegrityReport:
         )
 
     report.findings.extend(_crossed_matters())
-    report.findings.extend(_stale_matter_text(sample=sample))
+    report.findings.extend(_stale_text(report, sample=sample, full=full))
     report.freshness = freshness_status()
     report.findings.extend(_unpaid_debt(report.freshness))
     return report
@@ -284,63 +413,83 @@ def _unpaid_debt(state: FreshnessStatus) -> list[Finding]:
     ]
 
 
-def _stale_matter_text(*, sample: int) -> list[Finding]:
+def _drift_rows(kind: str, *, sample: int, full: bool) -> Any:
+    """The rows of one kind whose text is recomputed.
+
+    The default is a sample *across* the kind, not its oldest rows. It used to
+    be `order_by("pk")[:250]` over MATTER rows only, and primary keys are
+    UUIDv7 while a refresh deletes and re-inserts — so the sample was always
+    the rows written longest ago, the ones least likely to have drifted
+    (ENG-080). Ordering by a hash of the source id spreads it over the whole
+    kind, and the same corpus gives the same sample, so two runs agree.
+    """
+    rows = SearchDocument.objects.filter(source_kind=kind).only(
+        "pk", "source_object_id", *TEXT_COLUMNS
+    )
+    if full:
+        return rows.order_by("pk").iterator(chunk_size=500)
+    return rows.annotate(spread=MD5(Cast("source_object_id", output_field=CharField()))).order_by(
+        "spread"
+    )[:sample]
+
+
+def _stale_text(report: IntegrityReport, *, sample: int, full: bool) -> list[Finding]:
     """Rows whose indexed text is no longer what the canonical side would produce.
 
-    Every other check here is structural: is the row there, does it carry a
-    vector, does it name the right Matter. All of them pass on a row whose text
-    is simply out of date, which is the one defect this projection can hold that
-    a reader experiences directly — they search for a name and do not find the
-    file.
+    Every kind, through the indexer's own builders (`kind_contracts`). The
+    structural checks above all pass on a row whose text is simply out of date
+    — a Märge edited by `QuerySet.update()`, a person's display name changed
+    without a save, a data migration — and that is the defect a reader meets
+    directly: they search for a word and do not find the file.
 
-    It is reachable by design, not by accident. `app/search/signals.py` refreshes
-    what a write invalidates and deliberately stops where the fanout becomes
-    unbounded: renaming an Organisation, editing its aliases, renaming a Tag or a
-    PolicyArea changes the indexed text of every Matter pointing at it, and
-    reindexing thousands of rows inside somebody's form submission is a worse
-    failure than staleness. The documented answer is `rebuild_search_index` — but
-    until now nothing told an operator the rebuild was owed, so the gap was not
-    merely deferred, it was silent.
-
-    Recomputing is what `refresh_matters` would write, compared against what is
-    stored. Bounded by `sample` because the recomputation is the expensive half:
-    a drift this reports is nearly always corpus-wide, so a few hundred rows
-    answer the question that matters — *is a rebuild owed* — without reading
-    every Matter to say so.
+    Author names are covered because they are text the builders project (an
+    Entry's `alias_text` carries its author). Bounded by ``sample`` rows per
+    kind unless ``full``: the default answers "is a rebuild owed"; `--full`
+    answers "is every row current", which is what a deployment has to prove.
     """
-    from app.search.indexing import indexable_matters, indexed_text_for
-
-    rows = (
-        SearchDocument.objects.filter(source_kind=SearchSourceKind.MATTER)
-        .select_related("matter")
-        .order_by("pk")[:sample]
-    )
-    indexed = {row.matter_id: row for row in rows}
-    if not indexed:
+    if not full and sample <= 0:
         return []
 
-    drifted = 0
-    # `indexable_matters` is the indexer's own queryset, so the organisations,
-    # aliases, areas and tags `indexed_text_for` reads arrive with the rows.
-    # Spelling the prefetches out again here would be a second copy of the same
-    # knowledge, free to drift, in the tool whose job is to notice drift.
-    for matter in indexable_matters().filter(pk__in=indexed):
-        row = indexed[matter.pk]
-        expected = indexed_text_for(matter)
-        if any(getattr(row, field) != value for field, value in expected.items()):
-            drifted += 1
+    now = None
+    findings: list[Finding] = []
+    for kind, contract in kind_contracts().items():
+        drifted = 0
+        checked = 0
+        batch: list[SearchDocument] = []
 
-    if not drifted:
-        return []
-    return [
-        Finding(
-            label="Vananenud tekst",
-            detail=(
-                f"{drifted} kontrollitud {len(indexed)} reast kannab teksti, mida allikas "
-                "enam ei ütle (nt asutuse või sildi ümbernimetamine). Vajalik on täisindeks."
-            ),
-        )
-    ]
+        def settle(rows: list[SearchDocument], contract: KindContract = contract) -> int:
+            expected = contract.rebuild([row.source_object_id for row in rows], now)
+            stale = 0
+            for row in rows:
+                wanted = expected.get(row.source_object_id)
+                if wanted is None or any(
+                    getattr(row, column) != wanted[column] for column in TEXT_COLUMNS
+                ):
+                    stale += 1
+            return stale
+
+        for row in _drift_rows(kind, sample=sample, full=full):
+            batch.append(row)
+            if len(batch) >= 500:
+                drifted += settle(batch)
+                checked += len(batch)
+                batch = []
+        if batch:
+            drifted += settle(batch)
+            checked += len(batch)
+        report.drift_checked[kind] = checked
+
+        if drifted:
+            findings.append(
+                Finding(
+                    label=f"{contract.label}: vananenud tekst",
+                    detail=(
+                        f"{drifted} kontrollitud {checked} reast kannab teksti, mida allikas "
+                        f"enam ei ütle. Parandus: {contract.repair}."
+                    ),
+                )
+            )
+    return findings
 
 
 def _crossed_matters() -> list[Finding]:
@@ -351,30 +500,17 @@ def _crossed_matters() -> list[Finding]:
     row shown to the readers of A carrying the content of B — the one shape of
     projection defect that is a disclosure rather than an inconvenience.
 
-    No database constraint can express this: it is a comparison across a join,
-    not a property of the row. So it is checked here, in three joins over
-    indexed columns, rather than approximated by a large polymorphic ``CHECK``
-    that still could not see the other table.
+    Every kind with a source of its own is compared, from `kind_contracts`. The
+    hand-written list this replaced compared five of eight kinds, and never a
+    `Märge` or a recorded opinion (ENG-080).
     """
     findings: list[Finding] = []
-    checks = [
-        ("Sissekanne", Q(source_kind=SearchSourceKind.ENTRY), "entry__matter_id"),
-        ("Arvamus", Q(source_kind=SearchSourceKind.SUBMISSION), "submission__matter_id"),
-        (
-            "Dokument",
-            Q(source_kind__in=[SearchSourceKind.DOCUMENT_FRAGMENT, SearchSourceKind.DOCUMENT]),
-            "document__matter_id",
-        ),
-        (
-            "Ajalooline leht",
-            Q(source_kind=SearchSourceKind.LEGACY_SOURCE_PAGE),
-            "matter_source_page__matter_id",
-        ),
-        ("Kaasamis", Q(source_kind=SearchSourceKind.ENGAGEMENT), "engagement__matter_id"),
-    ]
-    for label, kind, path in checks:
+    for kind, contract in kind_contracts().items():
+        if contract.source_matter is None:
+            continue
+        path = contract.source_matter
         crossed = (
-            SearchDocument.objects.filter(kind)
+            SearchDocument.objects.filter(source_kind=kind)
             .filter(**{f"{path}__isnull": False})
             .exclude(matter_id=F(path))
             .count()
@@ -382,8 +518,11 @@ def _crossed_matters() -> list[Finding]:
         if crossed:
             findings.append(
                 Finding(
-                    label=f"{label}i teemaviide",
-                    detail=f"{crossed} rida osutab teisele teemale kui nende allikas",
+                    label=f"{contract.label}: teemaviide",
+                    detail=(
+                        f"{crossed} rida osutab teisele teemale kui nende allikas. "
+                        f"Parandus: {contract.repair}."
+                    ),
                 )
             )
     return findings
@@ -403,13 +542,21 @@ class Command(BaseCommand):
             type=int,
             default=DRIFT_SAMPLE,
             help=(
-                "How many indexed Matters to recompute when looking for text that has "
-                f"gone stale (default {DRIFT_SAMPLE}; 0 skips the check)."
+                "How many rows of each source kind to recompute when looking for text "
+                f"that has gone stale (default {DRIFT_SAMPLE}; 0 skips the check)."
+            ),
+        )
+        parser.add_argument(
+            "--full",
+            action="store_true",
+            help=(
+                "Recompute every row of every kind instead of a sample. This is the mode "
+                "that proves the projection current, and the one a deployment runs."
             ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        report = build_report(sample=max(0, options["drift_sample"]))
+        report = build_report(sample=max(0, options["drift_sample"]), full=options["full"])
 
         if not options["quiet"]:
             self.stdout.write(f"Otsinguindeksis on {report.total_rows} rida.")
@@ -418,6 +565,14 @@ class Command(BaseCommand):
                 mark = "ok" if expected == actual else "ERINEVUS"
                 self.stdout.write(
                     f"  {label:<{width}}  allikaid {expected:>7}  indeksis {actual:>7}  {mark}"
+                )
+            checked = sum(report.drift_checked.values())
+            if report.full:
+                self.stdout.write(f"  teksti võrdlus: kõik {checked} rida (--full)")
+            else:
+                self.stdout.write(
+                    f"  teksti võrdlus: valim, {checked} rida (kuni "
+                    f"{options['drift_sample']} liigi kohta; --full kontrollib kõiki)"
                 )
             for version, total in sorted(report.index_versions.items()):
                 marker = "" if version == INDEX_VERSION else "  (vananenud)"
@@ -438,12 +593,14 @@ class Command(BaseCommand):
             self.stderr.write(self.style.WARNING(f"{finding.label}: {finding.detail}"))
 
         if not report.ok:
+            # Each finding above names its own repair. This is the one that
+            # repairs every class, said once: `refresh_matter_search` rewrites
+            # MATTER rows only and cannot fix a child row (ENG-080).
             self.stderr.write(
                 self.style.WARNING(
-                    "Paranda käsuga `rebuild_search_index` (kogu korpus) või "
-                    "`refresh_matter_search <viide>` (üksik teema). Kui võlg on "
-                    "vana, kontrolli kõigepealt, kas `run_search_refresh_worker` "
-                    "töötab."
+                    "Iga leiu parandus on selle real. `rebuild_search_index` parandab "
+                    "kõik ülaltoodu ja tasub ka täisindeksi võla. Kui võlg on vana, "
+                    "kontrolli kõigepealt, kas `run_search_refresh_worker` töötab."
                 )
             )
             # A non-zero exit rather than a raised CommandError: this is a
@@ -451,4 +608,13 @@ class Command(BaseCommand):
             # did was work correctly and find something.
             raise SystemExit(1)
 
-        self.stdout.write(self.style.SUCCESS("Otsinguindeks on terve."))
+        if report.full:
+            self.stdout.write(
+                self.style.SUCCESS("Otsinguindeks on terve (kõik read kontrollitud).")
+            )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "Otsinguindeks on terve (tekst kontrollitud valimiga; --full kontrollib kõiki)."
+                )
+            )

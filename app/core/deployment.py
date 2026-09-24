@@ -579,6 +579,71 @@ def unparseable_boolean_variables(environ: dict[str, str] | None = None) -> dict
 # --------------------------------------------------------------------------
 
 
+#: The two moments `deployment_readiness` can be asked about a search index.
+#:
+#: A release that moves `INDEX_VERSION` is *supposed* to start serving on rows
+#: of the old version: the query chokepoint ignores them and search returns too
+#: little until step 11 of the runbook rebuilds the index. So a readiness check
+#: run before that rebuild must be able to say "stale, as expected" without
+#: failing — or every such release would be undeployable — and the check run
+#: after it must fail on exactly the same state, because then it means the
+#: rebuild was skipped and every search answers nothing (ENG-142).
+SEARCH_PHASE_FINAL = "final"
+SEARCH_PHASE_PRE_REBUILD = "pre-rebuild"
+SEARCH_PHASES = (SEARCH_PHASE_FINAL, SEARCH_PHASE_PRE_REBUILD)
+
+
+@dataclass(frozen=True)
+class SearchIndexState:
+    """Whether the search projection is built under the running code's contract."""
+
+    index_version: str
+    current_rows: int
+    stale_rows: int
+    matters: int
+    current_matter_rows: int
+
+    @property
+    def problem(self) -> str:
+        """Why search cannot answer as this build expects, or ``""``."""
+        if self.stale_rows:
+            return (
+                f"{self.stale_rows} search row(s) were built under an older index version; "
+                f"this build reads only {self.index_version}, so search ignores them. "
+                "Run `rebuild_search_index` (runbook step 11), then this check again."
+            )
+        if self.matters and not self.current_matter_rows:
+            return (
+                f"{self.matters} Matter(s) exist and no search row is built under "
+                f"{self.index_version}: search answers nothing. Run `rebuild_search_index`."
+            )
+        return ""
+
+
+def search_index_state() -> SearchIndexState:
+    """Two small aggregates and a count. Reads; never rebuilds."""
+    from django.db.models import Count, Q
+
+    from app.matters.models import Matter
+    from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
+
+    totals = SearchDocument.objects.aggregate(
+        current=Count("id", filter=Q(index_version=INDEX_VERSION)),
+        stale=Count("id", filter=~Q(index_version=INDEX_VERSION)),
+        current_matters=Count(
+            "id",
+            filter=Q(index_version=INDEX_VERSION, source_kind=SearchSourceKind.MATTER),
+        ),
+    )
+    return SearchIndexState(
+        index_version=INDEX_VERSION,
+        current_rows=totals["current"],
+        stale_rows=totals["stale"],
+        matters=Matter.objects.count(),
+        current_matter_rows=totals["current_matters"],
+    )
+
+
 @dataclass(frozen=True)
 class ReadinessReport:
     """Everything ``deployment_readiness`` asks, separated from how it prints.
@@ -600,6 +665,8 @@ class ReadinessReport:
     reference: Any
     problems: tuple[str, ...]
     warnings: tuple[str, ...]
+    search_index: SearchIndexState | None = None
+    search_phase: str = SEARCH_PHASE_FINAL
 
     @property
     def ok(self) -> bool:
@@ -607,8 +674,13 @@ class ReadinessReport:
         return not self.problems
 
 
-def readiness_report() -> ReadinessReport:
+def readiness_report(*, search_phase: str = SEARCH_PHASE_FINAL) -> ReadinessReport:
     """Ask this build about itself. Reads; never migrates and never writes.
+
+    ``search_phase`` says which moment of a deployment this is (see
+    `SEARCH_PHASES`). The default is the final one, so a search index left on an
+    older version is a problem — which is what makes a skipped rebuild visible
+    — and only a caller that names ``pre-rebuild`` gets it as a warning.
 
     Raises :class:`django.db.DatabaseError` when the database cannot be reached
     at all, which is the one condition that cannot be reported as a finding
@@ -658,6 +730,22 @@ def readiness_report() -> ReadinessReport:
         for name, value in sorted(unparseable_boolean_variables().items())
     ]
 
+    if search_phase not in SEARCH_PHASES:
+        raise ValueError(f"unknown search phase {search_phase!r}")
+    search = None
+    if not state.pending:
+        # Only once the schema is this build's: an unapplied migration is
+        # already the problem, and the search tables may not match the model.
+        search = search_index_state()
+        if search.problem:
+            if search_phase == SEARCH_PHASE_PRE_REBUILD:
+                warnings.append(
+                    f"{search.problem} Expected before the rebuild of a release that "
+                    "changes INDEX_VERSION; the final check (no --search-phase) fails on it."
+                )
+            else:
+                problems.append(search.problem)
+
     return ReadinessReport(
         identity=identity,
         postgresql=(major, minor),
@@ -666,4 +754,6 @@ def readiness_report() -> ReadinessReport:
         reference=baseline,
         problems=tuple(problems),
         warnings=tuple(warnings),
+        search_index=search,
+        search_phase=search_phase,
     )

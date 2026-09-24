@@ -28,9 +28,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandParser
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from app.search.indexing import BATCH_SIZE, rebuild_all
+from app.search.freshness import rebuild_and_discharge
+from app.search.indexing import BATCH_SIZE
 
 
 class Command(BaseCommand):
@@ -55,7 +56,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        result = rebuild_all(batch_size=options["batch_size"], clear=not options["keep_existing"])
+        # Through the same claim-rebuild-discharge path as the worker, so a
+        # successful manual repair also clears the debt it repaired and the
+        # freshness healthcheck goes green with the index (ENG-085).
+        outcome = rebuild_and_discharge(
+            batch_size=options["batch_size"], clear=not options["keep_existing"]
+        )
+        result = outcome.result
+        if result is None:  # pragma: no cover - a rebuild that returns has a result
+            raise CommandError("The rebuild reported no result.")
         self.stdout.write(
             self.style.SUCCESS(
                 f"Indexed {result.matters} matters, {result.entries} entries, "
@@ -65,3 +74,7 @@ class Command(BaseCommand):
                 f"(index version {result.index_version})."
             )
         )
+        if outcome.cleared:
+            self.stdout.write(
+                f"Cleared {outcome.cleared} outstanding rebuild obligation(s) this rebuild covered."
+            )

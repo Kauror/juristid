@@ -143,6 +143,24 @@ jobs:
           echo "PREVIOUS=$PREVIOUS" >> "$GITHUB_ENV"
           python3 scripts/ci/assert_release_note.py --changed-files changed-files.txt --waiver "$WAIVER" --env-file "$GITHUB_ENV"
 
+      # Whether this release moves `INDEX_VERSION`, decided from the two
+      # commits rather than from anybody's memory (ENG-142). A moved version
+      # means search answers nothing until the operator rebuilds the index,
+      # while readiness and the healthcheck stay green — so the answer goes
+      # into the manifest the operator deploys from. The script comes from this
+      # workflow's own revision of main, like the provenance gate's.
+      - name: The manifest says whether the search index must be rebuilt
+        env:
+          PREVIOUS: ${{ inputs.previous_sha }}
+          TARGET: ${{ inputs.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git show "$WORKFLOW_SHA:scripts/ci/index_version_change.py" > "$RUNNER_TEMP/index_version_change.py"
+          python3 "$RUNNER_TEMP/index_version_change.py" \
+            --previous "$PREVIOUS" --target "$TARGET" --git-dir "$GITHUB_WORKSPACE" \
+            --env-file "$GITHUB_ENV"
+
       # linux/amd64 explicitly, because the runner's default architecture is a
       # property of the runner and the host's is a property of the host, and a
       # release should not depend on those happening to agree.
@@ -197,6 +215,9 @@ jobs:
             echo "previous:      $PREVIOUS"
             echo "provenance:    $PROVENANCE"
             echo "release_note:  $RELEASE_NOTE${RELEASE_NOTE_DETAIL:+ — $RELEASE_NOTE_DETAIL}"
+            echo "index_version: $INDEX_VERSION_PREVIOUS -> $INDEX_VERSION_TARGET"
+            echo "index_version_changed: $INDEX_VERSION_CHANGED"
+            echo "search_rebuild_required: $INDEX_VERSION_CHANGED"
             echo "image_tag:     juristid-main-web:$SHORT"
             echo "image_id:      $image_id"
             echo "platform:      linux/amd64"

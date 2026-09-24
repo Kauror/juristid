@@ -775,3 +775,9 @@ classifications, or what counts as evidence for a link (ADR 0055). No schema
 change and no index-version bump: the projected values are byte-for-byte what the
 previous builder produced, so no rebuild is required by this change. It does not
 run any rebuild on production.
+
+> **Amended by ADR 0114 (2026-09-25).** `rebuild_search_index` now pays off the
+> debt that existed when it started, through the same claim-rebuild-discharge
+> path as the worker (`freshness.rebuild_and_discharge`). It used to rebuild and
+> leave every debt row in place, so freshness stayed red after a correct manual
+> repair (ENG-085).

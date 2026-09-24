@@ -42,6 +42,17 @@ class Command(BaseCommand):
             action="store_true",
             help="Report only problems. For a scripted post-deployment gate.",
         )
+        parser.add_argument(
+            "--search-phase",
+            choices=deployment.SEARCH_PHASES,
+            default=deployment.SEARCH_PHASE_FINAL,
+            help=(
+                "`final` (default): a search index on an older version fails the check. "
+                "`pre-rebuild`: only for the post-flight of a release whose manifest says "
+                "search_rebuild_required: YES, before its rebuild; the stale index is "
+                "reported as expected. Run the final check after the rebuild."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         quiet: bool = options["quiet"]
@@ -51,7 +62,7 @@ class Command(BaseCommand):
         # this command's prose. What is printed, and the exit behaviour, stay
         # here: they are this command's contract and not the report's.
         try:
-            report = deployment.readiness_report()
+            report = deployment.readiness_report(search_phase=options["search_phase"])
         except DatabaseError as error:
             raise CommandError(
                 f"The database is not reachable: {error.__class__.__name__}"
@@ -94,6 +105,15 @@ class Command(BaseCommand):
                 f"/{baseline.organisations_expected}"
             )
             self.stdout.write("  tags          not managed by the reviewed baseline")
+
+            search = report.search_index
+            if search is not None:
+                self.stdout.write("")
+                self.stdout.write("Search index")
+                self.stdout.write(f"  version      {search.index_version}")
+                self.stdout.write(f"  current rows {search.current_rows}")
+                self.stdout.write(f"  stale rows   {search.stale_rows}")
+                self.stdout.write(f"  phase        {report.search_phase}")
 
         # -- verdict -------------------------------------------------------
         for warning in report.warnings:

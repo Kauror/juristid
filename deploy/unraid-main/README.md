@@ -1271,6 +1271,15 @@ morning because the host rebooted.
 docker compose -p juristid-main -f compose.yml exec -T web python manage.py deployment_readiness
 ```
 
+**If the release manifest says `search_rebuild_required: YES`,** run it with
+`--search-phase=pre-rebuild` here instead. The new code reads only rows built
+under its own `INDEX_VERSION`, so until step 11 rebuilds the index the check
+finds every row stale — which is expected at this moment and reported as a
+warning in this phase. Step 11 then ends with the plain command above, which
+fails on exactly that state: a skipped rebuild cannot end the deployment green
+(ENG-142). A release whose manifest says `NO` runs the plain command here, as
+always, and it fails if search is stale for any other reason.
+
 `exec`, and here that is the correct word. Steps 6, 7 and 9 asked questions
 about code that was not running yet, so they had to start a container from the
 target image. This one asks about the process that is now serving, so it enters
@@ -1313,7 +1322,10 @@ the readiness check above. Step 11 is the one this repository currently owes.
 ### 11. The search index contract, when the release changes it
 
 Conditional, like step 7, and conditional on the same kind of fact: a release
-that leaves `app.search.models.INDEX_VERSION` alone needs nothing here.
+that leaves `app.search.models.INDEX_VERSION` alone needs nothing here. **The
+release manifest says which it is** — `index_version: OLD -> NEW` and
+`search_rebuild_required: YES/NO`, derived from the two commits by
+`scripts/ci/index_version_change.py` — so the condition is read, not remembered.
 
 **Why a release can need it at all.** Every `SearchDocument` records the
 contract it was built under, and the query chokepoint reads only rows carrying
@@ -1349,11 +1361,20 @@ the previous complete index for its whole run and a failure leaves that index in
 place — which is why it is safe here and safe to run again. It is safe beside
 the worker too: both take the same rebuild gate, so if they overlap one waits.
 
-Then prove it, rather than assuming it:
+It also clears the `SearchRebuildDebt` rows that existed when it started
+(ENG-085), so `check_search_freshness` goes green with the index rather than
+staying red until the worker rebuilds everything a second time.
+
+Then prove it, rather than assuming it — `--full`, because only the full pass
+recomputes every row's text; the default samples each kind:
 
 ```bash
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_integrity
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_integrity --full
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py deployment_readiness
 ```
+
+The second is the **final** post-flight, without `--search-phase`: it fails if
+any search row is still on an older index version.
 
 **Any finding stops the release.** Rows left on an older index version means the
 rebuild did not take and the corpus is still unreadable; a completeness finding
@@ -1378,16 +1399,17 @@ running beside the other five. From here on the worker keeps the index fresh on
 its own, and this step is not part of an ordinary release again until something
 changes `INDEX_VERSION` a second time.
 
-**Today that release exists.** `INDEX_VERSION` is `AUTH003.1`, set by ADR 0038,
-and the `searchindex` service arrived with ADR 0041 — both in the range a
-production instance still on an earlier revision has not crossed. Such an
-instance owes this step once, on the release that first serves `AUTH003.1`.
+**Whether this release is one is in its manifest.** The version has moved
+several times (`AUTH003.1`, `OPSUM.1`, `TEEMA.1`, and `DOKUMENT.1` with ADR 0113);
+any release whose range crosses a move owes this step once, and the manifest's
+`search_rebuild_required` line says so without anybody having to know the
+history.
 
 It is named here rather than left to a release note for the same reason step 7
 is: the condition is a fact about the deployment in front of you rather than a
 claim this repository can make about it. Run the step. If the corpus was already
 rebuilt under this contract, `rebuild_search_index` costs a few seconds and
-`check_search_integrity` confirms it; if it was not, those few seconds are the
+`check_search_integrity --full` confirms it; if it was not, those few seconds are the
 difference between a search that works and one that silently answers nothing.
 
 ### 12. The archive projection, when a release moves it
