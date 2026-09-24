@@ -256,7 +256,14 @@ def add_evidence_version(
 
     # Serialise version allocation for this logical document. Concurrent
     # callers queue here rather than racing to the same version number.
-    locked = Document.objects.select_for_update().get(pk=document.pk)
+    #
+    # `FOR NO KEY UPDATE` (ENG-027), which still makes two uploads take turns.
+    # Saving the new current version fires the document's search refresh, and
+    # when an earlier version has ACTIVE extracted text that refresh takes the
+    # rebuild gate's shared side. A rebuild holds the gate exclusively and needs
+    # `FOR KEY SHARE` on this row at COMMIT for the fragments it re-inserted;
+    # plain `FOR UPDATE` blocked it and the two deadlocked (app/matters/locks.py).
+    locked = Document.objects.select_for_update(no_key=True).get(pk=document.pk)
 
     next_number = (locked.versions.aggregate(highest=Max("version_number"))["highest"] or 0) + 1
     version_id = uuid7()

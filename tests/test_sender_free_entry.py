@@ -452,12 +452,23 @@ def _inline(matter, field: str) -> str:
     return reverse("matters:update_field", kwargs={"pk": matter.pk, "field": field})
 
 
+def _fresh(matter) -> dict[str, str]:
+    """The revision a freshly rendered rail carries; without it the save is
+    refused as stale (ENG-028)."""
+    from app.matters.services import matter_field_revision
+
+    return {"revision": matter_field_revision(matter, "source_organisations")}
+
+
 def test_the_rail_editor_files_a_typed_sender(signed_in, specialist):
     """The fourth place a sender is set, and it must not be the one place a
     body cannot be named."""
     matter = factories.MatterFactory(owner=specialist)
 
-    signed_in.post(_inline(matter, "source_organisations"), {"sender_name": "Eesti Näidisliit"})
+    signed_in.post(
+        _inline(matter, "source_organisations"),
+        {**_fresh(matter), "sender_name": "Eesti Näidisliit"},
+    )
 
     matter.refresh_from_db()
     assert [item.name for item in matter.source_organisations.all()] == ["Eesti Näidisliit"]
@@ -469,7 +480,11 @@ def test_the_rail_editor_unions_a_ticked_sender_with_a_typed_one(signed_in, spec
 
     signed_in.post(
         _inline(matter, "source_organisations"),
-        {"source_organisations": [str(chosen.pk)], "sender_name": "Eesti Näidisliit"},
+        {
+            **_fresh(matter),
+            "source_organisations": [str(chosen.pk)],
+            "sender_name": "Eesti Näidisliit",
+        },
     )
 
     matter.refresh_from_db()
@@ -489,7 +504,11 @@ def test_an_ambiguous_name_in_the_rail_editor_changes_nothing(signed_in, special
 
     response = signed_in.post(
         _inline(matter, "source_organisations"),
-        {"source_organisations": [str(existing.pk)], "sender_name": "Ministeerium"},
+        {
+            **_fresh(matter),
+            "source_organisations": [str(existing.pk)],
+            "sender_name": "Ministeerium",
+        },
     )
 
     assert response.status_code == 400
@@ -505,7 +524,7 @@ def test_an_empty_rail_post_still_clears_every_sender(signed_in, specialist):
     existing = factories.OrganisationFactory(name="Kliimaministeerium")
     matter = factories.MatterFactory(owner=specialist, source_organisations=[existing])
 
-    signed_in.post(_inline(matter, "source_organisations"), {})
+    signed_in.post(_inline(matter, "source_organisations"), _fresh(matter))
 
     matter.refresh_from_db()
     assert list(matter.source_organisations.all()) == []

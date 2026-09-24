@@ -37,6 +37,7 @@ from app.matters.services import (
     add_engagement,
     close_matter,
     compose_update,
+    matter_field_revision,
     personal_note_for,
     save_personal_note,
     set_brief_summary,
@@ -255,7 +256,10 @@ def test_an_unchanged_summary_writes_nothing(normal_matter, specialist):
 def test_the_summary_is_edited_inline_without_leaving_the_page(signed_in, normal_matter):
     response = signed_in.post(
         reverse("matters:update_summary", kwargs={"pk": normal_matter.pk}),
-        {"brief_summary": "Kaks lauset tavakeeles."},
+        {
+            "brief_summary": "Kaks lauset tavakeeles.",
+            "revision": matter_field_revision(normal_matter, "brief_summary"),
+        },
         headers={"HX-Request": "true"},
     )
 
@@ -309,7 +313,10 @@ def test_valdkonnad_are_edited_inline_and_audited(signed_in, normal_matter):
 
     response = signed_in.post(
         reverse("matters:update_field", kwargs={"pk": normal_matter.pk, "field": "policy_areas"}),
-        {"policy_areas": [str(chosen.pk)]},
+        {
+            "policy_areas": [str(chosen.pk)],
+            "revision": matter_field_revision(normal_matter, "policy_areas"),
+        },
         headers={"HX-Request": "true"},
     )
 

@@ -164,6 +164,12 @@ and is not part of this change. It was tested against the same rebuild and does
 not deadlock: it locks a Document but never asks for the rebuild gate, so there
 is no cycle to close.
 
+> **Amended by ADR 0109 §1 (2026-09-24).** This held only for a document with no
+> extracted text. When an earlier version has an ACTIVE derivative, saving the
+> new current version refreshes the document's fragments and reaches the gate,
+> so the cycle does close (ENG-027). `add_evidence_version` now locks the
+> Document at `FOR NO KEY UPDATE`, and so does `close_matter` on the Matter.
+
 ### 4. A waiter re-reads everything
 
 A transaction that waited on the Matter lock was, by definition, waiting for

@@ -16,6 +16,8 @@ for the parts that answer needs. Nobody types an anchor date for a quarter,
 because the anchor is not a fact — it is how the database sorts
 (Stage-2G brief 7, 51).
 {% endcomment %}
+{# The record version an edit was opened on; absent on an add form (ENG-028). #}
+{% if form.revision %}{{ form.revision }}{% endif %}
 {% if form.non_field_errors %}
   <div class="formerror" role="alert">
     {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}

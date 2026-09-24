@@ -12,7 +12,7 @@ Matter nobody has summarised yet should look short, not unfinished.
 {% endcomment %}
 <div class="summary" id="teema-luhikokkuvote">
   {% if can_write %}
-    <details class="summary__edit">
+    <details class="summary__edit"{% if summary_open %} open{% endif %}>
       <summary class="summary__trigger">
         {% if matter.brief_summary %}
           <p class="summary__text">{{ matter.brief_summary|linebreaksbr }}<span class="summary__action">Muuda</span></p>
@@ -24,6 +24,8 @@ Matter nobody has summarised yet should look short, not unfinished.
             hx-post="{% url 'matters:update_summary' pk=matter.pk %}"
             hx-target="#teema-pais" hx-swap="outerHTML">
         {% csrf_token %}
+        {# The paragraph this box was opened on; a stale save is refused (ENG-028). #}
+        <input type="hidden" name="revision" value="{{ summary_revision }}">
         <label class="visually-hidden" for="{{ summary_form.brief_summary.id_for_label }}">
           Lühikokkuvõte
         </label>

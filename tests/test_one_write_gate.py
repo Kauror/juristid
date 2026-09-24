@@ -56,6 +56,7 @@ from app.core.authorization import (
     acting_role,
 )
 from app.core.decorators import WRITE_REFUSED
+from app.matters.services import matter_field_revision
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -211,7 +212,10 @@ def test_a_writer_still_writes(client, specialist):
 
     response = client.post(
         reverse("matters:update_summary", kwargs={"pk": matter.pk}),
-        {"brief_summary": "Sünteetiline kokkuvõte"},
+        {
+            "brief_summary": "Sünteetiline kokkuvõte",
+            "revision": matter_field_revision(matter, "brief_summary"),
+        },
     )
 
     assert response.status_code in (200, 302)

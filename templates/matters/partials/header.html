@@ -258,6 +258,8 @@ rather than read.
               hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_areas' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
+          {# The set this box was rendered with; a stale save is refused (ENG-028). #}
+          <input type="hidden" name="revision" value="{{ policy_areas_revision }}">
           <fieldset class="inlineform__group">
             <legend class="visually-hidden">Valdkonnad</legend>
             {% for area in policy_area_choices %}
