@@ -107,7 +107,9 @@ files are **not** swept by the held-upload path, which only looks at the root of
 the directory. A staging session is removed from its own row by `manage.py
 prune_intake_staging`, which an operator runs. Nothing schedules it, and it
 cannot touch evidence — it reads neither the evidence store nor
-`DocumentVersion`.
+`DocumentVersion`. For each session it removes, it deletes everything under that
+session's own `intake/<session id>/` prefix, including an object whose row never
+committed; it never lists or deletes any other session's prefix.
 
 ## Backing up
 

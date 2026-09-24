@@ -29,6 +29,7 @@ from typing import Any
 
 from django.conf import settings
 
+from app.documents.filenames import canonical_filename
 from app.documents.services import ALLOWED_EVIDENCE_MIME_TYPES
 
 
@@ -123,4 +124,9 @@ def read_upload(uploaded_file: Any) -> AcceptedUpload:
             "Faili sisu ei vasta selle laiendile. Kontrolli, kas fail on terve ja õiget tüüpi."
         )
 
-    return AcceptedUpload(content=content, filename=filename[:400], mime_type=mime_type)
+    # NFC and bounded with the extension kept (ENG-088, ENG-033): a name typed
+    # on a Mac and the same name typed on Windows are one name, and a blind
+    # `[:400]` used to cut the extension off an over-long one.
+    return AcceptedUpload(
+        content=content, filename=canonical_filename(filename), mime_type=mime_type
+    )

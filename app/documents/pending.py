@@ -287,8 +287,9 @@ def _forget_expired(session: Any, manifest: dict[str, dict[str, Any]]) -> None:
 
     Housekeeping, not the pruner: this keeps one session's dictionary from
     growing across a long day. The objects themselves are removed by
-    ``prune_pending_uploads``, which is the only thing that may decide an object
-    on disk is nobody's.
+    :func:`_sweep`, by age, on the next hold — there is no separate pruning
+    command for held uploads (an earlier version of this sentence named one that
+    never existed; ENG-087).
     """
     from django.utils.dateparse import parse_datetime
 

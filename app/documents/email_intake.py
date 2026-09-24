@@ -42,6 +42,7 @@ from django.conf import settings
 from app.documents.derivatives import AttachmentDisposition, EmailAttachmentLink
 from app.documents.enums import DocumentRole
 from app.documents.extraction.base import ParsedAttachment
+from app.documents.filenames import canonical_filename
 from app.documents.models import DocumentVersion
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import EXTENSION_MIME_TYPES
@@ -98,6 +99,23 @@ def register_email_attachments(
             )
             continue
 
+        refusal = _attachment_refusal(attachment)
+        if refusal:
+            # The same rules `add_evidence_version` enforces, asked before any
+            # byte is written rather than raised from inside the publish
+            # transaction — where one unusable part used to fail the whole
+            # message: no body indexed, no sibling registered, and a forced
+            # re-run failing the same way (ENG-033). Only these known,
+            # per-attachment conditions are screened; anything else still
+            # fails the message as it did.
+            logger.info(
+                "attachment skipped version=%s ordinal=%d reason=%s",
+                parent_version.pk,
+                ordinal,
+                refusal,
+            )
+            continue
+
         if at_depth_limit and mime_type in NESTED_MESSAGE_MIME_TYPES:
             # The chain stops here. Only messages are refused: a PDF three
             # envelopes deep is still somebody's annex and still worth having,
@@ -113,9 +131,14 @@ def register_email_attachments(
             )
             continue
 
+        # NFC, and bounded with the extension kept: `Document.title` and the
+        # stored filename are varchar(400), and a longer machine-generated name
+        # was a database error that took the whole message down (ENG-033,
+        # ENG-088). The declared name is kept as declared on the link row.
+        filename = canonical_filename(attachment.filename)
         document = create_document(
             matter=matter,
-            title=attachment.filename or f"Manus {ordinal}",
+            title=filename or f"Manus {ordinal}",
             role=DocumentRole.EMAIL_ATTACHMENT,
             created_by=parent_version.uploaded_by,
             visibility_override=parent_version.document.visibility_override,
@@ -124,7 +147,7 @@ def register_email_attachments(
         version = add_evidence_version(
             document=document,
             content=attachment.content,
-            original_filename=attachment.filename or f"manus-{ordinal}",
+            original_filename=filename or f"manus-{ordinal}",
             mime_type=mime_type,
             uploaded_by=parent_version.uploaded_by,
             acquired_at=parent_version.acquired_at,
@@ -141,6 +164,19 @@ def register_email_attachments(
         created += 1
 
     return created
+
+
+def _attachment_refusal(attachment: ParsedAttachment) -> str:
+    """Why the evidence store would refuse this attachment, or ``""``.
+
+    Mirrors `add_evidence_version`'s own checks on the bytes, so a part that
+    would be refused there is skipped here instead.
+    """
+    if not attachment.content:
+        return "empty"
+    if len(attachment.content) > settings.MAX_EVIDENCE_UPLOAD_BYTES:
+        return "too_large"
+    return ""
 
 
 def _nesting_depth(version: DocumentVersion) -> int:

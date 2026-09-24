@@ -101,7 +101,11 @@ class DocumentUploadForm(forms.Form):
     role = forms.ChoiceField(
         label="Roll", choices=DocumentRole.choices, initial=DocumentRole.INCOMING_AUTHORITY
     )
-    upload = forms.FileField(label="Fail")
+    # An empty file is let through the form on purpose, so that `read_upload`
+    # refuses it with its own sentence. The form's default refusal was folded
+    # into «Vali fail ja roll.», which told somebody who had chosen both to
+    # choose them (ENG-089). One rule, in the validator every path shares.
+    upload = forms.FileField(label="Fail", allow_empty_file=True)
 
 
 @login_required

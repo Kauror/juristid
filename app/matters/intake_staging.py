@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 #: The prefix is not cosmetic. ``pending._sweep`` deletes objects at the *root*
 #: of that store by age, and it lists names rather than walking the tree — so
 #: staged bytes sit one directory down, out of its reach, and are swept by
-#: :func:`sweep_stale_sessions` from the rows that describe them instead. A test
+#: :func:`sweep_stale_sessions`, one selected session prefix at a time. A test
 #: holds that boundary (`tests/test_intake_staging.py`).
 STORAGE_PREFIX = "intake"
 
@@ -208,17 +208,49 @@ def stage_uploads(
     work or weaken it. What it adds is the checksum, the ordinal and the row
     the extraction worker claims.
 
+    **The session row is locked first** (``FOR NO KEY UPDATE``), and the
+    count and the next ordinal are read under that lock. Two uploads into one
+    form — a second tab, a retry — used to read the same ``max(ordinal)``, and
+    the loser hit the unique constraint as a 500 with its bytes already written
+    (ENG-087). Now the second waits for the first and numbers after it.
+
     The bytes are written before the row that describes them, which is the
     ordering ``add_evidence_version`` uses and for the same reason: a row
-    pointing at an object that is not there is undetectable, and an object no
-    row points at is swept.
+    pointing at an object that is not there is undetectable. If anything here
+    fails after a write, every object this call wrote is discarded before the
+    error propagates. What still escapes — a rollback *after* this returns —
+    sits under the session's own prefix, and the sweeper removes that prefix
+    whole (:func:`_discard_objects`).
     """
     session = session or MatterIntakeSession.objects.create(owner=owner, expires_at=_expiry())
+    MatterIntakeSession.objects.select_for_update(no_key=True).filter(pk=session.pk).exists()
 
     existing = session.files.count()
     next_ordinal = (session.files.aggregate(top=Max("ordinal"))["top"] or 0) + 1
     storage = staging_storage()
     staged: list[MatterIntakeFile] = []
+    written: list[str] = []
+    refusal = ""
+    try:
+        refusal = _stage_each(session, uploads, existing, next_ordinal, storage, staged, written)
+    except BaseException:
+        for key in written:
+            _discard_key(storage, key)
+        raise
+
+    return StagingResult(session=session, staged=tuple(staged), refusal=refusal)
+
+
+def _stage_each(
+    session: MatterIntakeSession,
+    uploads: list[AcceptedUpload],
+    existing: int,
+    next_ordinal: int,
+    storage: Any,
+    staged: list[MatterIntakeFile],
+    written: list[str],
+) -> str:
+    """Write each file and its row; ``written`` records every key as it lands."""
     refusal = ""
 
     for upload in uploads:
@@ -233,6 +265,7 @@ def stage_uploads(
             break
 
         key = storage.save(f"{STORAGE_PREFIX}/{session.pk}/{uuid7()}", ContentFile(upload.content))
+        written.append(key)
         staged.append(
             MatterIntakeFile.objects.create(
                 session=session,
@@ -245,8 +278,7 @@ def stage_uploads(
                 role=role_for(upload.filename),
             )
         )
-
-    return StagingResult(session=session, staged=tuple(staged), refusal=refusal)
+    return refusal
 
 
 def remove_file(*, session: MatterIntakeSession, file_id: Any) -> bool:
@@ -404,16 +436,42 @@ def consume_session(session: MatterIntakeSession) -> None:
 
 
 def _discard_objects(session: MatterIntakeSession) -> int:
-    """Delete this session's stored bytes, best effort. Rows are untouched."""
+    """Delete this session's stored bytes, best effort. Rows are untouched.
+
+    Everything under the session's own prefix, not only the keys its rows
+    name. An object whose row never committed — a write whose transaction
+    rolled back afterwards — is named by no row, and following rows alone left
+    it in the store for good (ENG-087). The prefix is this one session's and
+    nobody else's: the scope is exactly the sessions the caller already chose,
+    never a scan of the whole staging area.
+    """
     storage = staging_storage()
+    prefix = f"{STORAGE_PREFIX}/{session.pk}"
+    keys = set(session.files.exclude(storage_key="").values_list("storage_key", flat=True))
+    try:
+        _directories, names = storage.listdir(prefix)
+    except FileNotFoundError:
+        names = []
+    keys.update(f"{prefix}/{name}" for name in names)
+
     removed = 0
-    for key in session.files.exclude(storage_key="").values_list("storage_key", flat=True):
-        try:
-            storage.delete(key)
+    for key in sorted(keys):
+        if _discard_key(storage, key):
             removed += 1
-        except OSError:  # pragma: no cover - best effort
-            logger.warning("could not delete staged intake object %s", key, exc_info=True)
+    # The emptied directory itself, where the backend has directories.
+    _discard_key(storage, prefix)
     return removed
+
+
+def _discard_key(storage: Any, key: str) -> bool:
+    try:
+        if not storage.exists(key):
+            return False
+        storage.delete(key)
+        return True
+    except OSError:  # pragma: no cover - best effort
+        logger.warning("could not delete staged intake object %s", key, exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------------------------

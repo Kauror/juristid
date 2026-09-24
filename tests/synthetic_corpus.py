@@ -421,7 +421,9 @@ def malformed_eml() -> bytes:
     return "Subject: katkine\r\nFrom: keegi\r\n\x00\x00binaarne prügi".encode()
 
 
-def outlook_msg(*, attachment: bool = True) -> bytes:
+def outlook_msg(
+    *, attachment: bool = True, extra_attachments: tuple[tuple[str, bytes], ...] = ()
+) -> bytes:
     """A synthetic Outlook message, built with `extract-msg`'s own OLE writer.
 
     Writing one rather than committing one keeps the corpus generated end to
@@ -450,8 +452,18 @@ def outlook_msg(*, attachment: bool = True) -> bytes:
         ),
     }
 
+    parts: list[tuple[str, bytes]] = []
+    if attachment:
+        parts.append(
+            (
+                "lisa-1.pdf",
+                text_pdf([f"Lisa 1\n\nMääratlus: {ONLY_IN_ATTACHMENT} on tagatisrahaga pakend."]),
+            )
+        )
+    parts.extend(extra_attachments)
+
     writer = OleWriter()
-    header = b"\x00" * 8 + struct.pack("<IIII", 0, 0, 0, 1 if attachment else 0) + b"\x00" * 8
+    header = b"\x00" * 8 + struct.pack("<IIII", 0, len(parts), 0, len(parts)) + b"\x00" * 8
     properties = bytearray(header)
     for name, payload in streams.items():
         tag = int(name.rsplit("_", 1)[-1], 16)
@@ -466,12 +478,14 @@ def outlook_msg(*, attachment: bool = True) -> bytes:
     for tag in ("00020102", "00030102", "00040102"):
         writer.addEntry(f"__nameid_version1.0/__substg1.0_{tag}", b"")
 
-    if attachment:
-        payload = text_pdf([f"Lisa 1\n\nMääratlus: {ONLY_IN_ATTACHMENT} on tagatisrahaga pakend."])
-        folder = "__attach_version1.0_#00000000"
+    # Each part in its own attachment storage, numbered the way Outlook does.
+    # A zero-length payload is a real empty stream, which is what `extract-msg`
+    # reads back as `b""` (ENG-033).
+    for index, (filename, payload) in enumerate(parts):
+        folder = f"__attach_version1.0_#{index:08X}"
         attachment_streams = {
-            f"{folder}/__substg1.0_3707001F": unicode_property("lisa-1.pdf"),
-            f"{folder}/__substg1.0_3704001F": unicode_property("lisa-1"),
+            f"{folder}/__substg1.0_3707001F": unicode_property(filename),
+            f"{folder}/__substg1.0_3704001F": unicode_property(filename.rsplit(".", 1)[0]),
             f"{folder}/__substg1.0_370E001F": unicode_property("application/pdf"),
             f"{folder}/__substg1.0_37010102": payload,
         }
