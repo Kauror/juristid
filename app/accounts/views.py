@@ -192,7 +192,14 @@ def sign_out(request: HttpRequest) -> HttpResponse:
         )
     shared_gate.close_gate(request)
     logout(request)
-    return redirect("core:home")
+    response = redirect("core:home")
+    # What the browser itself kept of the session goes with it: the pages are
+    # `no-store` already, and this clears the origin's storage as well, where
+    # an older htmx kept copies of the register (ENG-009). "storage" only —
+    # not cookies, which `logout` has dealt with, and not the HTTP cache, which
+    # a `no-store` page never entered.
+    response["Clear-Site-Data"] = '"storage"'
+    return response
 
 
 # --------------------------------------------------------------------------

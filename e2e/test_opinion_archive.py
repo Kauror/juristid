@@ -545,11 +545,22 @@ def test_back_returns_to_the_previous_opinion_search(page, base_url):
     found = opinion_row_count(page)
 
     page.go_back()
-    page.wait_for_load_state("networkidle")
 
     assert "arvamus_q" not in page.url, page.url
     assert page.url.endswith("/teemad/") or "arvamus_q" not in page.url
     # The section came back unfiltered rather than showing a stale answer.
+    #
+    # Waited for rather than counted after a quiet network. Back is answered by
+    # the server now, not by a copy htmx kept in the browser (ENG-009), and the
+    # reload it starts can begin after `networkidle` has already resolved on
+    # the page being left.
+    page.wait_for_function(
+        """(found) => document.querySelectorAll(
+            '#arvamused-tulemused .submission, #arvamused-tulemused tbody tr'
+        ).length >= found""",
+        arg=max(found, 1),
+    )
+    page.wait_for_load_state("networkidle")
     assert opinion_row_count(page) >= found
 
 
