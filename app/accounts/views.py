@@ -17,9 +17,9 @@ from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.core.cache import cache
 from django.db.models import QuerySet
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect, render
-from django.utils.http import url_has_allowed_host_and_scheme
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from app.accounts import shared_gate
@@ -27,6 +27,7 @@ from app.accounts.models import User
 from app.accounts.selectors import persona_candidates, persona_from_id
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.request_params import safe_local_path
 
 MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
 
@@ -326,7 +327,7 @@ def act_as(request: HttpRequest) -> HttpResponse:
         # with the application's usual redirect to this page, which is the
         # honest outcome rather than a page invented for a reader who has not
         # said who they are (Vali kasutaja brief 19, 23).
-        return redirect(_safe_next(request) or "matters:overview")
+        return HttpResponseRedirect(_safe_next(request) or reverse("matters:overview"))
 
     # The central candidate population, not "every active account". A crafted
     # POST carrying an administrator's, a superuser's or a reader's identifier
@@ -345,7 +346,7 @@ def act_as(request: HttpRequest) -> HttpResponse:
     shared_gate.note_persona_chosen(request)
     _record_persona_change(request, previous=previous, chosen=person)
     messages.success(request, f"Vaatad rakendust nüüd kasutajana {person.display_name}.")
-    return redirect(_safe_next(request) or "matters:my_work")
+    return HttpResponseRedirect(_safe_next(request) or reverse("matters:my_work"))
 
 
 def _record_persona_change(request: HttpRequest, *, previous: Any, chosen: Any) -> None:
@@ -369,9 +370,12 @@ def _safe_next(request: HttpRequest) -> str:
     An open redirect on the one page everybody passes through would be a
     convenient place to send somebody somewhere else.
     """
-    candidate = request.POST.get("next") or request.GET.get("next") or ""
-    if candidate and url_has_allowed_host_and_scheme(
-        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    ):
-        return candidate
-    return ""
+    # A path on this site and nothing else: `/teemad/`, never a host (even
+    # this one), `//elsewhere`, `teemad/` or a bare URL name, which
+    # `redirect()` would resolve as a view (ENG-046). Callers hand the answer to
+    # `HttpResponseRedirect`, never to `redirect()`.
+    return safe_local_path(
+        request.POST.get("next") or request.GET.get("next"),
+        host=request.get_host(),
+        require_https=request.is_secure(),
+    )

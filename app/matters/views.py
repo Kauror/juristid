@@ -26,12 +26,11 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import F, Q
-from django.http import Http404, HttpRequest, HttpResponse, QueryDict
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
@@ -52,12 +51,14 @@ from app.core.dates import (
     add_months,
     format_estonian_date,
     parse_flexible_date,
+    read_flexible_date,
     short_day_month,
     weekday_letter,
 )
 from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
+from app.core.request_params import bounded_int, safe_local_path
 from app.documents import pending as pending_uploads
 from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document
@@ -551,7 +552,7 @@ def complete_work_item(request: HttpRequest, action_id: Any) -> HttpResponse:
     else:
         messages.success(request, "Tegevus on märgitud tehtuks.")
 
-    return redirect(_safe_next(request) or reverse("matters:my_work"))
+    return HttpResponseRedirect(_safe_next(request) or reverse("matters:my_work"))
 
 
 def _safe_next(request: HttpRequest) -> str:
@@ -560,12 +561,13 @@ def _safe_next(request: HttpRequest) -> str:
     The same guard `app.accounts.views` applies to the persona switch: a `next`
     a browser sent is somebody's input until it has been checked.
     """
-    candidate = request.POST.get("next") or ""
-    if candidate and url_has_allowed_host_and_scheme(
-        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    ):
-        return candidate
-    return ""
+    # A path on this site and nothing else: `/teemad/`, never a host (even
+    # this one), `//elsewhere`, `teemad/` or a bare URL name, which
+    # `redirect()` would resolve as a view (ENG-046). Callers hand the answer to
+    # `HttpResponseRedirect`, never to `redirect()`.
+    return safe_local_path(
+        request.POST.get("next"), host=request.get_host(), require_https=request.is_secure()
+    )
 
 
 @login_required
@@ -1671,7 +1673,7 @@ def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
     form = MatterFieldForm(request.POST, matter=matter)
     if not form.is_valid():
         messages.error(request, "Vigane väärtus.")
-        return redirect(_safe_next(request) or reverse("matters:matter_list"))
+        return HttpResponseRedirect(_safe_next(request) or reverse("matters:matter_list"))
 
     try:
         assign_matter(matter=matter, owner=form.cleaned_data.get("owner"), actor=request.user)
@@ -1686,7 +1688,7 @@ def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
             else f"«{matter.title}» on nüüd vastutajata.",
         )
 
-    return redirect(_safe_next(request) or reverse("matters:matter_list"))
+    return HttpResponseRedirect(_safe_next(request) or reverse("matters:matter_list"))
 
 
 def _organisation_options(term: str) -> list[Organisation]:
@@ -2697,7 +2699,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # that distinction is the whole point of the two counts: `{{ value|
         # default:"—" }}` renders a measured zero as a missing one
         # (`register_display.MemberFeedback`).
-        "register_facts": register_facts_for(matter),
+        "register_facts": register_facts_for(matter, request.user),
         # The standing `Kaasamine` section's state is gone with the section.
         # `engagement_rows`, `engagement_count`, `engagement_form`,
         # `engagement_editing`, `engagement_open` and `engagement_add_open`
@@ -3265,8 +3267,13 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
         documents = documents.filter(pk__in=opinion_ids)
     elif role in DocumentRole.values:
         documents = documents.filter(role=role)
-    if year.isdigit():
-        documents = documents.filter(created_at__year=int(year))
+    # A year PostgreSQL can compare with, or no year filter. `isdigit()` alone
+    # let `999999999999` through to a `bigint out of range` (ENG-046); the
+    # chip below names the year only when it was applied.
+    applied_year = bounded_int(year, default=0, minimum=1, maximum=9999)
+    year = str(applied_year) if applied_year else ""
+    if applied_year:
+        documents = documents.filter(created_at__year=applied_year)
 
     # The filters as they were actually applied, which is what the chips name
     # and what their removal links rebuild. `koik` is deliberately not carried:
@@ -4140,11 +4147,16 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
     # The box beside "Vaatasin üle" is the Estonian date control like every
     # other one, so `7.9.2026` has to reach here as a date. ISO still parses:
     # this route was posted to with ISO before the control changed.
-    raw_date = request.POST.get("next_review_date", "").strip()
-    next_review_date = parse_flexible_date(raw_date) if raw_date else None
+    #
+    # Empty means "no next review date" and is an ordinary answer. A value that
+    # is not a day is refused with nothing written: read as empty, `31.02.2026`
+    # used to *clear* the date somebody was trying to set (ENG-046).
+    reading = read_flexible_date(request.POST.get("next_review_date"))
 
     try:
-        acknowledge_review(action=action, actor=request.user, next_review_date=next_review_date)
+        if reading.invalid:
+            raise DomainError("Kirjuta kuupäev kujul 7.9.2026.")
+        acknowledge_review(action=action, actor=request.user, next_review_date=reading.value)
     except DomainError as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
@@ -5244,10 +5256,10 @@ def reopen(request: HttpRequest, pk: Any) -> HttpResponse:
 def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
     """Load the next slice of chronology without reloading the page."""
     matter = get_visible_matter(request, pk)
-    try:
-        offset = max(0, int(request.GET.get("nihe", 0)))
-    except ValueError:
-        offset = 0
+    # Bounded, not only non-negative: `?nihe=999999999999` was a `bigint out of
+    # range` in the SQL `OFFSET` (ENG-046). Past the end is the first slice,
+    # as any other unreadable offset is.
+    offset = bounded_int(request.GET.get("nihe"), default=0)
 
     only = _timeline_filter(request)
     items, has_more = matter_timeline(

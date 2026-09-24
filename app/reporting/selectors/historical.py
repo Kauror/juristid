@@ -83,6 +83,10 @@ FILE_TYPE_EXTENSIONS: dict[str, tuple[str, ...]] = {
 #: bucket: a corpus is never entirely made of formats somebody listed.
 OTHER_TYPE = "MUU"
 
+#: Every key a file-type bar can link to, and so every value `?failityyp=`
+#: may carry.
+FILE_TYPE_KEYS: frozenset[str] = frozenset((*FILE_TYPE_EXTENSIONS, OTHER_TYPE))
+
 #: ASiC-E and BDoc are valid historical material that nothing will ever open.
 #: Kept as a named group because "not parsed" and "failed to parse" are
 #: different facts and only one of them is a problem (brief 31).

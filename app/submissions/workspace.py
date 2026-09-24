@@ -38,6 +38,7 @@ from typing import Any
 
 from django.db.models import Q, QuerySet
 
+from app.core.request_params import uuid_or_none
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission
@@ -158,14 +159,23 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
             raise SubmissionQueryRefused(f"Tundmatu liik: {filters.kind}.")
         rows = rows.filter(kind=filters.kind)
 
+    # Identifiers are read as identifiers before they reach a UUID column, and
+    # refused with a sentence like every other filter here: `?saaja=abc` used
+    # to reach the ORM as typed (ENG-046).
     if filters.recipient_id:
-        rows = rows.filter(recipient_rows__organisation_id=filters.recipient_id).distinct()
+        recipient_id = uuid_or_none(filters.recipient_id)
+        if recipient_id is None:
+            raise SubmissionQueryRefused("Saajat ei leitud.")
+        rows = rows.filter(recipient_rows__organisation_id=recipient_id).distinct()
 
     if filters.owner_id:
+        owner_id = uuid_or_none(filters.owner_id)
+        if owner_id is None:
+            raise SubmissionQueryRefused("Vastutajat ei leitud.")
         # The Matter's responsible lawyer rather than `sent_by`: "whose opinion
         # is this" is a question about the work, and the person who pressed send
         # may have been covering.
-        rows = rows.filter(matter__owner_id=filters.owner_id)
+        rows = rows.filter(matter__owner_id=owner_id)
 
     return rows.select_related("matter", "matter__owner", "final_version").prefetch_related(
         "recipient_rows__organisation"

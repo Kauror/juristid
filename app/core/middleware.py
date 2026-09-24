@@ -22,6 +22,7 @@ from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 from django.conf import settings
+from django.core.exceptions import BadRequest
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import resolve_url
 from django.urls import NoReverseMatch, reverse
@@ -29,6 +30,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from app.accounts import shared_gate
 from app.core.authorization import remember_grants_for_one_request
+from app.core.request_params import has_nul
 
 #: Paths whose responses are identical for everybody and safe to cache.
 PUBLIC_PREFIXES = ("/static/", "/healthz", "/favicon.ico")
@@ -55,6 +57,37 @@ class PrivateResponseMiddleware:
             response.setdefault("Cache-Control", NO_STORE)
             response.setdefault("Pragma", "no-cache")
         return response
+
+
+class RefuseNulMiddleware:
+    """Refuse, before any view runs, a request whose parameters carry a NUL byte.
+
+    PostgreSQL text cannot hold ``\x00``, so every view that compares a query
+    parameter with a text column answered one with a 500 (ENG-046) — the
+    register, every Statistika tab, a Matter's documents, the opinion search.
+    No keyboard types it and no link this application writes carries it, so
+    there is no reader to serve and one place is enough: a 400 with nothing
+    written, rather than a rule every future ``request.GET.get`` has to
+    remember.
+
+    Query string and form fields only. An uploaded file's bytes are content and
+    are not inspected; its *name* is a header this application already
+    sanitises (`app.core.http.safe_filename`).
+    """
+
+    def __init__(self, get_response: Any) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        if _carries_nul(request.GET) or (request.method == "POST" and _carries_nul(request.POST)):
+            raise BadRequest("NUL byte in a request parameter")
+        return self.get_response(request)
+
+
+def _carries_nul(params: Any) -> bool:
+    return any(
+        has_nul(key) or any(has_nul(value) for value in params.getlist(key)) for key in params
+    )
 
 
 class RequestScopeMiddleware:

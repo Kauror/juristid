@@ -32,6 +32,7 @@ from __future__ import annotations
 import calendar
 import re
 from datetime import date, timedelta
+from typing import NamedTuple
 
 from django.utils.dateparse import parse_date
 
@@ -98,6 +99,40 @@ def parse_estonian_date(value: str | None) -> date | None:
         return None
 
 
+class DateReading(NamedTuple):
+    """What a typed date turned out to be: nothing, a day, or not a day.
+
+    Three answers, because two callers need all three. A filter treats *not a
+    day* as "empty the list and show what was typed"; a POST treats it as a
+    refusal. Both need to tell it apart from *nothing*, which means "no date"
+    and is an ordinary answer (ENG-046).
+    """
+
+    value: date | None
+    invalid: bool
+
+    @property
+    def empty(self) -> bool:
+        return self.value is None and not self.invalid
+
+
+def read_flexible_date(value: str | None) -> DateReading:
+    """Estonian first, then ISO; see `parse_flexible_date`."""
+    stripped = (value or "").strip()
+    if not stripped:
+        return DateReading(None, invalid=False)
+    if "\x00" in stripped:
+        return DateReading(None, invalid=True)
+    try:
+        parsed = parse_estonian_date(stripped) or parse_date(stripped)
+    except ValueError:
+        # `parse_date` raises on a well-formed ISO string that is not a day —
+        # `2026-02-30` — where `parse_estonian_date` answers None for
+        # `30.02.2026`. The same mistake typed two ways is the same answer.
+        parsed = None
+    return DateReading(parsed, invalid=parsed is None)
+
+
 def parse_flexible_date(value: str | None) -> date | None:
     """Estonian first, then ISO. For query parameters, not for form fields.
 
@@ -105,11 +140,12 @@ def parse_flexible_date(value: str | None) -> date | None:
     has no form behind it, and ``?tahtaeg_alates=`` has to read both a link a
     lawyer edited by hand and one the application generated before this module
     existed.
+
+    ``None`` for both *empty* and *not a day*, and never raises. A caller that
+    has to tell those apart — anything that writes — reads
+    `read_flexible_date` instead.
     """
-    if not value:
-        return None
-    stripped = value.strip()
-    return parse_estonian_date(stripped) or parse_date(stripped)
+    return read_flexible_date(value).value
 
 
 #: The one-letter weekday, Monday first. Estonian: esmaspäev, teisipäev,

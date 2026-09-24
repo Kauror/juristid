@@ -75,6 +75,14 @@ BLOCKED_BY_STRADDLING_ROW = "STRADDLING_ROW"
 #: Another Matter points at this one under an owning relation.
 BLOCKED_BY_RELATED_MATTER = "RELATED_MATTER"
 
+#: The models that exist to name two Matters, and so are removed with either
+#: one (docs/adr/0096 §4.2). Their `Matter` keys are the only ones
+#: `_straddling_rows` does not count; labels rather than classes, so this module
+#: does not import `related_materials` to state a fact about it.
+MATTER_PAIR_MODELS: frozenset[str] = frozenset(
+    {"related_materials.MatterRelation", "related_materials.RelatedSuggestionDismissal"}
+)
+
 #: What each refusal says to the person who pressed the button. One sentence
 #: naming the obstacle in the product's own words, because "ProtectedError" is
 #: not an answer and "something went wrong" is worse.
@@ -368,13 +376,21 @@ def _straddling_rows(owned: _Owned) -> list[DeletionBlocker]:
     So a row is owned only if every forward key it holds *into a model this
     deletion already owns* lands inside the set.
 
-    **`Matter`-valued keys are exempt, deliberately.** `MatterRelation` and
-    `RelatedSuggestionDismissal` exist precisely to name two Matters, and they
-    are reached from either end. Deleting the row that says "these two files are
-    related" is the correct consequence of one of them ceasing to exist — it is
-    not a fact about the surviving Matter that this deletion is destroying, it
-    is a fact about the pair. Shared vocabulary is not considered at all,
-    because those models never enter the owned inventory.
+    **`Matter`-valued keys count like any other — except on the two pair
+    models.** `MatterRelation` and `RelatedSuggestionDismissal` exist precisely
+    to name two Matters, and they are reached from either end. Deleting the row
+    that says "these two files are related" is the correct consequence of one of
+    them ceasing to exist — it is not a fact about the surviving Matter that
+    this deletion is destroying, it is a fact about the pair (docs/adr/0096).
+
+    Every other row whose `matter` is *another* Matter is that Matter's record.
+    `MatterBackgroundMaterial` is the case that was live: Y citing X's opinion
+    as background hangs off X's `Submission` under ``CASCADE``, so the walk
+    owned it, and a blanket exemption for Matter keys deleted Y's row with
+    nothing on Y to say so (ENG-042). It is a blocker now, with the same
+    generic sentence as every straddling row — the refusal does not name Y.
+    Shared vocabulary is not considered at all, because those models never
+    enter the owned inventory.
     """
     blockers: list[DeletionBlocker] = []
     for label in sorted(owned.ids):
@@ -390,7 +406,9 @@ def _straddling_rows(owned: _Owned) -> list[DeletionBlocker]:
             if not (key.many_to_one or key.one_to_one):
                 continue
             related = key.related_model
-            if related is None or related is Matter:
+            if related is None:
+                continue
+            if related is Matter and label in MATTER_PAIR_MODELS:
                 continue
             if related._meta.label not in owned.ids:
                 continue

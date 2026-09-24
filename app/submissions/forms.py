@@ -88,7 +88,10 @@ class FinalEvidenceForm(forms.Form):
     """
 
     upload = forms.FileField(label="Lõplik fail", required=False)
-    existing_version = forms.CharField(label="Olemasolev tõend", required=False)
+    # A UUID field, not text: the value is a primary key, and `abc` reached
+    # `get_object_or_404` as typed and was a 500 (ENG-046). Not a UUID is now
+    # the same refusal as no choice at all.
+    existing_version = forms.UUIDField(label="Olemasolev tõend", required=False)
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
