@@ -171,6 +171,13 @@ unaffected; so is the opinions archive, which has its own projection. What is
 lost is search inside the bytes of newly filed evidence, and it is lost on
 purpose until the storage underneath can absorb the writes.
 
+> **Amended by ADR 0113 (2026-09-25).** The sentence above was not true when it
+> was written: a document's *name* reached search only through the rows of an
+> extracted derivative, so a newly filed document could not be found by title
+> or filename either (ENG-030). Every Document now has a search row of its own
+> carrying its title and filenames. Content search is still withdrawn exactly as
+> this record decided.
+
 ## Alternatives considered
 
 **Rate-limit the extractor instead.** A sleep between documents, or a

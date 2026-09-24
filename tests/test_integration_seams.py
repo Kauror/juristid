@@ -524,4 +524,8 @@ def test_the_current_register_is_not_a_kind_of_search_row() -> None:
         # projection fed by another projection.
         "PROCEDURAL_DEVELOPMENT",
         "EXTERNAL_POSITION",
+        # docs/adr/0113. A `Document` is a canonical record with its own
+        # visibility; its row carries the document's own title and filenames,
+        # not anything derived from another projection.
+        "DOCUMENT",
     }

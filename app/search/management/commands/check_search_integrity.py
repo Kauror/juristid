@@ -54,7 +54,7 @@ from django.core.management.base import BaseCommand, CommandParser
 from django.db.models import Count, F, Q
 
 from app.documents.enums import DerivativeStatus
-from app.documents.models import DocumentTextFragment
+from app.documents.models import Document, DocumentTextFragment
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters.models import (
     Entry,
@@ -140,6 +140,13 @@ def _expected_populations() -> list[tuple[str, str, int]]:
             "Arvamused ja tagasiside",
             SearchSourceKind.EXTERNAL_POSITION.value,
             MatterExternalPosition.objects.filter(**live).count(),
+        ),
+        # One row per Document whatever its extraction state, which is what
+        # `indexable_documents` projects (ENG-030).
+        (
+            "Dokumendid",
+            SearchSourceKind.DOCUMENT.value,
+            Document.objects.filter(matter__deleted_at__isnull=True).count(),
         ),
     ]
 
@@ -355,7 +362,7 @@ def _crossed_matters() -> list[Finding]:
         ("Arvamus", Q(source_kind=SearchSourceKind.SUBMISSION), "submission__matter_id"),
         (
             "Dokument",
-            Q(source_kind=SearchSourceKind.DOCUMENT_FRAGMENT),
+            Q(source_kind__in=[SearchSourceKind.DOCUMENT_FRAGMENT, SearchSourceKind.DOCUMENT]),
             "document__matter_id",
         ),
         (

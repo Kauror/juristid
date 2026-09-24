@@ -12,6 +12,7 @@ path that writes authored HTML to the database without passing it here first.
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 
 import nh3
 
@@ -71,17 +72,75 @@ def sanitize_entry_html(raw: str) -> str:
     return cleaned.strip()
 
 
+#: Elements whose boundary is a boundary between words. `<p>Tere</p><p>kolleeg</p>`
+#: is two words on the page, and stripping the tags without a space between
+#: them fused them into one token nobody could search for (ENG-082).
+_BLOCK_ELEMENTS: frozenset[str] = frozenset(
+    {
+        "address", "article", "aside", "blockquote", "br", "dd", "div", "dl", "dt",
+        "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header",
+        "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td",
+        "tfoot", "th", "thead", "tr", "ul",
+    }
+)  # fmt: skip
+
+#: Elements whose *contents* are not text a reader sees.
+_INVISIBLE_ELEMENTS: frozenset[str] = frozenset({"script", "style", "template", "noscript"})
+
+
+class _TextOnly(HTMLParser):
+    """Collects the text a browser would show, and nothing else."""
+
+    def __init__(self) -> None:
+        # `convert_charrefs` decodes `&amp;`, `&nbsp;` and `&lt;` exactly once,
+        # in the text nodes and nowhere else.
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._hidden = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _INVISIBLE_ELEMENTS:
+            self._hidden += 1
+        elif tag in _BLOCK_ELEMENTS:
+            self.parts.append(" ")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _BLOCK_ELEMENTS:
+            self.parts.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _INVISIBLE_ELEMENTS:
+            self._hidden = max(self._hidden - 1, 0)
+        elif tag in _BLOCK_ELEMENTS:
+            self.parts.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden:
+            self.parts.append(data)
+
+
 def plain_text(html: str) -> str:
     """The text content of an entry body, for excerpts and search.
 
-    Never used for rendering — it exists so a list can show a preview without
-    putting markup through another escaping decision.
+    **Text, not escaped HTML.** It used to return nh3's output, which is
+    markup with every tag removed and every entity still escaped: a lawyer's
+    «AS Näide & Partnerid» was indexed as `AS Näide &amp; Partnerid`, and the
+    template's own escaping then showed the entity literally in the snippet.
+    Adjacent blocks were fused into one word as well (ENG-082). Now entities
+    are decoded once, block boundaries become spaces, and script and style
+    contents are dropped.
+
+    The result is a plain string. It is never marked safe and never inserted
+    as markup: every place it reaches a page goes through template
+    autoescaping, which is the only escaping layer — so `&lt;script&gt;` in
+    the source is the visible text `<script>` and renders as that text.
     """
     if not html:
         return ""
-    text = nh3.clean(html, tags=set(), attributes={}, strip_comments=True)
-    # nh3 leaves the text nodes; collapse the whitespace the tags used to hold.
-    return _WHITESPACE.sub(" ", text).strip()
+    parser = _TextOnly()
+    parser.feed(html)
+    parser.close()
+    return _WHITESPACE.sub(" ", "".join(parser.parts)).strip()
 
 
 def excerpt(html: str, limit: int = 200) -> str:

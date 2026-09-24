@@ -1177,11 +1177,14 @@ def test_neither_search_index_version_moves():
     own notes were not in the corpus. Both are genuine contract changes and
     both require a rebuild after deployment; neither has anything to do with
     the surface this file is about.
+    Moved again by docs/adr/0113: every Document gained a row of its own and
+    authored text became plain and bounded in the projection — a contract
+    change that needs a rebuild, and nothing to do with this file's surface.
     """
     from app.legacy_import.opinion_search_models import ARCHIVE_INDEX_VERSION
     from app.search.models import INDEX_VERSION
 
-    assert INDEX_VERSION == "TEEMA.1"
+    assert INDEX_VERSION == "DOKUMENT.1"
     assert ARCHIVE_INDEX_VERSION == "1"
 
 

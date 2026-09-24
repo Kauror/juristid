@@ -109,7 +109,10 @@ def _target_url(result: object) -> str:
     kind = result.source_kind  # type: ignore[attr-defined]
     matter_url = reverse("matters:matter_detail", kwargs={"pk": result.matter.pk})  # type: ignore[attr-defined]
 
-    if kind == SearchSourceKind.DOCUMENT_FRAGMENT and result.document_id:  # type: ignore[attr-defined]
+    if (
+        kind in (SearchSourceKind.DOCUMENT_FRAGMENT, SearchSourceKind.DOCUMENT)
+        and result.document_id  # type: ignore[attr-defined]
+    ):
         return reverse("documents:document_detail", kwargs={"pk": result.document_id})  # type: ignore[attr-defined]
     if kind == SearchSourceKind.ENTRY and result.entry_id:  # type: ignore[attr-defined]
         return f"{matter_url}#sissekanne-{result.entry_id}"  # type: ignore[attr-defined]

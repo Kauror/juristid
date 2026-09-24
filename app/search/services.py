@@ -148,6 +148,7 @@ SOURCE_LABELS: dict[str, str] = {
     # this map renders one that is empty (QA-003, QA-020).
     SearchSourceKind.PROCEDURAL_DEVELOPMENT.value: "Märge",
     SearchSourceKind.EXTERNAL_POSITION.value: "Arvamus või tagasiside",
+    SearchSourceKind.DOCUMENT.value: "Dokument",
 }
 
 #: Deterministic tiers. Higher wins, and the gaps are wide so that a strong
@@ -423,9 +424,12 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     child_title = Q(source_kind__in=CHILD_KINDS) & (
         Q(title__icontains=term) | Q(identifiers__iexact=term)
     )
-    document_title = Q(source_kind=SearchSourceKind.DOCUMENT_FRAGMENT) & (
-        Q(title__icontains=term) | Q(identifiers__icontains=term)
-    )
+    # A document's own row as well as its pages: an upload nobody extracted
+    # has only the former, and before it existed was unfindable by name
+    # (ENG-030). Its title and filenames are the whole of the row.
+    document_title = Q(
+        source_kind__in=(SearchSourceKind.DOCUMENT_FRAGMENT, SearchSourceKind.DOCUMENT)
+    ) & (Q(title__icontains=term) | Q(identifiers__icontains=term))
     fulltext = Q(search_estonian=estonian)
     simple_match = Q(search_simple=simple)
     # Fuzzy matching is a short-string feature: titles, references, names. It is

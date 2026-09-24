@@ -1048,8 +1048,11 @@ def test_the_projections_are_read_under_their_current_versions():
     an indexed identity tier into a column the projection did not read, which is
     a genuine contract change and the one this number now records — nothing to do
     with the surface this file is about.
+    Moved again by docs/adr/0113: every Document gained a row of its own and
+    authored text became plain and bounded in the projection — a contract
+    change that needs a rebuild, and nothing to do with this file's surface.
     """
-    assert INDEX_VERSION == "TEEMA.1"
+    assert INDEX_VERSION == "DOKUMENT.1"
     assert ARCHIVE_INDEX_VERSION == "1"
 
 
