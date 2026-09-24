@@ -894,12 +894,19 @@ def test_the_admin_can_still_see_a_tombstone(rich_matter, specialist, client, su
     the admin could not open would be a dead end (docs/adr/0096 §4.2).
     """
     from django.contrib.admin.sites import site
+    from django.test import RequestFactory
 
     from app.core.admin import MatterAdmin
 
     delete_matter(matter=rich_matter, actor=specialist)
 
+    request = RequestFactory().get("/admin/matters/matter/")
+    request.user = superuser
     admin = MatterAdmin(Matter, site)
-    assert admin.get_queryset(None).filter(pk=rich_matter.pk).exists()
-    for name in ("deleted_at", "deleted_by"):
-        assert name in admin.readonly_fields
+    assert admin.get_queryset(request).filter(pk=rich_matter.pk).exists()
+    # Read-only as a whole since ENG-008, which is stronger than the two
+    # `deleted_*` columns being read-only: nothing on the row can be changed,
+    # so nothing can resurrect the tombstone.
+    assert not admin.has_change_permission(request, rich_matter)
+    assert not admin.has_delete_permission(request, rich_matter)
+    assert not admin.has_add_permission(request)
