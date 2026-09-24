@@ -19,6 +19,7 @@ import uuid
 import pytest
 from django.db.models import ProtectedError
 from django.urls import reverse
+from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -613,7 +614,8 @@ def test_the_csv_export_lists_every_sender(signed_in, specialist):
     factories.MatterFactory(
         title="Ekspordi teema",
         owner=specialist,
-        reporting_year=2026,
+        # The period the export defaults to is the running year (ENG-002).
+        reporting_year=timezone.localdate().year,
         source_organisations=[first, second],
     )
 
