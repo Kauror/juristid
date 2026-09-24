@@ -41,6 +41,7 @@ from app.matters.enums import (
 )
 from app.matters.locks import (
     lock_matter_for_evidence_integrity,
+    lock_matter_for_write,
     lock_open_matter_for_business_write,
 )
 from app.matters.models import (
@@ -858,9 +859,15 @@ def set_organisations(
     fields: list[str] = []
     new_senders: list[Any] | None = None
 
+    # The Matter first, for the reason `set_policy_areas` gives: `.set()` below
+    # refreshes the search projection before the Matter row is saved, and two
+    # overlapping saves must queue here rather than on the projection (ENG-029).
+    # The comparison reads the locked row, not the caller's instance.
+    locked = lock_matter_for_write(matter.pk)
+
     if source_organisations is not _UNSET:
         proposed = normalize_source_organisations(source_organisations)
-        current = list(matter.source_organisations.all())
+        current = list(locked.source_organisations.all())
         if {organisation.pk for organisation in current} != {
             organisation.pk for organisation in proposed
         }:
@@ -870,9 +877,9 @@ def set_organisations(
 
     if (
         addressee_organisation is not _UNSET
-        and addressee_organisation != matter.addressee_organisation
+        and addressee_organisation != locked.addressee_organisation
     ):
-        changed["addressee_from"] = getattr(matter.addressee_organisation, "name", None)
+        changed["addressee_from"] = getattr(locked.addressee_organisation, "name", None)
         changed["addressee_to"] = getattr(addressee_organisation, "name", None)
         matter.addressee_organisation = addressee_organisation
         fields.append("addressee_organisation")
@@ -1066,6 +1073,82 @@ def guard_matter_revision(*, matter: Matter, expected_revision: str | None) -> M
     return locked
 
 
+#: What a stale inline save of one whole-value field is told (ENG-028). The
+#: inline editors each replace one value whole, so a copy rendered before a
+#: colleague's save is stale about exactly that value and nothing else.
+MATTER_FIELD_CONFLICT = (
+    "Seda välja on vahepeal mujal muudetud. Salvestatud väärtus on nüüd näha — "
+    "vaata see üle ja salvesta uuesti."
+)
+
+#: The inline editors that replace a whole value and carry a revision of it.
+GUARDED_MATTER_FIELDS = frozenset({"policy_areas", "source_organisations", "brief_summary"})
+
+
+class MatterFieldConflict(MatterEditConflict):
+    """One inline whole-value field changed elsewhere since it was rendered.
+
+    A `MatterEditConflict`, so everything that already answers a stale
+    `Muuda teemat` save with 409 recognises this one, and it carries the row as
+    it now stands for the same reason.
+    """
+
+    def __init__(self, current: Matter, field: str) -> None:
+        DomainError.__init__(self, MATTER_FIELD_CONFLICT)
+        self.current = current
+        self.field = field
+
+
+def matter_field_revision(matter: Matter, field: str) -> str:
+    """A digest of the one value an inline editor displays and replaces.
+
+    **Scoped to the field, not the Matter** (ENG-028). ADR 0104's token for
+    `Muuda teemat` is `updated_at`, because that form posts every fact at once.
+    The inline editors are three separate fragments — Valdkonnad in the header,
+    Saatja in the rail, Lühikokkuvõte under the meta line — and each re-renders
+    only itself after a save. A token that moved on every Matter write would
+    make the Saatja box stale the moment the same person saved Valdkonnad, and
+    refuse them in their own tab. What a whole-value editor must not do is
+    overwrite a *different value of its own field* than the one it showed, so
+    that value is what the token is.
+
+    Read with fresh queries rather than through the instance's caches, so the
+    digest describes the database and not a prefetch.
+    """
+    if field == "policy_areas":
+        parts = sorted(str(pk) for pk in matter.policy_areas.values_list("pk", flat=True))
+    elif field == "source_organisations":
+        parts = sorted(str(pk) for pk in matter.source_organisations.values_list("pk", flat=True))
+    elif field == "brief_summary":
+        parts = [
+            Matter.objects.filter(pk=matter.pk).values_list("brief_summary", flat=True).first()
+            or ""
+        ]
+    else:  # pragma: no cover - a programming error, not a request
+        raise ValueError(f"no revision for {field!r}")
+    material = "\x1f".join([field, *parts]).encode("utf-8")
+    return hashlib.sha256(material).hexdigest()[:32]
+
+
+def guard_matter_field_revision(*, matter: Matter, field: str, expected: str | None) -> Matter:
+    """Lock the Matter and refuse an inline save of a value that moved since.
+
+    The Matter row at `FOR NO KEY UPDATE` — the same lock the set editors take
+    for their search refresh (ENG-029), so one lock both decides whether the
+    save is stale and serialises it against the colleague it might overwrite.
+    Must be called inside `transaction.atomic`, before anything is written.
+
+    **A missing token is a conflict here**, unlike `guard_matter_revision`.
+    These forms always render one, so a POST without it came from a page older
+    than the guard or from something that is not the page; accepting it would
+    make the guard optional in exactly the case it exists for.
+    """
+    locked = lock_matter_for_write(matter.pk)
+    if not expected or matter_field_revision(locked, field) != expected:
+        raise MatterFieldConflict(locked, field)
+    return locked
+
+
 @transaction.atomic
 def set_matter_title(*, matter: Matter, value: str, actor: Any = None) -> Matter:
     """Rename a Matter.
@@ -1135,6 +1218,9 @@ def set_tags(*, matter: Matter, tags: Sequence[Any], actor: Any = None) -> Matte
     edit page is not where new taxonomy gets invented (master specification
     11.2, 21.2).
     """
+    # The Matter first, like every other set on this record: each assignment
+    # written below refreshes the search projection (ENG-029).
+    lock_matter_for_write(matter.pk)
     chosen = {tag.pk: tag for tag in tags}
     existing = {
         assignment.tag_id: assignment
@@ -1300,8 +1386,20 @@ def set_policy_areas(*, matter: Matter, policy_areas: Sequence[Any], actor: Any 
     Matter's *current* areas plus the offered vocabulary, and unticking one is a
     decision somebody makes deliberately (Teema redesign §7.2).
     """
+    # **The Matter first, then the set** (ENG-029). `.set()` fires the search
+    # refresh from inside the join-table write, *before* the Matter row is
+    # saved, so without this lock the refresh reached `SearchDocument` first:
+    # two overlapping saves of one Teema then locked the projection row and the
+    # Matter row in opposite orders and deadlocked, or both deleted the same
+    # projection and one re-insert hit its unique index. Locked here, every
+    # writer of this Teema queues on its row before touching anything else,
+    # which is the order every scalar setter already had (app/matters/locks.py).
+    #
+    # And `before` is read from the locked row rather than from the caller's
+    # instance, whose `policy_areas` may be a prefetch taken before the wait.
+    locked = lock_matter_for_write(matter.pk)
     chosen = list(policy_areas)
-    before = {area.pk for area in matter.policy_areas.all()}
+    before = {area.pk for area in locked.policy_areas.all()}
     after = {area.pk for area in chosen}
     if before == after:
         return matter
@@ -4515,12 +4613,21 @@ def close_matter(
         if successor.pk == matter.pk:
             raise DomainError("Teema ei saa jätkuda iseenda all.")
 
-    # The same lock set_next_action takes, in the same order. Whichever
+    # The same row set_next_action locks, in the same order. Whichever
     # transaction reaches the Matter row first wins: a closure that lands first
     # makes the other call refuse, and a next action that lands first is
     # cancelled by the closure. Neither ordering can leave a closed Matter
     # carrying an open instruction (docs/adr/0011).
-    locked = Matter.objects.select_for_update().get(pk=matter.pk)
+    #
+    # **`FOR NO KEY UPDATE`, not `FOR UPDATE`** (ENG-027). The save below fires
+    # the Matter's search refresh, which takes the rebuild gate's shared side;
+    # a rebuild holds that gate exclusively and, at its COMMIT, needs
+    # `FOR KEY SHARE` on this row for the `SearchDocument` it re-inserted.
+    # `FOR UPDATE` blocks that, the closure then waits for the gate, and
+    # PostgreSQL kills one of the two. The weaker mode still conflicts with
+    # itself and with `FOR UPDATE`, so two closures, a closure and a reopen, and
+    # a closure and a business write still take turns (app/matters/locks.py).
+    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
 
@@ -4591,9 +4698,9 @@ def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Mat
     writes nothing.
 
     `no_key=True` for the reason `app/matters/locks.py` gives: this transaction
-    goes on to insert a `ChangeEvent` that references the Matter, and the
-    weaker mode still conflicts with the plain `FOR UPDATE` a concurrent
-    `close_matter` takes, so the two cannot interleave.
+    goes on to insert a `ChangeEvent` that references the Matter, and the mode
+    conflicts with itself, so a concurrent `close_matter` — which takes the same
+    row at the same strength since ENG-027 — cannot interleave with it.
     """
     locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
     if locked.is_open:

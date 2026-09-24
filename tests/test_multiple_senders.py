@@ -411,9 +411,16 @@ def test_the_detail_page_survives_a_matter_with_no_sender(signed_in, specialist)
 
 
 def _update_senders(client, matter: Matter, organisations: list) -> object:
+    # The revision a freshly rendered page carries; a save without one is
+    # refused as stale (ENG-028).
+    from app.matters.services import matter_field_revision
+
     return client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "source_organisations"}),
-        {"source_organisations": [str(organisation.pk) for organisation in organisations]},
+        {
+            "source_organisations": [str(organisation.pk) for organisation in organisations],
+            "revision": matter_field_revision(matter, "source_organisations"),
+        },
     )
 
 

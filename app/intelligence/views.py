@@ -256,6 +256,16 @@ def add_important_date(request: HttpRequest, matter_id: Any) -> HttpResponse:
     )
 
 
+def _retry_form(form: Any, request: HttpRequest, conflict: Any) -> Any:
+    """The refused form again: the person's values, the stored revision, the reason."""
+    retry = request.POST.copy()
+    retry["revision"] = services.fact_revision(conflict.current)
+    again = type(form)(retry)
+    again.is_valid()
+    again.add_error(None, str(conflict))
+    return again
+
+
 @login_required
 @business_write_required
 @require_http_methods(["GET", "POST"])
@@ -273,7 +283,24 @@ def edit_important_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
         if form.is_valid():
             try:
                 services.update_important_date(
-                    record=record, actor=request.user, **form.as_service_kwargs()
+                    record=record,
+                    actor=request.user,
+                    expected_revision=form.cleaned_data.get("revision") or "",
+                    **form.as_service_kwargs(),
+                )
+            except services.FactEditConflict as conflict:
+                # Somebody changed this record after the form was opened. What
+                # this person typed comes back, the token moves to the stored
+                # version so a second press is a decision rather than another
+                # refusal, and nothing was overwritten (ENG-028).
+                return _render_form(
+                    request,
+                    matter,
+                    _retry_form(form, request, conflict),
+                    heading="Muuda olulist tähtaega",
+                    action=action,
+                    submit="Salvesta",
+                    status=409,
                 )
             except DomainError as error:
                 form.add_error(None, str(error))
@@ -445,7 +472,24 @@ def edit_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
         if form.is_valid():
             try:
                 services.update_effective_date(
-                    record=record, actor=request.user, **form.as_service_kwargs()
+                    record=record,
+                    actor=request.user,
+                    expected_revision=form.cleaned_data.get("revision") or "",
+                    **form.as_service_kwargs(),
+                )
+            except services.FactEditConflict as conflict:
+                # Somebody changed this record after the form was opened. What
+                # this person typed comes back, the token moves to the stored
+                # version so a second press is a decision rather than another
+                # refusal, and nothing was overwritten (ENG-028).
+                return _render_form(
+                    request,
+                    matter,
+                    _retry_form(form, request, conflict),
+                    heading="Muuda jõustumist",
+                    action=action,
+                    submit="Salvesta",
+                    status=409,
                 )
             except DomainError as error:
                 form.add_error(None, str(error))
@@ -617,7 +661,24 @@ def edit_work_victory(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResp
         if form.is_valid():
             try:
                 services.update_work_victory(
-                    record=record, actor=request.user, **form.as_service_kwargs()
+                    record=record,
+                    actor=request.user,
+                    expected_revision=form.cleaned_data.get("revision") or "",
+                    **form.as_service_kwargs(),
+                )
+            except services.FactEditConflict as conflict:
+                # Somebody changed this record after the form was opened. What
+                # this person typed comes back, the token moves to the stored
+                # version so a second press is a decision rather than another
+                # refusal, and nothing was overwritten (ENG-028).
+                return _render_form(
+                    request,
+                    matter,
+                    _retry_form(form, request, conflict),
+                    heading="Muuda töövõidu kirjet",
+                    action=action,
+                    submit="Salvesta",
+                    status=409,
                 )
             except DomainError as error:
                 form.add_error(None, str(error))

@@ -9,7 +9,9 @@ straight into the surface it named.
 `Muuda teemat` and `Muuda kulgu` are the two editors that post an entire current
 representation of something. Everything else on a Teema posts one record — a
 `Märge`, an opinion, an engagement — and every one of those already carries a
-revision token. These two did not, so:
+revision token. These two did not, so (the inline Valdkonnad, Saatja and
+Lühikokkuvõte editors were a third gap, closed later by ADR 0109 and tested in
+`tests/test_matter_write_serialization.py`):
 
 * tab A reassigned a Matter to Martin and saved; tab B, holding the page from
   before that, changed only the summary and saved — and the owner went back to

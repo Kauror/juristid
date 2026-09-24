@@ -25,6 +25,12 @@ one second apart — with nothing marking the second as an accident.
 
 ## 1. The contract
 
+> **Extended by ADR 0109 §3 (2026-09-24).** The inline Valdkonnad, Saatja and
+> Lühikokkuvõte editors and the three structured-fact editors post a whole value
+> and now carry a revision too — for the inline three, a digest of their own
+> value rather than the Matter's `updated_at`, and a missing token is a conflict
+> (ENG-028).
+
 **Every editor that posts a whole record carries `revision`.** A hidden field on
 the form, read back by the service, compared against the value of the *locked*
 row:

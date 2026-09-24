@@ -187,6 +187,10 @@ class PeriodForm(forms.Form):
 class ImportantDateForm(PeriodForm):
     """`Oluline tähtaeg` — a description and when it is expected."""
 
+    #: The version of the record an edit form was opened against, posted back
+    #: and compared under a row lock (ENG-028). Empty on an add form.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput)
+
     title = forms.CharField(
         label="Mis on oodata",
         max_length=2000,
@@ -224,6 +228,7 @@ class ImportantDateForm(PeriodForm):
     def from_record(cls, record: Any) -> ImportantDateForm:
         return cls(
             initial={
+                "revision": record.updated_at.isoformat(),
                 "title": record.title,
                 "note": record.note,
                 **cls.initial_for(record.date_value, record.date_precision),
@@ -233,6 +238,10 @@ class ImportantDateForm(PeriodForm):
 
 class EffectiveDateForm(PeriodForm):
     """`Jõustumine` — what comes into force, and what is known about when."""
+
+    #: The version of the record an edit form was opened against, posted back
+    #: and compared under a row lock (ENG-028). Empty on an add form.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput)
 
     period_required = False
 
@@ -317,6 +326,7 @@ class EffectiveDateForm(PeriodForm):
     def from_record(cls, record: Any) -> EffectiveDateForm:
         return cls(
             initial={
+                "revision": record.updated_at.isoformat(),
                 "kind": record.kind,
                 "description": record.description,
                 "source_url": record.source_url,
@@ -334,6 +344,10 @@ class WorkVictoryForm(PeriodForm):
     Matter page, a candidate when a machine or an import proposes one — and a
     status field here would let a request choose (app/intelligence/services.py).
     """
+
+    #: The version of the record an edit form was opened against, posted back
+    #: and compared under a row lock (ENG-028). Empty on an add form.
+    revision = forms.CharField(required=False, widget=forms.HiddenInput)
 
     precision_choices = VICTORY_PRECISION_CHOICES
     period_required = False
@@ -388,6 +402,7 @@ class WorkVictoryForm(PeriodForm):
     def from_record(cls, record: Any) -> WorkVictoryForm:
         return cls(
             initial={
+                "revision": record.updated_at.isoformat(),
                 "title": record.title,
                 "detail": record.detail,
                 "source_url": record.source_url,

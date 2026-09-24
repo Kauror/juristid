@@ -27,7 +27,10 @@ Lock order, everywhere these rows are locked together
 Take a prefix of that order or the whole of it, never a suffix before a prefix.
 `app.documents.services.add_evidence_version` locks a Document on its own,
 which is a suffix taken alone and therefore safe; what would not be safe is a
-path that locked a Document and then a Matter.
+path that locked a Document and then a Matter. It takes it `FOR NO KEY UPDATE`
+since ENG-027: a version whose document already has extracted text refreshes
+that document's search fragments from `post_save`, which reaches the rebuild
+gate, so `FOR UPDATE` there closed the same cycle closure did.
 
 Lock *strength* is the other half of the discipline, and it applies at **every**
 level of that order, not only the first. Each row here is taken
@@ -92,6 +95,23 @@ def lock_matter_for_evidence_integrity(matter_id: Any) -> Matter:
     return Matter.objects.select_for_update(no_key=True).get(pk=matter_id)
 
 
+def lock_matter_for_write(matter_id: Any) -> Matter:
+    """The Matter row, at the strength every Matter write in this module uses.
+
+    The general name for what :func:`lock_matter_for_evidence_integrity` does,
+    for the writers that are not about evidence: the whole-value set editors
+    and their search refresh (ENG-029), and the per-field guard that checks a
+    stale inline save against the locked row (ENG-028). One helper, so the
+    strength cannot drift between them — `FOR NO KEY UPDATE`, for the reasons
+    this module's opening note gives.
+
+    Returns the row as it is under the lock. A deleted Matter is not returned:
+    the default manager excludes tombstones, so the caller gets
+    `Matter.DoesNotExist`, which every view already answers with its 404.
+    """
+    return Matter.objects.select_for_update(no_key=True).get(pk=matter_id)
+
+
 def lock_submission_for_evidence_integrity(submission_pk: Any) -> Submission:
     """Second step of the order, and the same strength as the first.
 
@@ -127,14 +147,17 @@ def lock_open_matter_for_business_write(matter_id: Any) -> Matter:
     write that commits first is simply part of the file the closure then shuts.
     There is no interleaving in which both succeed, which is the whole point.
 
-    `close_matter` takes the same row at plain `FOR UPDATE`, and the two
-    strengths conflict with each other — so the exclusion this needs holds even
-    though this side takes the weaker mode. It takes the weaker mode because
-    these transactions go on to *insert rows that reference the Matter*: an
-    `Entry`, a `Document`, a `ChangeEvent`. Such an insert acquires `FOR KEY
-    SHARE` on the parent, which `FOR UPDATE` blocks and `FOR NO KEY UPDATE`
-    does not — the reasoning in this module's opening note, and the reason
-    `complete_current_action` was written this way from the start.
+    `close_matter` takes the same row at the same `FOR NO KEY UPDATE`, which
+    conflicts with itself — so the exclusion this needs holds. Until ENG-027
+    closure took plain `FOR UPDATE`, which excluded just as well and also
+    blocked the `FOR KEY SHARE` a search rebuild needs on the row at COMMIT,
+    while the closure's own refresh waited for the rebuild's gate: a deadlock.
+    The weaker mode is used throughout because these transactions go on to
+    *insert rows that reference the Matter*: an `Entry`, a `Document`, a
+    `ChangeEvent`. Such an insert acquires `FOR KEY SHARE` on the parent, which
+    `FOR UPDATE` blocks and `FOR NO KEY UPDATE` does not — the reasoning in this
+    module's opening note, and the reason `complete_current_action` was written
+    this way from the start.
 
     Must be called inside `transaction.atomic`, like everything else here, and
     at the start of the operation rather than after some of it has been written:

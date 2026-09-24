@@ -175,10 +175,12 @@ from app.matters.removal import (
     remove_matter_record,
 )
 from app.matters.services import (
+    GUARDED_MATTER_FIELDS,
     EngagementEditConflict,
     EntryEditConflict,
     ExternalPositionConflict,
     MatterEditConflict,
+    MatterFieldConflict,
     PersonalNoteConflict,
     ProceduralDevelopmentConflict,
     ProceduralLinkConflict,
@@ -197,7 +199,9 @@ from app.matters.services import (
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
+    guard_matter_field_revision,
     guard_matter_revision,
+    matter_field_revision,
     matter_revision_token,
     open_engagement_feedback_wait,
     personal_note_record,
@@ -2920,6 +2924,11 @@ def _header_context(
         # can still be corrected (app/taxonomy/vocabulary.py).
         "policy_area_choices": selectable_policy_areas(),
         "selected_policy_area_ids": {area.pk for area in matter.policy_areas.all()},
+        # What each inline whole-value editor was rendered against, posted back
+        # with it and checked under the Matter lock (ENG-028).
+        "policy_areas_revision": matter_field_revision(matter, "policy_areas"),
+        "senders_revision": matter_field_revision(matter, "source_organisations"),
+        "summary_revision": matter_field_revision(matter, "brief_summary"),
         "matter_policy_areas": list(matter.policy_areas.all()),
         "matter_legal_instruments": _legal_instrument_line(matter),
         # The one deadline the header shows, chosen by the rule in §5.5 rather
@@ -4940,40 +4949,25 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 
     value = form.cleaned_data.get(field)
     try:
-        if field == "owner":
-            assign_matter(matter=matter, owner=value, actor=request.user)
-        elif field == "stage":
-            change_stage(matter=matter, stage=value, actor=request.user)
-        elif field == "source_organisations":
-            # `list(...)` rather than the queryset, so an empty POST arrives as
-            # `[]` — "clear every sender" — and never as the `_UNSET` that means
-            # "leave them alone" (Agent-E brief 20, 34).
-            #
-            # Wrapped, because two writes have to survive or fail together: a
-            # typed name may create an institution, and `set_organisations`
-            # refusing afterwards must not leave it in the catalogue. Every
-            # other branch here is one service call and already atomic in
-            # itself (docs/adr/0063).
-            with transaction.atomic():
-                set_organisations(
-                    matter=matter,
-                    source_organisations=resolve_source_organisations(
-                        chosen=list(value or []),
-                        typed_name=form.cleaned_data.get("sender_name") or "",
-                    ),
-                    actor=request.user,
+        with transaction.atomic():
+            if field in GUARDED_MATTER_FIELDS:
+                # The whole-value set editors check what they showed against
+                # the locked row, and hold that lock through the write and its
+                # search refresh (ENG-028, ENG-029). The token is the field's own
+                # revision, rendered into the form beside the checkboxes.
+                matter = guard_matter_field_revision(
+                    matter=matter, field=field, expected=request.POST.get("revision")
                 )
-        elif field == "received_date":
-            set_matter_dates(matter=matter, received_date=value, actor=request.user)
-        elif field == "response_deadline":
-            set_matter_dates(matter=matter, response_deadline=value, actor=request.user)
-        elif field == "policy_area_other":
-            set_policy_area_other(matter=matter, value=value or "", actor=request.user)
-        elif field == "policy_areas":
-            # `list(...)` rather than the queryset, for the same reason the
-            # sender set uses one: an empty POST means "none of them", which is
-            # a decision somebody made, not a field they left alone.
-            set_policy_areas(matter=matter, policy_areas=list(value or []), actor=request.user)
+            _apply_inline_field(request, matter, field, value, form)
+    except MatterFieldConflict as conflict:
+        # Refused, with the surface re-rendered from what is stored now, so the
+        # person sees the colleague's value where theirs would have gone and
+        # decides again — rather than having silently reverted it. 409, which
+        # the page swaps in like a validation answer (static/js/app.js).
+        matter = conflict.current
+        context = _header_context(request, matter)
+        context["field_error"] = str(conflict)
+        return render(request, surface, context, status=409)
     except DomainError as error:
         context = _header_context(request, matter)
         context["field_error"] = str(error)
@@ -4984,6 +4978,46 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     # facts rail rather than the header strip, and swapping the header for it
     # would leave the value on screen unchanged while claiming it had saved.
     return render(request, surface, _header_context(request, matter))
+
+
+def _apply_inline_field(
+    request: HttpRequest, matter: Matter, field: str, value: Any, form: Any
+) -> None:
+    """The one service call an inline header or rail field stands for."""
+    if field == "owner":
+        assign_matter(matter=matter, owner=value, actor=request.user)
+    elif field == "stage":
+        change_stage(matter=matter, stage=value, actor=request.user)
+    elif field == "source_organisations":
+        # `list(...)` rather than the queryset, so an empty POST arrives as
+        # `[]` — "clear every sender" — and never as the `_UNSET` that means
+        # "leave them alone" (Agent-E brief 20, 34).
+        #
+        # Wrapped, because two writes have to survive or fail together: a
+        # typed name may create an institution, and `set_organisations`
+        # refusing afterwards must not leave it in the catalogue. Every
+        # other branch here is one service call and already atomic in
+        # itself (docs/adr/0063).
+        with transaction.atomic():
+            set_organisations(
+                matter=matter,
+                source_organisations=resolve_source_organisations(
+                    chosen=list(value or []),
+                    typed_name=form.cleaned_data.get("sender_name") or "",
+                ),
+                actor=request.user,
+            )
+    elif field == "received_date":
+        set_matter_dates(matter=matter, received_date=value, actor=request.user)
+    elif field == "response_deadline":
+        set_matter_dates(matter=matter, response_deadline=value, actor=request.user)
+    elif field == "policy_area_other":
+        set_policy_area_other(matter=matter, value=value or "", actor=request.user)
+    elif field == "policy_areas":
+        # `list(...)` rather than the queryset, for the same reason the
+        # sender set uses one: an empty POST means "none of them", which is
+        # a decision somebody made, not a field they left alone.
+        set_policy_areas(matter=matter, policy_areas=list(value or []), actor=request.user)
 
 
 #: Fields whose control is not in the header band. `_header_context` already
@@ -5108,9 +5142,31 @@ def update_summary(request: HttpRequest, pk: Any) -> HttpResponse:
         context["field_error"] = "Vigane väärtus."
         return render(request, "matters/partials/header.html", context, status=400)
 
-    set_brief_summary(
-        matter=matter, value=form.cleaned_data.get("brief_summary") or "", actor=request.user
-    )
+    try:
+        with transaction.atomic():
+            # The summary this form was opened on, checked against the locked
+            # row: a stale tab must not replace a colleague's newer paragraph
+            # with an edit of the older one (ENG-028).
+            matter = guard_matter_field_revision(
+                matter=matter, field="brief_summary", expected=request.POST.get("revision")
+            )
+            set_brief_summary(
+                matter=matter,
+                value=form.cleaned_data.get("brief_summary") or "",
+                actor=request.user,
+            )
+    except MatterFieldConflict as conflict:
+        # The paragraph above the box shows what is stored now; the box keeps
+        # what this person typed, and the token moves to the stored version so
+        # that pressing Salvesta again — having read both — is a decision
+        # rather than another refusal. Nothing they wrote is thrown away.
+        matter = conflict.current
+        context = _header_context(request, matter)
+        context["summary_form"] = form
+        context["summary_revision"] = matter_field_revision(matter, "brief_summary")
+        context["summary_open"] = True
+        context["field_error"] = str(conflict)
+        return render(request, "matters/partials/header.html", context, status=409)
     matter.refresh_from_db()
     context = _header_context(request, matter)
     context["summary_form"] = BriefSummaryForm(initial={"brief_summary": matter.brief_summary})

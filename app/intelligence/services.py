@@ -152,6 +152,54 @@ def add_important_date(
     return record
 
 
+#: What a stale edit of a structured fact is told (ENG-028). One sentence for
+#: all three, because the situation is the same: the record moved after this
+#: form was opened, and saving it would put back what it replaced.
+FACT_EDIT_CONFLICT = (
+    "Seda kirjet on vahepeal mujal muudetud. Salvestatud väärtus on nüüd kirjas — "
+    "vaata see üle ja salvesta uuesti."
+)
+
+
+class FactEditConflict(DomainError):
+    """A structured fact changed elsewhere between opening its edit form and saving."""
+
+    def __init__(self, current: Any) -> None:
+        super().__init__(FACT_EDIT_CONFLICT)
+        self.current = current
+
+
+def fact_revision(record: Any) -> str:
+    """The version an edit form was opened against: the row's `updated_at`.
+
+    Every write to these rows saves `updated_at` — an edit, a cancellation, a
+    confirmation — so any of them makes an open edit form stale, which is right:
+    each of those changes what the form would overwrite.
+    """
+    return record.updated_at.isoformat()
+
+
+def _lock_for_edit(record: Any, expected_revision: str | None) -> Any:
+    """Take the fact's row, and refuse an edit filled from an older one.
+
+    `FOR NO KEY UPDATE`, like every row lock in this codebase that is followed
+    by an insert referencing a parent (app/matters/locks.py). The status and
+    the revision are read from the locked row, never from the instance the view
+    fetched before the wait.
+
+    ``expected_revision`` is ``None`` for a caller that never rendered a form —
+    a service or a test — and those keep the old behaviour. The edit views
+    always pass the form's value, so from them an empty one is a conflict: a
+    page older than the guard must not be the way around it.
+    """
+    locked = type(record)._default_manager.select_for_update(no_key=True).get(pk=record.pk)
+    if expected_revision is not None and (
+        not expected_revision or fact_revision(locked) != expected_revision
+    ):
+        raise FactEditConflict(locked)
+    return locked
+
+
 @transaction.atomic
 def update_important_date(
     *,
@@ -162,6 +210,7 @@ def update_important_date(
     date_precision: str,
     note: str = "",
     actor: Any = None,
+    expected_revision: str | None = None,
 ) -> MatterImportantDate:
     """Correct a milestone, keeping what it said before in the audit trail.
 
@@ -170,6 +219,7 @@ def update_important_date(
     precisely the failure the department has with a hand-kept list
     (Stage-2G brief 35).
     """
+    record = _lock_for_edit(record, expected_revision)
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat tähtaega saab muuta.")
     title = _require_text(title, "Olulisel tähtajal peab olema kirjeldus.")
@@ -367,12 +417,14 @@ def update_effective_date(
     note: str = "",
     source_url: str = "",
     actor: Any = None,
+    expected_revision: str | None = None,
 ) -> MatterEffectiveDate:
     """Move a commencement date. The central view follows automatically.
 
     Nothing is copied anywhere: *Jõustuvad aktid* reads this table, so changing
     the date here is the whole change (Stage-2G brief 16).
     """
+    record = _lock_for_edit(record, expected_revision)
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat jõustumist saab muuta.")
     _validate_effective_date(kind, date_value, period_end, date_precision)
@@ -652,6 +704,7 @@ def update_work_victory(
     source_url: str = "",
     note: str = "",
     actor: Any = None,
+    expected_revision: str | None = None,
 ) -> MatterWorkVictory:
     """Edit the wording or the period. Never the review state.
 
@@ -659,6 +712,7 @@ def update_work_victory(
     candidate's description must not be able to promote it
     (Stage-2G brief 53).
     """
+    record = _lock_for_edit(record, expected_revision)
     title = _require_text(title, "Töövõidul peab olema kirjeldus.")
     _validate_period(period_date, period_end, date_precision)
 
