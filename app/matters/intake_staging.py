@@ -110,6 +110,73 @@ def get_session(*, owner: Any, session_id: Any) -> MatterIntakeSession | None:
     return MatterIntakeSession.objects.owned_by(owner).usable().filter(pk=parsed).first()
 
 
+def open_session(*, owner: Any) -> MatterIntakeSession:
+    """A fresh session for a freshly rendered `Uus teema` form.
+
+    Every render gets one, not only a render where somebody staged a file,
+    because the session is also the form's **one-time submission token**
+    (ENG-074): `Loo teema` consumes it in the transaction that creates the
+    Teema, so the same form posted twice — a retried request, a replayed POST —
+    finds it consumed and is answered with the Teema the first one created. A
+    new form is a new session, so creating a second Teema on purpose, even with
+    the same words, is always possible: this is idempotency per form, never
+    deduplication by content.
+
+    A render that is never submitted leaves a row that expires and is swept
+    with every other stale session (`sweep_stale_sessions`). It holds no form
+    text — an owner, an expiry, and later a consumption stamp and the Teema.
+    """
+    return MatterIntakeSession.objects.create(owner=owner, expires_at=_expiry())
+
+
+@dataclass(frozen=True)
+class CreateClaim:
+    """What `Loo teema` learned from the form token it was posted with.
+
+    ``session`` is set when the token named a session of this person's:
+    either just claimed by this request (``replayed`` false) or already
+    consumed by an earlier submission of the same form (``replayed`` true).
+    ``None`` is a POST that named no session of theirs at all.
+    """
+
+    session: MatterIntakeSession | None
+    replayed: bool = False
+
+
+def claim_for_create(*, owner: Any, session_id: Any) -> CreateClaim:
+    """Consume this form's session, atomically, or report that it already was.
+
+    Must run inside the transaction that creates the Teema, and before anything
+    else is written — in particular before a reference number is allocated. One
+    conditional ``UPDATE ... WHERE consumed_at IS NULL``: two submissions of the
+    same form race on that row, the second waits for the first to commit, finds
+    the condition false and claims nothing, and so writes nothing either. If the
+    first rolls back, its claim goes with it and the second proceeds. No
+    read-then-write, and nothing held in the web session.
+
+    Expiry does not stop a claim. An expired session no longer offers its staged
+    files — that is `get_session`'s rule, unchanged — but it is still this
+    form's token, and a form left open past the grace period must still be
+    saveable exactly once.
+    """
+    parsed = _as_uuid(session_id)
+    if parsed is None:
+        return CreateClaim(session=None)
+    now = timezone.now()
+    mine = MatterIntakeSession.objects.owned_by(owner).filter(pk=parsed)
+    if mine.filter(consumed_at__isnull=True).update(consumed_at=now, updated_at=now):
+        return CreateClaim(session=mine.get())
+    existing = mine.first()
+    if existing is not None and existing.consumed_at is not None:
+        return CreateClaim(session=existing, replayed=True)
+    return CreateClaim(session=None)
+
+
+def record_created_matter(*, session: MatterIntakeSession, matter: Any) -> None:
+    """Remember which Teema this form created, for a repeated submission to find."""
+    MatterIntakeSession.objects.filter(pk=session.pk).update(matter=matter)
+
+
 def live_files(session: MatterIntakeSession) -> list[MatterIntakeFile]:
     """The files still on the form, in the order they were offered."""
     return list(session.files.live().in_order())
