@@ -10,7 +10,7 @@ Everything that used to be a third tab is now in the main view where it is read:
 as a compact strip. A tab per database concern is what made a lawyer navigate to
 find out whether anything had happened (Teema redesign §3).
 {% endcomment %}
-<nav class="tabs" aria-label="Teema vaated">
+<nav class="tabs" id="teema-vaated" aria-label="Teema vaated"{% if tabs_out_of_band %} hx-swap-oob="true"{% endif %}>
   <a class="tabs__tab {% if tab == 'teema' %}is-active{% endif %}"
      {% if tab == 'teema' %}aria-current="page"{% endif %}
      href="{% url 'matters:matter_detail' pk=matter.pk %}">Teema</a>

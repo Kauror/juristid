@@ -221,7 +221,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-swap="outerHTML">Tühista</button>
       </p>
     </form>
-  {% elif external_position_evidence_form %}
+  {% elif external_position_evidence_form and external_position_evidence_form.record.pk == position.pk %}
     {% comment %}
       `+ Lisa fail`. The picker, and nothing else: this act adds a paper to a
       position the file already records correctly, so nothing about the record
@@ -232,10 +232,11 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       **It swaps `#teema-vaade` rather than this element.** The files a position
       carries are rendered by the chronology *around* this element, so answering
       a successful upload with this element alone would come back looking
-      exactly as it did before the file arrived. A refusal takes the same route
-      and prints above the column: a browser will not repopulate a file picker
-      whatever the server sends, so there is nothing here to bring back, and a
-      stale picker left open would suggest the choice survived.
+      exactly as it did before the file arrived. A refusal reopens this picker
+      on this row only, with its sentence under it: the form carries its
+      record and the branch compares it with this row, where it used to be a
+      page-wide variable that drew the same picker, id and error on every
+      position (ENG-036).
     {% endcomment %}
     <form class="uxtl__editform" aria-label="Faili lisamine seisukohale"
           hx-post="{% url 'matters:add_external_position_evidence' pk=matter.pk position_id=position.pk %}"
@@ -251,7 +252,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       <p class="uxtl__ms">
         <span class="uxtl__mswhat">{{ milestone.what }}</span>
       </p>
-      {% include "matters/partials/add_files.html" with field=external_position_evidence_form.attachments %}
+      {% include "matters/partials/add_files.html" with field=external_position_evidence_form.attachments describe_errors=True %}
       <p class="uxtl__editactions">
         <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
         <button class="button button--quiet button--tiny" type="button"
