@@ -258,12 +258,27 @@ auto-provisioning:
 
 ```bash
 docker compose -p juristid-main -f compose.yml run --rm web \
-  python manage.py createsuperuser --upn <email> --display_name "<name>"
+  python manage.py provision_user --upn <email> --display-name "<name>"
 ```
 
-These become the persona list behind the gate, and later the accounts Cloudflare
-Access asserts against. Use real addresses: do not invent `.invalid` identities
-here and do not use somebody else's address as a placeholder.
+`--role DEPARTMENT_HEAD` for the head of the department; the default is
+`SPECIALIST`. These become the persona list behind the gate, and later the
+accounts Cloudflare Access asserts against — which is why the UPN must be the
+person's real address. The command refuses anything else: an address that is
+not one, an `.invalid` identity, a role that is not department work. It gives
+the account no password, because neither mode reads one.
+
+Running it again for somebody who already exists exactly so changes nothing. If
+the existing account differs — another name, another role, deactivated, a
+technical account — it is refused and nothing is changed: a role change or a
+return from leave is a decision about a person, not a side effect of onboarding.
+
+**Not `createsuperuser`.** That makes an ADMINISTRATOR superuser, which is never
+offered as a persona and can never be given work (docs/adr/0034) — so a lawyer
+onboarded with it cannot find themselves behind the gate, and under Cloudflare
+Access would be signed into the Django admin over every Matter. It is only for
+the one technical administrator account, which never appears as a persona
+(ENG-013).
 
 ## Importing the historical corpus
 
@@ -964,7 +979,10 @@ operator's memory, is what keeps the contract.
 
 `.github/workflows/release-image.yml` is the build. It takes two commits — the
 full 40-character one to build, and the full 40-character one production runs
-now — checks out exactly the first, refuses a dirty tree, refuses a payload the
+now — checks out exactly the first, refuses a dirty tree, refuses a commit that
+is not one of main's own revisions (on main's first-parent history: the merge
+commit, never the pull request's head) or whose own push-to-main CI run has not
+passed in every job (ENG-015), refuses a payload the
 Chamber's lawyers will notice that has no entry in
 `docs/release-notes/uuendused.toml` (see `docs/release-notes/README.md` for the
 rule and the waiver), builds `linux/amd64` with `GIT_SHA` baked in, asks the

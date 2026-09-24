@@ -123,6 +123,22 @@ else
     fail "commit $TARGET is not in this checkout, even after fetching. It was never pushed, or it is on a fork."
   fi
 
+  # Existing is not accepted. Any pushed branch commit exists after a fetch,
+  # and a merged pull request's own head is even an ancestor of main — with
+  # the merge commit's tree and green checks of its own — without being what
+  # main accepted (ENG-015, the 2026-09-09 build). Main's first-parent history
+  # is exactly its accepted revisions. Captured first and matched with a
+  # here-string, for the SIGPIPE reason given below the stack checks.
+  if main_history="$(git -C "$REPO" rev-list --first-parent origin/main 2>/dev/null)"; then
+    if grep -qx "$TARGET" <<<"$main_history"; then
+      pass "the target is one of main's own revisions (first-parent history of origin/main)"
+    else
+      fail "commit $TARGET is not on origin/main's first-parent history. Deploy the merge commit main recorded, not a branch or pull-request head — the release workflow refuses to build anything else."
+    fi
+  else
+    fail "could not read origin/main's history in this checkout"
+  fi
+
   head="$(git -C "$REPO" rev-parse HEAD)"
   if [ "$head" = "$TARGET" ]; then
     pass "the checkout is already at the target"

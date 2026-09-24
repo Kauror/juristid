@@ -163,6 +163,28 @@ def test_a_known_person_is_signed_in_from_the_assertion(client, signing_key):
 
 
 @pytest.mark.django_db
+def test_a_provisioned_person_is_signed_in_and_is_not_an_administrator(client, signing_key):
+    """The account `provision_user` makes is the one Access signs in (ENG-013).
+
+    And only that: the runbook's old `createsuperuser` would have signed every
+    lawyer into the Django admin over every Matter once this mode is on.
+    """
+    from django.core.management import call_command
+
+    address = "uus.jurist@naidiskoda.test"
+    call_command("provision_user", "--upn", address, "--display-name", "Uus Jurist")
+    token = assertion(signing_key, email=address)
+
+    response = client.get("/osakond/", HTTP_CF_ACCESS_JWT_ASSERTION=token)
+    assert response.status_code == 200
+    assert response.wsgi_request.user.upn == address
+
+    admin = client.get("/admin/", HTTP_CF_ACCESS_JWT_ASSERTION=token)
+    assert admin.status_code == 302
+    assert "/admin/login/" in admin["Location"]
+
+
+@pytest.mark.django_db
 def test_a_request_with_no_assertion_is_denied_not_passed_through(client):
     """There is no public surface behind Access to fall through to."""
     response = client.get("/osakond/")

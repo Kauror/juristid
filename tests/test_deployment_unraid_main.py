@@ -711,11 +711,13 @@ def test_nothing_starts_through_the_development_entrypoint() -> None:
     assert "start-dev" not in COMPOSE.read_text(encoding="utf-8")
 
 
-#: Commands that write the register rather than the schema. A deployment carries
-#: code and migrations; importing twenty years of material, promoting a register
-#: or applying an opinion archive are separate reviewed operations with their own
-#: gates, and none of them may be reachable from a container start.
+#: Commands that write the register — or who may read it — rather than the
+#: schema. A deployment carries code and migrations; importing twenty years of
+#: material, promoting a register, applying an opinion archive or creating a
+#: person's account are separate reviewed operations with their own gates, and
+#: none of them may be reachable from a container start.
 DATA_APPLY_COMMANDS = (
+    "provision_user",
     "historical_import",
     "import_legacy_register",
     "promote_current_register",
