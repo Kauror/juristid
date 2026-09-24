@@ -11,6 +11,9 @@ Immediate by design. The failure mode this guards against announces itself
 otherwise as a file in a production evidence store, discovered a day later by an
 integrity scan.
 
+The skip policy lives here too (`ci_skip_policy.py`): in CI a skip that no
+entry names fails the run, for `pytest` and `pytest e2e` alike (ENG-051).
+
 The sharding options live here for the same reason: they have to apply to
 `pytest` and to `pytest e2e` alike, and this is the one file both invocations
 load. The partitioning itself is in ``ci_sharding.py``, where it can be reasoned
@@ -22,6 +25,7 @@ from __future__ import annotations
 import pytest
 
 import ci_sharding
+import ci_skip_policy
 from config.test_safety import assert_test_settings_are_in_force
 
 
@@ -107,3 +111,32 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     if dropped:
         config.hook.pytest_deselected(items=dropped)
     items[:] = kept
+
+
+#: Every skip this session reported, as (node id, reason).
+_skips: list[tuple[str, str]] = []
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    # An expected failure reports as skipped too, and is not one.
+    if report.skipped and not hasattr(report, "wasxfail"):
+        _skips.append((report.nodeid, ci_skip_policy.skip_reason(report.longrepr)))
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail a CI run that skipped something the policy does not name (ENG-051)."""
+    if not ci_skip_policy.enforced():
+        return
+    unexpected = ci_skip_policy.unexpected(_skips)
+    if not unexpected:
+        return
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_sep("=", "unexpected skips (ci_skip_policy.py)", red=True, bold=True)
+        for node_id, reason in unexpected:
+            reporter.write_line(f"{node_id}: {reason}")
+        reporter.write_line(
+            "A skip counts as coverage it does not provide. Fix the condition, or add a "
+            "reviewed entry with its reason to ci_skip_policy.EXPECTED_SKIPS."
+        )
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED

@@ -214,24 +214,12 @@ def test_the_next_action_row_says_the_step_and_its_date_and_nothing_else(page, b
         assert retired not in text, f"the step still says «{retired}»"
 
 
-def test_deferring_moves_the_date_and_says_which_day_it_lands_on(page, base_url):
-    sign_in(page, base_url, SANDRA)
-    open_matter_by_clicking(page, base_url, OPEN_TITLE)
-
-    # «Lükka edasi» is not on this page: the row it lived on is superseded and
-    # the control went with it (docs/adr/0074 §20). The route, the service and
-    # the day-counting rule are untouched and still reached from a work row
-    # elsewhere, which is where this behaviour is now driven.
-    defer = page.locator("details.uxnext__defer")
-    if not defer.count():
-        pytest.skip("«Lükka edasi» is not offered on the Teema page")
-
-    defer.locator("summary").click()
-    option = defer.locator("button[name=paevad][value='7']")
-    expect(option).to_contain_text("·")  # the resolved weekday and date
-    option.click()
-    page.wait_for_load_state("networkidle")
-    expect(page.locator("#teema-vaade")).to_be_visible()
+# `test_deferring_moves_the_date_and_says_which_day_it_lands_on` was retired
+# (ENG-051). Its control, «Lükka edasi» on the Teema page, was removed by
+# docs/adr/0074 §20, so it skipped on every run and was counted as coverage it
+# no longer gave. The absence is asserted where it belongs
+# (e2e/test_simplified_next_action.py), and the route and its day-counting rule
+# are still exercised directly (tests/test_ux_pass.py).
 
 
 def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):

@@ -267,6 +267,20 @@ suite from the visual one, so a file collected by neither job is a red build.
 It reads the shard counts out of the workflow rather than from a constant, so
 what it proves is what CI will actually do.
 
+**And the arguments, since ENG-110.** It used to collect with a hand-copied list
+of pytest arguments, so an `--ignore` added to the workflow left it green over a
+smaller suite. `ci_workflow_selection.py` now parses each suite's selecting
+arguments out of its own `run:` line and fails closed on any flag it does not
+know. The proof then compares the jobs' selections with the unfiltered
+universe: bare `pytest` for the PostgreSQL suite, `pytest e2e` for the browser
+and visual jobs together. A narrowed command is a red build here.
+`report_shard_health.py` reads the same definition.
+
+**Skips are allow-listed (ENG-051).** In CI, a skip that `ci_skip_policy.py`
+does not name — by test and by stated reason — fails the run. A missing
+`E2E_BASE_URL` or `E2E_GATE_*` fails the browser fixtures instead of skipping
+them. See docs/adr/0115.
+
 It runs in the quality job, which has no database and finishes in well under a
 minute. The proof that the slow jobs are complete should not itself be slow.
 
