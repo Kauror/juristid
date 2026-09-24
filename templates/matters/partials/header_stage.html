@@ -1,0 +1,51 @@
+{% comment %}
+`Hetkeseis` in the header band — its own partial so a save that moves the stage
+can refresh exactly this, out of band, and nothing else of the header.
+
+`+ Märge` may set `Uus hetkeseis`, and the answer to a Märge is the Teema column,
+which the header is not part of. The header used to be re-rendered only for a
+closure, so after a Märge moved the file to «Valitsuses» the header went on
+saying «Riigikogus» — the page contradicting the save just made, and inviting a
+second change from the header's own control (ENG-091). Out of band rather than
+the whole header, because the header holds five inline editors and re-rendering
+them on every note would close whichever one somebody had open
+(`app/matters/views.py` `_render_overview`).
+{% endcomment %}
+<span class="metaline__item" id="teema-hetkeseis"{% if stage_out_of_band %} hx-swap-oob="true"{% endif %}>
+  <span class="metaline__label">Hetkeseis</span>
+  {% if not can_write %}
+    {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
+    {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
+  {% else %}
+  <details class="inlineedit">
+    <summary class="inlineedit__trigger">
+      {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
+      {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
+      <span class="inlineedit__caret" aria-hidden="true">▾</span>
+    </summary>
+    <form class="inlineedit__form inlineform"
+          hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
+          hx-target="#teema-pais" hx-swap="outerHTML">
+      {% csrf_token %}
+      {% comment %}
+        The governed vocabulary, plus the stage this Matter already stands
+        in. A retired stage is named as one — the same thing the Valdkond
+        control above says with «varasem valdkond» — so it is offered back
+        and kept without reading as an ordinary current choice
+        (app/workflow/selectors.py, docs/adr/0032 §Amendment).
+      {% endcomment %}
+      <select class="field__input field__input--compact" name="stage"
+              aria-label="Hetkeseis" data-autosubmit>
+        <option value="">—</option>
+        {% for stage in stages %}
+          <option value="{{ stage.pk }}" {% if matter.stage_id == stage.pk %}selected{% endif %}>
+            {{ stage.label_et }}{% if not stage.is_active %} — varasem hetkeseis{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <button class="button button--quiet button--tiny" type="submit"
+              aria-label="Salvesta hetkeseisu muudatus">Salvesta</button>
+    </form>
+  </details>
+  {% endif %}
+</span>

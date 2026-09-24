@@ -6539,6 +6539,10 @@ class RecordEvidenceForm(forms.Form):
 
     def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
         self.record = record
+        if record is not None:
+            # Per record, so the refusal's `…_error` paragraph that Django's
+            # `aria-describedby` points at is as unique as the control is.
+            kwargs.setdefault("auto_id", f"id_{self.slug}_{record.pk}_%s")
         super().__init__(*args, **kwargs)
         if record is not None:
             # `workspace_attachments` puts its id on the *widget*, so that is

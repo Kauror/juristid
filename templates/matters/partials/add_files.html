@@ -28,5 +28,11 @@ timestamp or a filename (app/documents/links.py, brief §21, §22).
   <span class="cx-drop__text" data-filedrop-text>{{ drop_text|default:"Lohista failid siia või " }}<span class="cx-drop__pick">vali arvutist</span></span>
 </label>
 {% if field.errors %}
-  <p class="field__error">{{ field.errors|first }}</p>
+  {% comment %}
+    `describe_errors` names the paragraph the id Django's `aria-describedby`
+    already points at, so a refused control says why to a screen reader too.
+    Opt-in, because most of these forms share `id_attachments` and only a form
+    with its own ids may claim `…_error` without two elements sharing it.
+  {% endcomment %}
+  <p class="field__error"{% if describe_errors %} id="{{ field.auto_id }}_error" role="alert"{% endif %}>{{ field.errors|first }}</p>
 {% endif %}

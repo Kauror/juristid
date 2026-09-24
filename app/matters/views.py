@@ -3404,11 +3404,18 @@ def _render_overview(
     never show different pictures of the same save.
 
     ``header_out_of_band`` appends the header band to the same response, marked
-    `hx-swap-oob`, for the one save that changes something the header states —
-    a closure, which moves the state badge. Everything else leaves the header
+    `hx-swap-oob`, for the one save that changes the header wholesale — a
+    closure, which moves the state badge. Every other answer carries two small
+    out-of-band fragments instead, `Hetkeseis` and the `Dokumendid` count: the
+    two header facts a column save can move, since `+ Märge` may set the stage
+    and any save may carry a file (ENG-091). The rest of the header is left
     alone, because re-rendering it would rebuild five inline editors on every
     note somebody writes (docs/adr/0074 §10).
     """
+    # The instance a view fetched before its service ran is not the row the
+    # service locked and wrote: a `+ Märge` that moved the stage wrote it on
+    # `locked_matter`, and this one would render the stage it had before.
+    matter.refresh_from_db(fields=["stage"])
     context = _overview_context(request, matter)
     intelligence = context["intelligence"]
     context.update(
@@ -3422,6 +3429,17 @@ def _render_overview(
     if header_out_of_band:
         context["header_out_of_band"] = True
         body += render_to_string("matters/partials/header.html", context, request=request)
+    else:
+        # The two facts in the header a column save can move: `Hetkeseis`, which
+        # `+ Märge` may set, and the `Dokumendid` count, which any save carrying
+        # a file raises. Each is its own small out-of-band fragment, so the
+        # header states what the save just stored without the header's inline
+        # editors being rebuilt under the person (ENG-091).
+        context["stage_out_of_band"] = True
+        context["tabs_out_of_band"] = True
+        context["tab"] = "teema"
+        body += render_to_string("matters/partials/header_stage.html", context, request=request)
+        body += render_to_string("matters/partials/tabs.html", context, request=request)
     return HttpResponse(body, status=status)
 
 
@@ -5708,7 +5726,13 @@ def publish_website_overview_view(request: HttpRequest, pk: Any, overview_id: An
     """
     matter = get_visible_matter(request, pk)
     overview = _website_overview_for(request, matter, overview_id)
-    form = WebsiteOverviewLinkForm(request.POST)
+    # The row's own form, so a refusal comes back with this row's ids rather
+    # than Django's defaults: the strip draws every other planned row with its
+    # own form, and a bare `WebsiteOverviewLinkForm` here put a second
+    # `id_url` and `id_published_on` beside them, which sent the labels and
+    # the date helper to the wrong row (ENG-093). The field names are the
+    # same, so what is read from the POST is unchanged.
+    form = _website_overview_link_form(overview, data=request.POST)
     if not form.is_valid():
         return _website_overview_refusal(request, matter, overview=overview, form=form)
     try:
@@ -7536,17 +7560,7 @@ def add_development_evidence_view(
 
     form = DevelopmentEvidenceForm(request.POST, request.FILES, record=development)
     if not form.is_valid():
-        return _workspace_refusal(
-            request,
-            matter,
-            key="development_evidence_form",
-            form=form,
-            # The field's own sentence, because this form has exactly one field
-            # and a bare «parandage vead» over an empty picker says nothing a
-            # person can act on. `_workspace_refusal` puts it above the column,
-            # which is where a refusal no panel owns belongs.
-            error=str(next(iter(form.errors.get("attachments", [])), "")),
-        )
+        return _evidence_refusal(request, matter, key="development_evidence_form", form=form)
 
     try:
         workspace.add_development_evidence(
@@ -7555,11 +7569,46 @@ def add_development_evidence_view(
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:
-        return _workspace_refusal(
+        return _evidence_refusal(
             request, matter, key="development_evidence_form", form=form, error=str(error)
         )
 
     return _render_overview(request, matter)
+
+
+def _evidence_refusal(
+    request: HttpRequest, matter: Matter, *, key: str, form: Any, error: str = ""
+) -> HttpResponse:
+    """Re-render the column with a refused `+ Lisa fail` back on its own row.
+
+    Deliberately **not** `_workspace_refusal`, for the reason
+    `_website_overview_refusal` gives: that helper answers by reopening a
+    `LISA TEEMALE` panel, and this act has none. Routed through it, the refused
+    form became a page-wide variable — so every row of the same kind drew the
+    picker, all with one id, all with the same error — and the sentence, owned
+    by no panel, landed under `PRAEGUNE TEGEVUS` (ENG-036).
+
+    Here the form goes back under ``key`` and carries its own record
+    (`RecordEvidenceForm.record`); the row template draws the picker only where
+    that record is the row's. The sentence is the field's own error — the
+    service's refusal is added to the field — so it prints under the picker it
+    is about, associated with it, and nowhere else. Nothing about the record is
+    stored on the model to get there.
+
+    A closed Matter's header rides along out of band, as it does for every
+    refusal that tells a stale tab the file was shut (`_workspace_refusal`).
+    """
+    if error:
+        form.add_error("attachments", error)
+    matter.refresh_from_db(fields=["is_open"])
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context[key] = form
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    if not matter.is_open:
+        context["header_out_of_band"] = True
+        body += render_to_string("matters/partials/header.html", context, request=request)
+    return HttpResponse(body, status=400)
 
 
 @login_required
@@ -7614,16 +7663,7 @@ def add_external_position_evidence_view(
 
     form = ExternalPositionEvidenceForm(request.POST, request.FILES, record=position)
     if not form.is_valid():
-        return _workspace_refusal(
-            request,
-            matter,
-            key="external_position_evidence_form",
-            form=form,
-            # The field's own sentence: this form has exactly one field, and a
-            # bare «parandage vead» over an empty picker says nothing a person
-            # can act on.
-            error=str(next(iter(form.errors.get("attachments", [])), "")),
-        )
+        return _evidence_refusal(request, matter, key="external_position_evidence_form", form=form)
 
     try:
         workspace.add_external_position_evidence(
@@ -7632,7 +7672,7 @@ def add_external_position_evidence_view(
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:
-        return _workspace_refusal(
+        return _evidence_refusal(
             request, matter, key="external_position_evidence_form", form=form, error=str(error)
         )
 

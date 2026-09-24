@@ -186,7 +186,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
                 hx-swap="outerHTML">Tühista</button>
       </p>
     </form>
-  {% elif development_evidence_form %}
+  {% elif development_evidence_form and development_evidence_form.record.pk == development.pk %}
     {% comment %}
       `+ Lisa fail`. The picker, and nothing else: this act adds a paper to a
       step the file already records correctly, so nothing about the record is on
@@ -203,10 +203,14 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       the reader is already looking (app/matters/views.py,
       `add_development_evidence_view`).
 
-      A refusal takes the same route and prints above the column, because a file
-      picker is the one control a browser will not repopulate whatever the server
-      sends — so there is nothing here to bring back, and a stale picker left
-      open would suggest the choice survived.
+      **A refusal reopens this picker on this row only, with its sentence
+      under it.** The form carries the record it belongs to, and the branch
+      compares that record to this row: the refused form used to be a
+      page-wide variable, so every `Märge` in the chronology drew a picker
+      with the same id and the same error, and the sentence also landed under
+      PRAEGUNE TEGEVUS (ENG-036). The browser does not repopulate a file
+      picker, so the choice has to be made again — which the empty picker,
+      in the place it was made, says plainly.
     {% endcomment %}
     <form class="uxtl__editform" aria-label="Faili lisamine märkele"
           hx-post="{% url 'matters:add_development_evidence' pk=matter.pk development_id=development.pk %}"
@@ -222,7 +226,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       <p class="uxtl__ms">
         <span class="uxtl__mswhat">{{ milestone.what }}</span>
       </p>
-      {% include "matters/partials/add_files.html" with field=development_evidence_form.attachments %}
+      {% include "matters/partials/add_files.html" with field=development_evidence_form.attachments describe_errors=True %}
       <p class="uxtl__editactions">
         <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
         {% comment %}
