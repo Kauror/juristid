@@ -276,9 +276,12 @@ return from leave is a decision about a person, not a side effect of onboarding.
 **Not `createsuperuser`.** That makes an ADMINISTRATOR superuser, which is never
 offered as a persona and can never be given work (docs/adr/0034) — so a lawyer
 onboarded with it cannot find themselves behind the gate, and under Cloudflare
-Access would be signed into the Django admin over every Matter. It is only for
-the one technical administrator account, which never appears as a persona
-(ENG-013).
+Access would be signed into the Django admin instead of the product. It is only
+for the one technical administrator account, which never appears as a persona
+(ENG-013). That account's admin is for reference data: every business record
+there is read-only and shows only what the account may read through the
+product, which for an administrator excludes RESTRICTED Matters; a role, a
+superuser flag or a break-glass grant is not set there (ENG-008).
 
 ## Importing the historical corpus
 
