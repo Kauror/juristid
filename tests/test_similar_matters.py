@@ -480,7 +480,7 @@ DRAFT_URL_NAME = "related_materials:draft_suggestions"
 
 
 def _draft(client, **params: Any) -> str:
-    return client.get(reverse(DRAFT_URL_NAME), params).content.decode()
+    return client.post(reverse(DRAFT_URL_NAME), params).content.decode()
 
 
 def test_a_blank_form_suggests_nothing_at_all(client, specialist, a_pair):
@@ -561,7 +561,7 @@ def test_the_draft_never_suggests_a_matter_the_reader_may_not_open(
 
 
 def test_the_draft_writes_nothing(client, specialist, pakend, ministry):
-    """No Matter, no relation, no dismissal. It is a GET and it stays one."""
+    """No Matter, no relation, no dismissal — a POST that is still only a read."""
     _matter(
         specialist, "Pakendiseaduse muutmise eelnõu", number=1, tags=[pakend], addressee=ministry
     )
@@ -651,9 +651,59 @@ def test_a_crafted_key_that_does_not_exist_contributes_nothing(client, specialis
 
 
 def test_the_draft_route_needs_a_signed_in_reader(client):
-    response = client.get(reverse(DRAFT_URL_NAME), {"title": "Pakendiseadus"})
+    response = client.post(reverse(DRAFT_URL_NAME), {"title": "Pakendiseadus"})
 
     assert response.status_code in {302, 403}
+
+
+def test_the_draft_route_runs_nothing_but_reads(client, specialist, pakend, ministry):
+    """Every statement the route runs, not only the tables a test thought of.
+
+    POST is where the values travel, not permission to write (docs/adr/0108).
+    The session row is the framework's and is excluded; nothing else may be
+    anything but a read.
+    """
+    _matter(
+        specialist, "Pakendiseaduse muutmise eelnõu", number=1, tags=[pakend], addressee=ministry
+    )
+    client.force_login(specialist)
+
+    with CaptureQueriesContext(connection) as queries:
+        body = _draft(client, title="Pakendiseaduse rakendusaktide eelnõu")
+
+    assert "relatedcard" in body
+    writes = [
+        query["sql"]
+        for query in queries.captured_queries
+        if query["sql"].lstrip().split(" ", 1)[0].upper() in {"INSERT", "UPDATE", "DELETE"}
+        and "django_session" not in query["sql"]
+    ]
+    assert writes == []
+
+
+def test_the_draft_route_no_longer_answers_a_get(client, specialist):
+    """The form's values in an address are what this route stopped accepting (ENG-026)."""
+    client.force_login(specialist)
+
+    response = client.get(reverse(DRAFT_URL_NAME), {"title": "Pakendiseadus", "notes": "x"})
+
+    assert response.status_code == 405
+
+
+def test_a_summary_longer_than_any_address_is_answered(client, specialist, pakend, ministry):
+    """A long `Lühikokkuvõte` used to make the GET longer than the server accepts."""
+    _matter(
+        specialist, "Pakendiseaduse muutmise eelnõu", number=1, tags=[pakend], addressee=ministry
+    )
+    client.force_login(specialist)
+
+    response = client.post(
+        reverse(DRAFT_URL_NAME),
+        {"title": "Pakendiseaduse rakendusaktide eelnõu", "brief_summary": "pakend " * 1200},
+    )
+
+    assert response.status_code == 200
+    assert "relatedcard" in response.content.decode()
 
 
 def test_the_create_page_asks_for_suggestions_without_touching_the_form(client, specialist):
@@ -668,13 +718,40 @@ def test_the_create_page_asks_for_suggestions_without_touching_the_form(client, 
     body = client.get(reverse("matters:matter_create")).content.decode()
 
     assert 'id="sarnased-teemad"' in body
-    assert reverse(DRAFT_URL_NAME) in body
-    region = body.split('id="sarnased-teemad"')[1][:600]
+    region = body.split('id="sarnased-teemad"')[1][:900]
+    assert f'hx-post="{reverse(DRAFT_URL_NAME)}"' in region
+    assert "hx-get" not in region
     assert 'hx-target="this"' in region
     assert 'hx-swap="innerHTML"' in region
-    # Nothing but the four matching fields may cost a round trip.
+    # Nothing but the fields that decide the answer may cost a round trip.
     assert "from:#id_title" in region
     assert "from:#id_stage" not in region
+
+
+def test_the_request_carries_only_the_deciding_fields(client, specialist):
+    """ENG-026: the allow-list names five fields and the token — never `Märkmed`.
+
+    htmx adds the enclosing form to a POST by itself, so the list is what keeps
+    the private note, the deadline and everything else on the page. The token
+    travels in the body, where a POST needs it, and never in an address.
+    """
+    client.force_login(specialist)
+
+    body = client.get(reverse("matters:matter_create")).content.decode()
+    region = body.split('id="sarnased-teemad"')[1][:900]
+    allowed = region.split('hx-params="')[1].split('"')[0].split(",")
+
+    assert sorted(allowed) == sorted(
+        [
+            "title",
+            "brief_summary",
+            "policy_areas",
+            "legal_instruments",
+            "source_organisations",
+            "csrfmiddlewaretoken",
+        ]
+    )
+    assert 'name="notes"' in body, "the private note this list keeps out is on the form"
 
 
 def test_the_region_listens_for_a_restored_form(client, specialist):
@@ -689,25 +766,27 @@ def test_the_region_listens_for_a_restored_form(client, specialist):
     debounced list is ADR 0087 §4's and this round changes none of it.
     """
     client.force_login(specialist)
+    factories.OrganisationFactory()  # so `Saatja` renders a chip to be heard
 
     body = client.get(reverse("matters:matter_create")).content.decode()
     region = body.split('id="sarnased-teemad"')[1][:900]
 
     assert "sarnased:restored" in region
-    for field in (
-        "#id_title",
-        "#id_brief_summary",
-        "#id_policy_areas",
-        "#id_legal_instruments",
-        "#id_source_organisations",
-    ):
+    for field in ("#id_title", "#id_brief_summary"):
         assert f"from:{field}" in region
+    # The chips are checkboxes with an id each, so they are heard by name at
+    # the form — and every name heard is one the form really renders (ENG-090).
+    for name in ("policy_areas", "legal_instruments", "source_organisations"):
+        assert f"target.name==='{name}'" in region
+        assert f'name="{name}"' in body
+    assert "from:#id_policy_areas" not in region
     # And still nothing that cannot change the answer.
     assert "from:#id_stage" not in region
+    assert "target.name==='notes'" not in region
 
 
 def test_the_restore_asks_the_same_read_only_route(client, specialist, pakend, ministry):
-    """A restore is the ordinary GET, so it inherits the ordinary boundary.
+    """A restore is the ordinary request, so it inherits the ordinary boundary.
 
     There is no second endpoint, no restore flag and no server-side memory of a
     previous page: the same URL, answered the same way, writes nothing. The

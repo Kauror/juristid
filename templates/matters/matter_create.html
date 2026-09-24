@@ -474,15 +474,21 @@
       `Sarnased teemad` — what the register already holds about this subject,
       asked while the form is being filled in.
 
-      **Inside the form element, and it is not part of the form.** It sits here
-      because `hx-include` reads a CSS selector and `closest form` is the
-      honest one; nothing in the swapped fragment is a control, carries a
-      `name`, or is read by `matter_create`. The only element this touches is
-      the `<div>` below, which starts empty and is replaced by cards or by
-      nothing at all.
+      **Inside the form element, and it is not part of the form.** Nothing in
+      the swapped fragment is a control, carries a `name`, or is read by
+      `matter_create`. The only element this touches is the `<div>` below,
+      which starts empty and is replaced by cards or by nothing at all.
 
-      **GET, so it writes nothing, and no draft Matter is created** to compute
-      it (docs/adr/0087 §4). The response is bounded to five cards.
+      **POST, carrying the five fields that decide the answer and nothing
+      else** (docs/adr/0108, amending 0087 §4). It used to be a GET of
+      `closest form`, which put the whole form into the address — `Märkmed`,
+      the private note, and the CSRF token included — where every access log
+      and proxy on the way wrote it down, and a long `Lühikokkuvõte` made the
+      address longer than the server accepts. `hx-params` is the allow-list:
+      htmx adds the enclosing form to a POST by itself, and this names the
+      only parameters that leave the page, the token among them because a
+      POST needs one. No draft Matter is created and nothing is written; the
+      response is bounded to five cards.
 
       **The trigger is the four fields that decide the answer.** Typing in
       `Märkmed`, picking a `Hetkeseis` or choosing a deadline recomputes
@@ -493,10 +499,15 @@
       title is composing a sentence rather than hunting for a row.
 
       `changed` on every text trigger, so arrow keys and tabbing through do not
-      re-ask. `from:` names each control explicitly rather than listening at
-      the form, because the organisation pickers and the intake reader write
-      hidden inputs continuously and every one of those writes would otherwise
-      be a request.
+      re-ask. The three chip sets are checkboxes with one `name` each and an
+      id per chip (`id_policy_areas_0`, …), so they are heard at the form and
+      filtered by that `name`: the first version listened `from:#id_policy_areas`
+      and the like, ids no element carries, and picking a Valdkond, an
+      Õigusakt or a Saatja asked nothing at all (ENG-090). Filtering by name
+      still ignores what must not ask — the organisation pickers and the
+      intake reader write hidden inputs continuously, and `Märkmed` is heard by
+      nothing here. The short delay folds a burst of ticks, a suggestion
+      adopted or a chip row cleared, into one request.
 
       The form's own values are preserved by construction: the fragment replaces
       only `#sarnased-teemad`, so a refusal, an intake swap or a chip being
@@ -519,14 +530,12 @@
       matching answer in it, so an empty form still asks nothing at all.
     {% endcomment %}
     <div id="sarnased-teemad"
-         hx-get="{% url 'related_materials:draft_suggestions' %}"
+         hx-post="{% url 'related_materials:draft_suggestions' %}"
          hx-trigger="input changed delay:600ms from:#id_title,
                      input changed delay:600ms from:#id_brief_summary,
-                     change from:#id_policy_areas,
-                     change from:#id_legal_instruments,
-                     change from:#id_source_organisations,
+                     change[target.name==='policy_areas'||target.name==='legal_instruments'||target.name==='source_organisations'] delay:250ms from:closest form,
                      sarnased:restored"
-         hx-include="closest form"
+         hx-params="title,brief_summary,policy_areas,legal_instruments,source_organisations,csrfmiddlewaretoken"
          hx-target="this"
          hx-swap="innerHTML"></div>
   </form>
