@@ -40,7 +40,7 @@ from app.legacy_import.opinion_search import (
     visible_archive,
 )
 from app.submissions import workspace
-from app.submissions.embedded import embedded_context, page_url
+from app.submissions.embedded import embedded_context, mark_final_version_readable, page_url
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.workspace import PAGE_SIZE, SentFilters, SubmissionQueryRefused
 
@@ -103,6 +103,9 @@ def sent(request: HttpRequest) -> HttpResponse:
 
     paginator = Paginator(rows, PAGE_SIZE)
     page = paginator.get_page(request.GET.get("leht"))
+    # A Submission this reader may see can point at final evidence restricted
+    # below it; the row then offers no link and names nothing (ENG-047).
+    mark_final_version_readable(list(page.object_list), viewer)
 
     query = request.GET.copy()
     query.pop("leht", None)

@@ -19,6 +19,8 @@ retries a POST, changes the same row to the same state.
 from __future__ import annotations
 
 import datetime
+import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from django.contrib import messages
@@ -77,11 +79,12 @@ def opinion_queue(request: HttpRequest) -> HttpResponse:
         candidates = candidates.filter(match_class=match_class)
 
     counts = _pending_counts_by_class()
+    shown = list(candidates[:200])
     return render(
         request,
         "legacy_import/opinion_queue.html",
         {
-            "candidates": list(candidates[:200]),
+            "rows": queue_rows(shown, request.user),
             "total": candidates.count(),
             "counts": counts,
             "state": state,
@@ -91,6 +94,39 @@ def opinion_queue(request: HttpRequest) -> HttpResponse:
             "nav_active": "haldus",
         },
     )
+
+
+@dataclass(frozen=True)
+class QueueRow:
+    """One candidate, and the Matter it proposes as this reviewer may see it.
+
+    ``matter`` is ``None`` both where no Matter is proposed and where the one
+    proposed is not readable by this reviewer; ``hidden`` tells the two apart
+    without naming anything. Technical administration is not business access
+    (docs/adr/0005): a queue row pointing at a RESTRICTED Matter used to print its
+    title and link its id (ENG-067). The same shape `archive_detail` uses
+    (`MatterView`), so the template is never trusted to check a flag beside a
+    live object.
+    """
+
+    candidate: Any
+    matter: Any
+    hidden: bool
+
+
+def queue_rows(candidates: list[Any], user: Any) -> list[QueueRow]:
+    """Wrap each candidate with its Matter as ``user`` may see it. One query."""
+    from app.legacy_import.archive_views import _visible_matter_ids
+
+    visible = _visible_matter_ids(user, [candidate.matter_id for candidate in candidates])
+    return [
+        QueueRow(
+            candidate=candidate,
+            matter=candidate.matter if candidate.matter_id in visible else None,
+            hidden=candidate.matter_id is not None and candidate.matter_id not in visible,
+        )
+        for candidate in candidates
+    ]
 
 
 def _pending_counts_by_class() -> dict[str, int]:
@@ -170,15 +206,31 @@ def _reviewer(request: HttpRequest) -> Any:
     return request.user
 
 
+#: The one answer for a Matter this reviewer cannot link to — absent, deleted,
+#: malformed, or restricted beyond what they may read. One sentence for all of
+#: them, so the queue is not a way to learn which (ENG-067).
+MATTER_NOT_FOUND = "Valitud teemat ei leitud."
+
+
 def _chosen_matter(candidate: OpinionMatchCandidate, request: HttpRequest) -> Any:
+    """The Matter a decision names, resolved only among those this reviewer may read.
+
+    Through `visible_to`, like every other Matter read: a crafted post naming a
+    RESTRICTED Matter used to link the letter to it and answer with its
+    reference (ENG-067), and a malformed id reached the ORM as a 500.
+    """
     from app.matters.models import Matter
 
-    matter_id = request.POST.get("matter") or candidate.matter_id
-    if not matter_id:
+    raw = request.POST.get("matter") or candidate.matter_id
+    if not raw:
         raise ValueError("Tuleb valida teema.")
-    matter = Matter.objects.filter(pk=matter_id).first()
+    try:
+        matter_id = uuid.UUID(str(raw))
+    except ValueError as error:
+        raise ValueError(MATTER_NOT_FOUND) from error
+    matter = Matter.objects.visible_to(request.user).filter(pk=matter_id).first()
     if matter is None:
-        raise ValueError("Valitud teemat ei leitud.")
+        raise ValueError(MATTER_NOT_FOUND)
     return matter
 
 

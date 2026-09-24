@@ -3035,6 +3035,13 @@ fieldset.field > legend {
   word-break: break-word;
 }
 
+/* A file on a readable historical page whose own visibility is stricter than
+ * the page's: its place is kept and nothing about it is named (ENG-047). */
+.casefile__name--withheld {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .casefile__meta {
   color: var(--text-muted);
   font-size: var(--typography-size-meta);

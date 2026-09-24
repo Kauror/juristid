@@ -880,7 +880,9 @@ def test_a_legacy_row_reads_under_its_original_heading(normal_matter, ministry):
     assert position.provenance == ExternalPositionProvenance.LEGACY
     assert position.is_received is False
     assert position.kind_label == EXTERNAL_POSITION_LEGACY_HEADLINE
-    assert external_position_milestone(position).what.startswith("Väline seisukoht: ")
+    assert external_position_milestone(position, engagement=None).what.startswith(
+        "Väline seisukoht: "
+    )
 
 
 def test_a_legacy_row_keeps_its_provenance_through_a_correction(
@@ -946,7 +948,7 @@ def test_feedback_may_carry_no_date_at_all(normal_matter, specialist, associatio
     assert position.stated_on_precision == DatePrecision.EXACT
     # The audit timestamp exists and is internal; it is not the business date.
     assert position.created_at is not None
-    assert external_position_milestone(position).display_date == "Kuupäev teadmata"
+    assert external_position_milestone(position, engagement=None).display_date == "Kuupäev teadmata"
 
 
 def test_the_two_provenances_are_recorded_in_the_audit_trail(
@@ -1026,7 +1028,7 @@ def test_the_chronology_renders_the_note_on_its_own_labelled_line(
         summary="Toetab varianti B.",
         lawyer_note="Nende põhjendus ei arvesta liikmete kulumõjuga.",
     )
-    milestone = external_position_milestone(position)
+    milestone = external_position_milestone(position, engagement=None)
 
     assert milestone.sub == "Toetab varianti B."
     assert milestone.own_note == "Nende põhjendus ei arvesta liikmete kulumõjuga."

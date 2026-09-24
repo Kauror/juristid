@@ -138,6 +138,13 @@
                   · <a class="quietlink"
                        href="{% url 'documents:document_detail' pk=block.document.pk %}">Päritolu</a>
                 </span>
+              {% elif block.state == "withheld" %}
+                {% comment %}
+                  A file whose own visibility is stricter than this page's.
+                  Named by nothing — not its filename, size or id — because each
+                  of those says something about it (ENG-047).
+                {% endcomment %}
+                <span class="casefile__name casefile__name--withheld">Fail, mida selles kasutajavaates ei kuvata</span>
               {% else %}
                 <span class="casefile__name">{{ block.filename }}</span>
                 <span class="casefile__meta">

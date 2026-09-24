@@ -46,9 +46,9 @@
     </form>
   </div>
 
-  {% if candidates %}
+  {% if rows %}
     <div class="reviewlist">
-      {% for candidate in candidates %}
+      {% for row in rows %}{% with candidate=row.candidate %}
         <article class="card reviewcard">
           <div class="reviewcard__head">
             <span class="badge badge--{{ candidate.candidate_class|lower }}">
@@ -61,12 +61,21 @@
           <div class="reviewcard__pair">
             <div class="reviewcard__side">
               <p class="sectionlabel">Register</p>
-              <p class="reviewcard__title">{{ candidate.excel_title|default:"(pealkirjata)" }}</p>
-              {% if candidate.matter %}
-                <p class="reviewcard__meta">
-                  <a href="{% url 'matters:matter_detail' pk=candidate.matter.pk %}">Ava teema</a>
-                </p>
+              {% if row.hidden %}
+                {% comment %}
+                  The register row belongs to a Matter this reviewer may not
+                  read, so its title is that Matter's title: withheld with the
+                  link (ENG-067). The wording `archive_detail` uses.
+                {% endcomment %}
+                <p class="reviewcard__meta">Ettepanek osutab teemale, mida selles kasutajavaates ei kuvata.</p>
               {% else %}
+                <p class="reviewcard__title">{{ candidate.excel_title|default:"(pealkirjata)" }}</p>
+              {% endif %}
+              {% if row.matter %}
+                <p class="reviewcard__meta">
+                  <a href="{% url 'matters:matter_detail' pk=row.matter.pk %}">Ava teema</a>
+                </p>
+              {% elif not row.hidden %}
                 <p class="reviewcard__meta">Registris ei leitud vastavat teemat.</p>
               {% endif %}
             </div>
@@ -103,7 +112,7 @@
                      aria-label="Otsuse märkus"
                      placeholder="Märkus (valikuline)" maxlength="2000">
               <button type="submit" class="button button--primary" name="decision" value="link"
-                      {% if not candidate.matter or not candidate.source_page %}disabled{% endif %}>
+                      {% if not row.matter or not candidate.source_page %}disabled{% endif %}>
                 Seo teemaga
               </button>
               <button type="submit" class="button" name="decision" value="create"
@@ -123,10 +132,10 @@
             </p>
           {% endif %}
         </article>
-      {% endfor %}
+      {% endwith %}{% endfor %}
     </div>
-    {% if total > candidates|length %}
-      <p class="cardnote">Kuvatud {{ candidates|length }} kirjet {{ total }}-st.</p>
+    {% if total > rows|length %}
+      <p class="cardnote">Kuvatud {{ rows|length }} kirjet {{ total }}-st.</p>
     {% endif %}
   {% else %}
     <p class="empty">Selles vaates ei ole kirjeid.</p>

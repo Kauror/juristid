@@ -91,6 +91,7 @@ from app.matters.deletion import delete_matter, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
+    ENGAGEMENT_UNCHANGED,
     BriefSummaryForm,
     CloseMatterForm,
     CompactClosureForm,
@@ -6528,8 +6529,25 @@ def _external_position_for_correction(
     return get_object_or_404(
         MatterExternalPosition.objects.visible_to(request.user)
         .filter(matter=matter)
-        .select_related("organisation", "engagement", "matter"),
+        # Not `engagement`: the round a position answered has its own
+        # visibility and removal, and is read through them where it is shown
+        # (`_answered_engagement`, ENG-047).
+        .select_related("organisation", "matter"),
         pk=position_id,
+    )
+
+
+def _answered_engagement(request: HttpRequest, position: MatterExternalPosition) -> Any:
+    """The round this position answered, as this reader may see it, or ``None``.
+
+    Through `MatterEngagement.visible_to`, which leaves out a round restricted
+    below the Matter and one taken off the file — never through the foreign
+    key, which does neither (ENG-047).
+    """
+    if position.engagement_id is None:
+        return None
+    return (
+        MatterEngagement.objects.visible_to(request.user).filter(pk=position.engagement_id).first()
     )
 
 
@@ -6624,12 +6642,18 @@ def _external_position_row(
         {
             "matter": matter,
             "position": position,
-            "milestone": external_position_milestone(position),
+            "milestone": external_position_milestone(
+                position, engagement=_answered_engagement(request, position)
+            ),
             "external_position_edit_form": form,
             "external_position_evidence_form": evidence_form,
             "external_position_edit_error": error,
             "external_position_conflict_milestone": (
-                external_position_milestone(conflict) if conflict is not None else None
+                external_position_milestone(
+                    conflict, engagement=_answered_engagement(request, conflict)
+                )
+                if conflict is not None
+                else None
             ),
             "external_position_read_query": ENGAGEMENT_READ_QUERY,
             # One picker per record, because a chronology may hold several of
@@ -6962,7 +6986,16 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
             # turning received feedback into a discovered opinion
             # (docs/adr/0091 §3.4, §3.5).
             provenance=None,
-            engagement=form.cleaned_data.get("engagement"),
+            # `Seotud kaasamine` as the person left it. «Jääb samaks» is what
+            # the form offers — and pre-selects — when the stored round is one
+            # this reader may not see, so a correction of the date or the text
+            # leaves that relation exactly as it was instead of clearing it
+            # because the round was not in the list (ENG-047).
+            engagement=(
+                position.engagement
+                if form.cleaned_data.get("engagement") == ENGAGEMENT_UNCHANGED
+                else form.cleaned_data.get("engagement")
+            ),
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
         )

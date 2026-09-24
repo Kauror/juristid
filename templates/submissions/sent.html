@@ -191,8 +191,13 @@
                 {% endfor %}
               </td>
               <td>
-                {% if submission.final_version_id %}
+                {% if submission.final_version_id and submission.final_version_readable %}
                   {% comment %}
+                    Only where this reader may read the final file itself: it is
+                    a document with its own visibility, which may be stricter
+                    than the Submission's, and a row linking it would name it.
+                    Otherwise the cell reads as if there were none (ENG-047).
+
                     The version, not the document. `documents:open` is keyed on
                     the exact bytes — that is what makes a link to evidence a
                     link to evidence — and a document id in that slot resolved

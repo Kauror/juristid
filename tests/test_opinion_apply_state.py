@@ -190,7 +190,7 @@ def test_an_applied_candidate_leaves_the_review_queue(client, archive_path, admi
     response = client.get(reverse("legacy_import:opinion_queue"))
 
     assert response.status_code == 200
-    assert list(response.context["candidates"]) == []
+    assert list(response.context["rows"]) == []
 
 
 def test_an_automatic_application_records_no_human_reviewer(archive_path):

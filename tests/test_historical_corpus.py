@@ -566,11 +566,20 @@ def test_an_attachment_says_which_of_four_things_happened_to_it(applied, archive
         for record in link.resource_imports.select_related("resource", "document")
     }
     resources = {resource.resource_key: resource for resource in page.resources.all()}
-    blocks = _rendered_blocks(page, resources, records)
+    blocks = _rendered_blocks(page, resources, records, readable=_readable(records))
 
     attachment = next(block for block in blocks if block["kind"] == "file")
     assert attachment["state"] == "empty"
     assert attachment["document"] is None
+
+
+def _readable(records: dict) -> set:
+    """Every document these rows name: the tests below are about the four states.
+
+    Who may read which attachment is `source_page`'s own question, pinned in
+    tests/test_related_record_visibility.py (ENG-047).
+    """
+    return {record.document_id for record in records.values() if record.document_id}
 
 
 def test_a_materialised_attachment_reads_as_imported(applied, archive):
@@ -586,7 +595,9 @@ def test_a_materialised_attachment_reads_as_imported(applied, archive):
     resources = {resource.resource_key: resource for resource in page.resources.all()}
 
     attachment = next(
-        block for block in _rendered_blocks(page, resources, records) if block["kind"] == "file"
+        block
+        for block in _rendered_blocks(page, resources, records, readable=_readable(records))
+        if block["kind"] == "file"
     )
     assert attachment["state"] == "imported"
     assert attachment["document"] is not None
@@ -601,7 +612,9 @@ def test_an_attachment_nobody_has_copied_yet_reads_as_pending(applied):
     resources = {resource.resource_key: resource for resource in page.resources.all()}
 
     attachment = next(
-        block for block in _rendered_blocks(page, resources, {}) if block["kind"] == "file"
+        block
+        for block in _rendered_blocks(page, resources, {}, readable=set())
+        if block["kind"] == "file"
     )
     assert attachment["state"] == "pending"
 

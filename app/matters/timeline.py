@@ -973,8 +973,18 @@ def external_position_chronology_day(position: MatterExternalPosition) -> date:
     return position.stated_on or _local_day(position.created_at)
 
 
-def external_position_milestone(position: MatterExternalPosition) -> ChronologyMilestone:
+def external_position_milestone(
+    position: MatterExternalPosition, *, engagement: MatterEngagement | None
+) -> ChronologyMilestone:
     """One `Väline seisukoht` as the chronology row a reader sees.
+
+    ``engagement`` is the round this position answered **as this reader may see
+    it** — resolved by the caller through `MatterEngagement.visible_to`, which
+    also leaves out a removed round — or ``None``. It is a required argument
+    rather than a read of ``position.engagement``, because that foreign-key hop
+    ignores the round's own visibility and removal: a round taken off the file,
+    or restricted below the Matter, was still named here by its title (ENG-047,
+    docs/adr/0038, docs/adr/0102). The stored relation itself is untouched.
 
     Built here rather than inline in :func:`projected_milestones` because the
     correction form swaps this one row back in place after a save, and the two
@@ -1018,11 +1028,12 @@ def external_position_milestone(position: MatterExternalPosition) -> ChronologyM
     a visually hidden «avaneb uues aknas» (docs/adr/0081 §4).
     """
     sub = position.summary
-    if position.engagement is not None:
-        # The round this answered, where it answered one. After the explanation
-        # rather than before it: what they said is what a reader wants first,
-        # and «this came back from our consultation» is the context for it.
-        related = f"Vastus kaasamisele: {position.engagement.title}"
+    if engagement is not None:
+        # The round this answered, where it answered one and this reader may
+        # read it. After the explanation rather than before it: what they said
+        # is what a reader wants first, and «this came back from our
+        # consultation» is the context for it.
+        related = f"Vastus kaasamisele: {engagement.title}"
         sub = f"{sub} · {related}" if sub else related
     links = (ChronologyLink(label=position.link_label, url=position.url),) if position.url else ()
     # `Meile saadetud tagasiside: Metallitööstuse Liit`, `Teiste arvamus: MKM`,
@@ -1422,7 +1433,11 @@ def projected_milestones(
             ),
         )
 
+    # Read once and kept: the positions below name the round they answered from
+    # this same set rather than through their own foreign key (ENG-047).
+    answered: dict[Any, MatterEngagement] = {}
     for engagement in MatterEngagement.objects.filter(matter=matter).visible_to(user):
+        answered[engagement.pk] = engagement
         when = engagement_chronology_day(engagement)
         if when > day:
             continue
@@ -1434,14 +1449,16 @@ def projected_milestones(
     # the four audit events this record writes contribute no row of their own
     # and one act takes one line (docs/adr/0074 §14, docs/adr/0084 §6).
     #
-    # `select_related` on both foreign keys the row renders, because the
-    # headline is the organisation's name and the sub-line may name the
-    # consultation it answered — without it a Matter carrying ten positions
-    # would cost twenty queries to draw them.
+    # `select_related` on the organisation, whose name is the headline. The
+    # consultation a position answered is *not* followed through its foreign
+    # key: it has its own visibility and removal, so it comes from `answered`
+    # above — read through its own `visible_to`, no extra query — and a round
+    # this reader may not see, or one taken off the file, is simply absent
+    # (ENG-047).
     for position in (
         MatterExternalPosition.objects.filter(matter=matter)
         .visible_to(user)
-        .select_related("organisation", "engagement")
+        .select_related("organisation")
     ):
         when = external_position_chronology_day(position)
         if when > day:
@@ -1449,7 +1466,11 @@ def projected_milestones(
             # chronology reads newest-first and means *past*. The same rule the
             # engagement above it follows.
             continue
-        add(position, _end_of_day(when), external_position_milestone(position))
+        add(
+            position,
+            _end_of_day(when),
+            external_position_milestone(position, engagement=answered.get(position.engagement_id)),
+        )
 
     # `Menetluse areng`: one step the external procedure took.
     #

@@ -31,6 +31,7 @@ from app.core.http import content_disposition
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
 from app.legacy_import.historical_apply import index_source_link, is_empty_at_source
+from app.legacy_import.opinion_views import MATTER_NOT_FOUND, queue_rows
 from app.legacy_import.source_pages import (
     CandidateClass,
     CandidateState,
@@ -73,6 +74,13 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     }
     resources = {resource.resource_key: resource for resource in page.resources.all()}
+    # The page is readable; each attachment is a `Document` with its own
+    # visibility, which may be stricter. Read once, by id (ENG-047).
+    readable = set(
+        Document.objects.visible_to(request.user)
+        .filter(pk__in=[record.document_id for record in documents.values() if record.document_id])
+        .values_list("pk", flat=True)
+    )
 
     return render(
         request,
@@ -81,7 +89,7 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "matter": link.matter,
             "link": link,
             "page": page,
-            "blocks": _rendered_blocks(page, resources, documents),
+            "blocks": _rendered_blocks(page, resources, documents, readable=readable),
             "other_matters": (
                 visible_links(request.user)
                 .filter(source_page=page)
@@ -93,7 +101,9 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
     )
 
 
-def _rendered_blocks(page: LegacySourcePage, resources: dict, documents: dict) -> list[dict]:
+def _rendered_blocks(
+    page: LegacySourcePage, resources: dict, documents: dict, *, readable: set[Any]
+) -> list[dict]:
     """Narrative and files in one sequence, ready for the template.
 
     The template makes no decisions. Everything about what a block is, whether
@@ -111,6 +121,24 @@ def _rendered_blocks(page: LegacySourcePage, resources: dict, documents: dict) -
             key = block.get("resource_key", "")
             resource = resources.get(key)
             record = documents.get(key)
+            if record is not None and record.document_id and record.document_id not in readable:
+                # A file this reader may not read: its place in the page is kept
+                # and nothing about it is — no name, no size, no id to follow
+                # (ENG-047). Hiding the block altogether would make the page
+                # look as though it had less material than it does.
+                out.append(
+                    {
+                        "kind": "file",
+                        "ordinal": block.get("ordinal", 0),
+                        "filename": "",
+                        "size_bytes": 0,
+                        "document": None,
+                        "version": None,
+                        "opens_inline": False,
+                        "state": "withheld",
+                    }
+                )
+                continue
             out.append(
                 {
                     "kind": "file",
@@ -247,7 +275,7 @@ def review_queue(request: HttpRequest) -> HttpResponse:
         request,
         "legacy_import/review_queue.html",
         {
-            "candidates": candidates[:200],
+            "rows": queue_rows(list(candidates[:200]), request.user),
             "total": candidates.count(),
             "counts": counts,
             "state": state,
@@ -318,6 +346,11 @@ def _link_to_matter(candidate: HistoricalMatchCandidate, request: HttpRequest) -
     reviewer = _reviewer(request)
     if candidate.matter is None or candidate.source_page is None:
         raise ValueError("Kandidaadil puudub teema või lähteleht.")
+    if not Matter.objects.visible_to(request.user).filter(pk=candidate.matter_id).exists():
+        # A proposal pointing at a Matter this reviewer may not read is not one
+        # they may act on: linking would write onto it and the answer would name
+        # it (ENG-067). The same sentence as for a Matter that is not there.
+        raise ValueError(MATTER_NOT_FOUND)
     link, _ = MatterSourcePage.objects.get_or_create(
         matter=candidate.matter,
         source_page=candidate.source_page,

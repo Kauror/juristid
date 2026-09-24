@@ -5352,6 +5352,10 @@ def _closure_commencement(*, matter: Matter, author: Any, effective: dict[str, A
         kind=EffectiveDateKind.KNOWN_DATE,
         date_precision=DatePrecision.EXACT,
         date_value=date_value,
+        # A row taken off the file is not a fact the file states any more, so
+        # it cannot stand in for the commencement this closure records
+        # (docs/adr/0102, ENG-047).
+        removed_at__isnull=True,
     ).first()
     if existing is not None:
         return existing
