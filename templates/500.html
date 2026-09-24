@@ -1,0 +1,13 @@
+{% extends "error_page.html" %}
+{% comment %}
+  Rendered by Django with an empty context, so nothing here reads one. No
+  detail of the failure: the traceback goes to the log, not to the reader.
+{% endcomment %}
+{% block title %}Serveri viga{% endblock %}
+{% block heading %}Serveris tekkis viga{% endblock %}
+{% block body %}
+  <p class="lead">
+    Päringut ei õnnestunud lõpetada. Proovi mõne hetke pärast uuesti. Kui viga kordub,
+    anna sellest teada rakenduse haldajale.
+  </p>
+{% endblock %}

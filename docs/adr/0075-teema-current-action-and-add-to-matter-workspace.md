@@ -2,6 +2,9 @@
 
 Status: accepted
 Date: 2026-09-11
+Amended by [0107](0107-a-column-swap-keeps-what-was-typed-and-a-failure-is-told.md):
+§3's premise that the column holds nothing else to discard no longer holds.
+§3's decision stands.
 Supersedes the presentation clauses of [0074](0074-teema-approved-target.md) §3,
 §4, §6, §7, §8, §9, §10 and §15 that describe the composer. Everything else in
 0074 — the header, the rail, the process strip, the chronology, the canonical

@@ -15,7 +15,7 @@ and says nothing about the Matter's state — deliberately, because
 `can_add_content`, the flag that *does* read `is_open`, is what guards every
 control that would add something new (app/matters/views.py, docs/adr/0075 §12).
 {% endcomment %}
-<div class="uxtl__entry" id="sissekanne-{{ entry.pk }}-sisu">
+<div class="uxtl__entry" id="sissekanne-{{ entry.pk }}-sisu" data-draft-host>
   {% if entry_edit_form %}
     {% comment %}
       Edit mode. The form posts to the same address that opened it and swaps

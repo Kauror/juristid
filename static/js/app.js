@@ -1712,31 +1712,17 @@
       sync();
     });
 
-    /* The private note saves itself and says so. `beforeunload` covers the one
-       case the debounce cannot: somebody types a line and closes the tab
-       inside the delay window. */
-    scope.querySelectorAll(".railnote").forEach(function (form) {
-      if (!once(form, "Note")) {
+    /* The private note saves itself and says so. What it last saved is kept
+       per box, and only a save the server confirmed moves it
+       (`Workspace failures` below, ENG-012). */
+    scope.querySelectorAll("form[data-autosave]").forEach(function (form) {
+      if (!once(form, "Autosave")) {
         return;
       }
       var box = form.querySelector("textarea");
-      if (!box) {
-        return;
+      if (box && !autosaved.has(box)) {
+        autosaved.set(box, box.value);
       }
-      var saved = box.value;
-      window.addEventListener("beforeunload", function () {
-        if (box.value === saved) {
-          return;
-        }
-        var body = new FormData(form);
-        var url = form.getAttribute("hx-post");
-        if (url && navigator.sendBeacon) {
-          navigator.sendBeacon(url, body);
-        }
-      });
-      form.addEventListener("htmx:afterRequest", function () {
-        saved = box.value;
-      });
     });
   }
 
@@ -3693,6 +3679,551 @@
     });
   }
 
+  /* ==== Workspace failures, and what a swap must not take with it =========
+   *
+   * Two defects with one cause: the Teema workspace is one column that most
+   * saves replace whole, and until now the client only knew how to show the
+   * refusals the server renders (ENG-012, ENG-034).
+   *
+   * **A failure that is not a rendered refusal was silent.** A 500, a proxy's
+   * 502 during a restart, a dropped connection, an expired session and a stale
+   * CSRF token all left `Salvesta` looking dead — and an expired gate was
+   * worse: the browser followed the redirect and htmx swapped the password page
+   * into the column, text and all. The server now answers the last two with a
+   * marked 401 / 403 instead of a page (app/core/middleware.py
+   * `HtmxSignInMiddleware`, app/core/views.py `csrf_failure`), and every
+   * failure is shown here the same way: one sentence in Estonian, inside the
+   * form that sent the request, saying that it was not saved and that the text
+   * is still there. Nothing is swapped, so the text *is* still there. Nothing
+   * is sent again on the person's behalf either: a POST that may or may not
+   * have reached the database is the person's to repeat, and after a persona
+   * change in another tab a quiet retry would save it under somebody else's
+   * name.
+   *
+   * **A save in one panel threw away what was typed in the others.** The
+   * column is replaced whole so the task, the process strip and the chronology
+   * cannot disagree about the save that just happened (docs/adr/0074 §10), and
+   * that stays. What changes is that each place a lawyer types into is marked
+   * as a draft host (`data-draft-host`, with an id), and before a swap lands
+   * every host that holds unsaved input — other than the one that sent the
+   * request, whose answer is the server's to give — is carried across it with
+   * htmx's own `hx-preserve`: the element itself moves, so its text, cursor,
+   * chosen files and listeners move with it. Nothing is written to browser
+   * storage; the draft only ever lives in the page it was typed into
+   * (docs/adr/0107).
+   *
+   * A host is carried only into its own place. Where the new column has no
+   * element with that id, or has one about a different record
+   * (`data-draft-state` — the composer and `Muuda` beside a task that has
+   * since been replaced), keeping the old form would post against something
+   * the page no longer shows. That text is shown instead, read-only, as
+   * `Salvestamata sisu` above the task, in the same shape the server uses for
+   * the same situation (QA-06). A whole-record editor that is carried keeps
+   * the revision it was opened with, so saving it later over a newer version
+   * is refused as a conflict rather than overwriting it (docs/adr/0104).
+   */
+
+  /** What each autosaving box last had confirmed by the server. */
+  var autosaved = new WeakMap();
+  /** What each autosaving form has in flight. */
+  var autosaving = new WeakMap();
+
+  var FAILURE_REASONS = {
+    network: "Ühendus serveriga katkes.",
+    server: "Serveris tekkis viga.",
+    "sign-in": "Sisselogimine on aegunud.",
+    csrf: "Leht on aegunud: sisselogimine muutus pärast lehe avamist, näiteks teises aknas.",
+    forbidden: "Sellele toimingule puudub ligipääs.",
+    missing: "Kirjet ei leitud või see pole sulle nähtav.",
+    other: "",
+  };
+
+  function failureKind(xhr) {
+    var status = xhr ? xhr.status : 0;
+    var marked = xhr ? xhr.getResponseHeader("X-Juristid-Failure") : null;
+    if (!status) {
+      return "network";
+    }
+    if (marked === "sign-in" || marked === "csrf") {
+      return marked;
+    }
+    if (status === 403) {
+      return "forbidden";
+    }
+    if (status === 404) {
+      return "missing";
+    }
+    return status >= 500 ? "server" : "other";
+  }
+
+  function failureText(kind, writes) {
+    var reason = FAILURE_REASONS[kind] || "";
+    var tail = "";
+    if (writes && (kind === "sign-in" || kind === "csrf")) {
+      tail = "Sisestatud tekst on alles, kuid seda ei salvestatud — kopeeri see enne jätkamist.";
+    } else if (writes && (kind === "missing" || kind === "forbidden")) {
+      tail = "Sisestatud tekst on alles.";
+    } else if (writes) {
+      tail = "Sisestatud tekst on alles; proovi uuesti.";
+    } else if (kind !== "sign-in" && kind !== "csrf") {
+      tail = "Proovi uuesti.";
+    }
+    return [reason, tail].filter(Boolean).join(" ");
+  }
+
+  /* Where a failure is told: inside the form that sent the request, after its
+   * controls, so it sits beside the thing that did not happen and covers
+   * nothing. A control outside a form gets it right after itself. */
+  function failureHost(elt) {
+    if (!elt || !elt.closest || !document.contains(elt)) {
+      return null;
+    }
+    return elt.closest("form") || elt;
+  }
+
+  function clearFailure(elt) {
+    var host = failureHost(elt);
+    if (!host) {
+      return;
+    }
+    var old =
+      host.tagName === "FORM"
+        ? host.querySelector(":scope > [data-request-failure]")
+        : host.nextElementSibling;
+    if (old && old.hasAttribute("data-request-failure")) {
+      old.remove();
+    }
+  }
+
+  function showFailure(elt, kind, method, xhr) {
+    var writes = String(method || "").toUpperCase() !== "GET";
+    var notice = document.createElement("div");
+    notice.className = "reqfail";
+    notice.setAttribute("role", "alert");
+    notice.setAttribute("data-request-failure", kind);
+    var text = document.createElement("p");
+    text.className = "reqfail__text";
+    var lead = document.createElement("strong");
+    lead.className = "reqfail__lead";
+    lead.textContent = writes ? "Salvestamine ebaõnnestus." : "Sisu laadimine ebaõnnestus.";
+    text.appendChild(lead);
+    var rest = failureText(kind, writes);
+    if (rest) {
+      text.appendChild(document.createTextNode(" " + rest));
+    }
+    notice.appendChild(text);
+
+    /* The one way forward for the two failures a retry cannot fix. A link and
+     * a button the person chooses to use, never a navigation made for them:
+     * leaving is what would lose the text. */
+    var signIn = kind === "sign-in" && xhr ? xhr.getResponseHeader("X-Juristid-Sign-In") : "";
+    if (signIn && signIn.charAt(0) === "/" && signIn.charAt(1) !== "/") {
+      var link = document.createElement("a");
+      link.className = "reqfail__action";
+      link.href = signIn;
+      link.textContent = "Logi uuesti sisse";
+      notice.appendChild(link);
+    } else if (kind === "csrf") {
+      var reload = document.createElement("button");
+      reload.type = "button";
+      reload.className = "button button--quiet button--tiny reqfail__action";
+      reload.textContent = "Laadi leht uuesti";
+      reload.addEventListener("click", function () {
+        window.location.reload();
+      });
+      notice.appendChild(reload);
+    }
+
+    clearFailure(elt);
+    var host = failureHost(elt);
+    if (host && host.tagName === "FORM") {
+      host.appendChild(notice);
+    } else if (host) {
+      host.insertAdjacentElement("afterend", notice);
+    } else {
+      /* The control is gone — a swap replaced it while its request was out.
+       * The page still has to say that something was not saved. */
+      var main = document.getElementById("sisu") || document.body;
+      main.insertBefore(notice, main.firstChild);
+    }
+    if (elt && elt.matches && elt.matches("form[data-autosave]")) {
+      markAutosaveFailed(elt);
+    }
+  }
+
+  function reportFailure(event, kind) {
+    var detail = event.detail || {};
+    var config = detail.requestConfig || {};
+    var elt = detail.elt || config.elt || event.target;
+    showFailure(elt, kind || failureKind(detail.xhr), config.verb, detail.xhr);
+  }
+
+  /* The autosave's own line says «Salvestatud HH:mm» after a save that worked.
+   * After one that did not, it must not go on saying it. */
+  function markAutosaveFailed(form) {
+    var status = document.getElementById(form.getAttribute("data-autosave-status") || "");
+    if (status) {
+      status.textContent = "Salvestamata";
+      status.classList.add("is-unsaved");
+    }
+  }
+
+  function autosaveBox(form) {
+    return form && form.querySelector ? form.querySelector("textarea") : null;
+  }
+
+  /* -- Unsaved input ------------------------------------------------------ */
+
+  function selectChanged(select) {
+    var options = select.options;
+    if (select.multiple) {
+      for (var i = 0; i < options.length; i += 1) {
+        if (options[i].selected !== options[i].defaultSelected) {
+          return true;
+        }
+      }
+      return false;
+    }
+    /* A single select with no `selected` option shows its first one, and that
+     * is not a change the person made. */
+    var initial = 0;
+    for (var j = 0; j < options.length; j += 1) {
+      if (options[j].defaultSelected) {
+        initial = j;
+      }
+    }
+    return options.length > 0 && select.selectedIndex !== initial;
+  }
+
+  function controlChanged(control) {
+    if (control.disabled) {
+      return false;
+    }
+    var type = (control.type || "").toLowerCase();
+    if (/^(hidden|submit|button|reset|image)$/.test(type)) {
+      return false;
+    }
+    if (type === "file") {
+      return !!(control.files && control.files.length);
+    }
+    if (type === "checkbox" || type === "radio") {
+      return control.checked !== control.defaultChecked;
+    }
+    if (control.tagName === "SELECT") {
+      return selectChanged(control);
+    }
+    return control.value !== control.defaultValue;
+  }
+
+  function holdsUnsavedInput(host) {
+    if (host.hasAttribute("data-autosave")) {
+      var box = autosaveBox(host);
+      return !!box && autosaved.has(box) && box.value !== autosaved.get(box);
+    }
+    var controls = host.querySelectorAll("input, textarea, select");
+    for (var i = 0; i < controls.length; i += 1) {
+      if (controlChanged(controls[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function controlLabel(control) {
+    var label = null;
+    if (control.id && window.CSS && CSS.escape) {
+      label = document.querySelector('label[for="' + CSS.escape(control.id) + '"]');
+    }
+    label = label || control.closest("label");
+    var text = label ? label.textContent : control.getAttribute("aria-label") || "";
+    return text.replace(/\s+/g, " ").trim() || "Tekst";
+  }
+
+  /* What a host held that the page is about to stop showing: label and value,
+   * as text, for a person to read and copy. A chosen file cannot be carried
+   * as text; its name is, so the person knows to choose it again. */
+  function unsavedLines(host) {
+    var lines = [];
+    host.querySelectorAll("input, textarea, select").forEach(function (control) {
+      if (!controlChanged(control)) {
+        return;
+      }
+      var type = (control.type || "").toLowerCase();
+      var value = "";
+      if (type === "file") {
+        value = Array.prototype.map
+          .call(control.files, function (file) {
+            return file.name;
+          })
+          .join(", ");
+        value += " — fail tuleb uuesti valida";
+      } else if (type === "checkbox" || type === "radio") {
+        return;
+      } else if (control.tagName === "SELECT") {
+        value = Array.prototype.filter
+          .call(control.options, function (option) {
+            return option.selected;
+          })
+          .map(function (option) {
+            return option.textContent.trim();
+          })
+          .join(", ");
+      } else {
+        value = control.value;
+      }
+      if (value.trim()) {
+        lines.push([controlLabel(control), value]);
+      }
+    });
+    return lines;
+  }
+
+  var unsavedCount = 0;
+
+  function showUnsaved(region, lines) {
+    if (!region || !lines.length) {
+      return;
+    }
+    unsavedCount += 1;
+    var heading = "salvestamata-kliendis-" + unsavedCount;
+    var section = document.createElement("section");
+    section.className = "unsaved";
+    section.setAttribute("role", "status");
+    section.setAttribute("aria-labelledby", heading);
+    var h2 = document.createElement("h2");
+    h2.className = "rowlabel";
+    h2.id = heading;
+    h2.textContent = "Salvestamata sisu";
+    var note = document.createElement("p");
+    note.className = "unsaved__note";
+    note.textContent =
+      "Seda ei salvestatud: kirje, mille juures see oli, muutus vahepeal. " +
+      "Kopeeri see endale enne, kui lehe uuesti laadid.";
+    var list = document.createElement("dl");
+    list.className = "unsaved__body";
+    lines.forEach(function (line) {
+      var dt = document.createElement("dt");
+      dt.className = "unsaved__label";
+      dt.textContent = line[0];
+      var dd = document.createElement("dd");
+      dd.className = "unsaved__value";
+      dd.textContent = line[1];
+      list.appendChild(dt);
+      list.appendChild(dd);
+    });
+    section.appendChild(h2);
+    section.appendChild(note);
+    section.appendChild(list);
+    var task = region.querySelector("#praegune-tegevus");
+    if (task && task.parentNode) {
+      task.parentNode.insertBefore(section, task);
+    } else {
+      region.insertBefore(section, region.firstChild);
+    }
+  }
+
+  /* Which `LISA TEEMALE` choices were showing this host. The panels open off
+   * radios the server sets from what *it* is answering, so a panel carried
+   * across a save somebody made elsewhere would arrive hidden. Only a chain
+   * that was entirely open is recorded: a draft left in a panel the person had
+   * already switched away from stays where they left it. */
+  function openChoices(host) {
+    var picks = [];
+    for (var panel = host; panel; panel = panel.parentElement) {
+      if (panel.hasAttribute("data-addpanel") && panel.id) {
+        var pick = document.getElementById(panel.id + "-valik");
+        if (pick && pick.type === "radio") {
+          if (!pick.checked) {
+            return [];
+          }
+          picks.push(pick.id);
+        }
+      }
+    }
+    return picks;
+  }
+
+  function swapReplaces(detail) {
+    var elt = detail.requestConfig && detail.requestConfig.elt;
+    var style = detail.swapOverride;
+    if (!style && elt && elt.closest) {
+      var owner = elt.closest("[hx-swap]");
+      style = owner ? owner.getAttribute("hx-swap") : "";
+    }
+    style = (style || (window.htmx && window.htmx.config.defaultSwapStyle) || "innerHTML").split(" ")[0];
+    return style === "outerHTML" || style === "innerHTML";
+  }
+
+  var carried = null;
+
+  function keepDrafts(detail) {
+    carried = null;
+    var target = detail.target;
+    var requester = detail.requestConfig && detail.requestConfig.elt;
+    if (!target || !target.querySelectorAll || !swapReplaces(detail)) {
+      return;
+    }
+    var hosts = Array.prototype.filter.call(
+      target.querySelectorAll("[data-draft-host][id]"),
+      function (host) {
+        return host !== target && !(requester && host.contains(requester)) && holdsUnsavedInput(host);
+      },
+    );
+    if (!hosts.length) {
+      return;
+    }
+    var response = String(detail.serverResponse || "");
+    if (/<(html|head|body)[\s>]/i.test(response)) {
+      /* A whole document is htmx's to parse, title and all; a fragment
+       * template would drop the parts it treats specially. No workspace
+       * answer is one. */
+      return;
+    }
+    var template = document.createElement("template");
+    template.innerHTML = response;
+    var fresh = template.content;
+    var kept = [];
+    var lost = [];
+    hosts.forEach(function (host) {
+      var place = fresh.getElementById(host.id);
+      var same =
+        place &&
+        place.hasAttribute("data-draft-host") &&
+        (place.getAttribute("data-draft-state") || "") === (host.getAttribute("data-draft-state") || "");
+      if (same) {
+        place.setAttribute("hx-preserve", "true");
+        kept.push({ id: host.id, picks: openChoices(host) });
+      } else {
+        lost = lost.concat(unsavedLines(host));
+      }
+    });
+    if (kept.length) {
+      detail.serverResponse = template.innerHTML;
+    }
+    carried = { xhr: detail.xhr, targetId: target.id, kept: kept, lost: lost };
+  }
+
+  function settleDrafts(detail) {
+    if (!carried || carried.xhr !== detail.xhr) {
+      return;
+    }
+    var done = carried;
+    carried = null;
+    done.kept.forEach(function (entry) {
+      var host = document.getElementById(entry.id);
+      if (host) {
+        /* The element htmx put back is the old one, which never had the
+         * marker; this only makes sure no copy of it lingers to carry the
+         * host again on a later swap where it holds nothing. */
+        host.removeAttribute("hx-preserve");
+      }
+      entry.picks.forEach(function (id) {
+        var pick = document.getElementById(id);
+        if (pick) {
+          pick.checked = true;
+        }
+      });
+    });
+    showUnsaved(document.getElementById(done.targetId), done.lost);
+  }
+
+  /* -- The listeners, each registered once for the life of the page ------- */
+
+  /* A rejected save returns 400 with the surface re-rendered and the errors in
+   * place, and a refused autosave returns 409 with the conflict beside the
+   * box. HTMX drops non-2xx responses unless told otherwise, which would make
+   * a validation failure look like nothing happened at all — and would make a
+   * personal note that was *not* saved look exactly like one that was
+   * (app/matters/views.py `_note_conflict`, QA-09).
+   *
+   * **An empty refusal is not swapped.** There is nothing in it to show, and
+   * swapping nothing into the target deletes the target: the note's refused
+   * save (a bare 400) used to remove its own status line, and every later
+   * autosave then had nowhere to land. It is reported as a failure instead. */
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail;
+    var status = detail.xhr && detail.xhr.status;
+    if (status === 400 || status === 409) {
+      detail.shouldSwap = true;
+      detail.isError = false;
+    }
+    if (status >= 400 && status < 500 && !String(detail.serverResponse || "").trim()) {
+      detail.shouldSwap = false;
+      detail.isError = true;
+    }
+    if (detail.shouldSwap) {
+      keepDrafts(detail);
+    }
+  });
+
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    settleDrafts(event.detail || {});
+  });
+
+  document.body.addEventListener("htmx:beforeRequest", function (event) {
+    var elt = event.detail && event.detail.elt;
+    clearFailure(elt);
+    if (elt && elt.matches && elt.matches("form[data-autosave]")) {
+      var box = autosaveBox(elt);
+      if (box) {
+        autosaving.set(elt, box.value);
+      }
+    }
+  });
+
+  /* Only a 2xx moves what the note last saved. htmx fires `afterRequest` on
+   * errors, aborts and timeouts as well, and moving it there disarmed the
+   * unload flush below for exactly the text that had failed to save. A 409 is
+   * the conflict, and the box keeps saying so until it is reconciled. */
+  document.body.addEventListener("htmx:afterRequest", function (event) {
+    var detail = event.detail || {};
+    var elt = detail.elt;
+    if (!elt || !elt.matches || !elt.matches("form[data-autosave]")) {
+      return;
+    }
+    var box = autosaveBox(elt);
+    var status = detail.xhr ? detail.xhr.status : 0;
+    if (box && autosaving.has(elt) && status >= 200 && status < 300) {
+      autosaved.set(box, autosaving.get(elt));
+    }
+    autosaving.delete(elt);
+  });
+
+  /* The inline refusals (400/409/422 with a body) are the server's own answer
+   * and are already on the page; everything else that is an error is told. */
+  document.body.addEventListener("htmx:responseError", function (event) {
+    var detail = event.detail || {};
+    var xhr = detail.xhr;
+    var status = xhr ? xhr.status : 0;
+    if ((status === 400 || status === 409 || status === 422) && String(xhr.response || "").trim()) {
+      return;
+    }
+    reportFailure(event);
+  });
+  document.body.addEventListener("htmx:sendError", function (event) {
+    reportFailure(event, "network");
+  });
+  document.body.addEventListener("htmx:timeout", function (event) {
+    reportFailure(event, "network");
+  });
+
+  /* The one case the debounce cannot cover: a line typed into the note and the
+   * tab closed inside the delay, or a note whose last save failed. One
+   * listener for the page, asking whichever note is there now — it used to be
+   * one more listener per swap, each holding a box that no longer existed. */
+  window.addEventListener("beforeunload", function () {
+    document.querySelectorAll("form[data-autosave]").forEach(function (form) {
+      var box = autosaveBox(form);
+      if (!box || !autosaved.has(box) || box.value === autosaved.get(box)) {
+        return;
+      }
+      var url = form.getAttribute("hx-post");
+      if (url && navigator.sendBeacon) {
+        navigator.sendBeacon(url, new FormData(form));
+      }
+    });
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
     bindLiveSearch(document);
@@ -3708,20 +4239,6 @@
     bindSuggestionUse(document);
     bindPersonaMenu(document);
     focusFragmentTarget();
-  });
-
-  /* A rejected save returns 400 with the surface re-rendered and the errors in
-   * place, and a refused autosave returns 409 with the conflict beside the box.
-   * HTMX drops non-2xx responses unless told otherwise, which would make a
-   * validation failure look like nothing happened at all — and would make a
-   * personal note that was *not* saved look exactly like one that was
-   * (app/matters/views.py `_note_conflict`, QA-09). */
-  document.body.addEventListener("htmx:beforeSwap", function (event) {
-    var status = event.detail.xhr && event.detail.xhr.status;
-    if (status === 400 || status === 409) {
-      event.detail.shouldSwap = true;
-      event.detail.isError = false;
-    }
   });
 
   /* HTMX replaces whole surfaces, so re-bind inside whatever just arrived.

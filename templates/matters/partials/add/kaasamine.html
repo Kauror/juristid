@@ -43,7 +43,7 @@
            data-addpick aria-controls="lisa-kaasamine"
            {% if open_panel == "lisa-kaasamine" %}checked{% endif %}>
     <label class="disclosure-chip" for="lisa-kaasamine-valik">+ Kaasamine</label>
-    <div class="cx-panel" id="lisa-kaasamine" data-addpanel>
+    <div class="cx-panel" id="lisa-kaasamine" data-addpanel data-draft-host>
       <div class="cx-panel__body">
         {% if open_panel == "lisa-kaasamine" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>

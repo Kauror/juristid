@@ -34,7 +34,7 @@ and decides nothing: the service takes the Matter's lock and makes every rule
 itself, because the browser that posts may be holding a page from before
 anything changed.
 {% endcomment %}
-<div class="uxtl__ms-body" id="koja-arvamus-{{ submission.pk }}-sisu">
+<div class="uxtl__ms-body" id="koja-arvamus-{{ submission.pk }}-sisu" data-draft-host>
   {% if sent_opinion_edit_form %}
     <form class="uxtl__editform" aria-label="Koja arvamuse andmete parandamine"
           hx-post="{% url 'matters:update_sent_opinion' pk=matter.pk submission_id=submission.pk %}"

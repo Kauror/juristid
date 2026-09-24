@@ -40,7 +40,7 @@ nothing — `correct_procedural_development` takes the Matter's row lock and
 refuses a closed one on its own, because the browser that posts may be holding a
 page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
 {% endcomment %}
-<div class="uxtl__ms-body" id="menetluse-areng-{{ development.pk }}-sisu">
+<div class="uxtl__ms-body" id="menetluse-areng-{{ development.pk }}-sisu" data-draft-host>
   {% if development_edit_form %}
     {% comment %}
       Edit mode. The form posts to the same address that opened it and swaps

@@ -102,7 +102,7 @@ whose addressee nobody recorded should look short, not incomplete.
       <span class="railcard__key">Saatja</span>
       <span class="railcard__editable">
         {% if can_write %}
-          <details class="inlineedit">
+          <details class="inlineedit" id="teema-saatja-muuda" data-draft-host>
             <summary class="inlineedit__trigger" title="{{ matter.sender_names }}">
               {% if matter.source_organisations.all %}
                 <span class="railcard__value">{% include "matters/partials/senders.html" with matter=matter %}</span>
@@ -367,7 +367,8 @@ whose addressee nobody recorded should look short, not incomplete.
   {% if can_write %}
     <div class="railcard railcard--note">
       <span class="railcard__label">Märkmed</span>
-      <form class="railnote"
+      <form class="railnote" id="teema-markmed" data-draft-host
+            data-autosave data-autosave-status="teema-markme-seis"
             hx-post="{% url 'matters:save_note' pk=matter.pk %}"
             hx-trigger="input changed delay:900ms from:find textarea"
             hx-target="#teema-markme-seis" hx-swap="outerHTML">

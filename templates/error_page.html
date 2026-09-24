@@ -1,0 +1,31 @@
+{% load static %}<!doctype html>
+{% comment %}
+  The page Django itself renders when something went wrong before, or instead
+  of, a view: a 404, a 500 and a refused CSRF check (templates/404.html,
+  500.html, 403_csrf.html).
+
+  **Standalone, and on purpose.** A 500 is rendered with no request and no
+  context processors, often because something those depend on is what failed,
+  so nothing here may need either: no navigation, no persona, no counts, no
+  `{% url %}` beyond what cannot fail. Django's fallbacks were English pages on
+  an Estonian application (ENG-012).
+{% endcomment %}
+<html lang="et" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{% endblock %} · Koda Õigusloome</title>
+    <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+    <link rel="icon" type="image/png" href="{% static 'brand/koda-logo-negative.png' %}">
+    <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  </head>
+  <body>
+    <main class="page page--narrow" id="sisu">
+      <h1>{% block heading %}{% endblock %}</h1>
+      {% block body %}{% endblock %}
+      <p><a href="/">Avalehele</a></p>
+    </main>
+  </body>
+</html>

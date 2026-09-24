@@ -1,0 +1,17 @@
+{% extends "error_page.html" %}
+{% comment %}
+  A form sent from a page whose security token is no longer the session's —
+  most often because somebody chose another persona in a second tab, which
+  rotates it, or the page stayed open across a sign-in. Nothing was saved. The
+  check itself is Django's and is not relaxed; this is only the page it shows
+  (app/core/views.py `csrf_failure`, ENG-012).
+{% endcomment %}
+{% block title %}Leht on aegunud{% endblock %}
+{% block heading %}Leht on aegunud{% endblock %}
+{% block body %}
+  <p class="lead">
+    Vormi ei salvestatud, sest sisselogimine muutus pärast lehe avamist — näiteks valiti
+    teises aknas teine kasutaja. Mine tagasi, kopeeri sisestatud tekst, laadi leht uuesti ja
+    salvesta siis uuesti.
+  </p>
+{% endblock %}

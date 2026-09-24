@@ -35,7 +35,7 @@
            data-addpick aria-controls="teema-lopeta"
            {% if open_panel == "teema-lopeta" %}checked{% endif %}>
     <label class="disclosure-chip disclosure-chip--last" for="teema-lopeta-valik">+ Lõpeta teema</label>
-    <div class="cx-panel" id="teema-lopeta" data-addpanel>
+    <div class="cx-panel" id="teema-lopeta" data-addpanel data-draft-host>
       <div class="cx-panel__body">
         {% if open_panel == "teema-lopeta" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>

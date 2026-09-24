@@ -85,7 +85,7 @@ as late (docs/adr/0084 §5).
        data-addpick aria-controls="{{ panel_id }}"
        {% if open_value == panel_id %}checked{% endif %}>
 <label class="disclosure-chip" for="{{ panel_id }}-valik">{{ chip_label }}</label>
-<div class="cx-panel" id="{{ panel_id }}" data-addpanel>
+<div class="cx-panel" id="{{ panel_id }}" data-addpanel data-draft-host>
   <div class="cx-panel__body">
     {% if open_value == panel_id and workspace_error %}
       <p class="formerror" role="alert">{{ workspace_error }}</p>

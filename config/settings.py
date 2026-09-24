@@ -88,6 +88,11 @@ MIDDLEWARE = [
     # request's authorization lookups and nothing else
     # (app/core/authorization.py, `remember_grants_for_one_request`).
     "app.core.middleware.RequestScopeMiddleware",
+    # Around the authenticator, so it sees the gate's own redirect as well as
+    # `login_required`'s, and turns either into a 401 for an htmx request
+    # rather than letting the browser follow it into a fragment target
+    # (app/core/middleware.py `HtmxSignInMiddleware`, ENG-012).
+    "app.core.middleware.HtmxSignInMiddleware",
     # After AuthenticationMiddleware, because it decides whether the session
     # Django just restored belongs to the person Cloudflare authenticated.
     # Inert unless AUTH_MODE says otherwise (app/accounts/middleware.py).
@@ -562,6 +567,10 @@ SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = not DEBUG
+# The page a refused CSRF check shows — Estonian, and a marked 403 for htmx so
+# the page that sent it can say so. The check itself is unchanged
+# (app/core/views.py `csrf_failure`, ENG-012).
+CSRF_FAILURE_VIEW = "app.core.views.csrf_failure"
 X_FRAME_OPTIONS = "DENY"
 
 # Whether something in front terminates TLS and forwards the scheme.
