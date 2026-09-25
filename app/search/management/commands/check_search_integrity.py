@@ -197,8 +197,8 @@ class KindContract:
     repair: str
 
 
-#: The four columns a row's searchable text lives in.
-TEXT_COLUMNS = ("title", "identifiers", "alias_text", "body_text")
+#: The columns a row's searchable text lives in.
+TEXT_COLUMNS = ("title", "identifiers", "alias_text", "people_text", "body_text")
 
 REPAIR_ALL = "`rebuild_search_index`"
 REPAIR_MATTERS = "`refresh_matter_search <viide>` (üksik teema) või `rebuild_search_index`"
@@ -443,7 +443,7 @@ def _stale_text(report: IntegrityReport, *, sample: int, full: bool) -> list[Fin
     directly: they search for a word and do not find the file.
 
     Author names are covered because they are text the builders project (an
-    Entry's `alias_text` carries its author). Bounded by ``sample`` rows per
+    Entry's `people_text` carries its author). Bounded by ``sample`` rows per
     kind unless ``full``: the default answers "is a rebuild owed"; `--full`
     answers "is every row current", which is what a deployment has to prove.
     """

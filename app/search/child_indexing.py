@@ -28,6 +28,7 @@ from django.db.models import QuerySet
 from django.utils import timezone
 
 from app.core.richtext import plain_text
+from app.core.text import normalize_for_matching
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentTextFragment, DocumentVersion
 from app.matters.models import (
@@ -58,6 +59,19 @@ def bounded_body(text: str) -> str:
     never inside a UTF-8 sequence.
     """
     return (text or "")[:MAX_INDEXED_FRAGMENT_CHARACTERS]
+
+
+def names_with_folded_forms(names: list[str]) -> str:
+    """Names, and each one again without its diacritics, once each.
+
+    The alias tier compares a query's diacritic-free form with this column, so
+    «Pollumajandustootjate Liit» reaches a row that names
+    «Põllumajandustootjate Liit». The Matter row has always written both forms
+    (`app.search.indexing._alias_text_for`); a child row that names an
+    organisation now does too (ENG-031).
+    """
+    present = [name for name in names if name]
+    return " ".join(dict.fromkeys([*present, *(normalize_for_matching(n) for n in present)]))
 
 
 def indexable_entries() -> QuerySet[Entry]:
@@ -104,6 +118,7 @@ def _engagement_values(engagement, now: object) -> dict[str, object]:
         "title": engagement.title,
         "identifiers": "",
         "alias_text": " ".join(dict.fromkeys(engagement.link_search_terms)),
+        "people_text": "",
         "body_text": bounded_body(engagement.note or ""),
         # No locator. `source_locator` says *where a result opens from when
         # the source is not the Teema itself* — a page number, an archive
@@ -170,6 +185,7 @@ def _development_values(development, now: object) -> dict[str, object]:
         "title": development.title,
         "identifiers": "",
         "alias_text": "",
+        "people_text": "",
         "body_text": bounded_body(plain_text(development.note or "")),
         # No locator, for `_engagement_values`' reason: a `Märge` opens on its
         # Teema and has no place inside anything.
@@ -241,12 +257,17 @@ def _position_values(position, now: object) -> dict[str, object]:
         "source_kind": SearchSourceKind.EXTERNAL_POSITION,
         "source_object_id": position.pk,
         "external_position": position,
-        "title": position.summary or organisation,
+        # Who took the position, as the row's own title: what a result shows
+        # under the Teema to say which opinion matched (ENG-083).
+        "title": organisation or position.source_label or "Seisukoht",
         "identifiers": "",
-        "alias_text": " ".join(
-            term for term in dict.fromkeys([organisation, position.source_label]) if term
-        ),
-        "body_text": "",
+        "alias_text": names_with_folded_forms([organisation, position.source_label]),
+        "people_text": "",
+        # The summary is the body, so a match inside it can be quoted. It used
+        # to be the row's title, and a title is never excerpted: an opinion
+        # found by a phrase in its summary showed the Teema and nothing that
+        # said why (ENG-083).
+        "body_text": bounded_body(position.summary or ""),
         "source_locator": "",
         "index_version": INDEX_VERSION,
         "indexed_at": now,
@@ -306,14 +327,13 @@ def _entry_values(entry: Entry, now: object) -> dict[str, object]:
         "entry": entry,
         "title": entry.get_kind_display(),
         "identifiers": "",
-        "alias_text": " ".join(
-            part
-            for part in (
-                entry.organisation.name if entry.organisation else "",
-                entry.author.display_name if entry.author else "",
-            )
-            if part
+        "alias_text": names_with_folded_forms(
+            [entry.organisation.name if entry.organisation else ""]
         ),
+        # The author, in a column of their own: a search for a colleague's name
+        # is not a search for an organisation, and the result says «Autor»
+        # instead of «Asutus, valdkond või silt» (ENG-083).
+        "people_text": entry.author.display_name if entry.author else "",
         "body_text": bounded_body(body),
         # As above: an entry opens at its own anchor on the Teema page, which
         # `_target_url` builds from `entry_id`. The locator was a primary key.
@@ -342,7 +362,10 @@ def _submission_values(submission: Submission, now: object) -> dict[str, object]
         # The Koda reference on a sent opinion is what a ministry quotes back at
         # us, so it belongs in the exact-identifier tier rather than the body.
         "identifiers": submission.reference or "",
-        "alias_text": " ".join(dict.fromkeys([*recipients, *aliases])),
+        "alias_text": " ".join(
+            dict.fromkeys([names_with_folded_forms(recipients), *aliases])
+        ).strip(),
+        "people_text": "",
         # `summary` and `notes`, both canonical authored text.
         #
         # **`summary` is here because the substance moved into it.** Until
@@ -383,6 +406,7 @@ def fragment_values(fragment: DocumentTextFragment, now: object) -> dict[str, ob
         "title": document.title,
         "identifiers": version.original_filename,
         "alias_text": "",
+        "people_text": "",
         "body_text": bounded_body(fragment.text),
         "source_locator": fragment.locator_label,
         "index_version": INDEX_VERSION,
@@ -437,6 +461,7 @@ def document_values(document: Document, now: object) -> dict[str, object]:
         "title": document.title,
         "identifiers": bounded_body(_document_filenames(document)),
         "alias_text": "",
+        "people_text": "",
         "body_text": "",
         "source_locator": "",
         "index_version": INDEX_VERSION,
@@ -488,6 +513,7 @@ def source_link_values(link, now: object) -> dict[str, object]:
             for part in (page.source_section, page.source_section_group, page.source_parent_page)
             if part
         ),
+        "people_text": "",
         "body_text": bounded_body(page.derived_text),
         "source_locator": location[:200],
         "index_version": INDEX_VERSION,

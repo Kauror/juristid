@@ -61,7 +61,7 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
           <a class="result" href="{{ row.target }}">
             <span class="result__head">
               <span class="badge badge--source">{{ row.result.source_label }}</span>
-              <span class="result__title">{{ row.result.matter.title }}</span>
+              <span class="result__title" title="{{ row.result.matter.title }}">{{ row.result.matter.title }}</span>
               {% if row.result.is_matter %}
                 {% if row.result.matter.stage %}
                   <span class="badge">{{ row.result.matter.stage.label_et }}</span>
@@ -75,11 +75,18 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
               {% endif %}
             </span>
 
-            {% if row.result.document_title or row.result.source_locator %}
+            {% comment %}
+              Which of the Teema's records matched: the Märge, the Kaasamine,
+              the opinion or who gave it, the document and page. Several hits on
+              one Teema used to look identical — a badge and the Teema's title
+              (ENG-083).
+            {% endcomment %}
+            {% if row.result.source_title or row.result.document_title or row.result.source_locator %}
               <span class="result__source">
+                {% if row.result.source_title %}{{ row.result.source_title }}{% endif %}
+                {% if row.result.source_title and row.result.document_title %} · {% endif %}
                 {% if row.result.document_title %}{{ row.result.document_title }}{% endif %}
-                {% if row.result.document_title and row.result.source_locator %} · {% endif %}
-                {% if row.result.source_locator %}{{ row.result.source_locator }}{% endif %}
+                {% if row.result.source_locator %}{% if row.result.source_title or row.result.document_title %} · {% endif %}{{ row.result.source_locator }}{% endif %}
               </span>
             {% endif %}
 

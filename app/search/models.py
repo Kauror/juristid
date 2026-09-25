@@ -65,7 +65,18 @@ from app.core.models import BaseModel
 #: indexer lack every unextracted document's name and hold `&amp;` where the
 #: current code writes `&`, so they are made ineligible exactly as before — too
 #: little until the one-time rebuild, never something confidential.
-INDEX_VERSION = "DOKUMENT.1"
+#:
+#: Bumped from `DOKUMENT.1` by Round 6's recall and result changes (ENG-031,
+#: ENG-081, ENG-083), which change what a row holds in four ways: every row
+#: carries a diacritic-folded vector (`search_folded`), so «tahtaja» reaches
+#: «tähtaja»; an author's name moves from `alias_text` to `people_text`, so a
+#: hit on it can say «Autor» instead of «Asutus, valdkond või silt»; a recorded
+#: opinion's summary moves from its title to its body, so it can be quoted; and
+#: a Matter carrying a merged tag also carries the tag it was merged into. A row
+#: built by the older indexer has none of that, and is made ineligible exactly
+#: as before — too little until the one-time rebuild, never something
+#: confidential.
+INDEX_VERSION = "SONAVORM.1"
 
 
 class SearchSourceKind(models.TextChoices):
@@ -270,6 +281,19 @@ class SearchDocument(BaseModel):
         verbose_name="nimekujud",
         help_text="Asutuste, valdkondade ja siltide nimed ning nimekujud.",
     )
+    # The people a row names as its author, in a column of their own (ENG-083).
+    # They used to share `alias_text` with organisation, area and tag names, so
+    # a search for a colleague ranked their entries in the taxonomy tier and
+    # labelled them «Asutus, valdkond või silt» — true of none of them. A
+    # database default as well as a Python one: a release still serving while
+    # this column is added inserts rows without naming it.
+    people_text = models.TextField(
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="inimesed",
+        help_text="Kirje autori nimi.",
+    )
     body_text = models.TextField(
         blank=True,
         verbose_name="sisutekst",
@@ -289,6 +313,12 @@ class SearchDocument(BaseModel):
     # organisation name and calls it a title hit. Ranking tiers are only
     # meaningful if each one tests what it claims to test.
     search_title = SearchVectorField(null=True, editable=False)
+    # Every searchable column with its diacritics removed and nothing stemmed
+    # (`simple` over `unaccent`), so a query typed without õ, ä, ö, ü, š or ž
+    # reaches the words that have them, and a word's beginning can be matched
+    # as a prefix (ENG-031). Folded here, when the row is written, rather than
+    # applied to every row at query time, where no index could serve it.
+    search_folded = SearchVectorField(null=True, editable=False)
 
     index_version = models.CharField(max_length=16, default=INDEX_VERSION, editable=False)
     indexed_at = models.DateTimeField(db_index=True, verbose_name="indekseeritud")
@@ -308,6 +338,7 @@ class SearchDocument(BaseModel):
             GinIndex(fields=["search_estonian"], name="search_estonian_gin"),
             GinIndex(fields=["search_simple"], name="search_simple_gin"),
             GinIndex(fields=["search_title"], name="search_title_gin"),
+            GinIndex(fields=["search_folded"], name="search_folded_gin"),
             # Trigram indexes are for short strings only. The body text column
             # is deliberately absent: trigram-indexing extracted document text
             # is how a PostgreSQL search installation becomes unmaintainable
@@ -336,6 +367,11 @@ class SearchDocument(BaseModel):
                 fields=["alias_text"],
                 opclasses=["gin_trgm_ops"],
                 name="search_alias_trgm",
+            ),
+            GinIndex(
+                fields=["people_text"],
+                opclasses=["gin_trgm_ops"],
+                name="search_people_trgm",
             ),
             models.Index(fields=["matter", "source_kind"], name="search_matter_kind"),
             # Refreshing one document's projection deletes its rows first, and

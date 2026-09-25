@@ -346,8 +346,11 @@ def test_the_index_contract_is_untouched() -> None:
     Moved again by docs/adr/0113: every Document gained a row of its own and
     authored text became plain and bounded in the projection — a contract
     change that needs a rebuild, and nothing to do with this file's surface.
+    Moved again by docs/adr/0117: a diacritic-folded vector, authors in a
+    column of their own, received opinions' summaries in the body and merged
+    tags' successors — a rebuild, and nothing to do with this file's surface.
     """
-    assert INDEX_VERSION == "DOKUMENT.1"
+    assert INDEX_VERSION == "SONAVORM.1"
 
 
 def test_a_refused_query_produces_no_results_rather_than_an_error(

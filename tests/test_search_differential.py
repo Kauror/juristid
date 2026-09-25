@@ -1,13 +1,24 @@
-"""The indexed search answers exactly what the old query answered (ENG-010).
+"""The search finds everything the old query found, and more only on purpose.
 
-ENG-010 rewrote *how* search finds its rows — every tier now a predicate an
-index can serve, the ranking statement slim, participation by subquery instead
-of a join and a `DISTINCT` — and was not allowed to change *what* it finds. This
-module holds that: over one synthetic corpus with every source kind, restricted
-Matters and restricted children, it runs the query as it stood before the
-rewrite (`tests/search_reference.py`, frozen at the Round-5 main) and the query
-as it stands now, for every persona and every query below, and requires the same
-rows, in the same order, in the same tiers, with the same relevance.
+Round 6 changed search twice, and this module was written against the first.
+
+* **ENG-010 rewrote *how* search finds its rows** — every tier a predicate an
+  index can serve, the ranking statement slim, participation by subquery — and
+  was not allowed to change *what* it finds. It was held, while it landed, to
+  the same rows, in the same order, tiers and relevance as the query frozen at
+  the Round-5 main (`tests/search_reference.py`).
+* **ENG-031 and ENG-083 then changed what it finds, deliberately.** Diacritic-
+  free and word-beginning tiers, three more kinds in the title and alias tiers,
+  and an author tier. New answers are the point; a lost answer would be a
+  defect.
+
+So the contract now is the one that survives both: over one synthetic corpus
+with every source kind, restricted Matters and restricted children, for every
+persona and every query below, **every row the old query returns is still
+returned, at the same tier or a higher one**, and the new rows are allowed. The
+new rows themselves are held case by case in `tests/test_estonian_recall.py`,
+and the authorization of all of them in
+`tests/test_search_pagination_and_access.py`.
 
 The query list is the golden corpus the round asked for: references in three
 spellings, exact and inflected titles, organisation names and abbreviations,
@@ -91,6 +102,14 @@ STATIC_QUERIES = (
     "🙂 seadus",
     "100\\%",
     "%_%",
+    # tsquery syntax, which the word-beginning tier must never pass through
+    "seadus & maks",
+    "seadus | maks",
+    "!seadus",
+    "seadus:*",
+    "seadus <-> maks",
+    "'",
+    "\\",
     "ma",
     "xylofonimängija",
 )
@@ -106,31 +125,44 @@ def _ranked(queryset):
 
 
 @pytest.mark.django_db
-def test_every_persona_gets_exactly_the_old_answer_to_every_query(corpus):
+def test_no_old_answer_is_lost_or_demoted_for_any_persona(corpus):
     queries = (*STATIC_QUERIES, corpus.exact_title, corpus.exact_title.upper())
     assert len(queries) >= 40
 
     compared = 0
     non_empty = 0
+    widened = 0
     for persona, user in search_corpus.personas(corpus).items():
         for query in queries:
-            old = _ranked(
-                reference_search_documents(query=query, user=user).values_list(
-                    "pk", "match_tier", "relevance"
+            old = {
+                pk: tier
+                for pk, tier, _ in _ranked(
+                    reference_search_documents(query=query, user=user).values_list(
+                        "pk", "match_tier", "relevance"
+                    )
                 )
-            )
-            new = _ranked(
-                search_documents(query=query, user=user).values_list(
-                    "pk", "match_tier", "relevance"
+            }
+            new = {
+                pk: tier
+                for pk, tier, _ in _ranked(
+                    search_documents(query=query, user=user).values_list(
+                        "pk", "match_tier", "relevance"
+                    )
                 )
-            )
-            assert new == old, (persona, query)
-            assert result_count(query=query, user=user) == len(old), (persona, query)
+            }
+            lost = set(old) - set(new)
+            assert not lost, (persona, query, len(lost))
+            demoted = [pk for pk, tier in old.items() if new[pk] < tier]
+            assert not demoted, (persona, query, len(demoted))
+            assert result_count(query=query, user=user) == len(new), (persona, query)
             compared += 1
             non_empty += bool(old)
+            widened += len(new) - len(old)
     # The comparison has to have compared something: most queries find rows,
     # for every persona that is allowed to see them.
     assert non_empty > compared // 2
+    # And the recall tiers have to have found something the old query did not.
+    assert widened > 0
 
 
 @pytest.mark.django_db
@@ -139,7 +171,7 @@ def test_the_pages_are_the_ranked_answer_cut_into_pieces(corpus):
     for user in (corpus.specialist, corpus.reader):
         full = [
             pk
-            for pk, _, _ in reference_search_documents(query="seadus", user=user).values_list(
+            for pk, _, _ in search_documents(query="seadus", user=user).values_list(
                 "pk", "match_tier", "relevance"
             )
         ]

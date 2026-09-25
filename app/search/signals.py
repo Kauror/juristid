@@ -472,6 +472,60 @@ def refresh_on_version_added(
 # there is nothing that can drift away from what a rebuild would produce.
 
 
+_MERGE_CHANGED = "_search_merge_changed"
+
+
+@receiver(pre_save, sender=Tag, dispatch_uid="search_tag_merge_noticed")
+def notice_tag_merge(sender: type[Tag], instance: Tag, **kwargs: Any) -> None:
+    """Remember whether this save moves the tag's `merged_into` (ENG-081).
+
+    `pre_save`, for `_mark_on_rename`'s reason: by `post_save` the stored row
+    already says the new value. A save that does not name the field cannot
+    have changed it.
+    """
+    update_fields = kwargs.get("update_fields")
+    if instance.pk is None or (update_fields is not None and "merged_into" not in update_fields):
+        return
+    stored = sender._default_manager.filter(pk=instance.pk).values_list("merged_into_id", flat=True)
+    setattr(instance, _MERGE_CHANGED, stored.first() != instance.merged_into_id)
+
+
+@receiver(post_save, sender=Tag, dispatch_uid="search_refresh_tag_merge")
+def refresh_on_tag_merge(sender: type[Tag], instance: Tag, **kwargs: Any) -> None:
+    """Reproject the Matters a merge changes, and only those.
+
+    A merge changes what a Matter carrying the merged tag is findable by: the
+    tag it was merged into, and that tag's aliases, now belong to its indexed
+    names (`app.search.indexing._alias_text_for`). The Matters are known — the
+    ones assigned this tag, or any tag merged into it earlier, since their
+    canonical tag is decided through this one — so they are refreshed here, in
+    the admin's own transaction, rather than owing a rebuild of the whole
+    corpus for a change that reaches a few of them.
+
+    Renaming the canonical tag, or editing its aliases, still owes the full
+    rebuild it always did (`TAG_RENAMED`, `TAG_ALIAS_CHANGED`): those reach
+    every Matter carrying any tag that resolves to it, which is the same set,
+    but a rename is not a merge and keeps its existing, tested path.
+    """
+    if not getattr(instance, _MERGE_CHANGED, False) or indexing_is_suspended():
+        return
+    setattr(instance, _MERGE_CHANGED, False)
+    affected = {instance.pk}
+    frontier = {instance.pk}
+    while frontier:
+        frontier = set(
+            Tag.objects.filter(merged_into__in=frontier)
+            .exclude(pk__in=affected)
+            .values_list("pk", flat=True)
+        )
+        affected |= frontier
+    refresh_matters(
+        indexable_matters().filter(
+            pk__in=TagAssignment.objects.filter(tag__in=affected).values("matter")
+        )
+    )
+
+
 def _mark_on_rename(fields: tuple[str, ...], reason: str) -> Any:
     """Mark a rebuild owed when a save actually changes reference text.
 

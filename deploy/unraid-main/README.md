@@ -1400,7 +1400,7 @@ its own, and this step is not part of an ordinary release again until something
 changes `INDEX_VERSION` a second time.
 
 **Whether this release is one is in its manifest.** The version has moved
-several times (`AUTH003.1`, `OPSUM.1`, `TEEMA.1`, and `DOKUMENT.1` with ADR 0113);
+several times (`AUTH003.1`, `OPSUM.1`, `TEEMA.1`, `DOKUMENT.1` with ADR 0113, and `SONAVORM.1` with ADR 0117);
 any release whose range crosses a move owes this step once, and the manifest's
 `search_rebuild_required` line says so without anybody having to know the
 history.

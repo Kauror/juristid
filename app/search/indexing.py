@@ -26,7 +26,7 @@ from typing import Any
 
 from django.contrib.postgres.search import SearchVector
 from django.db import connection, transaction
-from django.db.models import QuerySet
+from django.db.models import F, Func, QuerySet, TextField
 from django.utils import timezone
 
 from app.core.text import normalize_for_matching
@@ -162,6 +162,7 @@ def indexable_matters() -> QuerySet[Matter]:
         "policy_areas",
         "tags",
         "tags__aliases",
+        "tags__merged_into__aliases",
     )
 
 
@@ -217,6 +218,16 @@ def _alias_text_for(matter: Matter) -> str:
     for tag in matter.tags.all():
         parts.append(tag.name_et)
         parts.extend(alias.alias for alias in tag.aliases.all())
+        # A tag merged into another stays findable through the one that
+        # replaced it: the governed name and its aliases are what a lawyer
+        # searches by today, and the Matter still carries the old assignment
+        # (`Tag.merged_into`'s own promise, master specification 14.7). Until
+        # ENG-081 this loop never followed the merge, and a Matter tagged with
+        # a retired tag was unreachable through its successor.
+        canonical = tag.canonical()
+        if canonical.pk != tag.pk:
+            parts.append(canonical.name_et)
+            parts.extend(alias.alias for alias in canonical.aliases.all())
 
     # The diacritic-free form as well, so `oigusloome` finds `õigusloome`
     # without unaccent having to be in the query path.
@@ -230,7 +241,7 @@ def _title_text_for(matter: Matter) -> str:
 
 
 def indexed_text_for(matter: Matter) -> dict[str, str]:
-    """The four searchable columns a Matter projects, and nothing else.
+    """The searchable text columns a Matter projects, and nothing else.
 
     Separated from the rest of the row so there is one owner of *what text
     represents a Matter*. The refresh writes it; `check_search_integrity`
@@ -242,6 +253,7 @@ def indexed_text_for(matter: Matter) -> dict[str, str]:
         "title": _title_text_for(matter),
         "identifiers": _identifiers_for(matter),
         "alias_text": _alias_text_for(matter),
+        "people_text": "",
         # The Matter's own authored summaries. Entry, Submission and document
         # text live in their own rows, so a result can say which of them
         # matched — folding them in here would make every hit read "the matter
@@ -317,28 +329,50 @@ def refresh_matters(matters: QuerySet[Matter]) -> int:
     return len(rows)
 
 
+def _folded(column: str) -> Func:
+    """A column with its diacritics removed, by the database's own `unaccent`.
+
+    The query side folds with the same function (`app.search.services`), so an
+    index built here and a query built there cannot disagree about what «õ»
+    becomes.
+    """
+    return Func(F(column), function="unaccent", output_field=TextField())
+
+
 def _recompute_vectors(documents: QuerySet[SearchDocument]) -> None:
     """Let PostgreSQL build the vectors, with the weights ranking depends on.
 
     A over B over C over D: a term in the title outranks the same term in an
-    identifier, which outranks an organisation alias, which outranks body text.
-    ``ts_rank`` reads these weights, so this is where most of the relevance
-    ordering is actually decided.
+    identifier, which outranks an organisation alias or an author's name,
+    which outranks body text. ``ts_rank`` reads these weights, so this is where
+    most of the relevance ordering is actually decided.
+
+    ``search_folded`` is every column once more, diacritics removed and nothing
+    stemmed, for the diacritic-free and word-beginning tiers (ENG-031).
     """
     documents.update(
         search_estonian=(
             SearchVector("title", weight="A", config="estonian")
             + SearchVector("identifiers", weight="B", config="estonian")
             + SearchVector("alias_text", weight="C", config="estonian")
+            + SearchVector("people_text", weight="C", config="estonian")
             + SearchVector("body_text", weight="D", config="estonian")
         ),
         search_simple=(
             SearchVector("title", weight="A", config="simple")
             + SearchVector("identifiers", weight="B", config="simple")
             + SearchVector("alias_text", weight="C", config="simple")
+            + SearchVector("people_text", weight="C", config="simple")
             + SearchVector("body_text", weight="D", config="simple")
         ),
         search_title=SearchVector("title", weight="A", config="estonian"),
+        search_folded=(
+            SearchVector(_folded("title"), weight="A", config="simple")
+            + SearchVector(_folded("identifiers"), weight="B", config="simple")
+            + SearchVector(_folded("alias_text"), weight="C", config="simple")
+            + SearchVector(_folded("people_text"), weight="C", config="simple")
+            + SearchVector(_folded("body_text"), weight="D", config="simple")
+        ),
     )
 
 
