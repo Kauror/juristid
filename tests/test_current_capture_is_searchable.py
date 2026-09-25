@@ -181,7 +181,13 @@ def test_the_lawyers_private_note_stays_out_of_the_corpus(normal_matter, special
     position.save()
 
     row = SearchDocument.objects.get(source_kind=SearchSourceKind.EXTERNAL_POSITION)
-    assert row.body_text == ""
+    # The body is the summary since ENG-083 moved it there to be quoted, and
+    # only the summary: the note is not in any column of the row.
+    assert row.body_text == position.summary
+    assert all(
+        "kulumõjuga" not in getattr(row, column)
+        for column in ("title", "identifiers", "alias_text", "people_text", "body_text")
+    )
     assert _titles(specialist, "kulumõjuga") == []
 
 

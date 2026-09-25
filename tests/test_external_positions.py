@@ -1004,11 +1004,13 @@ def test_a_position_is_projected_without_its_note_or_its_link(normal_matter, spe
     rebuild_all()
 
     row = SearchDocument.objects.get(source_object_id=position.pk)
-    assert row.title == "Toetab eelnõu, kuid soovib pikemat üleminekuaega."
+    # Who gave it is the row's title, and the summary is its body — so a result
+    # can say which opinion matched and quote the words that did (ENG-083).
+    assert row.title == ministry.name
+    assert row.body_text == "Toetab eelnõu, kuid soovib pikemat üleminekuaega."
     # The organisation rides in the alias tier, which is what makes a body
     # known to this Matter only through feedback reachable at all (QA-020).
     assert ministry.name in row.alias_text
-    assert row.body_text == ""
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT count(*) FROM search_searchdocument WHERE alias_text ILIKE %s",

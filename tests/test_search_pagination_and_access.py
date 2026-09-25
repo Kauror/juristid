@@ -213,7 +213,15 @@ def test_the_restricted_sentinels_do_not_leak_through_any_tier(corpus):
         f"{restricted.reference_year}_{restricted.reference_number}",  # reference
         "piiratud_zqx.pdf",  # restricted document's filename
         "zqxpiiratudmarge",  # diacritic-free
+        "zqxpiiratudtee",  # the beginning of a word (ENG-031)
+        "Zqxpiiratudmär",  # the beginning of a word, with its diacritic
+        "zqxpiiratudmar",  # both at once
     ]
+    # Every probe does reach the restricted rows — for somebody allowed to read
+    # them — so an empty answer below is authorization, not a probe that finds
+    # nothing for anyone.
+    for probe in probes:
+        assert _all_ids(probe, corpus.other_specialist), probe
     for user in (corpus.reader, corpus.administrator):
         for probe in probes:
             assert _all_ids(probe, user) == [], probe

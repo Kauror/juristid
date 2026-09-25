@@ -63,6 +63,9 @@ TEXT_INDEXES = {
     "search_title_trgm",
     "search_identifiers_trgm",
     "search_alias_trgm",
+    # Round 6's recall and author tiers (ENG-031, ENG-083).
+    "search_folded_gin",
+    "search_people_trgm",
 }
 
 
@@ -246,3 +249,32 @@ def test_the_query_as_it_stood_before_could_only_scan(projection):
         indexes_first=False,
     )
     assert [node for node in natural if node["Node Type"] in ("Unique", "HashAggregate")]
+
+
+def test_every_tsquery_is_a_literal_so_a_scan_does_not_recompute_it(projection):
+    """No query-side function a scan would evaluate per row (ADR 0117).
+
+    ``to_tsquery(regconfig, 'literal')`` is immutable and folded at planning;
+    ``unaccent`` is only stable, so written into the query it ran for every
+    row a broad term's sequential scan tested. Diacritics are folded once, in
+    a round trip of their own, before the query is built.
+    """
+    owner, _ = projection
+    sql, params = search_documents(query="tahtaja eelnõu", user=owner).query.sql_with_params()
+    assert "unaccent" not in sql
+    assert any(isinstance(p, str) and "eelnou" in p for p in params)  # folded, as a literal
+
+
+def test_folding_is_postgresqls_own_and_cannot_inject_syntax(db):
+    """The query side folds with the function the index side folds with.
+
+    Python's decomposition leaves «ß» and «æ» alone; PostgreSQL's ``unaccent``
+    does not, and a vector folded one way never matches a query folded the
+    other. And a character that folds into punctuation («½» becomes « 1/2»)
+    comes back as word runs only, never as tsquery syntax.
+    """
+    from app.search.services import _folded_words
+
+    assert _folded_words(("Straße", "tähtaja", "Æble")) == ("Strasse", "tahtaja", "AEble")
+    assert _folded_words(("½",)) == ("1", "2")
+    assert _folded_words(()) == ()

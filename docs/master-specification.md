@@ -1686,6 +1686,8 @@ Search must handle realistic lawyer queries involving:
 
 Stemming does not solve all Estonian compounds. Tag/organization aliases, simple tokens and trigram matching are complementary tools.
 
+Two index-served recall tiers sit below the exact ones: diacritic-free matching over a folded vector, and word-beginning matching (the query word's Estonian stem as a prefix), so a nominative finds the genitive the stemmer leaves alone. Stem alternation (`tähtaeg`/`tähtaja`) is a documented residual, not solved by these (ADR 0117).
+
 ## 14.5 Acceptance corpus
 
 Before real pilot, create and maintain ~30+ real representative search queries supplied by lawyers, including:

@@ -57,6 +57,7 @@ from typing import Any
 
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.core.paginator import Page, Paginator
+from django.db import connection
 from django.db.models import (
     Case,
     F,
@@ -154,11 +155,54 @@ class ContainsAnyCase(Lookup):
         return f"{lhs} ILIKE {rhs}", (*lhs_params, *rhs_params)
 
 
-for _column in ("title", "identifiers", "alias_text"):
+for _column in ("title", "identifiers", "alias_text", "people_text"):
     _field = SearchDocument._meta.get_field(_column)
     if not isinstance(_field, Field):  # pragma: no cover - a model change, caught at import
         raise TypeError(f"SearchDocument.{_column} is not a column")
     _field.register_lookup(ContainsAnyCase)
+
+
+def tsquery_of(text: str, *, config: str) -> SearchQuery:
+    """``to_tsquery(config, text)``, over text this module assembled itself.
+
+    Never a user's string: :func:`_tsquery_text` builds its argument from the
+    ``\\w+`` runs of the query, joined with ``&`` and suffixed with ``:*``,
+    so the only operators it can contain are the ones written here.
+
+    A literal, always. ``to_tsquery(regconfig, text)`` is immutable, so over a
+    literal PostgreSQL computes it once, at planning; over anything else it
+    computes it for every row a scan tests. That is why diacritics are folded
+    before this is called (:func:`_folded_words`) rather than inside it.
+
+    A `SearchQuery` rather than a bare function call, because that is what the
+    ``@@`` lookup recognises; anything else it wraps in ``plainto_tsquery``.
+    """
+    return SearchQuery(Value(text), config=config, search_type="raw")
+
+
+def _folded_words(words: tuple[str, ...]) -> tuple[str, ...]:
+    """The query's words through PostgreSQL's own ``unaccent``, in one round trip.
+
+    The index side folds with that function (`app.search.indexing._folded`),
+    so the query side must too — Python's Unicode decomposition disagrees with
+    it on letters such as «ß» and «æ». But ``unaccent`` is only *stable*, so
+    written into the query it would run for every row a scan tests, twice:
+    on a term too common for the indexes, that was a third of the scan's time
+    at the LARGE corpus (ADR 0117). Folded here, once, the tsquery is a
+    literal. What comes back is re-split into ``\\w+`` runs, so a character
+    that folds into punctuation («½» becomes « 1/2») cannot reach
+    ``to_tsquery`` as syntax.
+    """
+    if not words:
+        return ()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT array_agg(unaccent(word) ORDER BY position) "
+            "FROM unnest(%s::text[]) WITH ORDINALITY AS words(word, position)",
+            [list(words)],
+        )
+        (folded,) = cursor.fetchone()
+    return tuple(run for word in folded for run in _WORD.findall(word))
 
 
 #: Markers around the matched words. Deliberately not HTML: this string is
@@ -181,10 +225,13 @@ MATCH_REFERENCE = "reference"
 MATCH_TITLE = "title"
 MATCH_PHRASE = "phrase"
 MATCH_TAXONOMY = "taxonomy"
+MATCH_PERSON = "person"
 MATCH_CHILD_TITLE = "child_title"
 MATCH_DOCUMENT_TITLE = "document_title"
 MATCH_FULLTEXT = "fulltext"
 MATCH_SIMPLE = "simple"
+MATCH_FOLDED = "folded"
+MATCH_PREFIX = "prefix"
 MATCH_FUZZY = "fuzzy"
 
 MATCH_LABELS: dict[str, str] = {
@@ -192,10 +239,18 @@ MATCH_LABELS: dict[str, str] = {
     MATCH_TITLE: "Pealkiri",
     MATCH_PHRASE: "Pealkirja fraas",
     MATCH_TAXONOMY: "Asutus, valdkond või silt",
-    MATCH_CHILD_TITLE: "Sissekande või arvamuse pealkiri",
+    # A hit on the person who wrote the row. It used to be matched through the
+    # taxonomy column and labelled as an organisation, area or tag (ENG-083).
+    MATCH_PERSON: "Autor",
+    # The kinds this tier covers grew beyond entries and opinions (ENG-031):
+    # a Märge, a Kaasamine and a received opinion are matched by their own
+    # title too, so the label names the idea rather than two of the kinds.
+    MATCH_CHILD_TITLE: "Kirje pealkiri",
     MATCH_DOCUMENT_TITLE: "Dokumendi nimi",
     MATCH_FULLTEXT: "Tekstiotsing",
     MATCH_SIMPLE: "Sõnaotsing",
+    MATCH_FOLDED: "Täpitähtedeta",
+    MATCH_PREFIX: "Sõna algus",
     MATCH_FUZZY: "Ligilähedane",
 }
 
@@ -228,10 +283,13 @@ TIER_REFERENCE = 100
 TIER_TITLE_EXACT = 90
 TIER_TITLE_PHRASE = 80
 TIER_ALIAS = 70
+TIER_PERSON = 68
 TIER_CHILD_TITLE = 66
 TIER_DOCUMENT_TITLE = 62
 TIER_FULLTEXT = 60
 TIER_SIMPLE = 50
+TIER_FOLDED = 48
+TIER_PREFIX = 45
 TIER_TRIGRAM = 40
 
 TIER_MATCH_KIND: dict[int, str] = {
@@ -239,10 +297,13 @@ TIER_MATCH_KIND: dict[int, str] = {
     TIER_TITLE_EXACT: MATCH_TITLE,
     TIER_TITLE_PHRASE: MATCH_PHRASE,
     TIER_ALIAS: MATCH_TAXONOMY,
+    TIER_PERSON: MATCH_PERSON,
     TIER_CHILD_TITLE: MATCH_CHILD_TITLE,
     TIER_DOCUMENT_TITLE: MATCH_DOCUMENT_TITLE,
     TIER_FULLTEXT: MATCH_FULLTEXT,
     TIER_SIMPLE: MATCH_SIMPLE,
+    TIER_FOLDED: MATCH_FOLDED,
+    TIER_PREFIX: MATCH_PREFIX,
     TIER_TRIGRAM: MATCH_FUZZY,
 }
 
@@ -264,23 +325,47 @@ RESULTS_PER_PAGE = 50
 #: that merely share a stem.
 TRIGRAM_THRESHOLD = 0.6
 
+#: The kinds whose own title is matched as a substring.
+#:
+#: `Kaasamine`, `Märge` and a received opinion joined in Round 6 (ENG-031).
+#: They were added to the projection after this list was written and never to
+#: it, so a word inside a Märge title reached the row only if the Estonian
+#: stemmer happened to reduce it to the typed form — «Tarbijakaitseseadus»
+#: missed «…Tarbijakaitseseaduse…».
 CHILD_KINDS = (
     SearchSourceKind.ENTRY,
     SearchSourceKind.SUBMISSION,
     SearchSourceKind.LEGACY_SOURCE_PAGE,
+    SearchSourceKind.ENGAGEMENT,
+    SearchSourceKind.PROCEDURAL_DEVELOPMENT,
+    SearchSourceKind.EXTERNAL_POSITION,
 )
 
 #: The kinds that actually populate ``alias_text``. A document fragment does not
-#: — `fragment_values` writes ``""`` — so restricting the alias tier to these
-#: costs nothing in matching and keeps an unindexable ``ILIKE '%…%'`` away from
-#: the one population whose design headroom is millions of rows
-#: (app/search/child_indexing.py, Stage-2B brief 40).
+#: — `fragment_values` writes ``""`` — and neither does a Märge.
+#:
+#: A `Kaasamine` (its link's host) and a received opinion (who gave it) joined
+#: in Round 6 (ENG-031); an organisation known to a Teema only through the
+#: feedback it sent was otherwise reachable only through a stemmed body match.
 ALIAS_KINDS = (
     SearchSourceKind.MATTER,
     SearchSourceKind.ENTRY,
     SearchSourceKind.SUBMISSION,
     SearchSourceKind.LEGACY_SOURCE_PAGE,
+    SearchSourceKind.ENGAGEMENT,
+    SearchSourceKind.EXTERNAL_POSITION,
 )
+
+#: The shortest word matched by its beginning. «seadu» reaching «seaduse» is
+#: what the prefix tier is for; «ma» reaching every word that starts with «ma»
+#: is noise, so shorter words must match whole.
+PREFIX_MINIMUM = 4
+
+#: Words the query means literally — a phrase in quotes, an excluded word, an
+#: `or` — are websearch syntax, and the prefix and diacritic-free tiers do not
+#: second-guess them.
+_WEBSEARCH_SYNTAX = re.compile(r'"|(?:^|\s)-\w|(?:^|\s)or(?:\s|$)', re.IGNORECASE)
+_WORD = re.compile(r"\w+")
 
 #: The longest query this module will act on.
 #:
@@ -377,6 +462,11 @@ class SearchResult:
     rank: float
     source_kind: str = SearchSourceKind.MATTER.value
     source_locator: str = ""
+    #: The row's own title when the source is not the Teema — the Märge, the
+    #: Kaasamine, the opinion, who gave a received one — so several hits on
+    #: one Teema say which of its records each is (ENG-083). Empty for a Teema
+    #: and for a document, whose name `document_title` already carries.
+    source_title: str = ""
     document_title: str = ""
     document_id: Any = None
     document_version_id: Any = None
@@ -474,6 +564,38 @@ def _reference_condition(term: str) -> Q | None:
     return Q(matter__reference_year=year, matter__reference_number=number)
 
 
+def _plain_words(term: str) -> tuple[str, ...]:
+    """The query's words, when it is plain words, for the recall tiers.
+
+    Empty for a query that uses websearch syntax (a quoted phrase, ``-word``,
+    ``or``): that query says exactly what it means, and the exact tiers answer
+    it as written.
+    """
+    if _WEBSEARCH_SYNTAX.search(term):
+        return ()
+    return tuple(_WORD.findall(term))
+
+
+def _tsquery_text(words: tuple[str, ...], *, prefix: bool = False) -> str:
+    """``word & word``, or ``word:* & word:*`` — the only tsquery text built here.
+
+    Every word is a ``\\w+`` run, so it contains no quote, operator or
+    parenthesis; the syntax is all ours. A word shorter than
+    :data:`PREFIX_MINIMUM` is matched whole even in the prefix tier.
+    """
+    return " & ".join(
+        f"{word}:*" if prefix and len(word) >= PREFIX_MINIMUM else word for word in words
+    )
+
+
+def _any_case(term: str, normalized: str, column: str) -> Q:
+    """``column ILIKE %term%``, and its diacritic-free form when that differs."""
+    found = Q(**{f"{column}__contains_any_case": term})
+    if normalized != term:
+        found |= Q(**{f"{column}__contains_any_case": normalized})
+    return found
+
+
 def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     """Every tier as SQL: the eligibility predicate, the tier, the relevance.
 
@@ -534,9 +656,7 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     # identifiers and aliases, so a phrase query against it would report an
     # organisation-name hit as a title match.
     title_phrase = is_matter & Q(search_title=phrase)
-    alias = Q(source_kind__in=ALIAS_KINDS) & (
-        Q(alias_text__contains_any_case=term) | Q(alias_text__contains_any_case=normalized)
-    )
+    alias = Q(source_kind__in=ALIAS_KINDS) & _any_case(term, normalized, "alias_text")
     child_title = Q(source_kind__in=CHILD_KINDS) & (
         Q(title__contains_any_case=term)
         | (Q(identifiers__contains_any_case=term) & Q(identifiers__iexact=term))
@@ -547,8 +667,44 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     document_title = Q(
         source_kind__in=(SearchSourceKind.DOCUMENT_FRAGMENT, SearchSourceKind.DOCUMENT)
     ) & (Q(title__contains_any_case=term) | Q(identifiers__contains_any_case=term))
+    person = _any_case(term, normalized, "people_text")
     fulltext = Q(search_estonian=estonian)
     simple_match = Q(search_simple=simple)
+    # Two recall tiers below the exact ones (ENG-031), both answered by GIN:
+    #
+    # * **Diacritic-free.** The query's words, folded, against a vector of the
+    #   row's words folded the same way — «tahtaja» reaches «tähtaja».
+    # * **The start of a word.** Each word of four letters or more as a prefix,
+    #   against the Estonian vector (its stem: «seadus» becomes «seadu», which
+    #   begins «seaduse») and against the folded one (the word as typed, which
+    #   begins its inflected forms). This is where a nominative query finds the
+    #   genitive the stemmer does not reduce. It is not a stemmer: a stem that
+    #   *alternates* — «tähtaeg»/«tähtaja», «riigihange»/«riigihanke» — is not a
+    #   prefix of its other forms, and stays a documented miss
+    #   (tests/estonian_recall_corpus.py).
+    words = _plain_words(term)
+    if words:
+        # Never empty for non-empty words in practice; if every word folded
+        # into punctuation, the words as typed are the next best thing.
+        folded_words = _folded_words(words) or words
+        folded_query = tsquery_of(_tsquery_text(folded_words), config="simple")
+        stem_prefix = tsquery_of(_tsquery_text(words, prefix=True), config="estonian")
+        word_prefix = tsquery_of(_tsquery_text(folded_words, prefix=True), config="simple")
+        folded = Q(search_folded=folded_query)
+        prefix = Q(search_estonian=stem_prefix) | Q(search_folded=word_prefix)
+        # For *eligibility*, one `@@` per vector with the queries OR-ed inside
+        # it, instead of one per tier. Same rows — `v @@ (a || b)` is
+        # `v @@ a OR v @@ b` — but PostgreSQL detoasts a vector afresh for every
+        # `@@` that reads it, and on a term too common for the indexes to help,
+        # the scan paid that twice per vector per row: the broad queries on the
+        # IMPORT corpus took twice as long as before these tiers (ADR 0117).
+        # The tier below still tells the arms apart, on the matching rows only.
+        estonian_any = Q(search_estonian=estonian | stem_prefix)
+        folded_any = Q(search_folded=folded_query | word_prefix)
+    else:
+        folded = prefix = Q(pk__in=[])
+        estonian_any = fulltext
+        folded_any = Q(pk__in=[])
     # Fuzzy matching is a short-string feature: titles, references, names. It is
     # confined to Matter rows because "which page of this annex is nearly spelled
     # like your typo" is not a question anybody has (Stage-2B brief 40, 41).
@@ -568,10 +724,12 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
         title_exact
         | title_phrase
         | alias
+        | person
         | child_title
         | document_title
-        | fulltext
+        | estonian_any
         | simple_match
+        | folded_any
         | fuzzy
     )
 
@@ -579,18 +737,34 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
         When(title_exact, then=Value(TIER_TITLE_EXACT)),
         When(title_phrase, then=Value(TIER_TITLE_PHRASE)),
         When(alias, then=Value(TIER_ALIAS)),
+        When(person, then=Value(TIER_PERSON)),
         When(child_title, then=Value(TIER_CHILD_TITLE)),
         When(document_title, then=Value(TIER_DOCUMENT_TITLE)),
         When(fulltext, then=Value(TIER_FULLTEXT)),
         When(simple_match, then=Value(TIER_SIMPLE)),
+        When(folded, then=Value(TIER_FOLDED)),
+        When(prefix, then=Value(TIER_PREFIX)),
         default=Value(TIER_TRIGRAM),
         output_field=FloatField(),
     )
     # Within a tier, relevance decides. The weights set at index time (title A,
     # identifiers B, aliases C, body D) are what ts_rank reads.
+    relevance_by_folding: list[When] = []
+    if words:
+        relevance_by_folding = [
+            When(
+                folded,
+                then=SearchRank(F("search_folded"), folded_query),
+            ),
+            When(
+                prefix,
+                then=SearchRank(F("search_folded"), word_prefix),
+            ),
+        ]
     relevance = Case(
         When(fulltext, then=SearchRank(F("search_estonian"), estonian)),
         When(simple_match, then=SearchRank(F("search_simple"), simple)),
+        *relevance_by_folding,
         default=F("title_similarity"),
         output_field=FloatField(),
     )
@@ -782,6 +956,7 @@ def _present(ranked: list[tuple[Any, Any, Any]], *, term: str, user: Any) -> lis
             rank=float(relevance or 0.0),
             source_kind=document.source_kind,
             source_locator=readable_locator(document.source_kind, document.source_locator),
+            source_title=_source_title(document),
             document_title=document.document.title if document.document else "",
             document_id=document.document_id,
             document_version_id=document.document_version_id,
@@ -792,6 +967,36 @@ def _present(ranked: list[tuple[Any, Any, Any]], *, term: str, user: Any) -> lis
         )
         for document, tier, relevance in ordered
     ]
+
+
+#: Kinds whose row title is not already on the result under another name.
+_OWN_TITLE_KINDS = frozenset(
+    {
+        SearchSourceKind.ENTRY.value,
+        SearchSourceKind.SUBMISSION.value,
+        SearchSourceKind.ENGAGEMENT.value,
+        SearchSourceKind.PROCEDURAL_DEVELOPMENT.value,
+        SearchSourceKind.EXTERNAL_POSITION.value,
+        SearchSourceKind.LEGACY_SOURCE_PAGE.value,
+    }
+)
+
+
+def _source_title(document: SearchDocument) -> str:
+    """The row's own title, where it is not the Teema's or a document's name.
+
+    Read from the projection row, which the reader was just authorized to see —
+    the same row, and the same visibility, as the excerpt beside it.
+    """
+    return document.title if document.source_kind in _OWN_TITLE_KINDS else ""
+
+
+class TsQueryOr(Func):
+    """``(a || b)`` over two tsqueries: either one's words are worth marking."""
+
+    template = "(%(expressions)s)"
+    arg_joiner = " || "
+    output_field = TextField()
 
 
 def _snippets_for(
@@ -814,7 +1019,14 @@ def _snippets_for(
     if not with_body:
         return {}
 
-    estonian = SearchQuery(term, config="estonian", search_type="websearch")
+    highlight: Any = SearchQuery(term, config="estonian", search_type="websearch")
+    words = _plain_words(term)
+    if words:
+        # A word matched by its beginning is marked as well: the stem-prefix
+        # tier's own query, so «seadus» marks «seaduse» in the excerpt.
+        highlight = TsQueryOr(
+            highlight, tsquery_of(_tsquery_text(words, prefix=True), config="estonian")
+        )
     rows = (
         visible_documents(user)
         .filter(pk__in=with_body)
@@ -822,7 +1034,7 @@ def _snippets_for(
             headline=Headline(
                 Value("estonian"),
                 F("body_text"),
-                estonian,
+                highlight,
                 Value(HEADLINE_OPTIONS),
             )
         )

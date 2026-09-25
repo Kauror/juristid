@@ -2207,6 +2207,30 @@ th[aria-sort="descending"] .colhead__mark::after {
   color: var(--text-muted);
 }
 
+/* At phone width the one-line title left about 135px of a 375px screen — two
+   words — beside the kind badge and the Hetkeseis, so results on Teemad whose
+   titles begin alike could not be told apart (ENG-100). Below 40rem the title
+   takes the row and up to two lines, and the badges move beneath it. Desktop
+   rows keep their one dense line. `overflow-wrap: anywhere` is what keeps a
+   long unbroken title from pushing the page sideways. */
+@media (max-width: 40rem) {
+  .result__head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .result__title {
+    order: -1;
+    flex-basis: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+}
+
 /* ====================================================================
  * Design-token reference page
  *
@@ -2923,6 +2947,7 @@ fieldset.field > legend {
   margin-top: var(--spacing-15);
   color: var(--text-muted);
   font-size: var(--typography-size-meta);
+  overflow-wrap: anywhere;
 }
 
 .result__snippet {
