@@ -1637,6 +1637,11 @@ Use:
 
 Do **not** apply trigram indexes blindly to every large extracted document body.
 
+Every matching tier must be answerable from the projection's own indexes, so
+that the cost of a query follows the size of its answer rather than the size of
+the corpus; a result list is paged, with an exact count of what the reader may
+see, and every result is reachable (ADR 0116).
+
 ## 14.2 Indexed sources
 
 `SearchDocument` rows represent searchable content from:
