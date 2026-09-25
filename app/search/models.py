@@ -313,24 +313,29 @@ class SearchDocument(BaseModel):
             # is how a PostgreSQL search installation becomes unmaintainable
             # (master specification 14.1).
             #
-            # And they are now *partial*. Stage 2A had one row per Matter, so
-            # indexing every row's title cost nothing. Stage 2B adds a row per
-            # document fragment, where the design headroom is millions — and
-            # fuzzy-matching a typo against a fragment's title is not a feature
-            # anybody asked for. Restricting both indexes to MATTER rows keeps
-            # them the size they were, and the fuzzy tier in the query is
-            # restricted to the same rows so the planner can use them.
+            # One per searchable short column, over every row (ENG-010). They
+            # were partial — MATTER rows only — and so they could serve the
+            # fuzzy tier and nothing else, while the substring tiers for child
+            # titles, document names and aliases, which test *other* kinds,
+            # had no index and made every search a sequential scan. A fragment
+            # row's title and identifiers are its document's name and its
+            # file's name, and an alias column is empty on most kinds, so
+            # covering every row costs little: at 82,000 rows the three indexes
+            # together are about 16 MB, the size of the Estonian vector's GIN.
             GinIndex(
                 fields=["title"],
                 opclasses=["gin_trgm_ops"],
-                name="search_title_trigram",
-                condition=models.Q(source_kind="MATTER"),
+                name="search_title_trgm",
             ),
             GinIndex(
                 fields=["identifiers"],
                 opclasses=["gin_trgm_ops"],
-                name="search_identifiers_trigram",
-                condition=models.Q(source_kind="MATTER"),
+                name="search_identifiers_trgm",
+            ),
+            GinIndex(
+                fields=["alias_text"],
+                opclasses=["gin_trgm_ops"],
+                name="search_alias_trgm",
             ),
             models.Index(fields=["matter", "source_kind"], name="search_matter_kind"),
             # Refreshing one document's projection deletes its rows first, and

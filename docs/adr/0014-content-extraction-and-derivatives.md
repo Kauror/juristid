@@ -231,6 +231,13 @@ query is restricted to the same rows so the planner can use them. Fuzzy matching
 is a short-string feature — titles, references, names — and "which page of this
 annex is nearly spelled like your typo" is not a question anybody has.
 
+*Amended by ADR 0116 (ENG-010).* The indexes are no longer partial. The fuzzy
+tier is still confined to Matter rows, but the substring tiers for child titles,
+document names and aliases test other kinds, and with MATTER-only indexes they
+had none — which, ORed with the rest, made every search a sequential scan. Title,
+identifier and alias trigram indexes now cover every row; they index short
+columns only, and body text is still never trigram-indexed.
+
 ### Snippets are text, not markup
 
 `ts_headline` marks matches with two private-use bracket characters. The service

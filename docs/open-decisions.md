@@ -428,7 +428,7 @@ sections above stands as written.
 | Off-host disaster-recovery destination, retention, RPO and RTO | Genuinely open; `deploy/unraid-main/RECOVERY.md` states the contract and picks nothing |
 | Trusted-extraction policy for the real opinions archive | Genuinely open, and no longer blocked on a scanner — there is none (ADR 0072). What it is blocked on now is storage: the run is affordable when PostgreSQL is not behind a parity-protected USB disk. The archive is metadata-searchable meanwhile (ADR 0023) |
 | Promotion criteria for `CONTENT_MULTI_SIGNAL` | Genuinely open; the measurement that would justify it is written down in ADR 0023 and has not been taken |
-| Global-search behaviour at real corpus scale | Genuinely open; cannot be answered without EXPLAIN on a realistic corpus, and no index has been added on intuition |
+| Global-search behaviour at real corpus scale | **Resolved by ADR 0116 (ENG-010).** Was open because it could not be answered without EXPLAIN on a realistic corpus, and no index had been added on intuition. Measured on synthetic corpora of 17,000–147,000 rows: every search was a sequential scan of the projection, because the tiers were ORed with arms no index could serve. Each arm is now index-servable; a rare word at 147,000 rows went from 1.4 s to 0.14 s, while a word in half the corpus is still, correctly, one parallel pass. Re-measure on the host after the historical import |
 | Whether final evidence may be more restricted than its submission | Newly surfaced, and a product question rather than a bug. `check_evidence_is_usable` permits it; a restricted document bound to a normal submission puts its filename on a card everyone can see. Nothing in this pass changed the rule |
 
 ## Surfaced by the pre-QA UI round

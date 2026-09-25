@@ -420,12 +420,50 @@ def child_visibility_q(
     ) | restricted_participation_q(scope, prefix=parent_prefix)
 
 
+def restricted_participation_subquery_q(
+    scope: Scope,
+    *,
+    prefix: str = "matter__",
+    matter_field: str = "matter",
+) -> Q:
+    """:func:`restricted_participation_q`, without the join that fans rows out.
+
+    The same two facts — this person owns the Matter, or is one of its
+    collaborators — and the same refusal for a scope that knows nobody. The
+    difference is *how* the collaborator half reaches the through table.
+
+    ``Q(matter__collaborators=user)`` compiles to a ``LEFT OUTER JOIN`` on it,
+    and one Matter with three collaborators is then three rows. :func:`apply`
+    answers that with ``.distinct()``, which is correct and, over a search
+    projection, ruinous: PostgreSQL de-duplicates the *whole selected row*, and
+    the search page selected about 260 columns. The planner alone spent 4–5
+    seconds on that ``DISTINCT`` for a READER or an administrator (ENG-010).
+
+    Here the collaborator half is ``matter_id IN (SELECT matter_id FROM the
+    through table WHERE user_id = …)``. It is uncorrelated, so PostgreSQL runs it
+    once and hashes it; it cannot produce a second row for anything, so nothing
+    needs de-duplicating; and it stays safe to evaluate inside a parallel scan,
+    which a correlated ``EXISTS`` would not.
+    """
+    if not scope.is_authenticated or scope.user is None:
+        return NOTHING
+    through = apps.get_model("matters", "Matter").collaborators.through
+    return Q(**{f"{prefix}owner": scope.user}) | Q(
+        **{
+            f"{matter_field}__in": through.objects.filter(**{"user": scope.user}).values(
+                "matter_id"
+            )
+        }
+    )
+
+
 def projected_visibility_q(
     scope: Scope,
     *,
     kind_field: str,
     kind_overrides: dict[str, str | None],
     parent_prefix: str = "matter__",
+    participation_by_subquery: bool = False,
 ) -> Q:
     """Visibility for a table whose rows describe *different* kinds of source.
 
@@ -452,6 +490,11 @@ def projected_visibility_q(
     is the whole answer. A kind absent from the mapping is not matched at all,
     because authorization whitelists and an unrecognised source kind is not a
     reason to show somebody a row.
+
+    ``participation_by_subquery`` chooses how the participation half reaches
+    the collaborators (:func:`restricted_participation_subquery_q`). The rule it
+    expresses is the same either way; the subquery form never multiplies rows,
+    so a caller that uses it filters without ``.distinct()``.
     """
     if not scope.is_authenticated:
         return NOTHING
@@ -469,9 +512,13 @@ def projected_visibility_q(
     child_is_normal = functools.reduce(operator.or_, clauses)
 
     parent_is_normal = Q(**{f"{parent_prefix}visibility": Visibility.NORMAL})
-    return (parent_is_normal & child_is_normal) | restricted_participation_q(
-        scope, prefix=parent_prefix
-    )
+    if participation_by_subquery:
+        participation = restricted_participation_subquery_q(
+            scope, prefix=parent_prefix, matter_field=parent_prefix.removesuffix("__")
+        )
+    else:
+        participation = restricted_participation_q(scope, prefix=parent_prefix)
+    return (parent_is_normal & child_is_normal) | participation
 
 
 def effective_visibility_expression(

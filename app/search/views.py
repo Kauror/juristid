@@ -29,12 +29,10 @@ from app.search.models import SearchSourceKind
 from app.search.services import (
     MATCH_REFERENCE,
     MAX_QUERY_CHARACTERS,
-    MAX_RESULTS,
     clean_query,
-    result_count,
-    search,
     search_documents,
     search_matters,
+    search_page,
 )
 
 
@@ -49,18 +47,19 @@ def search_view(request: HttpRequest) -> HttpResponse:
     query = clean_query(raw)
     refused = bool(raw.strip()) and not query
 
-    results = search(query=query, user=request.user) if query else []
+    found = search_page(query=query, user=request.user, page_number=request.GET.get("leht"))
+    results = found.results
     # Counted with the same authorized queryset that produced the rows, so the
     # number can never describe a result set the user is not allowed to have.
-    total = result_count(query=query, user=request.user) if query else 0
+    total = found.total if query else 0
 
     # A reference that resolves to exactly one Matter is a navigation, not a
     # search: typing 2026_184 means "open that file".
     if total == 1 and len(results) == 1 and results[0].match_kind == MATCH_REFERENCE:
         return redirect("matters:matter_detail", pk=results[0].matter.pk)
 
-    # One query for the whole page instead of one per Matter row. `search`
-    # returns detached objects, so the prefetch is attached to them here rather
+    # One query for the whole page instead of one per Matter row. The results
+    # are detached objects, so the prefetch is attached to them here rather
     # than declared on the queryset — `current_action_of` reads exactly this
     # attribute and falls back to a query per Matter without it.
     matters = [result.matter for result in results if result.is_matter]
@@ -87,9 +86,11 @@ def search_view(request: HttpRequest) -> HttpResponse:
             "query": query,
             "rows": rows,
             "result_count": total,
-            "shown_count": len(rows),
-            "is_truncated": total > len(rows),
-            "result_limit": MAX_RESULTS,
+            # Every result is reachable: the page is one of a numbered set, and
+            # the shared pagination component carries the query to the next one
+            # (ENG-048). `leht` is the register's page parameter too.
+            "page": found.page,
+            "query_string": urlencode({"q": query}),
             "query_was_refused": refused,
             "max_query_characters": MAX_QUERY_CHARACTERS,
             "nav_active": "otsing",

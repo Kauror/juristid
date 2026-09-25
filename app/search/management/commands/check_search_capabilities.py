@@ -29,6 +29,15 @@ class Command(BaseCommand):
             "Estonian text-search configuration: "
             + ("present" if report.has_estonian_configuration else "MISSING")
         )
+        self.stdout.write(
+            "Trigram word-similarity threshold: "
+            + (
+                "unavailable"
+                if report.word_similarity_threshold is None
+                else f"{report.word_similarity_threshold:g}"
+                + (" (the fuzzy tier needs 0.6 or lower)" if not report.fuzzy_index_ok else "")
+            )
+        )
         if report.estonian_lexemes:
             self.stdout.write(f"Sample lexemes: {', '.join(report.estonian_lexemes)}")
 

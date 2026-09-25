@@ -47,12 +47,13 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
     <div class="card card--tight">
       <p class="sectionlabel">
         Vasted <span class="sectionlabel__count">{{ result_count }}</span>
-        {% if is_truncated %}
+        {% if page.paginator.num_pages > 1 %}
           {% comment %}
-            Saying which rows are on screen is the difference between a long
-            result set and a broken one.
+            Which rows are on screen, as a range. Every result is reachable
+            through the numbered pages below it; the fifty-first used to be the
+            first one that could not be (ENG-048).
           {% endcomment %}
-          <span class="sectionlabel__note">kuvatud {{ shown_count }}</span>
+          <span class="sectionlabel__note">{{ page.start_index }}–{{ page.end_index }}</span>
         {% endif %}
       </p>
       <div class="searchresults">
@@ -99,6 +100,7 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
           </a>
         {% endfor %}
       </div>
+      {% include "components/pagination.html" with page=page query_string=query_string %}
     </div>
   {% endif %}
 </div>
