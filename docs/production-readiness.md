@@ -184,8 +184,8 @@ takes to notice.
 Renaming an Organisation or a Tag changes what every record naming them
 projects, and it still deliberately triggers no fan-out — but since ADR 0041 it
 no longer triggers *nothing*: the rename records a durable obligation in its own
-transaction and the `searchindex` service discharges it with an atomic full
-rebuild. `check_search_freshness` is the one-line question ("is anything owed,
+transaction and the `searchindex` service discharges it with a full rebuild,
+built beside the index in use and swapped in whole (ADR 0118). `check_search_freshness` is the one-line question ("is anything owed,
 and has it been owed too long"), and is the container's healthcheck.
 `check_search_integrity` reports the same debt in context and consumes none of
 it. If the debt is old, the first thing to check is whether

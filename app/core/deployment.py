@@ -69,6 +69,16 @@ CONSEQUENTIAL_OPERATIONS: dict[str, str] = {
         "the database stops guaranteeing something; rows written from now on may "
         "break what the release still serving, or a rollback to it, assumes"
     ),
+    # `app.core.index_operations`: the same two, with a concurrent build. The
+    # lock differs; what the database guarantees afterwards does not.
+    "AddUniqueIndexConstraintConcurrentlyWhenPossible": (
+        "the database starts refusing rows it accepted; the release still serving "
+        "may write one, and existing rows must already satisfy it"
+    ),
+    "RemoveUniqueIndexConstraintConcurrentlyWhenPossible": (
+        "the database stops guaranteeing something; rows written from now on may "
+        "break what the release still serving, or a rollback to it, assumes"
+    ),
     "RunPython": "arbitrary code with the whole database in reach",
     "RunSQL": "arbitrary SQL with the whole database in reach",
 }
@@ -404,6 +414,9 @@ def storage_roots() -> tuple[StorageRoot, ...]:
 REBUILDABLE_MODELS = frozenset(
     {
         "search.SearchDocument",
+        # Which build of the projection is active. Bookkeeping about a
+        # projection, and restored by the same rebuild (docs/adr/0118).
+        "search.SearchGeneration",
         "documents.DocumentDerivative",
         # The archive's own search projection, rebuilt by
         # `opinion_archive_search rebuild` from rows a restore does bring back.

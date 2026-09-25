@@ -77,6 +77,7 @@ from django.db.models.functions import Greatest
 from app.core.authorization import projected_visibility_q, scope_for_user
 from app.core.text import normalize_for_matching
 from app.matters.models import Matter
+from app.search.generations import active_generation_expression
 from app.search.models import (
     INDEX_VERSION,
     SOURCE_OVERRIDE_FIELDS,
@@ -512,7 +513,13 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
     # `rebuild_search_index`. That is the correct direction to fail: a reader
     # sees too little and can tell, rather than reading something they should
     # not and cannot (docs/adr/0038).
-    documents = SearchDocument.objects.filter(index_version=INDEX_VERSION)
+    #
+    # And only the active generation (`app.search.generations`): while a full
+    # rebuild fills the next one, its rows sit beside these, complete for no
+    # one yet (ENG-011, docs/adr/0118).
+    documents = SearchDocument.objects.filter(
+        index_version=INDEX_VERSION, generation=active_generation_expression()
+    )
     # The predicate is evaluated against the joined live rows — the Matter, and
     # for a child row its own current override — never against anything the
     # projection stores. Restricting either takes effect on the next query with

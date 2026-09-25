@@ -2,10 +2,17 @@
 
     python manage.py rebuild_search_index
 
-**The rebuild is atomic.** Search keeps serving the previous complete index for
-the whole run, and the new one appears only when the entire rebuild has
-succeeded. If the command is interrupted or fails partway, the old index is
-still there and still complete.
+**Readers never see a partial index.** Search keeps serving the previous
+complete generation for the whole run; the new one is built beside it and
+becomes the one readers read only when the entire rebuild has succeeded. If the
+command is interrupted or fails partway, the old generation is still there,
+still complete and still the one in use, and the next run cleans up what this
+one left (docs/adr/0118).
+
+**Business writes carry on.** The rebuild holds the refresh gate one batch at
+a time, not for the whole run, so a save that refreshes search waits for at
+most one batch — the command prints the longest such hold, and the swap's.
+Only one rebuild runs at a time; a second one refuses rather than waits.
 
 That guarantee is the reason to prefer this command over ad-hoc reindexing, and
 it is worth being precise about why it was needed. Being derived data makes an
@@ -31,7 +38,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from app.search.freshness import rebuild_and_discharge
-from app.search.indexing import BATCH_SIZE
+from app.search.indexing import BATCH_SIZE, RebuildAlreadyRunning
 
 
 class Command(BaseCommand):
@@ -42,26 +49,27 @@ class Command(BaseCommand):
             "--batch-size",
             type=int,
             default=BATCH_SIZE,
-            help="Rows per statement batch. Bounds memory; the whole rebuild is "
-            "still one transaction.",
+            help="Sources per batch. Each batch is one short transaction under the "
+            "refresh gate, so this also bounds how long a concurrent save can wait.",
         )
         parser.add_argument(
             "--keep-existing",
             action="store_true",
-            help="Refresh in place instead of emptying first. Still atomic, and "
-            "every source that currently exists converges — but rows whose "
-            "source no longer qualifies survive: a deleted Matter, a deleted "
-            "entry, a page of a derivative that has since been superseded. "
-            "Use it to refresh without a gap; use the default to clean up.",
+            help="Accepted for existing scripts; changes nothing. Every rebuild now "
+            "builds a new generation beside the one in use, so there is no gap to "
+            "avoid and nothing stale survives either way.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
         # Through the same claim-rebuild-discharge path as the worker, so a
         # successful manual repair also clears the debt it repaired and the
         # freshness healthcheck goes green with the index (ENG-085).
-        outcome = rebuild_and_discharge(
-            batch_size=options["batch_size"], clear=not options["keep_existing"]
-        )
+        try:
+            outcome = rebuild_and_discharge(
+                batch_size=options["batch_size"], clear=not options["keep_existing"]
+            )
+        except RebuildAlreadyRunning as error:
+            raise CommandError(str(error)) from error
         result = outcome.result
         if result is None:  # pragma: no cover - a rebuild that returns has a result
             raise CommandError("The rebuild reported no result.")
@@ -71,8 +79,12 @@ class Command(BaseCommand):
                 f"{result.submissions} submissions, {result.document_rows} documents and "
                 f"{result.fragments} document fragments into {result.documents} rows in "
                 f"{result.seconds:.2f}s "
-                f"(index version {result.index_version})."
+                f"(index version {result.index_version}, generation {result.generation})."
             )
+        )
+        self.stdout.write(
+            f"Refresh gate held at most {result.longest_gate_seconds:.3f}s per batch "
+            f"over {result.batches} batches; the swap held it {result.swap_gate_seconds:.3f}s."
         )
         if outcome.cleared:
             self.stdout.write(

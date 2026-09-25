@@ -1412,6 +1412,17 @@ rebuilt under this contract, `rebuild_search_index` costs a few seconds and
 `check_search_integrity --full` confirms it; if it was not, those few seconds are the
 difference between a search that works and one that silently answers nothing.
 
+Since ADR 0118 the rebuild builds a new generation beside the one in use, so
+search keeps answering from the old index until the new one is complete, and
+saves wait for at most one batch rather than the whole rebuild; the command's
+last line says how long that was. Run it only after the previous release has
+stopped serving — a save served by the old release after the swap would put
+its row back where the new release does not read it. A second rebuild started
+while one runs refuses; wait for the first. If `check_search_integrity` then
+reports «Katkenud täisehitus» or «Vanad põlvkonnad», a rebuild was
+interrupted: run `rebuild_search_index` again, which cleans up before it
+builds.
+
 ### 12. The archive projection, when a release moves it
 
 The opinion archive has its own projection and its own check, and

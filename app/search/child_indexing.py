@@ -24,6 +24,8 @@ still holds: evidence rebuilds fragments, fragments rebuild this
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -45,6 +47,22 @@ from app.submissions.models import Submission
 #: does not lose evidence — the fragment keeps the whole text and the original
 #: keeps the bytes — so this is a bound on the projection, not on the record.
 MAX_INDEXED_FRAGMENT_CHARACTERS = 200_000
+
+
+def _generations(generations: Sequence[int] | None) -> Sequence[int]:
+    """The generations a refresh writes: the ones given, or every live one.
+
+    A full rebuild passes its own building generation. Everything else passes
+    nothing, and so writes the active generation and, while a rebuild is
+    filling one, the building generation too — which is what keeps a change
+    committed during a rebuild in the generation that becomes active
+    (`app.search.generations`, docs/adr/0118).
+    """
+    if generations is not None:
+        return generations
+    from app.search.generations import live_generations
+
+    return live_generations()
 
 
 def bounded_body(text: str) -> str:
@@ -132,10 +150,11 @@ def _engagement_values(engagement, now: object) -> dict[str, object]:
     }
 
 
-def refresh_engagements(engagements: QuerySet) -> int:
+def refresh_engagements(engagements: QuerySet, *, generations: Sequence[int] | None = None) -> int:
     rows = list(engagements)
     if not rows:
         return 0
+    generations = _generations(generations)
     # **Delete for every row, insert only for the ones still on the file.**
     #
     # A record a lawyer removed is read here like any other — the builders use
@@ -146,11 +165,17 @@ def refresh_engagements(engagements: QuerySet) -> int:
     now = timezone.now()
     identifiers = [engagement.pk for engagement in rows]
     SearchDocument.objects.filter(
-        source_kind=SearchSourceKind.ENGAGEMENT, source_object_id__in=identifiers
+        generation__in=generations,
+        source_kind=SearchSourceKind.ENGAGEMENT,
+        source_object_id__in=identifiers,
     ).delete()
     live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_engagement_values(engagement, now)) for engagement in live]
+        [
+            SearchDocument(**_engagement_values(engagement, now), generation=generation)
+            for engagement in live
+            for generation in generations
+        ]
     )
     return len(live)
 
@@ -195,10 +220,13 @@ def _development_values(development, now: object) -> dict[str, object]:
     }
 
 
-def refresh_developments(developments: QuerySet) -> int:
+def refresh_developments(
+    developments: QuerySet, *, generations: Sequence[int] | None = None
+) -> int:
     rows = list(developments)
     if not rows:
         return 0
+    generations = _generations(generations)
     # **Delete for every row, insert only for the ones still on the file.**
     #
     # A record a lawyer removed is read here like any other — the builders use
@@ -209,12 +237,17 @@ def refresh_developments(developments: QuerySet) -> int:
     now = timezone.now()
     identifiers = [development.pk for development in rows]
     SearchDocument.objects.filter(
+        generation__in=generations,
         source_kind=SearchSourceKind.PROCEDURAL_DEVELOPMENT,
         source_object_id__in=identifiers,
     ).delete()
     live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_development_values(development, now)) for development in live]
+        [
+            SearchDocument(**_development_values(development, now), generation=generation)
+            for development in live
+            for generation in generations
+        ]
     )
     return len(live)
 
@@ -274,10 +307,11 @@ def _position_values(position, now: object) -> dict[str, object]:
     }
 
 
-def refresh_positions(positions: QuerySet) -> int:
+def refresh_positions(positions: QuerySet, *, generations: Sequence[int] | None = None) -> int:
     rows = list(positions)
     if not rows:
         return 0
+    generations = _generations(generations)
     # **Delete for every row, insert only for the ones still on the file.**
     #
     # A record a lawyer removed is read here like any other — the builders use
@@ -288,11 +322,17 @@ def refresh_positions(positions: QuerySet) -> int:
     now = timezone.now()
     identifiers = [position.pk for position in rows]
     SearchDocument.objects.filter(
-        source_kind=SearchSourceKind.EXTERNAL_POSITION, source_object_id__in=identifiers
+        generation__in=generations,
+        source_kind=SearchSourceKind.EXTERNAL_POSITION,
+        source_object_id__in=identifiers,
     ).delete()
     live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_position_values(position, now)) for position in live]
+        [
+            SearchDocument(**_position_values(position, now), generation=generation)
+            for position in live
+            for generation in generations
+        ]
     )
     return len(live)
 
@@ -469,17 +509,25 @@ def document_values(document: Document, now: object) -> dict[str, object]:
     }
 
 
-def refresh_documents(documents: QuerySet[Document]) -> int:
+def refresh_documents(
+    documents: QuerySet[Document], *, generations: Sequence[int] | None = None
+) -> int:
     rows = list(documents)
     if not rows:
         return 0
+    generations = _generations(generations)
     now = timezone.now()
     SearchDocument.objects.filter(
+        generation__in=generations,
         source_kind=SearchSourceKind.DOCUMENT,
         source_object_id__in=[document.pk for document in rows],
     ).delete()
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**document_values(document, now)) for document in rows]
+        [
+            SearchDocument(**document_values(document, now), generation=generation)
+            for document in rows
+            for generation in generations
+        ]
     )
     return len(rows)
 
@@ -521,25 +569,32 @@ def source_link_values(link, now: object) -> dict[str, object]:
     }
 
 
-def refresh_source_links(links: QuerySet) -> int:
+def refresh_source_links(links: QuerySet, *, generations: Sequence[int] | None = None) -> int:
     rows = list(links)
     if not rows:
         return 0
+    generations = _generations(generations)
     now = timezone.now()
     SearchDocument.objects.filter(
+        generation__in=generations,
         source_kind=SearchSourceKind.LEGACY_SOURCE_PAGE,
         source_object_id__in=[link.pk for link in rows],
     ).delete()
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**source_link_values(link, now)) for link in rows]
+        [
+            SearchDocument(**source_link_values(link, now), generation=generation)
+            for link in rows
+            for generation in generations
+        ]
     )
     return len(rows)
 
 
-def refresh_entries(entries: QuerySet[Entry]) -> int:
+def refresh_entries(entries: QuerySet[Entry], *, generations: Sequence[int] | None = None) -> int:
     rows = list(entries)
     if not rows:
         return 0
+    generations = _generations(generations)
     # **Delete for every row, insert only for the ones still on the file.**
     #
     # A record a lawyer removed is read here like any other — the builders use
@@ -550,31 +605,48 @@ def refresh_entries(entries: QuerySet[Entry]) -> int:
     now = timezone.now()
     identifiers = [entry.pk for entry in rows]
     SearchDocument.objects.filter(
-        source_kind=SearchSourceKind.ENTRY, source_object_id__in=identifiers
+        generation__in=generations,
+        source_kind=SearchSourceKind.ENTRY,
+        source_object_id__in=identifiers,
     ).delete()
     live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_entry_values(entry, now)) for entry in live]
+        [
+            SearchDocument(**_entry_values(entry, now), generation=generation)
+            for entry in live
+            for generation in generations
+        ]
     )
     return len(live)
 
 
-def refresh_submissions(submissions: QuerySet[Submission]) -> int:
+def refresh_submissions(
+    submissions: QuerySet[Submission], *, generations: Sequence[int] | None = None
+) -> int:
     rows = list(submissions)
     if not rows:
         return 0
+    generations = _generations(generations)
     now = timezone.now()
     identifiers = [submission.pk for submission in rows]
     SearchDocument.objects.filter(
-        source_kind=SearchSourceKind.SUBMISSION, source_object_id__in=identifiers
+        generation__in=generations,
+        source_kind=SearchSourceKind.SUBMISSION,
+        source_object_id__in=identifiers,
     ).delete()
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**_submission_values(submission, now)) for submission in rows]
+        [
+            SearchDocument(**_submission_values(submission, now), generation=generation)
+            for submission in rows
+            for generation in generations
+        ]
     )
     return len(rows)
 
 
-def refresh_fragments(fragments: QuerySet[DocumentTextFragment]) -> int:
+def refresh_fragments(
+    fragments: QuerySet[DocumentTextFragment], *, generations: Sequence[int] | None = None
+) -> int:
     """Rewrite the projection for a set of fragments. Idempotent.
 
     Deletes before it inserts, like every other function in this module. An
@@ -594,18 +666,26 @@ def refresh_fragments(fragments: QuerySet[DocumentTextFragment]) -> int:
     rows = list(fragments)
     if not rows:
         return 0
+    generations = _generations(generations)
     now = timezone.now()
     SearchDocument.objects.filter(
+        generation__in=generations,
         source_kind=SearchSourceKind.DOCUMENT_FRAGMENT,
         source_object_id__in=[fragment.pk for fragment in rows],
     ).delete()
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**fragment_values(fragment, now)) for fragment in rows]
+        [
+            SearchDocument(**fragment_values(fragment, now), generation=generation)
+            for fragment in rows
+            for generation in generations
+        ]
     )
     return len(rows)
 
 
-def refresh_version_fragments(version: DocumentVersion) -> int:
+def refresh_version_fragments(
+    version: DocumentVersion, *, generations: Sequence[int] | None = None
+) -> int:
     """Rewrite the projection for one document version's live fragments.
 
     Deleting by ``document_version`` rather than by fragment id matters: a
@@ -614,13 +694,20 @@ def refresh_version_fragments(version: DocumentVersion) -> int:
     longer has.
     """
     now = timezone.now()
+    generations = _generations(generations)
     SearchDocument.objects.filter(
-        source_kind=SearchSourceKind.DOCUMENT_FRAGMENT, document_version=version
+        generation__in=generations,
+        source_kind=SearchSourceKind.DOCUMENT_FRAGMENT,
+        document_version=version,
     ).delete()
     fragments = list(indexable_fragments().filter(derivative__version=version).order_by("ordinal"))
     if not fragments:
         return 0
     SearchDocument.objects.bulk_create(
-        [SearchDocument(**fragment_values(fragment, now)) for fragment in fragments]
+        [
+            SearchDocument(**fragment_values(fragment, now), generation=generation)
+            for fragment in fragments
+            for generation in generations
+        ]
     )
     return len(fragments)

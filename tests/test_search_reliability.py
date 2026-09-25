@@ -32,6 +32,7 @@ from app.legacy_import.source_pages import (
 )
 from app.matters.models import Matter
 from app.organisations.models import Organisation, OrganisationType
+from app.search.generations import projection
 from app.search.indexing import (
     indexable_matters,
     indexing_is_suspended,
@@ -884,18 +885,18 @@ def _wait_for_a_blocked_backend() -> None:
 def test_a_matter_save_during_a_full_rebuild_still_succeeds(specialist, monkeypatch) -> None:
     """The race, with both halves in real transactions on real connections.
 
-    A full rebuild empties the table and refills it in one transaction. A
-    Matter save that lands in the middle deletes the row it is about to
-    replace, blocks on the rebuild, and then finds its delete matched nothing —
-    the row it could see is gone and the row the rebuild inserted is not in its
-    statement's snapshot. The insert that follows violates
-    ``search_one_document_per_source_object``, and because the refresh runs
-    inside the *business* transaction, what rolls back is the user's save.
+    A rebuild batch and a Matter save both delete-then-insert the Matter's row
+    in the generation being built. Unordered, the second insert hits the
+    one-row-per-source constraint — and because the refresh runs inside the
+    *business* transaction, what rolls back when it is the save's is the
+    user's work. The gate orders them: the batch holds its exclusive side,
+    the save queues on the shared side, and each sees the other's commit.
 
-    The interleaving is forced rather than hoped for: the rebuild is held open
-    after it has emptied and refilled the Matter rows, the save is started and
-    allowed to queue on a lock, and only then is the rebuild released. Without
-    the gate this raises ``IntegrityError`` in the save thread every time.
+    The interleaving is forced rather than hoped for: the batch is held open
+    with the gate taken, the save is started and allowed to queue on it, and
+    only then is the batch released. Since ENG-011 the gate is held per batch,
+    not for the whole rebuild (tests/test_search_generations.py holds the rest
+    of that design; docs/adr/0118).
     """
     matter = factories.MatterFactory(owner=specialist, title="Algne pealkiri")
     for index in range(20):
@@ -904,19 +905,22 @@ def test_a_matter_save_during_a_full_rebuild_still_succeeds(specialist, monkeypa
 
     from app.search import indexing
 
-    original_children = indexing._rebuild_children
-    refilled = threading.Event()
+    original_bounded = indexing._bounded_lock_waits
+    in_batch = threading.Event()
     release = threading.Event()
     failures: list[BaseException] = []
+    rebuilder_ids: set[int] = set()
 
-    def paused_children(*args, **kwargs):
-        refilled.set()
-        release.wait(timeout=LOCK_WAIT_TIMEOUT * 2)
-        return original_children(*args, **kwargs)
+    def paused_batch() -> None:
+        if threading.get_ident() in rebuilder_ids and not in_batch.is_set():
+            in_batch.set()
+            release.wait(timeout=LOCK_WAIT_TIMEOUT * 2)
+        original_bounded()
 
-    monkeypatch.setattr(indexing, "_rebuild_children", paused_children)
+    monkeypatch.setattr(indexing, "_bounded_lock_waits", paused_batch)
 
     def rebuild() -> None:
+        rebuilder_ids.add(threading.get_ident())
         try:
             rebuild_all()
         except BaseException as error:
@@ -939,7 +943,7 @@ def test_a_matter_save_during_a_full_rebuild_still_succeeds(specialist, monkeypa
     saver = threading.Thread(target=save)
     rebuilder.start()
     try:
-        assert refilled.wait(timeout=LOCK_WAIT_TIMEOUT), "the rebuild never reached its child pass"
+        assert in_batch.wait(timeout=LOCK_WAIT_TIMEOUT), "the rebuild never reached a batch"
         saver.start()
         _wait_for_a_blocked_backend()
     finally:
@@ -950,7 +954,7 @@ def test_a_matter_save_during_a_full_rebuild_still_succeeds(specialist, monkeypa
     assert failures == [], failures
     matter.refresh_from_db()
     assert matter.title == "Uus pealkiri"
-    rows = SearchDocument.objects.filter(matter=matter, source_kind=SearchSourceKind.MATTER)
+    rows = projection().filter(matter=matter, source_kind=SearchSourceKind.MATTER)
     assert rows.count() == 1
     # And the committed change is what the index holds, not the title the
     # rebuild read before the save landed.

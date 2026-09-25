@@ -332,14 +332,14 @@ def test_an_interrupted_rebuild_leaves_the_previous_index_complete(
     before = result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=specialist)
     assert before == 1
 
-    from app.search import indexing
+    def explode(kind: str, sources: int) -> None:
+        # Since ENG-011 every batch commits into a generation nobody reads yet,
+        # so "after the matters were written" is a real, committed state.
+        if kind == "matters":
+            raise RuntimeError("rebuild interrupted after the matters were written")
 
-    def explode(*args, **kwargs):
-        raise RuntimeError("rebuild interrupted after the matters were written")
-
-    monkeypatch.setattr(indexing, "_rebuild_children", explode)
     with pytest.raises(RuntimeError):
-        rebuild_all()
+        rebuild_all(between_batches=explode)
 
     assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=specialist) == before
 

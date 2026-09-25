@@ -13,8 +13,15 @@ import pytest
 from app.matters.models import Matter
 from app.matters.services import create_matter
 from app.organisations.models import Organisation, OrganisationType
+from app.search.generations import projection
 from app.search.indexing import indexable_matters, rebuild_all, refresh_matter, refresh_matters
-from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
+from app.search.models import (
+    INDEX_VERSION,
+    SearchDocument,
+    SearchGeneration,
+    SearchGenerationState,
+    SearchSourceKind,
+)
 from app.search.services import (
     MATCH_FUZZY,
     MATCH_REFERENCE,
@@ -411,11 +418,12 @@ def test_an_interrupted_rebuild_leaves_the_previous_index_complete(
     monkeypatch.undo()
 
     # The previous index is intact: same size, and still answering.
-    assert SearchDocument.objects.count() == complete
+    assert projection().count() == complete
     assert search_matters(query="Jäätmeseaduse", user=specialist)[0].matter == corpus["waste"]
-    assert SearchDocument.objects.get(matter=corpus["waste"]).title == original_title
-    # And the half-written new state is nowhere: the interrupted run got as far
-    # as one batch, and that batch is gone with the rest.
+    assert projection().get(matter=corpus["waste"]).title == original_title
+    # And the half-written new state is nowhere a reader looks: the interrupted
+    # run committed one batch into a generation that never became active
+    # (docs/adr/0118).
     assert search_matters(query="Pakendiseaduse", user=specialist) == []
 
 
@@ -450,10 +458,16 @@ def test_a_rebuild_after_an_interrupted_one_produces_the_new_complete_index(
 
 
 def test_an_interrupted_rebuild_leaves_no_orphans_behind(corpus, monkeypatch) -> None:
-    """Whatever the interrupted run wrote is rolled back with everything else."""
+    """Whatever the interrupted run wrote is never read, and the next run removes it.
+
+    Before ENG-011 the whole rebuild was one transaction and the interrupted
+    run's rows rolled back with it. Now each batch commits into a generation
+    of its own, so they are there — in a generation marked FAILED, which no
+    reader reads — until the next rebuild, which deletes them before it starts.
+    """
     from app.search import indexing
 
-    before = set(SearchDocument.objects.values_list("pk", flat=True))
+    before = set(projection().values_list("pk", flat=True))
 
     calls = {"count": 0}
     recompute = indexing._recompute_vectors
@@ -469,7 +483,14 @@ def test_an_interrupted_rebuild_leaves_no_orphans_behind(corpus, monkeypatch) ->
         rebuild_all(batch_size=1)
     monkeypatch.undo()
 
-    assert set(SearchDocument.objects.values_list("pk", flat=True)) == before
+    assert set(projection().values_list("pk", flat=True)) == before
+    failed = SearchGeneration.objects.get(state=SearchGenerationState.FAILED)
+    assert "RuntimeError" in failed.last_error  # the class, never the message (describe_failure)
+    assert SearchDocument.objects.filter(generation=failed.number).exists()
+
+    result = rebuild_all()
+    assert not SearchDocument.objects.exclude(generation=result.generation).exists()
+    assert projection().count() == SearchDocument.objects.count() == result.documents
 
 
 # -- typo tolerance on titles of realistic length ---------------------------
