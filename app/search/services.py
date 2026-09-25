@@ -16,10 +16,30 @@ either level. A document restricted a second ago is invisible on the next query
 even though its fragments' search rows have not been touched
 (docs/adr/0005, 0013, 0014).
 
-It is still **one queryset and one statement**. Stage 2A worried that mixed
-source kinds would force a union, and that a count taken across a union is a
-count that can disagree with the rows beside it. The kind-to-override mapping in
-`app.core.authorization.projected_visibility_q` is what avoids that.
+It is still **one queryset**, and each question asked of it is one statement.
+Stage 2A worried that mixed source kinds would force a union, and that a count
+taken across a union is a count that can disagree with the rows beside it. The
+kind-to-override mapping in `app.core.authorization.projected_visibility_q` is
+what avoids that. The ranked page and the count are two statements over the same
+filtered queryset, so they cannot describe different result sets.
+
+**Every matching tier is a predicate an index can serve** (ENG-010). Until that,
+the tiers were ORed into one WHERE clause in which one arm tested the *joined*
+Matter title, one filtered on a `word_similarity` annotation and three used
+`UPPER(x) LIKE UPPER('%…%')`, which no index on `x` can answer. A single
+unindexable arm makes an OR unindexable, so every search read and ranked the
+whole projection — 0 of 132 audited plans used a text index, and a READER's page
+also paid for a `DISTINCT` over every selected column. Now each arm tests only
+this table's own columns with an operator an index serves: `@@` against the
+three GIN vectors, `ILIKE` and `%>` against the trigram indexes. PostgreSQL can
+then answer a selective query with one bitmap per arm OR-ed together, and still
+chooses a single sequential pass when a word occurs in half the corpus — which,
+for a word like that, is the right plan.
+
+**The ranking statement carries ids and sort keys, nothing else.** The body
+text, the vectors and the eleven joined presentation tables used to travel
+through the sort for every matching row so that fifty of them could be shown.
+They are now fetched afterwards, for the page's rows only (`_present`).
 
 Ranking is deterministic and tiered. Exact answers come first and fuzzy answers
 last, so a lawyer typing a reference gets that file rather than a relevance
@@ -36,11 +56,23 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.contrib.postgres.search import SearchQuery, SearchRank
-from django.db.models import Case, F, FloatField, Func, Q, QuerySet, TextField, Value, When
+from django.core.paginator import Page, Paginator
+from django.db.models import (
+    Case,
+    F,
+    Field,
+    FloatField,
+    Func,
+    Lookup,
+    Q,
+    QuerySet,
+    TextField,
+    Value,
+    When,
+)
 from django.db.models.expressions import Combinable
 from django.db.models.functions import Greatest
 
-from app.core.authorization import apply as apply_scope
 from app.core.authorization import projected_visibility_q, scope_for_user
 from app.core.text import normalize_for_matching
 from app.matters.models import Matter
@@ -88,6 +120,45 @@ class Headline(Func):
 
     function = "ts_headline"
     output_field = TextField()
+
+
+class ContainsAnyCase(Lookup):
+    """``column ILIKE '%term%'`` — the substring test a trigram index can serve.
+
+    Django's own ``icontains`` compiles to ``UPPER(column) LIKE UPPER(…)``. That
+    is the same question, and no index on ``column`` can answer it: the
+    expression being compared is ``UPPER(column)``, which nothing indexes. So
+    the substring tiers read every row no matter which indexes existed, and one
+    such tier in an OR was enough to make the whole search a sequential scan
+    (ENG-010).
+
+    ``ILIKE`` over the plain column is what ``gin_trgm_ops`` answers. The term
+    is escaped exactly as ``icontains`` escapes it — ``%``, ``_`` and the
+    backslash are literal characters to a lawyer — so ``50%`` finds «50%» and
+    not every title with a 5 and a 0 in it.
+
+    Registered on the three projection columns that carry trigram indexes, and
+    nowhere else, so the lookup cannot be reached for a column where it would
+    silently scan (`app.search.models.SearchDocument`).
+    """
+
+    lookup_name = "contains_any_case"
+    prepare_rhs = False
+
+    def get_db_prep_lookup(self, value: Any, connection: Any) -> tuple[str, tuple[str]]:
+        return "%s", ("%" + connection.ops.prep_for_like_query(value) + "%",)
+
+    def as_sql(self, compiler: Any, connection: Any) -> tuple[str, tuple[Any, ...]]:
+        lhs, lhs_params = self.process_lhs(compiler, connection)
+        rhs, rhs_params = self.process_rhs(compiler, connection)
+        return f"{lhs} ILIKE {rhs}", (*lhs_params, *rhs_params)
+
+
+for _column in ("title", "identifiers", "alias_text"):
+    _field = SearchDocument._meta.get_field(_column)
+    if not isinstance(_field, Field):  # pragma: no cover - a model change, caught at import
+        raise TypeError(f"SearchDocument.{_column} is not a column")
+    _field.register_lookup(ContainsAnyCase)
 
 
 #: Markers around the matched words. Deliberately not HTML: this string is
@@ -175,7 +246,13 @@ TIER_MATCH_KIND: dict[int, str] = {
     TIER_TRIGRAM: MATCH_FUZZY,
 }
 
-MAX_RESULTS = 50
+#: Results per page on `/otsing/`.
+#:
+#: This used to be `MAX_RESULTS`, and it was a ceiling rather than a page: the
+#: fifty-first result could not be reached from global search at all (ENG-048).
+#: It is now the size of one page of a numbered, server-side pagination that
+#: reaches every authorized result.
+RESULTS_PER_PAGE = 50
 
 #: Below this, trigram matching is noise.
 #:
@@ -326,6 +403,12 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
 
     This is the chokepoint. Everything else in the module builds on the
     queryset this returns, so there is no path to a result that skipped it.
+
+    It joins nothing it does not decide with: the Matter, for its visibility and
+    owner, and a child's own row, for that child's current override. Presentation
+    joins are added by whoever presents (`_present`, `search_matters`), because a
+    ranked search over the whole projection must not carry eleven tables' worth
+    of columns through its sort (ENG-010).
     """
     scope = scope_for_user(user)
     # Rows built under an older projection contract are not read at all.
@@ -339,32 +422,42 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
     # `rebuild_search_index`. That is the correct direction to fail: a reader
     # sees too little and can tell, rather than reading something they should
     # not and cannot (docs/adr/0038).
-    documents = SearchDocument.objects.filter(index_version=INDEX_VERSION).select_related(
-        "matter",
-        "matter__owner",
-        "matter__stage",
-        "matter__addressee_organisation",
-        "document",
-        "document_version",
-        "entry",
-        "engagement",
-        "submission",
-        "matter_source_page",
-        "matter_source_page__source_page",
-    )
+    documents = SearchDocument.objects.filter(index_version=INDEX_VERSION)
     # The predicate is evaluated against the joined live rows — the Matter, and
     # for a child row its own current override — never against anything the
     # projection stores. Restricting either takes effect on the next query with
     # no reindex.
-    return apply_scope(
-        documents,
+    #
+    # Filtered without `.distinct()`. Participation reaches the collaborators
+    # through an uncorrelated subquery rather than a join, so no row can appear
+    # twice, and the `DISTINCT` over every selected column — the READER's and
+    # the administrator's four-second planning cost — has nothing to do
+    # (`restricted_participation_subquery_q`, ENG-010).
+    return documents.filter(
         projected_visibility_q(
             scope,
             kind_field="source_kind",
             kind_overrides=SOURCE_OVERRIDE_FIELDS,
             parent_prefix="matter__",
-        ),
+            participation_by_subquery=True,
+        )
     )
+
+
+#: What a result row needs to render, joined for the page's rows only.
+PRESENTATION_RELATIONS = (
+    "matter",
+    "matter__owner",
+    "matter__stage",
+    "matter__addressee_organisation",
+    "document",
+    "document_version",
+    "entry",
+    "engagement",
+    "submission",
+    "matter_source_page",
+    "matter_source_page__source_page",
+)
 
 
 def _reference_condition(term: str) -> Q | None:
@@ -382,12 +475,27 @@ def _reference_condition(term: str) -> Q | None:
 
 
 def _build(term: str) -> tuple[Q, Combinable, Combinable]:
-    """One query with every tier expressed as SQL.
+    """Every tier as SQL: the eligibility predicate, the tier, the relevance.
 
-    Deliberately a single statement. Running the tiers as separate queries and
-    stitching the results in Python would make the result count depend on
-    Python-side deduplication, and a count that is computed anywhere other than
-    the database is a count that can disagree with the rows.
+    One predicate, and every arm of it is served by an index on this table's
+    own columns (ENG-010). That is what the three rules below are for, and each
+    one replaced an arm that forced a full scan:
+
+    * **Substrings are `ILIKE`** (:class:`ContainsAnyCase`), which the trigram
+      indexes answer, instead of ``UPPER(x) LIKE``, which nothing does.
+    * **An exact title is found through the projection's own title.** The arm
+      used to test ``matters_matter.title`` directly — a column of another
+      table, which turned the whole OR into a filter applied *after* joining
+      every row. A MATTER row's title begins with its Matter's title, so the
+      trigram index narrows first, and the exact comparison against the Matter
+      is an uncorrelated ``IN`` that PostgreSQL evaluates once.
+    * **Fuzzy matching uses the operator** ``%>``, which the trigram index
+      serves, and only then the threshold on ``word_similarity`` — the same
+      number as before, now computed for the rows the index returned rather
+      than for all of them.
+
+    What each arm *means* is unchanged, and `tests/test_search_differential.py`
+    holds that against the query as it stood before, row for row and in order.
     """
     normalized = normalize_for_matching(term)
     estonian = SearchQuery(term, config="estonian", search_type="websearch")
@@ -413,30 +521,48 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
         )
 
     is_matter = Q(source_kind=SearchSourceKind.MATTER)
-    title_exact = is_matter & (Q(matter__title__iexact=term) | Q(title__iexact=term))
+    # The Matter's own title, exactly, or the row's whole projected title. The
+    # substring test is implied by either and is what the trigram index serves;
+    # the subquery is a single hashed lookup, not a join.
+    exactly_titled = Matter.all_objects.filter(title__iexact=term).values("pk")
+    title_exact = (
+        is_matter
+        & Q(title__contains_any_case=term)
+        & (Q(matter__in=exactly_titled) | Q(title__iexact=term))
+    )
     # Against the title-only vector. The combined vector also carries
     # identifiers and aliases, so a phrase query against it would report an
     # organisation-name hit as a title match.
     title_phrase = is_matter & Q(search_title=phrase)
     alias = Q(source_kind__in=ALIAS_KINDS) & (
-        Q(alias_text__icontains=term) | Q(alias_text__icontains=normalized)
+        Q(alias_text__contains_any_case=term) | Q(alias_text__contains_any_case=normalized)
     )
     child_title = Q(source_kind__in=CHILD_KINDS) & (
-        Q(title__icontains=term) | Q(identifiers__iexact=term)
+        Q(title__contains_any_case=term)
+        | (Q(identifiers__contains_any_case=term) & Q(identifiers__iexact=term))
     )
     # A document's own row as well as its pages: an upload nobody extracted
     # has only the former, and before it existed was unfindable by name
     # (ENG-030). Its title and filenames are the whole of the row.
     document_title = Q(
         source_kind__in=(SearchSourceKind.DOCUMENT_FRAGMENT, SearchSourceKind.DOCUMENT)
-    ) & (Q(title__icontains=term) | Q(identifiers__icontains=term))
+    ) & (Q(title__contains_any_case=term) | Q(identifiers__contains_any_case=term))
     fulltext = Q(search_estonian=estonian)
     simple_match = Q(search_simple=simple)
     # Fuzzy matching is a short-string feature: titles, references, names. It is
-    # confined to Matter rows so the partial trigram indexes can serve it, and
-    # because "which page of this annex is nearly spelled like your typo" is not
-    # a question anybody has (Stage-2B brief 40, 41).
-    fuzzy = is_matter & Q(title_similarity__gte=TRIGRAM_THRESHOLD)
+    # confined to Matter rows because "which page of this annex is nearly spelled
+    # like your typo" is not a question anybody has (Stage-2B brief 40, 41).
+    #
+    # `%>` is `word_similarity(term, column) >= pg_trgm.word_similarity_threshold`,
+    # and it is here because the index can answer it; the explicit comparison
+    # beside it is the rule, so a server configured with a lower threshold
+    # returns exactly what this one does. One configured *higher* would narrow
+    # the tier, which `check_search_capabilities` refuses.
+    fuzzy = (
+        is_matter
+        & (Q(title__trigram_word_similar=term) | Q(identifiers__trigram_word_similar=term))
+        & Q(title_similarity__gte=TRIGRAM_THRESHOLD)
+    )
 
     matched = (
         title_exact
@@ -472,7 +598,13 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
 
 
 def search_documents(*, query: str, user: Any) -> QuerySet[SearchDocument]:
-    """The ranked, authorized queryset. Countable and sliceable as it stands."""
+    """The ranked, authorized queryset. Countable and sliceable as it stands.
+
+    Model instances without presentation joins: a caller that renders fetches
+    those for the rows it renders (`_present`). Iterating this over a broad
+    query is the whole matching set, so the page and the count use
+    ``values_list`` and ``count`` on it rather than this.
+    """
     term = clean_query(query)
     if not term:
         return visible_documents(user).none()
@@ -498,28 +630,36 @@ def search_documents(*, query: str, user: Any) -> QuerySet[SearchDocument]:
     return (
         scoped.filter(matched)
         .annotate(match_tier=tier, relevance=relevance)
-        .order_by(
-            "-match_tier",
-            "-relevance",
-            "-matter__reference_year",
-            "-matter__reference_number",
-            "source_kind",
-            "source_locator",
-            # The last tie-break, and the only one guaranteed to break the tie.
-            # Everything above it can repeat: an archive Matter has no
-            # reference at all, and two fragments of two different files
-            # attached to the same Matter are both "lk 3". Without a unique
-            # final key PostgreSQL is free to return those rows in a different
-            # order on every request, which moves results between the fifty
-            # shown and the ones cut off — a row that vanishes on reload for no
-            # reason a reader can see.
-            "pk",
-        )
+        .order_by(*RESULT_ORDER)
     )
 
 
+#: The ranking, deterministic to the last row.
+RESULT_ORDER = (
+    "-match_tier",
+    "-relevance",
+    "-matter__reference_year",
+    "-matter__reference_number",
+    "source_kind",
+    "source_locator",
+    # The last tie-break, and the only one guaranteed to break the tie.
+    # Everything above it can repeat: an archive Matter has no reference at
+    # all, and two fragments of two different files attached to the same
+    # Matter are both "lk 3". Without a unique final key PostgreSQL is free to
+    # return those rows in a different order on every request, which moves
+    # results between pages — a row that vanishes on the next page, or appears
+    # on two, for no reason a reader can see (ENG-048).
+    "pk",
+)
+
+
 def result_count(*, query: str, user: Any) -> int:
-    """How many results this user has. Never includes anything they cannot see."""
+    """How many results this user has. Never includes anything they cannot see.
+
+    A ``COUNT(*)`` over the same filtered queryset the page is sliced from, and
+    nothing else: no ranking, no sort, no presentation joins. It used to be a
+    second copy of the whole ranked search wrapped in a count (ENG-010).
+    """
     return search_documents(query=query, user=user).count()
 
 
@@ -549,23 +689,97 @@ def matching_matter_ids(*, query: str, user: Any) -> QuerySet[SearchDocument, An
     return search_documents(query=query, user=user).order_by().values("matter_id")
 
 
-def search(*, query: str, user: Any, limit: int = MAX_RESULTS) -> list[SearchResult]:
-    """Find things. Authorization first, deterministic tiers, then relevance."""
-    term = clean_query(query)
-    documents = list(search_documents(query=term, user=user)[:limit])
-    if not documents:
-        return []
+@dataclass(frozen=True)
+class SearchPage:
+    """One page of results, and the paginator that says where it sits."""
 
-    snippets = _snippets_for(documents, term=term, user=user)
+    results: list[SearchResult]
+    page: Page
+
+    @property
+    def total(self) -> int:
+        return self.page.paginator.count
+
+
+def search_page(
+    *,
+    query: str,
+    user: Any,
+    page_number: Any = None,
+    per_page: int = RESULTS_PER_PAGE,
+) -> SearchPage:
+    """A numbered page of the ranked results, every one of them reachable.
+
+    Offset pagination over an order that ends in the primary key, so a page is
+    the same rows on every request and consecutive pages neither repeat nor
+    skip a row (ENG-048). Authorization is in the queryset being sliced, so a
+    row the reader may not see is not a gap on their page: it was never one of
+    their results.
+
+    `Paginator.get_page` is the malformed-input policy, and it is the
+    register's too: anything that is not a page number reads as the first page,
+    and a number past the end reads as the last one.
+
+    Three statements, each bounded by what it answers: a ``COUNT(*)``, the
+    page's ids in rank order, and the page's rows with what they need to render
+    (plus excerpts, for the rows that have a body).
+    """
+    term = clean_query(query)
+    page = Paginator(_ranked(term, user), per_page).get_page(page_number)
+    results = _present(list(page.object_list), term=term, user=user)
+    page.object_list = results
+    return SearchPage(results=results, page=page)
+
+
+def search(*, query: str, user: Any, limit: int = RESULTS_PER_PAGE) -> list[SearchResult]:
+    """Find things. Authorization first, deterministic tiers, then relevance.
+
+    The first ``limit`` results. The page uses :func:`search_page`, which can
+    reach the rest.
+    """
+    term = clean_query(query)
+    return _present(list(_ranked(term, user)[:limit]), term=term, user=user)
+
+
+def _ranked(term: str, user: Any) -> Any:
+    """``(pk, tier, relevance)`` in rank order — the slim ranking statement.
+
+    An empty term, including a refused one, is no results, and asks the
+    database nothing.
+    """
+    if not term:
+        return []
+    # The two annotations are invisible to django-stubs, not to Django.
+    return search_documents(query=term, user=user).values_list(  # type: ignore[misc]
+        "pk", "match_tier", "relevance"
+    )
+
+
+def _present(ranked: list[tuple[Any, Any, Any]], *, term: str, user: Any) -> list[SearchResult]:
+    """The page's rows, in rank order, with what they need to render.
+
+    Fetched through :func:`visible_documents` rather than by primary key alone.
+    The ids came from an authorized query a moment ago, so this is redundant;
+    it is here because "the ids are already checked" is exactly the assumption
+    that stops being true when somebody later reuses this function.
+    """
+    if not ranked:
+        return []
+    documents = {
+        document.pk: document
+        for document in visible_documents(user)
+        .filter(pk__in=[pk for pk, _, _ in ranked])
+        .select_related(*PRESENTATION_RELATIONS)
+    }
+    ordered = [
+        (documents[pk], tier, relevance) for pk, tier, relevance in ranked if pk in documents
+    ]
+    snippets = _snippets_for([document for document, _, _ in ordered], term=term, user=user)
     return [
         SearchResult(
             matter=document.matter,
-            # Annotations, not columns; django-stubs cannot see them on the
-            # model, so they are read by name.
-            match_kind=TIER_MATCH_KIND.get(
-                int(getattr(document, "match_tier", TIER_FULLTEXT)), MATCH_FULLTEXT
-            ),
-            rank=float(getattr(document, "relevance", 0.0) or 0.0),
+            match_kind=TIER_MATCH_KIND.get(int(tier or TIER_FULLTEXT), MATCH_FULLTEXT),
+            rank=float(relevance or 0.0),
             source_kind=document.source_kind,
             source_locator=readable_locator(document.source_kind, document.source_locator),
             document_title=document.document.title if document.document else "",
@@ -576,7 +790,7 @@ def search(*, query: str, user: Any, limit: int = MAX_RESULTS) -> list[SearchRes
             source_page_id=document.matter_source_page_id,
             snippet=snippets.get(document.pk, ()),
         )
-        for document in documents
+        for document, tier, relevance in ordered
     ]
 
 
@@ -638,15 +852,20 @@ def _split_highlights(headline: str) -> tuple[SnippetRun, ...]:
     return tuple(runs)
 
 
-def search_matters(*, query: str, user: Any, limit: int = MAX_RESULTS) -> list[SearchResult]:
+def search_matters(*, query: str, user: Any, limit: int = RESULTS_PER_PAGE) -> list[SearchResult]:
     """Matter-level results only.
 
     Kept for callers that want the Stage-2A behaviour — a navigation shortcut,
-    a picker — rather than the full mixed corpus.
+    a picker — rather than the full mixed corpus. The Matter's owner, addressee
+    and stage are joined because the header's suggestions print them.
     """
-    documents = search_documents(query=query, user=user).filter(
-        source_kind=SearchSourceKind.MATTER
-    )[:limit]
+    documents = (
+        search_documents(query=query, user=user)
+        .filter(source_kind=SearchSourceKind.MATTER)
+        .select_related(
+            "matter", "matter__owner", "matter__stage", "matter__addressee_organisation"
+        )[:limit]
+    )
     return [
         SearchResult(
             matter=document.matter,

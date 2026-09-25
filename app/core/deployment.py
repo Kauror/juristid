@@ -86,6 +86,10 @@ ADDITIVE_OPERATIONS: frozenset[str] = frozenset(
         "RenameIndex",
         "AddIndexConcurrently",
         "RemoveIndexConcurrently",
+        # `app.core.index_operations`: the two above, built plainly only inside
+        # a transaction, which the release's migrate step never is.
+        "AddIndexConcurrentlyWhenPossible",
+        "RemoveIndexConcurrentlyWhenPossible",
         "AlterModelOptions",
         "AlterModelManagers",
         "CreateExtension",

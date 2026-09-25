@@ -47,3 +47,26 @@ def test_estonian_configuration_stems_inflected_forms():
 def test_capability_report_is_satisfied():
     report = build_report()
     assert report.ok, report
+
+
+def test_the_fuzzy_threshold_repeated_here_is_the_tiers_own():
+    from app.search.capabilities import FUZZY_THRESHOLD
+    from app.search.services import TRIGRAM_THRESHOLD
+
+    assert FUZZY_THRESHOLD == TRIGRAM_THRESHOLD
+
+
+def test_a_server_that_would_narrow_the_fuzzy_tier_is_refused():
+    """`%>` compares against the server's threshold before the tier's own rule
+    sees a row, so a server set above 0.6 would lose fuzzy matches silently
+    (ENG-010). The capability check says so instead."""
+    from django.db import connection
+
+    assert build_report().fuzzy_index_ok
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT word_similarity('a', 'a')")
+        cursor.execute("SET LOCAL pg_trgm.word_similarity_threshold = 0.7")
+    report = build_report()
+    assert report.word_similarity_threshold == pytest.approx(0.7)
+    assert not report.fuzzy_index_ok
+    assert not report.ok
