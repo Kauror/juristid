@@ -1428,6 +1428,8 @@ Fields conceptually include:
 
 It can always be rebuilt from canonical records/derivatives and later feed an external search engine if measured requirements demand one.
 
+A full rebuild builds a new generation of the projection beside the one in use and switches readers to it only when it is complete, so readers never see a partial index and business writes are not held for the rebuild's duration (ADR 0118).
+
 ## 11.4 Phase-2 entities
 
 ### PolicyThread (`Mõjuteema`)

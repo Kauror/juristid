@@ -72,7 +72,15 @@ from app.matters.models import (
 )
 from app.search.freshness import FreshnessStatus
 from app.search.freshness import status as freshness_status
-from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
+from app.search.generations import active_generation, building_generation, projection
+from app.search.indexing import rebuild_is_running
+from app.search.models import (
+    INDEX_VERSION,
+    SearchDocument,
+    SearchGeneration,
+    SearchGenerationState,
+    SearchSourceKind,
+)
 from app.submissions.models import Submission
 
 
@@ -92,6 +100,11 @@ class IntegrityReport:
     findings: list[Finding] = field(default_factory=list)
     index_versions: dict[str, int] = field(default_factory=dict)
     total_rows: int = 0
+    #: The generation readers read, and the one a running rebuild is filling.
+    generation: int = 0
+    building: int | None = None
+    #: Rows that belong to no live generation: a finished rebuild's leftovers.
+    dead_rows: int = 0
     freshness: FreshnessStatus | None = None
 
     @property
@@ -288,10 +301,11 @@ def build_report(*, sample: int = DRIFT_SAMPLE, full: bool = False) -> Integrity
     """``sample`` rows per kind are recomputed, or every row with ``full``."""
     report = IntegrityReport()
     report.full = full
-    report.total_rows = SearchDocument.objects.count()
+    report.total_rows = projection().count()
 
     projected = dict(
-        SearchDocument.objects.values_list("source_kind")
+        projection()
+        .values_list("source_kind")
         .annotate(total=Count("id"))
         .values_list("source_kind", "total")
     )
@@ -317,7 +331,8 @@ def build_report(*, sample: int = DRIFT_SAMPLE, full: bool = False) -> Integrity
         )
 
     report.index_versions = dict(
-        SearchDocument.objects.values_list("index_version")
+        projection()
+        .values_list("index_version")
         .annotate(total=Count("id"))
         .values_list("index_version", "total")
     )
@@ -336,9 +351,9 @@ def build_report(*, sample: int = DRIFT_SAMPLE, full: bool = False) -> Integrity
             )
         )
 
-    unvectored = SearchDocument.objects.filter(
-        Q(search_estonian__isnull=True) | Q(search_simple__isnull=True)
-    ).count()
+    unvectored = (
+        projection().filter(Q(search_estonian__isnull=True) | Q(search_simple__isnull=True)).count()
+    )
     if unvectored:
         # A row with no vector is a row that exists, counts as indexed and can
         # never match a full-text query. It is the one defect this projection
@@ -347,7 +362,7 @@ def build_report(*, sample: int = DRIFT_SAMPLE, full: bool = False) -> Integrity
             Finding(label="Otsinguvektorid", detail=f"{unvectored} real puudub otsinguvektor")
         )
 
-    unidentified = SearchDocument.objects.filter(source_object_id__isnull=True).count()
+    unidentified = projection().filter(source_object_id__isnull=True).count()
     if unidentified:
         # The uniqueness constraint is conditional on this column, so a row
         # without it is a row that can be duplicated without anything noticing.
@@ -359,7 +374,8 @@ def build_report(*, sample: int = DRIFT_SAMPLE, full: bool = False) -> Integrity
         )
 
     unknown_kinds = (
-        SearchDocument.objects.exclude(source_kind__in=[k.value for k in SearchSourceKind])
+        projection()
+        .exclude(source_kind__in=[k.value for k in SearchSourceKind])
         .values_list("source_kind", flat=True)
         .distinct()
     )
@@ -371,6 +387,7 @@ def build_report(*, sample: int = DRIFT_SAMPLE, full: bool = False) -> Integrity
             Finding(label="Tundmatu allika liik", detail=f"{kind!r} ei ole teadaolev liik")
         )
 
+    report.findings.extend(_generations(report))
     report.findings.extend(_crossed_matters())
     report.findings.extend(_stale_text(report, sample=sample, full=full))
     report.freshness = freshness_status()
@@ -413,6 +430,63 @@ def _unpaid_debt(state: FreshnessStatus) -> list[Finding]:
     ]
 
 
+def _generations(report: IntegrityReport) -> list[Finding]:
+    """Which generation is read, and what a rebuild left behind (docs/adr/0118).
+
+    Everything else in this report reads the active generation only, as
+    readers do. This is the one place that looks at the whole table.
+
+    A rebuild in progress is not a finding: its building generation is the
+    system working. A BUILDING generation that no rebuild is filling is a
+    rebuild that died before its swap, and rows of a generation that is
+    neither active nor building are one that died after it — both harmless to
+    readers, both cleaned by the next rebuild, both worth saying.
+    """
+    findings: list[Finding] = []
+    report.generation = active_generation()
+    report.building = building_generation()
+    running = rebuild_is_running()
+    live = {report.generation} | ({report.building} if report.building is not None else set())
+    report.dead_rows = SearchDocument.objects.exclude(generation__in=live).count()
+    if report.building is not None and not running:
+        findings.append(
+            Finding(
+                label="Katkenud täisehitus",
+                detail=(
+                    f"põlvkond {report.building} on pooleli, kuid ükski täisehitus ei käi; "
+                    "lugejad kasutavad endiselt põlvkonda "
+                    f"{report.generation}. `rebuild_search_index` koristab ja ehitab uuesti"
+                ),
+            )
+        )
+    if report.dead_rows and not running:
+        findings.append(
+            Finding(
+                label="Vanad põlvkonnad",
+                detail=(
+                    f"{report.dead_rows} rida kuulub asendatud või katkenud põlvkonnale; "
+                    "lugejad neid ei näe. `rebuild_search_index` koristab need"
+                ),
+            )
+        )
+    failed = (
+        SearchGeneration.objects.filter(state=SearchGenerationState.FAILED)
+        .exclude(last_error="")
+        .order_by("-number")
+        .first()
+    )
+    if failed is not None and failed.number > report.generation:
+        # Only a failure newer than the generation in use: one that a later
+        # rebuild has since succeeded past is history, not a finding.
+        findings.append(
+            Finding(
+                label="Ebaõnnestunud täisehitus",
+                detail=f"põlvkond {failed.number}: {failed.last_error}",
+            )
+        )
+    return findings
+
+
 def _drift_rows(kind: str, *, sample: int, full: bool) -> Any:
     """The rows of one kind whose text is recomputed.
 
@@ -423,9 +497,7 @@ def _drift_rows(kind: str, *, sample: int, full: bool) -> Any:
     (ENG-080). Ordering by a hash of the source id spreads it over the whole
     kind, and the same corpus gives the same sample, so two runs agree.
     """
-    rows = SearchDocument.objects.filter(source_kind=kind).only(
-        "pk", "source_object_id", *TEXT_COLUMNS
-    )
+    rows = projection().filter(source_kind=kind).only("pk", "source_object_id", *TEXT_COLUMNS)
     if full:
         return rows.order_by("pk").iterator(chunk_size=500)
     return rows.annotate(spread=MD5(Cast("source_object_id", output_field=CharField()))).order_by(
@@ -510,7 +582,8 @@ def _crossed_matters() -> list[Finding]:
             continue
         path = contract.source_matter
         crossed = (
-            SearchDocument.objects.filter(source_kind=kind)
+            projection()
+            .filter(source_kind=kind)
             .filter(**{f"{path}__isnull": False})
             .exclude(matter_id=F(path))
             .count()
@@ -559,7 +632,11 @@ class Command(BaseCommand):
         report = build_report(sample=max(0, options["drift_sample"]), full=options["full"])
 
         if not options["quiet"]:
-            self.stdout.write(f"Otsinguindeksis on {report.total_rows} rida.")
+            self.stdout.write(
+                f"Otsinguindeksis on {report.total_rows} rida (põlvkond {report.generation})."
+            )
+            if report.building is not None:
+                self.stdout.write(f"  täisehitus: põlvkond {report.building} on ehitamisel")
             width = max(len(label) for label, _, _ in report.counts)
             for label, expected, actual in report.counts:
                 mark = "ok" if expected == actual else "ERINEVUS"

@@ -66,7 +66,7 @@ from django.db.models import Count, F, Min, QuerySet, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from app.search.indexing import RebuildResult, rebuild_all
+from app.search.indexing import RebuildAlreadyRunning, RebuildResult, rebuild_all
 from app.search.models import SearchRebuildDebt, SearchRebuildReason
 
 logger = logging.getLogger(__name__)
@@ -266,9 +266,12 @@ def search_index_state() -> SearchIndexState:
     from django.db.models import Q
 
     from app.matters.models import Matter
-    from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
+    from app.search.generations import projection
+    from app.search.models import INDEX_VERSION, SearchSourceKind
 
-    totals = SearchDocument.objects.aggregate(
+    # The generation readers read; a rebuild's building generation is not yet
+    # anyone's index (docs/adr/0118).
+    totals = projection().aggregate(
         current=Count("id", filter=Q(index_version=INDEX_VERSION)),
         stale=Count("id", filter=~Q(index_version=INDEX_VERSION)),
         current_matters=Count(
@@ -317,6 +320,10 @@ def rebuild_and_discharge(*, batch_size: int | None = None, clear: bool = True) 
         arguments["batch_size"] = batch_size
     try:
         result = rebuild_all(**arguments)
+    except RebuildAlreadyRunning:
+        # Not an attempt that failed: another rebuild is running and will pay
+        # off whatever it covers. Nothing to record against the debt.
+        raise
     except Exception as error:
         if claimed:
             _record_attempt(claimed, error)
@@ -349,7 +356,13 @@ def consume_once() -> ConsumeResult:
         return ConsumeResult(rebuilt=False, cleared=0)
     # Only the rows claimed before the rebuild began are cleared. Anything
     # marked while it ran survives and is paid off by the next pass.
-    return rebuild_and_discharge()
+    try:
+        return rebuild_and_discharge()
+    except RebuildAlreadyRunning:
+        # An operator's rebuild is running. The debt stays owed and the next
+        # pass looks again; by then the operator's rebuild has most likely
+        # discharged it (docs/adr/0118).
+        return ConsumeResult(rebuilt=False, cleared=0)
 
 
 def _record_attempt(claimed: list[Any], error: BaseException) -> None:

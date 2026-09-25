@@ -331,6 +331,12 @@ failing a lawyer's save, and the regression is re-asserted against a
 debt-driven rebuild specifically. A save landing mid-rebuild waits for it —
 seconds, a few times a month.
 
+> *Amended by ADR 0118 (ENG-011).* A save landing mid-rebuild now waits for at
+> most one batch of it, not for all of it: the rebuild fills a new generation
+> in short transactions and swaps it in at the end. "The atomic full rebuild"
+> above means that swap. A worker pass that finds another rebuild running
+> leaves the debt owed for the next pass instead of queueing behind it.
+
 **Convergence target.** There is no business SLA for this and this ADR does not
 invent one. `SEARCH_REFRESH_WORKER_IDLE_SECONDS` defaults to 10, so a vocabulary
 edit converges in roughly one idle period plus one rebuild.

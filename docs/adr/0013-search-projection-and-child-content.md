@@ -141,6 +141,13 @@ answer is a generation column or a shadow table swapped in at the end, **not** a
 return to committing partial state: that trades a visible pause for an invisible
 gap, which is the worse of the two.
 
+> *Amended by ADR 0118 (ENG-011).* The corpus grew to where the single
+> transaction held every search-refreshing save for the whole rebuild, and the
+> answer this paragraph named is what was built: a generation column. The
+> invariant is unchanged — readers see one complete index at every moment —
+> and is now kept by reading only the active generation, not by one
+> transaction.
+
 ## Alternatives considered
 
 **Keep Stage 1's `icontains` implementation.** Rejected: no stemming, so Estonian

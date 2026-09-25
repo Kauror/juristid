@@ -165,6 +165,81 @@ SOURCE_OVERRIDE_FIELDS: dict[str, str | None] = {
 }
 
 
+#: The generation every row belongs to before any generation-aware rebuild has
+#: run: every row that existed when generations were introduced, every row an
+#: older release inserts (the column's database default), and every row in a
+#: database whose generation records are gone. Readers treat it as active when
+#: no generation says otherwise (`active_generation`).
+INITIAL_GENERATION = 1
+
+
+class SearchGenerationState(models.TextChoices):
+    """Where one complete build of the projection is in its life.
+
+    One is ACTIVE — the one every reader reads. At most one is BUILDING, filled
+    by a full rebuild while business writes go on writing both. A swap makes
+    BUILDING the new ACTIVE and the old one RETIRED, whose rows are then
+    deleted. A build that did not finish is FAILED and its rows are deleted by
+    the next rebuild (docs/adr/0118).
+    """
+
+    BUILDING = "BUILDING", "Ehitamisel"
+    ACTIVE = "ACTIVE", "Kasutusel"
+    RETIRED = "RETIRED", "Asendatud"
+    FAILED = "FAILED", "Katkenud"
+
+
+class SearchGeneration(BaseModel):
+    """One full build of the projection, by number (ENG-011).
+
+    **Why it exists.** A full rebuild used to empty the table and refill it in
+    one transaction, holding the exclusive side of the refresh gate throughout
+    so that no targeted refresh could collide with the refill. Every save that
+    refreshes search — a Märge, a document, a title — waited for the whole
+    rebuild: 42–50 seconds at 38,000 rows in the audit, and it grows with the
+    corpus. Now a rebuild writes a new generation beside the active one, in
+    short batches, while business writes keep writing both; readers switch to
+    it in one short transaction when it is complete.
+
+    **It is derived bookkeeping, not canonical state.** Losing every row of this
+    table loses nothing a rebuild cannot restore: readers then read
+    `INITIAL_GENERATION`, which after a completed rebuild holds no rows — so
+    search answers nothing, fails closed, and the next rebuild repairs it
+    (`app.core.deployment.REBUILDABLE_MODELS`).
+    """
+
+    number = models.PositiveIntegerField(unique=True, verbose_name="number")
+    state = models.CharField(
+        max_length=16, choices=SearchGenerationState.choices, verbose_name="olek"
+    )
+    index_version = models.CharField(max_length=16, blank=True, verbose_name="indeksi versioon")
+    started_at = models.DateTimeField(verbose_name="alustatud")
+    activated_at = models.DateTimeField(null=True, blank=True, verbose_name="kasutusele võetud")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="lõpetatud")
+    rows = models.PositiveIntegerField(null=True, blank=True, verbose_name="ridu")
+    last_error = models.TextField(blank=True, verbose_name="viimane viga")
+
+    class Meta:
+        verbose_name = "otsinguindeksi põlvkond"
+        verbose_name_plural = "otsinguindeksi põlvkonnad"
+        ordering = ["number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["state"],
+                condition=models.Q(state="ACTIVE"),
+                name="search_one_active_generation",
+            ),
+            models.UniqueConstraint(
+                fields=["state"],
+                condition=models.Q(state="BUILDING"),
+                name="search_one_building_generation",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.number}:{self.state}"
+
+
 class SearchDocument(BaseModel):
     matter = models.ForeignKey(
         "matters.Matter",
@@ -322,16 +397,33 @@ class SearchDocument(BaseModel):
 
     index_version = models.CharField(max_length=16, default=INDEX_VERSION, editable=False)
     indexed_at = models.DateTimeField(db_index=True, verbose_name="indekseeritud")
+    # Which build of the projection this row belongs to (`SearchGeneration`).
+    # A plain number rather than a foreign key: a row must be insertable by a
+    # release that knows nothing of generations (the database default), and a
+    # projection row must never fail to insert because bookkeeping is missing.
+    # Not a PositiveIntegerField: its CHECK would have to be validated against
+    # every existing row, under an ACCESS EXCLUSIVE lock, when the column is
+    # added (182 ms at 147,000 rows, blocking readers). A plain integer with a
+    # constant default is a catalogue change only.
+    generation = models.IntegerField(
+        default=INITIAL_GENERATION,
+        db_default=INITIAL_GENERATION,
+        editable=False,
+        verbose_name="põlvkond",
+    )
 
     class Meta:
         verbose_name = "otsingudokument"
         verbose_name_plural = "otsingudokumendid"
         ordering = ["matter", "source_kind"]
         constraints = [
+            # One row per source *per generation*: a full rebuild writes the
+            # next generation beside the active one, and both hold a row for
+            # every source until the swap (ENG-011).
             models.UniqueConstraint(
-                fields=["source_kind", "source_object_id"],
+                fields=["generation", "source_kind", "source_object_id"],
                 condition=models.Q(source_object_id__isnull=False),
-                name="search_one_document_per_source_object",
+                name="search_one_row_per_source_and_generation",
             ),
         ]
         indexes = [
@@ -377,6 +469,14 @@ class SearchDocument(BaseModel):
             # Refreshing one document's projection deletes its rows first, and
             # at fragment scale that lookup must not be a scan.
             models.Index(fields=["document_version"], name="search_by_version"),
+            # Deliberately no plain index on `generation`. Readers filter on it
+            # in every query, and one would offer the planner a way to read
+            # every row of the active generation — all of them — instead of
+            # asking the text indexes; the plan-shape tests caught it doing
+            # so. The rebuild's own lookups by generation go through the
+            # unique index above, which leads with `generation` and which a
+            # reader's query cannot use, because it is partial
+            # (`app.search.indexing._by_generation`, docs/adr/0118).
         ]
 
     def __str__(self) -> str:

@@ -64,3 +64,41 @@ def test_outside_a_transaction_they_are_built_concurrently():
 def test_the_release_gate_reads_them_as_additive():
     for operation in (AddIndexConcurrentlyWhenPossible, RemoveIndexConcurrentlyWhenPossible):
         assert operation.__name__ in ADDITIVE_OPERATIONS
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_the_generation_uniqueness_is_swapped_concurrently_and_never_absent():
+    """`search/0013`: the new partial unique index first, then the old one dropped.
+
+    Both ``CONCURRENTLY`` outside a transaction, so writes to the projection
+    carry on while they build; and in that order, so there is no moment
+    without a one-row-per-source guarantee (docs/adr/0118).
+    """
+    try:
+        with CaptureQueriesContext(connection) as backwards:
+            call_command("migrate", "search", "0012", verbosity=0)
+        with CaptureQueriesContext(connection) as forwards:
+            call_command("migrate", "search", "0013", verbosity=0)
+    finally:
+        call_command("migrate", verbosity=0)
+    up = [query["sql"] for query in forwards.captured_queries]
+    created = next(
+        i for i, sql in enumerate(up) if "search_one_row_per_source_and_generation" in sql
+    )
+    dropped = next(i for i, sql in enumerate(up) if "search_one_document_per_source_object" in sql)
+    assert up[created].startswith("CREATE UNIQUE INDEX CONCURRENTLY")
+    assert up[dropped].startswith("DROP INDEX CONCURRENTLY IF EXISTS")
+    assert created < dropped
+    down = " ".join(query["sql"] for query in backwards.captured_queries)
+    assert 'CREATE UNIQUE INDEX CONCURRENTLY "search_one_document_per_source_object"' in down
+    assert "search_one_row_per_source_and_generation" in down
+
+
+def test_only_a_partial_unique_constraint_is_built_concurrently():
+    from django.db import models
+
+    from app.core.index_operations import _concurrently
+
+    plain = models.UniqueConstraint(fields=["title"], name="x")
+    with pytest.raises(TypeError):
+        _concurrently(plain, None, None)
