@@ -147,7 +147,7 @@ def test_the_first_entry_journey_never_passes_through_ulevaade(client, gate_mode
     assert "Marko oma teema" in chosen.content.decode()
 
     # No step of that journey was the department page.
-    overview = reverse("matters:overview")
+    overview = reverse("matters:department")
     for step in (first, passed, chosen):
         assert overview not in [url for url, _ in step.redirect_chain]
 
@@ -178,7 +178,7 @@ def test_the_department_page_is_still_reachable_for_a_persona(behind_the_gate):
     marko = factories.UserFactory()
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
 
-    response = behind_the_gate.get(reverse("matters:overview"))
+    response = behind_the_gate.get(reverse("matters:department"))
     assert response.status_code == 200
     assert response.resolver_match.view_name == "matters:department"
 
@@ -188,7 +188,7 @@ def test_the_department_page_is_still_reachable_with_no_persona(behind_the_gate)
     owner = factories.UserFactory()
     factories.MatterFactory(owner=owner, title="Avalik teema kõigile", is_open=True)
 
-    response = behind_the_gate.get(reverse("matters:overview"))
+    response = behind_the_gate.get(reverse("matters:department"))
     assert response.status_code == 200
     assert not response.wsgi_request.user.is_authenticated
     assert "Avalik teema kõigile" in response.content.decode()
@@ -219,9 +219,9 @@ def test_a_contextual_persona_switch_still_returns_to_the_page(behind_the_gate):
     marko = factories.UserFactory()
     response = behind_the_gate.post(
         reverse("accounts:act_as"),
-        {"user_id": str(marko.pk), "next": reverse("matters:overview")},
+        {"user_id": str(marko.pk), "next": reverse("matters:department")},
     )
-    assert response["Location"] == reverse("matters:overview")
+    assert response["Location"] == reverse("matters:department")
 
 
 # -- the development sign-in reaches the same home -------------------------

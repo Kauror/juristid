@@ -24,9 +24,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from app.accounts.enums import UserRole
 from app.core.authorization import apply as apply_scope
-from app.core.authorization import matter_visibility_q, scope_for_user
+from app.core.authorization import (
+    matter_visibility_q,
+    may_review_historical_matches,
+    scope_for_user,
+)
 from app.core.http import content_disposition
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
@@ -232,7 +235,7 @@ def _require_administrator(request: HttpRequest) -> None:
     is merely unlinked is still a route, and this one can create Matters
     (Stage-2D brief 39).
     """
-    if getattr(request.user, "role", None) != UserRole.ADMINISTRATOR:
+    if not may_review_historical_matches(request.user):
         raise Http404
 
 
