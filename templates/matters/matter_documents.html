@@ -442,8 +442,10 @@ finds again (§23.5).
                         {% else %}<span class="muted">—</span>{% endif %}
                         <span class="doctable__actions">
                           {% if document.current_version %}
+                            {# Named after its file (ENG-098): twelve links called «Ava» tell a screen reader nothing. #}
                             <a class="button button--secondary button--tiny"
-                               href="{% url 'documents:open' pk=document.current_version.pk %}">Ava</a>
+                               href="{% url 'documents:open' pk=document.current_version.pk %}"
+                               aria-label="Ava {{ document.title }}">Ava</a>
                             <a class="quietlink"
                                href="{% url 'documents:download' pk=document.current_version.pk %}"
                                aria-label="Laadi alla {{ document.title }}">↓</a>
