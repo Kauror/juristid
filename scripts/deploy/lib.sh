@@ -319,6 +319,28 @@ inventory_first_missing() {
   return 1
 }
 
+# The entries of an inventory that are regular files in a tree, written to a new
+# inventory in the same order. The backup uses it for the listing taken as the
+# dump began: an entry the pool does not hold vanished before the dump started
+# (juristid-backup.sh, "What belongs to this set").
+inventory_present_in() {
+  local tree="$1" inventory="$2" destination="$3" entry
+  [ -r "$inventory" ] || die "membership inventory cannot be read: $inventory"
+  while IFS= read -r -d '' entry; do
+    if [ -f "$tree/$entry" ]; then printf '%s\0' "$entry"; fi
+  done <"$inventory" >"$destination"
+}
+
+# Two inventories as one: every path either names, once, sorted the way
+# `capture_inventory` sorts, so the result is the same file however it came to
+# be.
+inventory_union() {
+  local first="$1" second="$2" destination="$3"
+  [ -r "$first" ] || die "membership inventory cannot be read: $first"
+  [ -r "$second" ] || die "membership inventory cannot be read: $second"
+  cat -- "$first" "$second" | LC_ALL=C sort -zu >"$destination"
+}
+
 # What the members add up to, in the tree they are being checked against.
 #
 # Only the listed files, which is the entire point: the pool around them may

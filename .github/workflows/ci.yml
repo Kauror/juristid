@@ -1281,6 +1281,188 @@ jobs:
             "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'" | tr -d '\r\n ')"
           test "$tables" -gt 0 || { echo "the database-only restore restored nothing"; exit 1; }
 
+      # -- a deletion during the dump (ENG-114) ------------------------------
+      #
+      # Kustuta teema commits the deletion of a Teema's rows and then removes
+      # its objects. Landing inside the dump, that leaves the rows in the dump's
+      # snapshot and the objects gone from the tree, and a membership read only
+      # after the dump left them out: a set that verified at levels 1 and 2 and
+      # restored the Teema without its bytes.
+      #
+      # Made deterministic rather than hoped for, the way the audit's verifier
+      # did it: a session holds a lock pg_dump needs, so pg_dump waits *inside*
+      # its snapshot while the real `delete_matter()` commits, and only then is
+      # the lock released. Its own database, data root and backup root.
+
+      - name: A Teema deleted while the dump runs is restored with its bytes
+        run: |
+          set -euo pipefail
+          root=/tmp/juristid-rehearsal/race
+          mkdir -p "$root/source/evidence" "$root/source/legacy-source" "$root/source/derivatives" "$root/backups"
+          printf '<page id="race"/>' > "$root/source/legacy-source/page.xml"
+          compose() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" "$@"; }
+          sql() { compose exec -T db psql --no-password -U juristid -d race -tAc "$1" | tr -d '\r\n '; }
+          on_race() {
+            POSTGRES_DB=race EVIDENCE_ROOT="$root/source/evidence" \
+              LEGACY_SOURCE_ROOT="$root/source/legacy-source" DERIVATIVE_ROOT="$root/source/derivatives" \
+              uv run python manage.py "$@"
+          }
+
+          compose exec -T db psql --no-password -U juristid -d postgres -c 'CREATE DATABASE race OWNER juristid'
+          on_race migrate --noinput
+          on_race seed_e2e_data
+          test "$(find "$root/source/evidence" -type f | wc -l)" -gt 0 \
+            || { echo "the seed wrote no evidence; this step tests nothing"; exit 1; }
+
+          # Pick a Teema the deletion will accept and write down its objects.
+          # The keys stay in the job's temporary files; nothing is printed.
+          on_race shell -c "
+          from pathlib import Path
+          from app.documents.models import DocumentVersion
+          from app.matters.deletion import plan_matter_deletion
+          for version in DocumentVersion.objects.select_related('document__matter').order_by('pk'):
+              matter = version.document.matter
+              if not plan_matter_deletion(matter).refusals:
+                  keys = sorted(DocumentVersion.objects.filter(document__matter=matter).values_list('storage_key', flat=True))
+                  Path('$root/doomed.pk').write_text(str(matter.pk))
+                  Path('$root/doomed.keys').write_text(chr(10).join(keys) + chr(10))
+                  break
+          "
+          test -s "$root/doomed.keys" || { echo "no seeded Teema with evidence can be deleted"; exit 1; }
+
+          compose exec -T db psql --no-password -U juristid -d race \
+            -c 'BEGIN; LOCK TABLE django_migrations IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(300); COMMIT;' \
+            > /dev/null 2>&1 &
+          holder=$!
+          held=0
+          for _ in $(seq 1 100); do
+            held="$(sql "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation WHERE c.relname = 'django_migrations' AND l.mode = 'AccessExclusiveLock' AND l.granted")"
+            [ "$held" = 1 ] && break
+            sleep 0.2
+          done
+          test "$held" = 1 || { echo "the lock was never taken"; exit 1; }
+
+          scripts/deploy/juristid-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" --db-name race \
+            --data-root "$root/source" --backup-root "$root/backups" --minimum-free-mib 64 \
+            > "$root/backup.log" 2>&1 &
+          backup=$!
+
+          waiting=0
+          for _ in $(seq 1 300); do
+            waiting="$(sql "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'pg_dump' AND wait_event_type = 'Lock'")"
+            [ "$waiting" -ge 1 ] && break
+            sleep 0.2
+          done
+          test "$waiting" -ge 1 || { echo "pg_dump never waited inside its snapshot; this step tests nothing"; cat "$root/backup.log"; exit 1; }
+
+          # The real deletion, committed while the dump's snapshot is open. Its
+          # on-commit cleanup removes the objects from the source tree.
+          on_race shell -c "
+          from pathlib import Path
+          from app.matters.deletion import delete_matter
+          from app.matters.models import Matter
+          delete_matter(matter=Matter.objects.get(pk=Path('$root/doomed.pk').read_text()))
+          "
+          while IFS= read -r key; do
+            test ! -e "$root/source/evidence/$key" || { echo "the deletion did not remove its objects; this step tests nothing"; exit 1; }
+          done < "$root/doomed.keys"
+
+          sql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%pg_sleep(300)%' AND pid <> pg_backend_pid()" > /dev/null
+          wait "$holder" || true
+          wait "$backup" || { echo "the backup failed"; cat "$root/backup.log"; exit 1; }
+          cat "$root/backup.log"
+
+          set_r="$(find "$root/backups/sets" -mindepth 1 -maxdepth 1 -type d -not -name '*.partial' | sort | tail -1)"
+          tr '\0' '\n' < "$set_r/evidence.files0" > "$root/members.txt"
+          while IFS= read -r key; do
+            grep -qxF -- "$key" "$root/members.txt" \
+              || { echo "the set does not name an object of the Teema deleted during the dump"; exit 1; }
+          done < "$root/doomed.keys"
+          scripts/deploy/juristid-verify-backup.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+            --set "$set_r" --backup-root "$root/backups" --level 2
+
+          # The dump holds the Teema; the restore must bring its bytes back
+          # beside it, which is what the integrity check asks.
+          compose exec -T db psql --no-password -U juristid -d postgres -c 'CREATE DATABASE race_restored OWNER juristid'
+          mkdir -p "$root/restored/evidence" "$root/restored/legacy-source" "$root/restored/derivatives"
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" --db-name race_restored \
+            --set "$set_r" --backup-root "$root/backups" --data-root "$root/restored"
+          doomed="$(cat "$root/doomed.pk")"
+          test "$(sql "SELECT deleted_at IS NOT NULL FROM matters_matter WHERE id = '$doomed'")" = t \
+            || { echo "the Teema is not deleted in the live database; this step tests nothing"; exit 1; }
+          restored_live="$(compose exec -T db psql --no-password -U juristid -d race_restored -tAc \
+            "SELECT deleted_at IS NULL FROM matters_matter WHERE id = '$doomed'" | tr -d '\r\n ')"
+          test "$restored_live" = t \
+            || { echo "the dump did not hold the Teema before its deletion; this step tests nothing"; exit 1; }
+          POSTGRES_DB=race_restored EVIDENCE_ROOT="$root/restored/evidence" \
+            LEGACY_SOURCE_ROOT="$root/restored/legacy-source" DERIVATIVE_ROOT="$root/restored/derivatives" \
+            uv run python manage.py check_evidence_integrity
+
+      # -- a restore that fails part-way (ENG-115) ---------------------------
+      #
+      # pg_restore ran with --exit-on-error but not --single-transaction, so a
+      # failure left every statement before it committed: a schema and part of
+      # the rows. The rerun the message advised then met the storage refusal,
+      # because step 4 had already copied the evidence.
+      #
+      # The failure is made the honest way: a type in the target database with
+      # the name of the dump's last table. `information_schema.tables` does not
+      # count types, so the empty-database check passes, the storage copy runs,
+      # and pg_restore fails on CREATE TABLE after every earlier one.
+
+      - name: A restore that fails part-way leaves the database empty and says what to move
+        run: |
+          set -euo pipefail
+          root=/tmp/juristid-rehearsal/membership
+          compose() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" "$@"; }
+          tables() {
+            compose exec -T db psql --no-password -U juristid -d membership_failed -tAc \
+              "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'" | tr -d '\r\n '
+          }
+          compose cp "$MEMBERSHIP_SET_C/database.dump" db:/tmp/failing.dump
+          last="$(compose exec -T db pg_restore --list /tmp/failing.dump \
+            | awk '$4 == "TABLE" && $5 == "public" { name = $6 } END { print name }')"
+          test -n "$last" || { echo "the dump lists no table; this step tests nothing"; exit 1; }
+
+          compose exec -T db psql --no-password -U juristid -d postgres -c 'CREATE DATABASE membership_failed OWNER juristid'
+          compose exec -T db psql --no-password -U juristid -d membership_failed \
+            -c "CREATE TYPE public.\"$last\" AS (blocker integer)"
+          test "$(tables)" = 0 || { echo "the blocker counts as a table; this step tests nothing"; exit 1; }
+          mkdir -p "$root/restored-failed/evidence" "$root/restored-failed/legacy-source"
+
+          if scripts/deploy/juristid-restore.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" --db-name membership_failed \
+               --set "$MEMBERSHIP_SET_C" --backup-root "$root/backups" --data-root "$root/restored-failed" \
+               2> "$root/failed.err"; then
+            echo "the restore succeeded over a blocked table"; exit 1
+          fi
+          cat "$root/failed.err"
+          grep -q "pg_restore failed" "$root/failed.err" \
+            || { echo "the restore failed somewhere other than pg_restore; this step tests nothing"; exit 1; }
+
+          # Nothing the failed restore wrote survived.
+          test "$(tables)" = 0 || { echo "the failed restore left $(tables) table(s) behind"; exit 1; }
+          # And the message names the storage it had already filled.
+          grep -qF "$root/restored-failed/evidence" "$root/failed.err" \
+            || { echo "the failure does not name the evidence tree to move aside"; exit 1; }
+          grep -qF "$root/restored-failed/legacy-source" "$root/failed.err" \
+            || { echo "the failure does not name the page-XML tree to move aside"; exit 1; }
+
+          # Doing exactly what it says works: fix the cause, move the trees
+          # aside, run again onto the same database and data root.
+          compose exec -T db psql --no-password -U juristid -d membership_failed -c "DROP TYPE public.\"$last\""
+          mv "$root/restored-failed/evidence" "$root/restored-failed/evidence.aside"
+          mv "$root/restored-failed/legacy-source" "$root/restored-failed/legacy-source.aside"
+          mkdir -p "$root/restored-failed/evidence" "$root/restored-failed/legacy-source"
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" --db-name membership_failed \
+            --set "$MEMBERSHIP_SET_C" --backup-root "$root/backups" --data-root "$root/restored-failed"
+          test "$(tables)" -gt 0 || { echo "the rerun restored nothing"; exit 1; }
+          test -s "$root/restored-failed/evidence/aa/new-c.bin" || { echo "the rerun did not restore the member"; exit 1; }
+
       # -- the destructive part --------------------------------------------
 
       - name: Destroy the database and the storage trees
