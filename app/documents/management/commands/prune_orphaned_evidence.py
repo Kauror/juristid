@@ -85,6 +85,23 @@ class Command(BaseCommand):
         "and that are older than the grace period."
     )
 
+    #: Which store this command walks, in the words its output uses. Every rule
+    #: above — the grace period, the refusal to conclude from a failed listing,
+    #: the honest delete count — holds for any store whose bytes are written
+    #: before their row, which is why `prune_orphaned_derivatives` is this
+    #: command pointed at a different store rather than a second copy of it.
+    store_label = "evidence"
+
+    def storage(self) -> Any:
+        return evidence_storage()
+
+    def referenced(self) -> set[str]:
+        # Every canonical holder, not only DocumentVersion: the opinion archive
+        # stores its binaries in this same class, and a pruner that did not know
+        # that would delete evidence a row is holding
+        # (app/documents/references.py).
+        return referenced_storage_keys()
+
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
             "--delete",
@@ -110,19 +127,16 @@ class Command(BaseCommand):
         if options["delete"] and grace_hours < MINIMUM_DELETE_GRACE_HOURS:
             raise CommandError(
                 f"--delete requires a grace period of at least {MINIMUM_DELETE_GRACE_HOURS} "
-                f"hour(s); {grace_hours} was given. Evidence bytes are written before the "
-                "row that describes them, so a shorter window makes this command capable of "
+                f"hour(s); {grace_hours} was given. {self.store_label.capitalize()} bytes are "
+                "written before the row that describes them, so a shorter window makes this "
+                "command capable of "
                 "deleting an upload that is still committing. Run without --delete to see "
                 "what a shorter window would select."
             )
 
         cutoff = timezone.now() - timedelta(hours=grace_hours)
-        storage = evidence_storage()
-        # Every canonical holder, not only DocumentVersion: the opinion archive
-        # stores its binaries in this same class, and a pruner that did not know
-        # that would delete evidence a row is holding
-        # (app/documents/references.py).
-        referenced = referenced_storage_keys()
+        storage = self.storage()
+        referenced = self.referenced()
 
         keys, unreadable = walk_storage(storage)
         candidates = [self._classify(storage, key, cutoff) for key in keys if key not in referenced]
@@ -136,10 +150,13 @@ class Command(BaseCommand):
                 # unreadable prefix is unknown, and "none found" would be read
                 # as "none exist".
                 raise CommandError(
-                    f"{len(unreadable)} prefix(es) could not be listed, so the evidence "
-                    "store was not fully examined. No conclusion is available."
+                    f"{len(unreadable)} prefix(es) could not be listed, so the "
+                    f"{self.store_label} store was not fully examined. No conclusion is "
+                    "available."
                 )
-            self.stdout.write(self.style.SUCCESS("No unreferenced evidence objects found."))
+            self.stdout.write(
+                self.style.SUCCESS(f"No unreferenced {self.store_label} objects found.")
+            )
             return
 
         for candidate in sorted(candidates, key=lambda item: item.key):
@@ -191,7 +208,9 @@ class Command(BaseCommand):
                 storage.delete(candidate.key)
             except Exception as error:
                 failures += 1
-                logger.warning("Could not delete orphaned evidence object %s", candidate.key)
+                logger.warning(
+                    "Could not delete orphaned %s object %s", self.store_label, candidate.key
+                )
                 self.stderr.write(f"delete-failed\t{candidate.key}\t{type(error).__name__}")
                 continue
             deleted += 1
