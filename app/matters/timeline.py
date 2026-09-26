@@ -28,10 +28,11 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from django.db import models
+from django.db.models.functions import Cast, Coalesce, TruncDate
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
@@ -40,7 +41,7 @@ from app.audit.visibility import scope_change_events
 from app.core.dates import format_estonian_date
 from app.matters import selectors
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import EngagementKind
+from app.matters.enums import EngagementKind, WebsiteOverviewStatus
 from app.matters.models import (
     Entry,
     Matter,
@@ -803,6 +804,11 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
     )
 
 
+def _start_of_day(day: date) -> datetime:
+    """The first moment of a local day: where a day-granular bound begins."""
+    return timezone.make_aware(datetime.combine(day, datetime.min.time()))
+
+
 def _end_of_day(day: date) -> datetime:
     """Where a dated fact sorts among the timestamped ones.
 
@@ -1279,12 +1285,24 @@ def submission_milestone(submission: Any, addressees: Sequence[str] = ()) -> Chr
     )
 
 
+#: What `projected_milestones` reads instead of the intelligence facts when the
+#: caller has already turned them into rows.
+_NO_FACTS = type(
+    "_NoFacts",
+    (),
+    {"work_victories": (), "past_dates": (), "upcoming_dates": (), "effective_dates": ()},
+)()
+
+
 def projected_milestones(
     *,
     matter: Matter,
     user: Any,
     intelligence: Any = None,
     today: date | None = None,
+    since: date | None = None,
+    include_facts: bool = True,
+    include_records: bool = True,
 ) -> list[TimelineItem]:
     """The structured facts, as chronology rows, read from their own records.
 
@@ -1307,12 +1325,35 @@ def projected_milestones(
 
     Scoped through `matter_intelligence` and `visible_to`, so a restricted child
     changes no row, no count and no ordering (AUTH-003).
+
+    **Read from a day on, when a page only needs that much (ENG-125).** With
+    ``since``, each record family — engagements, external positions, procedural
+    developments, sent opinions, overviews — is read only where its chronology
+    day is on or after ``since``, in SQL, by the same day rule the row is placed
+    by (`_record_family_days`). A row's key is the end of its day, so every row
+    keyed at or after the start of ``since`` is here, exactly; a few earlier ones
+    may be too, and the caller does not trust those. ``include_facts`` and
+    ``include_records`` let `matter_timeline` read the intelligence facts once
+    and the record families once per bound.
     """
     from app.intelligence.selectors import matter_intelligence
 
     day = today or timezone.localdate()
-    facts = intelligence if intelligence is not None else matter_intelligence(matter, user, day)
+    if include_facts:
+        facts = intelligence if intelligence is not None else matter_intelligence(matter, user, day)
+    else:
+        facts = _NO_FACTS
     rows: list[TimelineItem] = []
+    start = _start_of_day(since) if since is not None else None
+
+    def dated(queryset: Any, field_name: str) -> Any:
+        """Rows whose chronology day — the date, else the recorded day — is ≥ since."""
+        if start is None:
+            return queryset
+        return queryset.filter(
+            models.Q(**{f"{field_name}__gte": since})
+            | models.Q(**{f"{field_name}__isnull": True, "created_at__gte": start})
+        )
 
     def add(record: Any, when: datetime, milestone: ChronologyMilestone) -> None:
         rows.append(
@@ -1433,13 +1474,27 @@ def projected_milestones(
             ),
         )
 
+    if not include_records:
+        return rows
+
+    positions = dated(
+        MatterExternalPosition.objects.filter(matter=matter).visible_to(user), "stated_on"
+    ).select_related("organisation")
+
     # Read once and kept: the positions below name the round they answered from
-    # this same set rather than through their own foreign key (ENG-047).
+    # this same set rather than through their own foreign key (ENG-047). Read
+    # from a day on, the set still holds every round a read position answered,
+    # whatever its own day — in the same query, so no row costs one.
     answered: dict[Any, MatterEngagement] = {}
-    for engagement in MatterEngagement.objects.filter(matter=matter).visible_to(user):
+    engagements = MatterEngagement.objects.filter(matter=matter).visible_to(user)
+    if start is not None:
+        engagements = dated(engagements, "occurred_on") | engagements.filter(
+            pk__in=positions.values("engagement_id")
+        )
+    for engagement in engagements:
         answered[engagement.pk] = engagement
         when = engagement_chronology_day(engagement)
-        if when > day:
+        if when > day or (since is not None and when < since):
             continue
         add(engagement, _end_of_day(when), engagement_milestone(engagement))
 
@@ -1455,11 +1510,7 @@ def projected_milestones(
     # above — read through its own `visible_to`, no extra query — and a round
     # this reader may not see, or one taken off the file, is simply absent
     # (ENG-047).
-    for position in (
-        MatterExternalPosition.objects.filter(matter=matter)
-        .visible_to(user)
-        .select_related("organisation")
-    ):
+    for position in positions:
         when = external_position_chronology_day(position)
         if when > day:
             # A position dated in the future is not history yet, and the
@@ -1481,7 +1532,9 @@ def projected_milestones(
     # No `select_related`: the row renders the record's own two columns and
     # nothing across a foreign key — the stage it may have moved is on the Matter
     # and is deliberately not copied here (`MatterProceduralDevelopment`).
-    for development in MatterProceduralDevelopment.objects.filter(matter=matter).visible_to(user):
+    for development in dated(
+        MatterProceduralDevelopment.objects.filter(matter=matter).visible_to(user), "occurred_on"
+    ):
         when = development_chronology_day(development)
         if when > day:
             # A development dated in the future is not history yet, and the
@@ -1518,18 +1571,16 @@ def projected_milestones(
     # opinions costs two queries to name their recipients rather than eight. The
     # prefetch is filtered to `ADDRESSEE` in SQL rather than in Python, because
     # «teadmiseks» is a copy and not somebody Koda wrote to.
-    for submission in (
-        Submission.objects.filter(matter=matter)
-        .visible_to(user)
-        .historically_sent()
-        .prefetch_related(
-            models.Prefetch(
-                "recipient_rows",
-                queryset=SubmissionRecipient.objects.filter(
-                    role=RecipientRole.ADDRESSEE
-                ).select_related("organisation"),
-                to_attr="chronology_addressees",
-            )
+    sent = Submission.objects.filter(matter=matter).visible_to(user).historically_sent()
+    if start is not None:
+        sent = sent.filter(sent_at__gte=start)
+    for submission in sent.prefetch_related(
+        models.Prefetch(
+            "recipient_rows",
+            queryset=SubmissionRecipient.objects.filter(
+                role=RecipientRole.ADDRESSEE
+            ).select_related("organisation"),
+            to_attr="chronology_addressees",
         )
     ):
         if submission.sent_at is None:  # pragma: no cover - refused by a CHECK constraint
@@ -1560,7 +1611,12 @@ def projected_milestones(
     # Attached to the record the row already carries, so the chronology template
     # reads it off `item.website_overview` without a second context key.
     linked_opinions = linked_submissions_by_overview(matter, user=user)
-    for overview in MatterWebsiteOverview.objects.filter(matter=matter).visible_to(user):
+    overviews = MatterWebsiteOverview.objects.filter(matter=matter).visible_to(user)
+    if start is not None:
+        # Placed on its publication day (else the day it was recorded), or on
+        # the day a plan was cancelled: any of the three on or after `since`.
+        overviews = dated(overviews, "published_on") | overviews.filter(cancelled_at__gte=start)
+    for overview in overviews:
         overview.linked_opinions = linked_opinions.get(overview.pk, [])
         if overview.is_published:
             published_on = overview.published_on
@@ -1730,29 +1786,22 @@ def matter_timeline(
     # assembled. Which effects fold onto which row depends on which records this
     # reader may actually see, so the projection — which is where `visible_to`
     # is applied — has to run first (AUTH-003, docs/adr/0092 §7).
-    projected: list[TimelineItem] = []
+    #
+    # The intelligence facts are turned into rows once; the record families are
+    # read per bound, from its day on (ENG-125).
+    day = today or timezone.localdate()
+    fact_rows: list[TimelineItem] = []
     if only != TIMELINE_FILTER_ENTRIES:
-        projected = projected_milestones(
-            matter=matter, user=user, intelligence=intelligence, today=today
+        fact_rows = projected_milestones(
+            matter=matter, user=user, intelligence=intelligence, today=day, include_records=False
         )
 
     # A file that supports a structured fact reads on that fact's own row and
     # nowhere else. Its evidence event would otherwise become a row of its own —
     # the operation that wrote it has no `Entry` to be grouped onto — which is a
-    # second line, and a second dot, for one act (brief §25).
-    #
-    # The sent opinions' final texts are handed over from the projection above
-    # rather than read again: those rows are already in hand, and asking the
-    # database a second time for a column this function has just been given is a
-    # query for an answer it already has.
-    shown_on_their_record = _versions_shown_on_their_record(
-        matter,
-        final_texts={
-            item.record.final_version_id
-            for item in projected
-            if item.submission is not None and item.record.final_version_id
-        },
-    )
+    # second line, and a second dot, for one act (brief §25). Asked of the whole
+    # Matter, because it decides whether an event is a row at all.
+    shown_on_their_record = _versions_shown_on_their_record(matter, user=user, day=day)
     # The open step, which `_assemble_timeline` keeps off the chronology as a
     # row of its own (docs/adr/0092 §8).
     open_action = (
@@ -1763,20 +1812,23 @@ def matter_timeline(
     open_action_pk = getattr(open_action, "pk", None)
 
     sources = _ChronologySources(
+        matter=matter,
+        user=user,
+        day=day,
         entry_scope=entry_scope,
         event_scope=event_scope,
-        projected=projected,
+        fact_rows=fact_rows,
         shown_on_their_record=frozenset(shown_on_their_record),
         only=only,
     )
     batch = window
     while True:
         bound = sources.bound(batch)
-        entries, events = sources.load(bound)
+        entries, events, projected = sources.load(bound)
         items = _assemble_timeline(
             entries=entries,
             events=events,
-            projected=list(projected),
+            projected=projected,
             shown_on_their_record=shown_on_their_record,
             open_action_pk=open_action_pk,
             only=only,
@@ -1797,31 +1849,45 @@ def matter_timeline(
     )
 
 
+def _local_date(field_name: str) -> Any:
+    """A stored moment's calendar day for the reader, in SQL — `_local_day`'s twin."""
+    return TruncDate(field_name, tzinfo=timezone.get_current_timezone())
+
+
+def _dated_day(date_field: str) -> Any:
+    """The chronology day of a record placed on a date, else on the day it was recorded."""
+    return Coalesce(date_field, _local_date("created_at"), output_field=models.DateField())
+
+
 @dataclass
 class _ChronologySources:
-    """Where one Matter's chronology rows come from, read up to a time bound.
+    """Where one Matter's chronology rows come from, read from a day on.
 
     A row's key is the moment of the one source it is anchored on: an entry's
-    `occurred_at`, a projected record's date, a lone or milestone event's
-    `occurred_at`, or the earliest event of an operation that has neither an
-    entry nor a record. So a bound on those moments is a bound on rows — as long
-    as everything a row is *assembled* from arrives with its anchor. `load`
-    guarantees that by reading whole every operation it touches, plus the two
-    kinds of event that decide how a row is assembled without ever being one:
-    the `ENTRY_ADDED` that ties an entry to its operation, and the
-    `PROCEDURAL_DEVELOPMENT_RECORDED` that ties a record to its.
+    `occurred_at`, the end of a projected record's day, a lone or milestone
+    event's `occurred_at`, or the earliest event of an operation that has
+    neither an entry nor a record. So a bound on days is a bound on rows — as
+    long as everything a row is *assembled* from arrives with its anchor. `load`
+    guarantees that by reading whole every operation it touches, plus the kinds
+    of event that decide how a row is assembled without ever being one: the
+    `ENTRY_ADDED` that ties an entry to its operation, and the
+    `PROCEDURAL_DEVELOPMENT_RECORDED` that ties a record to its. What decides
+    whether an event is a row at all — a file shown on its record, an effect
+    folded onto a development — is asked of the whole Matter, never of the
+    rows read so far.
     """
 
+    matter: Matter
+    user: Any
+    day: date
     entry_scope: Any
     event_scope: Any
-    projected: list[TimelineItem]
+    fact_rows: list[TimelineItem]
     shown_on_their_record: frozenset[Any]
     only: str
-    record_pks: list[Any] = field(init=False)
     anchor_q: models.Q = field(init=False)
 
     def __post_init__(self) -> None:
-        self.record_pks = [item.record.pk for item in self.projected if item.record is not None]
         # Events that can never anchor a row, left out of both the bound and the
         # seed. Each exclusion mirrors a rule `_assemble_timeline` applies
         # exactly, so nothing a row is anchored on is left out; an excluded
@@ -1834,56 +1900,131 @@ class _ChronologySources:
                 event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
                 object_id__in=self.shown_on_their_record,
             )
-        if self.record_pks:
+        if self.only != TIMELINE_FILTER_ENTRIES:
             anchor &= ~models.Q(
                 event_type__in=OPERATION_EFFECT_EVENT_TYPES,
-                operation_id__in=self._record_operations(self.record_pks),
+                operation_id__in=self._development_operations(),
             )
         self.anchor_q = anchor
 
-    def _record_operations(self, record_pks: list[Any]) -> Any:
+    def _developments(self) -> Any:
+        """The developments the chronology draws: visible, and not in the future."""
+        return (
+            MatterProceduralDevelopment.objects.filter(matter=self.matter)
+            .visible_to(self.user)
+            .annotate(chronology_day=_dated_day("occurred_on"))
+            .filter(chronology_day__lte=self.day)
+        )
+
+    def _development_operations(self, before: date | None = None) -> Any:
+        """The operations that wrote a drawn development — before a day, if given.
+
+        A stage move or next step saved with a development folds onto that
+        development's row and is never a row of its own (docs/adr/0092 §6).
+        """
+        developments = self._developments()
+        if before is not None:
+            developments = developments.filter(chronology_day__lt=before)
         return (
             self.event_scope.filter(
-                event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=record_pks
+                event_type__in=RECORD_OPERATION_EVENT_TYPES,
+                object_id__in=developments.values("pk"),
             )
             .exclude(operation_id=None)
             .values("operation_id")
         )
 
     def bound(self, batch: int) -> datetime | None:
-        """The moment of the `batch`-th newest possible row anchor, or ``None``.
+        """The key of the `batch`-th newest possible row anchor, or ``None``.
 
         Every row is anchored on a distinct source, so there are at most as
         many rows at or after this moment as there are anchors — the bound is
         where a page *might* be complete, and the caller moves it back when it
         is not. ``None`` means fewer anchors exist than asked for: read
         everything.
+
+        Exact moments where the anchor has one — an entry, an event — and the
+        end of the day for a record family, which is the key its row is given
+        (`_end_of_day`); a day-granular bound would read every note written on
+        a busy day to show thirty of them. One query, whichever sources this
+        view reads: the newest `batch` of each, as one UNION ALL of two
+        columns, one of them empty per source.
         """
         moments: list[datetime] = []
-        # One query, whichever sources this view reads: the newest `batch`
-        # anchor moments of each, as one UNION ALL, each row tagged with the
-        # source it came from.
         reads: list[Any] = []
+        # Cast, not merely typed: under `SELECT DISTINCT` PostgreSQL resolves a
+        # bare NULL to text, and the UNION then refuses to match the columns.
+        no_moment = Cast(models.Value(None), output_field=models.DateTimeField())
+        no_day = Cast(models.Value(None), output_field=models.DateField())
 
-        def newest(queryset: Any) -> None:
-            source = models.Value(len(reads), output_field=models.IntegerField())
+        columns = ("anchor_moment", "anchor_day", "anchor_source")
+
+        def source() -> Any:
+            # Which read a row came from, so completeness is known per source.
+            return models.Value(len(reads), output_field=models.IntegerField())
+
+        def newest_moment(queryset: Any, field_name: str) -> None:
             reads.append(
-                queryset.annotate(anchor_source=source)
-                .order_by("-occurred_at")
-                .values_list("occurred_at", "anchor_source")[:batch]
+                queryset.annotate(
+                    anchor_moment=models.F(field_name), anchor_day=no_day, anchor_source=source()
+                )
+                .order_by("-anchor_moment")
+                .values_list(*columns)[:batch]
+            )
+
+        def newest_day(queryset: Any, expression: Any) -> None:
+            reads.append(
+                queryset.annotate(
+                    anchor_moment=no_moment, anchor_day=expression, anchor_source=source()
+                )
+                .order_by("-anchor_day")
+                .values_list(*columns)[:batch]
             )
 
         if self.only != TIMELINE_FILTER_ENTRIES:
-            moments.extend(item.occurred_at for item in self.projected)
-            newest(self.event_scope.filter(self.anchor_q))
+            moments.extend(item.occurred_at for item in self.fact_rows)
+            newest_moment(self.event_scope.filter(self.anchor_q), "occurred_at")
+            visible = {"matter": self.matter}
+            for queryset, date_field in (
+                (MatterEngagement.objects.filter(**visible).visible_to(self.user), "occurred_on"),
+                (
+                    MatterExternalPosition.objects.filter(**visible).visible_to(self.user),
+                    "stated_on",
+                ),
+            ):
+                newest_day(
+                    queryset.annotate(chronology_day=_dated_day(date_field)).filter(
+                        chronology_day__lte=self.day
+                    ),
+                    _dated_day(date_field),
+                )
+            newest_day(self._developments(), _dated_day("occurred_on"))
+            newest_day(
+                Submission.objects.filter(**visible)
+                .visible_to(self.user)
+                .historically_sent()
+                .filter(sent_at__lt=_start_of_day(self.day + timedelta(days=1))),
+                _local_date("sent_at"),
+            )
+            overviews = MatterWebsiteOverview.objects.filter(**visible).visible_to(self.user)
+            newest_day(
+                overviews.filter(status=WebsiteOverviewStatus.PUBLISHED),
+                _dated_day("published_on"),
+            )
+            newest_day(
+                overviews.filter(
+                    status=WebsiteOverviewStatus.CANCELLED, cancelled_at__isnull=False
+                ),
+                _local_date("cancelled_at"),
+            )
         if self.entry_scope is not None:
-            newest(self.entry_scope)
+            newest_moment(self.entry_scope, "occurred_at")
+
         per_source = [0] * len(reads)
-        if reads:
-            first, *rest = reads
-            for moment, source in first.union(*rest, all=True) if rest else first:
-                moments.append(moment)
-                per_source[source] += 1
+        first, *rest = reads
+        for moment, day, read in first.union(*rest, all=True) if rest else first:
+            moments.append(moment if moment is not None else _end_of_day(day))
+            per_source[read] += 1
         # **Every source answered in full**: nothing older exists anywhere, so
         # the whole chronology is what a bound would make the caller read anyway
         # — and reading it as such trusts every row at once, where a bound on
@@ -1894,50 +2035,67 @@ class _ChronologySources:
         moments.sort(reverse=True)
         return moments[batch - 1]
 
-    def load(self, bound: datetime | None) -> tuple[list[Entry], list[ChangeEvent]]:
+    def load(
+        self, bound: datetime | None
+    ) -> tuple[list[Entry], list[ChangeEvent], list[TimelineItem]]:
         order = ("-occurred_at", "-created_at", "-id")
-        if bound is None:
+        # A record's row is keyed at the end of its day, so its row is at or
+        # after the bound exactly when its day is on or after the bound's day.
+        since = _local_day(bound) if bound is not None else None
+        records: list[TimelineItem] = []
+        if self.only != TIMELINE_FILTER_ENTRIES:
+            records = projected_milestones(
+                matter=self.matter,
+                user=self.user,
+                today=self.day,
+                since=since,
+                include_facts=False,
+            )
+        projected = [*self.fact_rows, *records]
+        record_pks = [item.record.pk for item in records if item.record is not None]
+
+        if bound is None or since is None:
             everything = (
                 list(self.entry_scope.select_related("author", "organisation").chronological())
                 if self.entry_scope is not None
                 else []
             )
-            return everything, list(self.event_scope.select_related("actor").order_by(*order))
+            return (
+                everything,
+                list(self.event_scope.select_related("actor").order_by(*order)),
+                projected,
+            )
 
-        recent_records = [
-            item.record.pk
-            for item in self.projected
-            if item.record is not None and item.occurred_at >= bound
-        ]
+        start = bound
         # What the rows at or after the bound are anchored on or assembled from.
-        seed = (self.anchor_q & models.Q(occurred_at__gte=bound)) | models.Q(
-            event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=recent_records
+        seed = (self.anchor_q & models.Q(occurred_at__gte=start)) | models.Q(
+            event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=record_pks
         )
         if self.entry_scope is not None:
             seed |= models.Q(
                 event_type=ChangeEventType.ENTRY_ADDED,
-                object_id__in=self.entry_scope.filter(occurred_at__gte=bound).values("pk"),
+                object_id__in=self.entry_scope.filter(occurred_at__gte=start).values("pk"),
             )
         operations = self.event_scope.filter(seed).exclude(operation_id=None).values("operation_id")
-        events = list(
-            self.event_scope.filter(
-                seed
-                # Which operation wrote each projected record: one row each,
-                # and what decides whether a stage move is folded or a row.
-                | models.Q(
-                    event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=self.record_pks
-                )
-                # Every operation touched, whole.
-                | models.Q(operation_id__in=operations)
-            )
-            .select_related("actor")
-            .order_by(*order)
+        wanted = self.event_scope.filter(
+            seed
+            # Every operation touched, whole.
+            | models.Q(operation_id__in=operations)
         )
+        if self.only != TIMELINE_FILTER_ENTRIES:
+            # Except what folds onto a development read no further than here:
+            # those effects belong to a row before `since`, and read without
+            # their development they would stand as rows of their own.
+            wanted = wanted.exclude(
+                event_type__in=OPERATION_EFFECT_EVENT_TYPES,
+                operation_id__in=self._development_operations(before=since),
+            )
+        events = list(wanted.select_related("actor").order_by(*order))
         entries: list[Entry] = []
         if self.entry_scope is not None:
             entries = list(
                 self.entry_scope.filter(
-                    models.Q(occurred_at__gte=bound)
+                    models.Q(occurred_at__gte=start)
                     | models.Q(
                         pk__in=self.event_scope.filter(
                             event_type=ChangeEventType.ENTRY_ADDED, operation_id__in=operations
@@ -1947,7 +2105,7 @@ class _ChronologySources:
                 .select_related("author", "organisation")
                 .chronological()
             )
-        return entries, events
+        return entries, events, projected
 
 
 def _assemble_timeline(
@@ -2304,7 +2462,7 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     return resolved
 
 
-def _versions_shown_on_their_record(matter: Matter, *, final_texts: set[Any]) -> set[Any]:
+def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> set[Any]:
     """Evidence versions that read on a structured fact's own chronology row.
 
     **A file is not a chronology event.** Attaching two PDFs to a `Töövõit` is
@@ -2325,9 +2483,11 @@ def _versions_shown_on_their_record(matter: Matter, *, final_texts: set[Any]) ->
     `DocumentLink`, so the link query below cannot see it — and since
     docs/adr/0092 the send has a row of its own that renders those exact bytes,
     which made `+ Koja arvamus` draw «Arvamus välja» and a second «lisas
-    dokumendi» line for one act. ``final_texts`` is those versions, handed in by
-    the caller from the projection it has already made, so naming them here
-    costs nothing (docs/adr/0092 §5).
+    dokumendi» line for one act. The sends are the ones the chronology draws —
+    visible to this reader, historically sent, on or before ``day`` — asked of
+    the whole Matter rather than of the rows read so far, because a page read
+    from a day on must still know that an older send's file is not a row
+    (docs/adr/0092 §5, ENG-125). One query, whatever the Matter holds.
 
     Unscoped on purpose — this decides *where* a file reads, never *whether*.
     Visibility is applied twice over, by `scope_change_events` on the event
@@ -2337,15 +2497,20 @@ def _versions_shown_on_their_record(matter: Matter, *, final_texts: set[Any]) ->
     from app.documents.links import DocumentLink
     from app.documents.models import DocumentVersion
 
-    documents = set(
-        DocumentLink.objects.filter(document__matter=matter, entry__isnull=True).values_list(
-            "document_id", flat=True
-        )
+    final_texts = (
+        Submission.objects.filter(matter=matter)
+        .visible_to(user)
+        .historically_sent()
+        .filter(sent_at__lt=_start_of_day(day + timedelta(days=1)), final_version__isnull=False)
+        .values("final_version_id")
     )
-    if not documents:
-        return final_texts
-    return final_texts | set(
-        DocumentVersion.objects.filter(document_id__in=documents).values_list("id", flat=True)
+    linked = DocumentLink.objects.filter(document__matter=matter, entry__isnull=True).values(
+        "document_id"
+    )
+    return set(
+        DocumentVersion.objects.filter(
+            models.Q(document_id__in=linked) | models.Q(pk__in=final_texts)
+        ).values_list("id", flat=True)
     )
 
 

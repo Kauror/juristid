@@ -18,7 +18,7 @@ from __future__ import annotations
 import unicodedata
 import uuid
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import UTC, date, timedelta
 from typing import Any
 
 from django import forms
@@ -27,6 +27,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import F, Q
+from django.db.models.functions import ExtractYear
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -3400,11 +3401,16 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
         if value:
             applied_filters[name] = value
 
-    rows = list(documents)
-    evidence = [document for document in rows if not document.has_working_document]
-    working = [document for document in rows if document.has_working_document]
+    # Counted and sliced in the database (ENG-125). The table shows twelve rows
+    # of evidence, and a Matter holding hundreds used to load every one of them
+    # — and every working reference — to throw all but twelve away.
+    # `has_working_document` is `sharepoint_item_id` being set, so the split is
+    # a column filter rather than a property read per row.
+    evidence = documents.filter(sharepoint_item_id="")
+    working = list(documents.exclude(sharepoint_item_id=""))
     show_all = request.GET.get("koik") == "1"
-    visible_evidence = evidence if show_all else evidence[:DOCUMENT_PAGE_SIZE]
+    evidence_total = evidence.count()
+    visible_evidence = list(evidence if show_all else evidence[:DOCUMENT_PAGE_SIZE])
 
     for document in visible_evidence:
         # Resolved per row here rather than in the template, so the page cannot
@@ -3450,8 +3456,8 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "tab": "dokumendid",
             "nav_active": "teemad",
             "evidence_documents": visible_evidence,
-            "evidence_total": len(evidence),
-            "evidence_hidden": max(len(evidence) - len(visible_evidence), 0),
+            "evidence_total": evidence_total,
+            "evidence_hidden": max(evidence_total - len(visible_evidence), 0),
             "working_documents": working,
             "document_roles": _role_filter_choices(),
             "upload_roles": _upload_role_choices(),
@@ -3459,7 +3465,15 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             # Only the years this Matter actually has files from. A dropdown
             # offering ten empty years is a dropdown that teaches people the
             # filter does not work.
-            "document_years": sorted({document.created_at.year for document in rows}, reverse=True),
+            # Asked of the database, as the year each row's stored moment has
+            # in UTC — which is what `created_at.year` on the loaded rows used
+            # to answer.
+            "document_years": list(
+                documents.annotate(created_year=ExtractYear("created_at", tzinfo=UTC))
+                .order_by("-created_year")
+                .values_list("created_year", flat=True)
+                .distinct()
+            ),
             "document_filters": {"otsi": term, "roll": role, "aasta": year},
             "document_filters_active": bool(term or role or year),
             # Built from the *applied* values rather than from `request.GET`, so
