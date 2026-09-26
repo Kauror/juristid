@@ -509,6 +509,12 @@
       nothing here. The short delay folds a burst of ticks, a suggestion
       adopted or a chip row cleared, into one request.
 
+      The name filter is `app.js`'s, not an htmx `change[…]` filter: that is a
+      string compiled into a function, which the page's `script-src 'self'`
+      and `htmx.config.allowEval = false` refuse (ENG-124). A change to one of
+      the names in `data-similar-chips` makes `app.js` say `sarnased:chips`
+      to this region.
+
       The form's own values are preserved by construction: the fragment replaces
       only `#sarnased-teemad`, so a refusal, an intake swap or a chip being
       picked leaves whatever is typed exactly where it is.
@@ -531,9 +537,10 @@
     {% endcomment %}
     <div id="sarnased-teemad"
          hx-post="{% url 'related_materials:draft_suggestions' %}"
+         data-similar-chips="policy_areas legal_instruments source_organisations"
          hx-trigger="input changed delay:600ms from:#id_title,
                      input changed delay:600ms from:#id_brief_summary,
-                     change[target.name==='policy_areas'||target.name==='legal_instruments'||target.name==='source_organisations'] delay:250ms from:closest form,
+                     sarnased:chips delay:250ms,
                      sarnased:restored"
          hx-params="title,brief_summary,policy_areas,legal_instruments,source_organisations,csrfmiddlewaretoken"
          hx-target="this"
