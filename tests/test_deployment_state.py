@@ -230,7 +230,7 @@ def test_a_migrated_database_has_nothing_pending_and_nothing_unknown() -> None:
 
 
 def test_the_leaves_name_the_applications_they_belong_to() -> None:
-    """A backup manifest records these, so a restore can be matched to its code."""
+    """`deployment_readiness` reports these; the fingerprint records the applied ones."""
     state = deployment.migration_state()
     assert any(leaf.startswith("matters.") for leaf in state.leaves)
     assert all("." in leaf for leaf in state.leaves)

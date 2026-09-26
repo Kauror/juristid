@@ -661,9 +661,14 @@ unavailable, `check_evidence_integrity` below still runs, and what the restore
 has been proved to be is "structurally consistent", not "everything came back".
 
 Any difference in canonical counts, evidence digests, page-XML digests or
-migration leaves exits non-zero and names what moved. Rebuildable counts are
-reported and deliberately not compared: a restored database is *supposed* to
-have an empty search projection.
+migration leaves exits non-zero and names what moved. The migration leaves are
+the last *applied* migration of each app, read from the restored database, so a
+restore missing a migration is caught, and a restore onto a newer build that has
+not migrated yet is not mistaken for one — `deployment_readiness` is what says
+that build still has migrations to apply. Rebuildable counts are reported and
+deliberately not compared: a restored database is *supposed* to have an empty
+search projection. Operational counts (the search debt queue, the gate throttle,
+unfinished Uus teema forms) are reported and not compared either.
 
 ```bash
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py check_evidence_integrity
