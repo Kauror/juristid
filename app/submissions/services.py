@@ -300,9 +300,8 @@ def _refuse_a_future_send(sent_at: date | None) -> None:
         return
     sent_on: date = sent_at
     if isinstance(sent_at, datetime):
-        sent_on = (
-            timezone.localtime(sent_at).date() if timezone.is_aware(sent_at) else sent_at.date()
-        )
+        aware = sent_at if timezone.is_aware(sent_at) else timezone.make_aware(sent_at)
+        sent_on = timezone.localdate(aware)
     if sent_on > timezone.localdate():
         raise DomainError(SENT_DATE_IN_THE_FUTURE)
 
