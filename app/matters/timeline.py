@@ -1957,18 +1957,28 @@ class _ChronologySources:
         no_moment = Cast(models.Value(None), output_field=models.DateTimeField())
         no_day = Cast(models.Value(None), output_field=models.DateField())
 
+        columns = ("anchor_moment", "anchor_day", "anchor_source")
+
+        def source() -> Any:
+            # Which read a row came from, so completeness is known per source.
+            return models.Value(len(reads), output_field=models.IntegerField())
+
         def newest_moment(queryset: Any, field_name: str) -> None:
             reads.append(
-                queryset.annotate(anchor_moment=models.F(field_name), anchor_day=no_day)
+                queryset.annotate(
+                    anchor_moment=models.F(field_name), anchor_day=no_day, anchor_source=source()
+                )
                 .order_by("-anchor_moment")
-                .values_list("anchor_moment", "anchor_day")[:batch]
+                .values_list(*columns)[:batch]
             )
 
         def newest_day(queryset: Any, expression: Any) -> None:
             reads.append(
-                queryset.annotate(anchor_moment=no_moment, anchor_day=expression)
+                queryset.annotate(
+                    anchor_moment=no_moment, anchor_day=expression, anchor_source=source()
+                )
                 .order_by("-anchor_day")
-                .values_list("anchor_moment", "anchor_day")[:batch]
+                .values_list(*columns)[:batch]
             )
 
         if self.only != TIMELINE_FILTER_ENTRIES:
@@ -2010,10 +2020,17 @@ class _ChronologySources:
         if self.entry_scope is not None:
             newest_moment(self.entry_scope, "occurred_at")
 
+        per_source = [0] * len(reads)
         first, *rest = reads
-        for moment, day in first.union(*rest, all=True) if rest else first:
+        for moment, day, read in first.union(*rest, all=True) if rest else first:
             moments.append(moment if moment is not None else _end_of_day(day))
-        if len(moments) < batch:
+            per_source[read] += 1
+        # **Every source answered in full**: nothing older exists anywhere, so
+        # the whole chronology is what a bound would make the caller read anyway
+        # — and reading it as such trusts every row at once, where a bound on
+        # the oldest anchor would leave a page one row short whenever an anchor
+        # draws no row (the open step, above all) and cost a second round.
+        if len(moments) < batch or all(count < batch for count in per_source):
             return None
         moments.sort(reverse=True)
         return moments[batch - 1]

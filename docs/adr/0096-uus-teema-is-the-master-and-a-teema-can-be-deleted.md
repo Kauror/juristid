@@ -282,6 +282,18 @@ objects are by definition unreferenced, which is exactly what
 and a failure is logged, costs disk and nothing else, and is reclaimed by the
 pruner. That is the repository's established pattern and not a new one.
 
+> **Amended 2026-09-27 (ENG-032).** The derivative keys — a PDF's first-page
+> render, an image's downscaled copy — were collected beside the evidence keys
+> and deleted through the *evidence* store, where they name nothing, so every
+> render of a deleted Teema stayed on disk. Each key is now deleted through the
+> store that issued it, still after the commit. `check_derivative_integrity`
+> reports derivative rows whose object is gone and objects no row names;
+> `prune_orphaned_derivatives` (report by default, `--delete` to remove, the
+> same grace period as evidence) reclaims the latter and never opens the
+> evidence store. Leftovers from deletions made before this fix exist on hosts
+> that ran extraction; removing them is an operator action with its own
+> authorisation, not part of a deploy.
+
 **Search needs no rebuild and `INDEX_VERSION` does not move.** `SearchDocument`
 rows are owned and are removed in the same operation, so a deleted Matter leaves
 search immediately; and the projection is built from `Matter.objects`, so a
