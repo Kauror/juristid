@@ -784,11 +784,11 @@ def test_a_row_nobody_placed_reads_where_its_date_puts_it(page, base_url):
     if not control.evaluate("el => el.open"):
         control.locator(".inlineedit__trigger").click()
     expect(control.locator('select[aria-label="Hetkeseis"]')).to_be_visible()
-    # **The select submits itself** — `data-autosubmit` — and the response swaps
-    # `#teema-pais` wholesale. So there is no `Salvesta` left to press: reaching
-    # for it races the swap that detaches it, which is a click that times out on
-    # a save that already happened.
+    # **Choosing is not saving** (ENG-035): the header's stage select has no
+    # `data-autosubmit`, so the decision is its own `Salvesta`, and the response
+    # swaps `#teema-pais` wholesale.
     control.locator('select[aria-label="Hetkeseis"]').select_option(label="Riigikogus")
+    control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
     page.wait_for_load_state("networkidle")
     expect(stage_control(page).locator(".inlineedit__trigger")).to_contain_text("Riigikogus")
     _record_koda_opinion(page, sent_on=_past(2), filename="arvamus.pdf")
