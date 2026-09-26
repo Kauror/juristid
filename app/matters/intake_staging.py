@@ -428,6 +428,44 @@ def promote_intake_files(
     return promoted
 
 
+def without_staged_copies(
+    uploads: list[AcceptedUpload], staged: list[MatterIntakeFile]
+) -> list[AcceptedUpload]:
+    """The chosen files this session has not already staged.
+
+    A form posts its session from the first render (ENG-074), and the browser
+    empties the file input only once the stage answer arrives. A `Loo teema`
+    pressed while that upload is in flight therefore carries both: the session,
+    into which the server has by then staged the files, and the same files
+    again in the input. Promoting one and attaching the other filed every file
+    twice. The page now waits for the upload before it submits; this is the
+    server's half, for a browser that did not wait — a request that hung past
+    the page's limit, or a stage answer that never came back after it had
+    committed.
+
+    **Narrow on purpose.** A chosen file is dropped only when a file staged
+    into *this same session* has the same name and the same bytes, and each
+    staged file cancels at most one chosen file. It is not deduplication by
+    content: two different names with identical bytes are two files, and so
+    is a file chosen again after a refusal — that one arrives as a held
+    upload, which is never passed through here (`matter_create`). Both halves
+    of this overlap come from one form, one press and one set of bytes, so it
+    is one file sent twice rather than two a person chose.
+    """
+    remaining: dict[tuple[str, str], int] = {}
+    for item in staged:
+        key = (item.original_filename, item.sha256)
+        remaining[key] = remaining.get(key, 0) + 1
+    kept: list[AcceptedUpload] = []
+    for upload in uploads:
+        key = (upload.filename, hashlib.sha256(upload.content).hexdigest())
+        if remaining.get(key):
+            remaining[key] -= 1
+            continue
+        kept.append(upload)
+    return kept
+
+
 def consume_session(session: MatterIntakeSession) -> None:
     """The Teema exists, so the staging is over: stamp it and drop the bytes.
 

@@ -113,6 +113,63 @@ def test_every_file_chosen_together_arrives_together(page, base_url, tmp_path):
         expect(file_row(page, name)).to_be_visible()
 
 
+def test_loo_teema_pressed_while_uploading_files_each_file_once(page, base_url, tmp_path):
+    """A press mid-upload waits for the upload, and every file arrives once.
+
+    The race the test above lost intermittently, made deterministic. The stage
+    request reaches the server and is staged, and its answer is held in the
+    browser — the window in which the form used to post its session *and* the
+    same files still sitting in the input, so each became two Documents. The
+    page must hold the press until the answer lands, then submit once.
+    """
+    sign_in(page, base_url, MARTIN)
+
+    names = ["esimene.pdf", "teine.pdf", "kolmas.pdf"]
+    paths = []
+    for name in names:
+        path = tmp_path / name
+        path.write_bytes(PDF_BYTES)
+        paths.append(str(path))
+
+    held = []
+    # Staged on the server, answered to the page only when this test says so.
+    page.route("**/teemad/uus/failid/", lambda route: held.append((route, route.fetch())))
+    creates = []
+
+    def note_create(request) -> None:
+        if request.method == "POST" and request.url.endswith("/teemad/uus/"):
+            creates.append(request)
+
+    page.on("request", note_create)
+
+    open_create(page, base_url)
+    page.locator("#id_title").fill("Üleslaadimise ajal vajutatud")
+    name_a_next_step(page)
+    page.locator("#id_files").set_input_files(paths)
+    for _ in range(300):
+        if held:
+            break
+        page.wait_for_timeout(100)
+    assert held, "the files were never sent to staging"
+
+    button = page.get_by_role("button", name="Loo teema")
+    button.click()
+    expect(button).to_be_disabled()
+    page.wait_for_timeout(1000)
+    assert not creates, "the form was posted while its files were still uploading"
+
+    route, response = held.pop()
+    route.fulfill(response=response)
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    said = confirmation(page)
+    open_documents(page)
+
+    assert len(creates) == 1
+    assert "koos 3 failiga" in said, said
+    for name in names:
+        expect(file_row(page, name)).to_have_count(1)
+
+
 def test_a_file_taken_back_off_does_not_arrive(page, base_url, tmp_path):
     """The remove control is the other half of the contract."""
     sign_in(page, base_url, MARTIN)
