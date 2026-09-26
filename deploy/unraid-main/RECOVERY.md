@@ -215,9 +215,26 @@ one of the two passes has it. The reverse — an object in the mirror with no ro
 — is harmless and already has a name and a command: an orphan, and
 `prune_orphaned_evidence`.
 
-That argument holds only because evidence is append-only. It is: existing
-evidence is immutable through a database trigger, and removal goes through
-legal-hold rules rather than through the filesystem.
+That argument covers objects being *written*. Objects are also removed: an
+evidence object is immutable, but since Kustuta teema (ADR 0096) a deletion
+removes a Teema's rows in one transaction and its objects straight after that
+commits, and `prune_orphaned_evidence` removes objects no row names. A deletion
+that commits while the dump runs leaves its rows in the dump and its objects
+gone from the tree by the end — so a set whose membership was read only after
+the dump restored that Teema without its bytes (ENG-114).
+
+So membership is read at **both ends** of the dump. As the dump begins, the
+script lists the trees and copies exactly those objects into the pool before
+`pg_dump` starts; as it ends, it lists them again. The set names the union,
+less any object that vanished before the dump began (its rows' deletion had
+already committed, so the dump does not describe it). Every member must be in
+the pool, or the backup stops and leaves `….partial` — run it again. An object
+named whose row did not reach the dump is an orphan after a restore:
+`check_evidence_integrity` names it and `prune_orphaned_evidence` reclaims it. A
+pool with extras, never a set with gaps.
+
+The pools themselves stay append-only: the script never removes anything from
+them.
 
 ### What the script will not do
 
@@ -269,8 +286,9 @@ both and compares:
 * **fewer bytes with the right file count** is a failure. Something was
   truncated in place.
 * **more of either** is reported and is not a failure. The pools are shared
-  between sets rather than copied per set, and evidence is append-only, so an
-  older set verified today is *supposed* to find more than it recorded.
+  between sets rather than copied per set, and nothing ever removes an object
+  from a pool, so an older set verified today is *supposed* to find more than
+  it recorded.
 
 **Does this set still have its own objects?** From manifest version 3, level 2
 also reads the set's membership inventory and proves every path in it is a
@@ -556,8 +574,17 @@ scripts/deploy/juristid-restore.sh --project juristid-main --compose-file deploy
 
 The script verifies the set before writing anything, **refuses a database that
 already holds tables**, copies evidence with `--ignore-existing` so it can never
-overwrite something newer than the backup, and stops at the first `pg_restore`
-error rather than reporting a count nobody reads.
+overwrite something newer than the backup, and restores the database in **one
+transaction** (`pg_restore --single-transaction --exit-on-error`), so the first
+error rolls the whole database back rather than leaving a schema and part of
+the rows.
+
+If `pg_restore` fails, the database is therefore as empty as it was before the
+run and needs no dropping. The storage trees are not: the evidence and page XML
+were copied first, and a rerun onto the same data root is refused because they
+are no longer empty. The failure message names both trees. Find the cause in
+`pg_restore`'s own error, move `evidence/` and `legacy-source/` under the data
+root aside — do not delete them — and run the script again (ENG-115).
 
 If it refuses because the database is not empty: that is the intended behaviour,
 and there is no flag for it. Restoring over live data replaces every row written

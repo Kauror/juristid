@@ -229,9 +229,16 @@ present in the source when the second pass runs and is therefore in the pool.
 Objects appearing after that moment may enter the pool and are simply not
 members of this set — a pool with extras, never a set with gaps.
 
-This argument depends on evidence being append-only, which it is: existing
-evidence is immutable through a database trigger, and removal goes through
-legal-hold rules rather than the filesystem (ADR 0003, ADR 0014).
+That argument, as first written, depended on evidence being append-only, and it
+stopped being true with Kustuta teema (ADR 0096): a deletion removes a Teema's
+rows and, straight after the commit, its objects; `prune_orphaned_evidence`
+removes objects no row names. A deletion committing while the dump ran left its
+rows in the dump and its objects out of an inventory read after it (ENG-114).
+**Amended 2026-09-26:** membership is the union of a listing taken as the dump
+begins — whose objects are copied into the pool before `pg_dump` starts — and
+the listing taken after it, less objects that vanished before the dump began.
+Every member must be in the pool before the set is sealed. Objects remain
+immutable; the *pools* remain append-only; the *source tree* does not.
 
 ### Verification has three levels, and only the third means much
 

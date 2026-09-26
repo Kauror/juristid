@@ -53,19 +53,31 @@
 # CONSISTENCY
 #
 # `pg_dump` is transactionally consistent with itself. It is not consistent with
-# a filesystem someone is still writing to, and this system writes evidence
-# bytes *before* the DocumentVersion row that describes them commits. So the
-# mirror is synchronised twice, once before the dump and once after: any object
-# whose row entered the dump had its bytes written before the dump began, so
-# either the first pass or the second one has it. The reverse — an object in the
-# mirror with no row — is harmless and already has a name: an orphan.
+# a filesystem someone is still writing to — or deleting from.
 #
-# That argument depends on evidence being append-only. It is: existing evidence
-# is immutable through a database trigger, and deletion goes through legal-hold
-# rules rather than through the filesystem (docs/adr/0003, docs/adr/0014).
+# Writing: this system writes evidence bytes *before* the DocumentVersion row
+# that describes them commits. So the mirror is synchronised twice, once before
+# the dump and once after: any object whose row entered the dump had its bytes
+# written before the dump began, so either the first pass or the second one has
+# it. The reverse — an object in the mirror with no row — is harmless and
+# already has a name: an orphan.
+#
+# Deleting: an evidence object is immutable, but the tree has not been
+# append-only since Kustuta teema (docs/adr/0096). A deletion removes the
+# Teema's rows in one transaction and its objects straight after that commits,
+# and `prune_orphaned_evidence` removes objects no row names. A deletion that
+# commits after the dump's snapshot leaves the rows *in* the dump and the
+# objects gone from the tree before the dump ends. Membership read from the
+# tree after the dump alone therefore named a set whose restore brought the
+# Teema back without its bytes (ENG-114). It is now read at both ends of the
+# dump; "What belongs to this set" below has the argument.
+#
+# The pools stay append-only: nothing here removes anything from them, so an
+# object the first pass copied is still there when the set is sealed.
 #
 # THIS SCRIPT NEVER DELETES ANYTHING. Not an old backup set, not a mirror entry,
-# not a partial artifact belonging to another run. Retention is an operations
+# not a partial artifact belonging to another run. The one exception is its own
+# scratch listings, in a private temporary directory removed on exit. Retention is an operations
 # decision nobody has taken yet (docs/open-decisions.md), and creating backups
 # safely is the more urgent half.
 
@@ -184,6 +196,11 @@ PARTIAL_DIR="$SET_DIR.partial"
 mkdir -p "$BACKUP_ROOT/sets" "$EVIDENCE_MIRROR" "$LEGACY_MIRROR"
 mkdir "$PARTIAL_DIR"
 
+# The listings taken as the dump begins (see "What belongs to this set"). Not in
+# the set: they are working state, and a set carries only what it checksums.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf -- "$SCRATCH"' EXIT
+
 note "Juristid backup"
 note "  project      $JURISTID_PROJECT"
 note "  data root    $DATA_ROOT"
@@ -238,15 +255,38 @@ sync_tree() {
     note "  --allow-empty $label was given but $label holds $source_count file(s); the flag changed nothing and can be dropped"
   fi
 
-  # No --delete, deliberately. These trees are append-only, so there is nothing
-  # legitimate to delete, and a mirror that can delete is a mirror that can
-  # propagate an accident at the speed of rsync.
+  # No --delete, deliberately. The mirror is a pool that only ever grows: an
+  # object that left the source may still be named by an earlier set, or by
+  # this one (see "What belongs to this set"), and a mirror that can delete is a
+  # mirror that can propagate an accident at the speed of rsync.
   rsync -a --numeric-ids "$source/" "$mirror/"
 }
 
 step "Evidence and page XML, first pass"
 sync_tree "evidence" "$EVIDENCE_SOURCE" "$EVIDENCE_MIRROR"
 sync_tree "legacy-source" "$LEGACY_SOURCE" "$LEGACY_MIRROR"
+
+# What the trees hold as the dump begins, and those exact objects in the pool
+# before it does. Read "What belongs to this set" for why.
+#
+# The copy is driven by the listing and runs to completion before `pg_dump`
+# starts. rsync's exit 24 — a listed file vanished — is the one outcome that is
+# not an error here: an object removed before the dump began was removed after
+# its rows' deletion committed, so the dump does not describe it.
+step "Membership as the dump begins"
+pin_listing() {
+  local label="$1" source="$2" mirror="$3" listing="$4" status=0
+  capture_inventory "$source" "$listing"
+  rsync -a --numeric-ids --from0 --files-from="$listing" "$source/" "$mirror/" || status=$?
+  case "$status" in
+    0) : ;;
+    24) note "  $label: an object left the tree before the dump began; it is not a member" ;;
+    *) die "copying $label's listed objects into the pool failed (rsync exit $status). The partial set is at $PARTIAL_DIR." ;;
+  esac
+  note "  $label  $(inventory_count "$listing") file(s)"
+}
+pin_listing "evidence" "$EVIDENCE_SOURCE" "$EVIDENCE_MIRROR" "$SCRATCH/evidence.before"
+pin_listing "legacy-source" "$LEGACY_SOURCE" "$LEGACY_MIRROR" "$SCRATCH/legacy-source.before"
 
 # --------------------------------------------------------------------------
 # The database
@@ -276,44 +316,72 @@ note "  sha256         ${DUMP_SHA}"
 # What belongs to this set
 # --------------------------------------------------------------------------
 #
-# Between the dump and the second sync, and both halves of that are the point.
+# Every object in the tree at either end of the dump: the listing taken as it
+# began, less what vanished before it began, plus a listing taken as it ends.
 #
-# After the dump, because bytes are written before the row describing them
-# commits: anything the dump refers to was on disk before the dump began, so an
-# inventory taken now names it. And before the second sync, because every path
-# named here is therefore present in the source when the next pass runs — so the
-# pass guarantees its bytes reach the pool. Objects appearing after this moment
-# may still enter the pool and are simply not members of this set, which is the
-# harmless direction: a pool with extras, never a set with gaps.
+# The end, because bytes are written before the row describing them commits:
+# anything the dump refers to was on disk before the dump began, so a listing
+# taken now names it — and taken before the second sync, so every path it names
+# is in the source when that pass runs and its bytes reach the pool.
 #
-# Measured against the source tree rather than the pool, because the source is
-# what this set is a backup *of*. The verifier recomputes the same totals against
-# the pool, and a disagreement is exactly the truncation worth catching.
+# The beginning, because a deletion may commit while the dump runs. The dump's
+# snapshot still holds that Teema's rows, and by the end its objects are gone
+# from the tree (ENG-114). The listing as the dump began names them, and they
+# were copied into the pool before the dump started, so the set can still name
+# them and a restore brings them back beside their rows. An object in that
+# listing that vanished before the copy reached it was removed before the dump
+# began, after its rows' deletion committed: not a member, and not in the pool.
+#
+# The union is the harmless direction. An object named here whose row did not
+# reach the dump is an orphan after a restore — `check_evidence_integrity` names
+# it and `prune_orphaned_evidence` reclaims it: a pool with extras, never a set
+# with gaps. One case is left, and it is narrow: an object written in the second
+# or two between the beginning listing and the dump's start, its row committed
+# before the snapshot, and its Teema deleted before the second pass. Nothing
+# names it, the post-restore integrity check reports the missing object, and the
+# next backup is whole.
 
 step "Membership of this set"
 
 EVIDENCE_INVENTORY="$(inventory_name_for evidence)"
 LEGACY_INVENTORY="$(inventory_name_for legacy-source)"
 
-capture_inventory "$EVIDENCE_SOURCE" "$PARTIAL_DIR/$EVIDENCE_INVENTORY"
-capture_inventory "$LEGACY_SOURCE" "$PARTIAL_DIR/$LEGACY_INVENTORY"
-
-EVIDENCE_MEMBERS="$(inventory_count "$PARTIAL_DIR/$EVIDENCE_INVENTORY")"
-LEGACY_MEMBERS="$(inventory_count "$PARTIAL_DIR/$LEGACY_INVENTORY")"
-EVIDENCE_MEMBER_BYTES="$(inventory_selected_bytes "$EVIDENCE_SOURCE" "$PARTIAL_DIR/$EVIDENCE_INVENTORY")"
-LEGACY_MEMBER_BYTES="$(inventory_selected_bytes "$LEGACY_SOURCE" "$PARTIAL_DIR/$LEGACY_INVENTORY")"
-
-# Counts only. The paths themselves stay in the inventory file: they are object
-# names from the Chamber's corpus and there is no reason for them to be in a
-# deployment log.
-note "  evidence       $EVIDENCE_MEMBERS active file(s), $EVIDENCE_MEMBER_BYTES byte(s)"
-note "  legacy-source  $LEGACY_MEMBERS active file(s), $LEGACY_MEMBER_BYTES byte(s)"
+capture_inventory "$EVIDENCE_SOURCE" "$SCRATCH/evidence.after"
+capture_inventory "$LEGACY_SOURCE" "$SCRATCH/legacy-source.after"
 
 step "Evidence and page XML, second pass"
 # Catches any object whose row entered the dump while the first pass was
 # running. Safe to repeat because the objects are immutable.
 sync_tree "evidence" "$EVIDENCE_SOURCE" "$EVIDENCE_MIRROR"
 sync_tree "legacy-source" "$LEGACY_SOURCE" "$LEGACY_MIRROR"
+
+inventory_present_in "$EVIDENCE_MIRROR" "$SCRATCH/evidence.before" "$SCRATCH/evidence.pinned"
+inventory_present_in "$LEGACY_MIRROR" "$SCRATCH/legacy-source.before" "$SCRATCH/legacy-source.pinned"
+inventory_union "$SCRATCH/evidence.pinned" "$SCRATCH/evidence.after" "$PARTIAL_DIR/$EVIDENCE_INVENTORY"
+inventory_union "$SCRATCH/legacy-source.pinned" "$SCRATCH/legacy-source.after" "$PARTIAL_DIR/$LEGACY_INVENTORY"
+
+# Every member in the pool before the set can say it has one. A member missing
+# here appeared after the dump began and vanished before the second pass —
+# exactly the kind of set this script exists not to seal.
+if inventory_first_missing "$EVIDENCE_MIRROR" "$PARTIAL_DIR/$EVIDENCE_INVENTORY" >/dev/null ||
+  inventory_first_missing "$LEGACY_MIRROR" "$PARTIAL_DIR/$LEGACY_INVENTORY" >/dev/null; then
+  die "an object this set names is not in the pool: it appeared after the dump began and was removed before it could be copied. A set sealed now would have a gap. Nothing has been deleted; the partial set is at $PARTIAL_DIR. Take the backup again."
+fi
+
+# Measured in the pool, where nothing is removed, rather than in the source: a
+# member may legitimately have left the source while this ran. The verifier
+# recomputes the same totals from the pool, so anything that changes a member
+# after the set is sealed still disagrees with the manifest.
+EVIDENCE_MEMBERS="$(inventory_count "$PARTIAL_DIR/$EVIDENCE_INVENTORY")"
+LEGACY_MEMBERS="$(inventory_count "$PARTIAL_DIR/$LEGACY_INVENTORY")"
+EVIDENCE_MEMBER_BYTES="$(inventory_selected_bytes "$EVIDENCE_MIRROR" "$PARTIAL_DIR/$EVIDENCE_INVENTORY")"
+LEGACY_MEMBER_BYTES="$(inventory_selected_bytes "$LEGACY_MIRROR" "$PARTIAL_DIR/$LEGACY_INVENTORY")"
+
+# Counts only. The paths themselves stay in the inventory file: they are object
+# names from the Chamber's corpus and there is no reason for them to be in a
+# deployment log.
+note "  evidence       $EVIDENCE_MEMBERS member file(s), $EVIDENCE_MEMBER_BYTES byte(s)"
+note "  legacy-source  $LEGACY_MEMBERS member file(s), $LEGACY_MEMBER_BYTES byte(s)"
 
 # --------------------------------------------------------------------------
 # Manifest
