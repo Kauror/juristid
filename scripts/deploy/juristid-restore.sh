@@ -18,7 +18,7 @@
 #      leaves a half-populated database that looks like a working one
 #   3. refuse a database that still holds a register
 #   4. evidence and page XML into the data root, never overwriting
-#   5. the database
+#   5. the database, in one transaction
 #   6. hand back to the operator, who verifies before anything is published
 #
 # Step 1 comes before docker and rsync are even required, and that is the same
@@ -101,7 +101,10 @@ Usage:
 
 From manifest version 3 a set names its own objects and only those are copied.
 Refuses a database that already contains a register, and refuses to restore a
-version 3 set onto storage that is not empty. Restores nothing partially.
+version 3 set onto storage that is not empty. The database is restored in one
+transaction, so a failed restore leaves it as empty as it was found; the
+evidence and page XML are copied before it, and a failure says which trees to
+move aside before running again.
 USAGE
 }
 
@@ -347,14 +350,32 @@ juristid_compose cp "$SET_DIR/database.dump" "db:$CONTAINER_PATH"
 # --exit-on-error, so a restore stops at the first failure rather than
 # continuing and reporting a count of errors at the end that nobody reads. A
 # partially restored database is the failure mode this whole script is arranged
-# against.
+# against — and --exit-on-error alone did not prevent one: every statement
+# before the failing one had committed, so a restore that died in the data left
+# the schema and part of the rows behind (ENG-115). --single-transaction makes
+# the whole restore one transaction, so a failure rolls all of it back and the
+# database is as empty as step 3 found it.
+#
+# The storage trees are the other half. Step 4 has already copied this set's
+# objects into them, and a rerun onto the same data root is refused because they
+# are no longer empty — so the failure names them, rather than leaving the
+# operator to meet that refusal second.
+restore_failed() {
+  local message="pg_restore failed, and nothing it wrote was kept: the restore ran as one transaction, so the database '$DB_NAME' is as empty as it was before this run."
+  if [ "$DATABASE_ONLY" -eq 0 ]; then
+    message="$message Step 4 had already copied this set's objects into $DATA_ROOT/evidence and $DATA_ROOT/legacy-source, and a rerun refuses storage that is not empty: move those two trees aside (do not delete them — they are this set's evidence) before running again."
+  fi
+  die "$message Read pg_restore's error above and fix its cause first. Do not continue to a public cutover from here."
+}
+
 juristid_compose exec -T db pg_restore \
   --no-password \
   --username="$DB_USER" \
   --dbname="$DB_NAME" \
   --exit-on-error \
+  --single-transaction \
   "$CONTAINER_PATH" ||
-  die "pg_restore failed. The database is now partially restored and must not be started against: drop it, recreate it, and restore again. Do not continue to a public cutover from here."
+  restore_failed
 
 note "  restored"
 

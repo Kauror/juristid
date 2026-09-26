@@ -183,9 +183,9 @@ check_one_mirror() {
     die "$label mirror holds $actual_files file(s); this set was sealed against $recorded_files. Objects are missing. Do not treat this set as a backup of the evidence it names."
   fi
 
-  # Growth is legitimate and expected. Evidence is append-only, the mirror is
-  # shared between sets rather than copied per set, and every backup taken after
-  # this one adds to it. An older set verified today is therefore *supposed* to
+  # Growth is legitimate and expected. Nothing removes an object from the
+  # mirror, it is shared between sets rather than copied per set, and every
+  # backup taken after this one adds to it. An older set verified today is therefore *supposed* to
   # find more than it recorded.
   if [ "$actual_files" -gt "$recorded_files" ]; then
     note "  $label: $actual_files file(s), $((actual_files - recorded_files)) more than when this set was sealed (append-only; expected on an older set)."
