@@ -560,34 +560,52 @@ def plan_matter_deletion(matter: Matter) -> DeletionPlan:
     )
 
 
-def _forget_storage(keys: Sequence[str]) -> None:
-    """Best effort, after the commit, with the pruner as the guarantee.
+def _forget_storage(evidence_keys: Sequence[str], derivative_keys: Sequence[str] = ()) -> None:
+    """Best effort, after the commit, with the pruners as the guarantee.
 
     Storage cleanup is deliberately *not* part of the transaction. The bytes are
     outside PostgreSQL and cannot be rolled back, so deleting them before the
     commit would destroy evidence a rollback then claims still exists.
 
+    **Each key through its own store.** Evidence and derivatives are two storage
+    classes with two roots (docs/adr/0014), and a key means nothing outside the
+    store that issued it. Every key used to be deleted through the evidence
+    store, where a derivative key names nothing — so each delete "succeeded"
+    without an error and every PDF render and downscaled image of a deleted
+    Teema stayed on disk, in the backups and on the appdata share (ENG-032).
+    Which store a key belongs to is known from the row it was read off
+    (`DeletionPlan.evidence_keys` / `.derivative_keys`), never guessed from its
+    shape.
+
     Afterwards, an object whose row is gone is by definition unreferenced, which
-    is precisely what ``prune_orphaned_evidence`` finds and removes — so a
-    failure here costs disk and nothing else, and it is tracked rather than
-    lost. The attempt is made anyway, because reclaiming at once is better than
-    reclaiming at the next run (app/documents/management/commands).
+    is precisely what ``prune_orphaned_evidence`` and
+    ``prune_orphaned_derivatives`` find and remove — so a failure here costs
+    disk and nothing else, and it is tracked rather than lost. The attempt is
+    made anyway, because reclaiming at once is better than reclaiming at the
+    next run (app/documents/management/commands).
     """
-    if not keys:
-        return
+    from app.documents.extraction.orchestrator import derivative_storage
     from app.documents.services import evidence_storage
 
-    storage = evidence_storage()
-    for key in keys:
-        try:
-            storage.delete(key)
-        except Exception:  # pragma: no cover - reported, never fatal
-            logger.warning(
-                "matter deletion could not remove evidence object %s; "
-                "it is unreferenced and prune_orphaned_evidence will reclaim it",
-                key,
-                extra={"storage_key": key},
-            )
+    for label, storage_for, keys, pruner in (
+        ("evidence", evidence_storage, evidence_keys, "prune_orphaned_evidence"),
+        ("derivative", derivative_storage, derivative_keys, "prune_orphaned_derivatives"),
+    ):
+        if not keys:
+            continue
+        storage = storage_for()
+        for key in keys:
+            try:
+                storage.delete(key)
+            except Exception:  # pragma: no cover - reported, never fatal
+                logger.warning(
+                    "matter deletion could not remove %s object %s; "
+                    "it is unreferenced and %s will reclaim it",
+                    label,
+                    key,
+                    pruner,
+                    extra={"storage_key": key},
+                )
 
 
 def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
@@ -686,6 +704,5 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
                 "evidence_objects": len(plan.evidence_keys),
             },
         )
-        keys = (*plan.evidence_keys, *plan.derivative_keys)
-        transaction.on_commit(lambda: _forget_storage(keys))
+        transaction.on_commit(lambda: _forget_storage(plan.evidence_keys, plan.derivative_keys))
     return plan
