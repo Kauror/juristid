@@ -169,7 +169,7 @@ rather than read.
     {% comment %}
       The three editors below are behind `can_write`, like every other inline
       editor on this page and in the rail. A reader was offered the same
-      disclosures, picked a name, and the `data-autosubmit` posted to a route
+      disclosures, picked a name, and the form posted to a route
       that answers a non-writer with 404 — which htmx does not swap, so nothing
       on the page said anything and the select sat showing a choice the record
       never took. The value is still read either way; only the control that
@@ -190,8 +190,15 @@ rather than read.
               hx-post="{% url 'matters:update_field' pk=matter.pk field='owner' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
+          {% comment %}
+            No `data-autosubmit` (ENG-035). Choosing a person here reassigns
+            the Teema, notifies them and moves the open step to them, and on
+            Chromium/Windows every ArrowDown on a closed select is a `change` —
+            so committing on change made one arrow key a reassignment. The
+            decision is `Salvesta`, for the mouse and the keyboard alike.
+          {% endcomment %}
           <select class="field__input field__input--compact" name="owner"
-                  aria-label="Vastutaja" data-autosubmit>
+                  aria-label="Vastutaja">
             <option value="">Määramata</option>
             {% for person in owners %}
               <option value="{{ person.pk }}" {% if matter.owner_id == person.pk %}selected{% endif %}>

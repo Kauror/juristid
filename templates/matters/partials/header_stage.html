@@ -34,8 +34,13 @@ them on every note would close whichever one somebody had open
         and kept without reading as an ordinary current choice
         (app/workflow/selectors.py, docs/adr/0032 §Amendment).
       {% endcomment %}
+      {% comment %}
+        No `data-autosubmit` (ENG-035): a stage change is a recorded fact on
+        Menetluse kulg, and a keyboard walk through the options is not a
+        decision. `Salvesta` is.
+      {% endcomment %}
       <select class="field__input field__input--compact" name="stage"
-              aria-label="Hetkeseis" data-autosubmit>
+              aria-label="Hetkeseis">
         <option value="">—</option>
         {% for stage in stages %}
           <option value="{{ stage.pk }}" {% if matter.stage_id == stage.pk %}selected{% endif %}>

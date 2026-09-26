@@ -1578,15 +1578,56 @@
       });
     });
 
-    /* An inline header edit commits on change; the visible Salvesta button
-       remains for keyboard users and for anyone with JS disabled. */
+    /* A filter commits a *chosen* value, never a value passed through
+       (ENG-035). `data-autosubmit` is on read-only filters only — Dokumendid'
+       Roll and Aasta, the two review queues — and never on a business write,
+       whose decision is its own Salvesta.
+
+       On Chromium/Windows a closed select fires `change` for every ArrowDown,
+       ArrowUp and type-ahead letter, so committing on `change` alone reloaded
+       the page at each keystroke and a keyboard user could never reach the
+       option they wanted. A pointer choice still commits at once; a keyboard
+       walk commits on Enter, or when the person leaves the control holding a
+       value other than the one it last committed. The visible submit button
+       stays for everybody, and for anybody without scripting. */
     scope.querySelectorAll("[data-autosubmit]").forEach(function (control) {
       if (!once(control, "Autosubmit")) {
         return;
       }
+      var committed = control.value;
+      var byKeyboard = false;
+      var commit = function () {
+        if (!control.form || control.value === committed) {
+          return;
+        }
+        committed = control.value;
+        control.form.requestSubmit();
+      };
+      control.addEventListener("pointerdown", function () {
+        byKeyboard = false;
+      });
+      control.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          byKeyboard = false;
+          if (control.value !== committed) {
+            event.preventDefault();
+            commit();
+          }
+          return;
+        }
+        if (event.key !== "Tab" && event.key !== "Shift") {
+          byKeyboard = true;
+        }
+      });
       control.addEventListener("change", function () {
-        if (control.form) {
-          control.form.requestSubmit();
+        if (!byKeyboard) {
+          commit();
+        }
+      });
+      control.addEventListener("blur", function () {
+        if (byKeyboard) {
+          byKeyboard = false;
+          commit();
         }
       });
     });
