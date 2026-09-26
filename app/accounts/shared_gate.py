@@ -33,6 +33,7 @@ import functools
 import hashlib
 import hmac
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -57,12 +58,18 @@ GATE_PERSONA_CHOSEN_AT = "shared_gate:persona_chosen_at"
 EXEMPT_PREFIXES = ("/healthz", "/static/")
 
 
-class GateLocked(Exception):
-    """This client has spent its attempts. Carries the wait, in seconds."""
+@dataclass(frozen=True)
+class AttemptOutcome:
+    """What one password attempt came to.
 
-    def __init__(self, seconds: int) -> None:
-        super().__init__(f"locked for {seconds}s")
-        self.seconds = seconds
+    ``reason`` is ``"locked_out"`` or ``"bad_password"`` when the attempt was
+    refused, for the audit row; the page never shows it. ``wait`` is the lockout
+    the client is now under, in seconds, or 0.
+    """
+
+    passed: bool
+    reason: str = ""
+    wait: int = 0
 
 
 # -- the mode --------------------------------------------------------------
@@ -158,14 +165,57 @@ def lockout_seconds_remaining(request: HttpRequest) -> int:
     return record.seconds_remaining()
 
 
-def require_not_locked(request: HttpRequest) -> None:
-    remaining = lockout_seconds_remaining(request)
-    if remaining:
-        raise GateLocked(remaining)
+def attempt(request: HttpRequest, supplied: str) -> AttemptOutcome:
+    """Spend one attempt: check the lockout, verify the password, record the result.
+
+    **One step, under this client's row lock.** The lockout used to be read
+    without a lock, the password verified, and only the *failure* counted under
+    the lock. Attempts fired together all read "not locked", all had their
+    password checked, and queued up only to be counted — so the attempt that
+    reached the limit armed the lockout after every attempt already in flight
+    had been verified, and a burst of parallel connections got
+    max(limit, parallelism) guesses per window rather than the limit (ENG-070).
+
+    Now the row is taken before anything is decided. Attempts from one client
+    take turns through check, verification and count, so the attempt after the
+    one that armed the lockout finds it armed and is refused without its
+    password ever being checked. The limit is exactly `SHARED_GATE_MAX_ATTEMPTS`
+    verifications, however the attempts arrive: the one that reaches the limit
+    is verified and arms the lockout, and every later one waits it out.
+
+    The lock is held while the password hash runs. That is deliberate and it is
+    bounded: the row is one client's, so it serialises one client's attempts
+    against each other and nobody else's (see `record_failure` on why the lock is
+    a row and never the table). A request that finds the client locked out is
+    refused before verification, so it holds the row only for a read.
+
+    A correct password clears the client's state inside the same step, which is
+    what stops a request that was already locked out from resetting the counter
+    merely because it happened to carry the right password: it never reaches
+    the check.
+    """
+    with transaction.atomic():
+        record = _locked_throttle(client_key(request))
+        remaining = record.seconds_remaining()
+        if remaining:
+            return AttemptOutcome(passed=False, reason="locked_out", wait=remaining)
+        if not verify_password(supplied):
+            wait = record.register_failure(
+                max_attempts=settings.SHARED_GATE_MAX_ATTEMPTS,
+                base_seconds=settings.SHARED_GATE_LOCKOUT_SECONDS,
+                ceiling_seconds=settings.SHARED_GATE_MAX_LOCKOUT_SECONDS,
+            )
+            return AttemptOutcome(passed=False, reason="bad_password", wait=wait)
+        record_success(request)
+    return AttemptOutcome(passed=True)
 
 
 def record_failure(request: HttpRequest) -> int:
     """Count one wrong password, and return the resulting wait in seconds.
+
+    The counting half of `attempt`, which is what the sign-in view calls. A
+    caller that verifies a password *before* taking this lock reopens the race
+    `attempt` closes.
 
     Per client, never global. A global counter would let one attacker lock the
     department out of its own system, which is a denial-of-service primitive
