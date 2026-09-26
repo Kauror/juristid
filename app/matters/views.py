@@ -242,6 +242,7 @@ from app.submissions import embedded as opinions
 from app.submissions.forms import (
     CREATE_PREFIX,
     REGISTER_PREFIX,
+    MarkSentForm,
     RegisterSentOpinionForm,
     SentOpinionEditForm,
     SubmissionCreateForm,
@@ -3395,7 +3396,12 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     # Matter that then read `1 koostamisel` beside a sent opinion of the same
     # text (R2-01).
     unregistered = unregistered_opinion_documents(matter, viewer=request.user)
-    drafts = open_drafts(matter, viewer=request.user)
+    drafts: list[Any] = open_drafts(matter, viewer=request.user)
+    # `Märgi saadetuks` asks who the letter goes to, on each draft that has its
+    # file, opening on the addressees the draft already names (ENG-041).
+    for draft in drafts:
+        if draft.final_version_id:
+            draft.send_form = MarkSentForm(draft=draft)
 
     # Historical letters already filed onto this Matter. Imported lazily for the
     # same reason `_historical_context` is: `app.legacy_import` imports the

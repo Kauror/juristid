@@ -49,7 +49,7 @@ from django.db.models import Q
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.submissions.enums import RecipientRole, SubmissionStatus
-from app.submissions.models import Submission
+from app.submissions.models import Submission, addressee_prefetch
 
 #: The query-string value the Dokumendid role filter uses for the union above.
 #:
@@ -252,5 +252,7 @@ def open_drafts(matter: Any, *, viewer: Any) -> list[Submission]:
         Submission.objects.filter(matter=matter, status=SubmissionStatus.DRAFT)
         .visible_to(viewer)
         .select_related("final_version")
+        # What the draft's `Märgi saadetuks` opens on (ENG-041).
+        .prefetch_related(addressee_prefetch())
         .order_by("-created_at")
     )

@@ -7394,6 +7394,20 @@ button.accordion__action:focus-visible {
   margin: 0 0 0 auto;
 }
 
+/* `Märgi saadetuks` asks who the letter goes to (ENG-041): a list box, the
+   channel and the button. They wrap under the title rather than squeezing it,
+   and the box never grows wider than the row at a phone width. */
+.draftrow__form--send {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  max-width: 100%;
+}
+
+.draftrow__addressees {
+  flex: 1 1 16rem;
+  max-width: 28rem;
+}
+
 /* A working reference looks like the opposite of evidence: dashed, arrowed,
    and captioned with the fact that it keeps changing. */
 .badge--sharepoint {
