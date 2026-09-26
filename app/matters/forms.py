@@ -7365,6 +7365,7 @@ class MatterProgressForm(forms.Form):
         from app.matters.services import (
             DEVELOPMENT_CANNOT_BE_FUTURE,
             DEVELOPMENT_NEEDS_SOMETHING,
+            development_save_says_something,
         )
 
         cleaned = super().clean() or {}
@@ -7392,13 +7393,24 @@ class MatterProgressForm(forms.Form):
         # `attachments` is read off `cleaned_data` rather than off `self.files`,
         # so a picker whose files the field itself refused does not count as
         # content and the person is told about the file rather than about this.
-        if not self.errors and not any(
-            (
-                (cleaned.get("title") or "").strip(),
-                cleaned.get("attachments") or (),
-                cleaned.get("stage") is not None,
-                text,
-            )
+        #
+        # **The operation's own rule, asked early** (ENG-060). A stage counts
+        # only when it moves the file, and this form knows the stage the page
+        # was drawn with — `phases.stage_key`, read by the same view that drew
+        # the select. That can be stale by the time the save lands, so it is a
+        # pre-check and nothing more: `add_procedural_development` asks again on
+        # the locked Matter and its answer is the one that counts. Without a
+        # `phases` there is no drawn stage to compare with, and any chosen stage
+        # is left for the operation to judge.
+        stage = cleaned.get("stage")
+        drawn_at = getattr(self.phases, "stage_key", None) if self.phases is not None else None
+        moves_stage = stage is not None and (drawn_at is None or stage.key != drawn_at)
+        if not self.errors and not development_save_says_something(
+            title=cleaned.get("title"),
+            note="",
+            has_files=bool(cleaned.get("attachments")),
+            moves_stage=moves_stage,
+            next_text=text,
         ):
             self.add_error(None, DEVELOPMENT_NEEDS_SOMETHING)
         return cleaned

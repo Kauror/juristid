@@ -4210,6 +4210,53 @@ def correct_external_position(
 DEVELOPMENT_NEEDS_SOMETHING = (
     "Kirjuta, mis juhtus, või lisa fail, uus hetkeseis või järgmine tegevus."
 )
+#: What a `Muuda` that would take the last words off a file-less `Märge` is told.
+#:
+#: Its own sentence, because the correction form has no file control, no
+#: `Hetkeseis` and no next step to offer: telling somebody to add one of those
+#: would point at controls the form does not have. The way out of a row that
+#: should not be there at all is `Kustuta` (docs/adr/0102), and the sentence says
+#: so (ENG-060).
+DEVELOPMENT_CORRECTION_LEAVES_NOTHING = (
+    "Märge ei saa jääda tühjaks. Kirjuta, mis juhtus, või kustuta märge, kui see on vale."
+)
+
+
+def development_row_says_something(*, title: Any, note: Any, has_files: bool) -> bool:
+    """What a `Märge` row itself holds: a sentence, a note, or a file.
+
+    **The row's own content, and nothing the save beside it did.** A `Märge` may
+    also have moved the `Hetkeseis` or set the next step, and those are real
+    effects of the operation that wrote it — but they are facts about the Matter
+    and the `NextAction`, correctable on their own surfaces, not something this
+    row says. Reading them as row content would make a correction's answer depend
+    on whether removing the `Märge` should take them with it, which is an open
+    question this rule must not decide (ENG-020). The date and `Etapp` are not
+    content either: the panel fills both in, so every press would carry them.
+    """
+    return bool((title or "").strip() or (note or "").strip() or has_files)
+
+
+def development_save_says_something(
+    *, title: Any, note: Any, has_files: bool, moves_stage: bool, next_text: Any
+) -> bool:
+    """docs/adr/0105 §4: a `Märge` saves if it writes *something*.
+
+    The row's own content (:func:`development_row_says_something`), or a
+    `Hetkeseis` that actually **moves**, or a next step. ``moves_stage`` is the
+    effect and not the request: choosing the stage the file already has makes
+    `change_stage` write nothing, so it is not content (ENG-060). The operation
+    answers it on the Matter row it has locked; the panel answers it early, from
+    the stage the page was drawn with, so a person reads the refusal beside the
+    controls — and whichever answer is later decides.
+    """
+    return (
+        development_row_says_something(title=title, note=note, has_files=has_files)
+        or moves_stage
+        or bool((next_text or "").strip())
+    )
+
+
 #: What somebody filing next month's committee sitting as a development is told.
 #:
 #: `Menetluse areng` records something that **has happened** (docs/adr/0092 §3,
@@ -4619,6 +4666,19 @@ def correct_procedural_development(
         # Nothing moved, so nothing is recorded. An audit row for a save that
         # changed no value would be a history of somebody pressing a button.
         return current
+    # **A correction may not take the last words off a file-less row** (ENG-060).
+    # `+ Märge` refuses to create a row saying nothing, and a correction that
+    # could produce one would be the same row by a second door. Only when this
+    # save removes words: a row whose content was always somewhere else — a
+    # `Märge` that was only a stage change — stays correctable in its date, since
+    # correcting it takes nothing off it. What the original save moved is not
+    # counted as this row's content (`development_row_says_something`).
+    if {"title", "note"} & set(changed) and not development_row_says_something(
+        title=proposed["title"],
+        note=proposed["note"],
+        has_files=current.document_links.exists(),
+    ):
+        raise DomainError(DEVELOPMENT_CORRECTION_LEAVES_NOTHING)
     # **A correction may not move the date into the future**, the same invariant
     # `record_procedural_development` states and the same sentence.
     #
