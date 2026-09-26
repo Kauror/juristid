@@ -5755,13 +5755,16 @@ def _website_overview_link_form(
     from what it actually says, because there the form is a correction.
     """
     auto_id = f"id_kodulehe_ulevaade_{overview.pk}_%s"
+    # What the row already says, so the form's future-date rule judges only a
+    # day the save would put there (ENG-004). A plan has no day yet.
+    stored = overview.published_on if overview.is_published else None
     if data is not None:
-        return WebsiteOverviewLinkForm(data, auto_id=auto_id)
+        return WebsiteOverviewLinkForm(data, auto_id=auto_id, stored_published_on=stored)
     initial: dict[str, Any] = {"revision": overview.revision_token}
     if overview.is_published:
         initial["url"] = overview.url
         initial["published_on"] = overview.published_on
-    return WebsiteOverviewLinkForm(initial=initial, auto_id=auto_id)
+    return WebsiteOverviewLinkForm(initial=initial, auto_id=auto_id, stored_published_on=stored)
 
 
 def _planned_website_overview_rows(

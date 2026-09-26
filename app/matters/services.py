@@ -1866,6 +1866,27 @@ def _refuse_deadline_before_engagement(
         raise DomainError(DEADLINE_BEFORE_ENGAGEMENT)
 
 
+#: What a consultation dated after today is told (ENG-004).
+#:
+#: A `Kaasamine` is something that already happened (docs/adr/0082), and Teema
+#: käik projects only what has: a round dated tomorrow was saved, then left the
+#: page together with its only `Muuda` and `Kustuta` until the day arrived — and
+#: `24.09.62` is 2062. So the date is refused where every writer passes, with the
+#: sentence both `Kaasamine` forms print.
+ENGAGEMENT_CANNOT_BE_FUTURE = "Kaasamise kuupäev ei saa olla tulevikus."
+
+
+def _refuse_a_future_engagement(occurred_on: Any, occurred_on_precision: Any) -> None:
+    """A round whose whole period begins after the Tallinn business day is refused.
+
+    `period_starts_after`, the comparison `+ Märge` makes and the one the
+    chronology hides by: *september 2026* read on the 18th covers today and is
+    not the future, and an unknown date is not in the future either.
+    """
+    if period_starts_after(occurred_on, occurred_on_precision, day=timezone.localdate()):
+        raise DomainError(ENGAGEMENT_CANNOT_BE_FUTURE)
+
+
 @transaction.atomic
 def _engagement_response_count(value: Any) -> int | None:
     """`Vastuseid`, or nothing at all.
@@ -2021,6 +2042,7 @@ def add_engagement(
     if not clean_title:
         raise DomainError("Kaasamisel peab olema pealkiri.")
     precision = _engagement_precision(occurred_on, occurred_on_precision)
+    _refuse_a_future_engagement(occurred_on, precision)
     _refuse_deadline_before_engagement(occurred_on, precision, feedback_deadline)
 
     engagement = MatterEngagement.objects.create(
@@ -2257,6 +2279,15 @@ def update_engagement(
             proposed.get("occurred_on", locked.occurred_on),
             proposed.get("occurred_on_precision", locked.occurred_on_precision),
             proposed.get("feedback_deadline", locked.feedback_deadline),
+        )
+    # **Nor may a correction move the round into the future** (ENG-004), guarded
+    # the same way: only when the date or its precision moves. A row stored with
+    # a future date before this rule existed stays correctable — its title, its
+    # note, and its date back to the day it really happened.
+    if {"occurred_on", "occurred_on_precision"} & set(changed):
+        _refuse_a_future_engagement(
+            proposed.get("occurred_on", locked.occurred_on),
+            proposed.get("occurred_on_precision", locked.occurred_on_precision),
         )
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
@@ -2728,6 +2759,12 @@ WEBSITE_OVERVIEW_URL_TOO_LONG = (
     f"Ülevaate või uudise link on liiga pikk — kuni {WEBSITE_OVERVIEW_URL_MAX_LENGTH} tähemärki."
 )
 WEBSITE_OVERVIEW_NEEDS_LINK = "Avaldatud ülevaade või uudis vajab linki."
+#: What a publication dated after today is told (ENG-004). `published_on` is the
+#: day the page went up (docs/adr/0081), which cannot be tomorrow; Teema käik
+#: shows only what has happened, so a future day was saved and then left the
+#: page together with the row's `Paranda link` and `Kustuta`. An empty date is
+#: still an ordinary answer — *the day is unknown* (docs/adr/0089 §8).
+WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE = "Avaldamise kuupäev ei saa olla tulevikus."
 WEBSITE_OVERVIEW_ALREADY_PUBLISHED = (
     "See ülevaade või uudis on juba avaldatud. Linki ja kuupäeva saab parandada."
 )
@@ -2945,6 +2982,12 @@ def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsite
     return overview
 
 
+def _refuse_a_future_publication(published_on: Any) -> None:
+    """A page cannot have gone up after the Tallinn business day. `None` is unknown."""
+    if published_on is not None and published_on > timezone.localdate():
+        raise DomainError(WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE)
+
+
 def _publication_values(url: Any, published_on: Any) -> tuple[str, Any]:
     """The one thing a publication needs, and the one it may not know.
 
@@ -3007,6 +3050,7 @@ def publish_website_overview(
         raise DomainError(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL)
 
     clean_url, day = _publication_values(url, published_on)
+    _refuse_a_future_publication(day)
     now = timezone.now()
     locked.status = WebsiteOverviewStatus.PUBLISHED
     locked.url = clean_url
@@ -3107,6 +3151,11 @@ def correct_website_overview_link(
     clean_url, day = _publication_values(url, published_on)
     if clean_url == locked.url and day == locked.published_on:
         return locked
+    # Only a day that *moves* is judged (ENG-004): a publication stored with a
+    # future day before the rule existed can still have its address corrected,
+    # and its day moved back or cleared.
+    if day != locked.published_on:
+        _refuse_a_future_publication(day)
 
     payload: dict[str, Any] = {"fields": []}
     if clean_url != locked.url:
@@ -3646,6 +3695,18 @@ EXTERNAL_POSITION_ENGAGEMENT_ELSEWHERE = "Seotud kaasamine peab olema sama teema
 #: and deliberately the same shape of sentence.
 EXTERNAL_POSITION_EDIT_CONFLICT = "Välist seisukohta on vahepeal mujal muudetud."
 
+#: What a position dated after today is told (ENG-004). What another
+#: organisation *said* is a fact about the past, and Teema käik shows only what
+#: has happened (docs/adr/0084) — so a future date is refused where every writer
+#: passes rather than saved and then left off the page with its controls.
+EXTERNAL_POSITION_CANNOT_BE_FUTURE = "Välise seisukoha kuupäev ei saa olla tulevikus."
+
+
+def _refuse_a_future_position(stated_on: Any, stated_on_precision: Any) -> None:
+    """The `Kaasamine` rule, for the same reason: a period begun after today."""
+    if period_starts_after(stated_on, stated_on_precision, day=timezone.localdate()):
+        raise DomainError(EXTERNAL_POSITION_CANNOT_BE_FUTURE)
+
 
 class ExternalPositionConflict(DomainError):
     """The position changed elsewhere between rendering a form and saving it.
@@ -3897,6 +3958,9 @@ def record_external_position(
     _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
+    # Before the row exists and before the workspace captures a single file, so
+    # a refusal leaves no record, no event and no evidence behind.
+    _refuse_a_future_position(stated_on, precision)
 
     position = MatterExternalPosition.objects.create(
         matter=matter,
@@ -4148,6 +4212,11 @@ def correct_external_position(
         # changed no value would be a history of somebody pressing a button
         # (`update_engagement`).
         return current
+    # Only when the date or its precision moves (ENG-004): a position stored
+    # with a future date before the rule existed can still have its summary,
+    # its source or its date corrected — back to the past, never forward.
+    if {"stated_on", "stated_on_precision"} & set(changed):
+        _refuse_a_future_position(stated_on, precision)
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "organisation_id" in changed:

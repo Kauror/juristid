@@ -15,10 +15,12 @@ things:
   precision other than `EXACT`. `workflow.0009` installs a `CHECK` for each, so
   any one of these makes `migrate` fail.
 * **Service rules.** A `Kaasamine` whose reply-by date falls before its round's
-  whole period began, and an opinion recorded as sent after today. No `CHECK`
-  guards either — the send date is a business-day question and the engagement
-  rule is a period question — so they do not stop the migration. The services
-  refuse to *write* them since ENG-043; these are rows written before that, by a
+  whole period began, an opinion recorded as sent after today, and a
+  `Kaasamine`, `Väline seisukoht` or published `Ülevaade` dated after today
+  (ENG-004). No `CHECK`
+  guards any of them — the send date is a business-day question and the engagement
+  rules are period questions — so they do not stop the migration. The services
+  refuse to *write* them since ENG-043 and ENG-004; these are rows written before that, by a
   path that has since been closed or by a synthetic generator.
 
 **Nothing is repaired.** A finding is a question about what a record was meant
@@ -57,7 +59,15 @@ BLOCKING = frozenset(
 )
 
 #: Finding kinds the services refuse but no constraint does.
-SERVICE_RULES = frozenset({"engagement-deadline-before-round", "submission-sent-in-future"})
+SERVICE_RULES = frozenset(
+    {
+        "engagement-deadline-before-round",
+        "submission-sent-in-future",
+        "engagement-in-future",
+        "external-position-in-future",
+        "website-overview-published-in-future",
+    }
+)
 
 #: What each kind means, printed once above its rows.
 EXPLANATIONS: dict[str, str] = {
@@ -70,6 +80,17 @@ EXPLANATIONS: dict[str, str] = {
         "MatterEngagement.feedback_deadline falls before the whole period of occurred_on"
     ),
     "submission-sent-in-future": "Submission.sent_at is after today in Europe/Tallinn",
+    # ENG-004. Teema käik projects only what has happened, so each of these is
+    # a row the file holds and its page does not show — nor the row's `Muuda`.
+    "engagement-in-future": (
+        "MatterEngagement.occurred_on is a period that begins after today in Europe/Tallinn"
+    ),
+    "external-position-in-future": (
+        "MatterExternalPosition.stated_on is a period that begins after today in Europe/Tallinn"
+    ),
+    "website-overview-published-in-future": (
+        "MatterWebsiteOverview.published_on is after today in Europe/Tallinn"
+    ),
 }
 
 
@@ -176,6 +197,55 @@ def _submission_findings(today: datetime.date) -> list[Finding]:
     ]
 
 
+def _future_record_findings(today: datetime.date) -> list[Finding]:
+    """Timeline records dated after today, written before the services refused it.
+
+    ENG-004's rows: the services refuse a future date since then, and the Teema
+    page leaves such a row off its chronology — together with its only `Muuda` —
+    until the day arrives. So this is where somebody learns the row exists. The
+    anchor narrows in SQL (a period's anchor is its first day) and the services'
+    own `period_starts_after` decides, so the report and the refusal agree.
+    """
+    from app.workflow.dates import period_starts_after
+
+    engagement = apps.get_model("matters", "MatterEngagement")
+    position = apps.get_model("matters", "MatterExternalPosition")
+    overview = apps.get_model("matters", "MatterWebsiteOverview")
+    findings = [
+        Finding(
+            kind="engagement-in-future",
+            subject=str(pk),
+            detail=f"occurred_on={occurred_on} ({precision})",
+        )
+        for pk, occurred_on, precision in engagement.objects.filter(occurred_on__gt=today)
+        .order_by("occurred_on", "pk")
+        .values_list("pk", "occurred_on", "occurred_on_precision")
+        if period_starts_after(occurred_on, precision, day=today)
+    ]
+    findings.extend(
+        Finding(
+            kind="external-position-in-future",
+            subject=str(pk),
+            detail=f"stated_on={stated_on} ({precision})",
+        )
+        for pk, stated_on, precision in position.objects.filter(stated_on__gt=today)
+        .order_by("stated_on", "pk")
+        .values_list("pk", "stated_on", "stated_on_precision")
+        if period_starts_after(stated_on, precision, day=today)
+    )
+    findings.extend(
+        Finding(
+            kind="website-overview-published-in-future",
+            subject=str(pk),
+            detail=f"status={status}, published_on={published_on}",
+        )
+        for pk, status, published_on in overview.objects.filter(published_on__gt=today)
+        .order_by("published_on", "pk")
+        .values_list("pk", "status", "published_on")
+    )
+    return findings
+
+
 def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantReport:
     """Every row breaking one of the rules above. Reads; never writes."""
     day = today or timezone.localdate()
@@ -183,4 +253,5 @@ def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantR
     report.findings.extend(_next_action_findings())
     report.findings.extend(_engagement_findings())
     report.findings.extend(_submission_findings(day))
+    report.findings.extend(_future_record_findings(day))
     return report

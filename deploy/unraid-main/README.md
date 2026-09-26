@@ -1246,7 +1246,7 @@ found under a kind name, and **the kind decides, not the exit status**:
 | It reported | Which means | What to do |
 | --- | --- | --- |
 | `next-action-kind`, `next-action-date-semantics`, `next-action-precision`, `next-action-status`, `next-action-undated-period` | `workflow/0009` would fail on these rows | **Stop. Do not migrate.** Which value a step was meant to carry is a decision for somebody who knows the work; nothing here repairs it, and nothing should. |
-| `engagement-deadline-before-round`, `submission-sent-in-future` | a row breaks a rule the services now refuse to write; no constraint guards it | These do **not** block the migration. Record the identifiers for review and carry on. Imported archive rows are reported, never rewritten. |
+| `engagement-deadline-before-round`, `submission-sent-in-future`, `engagement-in-future`, `external-position-in-future`, `website-overview-published-in-future` | a row breaks a rule the services now refuse to write; no constraint guards it | These do **not** block the migration. Record the identifiers for review and carry on. Imported archive rows are reported, never rewritten. |
 
 A preflight that did not finish — the command missing from the image, a
 traceback instead of a report — is **not a pass**, exactly as for the evidence
