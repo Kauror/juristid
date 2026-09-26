@@ -12,7 +12,14 @@ from typing import Any
 from django.db import models
 
 from app.core.models import BaseModel
-from app.core.text import normalize_for_matching
+from app.core.text import normalize_organisation_name, strip_bidi_controls
+
+
+def _with_derived(update_fields: Any, *derived: str) -> Any:
+    """``update_fields`` widened by the columns a save derives, or left as None."""
+    if update_fields is None:
+        return None
+    return sorted({*update_fields, *derived})
 
 
 class OrganisationType(models.TextChoices):
@@ -86,9 +93,23 @@ class Organisation(BaseModel):
         return self.name
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        self.normalized_name = normalize_for_matching(self.name)
-        if kwargs.get("update_fields") is not None:
-            kwargs["update_fields"] = sorted({*kwargs["update_fields"], "normalized_name"})
+        """Derive the matching key, and keep direction controls out of the name.
+
+        The key is :func:`~app.core.text.normalize_organisation_name`, which
+        ignores invisible format characters, so a pasted soft hyphen does not
+        make a second institution (ENG-045). The name itself loses only the
+        bidirectional controls — they can make a stored name display as
+        something it is not, and mean nothing in an institution's name. Every
+        other character stays exactly as it was typed.
+        """
+        derived = ["normalized_name"]
+        cleaned = strip_bidi_controls(self.name)
+        if cleaned != self.name:
+            self.name = cleaned
+            derived.append("name")
+        self.normalized_name = normalize_organisation_name(self.name)
+        if "update_fields" in kwargs:
+            kwargs["update_fields"] = _with_derived(kwargs["update_fields"], *derived)
         super().save(*args, **kwargs)
 
 
@@ -123,7 +144,13 @@ class OrganisationAlias(BaseModel):
         return self.alias
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        self.normalized_alias = normalize_for_matching(self.alias)
-        if kwargs.get("update_fields") is not None:
-            kwargs["update_fields"] = sorted({*kwargs["update_fields"], "normalized_alias"})
+        """The same two rules as :meth:`Organisation.save`, for a spelling."""
+        derived = ["normalized_alias"]
+        cleaned = strip_bidi_controls(self.alias)
+        if cleaned != self.alias:
+            self.alias = cleaned
+            derived.append("alias")
+        self.normalized_alias = normalize_organisation_name(self.alias)
+        if "update_fields" in kwargs:
+            kwargs["update_fields"] = _with_derived(kwargs["update_fields"], *derived)
         super().save(*args, **kwargs)

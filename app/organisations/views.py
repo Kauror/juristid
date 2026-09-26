@@ -77,6 +77,12 @@ def quick_create(request: HttpRequest) -> HttpResponse:
             status=400,
         )
 
+    # The one resolver, the same one every typed counterparty name goes
+    # through: an exact match is reused, a name two rows already carry is
+    # refused here as a validation answer rather than made into a third row,
+    # and a new name is created under the lock that keeps two simultaneous
+    # clicks from creating it twice (ENG-045). The refusal quotes only what was
+    # typed, so it cannot say anything about a Teema the institution is on.
     try:
         result = get_or_create_organisation(
             name=form.cleaned_data["name"],

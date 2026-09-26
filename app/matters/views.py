@@ -137,7 +137,7 @@ from app.matters.forms import (
     read_organisation_choices,
     visible_engagements_of,
 )
-from app.matters.intake import register_incoming, validate_uploads
+from app.matters.intake import register_incoming, role_for, validate_uploads
 from app.matters.intake_suggestions import (
     CurrentValues,
     SuggestedField,
@@ -240,6 +240,7 @@ from app.submissions import embedded as opinions
 from app.submissions.forms import (
     CREATE_PREFIX,
     REGISTER_PREFIX,
+    MarkSentForm,
     RegisterSentOpinionForm,
     SentOpinionEditForm,
     SubmissionCreateForm,
@@ -2590,14 +2591,21 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
     subject to the same evidence rules as one uploaded later: same storage, same
     checksum, same immutability trigger, same scan state. Nothing is inferred
     from the filename — not a stage, not a submission, not a date.
+
+    **The role is the one thing that is, and it is not decided here.** It is
+    `app.matters.intake.role_for`'s answer, the same one Saabunud and the staging
+    area give, so an `.eml` is «Algne e-kiri» however it reached the Teema. This
+    step used to write `INCOMING_AUTHORITY` for every file, and the same e-mail
+    was classified by the path it happened to take — the direct post, which is
+    the form without scripting, and every file held through a refused save
+    (ENG-066). Documents stored before that are left as they were.
     """
-    from app.documents.enums import DocumentRole
     from app.documents.services import add_evidence_version, create_document
 
     document = create_document(
         matter=matter,
         title=upload.filename,
-        role=DocumentRole.INCOMING_AUTHORITY,
+        role=role_for(upload.filename),
         created_by=actor,
     )
     add_evidence_version(
@@ -3393,7 +3401,12 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     # Matter that then read `1 koostamisel` beside a sent opinion of the same
     # text (R2-01).
     unregistered = unregistered_opinion_documents(matter, viewer=request.user)
-    drafts = open_drafts(matter, viewer=request.user)
+    drafts: list[Any] = open_drafts(matter, viewer=request.user)
+    # `Märgi saadetuks` asks who the letter goes to, on each draft that has its
+    # file, opening on the addressees the draft already names (ENG-041).
+    for draft in drafts:
+        if draft.final_version_id:
+            draft.send_form = MarkSentForm(draft=draft)
 
     # Historical letters already filed onto this Matter. Imported lazily for the
     # same reason `_historical_context` is: `app.legacy_import` imports the

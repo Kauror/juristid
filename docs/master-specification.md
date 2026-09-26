@@ -1318,17 +1318,30 @@ per-field rather than global:
 
 - **Teema `Adressaat`** and the closing flow's opinion **recipients** accept a
   typed name. Resolution is normalised-exact and nothing more — canonical name
-  or recorded alias, casefolded, diacritics stripped, whitespace collapsed. One
-  match reuses that institution, no match creates one, and two matches refuse
-  the save rather than guess, because a third row spelled the same way would
-  make the ambiguity permanent. Creation happens inside the record's own
-  transaction, so a refused save leaves no institution behind.
+  or recorded alias, casefolded, diacritics stripped, whitespace collapsed, and
+  invisible Unicode format characters (category Cf: soft hyphen, zero-width
+  space, byte-order mark, direction controls) ignored, because text pasted from
+  Word, a PDF or a web page carries them and a reader cannot see them. Visible
+  punctuation is not ignored. One match reuses that institution, no match
+  creates one, and two matches refuse the save rather than guess, because a
+  third row spelled the same way would make the ambiguity permanent. Creation
+  happens inside the record's own transaction, so a refused save leaves no
+  institution behind, and the create decision is serialised per normalised
+  name, so two saves naming one new body at the same moment leave one row.
+  Direction controls are removed from a stored name or alias; nothing else
+  about what was typed is changed.
 - **Teema `Saatja`** and `Saabunud` accept a typed name on exactly the same
   terms, since docs/adr/0063. The sender relation is plural, so a typed name is
   *added* to whatever is ticked rather than replacing it, and a body reached
   twice is one sender; everything else — normalised-exact resolution, reuse,
   refusal on ambiguity, creation inside the record's own transaction — is the
   same code as the addressee half.
+- **The quick-create panel** (`Uus organisatsioon`, behind every organisation
+  picker) resolves on the same terms and through the same code: an exact match
+  is reused and said so, a name two rows already carry is refused rather than
+  given a third, and only a genuinely new name is created. Existing duplicates
+  are never merged automatically; `manage.py check_organisation_duplicates`
+  lists them for a person to decide.
 
 The two fields are one catalogue and two questions. `Matter.source_organisations`
 records who a matter came from and `Matter.addressee_organisation` records who

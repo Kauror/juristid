@@ -101,12 +101,57 @@ class FinalEvidenceForm(forms.Form):
 
 
 class MarkSentForm(forms.Form):
+    """`Märgi saadetuks` on one draft row: who it goes to, and by which channel.
+
+    `Adressaadid` is asked here because this is the moment the answer becomes a
+    fact. `SubmissionCreateForm` leaves it open — a draft's addressee is still
+    being worked out — and nothing asked again before the draft became a SENT
+    record naming nobody (ENG-041). The control is the one the `+ Uus arvamus`
+    and `Registreeri saatmine` panels on the same page already use, and it opens
+    on the addressees the draft already names, so the common case is one click.
+
+    Required, and rendered with the browser's own `required` so an empty choice
+    is refused beside the control, with the focus on it, before anything is
+    posted. The service refuses it again for a post that did not come from this
+    control (`mark_submission_sent_on_open_matter`), so the page is courtesy and
+    the service is the rule.
+
+    One per draft on the page, so ``draft`` gives each its own ids — two
+    `id_recipients` on one page would point every `<label for>` at the first.
+    """
+
+    recipients = forms.ModelMultipleChoiceField(
+        label="Adressaadid",
+        queryset=Organisation.objects.none(),
+        required=True,
+        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "4"}),
+        help_text="Kellele arvamus saadetakse. Vähemalt üks.",
+    )
     channel = forms.CharField(
         label="Kanal", max_length=200, required=False, widget=forms.TextInput()
     )
     reference = forms.CharField(
         label="Viide", max_length=200, required=False, widget=forms.TextInput()
     )
+
+    def __init__(
+        self, *args: Any, draft: Any = None, organisations: Any = None, **kwargs: Any
+    ) -> None:
+        if draft is not None:
+            kwargs.setdefault("auto_id", f"id_saatmine_{draft.pk}_%s")
+            kwargs.setdefault(
+                "initial",
+                {
+                    "recipients": [row.organisation_id for row in draft.addressee_rows],
+                    "channel": draft.channel,
+                },
+            )
+        super().__init__(*args, **kwargs)
+        set_choices(
+            self,
+            "recipients",
+            organisations if organisations is not None else Organisation.objects.order_by("name"),
+        )
 
 
 class RegisterSentOpinionForm(SubmissionCreateForm):
@@ -138,10 +183,12 @@ class RegisterSentOpinionForm(SubmissionCreateForm):
     about a letter whose date nobody had supplied (R2-01). There is no answer
     this form can infer, so it asks.
 
-    `recipients` is required for the same reason and is required *here only*:
-    `SubmissionCreateForm` opens a draft, where "who this goes to" is a question
-    still being worked out. A registered send is a statement that Koda wrote to
-    somebody, and a send with no addressee is not a fact anybody can check.
+    `recipients` is required for the same reason, here and on the draft row's
+    `Märgi saadetuks` (`MarkSentForm`) — never on `SubmissionCreateForm`, which
+    opens a draft, where "who this goes to" is a question still being worked
+    out. A send is a statement that Koda wrote to somebody, and a send with no
+    addressee is not a fact anybody can check (ENG-041, docs/adr/0061's
+    2026-09-26 amendment).
     """
 
     document = forms.ChoiceField(

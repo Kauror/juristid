@@ -725,9 +725,11 @@ def test_the_full_opinion_lifecycle_runs_from_documents(signed_in, specialist, o
     submission.refresh_from_db()
     assert submission.final_version_id is not None
 
+    # `Märgi saadetuks` names who it goes to — the draft's own addressee, which
+    # the row's `Adressaadid` opens on (ENG-041).
     sent = signed_in.post(
         reverse("submissions:mark_sent", kwargs={"pk": submission.pk}),
-        {"channel": "EIS", "reference": "1-2/26-77"},
+        {"recipients": [str(organisation.pk)], "channel": "EIS", "reference": "1-2/26-77"},
     )
     submission.refresh_from_db()
     assert submission.status == SubmissionStatus.SENT
@@ -1414,7 +1416,10 @@ def test_the_draft_path_that_replaces_it_still_works(signed_in, specialist, orga
     document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
     draft = _draft_owning(matter, document, actor=specialist, organisation=organisation)
 
-    signed_in.post(reverse("submissions:mark_sent", kwargs={"pk": draft.pk}), {})
+    signed_in.post(
+        reverse("submissions:mark_sent", kwargs={"pk": draft.pk}),
+        {"recipients": [str(organisation.pk)]},
+    )
 
     draft.refresh_from_db()
     assert draft.status == SubmissionStatus.SENT

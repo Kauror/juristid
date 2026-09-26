@@ -45,7 +45,7 @@ from django.utils import timezone
 
 from app.core.errors import DomainError
 from app.core.ids import uuid7
-from app.documents.enums import DocumentRole, ExtractionState
+from app.documents.enums import ExtractionState
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import AcceptedUpload
 from app.matters.intake import MAX_INTAKE_FILES, role_for
@@ -402,10 +402,17 @@ def promote_intake_files(
                 f"Faili „{staged.original_filename}” sisu on muutunud. Vali see uuesti."
             )
 
+        # The role is `role_for`'s, asked again of the same name rather than
+        # read back from the staged row. The staged copy is the same answer,
+        # kept for the analyser's ranking; asking the rule itself leaves no
+        # second rule behind — the fallback this replaced filed a row with a
+        # blank role as `INCOMING_AUTHORITY` whatever it was — and keeps every
+        # path that turns an incoming file into a Document on one classifier
+        # (ENG-066).
         document = create_document(
             matter=matter,
             title=staged.original_filename,
-            role=staged.role or DocumentRole.INCOMING_AUTHORITY,
+            role=role_for(staged.original_filename),
             created_by=actor,
         )
         add_evidence_version(

@@ -193,6 +193,11 @@ What was wrong was reaching that default from a form whose entire purpose is to
 record something historical. Blank on that form is not an answer meaning *now*;
 it is the absence of one, and the application has no source for it.
 
+**Superseded on 2026-09-26 for where the addressee rule applies — see the
+amendment at the end of this document.** The addressee half of the next
+paragraph was stated for `Registreeri saatmine` alone; it now holds for every
+new interactive send, `Märgi saadetuks` included. The date half is unchanged.
+
 So `Saadetud` and at least one `Adressaat` are **required** on
 `RegisterSentOpinionForm`, the help text that said blank meant now is gone, and
 a successful registration always carries a supplied day at
@@ -225,3 +230,68 @@ deliberate resend or supersession of the same text should produce, and it is
 left open rather than answered by the shape of a bug fix.
 
 Nothing here changes the schema, the projection or `INDEX_VERSION`.
+
+---
+
+## Amendment, 2026-09-26 — a new send names who it went to, on every door
+
+- Status: accepted, amending the 2026-09-11 amendment above
+- Scope: the interactive `Märgi saadetuks` on a draft row on `Dokumendid`, and
+  the service it posts to. Drafts, archive-applied sends, the correction form and
+  every stored row are untouched.
+
+### What was decided before
+
+The 2026-09-11 amendment made at least one addressee **required** on
+`Registreeri saatmine`, in the form and in `register_sent_opinion` itself, and
+`+ Koja arvamus` asks the same (docs/adr/0091 §6). It said nothing about
+`Märgi saadetuks`, and `SubmissionCreateForm` deliberately leaves `Adressaadid`
+optional, because who a draft goes to is still being worked out while it is
+written.
+
+### Why it is superseded
+
+That left one door open. A draft created with no recipient could be given its
+file and then pressed `Märgi saadetuks`, whose form asked only for a channel and
+whose service — `mark_submission_sent_on_open_matter`, then
+`mark_submission_sent` — asked nothing. The canonical record then said Koda's
+opinion went to nobody, its `SUBMISSION_SENT` event carried `addressees: []`,
+the `/arvamused/` cell read `—`, and `Muuda` on the `Arvamus välja` row refused
+every save until somebody invented an addressee (ENG-041). The rule was right;
+it lived in two of the three doors rather than in the act.
+
+### What is decided now
+
+- **Every new interactive send names at least one addressee.** The draft row's
+  `Märgi saadetuks` asks `Adressaadid` with the same list box `+ Uus arvamus`
+  and `Registreeri saatmine` use, opening on the addressees the draft already
+  names, and marked `required` so the browser refuses an empty choice beside
+  the control with the focus on it.
+- **The service is the rule.** `mark_submission_sent_on_open_matter` takes the
+  addressees, sets them on the draft (its `Teadmiseks` recipients carried
+  through unchanged) and refuses the send when none remain — under the
+  Submission's row lock, in the same transaction as the send, so a crafted POST
+  cannot bypass it and a refusal leaves the draft a draft: no timestamp, no
+  recipient change, no event. «Saadetuks märkimiseks on vaja vähemalt üht
+  adressaati.»
+- **One act, one event.** Choosing who a letter goes to at the moment of sending
+  is part of sending it, so no separate `SUBMISSION_RECIPIENTS_CHANGED` is
+  written; the `SUBMISSION_SENT` payload names the addressees it went to.
+- **A draft is still free.** Creating a draft with no recipient and attaching
+  its file both stay allowed.
+
+### What this amendment does not change
+
+- **Nothing retroactive.** `mark_submission_sent` itself does not carry the rule,
+  because the archive apply composes it into records of letters really sent
+  whose recipient could not be resolved (`app/legacy_import/opinion_apply.py`).
+  Those SENT rows with no addressee remain legitimate history and still read on
+  `Teema käik`, `Dokumendid`, `/arvamused/` and Statistika.
+- **The correction form keeps its requirement.** `Muuda` on a recorded send
+  still asks for an addressee, so correcting an archive send that has none
+  still needs one to be named (docs/adr/0103). Whether such a correction may be
+  saved without one is not decided here.
+- The `Märgi saadetuks` send date is still *now*, and `Registreeri saatmine`
+  still requires a supplied day; the table above stands.
+- No schema change, no migration, no backfill, no search-projection change and
+  no `INDEX_VERSION` change.

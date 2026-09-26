@@ -175,16 +175,30 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def mark_sent(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Märgi saadetuks`: the draft goes out now, to the addressees on the form.
+
+    The `Adressaadid` answer is what the draft is sent to, and it is always
+    passed — an empty choice as an empty list, never as «whatever the draft had»
+    — so the service's one rule decides every refusal: no addressee, no send,
+    and nothing written (ENG-041). The form only reads the identifiers; an
+    organisation the catalogue does not hold is refused here with its own
+    sentence rather than being reported as «no addressee».
+    """
     submission = _visible_submission(request, pk)
     form = MarkSentForm(request.POST)
     form.is_valid()
+
+    if form.has_error("recipients") and not form.has_error("recipients", "required"):
+        messages.error(request, "Valitud adressaati ei leitud. Laadi leht uuesti ja vali uuesti.")
+        return _back(submission)
 
     try:
         mark_submission_sent_on_open_matter(
             submission=submission,
             actor=request.user,
-            channel=form.cleaned_data.get("channel", "") if form.is_bound else "",
-            reference=form.cleaned_data.get("reference", "") if form.is_bound else "",
+            channel=form.cleaned_data.get("channel", ""),
+            reference=form.cleaned_data.get("reference", ""),
+            addressees=list(form.cleaned_data.get("recipients") or []),
         )
         messages.success(request, "Arvamus on märgitud saadetuks.")
     except DomainError as error:
