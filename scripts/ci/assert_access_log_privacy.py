@@ -32,10 +32,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-QUERY_SECRET = "RESTRICTED-SENTINEL"
-REFERER_SECRET = "REFERER-SENTINEL"
+QUERY_SENTINEL = "RESTRICTED-SENTINEL"
+REFERER_SENTINEL = "REFERER-SENTINEL"
 PATH = "/otsing/"
-QUERY = f"q={QUERY_SECRET}&foo=bar"
+QUERY = f"q={QUERY_SENTINEL}&foo=bar"
 
 
 def _spare_port() -> int:
@@ -69,7 +69,7 @@ def _wait_until_listening(port: int, process: subprocess.Popen[bytes]) -> None:
 def _request(port: int) -> None:
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}{PATH}?{QUERY}",
-        headers={"Referer": f"http://127.0.0.1:{port}/teemad/?q={REFERER_SECRET}"},
+        headers={"Referer": f"http://127.0.0.1:{port}/teemad/?q={REFERER_SENTINEL}"},
     )
     try:
         urllib.request.build_opener(_NoRedirect).open(request, timeout=60).read()
@@ -84,6 +84,8 @@ def access_line(format_args: list[str]) -> str:
         log = Path(scratch) / "access.log"
         process = subprocess.Popen(  # noqa: S603 - a fixed argv, no shell
             [
+                sys.executable,
+                "-m",
                 "gunicorn",
                 "config.wsgi:application",
                 "--bind",
@@ -115,7 +117,7 @@ def main() -> int:
 
     control = access_line([])
     print(f"gunicorn default format: {control}")
-    if QUERY_SECRET not in control or REFERER_SECRET not in control:
+    if QUERY_SENTINEL not in control or REFERER_SENTINEL not in control:
         print(
             "::error::even gunicorn's default format showed no secret, so this probe "
             "cannot see a query string and proves nothing"
@@ -127,7 +129,7 @@ def main() -> int:
     problems = []
     if f" {PATH} " not in line:
         problems.append(f"the path {PATH} is not in the line")
-    for leaked in (QUERY_SECRET, REFERER_SECRET, "q=", "foo=bar", "?"):
+    for leaked in (QUERY_SENTINEL, REFERER_SENTINEL, "q=", "foo=bar", "?"):
         if leaked in line:
             problems.append(f"{leaked!r} reached the access log")
     for problem in problems:

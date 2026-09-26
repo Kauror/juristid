@@ -64,9 +64,9 @@ LEAKING_ATOMS = (
     "{http_referer}e",
 )
 
-QUERY_SECRET = "RESTRICTED-SENTINEL"
-REFERER_SECRET = "REFERER-SENTINEL"
-FILENAME_SECRET = "Kiri ministrile SALAJANE-SENTINEL.pdf"
+QUERY_SENTINEL = "RESTRICTED-SENTINEL"
+REFERER_SENTINEL = "REFERER-SENTINEL"
+FILENAME_SENTINEL = "Kiri ministrile SALAJANE-SENTINEL.pdf"
 
 
 def _compose(path: Path) -> dict[str, Any]:
@@ -146,12 +146,12 @@ def test_a_search_is_logged_by_its_path_alone(stack, tmp_path):
     config.set("access_log_format", _flag(command, "--access-logformat"))
     access = glogging.Logger(config)
 
-    referer = f"https://juristid.example/teemad/?q={REFERER_SECRET}"
+    referer = f"https://juristid.example/teemad/?q={REFERER_SENTINEL}"
     environ = {
         "REQUEST_METHOD": "GET",
-        "RAW_URI": f"/otsing/?q={QUERY_SECRET}&foo=bar",
+        "RAW_URI": f"/otsing/?q={QUERY_SENTINEL}&foo=bar",
         "PATH_INFO": "/otsing/",
-        "QUERY_STRING": f"q={QUERY_SECRET}&foo=bar",
+        "QUERY_STRING": f"q={QUERY_SENTINEL}&foo=bar",
         "SERVER_PROTOCOL": "HTTP/1.1",
         "REMOTE_ADDR": "172.18.0.9",
         "HTTP_REFERER": referer,
@@ -165,7 +165,7 @@ def test_a_search_is_logged_by_its_path_alone(stack, tmp_path):
 
     [line] = (tmp_path / "access.log").read_text(encoding="utf-8").splitlines()
     assert '"GET /otsing/ HTTP/1.1" 200 5120 42ms' in line
-    for leaked in (QUERY_SECRET, REFERER_SECRET, "q=", "foo=bar", "?"):
+    for leaked in (QUERY_SENTINEL, REFERER_SENTINEL, "q=", "foo=bar", "?"):
         assert leaked not in line, f"{leaked!r} reached the access log: {line}"
 
 
@@ -201,7 +201,7 @@ def test_a_full_hold_does_not_log_the_file_it_turned_away(
 ):
     monkeypatch.setattr(pending, "MAX_HELD_FILES", 0)
     upload = AcceptedUpload(
-        content=b"%PDF-1.4 hoitud", filename=FILENAME_SECRET, mime_type="application/pdf"
+        content=b"%PDF-1.4 hoitud", filename=FILENAME_SENTINEL, mime_type="application/pdf"
     )
 
     with caplog.at_level(logging.WARNING, logger="app.documents.pending"):
@@ -211,7 +211,7 @@ def test_a_full_hold_does_not_log_the_file_it_turned_away(
     assert "hold is full" in caplog.text, "the warning this test is about was never written"
     assert "application/pdf" in caplog.text
     assert "SALAJANE" not in caplog.text
-    assert FILENAME_SECRET not in caplog.text
+    assert FILENAME_SENTINEL not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -232,7 +232,7 @@ def test_a_parser_crash_logs_the_row_and_never_the_filename(
 
     with caplog.at_level(logging.ERROR, logger="app.documents.extraction.orchestrator"):
         outcome = orchestrator.parse_source(
-            filename=FILENAME_SECRET,
+            filename=FILENAME_SENTINEL,
             mime_type="application/pdf",
             load=lambda: b"%PDF-1.4",
             reference=reference,
@@ -242,4 +242,4 @@ def test_a_parser_crash_logs_the_row_and_never_the_filename(
     assert outcome.error_code == "parser_error"
     assert f"crashed on {named_as}" in caplog.text
     assert "SALAJANE" not in caplog.text
-    assert FILENAME_SECRET not in caplog.text
+    assert FILENAME_SENTINEL not in caplog.text
