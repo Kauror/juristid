@@ -35,6 +35,10 @@ class Command(BaseCommand):
 
         for name in result.created:
             self.stdout.write(f"  + {name}")
+        for name in result.ambiguous:
+            # Two rows already carry this name. Neither was touched and no
+            # third was made; `check_organisation_duplicates` lists them.
+            self.stdout.write(self.style.WARNING(f"  ? {name}: matches more than one row, skipped"))
         self.stdout.write(
             self.style.SUCCESS(
                 f"{result.total} reference organisations: {len(result.created)} created, "

@@ -489,6 +489,5 @@ urlpatterns = [
     path("teemad/<uuid:pk>/muudatused/", views.matter_changes, name="matter_changes"),
     # Full-page posts
     path("teemad/<uuid:pk>/seisukoht/salvesta/", views.update_position, name="update_position"),
-    path("teemad/<uuid:pk>/sulge/", views.close, name="close"),
     path("teemad/<uuid:pk>/taasava/", views.reopen, name="reopen"),
 ]

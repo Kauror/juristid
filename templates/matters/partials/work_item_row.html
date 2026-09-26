@@ -23,7 +23,8 @@ any more, and «JÄLGIN vaata üle septembris kui enne pole infot» said the sam
 thing twice (ADR 0054).
 
 Only a DO with a deadline, and an Oluline tähtaeg, are ever coloured or worded
-as late. A WAIT or MONITOR whose review date has passed is ripe for a look,
+as late. A WAIT or MONITOR whose review date has come round — its day, or the
+first day of the period it names (ADR 0079 §6) — is ripe for a look,
 which is warning-level and is not lateness (master specification 18.8). The row
 still reads the stored kind to decide that — it simply no longer prints it.
 
@@ -85,10 +86,13 @@ control on this row: the row itself is the link.
           {% comment %}
             "Vaatasin üle" is a real service (app/workflow/services.acknowledge_review)
             and it needs the next review date, which is a decision rather than a
-            default. So the row links to the dated control that already exists
-            on the Matter instead of guessing a date here (§7).
+            default. So the row links to the dated control on the Matter instead
+            of guessing a date here (§7) — `#vaatasin-ule` beside the step in
+            `PRAEGUNE TEGEVUS`, which `ux.js` opens on arrival. It pointed at
+            the zone itself until ENG-021, where the only controls were `Muuda`
+            and completion: a link that promised a review and delivered neither.
           {% endcomment %}
-          <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Vaatasin üle…</a>
+          <a class="rowmenu__item" href="{{ item.matter_url }}#vaatasin-ule">Vaatasin üle…</a>
         {% endif %}
       {% endif %}
       {% if item.is_feedback_wait %}

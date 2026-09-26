@@ -52,7 +52,6 @@ from app.core.dates import (
     add_months,
     format_estonian_date,
     parse_flexible_date,
-    read_flexible_date,
     short_day_month,
     weekday_letter,
 )
@@ -96,7 +95,6 @@ from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
     BriefSummaryForm,
-    CloseMatterForm,
     CompactClosureForm,
     CompactEffectiveDateForm,
     CompactEngagementForm,
@@ -127,6 +125,7 @@ from app.matters.forms import (
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
     ReceivedFeedbackForm,
+    ReviewActionForm,
     TimelineStepsForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
@@ -138,7 +137,7 @@ from app.matters.forms import (
     read_organisation_choices,
     visible_engagements_of,
 )
-from app.matters.intake import register_incoming, validate_uploads
+from app.matters.intake import register_incoming, role_for, validate_uploads
 from app.matters.intake_suggestions import (
     CurrentValues,
     SuggestedField,
@@ -191,7 +190,6 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
-    close_matter,
     compose_update,
     correct_engagement,
     correct_external_position,
@@ -242,6 +240,7 @@ from app.submissions import embedded as opinions
 from app.submissions.forms import (
     CREATE_PREFIX,
     REGISTER_PREFIX,
+    MarkSentForm,
     RegisterSentOpinionForm,
     SentOpinionEditForm,
     SubmissionCreateForm,
@@ -1670,7 +1669,8 @@ def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
     Nothing is done differently here from the header's own owner control: the
     same form validates the choice against `assignable_including`, and the same
     `assign_matter` service writes it, moves the open step that was following
-    the previous owner, and records the change event. What is different is only
+    the previous owner — or, on a first assignment, the one nobody held — and
+    records the change event. What is different is only
     where the reader ends up — back on the register, with their filters intact,
     because triaging four unassigned files should not cost four round trips
     through four Matter pages (app/matters/services.py, docs/adr/0036).
@@ -2592,14 +2592,21 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
     subject to the same evidence rules as one uploaded later: same storage, same
     checksum, same immutability trigger, same scan state. Nothing is inferred
     from the filename — not a stage, not a submission, not a date.
+
+    **The role is the one thing that is, and it is not decided here.** It is
+    `app.matters.intake.role_for`'s answer, the same one Saabunud and the staging
+    area give, so an `.eml` is «Algne e-kiri» however it reached the Teema. This
+    step used to write `INCOMING_AUTHORITY` for every file, and the same e-mail
+    was classified by the path it happened to take — the direct post, which is
+    the form without scripting, and every file held through a refused save
+    (ENG-066). Documents stored before that are left as they were.
     """
-    from app.documents.enums import DocumentRole
     from app.documents.services import add_evidence_version, create_document
 
     document = create_document(
         matter=matter,
         title=upload.filename,
-        role=DocumentRole.INCOMING_AUTHORITY,
+        role=role_for(upload.filename),
         created_by=actor,
     )
     add_evidence_version(
@@ -3395,7 +3402,12 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     # Matter that then read `1 koostamisel` beside a sent opinion of the same
     # text (R2-01).
     unregistered = unregistered_opinion_documents(matter, viewer=request.user)
-    drafts = open_drafts(matter, viewer=request.user)
+    drafts: list[Any] = open_drafts(matter, viewer=request.user)
+    # `Märgi saadetuks` asks who the letter goes to, on each draft that has its
+    # file, opening on the addressees the draft already names (ENG-041).
+    for draft in drafts:
+        if draft.final_version_id:
+            draft.send_form = MarkSentForm(draft=draft)
 
     # Historical letters already filed onto this Matter. Imported lazily for the
     # same reason `_historical_context` is: `app.legacy_import` imports the
@@ -4214,33 +4226,42 @@ def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpRespon
 @business_write_required
 @require_http_methods(["POST"])
 def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
-    """Record that a WAIT or MONITOR was checked, and when to check again.
+    """`Vaatasin üle` — a WAIT or MONITOR was checked, and when to check again.
 
     Reviewing is not completing: the Matter is still waiting on the same thing,
     so the action keeps its identity and only its review date moves.
+
+    **Posted from `PRAEGUNE TEGEVUS`**, where the control sits beside the step
+    it reviews, and where Minu asjad's `Vaatasin üle…` lands. From 2026-09-11
+    until ENG-021 no template posted here at all: the row controls went with
+    ADR 0074 §20 and the work row's link was left pointing at a zone that
+    offered only `Muuda` and completion.
+
+    The box is the Estonian date control like every other one, so `7.9.2026`
+    reaches here as a date and ISO still parses. Empty means "no next review
+    date" and is an ordinary answer. A value that is not a day is refused on the
+    box with nothing written: read as empty, `31.02.2026` used to *clear* the
+    date somebody was trying to set (ENG-046). Both refusals — the box's and the
+    service's — come back through `_workspace_refusal`, into the panel that was
+    pressed, or into the workspace slot when a replacement means that panel is
+    no longer drawn.
     """
     matter = get_visible_matter(request, pk)
     action = get_object_or_404(
         NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
     )
-    # The box beside "Vaatasin üle" is the Estonian date control like every
-    # other one, so `7.9.2026` has to reach here as a date. ISO still parses:
-    # this route was posted to with ISO before the control changed.
-    #
-    # Empty means "no next review date" and is an ordinary answer. A value that
-    # is not a day is refused with nothing written: read as empty, `31.02.2026`
-    # used to *clear* the date somebody was trying to set (ENG-046).
-    reading = read_flexible_date(request.POST.get("next_review_date"))
+    form = ReviewActionForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="review_form", form=form)
 
     try:
-        if reading.invalid:
-            raise DomainError("Kirjuta kuupäev kujul 7.9.2026.")
-        acknowledge_review(action=action, actor=request.user, next_review_date=reading.value)
+        acknowledge_review(
+            action=action,
+            actor=request.user,
+            next_review_date=form.cleaned_data.get("next_review_date"),
+        )
     except DomainError as error:
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["composer_error"] = str(error)
-        return render(request, "matters/partials/overview.html", context, status=400)
+        return _workspace_refusal(request, matter, key="review_form", form=form, error=str(error))
 
     return _render_overview(request, matter)
 
@@ -5348,26 +5369,6 @@ def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
-def close(request: HttpRequest, pk: Any) -> HttpResponse:
-    matter = get_visible_matter(request, pk)
-    form = CloseMatterForm(request.POST)
-    if form.is_valid():
-        try:
-            close_matter(
-                matter=matter,
-                disposition=form.cleaned_data["disposition"],
-                reason=form.cleaned_data["reason"],
-                actor=request.user,
-            )
-            messages.success(request, "Teema on suletud.")
-        except DomainError as error:
-            messages.error(request, str(error))
-    return redirect("matters:matter_detail", pk=matter.pk)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
 def reopen(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     try:
@@ -6099,6 +6100,8 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "closure_form": ("teema-lopeta", ""),
     # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher either.
     "action_form": ("lisa-jargmine", ""),
+    # `PRAEGUNE TEGEVUS` → `Vaatasin üle`, beside a step that waits (ENG-021).
+    "review_form": ("vaatasin-ule", ""),
 }
 
 
@@ -6212,6 +6215,11 @@ def workspace_forms(
                 else None
             ),
         ),
+        # `Vaatasin üle` beside a step that waits on somebody else. Unbound and
+        # empty: the next review date is a decision, and a box pre-filled with
+        # the date that has just come round would invite saving it back — a
+        # review that moves nothing (ENG-021).
+        "review_form": ReviewActionForm(),
         "add_engagement_form": CompactEngagementForm(),
         "important_date_form": CompactImportantDateForm(),
         "effective_date_form": CompactEffectiveDateForm(),
@@ -6365,10 +6373,14 @@ def _workspace_refusal(
     # launcher: its panel is `Muuda` inside `PRAEGUNE TEGEVUS`, which
     # `current_action.html` draws only under `{% elif current_action %}`
     # (docs/adr/0097 §8.2).
-    needs_current_action = {"current_action_form", "action_form"}
+    needs_current_action = {"current_action_form", "action_form", "review_form"}
     panel_is_rendered = matter.is_open and (
         key not in needs_current_action or context["current_action"] is not None
     )
+    if key == "review_form" and panel_is_rendered:
+        # `Vaatasin üle` is drawn only beside a step that waits: a replacement
+        # that is a plan has no such panel to print the refusal in (ENG-021).
+        panel_is_rendered = context["current_action"].is_review_kind
     if not error and not panel_is_rendered:
         # A *validation* refusal whose panel is not on the fresh column.
         #

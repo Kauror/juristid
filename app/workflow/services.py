@@ -111,6 +111,33 @@ def responsible_for_new_work(*, matter: Any, explicit: Any = None) -> Any:
     return owner
 
 
+#: What a step with no day but a period precision is told.
+UNDATED_ACTION_WITH_A_PRECISION = "Kuupäevata tegevusel ei saa olla kuupäeva täpsust."
+
+
+def refuse_an_unsupported_precision(target_date: date | None, date_precision: str) -> None:
+    """The precision half of a `NextAction`'s date, checked where every writer passes.
+
+    The two services that write `date_precision` — `set_next_action` and
+    `acknowledge_review` — call this, and `workflow_nextaction` carries the same
+    two rules as `CHECK` constraints underneath (ENG-043). A `DomainError` here
+    names what was wrong; an `IntegrityError` out of a composer transaction that
+    has already written a note names a constraint.
+
+    * **The vocabulary.** `HALF_YEAR` and `INFERRED` are not offered for new
+      input and are still valid values (docs/adr/0079 §7, §8); anything outside
+      `DatePrecision` was rendered as an exact day by every surface that met it.
+    * **A step with no day is `EXACT`** (docs/adr/0106). `target_date=None` means
+      no day has been recorded yet, and a `QUARTER` beside nothing is a period
+      of nothing — so the undated step keeps the default the model has always
+      given it, and only its approximate twin is refused.
+    """
+    if date_precision not in DatePrecision.values:
+        raise DomainError(f"Tundmatu kuupäeva täpsus {date_precision!r}.")
+    if target_date is None and date_precision != DatePrecision.EXACT:
+        raise DomainError(UNDATED_ACTION_WITH_A_PRECISION)
+
+
 @transaction.atomic
 def set_next_action_for_new_work(
     *,
@@ -203,6 +230,7 @@ def set_next_action(
         raise DomainError(f"Tundmatu tegevuse liik {kind!r}.")
     if date_semantics not in DateSemantics.values:
         raise DomainError(f"Tundmatu kuupäeva tähendus {date_semantics!r}.")
+    refuse_an_unsupported_precision(target_date, date_precision)
 
     # **A next action may have no date at all**, and that is not an incomplete
     # record (docs/adr/0106). «Vaatan ministeeriumi vastuse üle» is a whole
@@ -522,6 +550,15 @@ def acknowledge_review(
     On the locked row, like completing and cancelling: a review recorded on an
     action that a replacement has just superseded would be a REVIEWED event on a
     step nobody is following any more (ENG-072).
+
+    **A review that would leave the step exactly as it is records nothing.**
+    The lock serialises a double submit, but a transition that stays OPEN is
+    not refused by the status check the way a second completion is — so the
+    second POST of the same `Vaatasin üle` used to find the date it had just
+    set, set it again, and write a second NEXT_ACTION_REVIEWED for one look at
+    the file. Compared on the locked row, date and precision both, and answered
+    with the action rather than a refusal: the person's review did land, once
+    (ENG-021).
     """
     refusal = "Ainult kehtivat tegevust saab üle vaadata."
     action = _lock_for_transition(action, refusal)
@@ -529,6 +566,9 @@ def acknowledge_review(
         raise DomainError(refusal)
     if action.kind not in REVIEW_KINDS:
         raise DomainError("Üle vaadata saab ainult ootamist või jälgimist.")
+    refuse_an_unsupported_precision(next_review_date, date_precision)
+    if (action.target_date, action.date_precision) == (next_review_date, date_precision):
+        return action
 
     previous = action.target_date
     action.target_date = next_review_date

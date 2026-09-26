@@ -90,9 +90,9 @@ def test_the_removed_furniture_is_gone_for_good(signed_in, specialist):
     assert "Olulisi tähtaegu pole lisatud." not in body
     assert "Jõustumise infot pole lisatud." not in body
     assert "Töövõite ega kandidaate pole lisatud." not in body
-    # Closing is a composer action now, not a box in the facts rail.
-    close_action = 'action="' + reverse("matters:close", kwargs={"pk": matter.pk})
-    assert close_action not in body
+    # Closing is a composer action now, not a box in the facts rail — and the
+    # old full-page route that box posted to is retired (ENG-065).
+    assert f'action="/teemad/{matter.pk}/sulge/' not in body
 
 
 # ---------------------------------------------------------------------------
@@ -1042,8 +1042,8 @@ def test_closing_needs_business_write(client, normal_matter):
     client.force_login(reader)
 
     response = client.post(
-        reverse("matters:close", kwargs={"pk": normal_matter.pk}),
-        {"disposition": Disposition.COMPLETED, "reason": ""},
+        reverse("matters:close_from_workspace", kwargs={"pk": normal_matter.pk}),
+        {"disposition": Disposition.COMPLETED},
     )
 
     assert response.status_code == 404

@@ -107,6 +107,10 @@ colleague's file stays responsible; moving that would be the system overruling a
 decision a person made. The handover is named in the assignment event's payload
 rather than raised as a second event: one thing happened.
 
+**Superseded on 2026-09-26 for the first assignment of an unowned Matter — see
+the amendment at the end of this document.** «Only when its responsible person is
+the previous owner» left the step nobody holds on nobody's desk.
+
 The same report exposed a second, latent defect. The old banding required
 `DEADLINE` semantics for the near bands and a beyond-horizon date for the far
 one, so a DO carrying any other semantics and dated inside the next week fell
@@ -239,3 +243,66 @@ while you add to it, is the one path.
 - Nothing in this round touched historical data, the Excel cutover, the opinion
   archive, taxonomy vocabulary, closure semantics, Töövõit governance, or the
   authorization architecture.
+
+---
+
+## Amendment, 2026-09-26 — the first owner also takes the step nobody holds
+
+- Status: accepted, amending §4
+- Scope: which open `NextAction` `assign_matter` moves when a Matter changes
+  owner (engineering audit ENG-023). `Matter.owner` and `NextAction.responsible`
+  stay two separate facts; nothing else about assignment changes.
+
+### What was decided before
+
+§4: the open step follows the file **only** when its responsible person is the
+previous owner, so that a colleague deliberately named for a step keeps it.
+
+### Why it is superseded
+
+A step written on an unowned Matter has no responsible person at all:
+`set_next_action` has no owner to default to, and `responsible_for_new_work`
+deliberately stores nobody rather than inventing somebody (ADR 0036 §5). The
+Uus teema «Koostan arvamuse» step, created from an Arvamuse tähtaeg with no
+Vastutaja chosen, is the common case. When the Matter was then triaged to a
+lawyer, «responsible is the previous owner» was false — there was no previous
+owner — so the step stayed with nobody. It was on no Minu asjad, the new owner's
+row read «järgmine tegevus puudub · Määra» while the Teema showed the step, and
+once it was late Osakond (which groups by owner) counted it against the new
+owner while their own «üle tähtaja» did not list it. The assignment event said
+`next_action_moved: null`, truthfully.
+
+### What is decided now
+
+On the **first** assignment — the Matter had no owner — the open step that
+nobody holds (`responsible` is NULL) follows the file to the new owner. It is the
+same default `set_next_action` applies, arriving late: had the owner existed when
+the step was written, it would have been theirs.
+
+The rest of §4 stands, and the two rules together are the whole of it:
+
+- previous owner held the step → it follows the file (unchanged);
+- nobody held it and nobody owned the file → it follows the file (new);
+- a person other than the previous owner holds it → it stays with them, on the
+  first assignment as on every later one;
+- no open step → only the assignment happens.
+
+`next_action_moved` in the MATTER_ASSIGNED payload names the moved step's id in
+the first two cases and is `null` in the last two. The rule applies to every
+caller of `assign_matter` — the register's triage control, the Teema header, the
+full edit page and the owner backfill — because they all reach it through that
+one service.
+
+### What this amendment does not change
+
+- A step nobody holds on a Matter that **already had** an owner is not adopted
+  by a later hand-over. No current write path produces that shape; whether a
+  later reassignment should repair one left over from before this rule is an
+  open product question, not decided here.
+- Osakond's Meeskond columns keep grouping by owner (ADR 0036, amendment of
+  2026-09-11), and the desk keeps grouping work by responsible (ADR 0033 §2).
+- The Matter lock `assign_matter` takes before anything else (ADR 0110) and its
+  refusal of a deleted Matter. The step is read under that lock.
+- `refresh_matter_from_register`, the final cutover's field refresh, still
+  writes the owner column directly and moves no step; it is an operator
+  command over imported Matters and is not changed here.

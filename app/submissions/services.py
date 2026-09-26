@@ -7,7 +7,7 @@ window in which the system claims Koda sent an opinion it cannot produce.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from django.db import transaction
@@ -276,6 +276,36 @@ def select_final_evidence(
     return submission
 
 
+#: What a send dated after today is told — the sentence both `Saatmise kuupäev`
+#: forms print, and the one the services raise (ENG-043).
+SENT_DATE_IN_THE_FUTURE = "Saatmise kuupäev ei saa olla tulevikus."
+
+
+def _refuse_a_future_send(sent_at: date | None) -> None:
+    """A send is never in the future. The record says what happened.
+
+    **The Tallinn business day, not the instant.** A send stamped 22:30 UTC on
+    the 24th went out at 01:30 on the 25th in Tallinn, and on the 24th that is
+    tomorrow; a send later today is today whatever its hour. So the question is
+    whether the business date of ``sent_at`` is after
+    `timezone.localdate()` — the comparison both forms make on the day box, now
+    made where every writer passes (ENG-043).
+
+    ``None`` is «now» to `mark_submission_sent` and is never in the future. A
+    naive value is read as already being Tallinn time, which is what
+    `timezone.make_aware` would have made of it, and a bare day is already the
+    business date.
+    """
+    if sent_at is None:
+        return
+    sent_on: date = sent_at
+    if isinstance(sent_at, datetime):
+        aware = sent_at if timezone.is_aware(sent_at) else timezone.make_aware(sent_at)
+        sent_on = timezone.localdate(aware)
+    if sent_on > timezone.localdate():
+        raise DomainError(SENT_DATE_IN_THE_FUTURE)
+
+
 @transaction.atomic
 def mark_submission_sent(
     *,
@@ -336,6 +366,7 @@ def mark_submission_sent(
 
     if sent_at_precision not in SentAtPrecision.values:
         raise DomainError(f"Tundmatu saatmisaja täpsus {sent_at_precision!r}.")
+    _refuse_a_future_send(sent_at)
 
     locked.status = SubmissionStatus.SENT
     locked.sent_at = sent_at or timezone.now()
@@ -484,6 +515,12 @@ def correct_sent_opinion(
         "kind": kind,
     }
     changed = [field for field in after if before[field] != after[field]]
+    # **A correction may not move the send into the future** (ENG-043). Only
+    # when it moves the date: an archival row already carrying a future day is
+    # reported by `check_domain_invariants` and never rewritten here, and
+    # correcting its summary states no new send fact to refuse.
+    if "sent_at" in changed:
+        _refuse_a_future_send(sent_at)
     if changed:
         for field in changed:
             setattr(locked, field, after[field])
@@ -754,6 +791,10 @@ def register_sent_opinion(
         raise DomainError("Tõend peab kuuluma valitud dokumendi juurde.")
     if sent_at is None:
         raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
+    # Before anything is created, although `mark_submission_sent` asks again:
+    # the refusal is about the fact being registered, not about a draft this
+    # function would otherwise write and roll back (ENG-043).
+    _refuse_a_future_send(sent_at)
     if sent_at_precision != SentAtPrecision.DATE:
         raise DomainError("Registreeritud saatmise täpsus on kuupäev.")
     if not recipients:
@@ -913,6 +954,10 @@ def select_final_evidence_on_open_matter(
     return select_final_evidence(submission=submission, version=version, actor=actor)
 
 
+#: What `Märgi saadetuks` answers when nobody would be recorded as written to.
+SEND_NEEDS_ADDRESSEE = "Saadetuks märkimiseks on vaja vähemalt üht adressaati."
+
+
 @transaction.atomic
 def mark_submission_sent_on_open_matter(
     *,
@@ -920,6 +965,7 @@ def mark_submission_sent_on_open_matter(
     actor: Any = None,
     channel: str = "",
     reference: str = "",
+    addressees: list[Any] | None = None,
 ) -> Submission:
     """`Märgi saadetuks` on a draft — the act that means *now*.
 
@@ -928,8 +974,49 @@ def mark_submission_sent_on_open_matter(
     passed here and must not be — this route means the letter is going out as
     the button is pressed, and `register_sent_opinion` is the separate act for
     one that went out earlier.
+
+    **A new send names who it went to.** A draft may be started with nobody
+    addressed — who a letter goes to is still being worked out while it is
+    written — but the moment it is recorded as sent it is a statement that Koda
+    wrote to somebody, and a SENT opinion with no addressee is not a fact
+    anybody can check. `Registreeri saatmine` and `+ Koja arvamus` refused one
+    since R2-01; this door did not, so the canonical record could say an opinion
+    went to nobody and its correction form then refused every save until an
+    addressee was invented (ENG-041, docs/adr/0061's 2026-09-26 amendment).
+
+    ``addressees`` is the send form's answer, and it replaces the draft's
+    addressees in the same transaction as the send — `teadmiseks` recipients are
+    carried through unchanged, the way a correction carries them. ``None`` keeps
+    whatever the draft already names. Either way the rule is asked **here**,
+    under the Submission's row lock and against the rows the send will report,
+    so a crafted POST cannot bypass it; a refusal leaves the draft exactly as it
+    was, with no recipient change and no event.
+
+    **Not retroactive, and not in `mark_submission_sent`.** The archive apply
+    writes SENT records whose recipient could not be resolved, and those remain
+    legitimate history; the rule is about this interactive act only.
+
+    No separate `SUBMISSION_RECIPIENTS_CHANGED` event: choosing who a letter is
+    sent to is part of sending it, and the `SUBMISSION_SENT` event names the
+    addressees it went to — the same reason `create_submission` records none
+    for the recipients a draft is created with.
     """
     lock_open_matter_for_business_write(submission.matter_id)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
+    # Only a draft's recipients are the send form's to set. Anything else is
+    # refused by `mark_submission_sent` below with its own sentence, and must
+    # not have its recorded addressees rewritten on the way there.
+    if locked.status == SubmissionStatus.DRAFT:
+        if addressees is not None:
+            set_recipients(
+                submission=locked,
+                addressees=addressees,
+                for_information=_for_information_of(locked),
+                actor=actor,
+                audit=False,
+            )
+        if not SubmissionRecipient.objects.addressees().filter(submission=locked).exists():
+            raise DomainError(SEND_NEEDS_ADDRESSEE)
     return mark_submission_sent(
         submission=submission,
         actor=actor,

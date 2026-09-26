@@ -306,10 +306,14 @@ def test_the_pre_migration_audit_is_target_image_and_not_unconditional(readme: s
             f"a pre-migration audit asks the new release's question, so it needs the new "
             f"release's image\n  {line}"
         )
-        assert "--skip-storage-scan" in line, (
-            f"the pre-migration pass is the cheap relational one; walking the evidence store "
-            f"is a maintenance window, not a deployment step\n  {line}"
-        )
+        # Only the evidence check can walk the evidence store; the invariant
+        # preflight (`check_domain_invariants`, ENG-043) is relational already
+        # and has no storage pass to skip.
+        if "check_evidence_integrity" in line:
+            assert "--skip-storage-scan" in line, (
+                f"the pre-migration pass is the cheap relational one; walking the evidence "
+                f"store is a maintenance window, not a deployment step\n  {line}"
+            )
 
 
 @pytest.mark.parametrize("runbook", RUNBOOKS, ids=lambda path: path.parent.name + "/" + path.name)

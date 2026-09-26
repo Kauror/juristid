@@ -96,6 +96,11 @@ pytestmark = pytest.mark.django_db
 PREPARE_BY = dt.date(2026, 9, 25)
 ENGAGED_ON = dt.date(2026, 9, 19)
 SENT_ON = dt.date(2026, 9, 17)
+#: Days a `Koja arvamus` went out. In the past for good: a send is never in the
+#: future (ENG-043), so a date still ahead would be refused — and a test that
+#: wrote one would change its result the day it arrived.
+OPINION_SENT_ON = dt.date(2026, 6, 29)
+LATER_OPINION_SENT_ON = dt.date(2026, 8, 3)
 
 
 def _happened(days: int = 12) -> dt.date:
@@ -1587,14 +1592,14 @@ def test_a_koda_opinion_is_a_sent_submission_with_its_exact_evidence(
         author=specialist,
         upload=_pdf("koja_arvamus.pdf"),
         recipients=[ministry],
-        sent_on=dt.date(2026, 9, 29),
+        sent_on=OPINION_SENT_ON,
         title="Koja arvamus pakendiseaduse eelnõule",
     )
 
     submission = result.record
     assert submission.status == SubmissionStatus.SENT
     assert submission.sent_at_precision == SentAtPrecision.DATE
-    assert timezone.localtime(submission.sent_at).date() == dt.date(2026, 9, 29)
+    assert timezone.localtime(submission.sent_at).date() == OPINION_SENT_ON
     assert submission.title == "Koja arvamus pakendiseaduse eelnõule"
     assert list(submission.recipients.all()) == [ministry]
     # The exact bytes, under the role the product already has for an opinion.
@@ -1609,7 +1614,7 @@ def test_the_title_falls_back_to_the_filename(normal_matter, specialist, ministr
         author=specialist,
         upload=_pdf("Koja arvamus.pdf"),
         recipients=[ministry],
-        sent_on=dt.date(2026, 9, 29),
+        sent_on=OPINION_SENT_ON,
     )
 
     assert result.record.title == "Koja arvamus.pdf"
@@ -1640,14 +1645,14 @@ def test_several_koda_opinions_per_matter(
         author=specialist,
         upload=_pdf("arvamus_1.pdf", b"%PDF-1.4 esimene"),
         recipients=[ministry],
-        sent_on=dt.date(2026, 9, 29),
+        sent_on=OPINION_SENT_ON,
     ).record
     second = add_matter_koda_opinion(
         matter=normal_matter,
         author=specialist,
         upload=_pdf("arvamus_2.pdf", b"%PDF-1.4 teine"),
         recipients=[committee],
-        sent_on=dt.date(2026, 11, 3),
+        sent_on=LATER_OPINION_SENT_ON,
     ).record
 
     assert first.pk != second.pk
@@ -1673,7 +1678,7 @@ def test_the_recipient_is_not_the_matters_sender(
         author=specialist,
         upload=_pdf(),
         recipients=[committee],
-        sent_on=dt.date(2026, 11, 3),
+        sent_on=LATER_OPINION_SENT_ON,
     ).record
 
     assert list(submission.recipients.all()) == [committee]
@@ -1690,7 +1695,7 @@ def test_a_draft_does_not_become_sent_by_a_file_arriving(
         author=specialist,
         upload=_pdf(),
         recipients=[ministry],
-        sent_on=dt.date(2026, 9, 29),
+        sent_on=OPINION_SENT_ON,
     )
 
     draft.refresh_from_db()
@@ -1711,7 +1716,7 @@ def test_a_koda_opinion_is_refused_on_a_closed_matter(
             author=specialist,
             upload=_pdf(),
             recipients=[ministry],
-            sent_on=dt.date(2026, 9, 29),
+            sent_on=OPINION_SENT_ON,
         )
 
 
@@ -2139,7 +2144,7 @@ def test_a_sent_opinion_with_no_open_step_offers_the_continuation(
         author=specialist,
         upload=_pdf(),
         recipients=[ministry],
-        sent_on=dt.date(2026, 9, 29),
+        sent_on=OPINION_SENT_ON,
     )
     client.force_login(specialist)
     body = client.get(
@@ -2174,7 +2179,7 @@ def test_the_continuation_creates_no_work(
         author=specialist,
         upload=_pdf(),
         recipients=[ministry],
-        sent_on=dt.date(2026, 9, 29),
+        sent_on=OPINION_SENT_ON,
     )
 
     assert not NextAction.objects.filter(matter=normal_matter).exists()
@@ -2191,7 +2196,7 @@ def test_a_restricted_submission_puts_no_continuation_on_the_page(
         author=specialist,
         upload=_pdf(),
         recipients=[ministry],
-        sent_on=dt.date(2026, 9, 29),
+        sent_on=OPINION_SENT_ON,
     ).record
     # Restricting the submission means restricting its evidence first: the
     # database refuses final evidence less restricted than the submission it

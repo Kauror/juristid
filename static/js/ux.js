@@ -112,8 +112,13 @@
      launcher — so on exactly the rows that block lists, the old target did not
      exist and arrival did nothing at all: no reveal, no scroll, no caret. The
      one ordinary way to set a first step is the optional `Järgmine tegevus`
-     inside `+ Märge` (docs/adr/0097 §8.2). */
-  var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine", "lisa-marge"];
+     inside `+ Märge` (docs/adr/0097 §8.2).
+
+     `vaatasin-ule` is Minu asjad's `Vaatasin üle…`: the review disclosure
+     beside a step that waits, opened with the caret in its date box. Where the
+     step has since become a plan the panel is not drawn, and arrival falls back
+     to `PRAEGUNE TEGEVUS` like the others (ENG-021). */
+  var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine", "lisa-marge", "vaatasin-ule"];
 
   /* Open whatever kind of disclosure this destination is, and say whether it
    * was one.

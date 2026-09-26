@@ -714,7 +714,10 @@ SETTLED_LEAVES = {
     # `matters` is not here any more: 0012 adds `PersonalScratchpad` and the
     # next release carries it into a database that already has 0011, so CI
     # steps the app back and applies it forwards from exactly that state.
-    "organisations": "0001_initial",
+    # `organisations` is not here any more: 0002 recomputes the matching keys
+    # under the organisation key (ENG-045), and the next release carries it
+    # into a database that already has 0001, so CI steps the app back and
+    # applies it forwards over the seeded catalogue.
     # `reporting` is not here any more: 0002 adds the snapshot's pointer to
     # the `NextAction` it photographed, and the next release carries it into
     # a database that already has 0001, so CI steps the app back and applies

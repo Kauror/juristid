@@ -135,7 +135,17 @@ def hold(session: Any, uploads: list[AcceptedUpload]) -> list[HeldUpload]:
             # Silently, and on purpose. The alternative is refusing a save
             # because of a limit on a convenience, which would make the
             # convenience worse than not having it.
-            logger.warning("pending upload hold is full; %s not held", upload.filename)
+            #
+            # Type and size, never the name. A filename is business text — it
+            # is often the subject of the letter — and nothing of that kind
+            # goes to the container log (ENG-071). The file has no row yet, so
+            # there is no identifier to give instead.
+            logger.warning(
+                "pending upload hold is full (%d held); a %s file of %d bytes was not held",
+                len(manifest),
+                upload.mime_type,
+                len(upload.content),
+            )
             break
         # The name the backend actually used, not the one it was asked for: a
         # storage that sanitised or de-duplicated the key would otherwise leave

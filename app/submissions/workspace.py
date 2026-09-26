@@ -41,7 +41,12 @@ from django.db.models import Q, QuerySet
 from app.core.request_params import uuid_or_none
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind, SubmissionStatus
-from app.submissions.models import Submission
+from app.submissions.models import (
+    Submission,
+    addressed_to,
+    addressee_organisations,
+    addressee_prefetch,
+)
 from app.workflow.dates import MAX_YEAR, MIN_YEAR, year_from
 
 #: Rows per page. The same figure the archive browse uses, so the two tabs of
@@ -166,7 +171,10 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
         recipient_id = uuid_or_none(filters.recipient_id)
         if recipient_id is None:
             raise SubmissionQueryRefused("Saajat ei leitud.")
-        rows = rows.filter(recipient_rows__organisation_id=recipient_id).distinct()
+        # The addressee, never any recipient: an organisation only copied in
+        # («teadmiseks») was not written to, and Statistika's own `?saaja=`
+        # always knew that (ENG-061).
+        rows = rows.filter(addressed_to(recipient_id))
 
     if filters.owner_id:
         owner_id = uuid_or_none(filters.owner_id)
@@ -177,8 +185,10 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
         # may have been covering.
         rows = rows.filter(matter__owner_id=owner_id)
 
+    # `addressee_rows`, the one collection the `Adressaat` cell prints: one
+    # query for the page, however many rows it has (ENG-061).
     return rows.select_related("matter", "matter__owner", "final_version").prefetch_related(
-        "recipient_rows__organisation"
+        addressee_prefetch()
     )
 
 
@@ -209,6 +219,12 @@ def drafting(user: Any, visible: QuerySet[Submission] | None = None) -> QuerySet
     the figure on Ülevaade and the list at ``/arvamused/?olek=DRAFT`` hold the
     same rows — and ``tests/test_overview_drilldowns.py`` asserts that against
     the view rather than trusting this comment.
+
+    It is also the Submission half of the per-Matter «koostamisel» that Osakond
+    and the register's ``?arvamus=`` count
+    (``app.matters.register_filters.opinion_state_q``, ENG-019): a Matter is
+    being drafted there exactly when this returns a row on it for that reader,
+    or its register row still says so.
     """
     rows = Submission.objects.visible_to(user) if visible is None else visible
     return rows.filter(status=DRAFTING_STATUS)
@@ -243,17 +259,15 @@ def sent_years(user: Any) -> list[int]:
 
 
 def recipient_options(user: Any) -> QuerySet[Organisation]:
-    """Organisations that appear on a submission this reader may see.
+    """Organisations that are the addressee of a submission this reader may see.
 
     Not every Organisation: offering the full reference list would advertise
     fifteen ministries as filters that all return nothing, and would leak the
     shape of restricted correspondence to a reader filtering their way through
     it.
+
+    **Addressees only**, from the same collection the filter above applies. An
+    organisation that was only copied in used to be offered here, and choosing
+    it listed letters whose `Adressaat` did not name it (ENG-061).
     """
-    return (
-        Organisation.objects.filter(
-            submission_recipient_rows__submission__in=Submission.objects.visible_to(user)
-        )
-        .distinct()
-        .order_by("name")
-    )
+    return addressee_organisations(Submission.objects.visible_to(user)).order_by("name")

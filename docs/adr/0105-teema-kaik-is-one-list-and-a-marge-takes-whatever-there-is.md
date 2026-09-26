@@ -180,6 +180,8 @@ The rule lives in `workspace.add_procedural_development`, where the four can be
 seen together, and the form repeats it beside the controls; the service raises it
 before taking the Matter's row lock, because a save that was never going to write
 anything should not queue behind one.
+**Superseded on 2026-09-26 for what counts as a stage, when the rule is decided,
+and what a correction may leave — see the amendment at the end of this document.**
 
 **The one date that stays paired is the next step's.** `Kuupäev` clears to
 «kuupäev teadmata» as it already did, and `Järgmine tegevus` still needs its day.
@@ -231,3 +233,72 @@ said `Mis menetluses juhtus`, the narrower wording ADR 0097 §6 stopped using.
 * `opinion_manage.html` still says `Ava ülevaade või uudis`. That is a list of
   write-ups beside an opinion rather than a chronology row whose subject is the
   address, and it is deliberately out of this round.
+
+---
+
+## Amendment, 2026-09-26 — a `Märge` is judged by what it writes, on the locked Matter
+
+- Status: accepted, amending §4's «what is still refused» paragraph and its
+  placement of the rule before the row lock
+- Scope: what counts as content when `+ Märge` is saved, where that is decided,
+  and what `Muuda` on a `Märge` may leave behind (ENG-060). Nothing else in this
+  ADR moves.
+
+### What was decided before
+
+A press carrying «no sentence, no file, no stage and no step» was refused, the
+rule read what was **posted**, and it was raised before the Matter's row was
+locked so that an empty save would not queue behind a lock. `Muuda` on a stored
+`Märge` asked no such question at all.
+
+### Why it is superseded
+
+**A posted stage is not a written one.** Choosing the `Hetkeseis` the file
+already has makes `change_stage` write nothing, so «Uus hetkeseis: <the current
+one>» and nothing else passed the rule and stored a dated row saying nothing —
+no title, no file, and not even a stage event beside it. The audit reproduced it
+through the panel (ENG-060).
+
+**The current stage cannot be read before the lock.** The view fetches the
+Matter before the transaction; a colleague's stage change committed in between
+makes that instance answer for a moment that has passed. Comparing against it
+would refuse a real change and accept an empty one exactly when two people are
+working on the same file.
+
+**And a correction was a second door to the same row.** `Muuda` could clear the
+title, the note and the date of a file-less `Märge`, leaving the row the capture
+rule exists to prevent.
+
+### What is decided now
+
+- **A save must write something**: a sentence (`Mis juhtus?`), a note, a file, a
+  `Hetkeseis` that **moves** the file, or a next step. The date and `Etapp` are
+  not content — the panel fills both in. A note counts because it is a sentence
+  the row states; the panel does not ask for one (docs/adr/0097 §6.2), so this
+  changes nothing a person sees there.
+- **It is decided on the locked Matter**, after
+  `lock_open_matter_for_business_write`, by
+  `app.matters.services.development_save_says_something`. The refusal of an empty
+  press now queues behind the row lock; being right about the stage is worth
+  that. The panel still asks first, from the stage the page was drawn with, so the
+  sentence appears beside the controls — as a pre-check only; the operation's
+  answer is the one that counts.
+- **A correction may not take the last words off a file-less row.** If `Muuda`
+  would leave a `Märge` with no title, no note and no linked file, it is refused
+  with its own sentence pointing at `Kustuta` (docs/adr/0102). Clearing the
+  title while a note remains is an ordinary correction. A row whose content was
+  always elsewhere — a `Märge` that was only a stage change — stays correctable
+  in its date, because correcting it takes nothing off it.
+- **What the original save moved is not the row's content.** A `Hetkeseis` change
+  or a next step written by the same operation are facts about the Matter and the
+  `NextAction`, correctable on their own surfaces; they do not make a wordless,
+  file-less row acceptable. Whether removing a `Märge` should take them with it
+  is a separate open question (ENG-020) and this amendment does not answer it.
+- A refused save or correction writes no row and no `ChangeEvent`.
+
+### What this amendment does not change
+
+§4's decision that every control is optional and any one of them is a whole
+save; the titleless row reading `Märge`; `ProceduralDevelopmentEditForm` being
+able to clear a title; docs/adr/0106's undated next step; no schema, no
+migration and no search-index version change.

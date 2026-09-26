@@ -30,7 +30,13 @@ from app.workflow.enums import (
     Disposition,
     Track,
 )
-from app.workflow.lateness import days_past_period, is_past_period, overdue_date_q
+from app.workflow.lateness import (
+    days_past_period,
+    is_past_period,
+    is_review_due,
+    overdue_date_q,
+    review_due_q,
+)
 
 
 class StageVocabulary(BaseModel):
@@ -187,11 +193,10 @@ class NextActionQuerySet(models.QuerySet):
         )
 
     def due_for_review(self, today: date | None = None) -> NextActionQuerySet:
-        return self.open().filter(
-            kind__in=REVIEW_KINDS,
-            target_date__isnull=False,
-            target_date__lte=today or timezone.localdate(),
-        )
+        """Open reviews that have come round — exactly the rows
+        ``is_due_for_review`` below answers ``True`` for, because both read
+        :func:`~app.workflow.lateness.review_due_q`'s one rule (ADR 0079 §6)."""
+        return self.open().filter(review_due_q(today or timezone.localdate()))
 
 
 #: What a step with no recorded day prints where its date would go.
@@ -331,6 +336,38 @@ class NextAction(VisibilityInheritingModel):
                 ),
                 name="workflow_next_action_visibility_vocabulary",
             ),
+            # **The four vocabularies, and the one rule relating two columns**
+            # (ENG-043). Every sibling precision column has had its vocabulary
+            # `CHECK` since Stage 2G (`matters_engagement_occurred_precision_
+            # vocabulary` and the rest); this table predates the pattern and was
+            # never retrofitted, so `'BOGUS'` was storable and printed as a day.
+            # The services refuse all of these first, with a sentence
+            # (`set_next_action`, `acknowledge_review`); these are the backstop
+            # for a writer that goes around them.
+            models.CheckConstraint(
+                condition=models.Q(kind__in=ActionKind.values),
+                name="workflow_next_action_kind_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(date_semantics__in=DateSemantics.values),
+                name="workflow_next_action_date_semantics_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(date_precision__in=DatePrecision.values),
+                name="workflow_next_action_precision_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=ActionStatus.values),
+                name="workflow_next_action_status_vocabulary",
+            ),
+            # **An undated step is `EXACT`**, and only that. docs/adr/0106's
+            # `target_date IS NULL` stays legal — a step whose day nobody knows
+            # yet — and a period with nothing to qualify does not.
+            models.CheckConstraint(
+                condition=models.Q(target_date__isnull=False)
+                | models.Q(date_precision=DatePrecision.EXACT),
+                name="workflow_next_action_undated_is_exact",
+            ),
         ]
         indexes = [
             models.Index(
@@ -368,11 +405,24 @@ class NextAction(VisibilityInheritingModel):
         return is_past_period(self.target_date, self.date_precision, today or timezone.localdate())
 
     def is_due_for_review(self, today: date | None = None) -> bool:
-        if not self.is_open or self.target_date is None:
+        """Whether this review has come round: a review kind whose recorded
+        period has begun, today included.
+
+        *oktoober 2026* is due from 1 October — not from 1 November, where the
+        work surfaces used to put it by borrowing the deadline rule above. A
+        reminder is not a promise, and the two boundaries are a month apart on
+        purpose (ADR 0079 §6, ENG-040). Every work surface's ``is_review_ripe``
+        is this answer, and ``due_for_review`` is the same rule in SQL
+        (:mod:`app.workflow.lateness`).
+        """
+        if not self.is_open:
             return False
-        if self.kind not in REVIEW_KINDS:
-            return False
-        return self.target_date <= (today or timezone.localdate())
+        return is_review_due(
+            kind=self.kind,
+            value=self.target_date,
+            precision=self.date_precision,
+            today=today or timezone.localdate(),
+        )
 
     @property
     def is_review_kind(self) -> bool:

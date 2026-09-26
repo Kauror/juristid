@@ -257,6 +257,8 @@ engagement date — is unchanged and is now kept in two places for two kinds of
 caller: `refuse_deadline_before_engagement` for the bound forms that still write the
 column, and the same one string inside `open_engagement_feedback_wait` for the act,
 which has no form to report on.
+**Superseded on 2026-09-26 for where the date-order rule is kept and how a period
+is compared — see the amendment at the end of this document.**
 
 **It swaps the round's own row and nothing else**, which is the contract
 `✓ Tehtud` keeps and for the reason ADR 0052 §8 and §9 give: re-rendering
@@ -1061,3 +1063,51 @@ on the record that could not be rebuilt from it.
 What a reverse of the additive half would lose is what people wrote into the three
 new columns on `MatterExternalPosition`, which is the usual cost of additive columns
 and the reason these are the smallest set that answers the question.
+
+---
+
+## Amendment, 2026-09-26 — the date-order rule is the services', and reads a period as a period
+
+- Status: accepted, amending §2's sentence on where the date-order rule is kept
+- Scope: which code enforces «a reply-by day may not fall before the engagement
+  date», and what «before» means for an approximate engagement date (ENG-043).
+  The rule itself, the wait, and everything else in §2 are unchanged.
+
+### What was decided before
+
+The rule was kept in two places for two kinds of caller: the bound forms, through
+`refuse_deadline_before_engagement`, and `open_engagement_feedback_wait`, which
+compared the deadline with the stored engagement date. `add_engagement` and
+`update_engagement` — and so `correct_engagement` — did not ask at all.
+
+### Why it is superseded
+
+A form is what one browser was shown; a service is what every writer passes. The
+audit stored a deadline before its round through `add_engagement`, and moved a
+round past its deadline through `correct_engagement` (ENG-043). And comparing
+with the *stored number* is not what docs/adr/0079 §2 says a period date is: an
+engagement recorded at `MONTH` covers the whole month, so a reply-by day inside
+it is ordinary even when it falls before the value a caller happened to store.
+
+### What is decided now
+
+- **One rule, in the services**:
+  `app.matters.services.feedback_deadline_precedes_engagement`, raised as a
+  `DomainError` by `add_engagement`, by `update_engagement` (and so
+  `correct_engagement`) whenever a save moves either date, and by
+  `open_engagement_feedback_wait`. The form helper asks the same function early,
+  so the refusal still reads under `Tagasisidet ootame kuni`, and the sentence
+  lives beside the rule (`DEADLINE_BEFORE_ENGAGEMENT`).
+- **«Before» means before the first day of the engagement date's whole period**
+  (`period_bounds`). The reply-by day stays exact (docs/adr/0079 §11); an
+  engagement at `MONTH`, `QUARTER`, `HALF_YEAR` or `YEAR` refuses only a
+  deadline before its period began, and `EXACT` and `INFERRED` are days.
+- A correction that moves neither date is not refused for a pair it did not
+  write; such a row is reported by `check_domain_invariants` and repaired, if at
+  all, by a person.
+
+### What this amendment does not change
+
+That a deadline opens a wait; that either date alone relates to nothing; that a
+deadline in the past is accepted; the wait's work item, its completion and its
+closure with the Matter. No schema change.
