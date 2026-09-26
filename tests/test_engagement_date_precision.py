@@ -383,15 +383,15 @@ def test_a_period_can_be_corrected_to_the_exact_day_somebody_found(signed_in, sp
     day.
     """
     matter = factories.MatterFactory(owner=specialist)
-    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
-    response = _edit(signed_in, engagement, occurred_on="17.10.2026")
+    response = _edit(signed_in, engagement, occurred_on="17.10.2025")
     assert response.status_code == 200, response.content.decode()[:2000]
 
     engagement.refresh_from_db()
-    assert engagement.occurred_on == dt.date(2026, 10, 17)
+    assert engagement.occurred_on == dt.date(2025, 10, 17)
     assert engagement.occurred_on_precision == DatePrecision.EXACT
-    assert engagement.display_date == "17.10.2026"
+    assert engagement.display_date == "17.10.2025"
 
 
 def test_no_write_surface_can_create_a_new_period(signed_in, specialist):
@@ -452,7 +452,7 @@ def test_the_clear_checkbox_removes_a_period_and_its_precision(signed_in, specia
     kind of record an empty day box means «leave it alone».
     """
     matter = factories.MatterFactory(owner=specialist)
-    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
     response = _edit(signed_in, engagement, clear_occurred_on="on")
     assert response.status_code == 200, response.content.decode()[:2000]
@@ -548,7 +548,7 @@ def test_no_live_write_path_invents_a_period_for_an_unknown_date(signed_in, spec
     panel_matter = factories.MatterFactory(owner=specialist)
     composer_matter = factories.MatterFactory(owner=specialist)
     edit_matter = factories.MatterFactory(owner=specialist)
-    engagement = _stored(edit_matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
+    engagement = _stored(edit_matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
     _add(signed_in, panel_matter, occurred_on="")
     signed_in.post(
@@ -578,7 +578,7 @@ def test_viimane_tegevus_reads_the_period_rather_than_the_anchor(
     """§3. `MatterActivityFact` carries the precision of the row it read.
 
     The register column renders this through `display_date`; without the
-    precision travelling with the date it would print `1.10.2026` for a
+    precision travelling with the date it would print `1.10.2025` for a
     consultation nobody dated to 1 October.
     """
     matter = factories.MatterFactory(owner=specialist)
@@ -618,15 +618,15 @@ def test_viimane_tegevus_is_unchanged_for_every_exact_fact(specialist):
 @pytest.mark.parametrize(
     ("precision", "expected"),
     [
-        (DatePrecision.MONTH, "10.26"),
-        (DatePrecision.QUARTER, "IV kvartal 2026"),
-        (DatePrecision.YEAR, "2026"),
+        (DatePrecision.MONTH, "10.25"),
+        (DatePrecision.QUARTER, "IV kvartal 2025"),
+        (DatePrecision.YEAR, "2025"),
     ],
 )
 def test_viimati_muudetud_has_a_compact_reading_that_is_not_a_day(specialist, precision, expected):
     """*Viimati muudetud* on Minu töö prints `j.n` and has no room for a year.
 
-    A month therefore becomes `10.26` — two numbers, the shape the dense work
+    A month therefore becomes `10.25` — two numbers, the shape the dense work
     surfaces already use (`WorkItem.compact_month`) — and a quarter or a year is
     spelled out, because neither has a two-number form a reader would arrive at
     unaided. What must not appear is `1.10`.
@@ -636,42 +636,42 @@ def test_viimati_muudetud_has_a_compact_reading_that_is_not_a_day(specialist, pr
         matter=matter,
         kind=EngagementKind.SURVEY,
         title="liikmed",
-        occurred_on=dt.date(2026, 10, 1),
+        occurred_on=dt.date(2025, 10, 1),
         occurred_on_precision=precision,
     )
 
     rows = recent_changes(specialist, specialist)
 
     assert [row.compact_display for row in rows] == [expected]
-    assert rows[0].occurred_on == dt.date(2026, 10, 1)
+    assert rows[0].occurred_on == dt.date(2025, 10, 1)
 
 
 def test_an_exact_engagement_wins_a_tie_against_an_approximate_one(specialist):
     """Two rows on one anchor: the day is the more informative of the two.
 
-    Deterministic on purpose. A column that flickered between `1.10.2026` and
-    *oktoober 2026* across identical requests would be a column nobody trusts.
+    Deterministic on purpose. A column that flickered between `1.10.2025` and
+    *oktoober 2025* across identical requests would be a column nobody trusts.
     """
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(
         matter=matter,
         kind=EngagementKind.SURVEY,
         title="kuu",
-        occurred_on=dt.date(2026, 10, 1),
+        occurred_on=dt.date(2025, 10, 1),
         occurred_on_precision=DatePrecision.MONTH,
     )
     add_engagement(
         matter=matter,
         kind=EngagementKind.SURVEY,
         title="päev",
-        occurred_on=dt.date(2026, 10, 1),
+        occurred_on=dt.date(2025, 10, 1),
     )
 
     fact = _fact(matter, specialist)
 
     assert fact is not None
     assert fact.date_precision == DatePrecision.EXACT
-    assert fact.display_date == "1.10.2026"
+    assert fact.display_date == "1.10.2025"
 
 
 def test_the_register_row_renders_the_activity_through_display_date(signed_in, specialist):
@@ -681,7 +681,7 @@ def test_the_register_row_renders_the_activity_through_display_date(signed_in, s
         matter=matter,
         kind=EngagementKind.SURVEY,
         title="liikmed",
-        occurred_on=dt.date(2026, 10, 1),
+        occurred_on=dt.date(2025, 10, 1),
         occurred_on_precision=DatePrecision.MONTH,
     )
 
@@ -691,8 +691,8 @@ def test_the_register_row_renders_the_activity_through_display_date(signed_in, s
     # started there would run through the whole row and pass on the title.
     cell = body[body.rindex("table__lastactivity") :]
     cell = cell[: cell.index("</td>")]
-    assert "oktoober 2026" in cell
-    assert "1.10.2026" not in cell
+    assert "oktoober 2025" in cell
+    assert "1.10.2025" not in cell
 
 
 # ===========================================================================
@@ -875,7 +875,7 @@ def test_the_service_refuses_a_precision_outside_the_vocabulary():
             matter=matter,
             kind=EngagementKind.SURVEY,
             title="liikmed",
-            occurred_on=dt.date(2026, 10, 1),
+            occurred_on=dt.date(2025, 10, 1),
             occurred_on_precision="SOMETIME",
         )
 
@@ -886,20 +886,20 @@ def test_the_service_refuses_a_precision_outside_the_vocabulary():
 
 
 def test_the_audit_row_records_the_precision_beside_the_anchor(specialist):
-    """An audit row carrying `2026-10-01` alone says «1 October» to whoever
+    """An audit row carrying `2025-10-01` alone says «1 October» to whoever
     reads it back — the invention docs/adr/0079 §2 exists to refuse."""
     matter = factories.MatterFactory(owner=specialist)
-    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1), actor=specialist)
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1), actor=specialist)
 
     from app.audit.models import ChangeEvent
 
     added = ChangeEvent.objects.filter(object_id=engagement.pk).latest("created_at")
-    assert added.payload["occurred_on"] == "2026-10-01"
+    assert added.payload["occurred_on"] == "2025-10-01"
     assert added.payload["occurred_on_precision"] == DatePrecision.MONTH
 
     correct_engagement(
         engagement=engagement,
-        occurred_on=dt.date(2026, 10, 1),
+        occurred_on=dt.date(2025, 10, 1),
         occurred_on_precision=DatePrecision.QUARTER,
         actor=specialist,
     )
@@ -915,13 +915,13 @@ def test_an_unrelated_correction_leaves_the_precision_alone(specialist):
     """`_UNSET` protects a field a caller does not name — including this one.
 
     The importer and the register refresh rely on that, and a title fix must
-    not quietly make *oktoober 2026* mean 1 October.
+    not quietly make *oktoober 2025* mean 1 October.
     """
     matter = factories.MatterFactory(owner=specialist)
-    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2026, 10, 1))
+    engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
     correct_engagement(engagement=engagement, title="kaubandusvaldkonna töögrupp")
 
     engagement.refresh_from_db()
-    assert engagement.occurred_on == dt.date(2026, 10, 1)
+    assert engagement.occurred_on == dt.date(2025, 10, 1)
     assert engagement.occurred_on_precision == DatePrecision.MONTH

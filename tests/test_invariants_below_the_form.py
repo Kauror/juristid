@@ -139,13 +139,13 @@ def test_the_same_day_and_a_later_day_are_ordinary(normal_matter, specialist):
 @pytest.mark.parametrize(
     ("occurred_on", "precision", "deadline", "refused"),
     [
-        # *oktoober 2026*: a deadline inside the month is the commonest thing a
+        # *oktoober 2025*: a deadline inside the month is the commonest thing a
         # round run over a month says; one before the month began is a slip.
-        (datetime.date(2026, 10, 1), DatePrecision.MONTH, datetime.date(2026, 10, 15), False),
-        (datetime.date(2026, 10, 1), DatePrecision.MONTH, datetime.date(2026, 9, 30), True),
-        # *IV kvartal 2026*
-        (datetime.date(2026, 10, 1), DatePrecision.QUARTER, datetime.date(2026, 11, 30), False),
-        (datetime.date(2026, 10, 1), DatePrecision.QUARTER, datetime.date(2026, 9, 30), True),
+        (datetime.date(2025, 10, 1), DatePrecision.MONTH, datetime.date(2025, 10, 15), False),
+        (datetime.date(2025, 10, 1), DatePrecision.MONTH, datetime.date(2025, 9, 30), True),
+        # *IV kvartal 2025*
+        (datetime.date(2025, 10, 1), DatePrecision.QUARTER, datetime.date(2025, 11, 30), False),
+        (datetime.date(2025, 10, 1), DatePrecision.QUARTER, datetime.date(2025, 9, 30), True),
         # *2026*
         (datetime.date(2026, 1, 1), DatePrecision.YEAR, datetime.date(2026, 3, 1), False),
         (datetime.date(2026, 1, 1), DatePrecision.YEAR, datetime.date(2025, 12, 31), True),
@@ -155,9 +155,9 @@ def test_the_same_day_and_a_later_day_are_ordinary(normal_matter, specialist):
         # **The period, not the stored number.** A caller that hands in
         # 20 October at `MONTH` has named October; a reply-by date of 5 October
         # falls inside it, although it is before the raw value.
-        (datetime.date(2026, 10, 20), DatePrecision.MONTH, datetime.date(2026, 10, 5), False),
+        (datetime.date(2025, 10, 20), DatePrecision.MONTH, datetime.date(2025, 10, 5), False),
         # `INFERRED` is a day (docs/adr/0079 §8).
-        (datetime.date(2026, 10, 20), DatePrecision.INFERRED, datetime.date(2026, 10, 19), True),
+        (datetime.date(2025, 10, 20), DatePrecision.INFERRED, datetime.date(2025, 10, 19), True),
     ],
 )
 def test_an_approximate_round_refuses_only_a_deadline_before_its_whole_period(
@@ -262,18 +262,18 @@ def test_opening_a_wait_uses_the_same_period_rule(normal_matter, specialist):
     engagement = _add(
         normal_matter,
         specialist,
-        occurred_on=datetime.date(2026, 10, 20),
+        occurred_on=datetime.date(2025, 10, 20),
         occurred_on_precision=DatePrecision.MONTH,
     )
 
     matter_services.open_engagement_feedback_wait(
-        engagement=engagement, deadline=datetime.date(2026, 10, 5), actor=specialist
+        engagement=engagement, deadline=datetime.date(2025, 10, 5), actor=specialist
     )
 
-    other = _add(normal_matter, specialist, occurred_on=datetime.date(2026, 10, 20))
+    other = _add(normal_matter, specialist, occurred_on=datetime.date(2025, 10, 20))
     with pytest.raises(DomainError) as refusal:
         matter_services.open_engagement_feedback_wait(
-            engagement=other, deadline=datetime.date(2026, 10, 19), actor=specialist
+            engagement=other, deadline=datetime.date(2025, 10, 19), actor=specialist
         )
     assert str(refusal.value) == matter_services.DEADLINE_BEFORE_ENGAGEMENT
 
@@ -652,9 +652,9 @@ def test_a_clean_database_passes_the_preflight(normal_matter, specialist):
     _add(
         normal_matter,
         specialist,
-        occurred_on=datetime.date(2026, 10, 1),
+        occurred_on=datetime.date(2025, 10, 1),
         occurred_on_precision=DatePrecision.MONTH,
-        feedback_deadline=datetime.date(2026, 10, 15),
+        feedback_deadline=datetime.date(2025, 10, 15),
     )
 
     code, output = _preflight()
@@ -718,11 +718,11 @@ def test_the_preflight_reports_the_service_invariants_too(
     inside = _add(
         normal_matter,
         specialist,
-        occurred_on=datetime.date(2026, 10, 1),
+        occurred_on=datetime.date(2025, 10, 1),
         occurred_on_precision=DatePrecision.MONTH,
     )
     MatterEngagement.objects.filter(pk=inside.pk).update(
-        occurred_on=datetime.date(2026, 10, 20), feedback_deadline=datetime.date(2026, 10, 5)
+        occurred_on=datetime.date(2025, 10, 20), feedback_deadline=datetime.date(2025, 10, 5)
     )
     future = _register(normal_matter, specialist, organisation, capture_evidence, _tallinn(TODAY))
     Submission.objects.filter(pk=future.pk).update(sent_at=_tallinn(TOMORROW))

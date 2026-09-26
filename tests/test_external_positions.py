@@ -569,18 +569,27 @@ def test_the_attached_file_reads_under_the_row_and_adds_no_line(
     assert [file.label for file in rows[0].files] == ["seisukoht.pdf"]
 
 
-def test_a_future_position_is_not_yet_history(normal_matter, specialist, ministry):
+def test_a_future_position_is_refused_rather_than_saved_and_hidden(
+    normal_matter, specialist, ministry
+):
+    """ENG-004. This test used to assert the defect: the position was stored,
+    and Teema käik left it out — with its `Muuda` and `Kustuta` — until its date
+    arrived. A position is what somebody *said*, so a future date is refused
+    where every writer passes (`tests/test_future_dated_records.py`)."""
     from django.utils import timezone
 
-    _recorded(
-        normal_matter,
-        ministry,
-        specialist,
-        url=POSITION_URL,
-        stated_on=timezone.localdate() + dt.timedelta(days=30),
-    )
+    from app.matters.services import EXTERNAL_POSITION_CANNOT_BE_FUTURE
 
-    assert not [item for item in _timeline(normal_matter, specialist) if item.external_position]
+    with pytest.raises(DomainError, match=EXTERNAL_POSITION_CANNOT_BE_FUTURE):
+        _recorded(
+            normal_matter,
+            ministry,
+            specialist,
+            url=POSITION_URL,
+            stated_on=timezone.localdate() + dt.timedelta(days=30),
+        )
+
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
 
 
 def test_a_reader_who_may_not_see_the_position_gets_no_row(specialist, reader, ministry):
@@ -696,7 +705,7 @@ def test_a_precision_correction_is_audited_even_when_the_anchor_does_not_move(
         ministry,
         specialist,
         url=POSITION_URL,
-        stated_on=dt.date(2026, 10, 1),
+        stated_on=dt.date(2025, 10, 1),
         stated_on_precision=DatePrecision.MONTH.value,
     )
 
@@ -704,7 +713,7 @@ def test_a_precision_correction_is_audited_even_when_the_anchor_does_not_move(
         position=position,
         organisation=ministry,
         url=POSITION_URL,
-        stated_on=dt.date(2026, 10, 1),
+        stated_on=dt.date(2025, 10, 1),
         stated_on_precision=DatePrecision.QUARTER.value,
         summary="",
         engagement=None,
@@ -1871,7 +1880,7 @@ def test_an_approximate_record_reopens_on_its_period_and_never_on_its_anchor(
         ministry,
         specialist,
         summary="Toetab.",
-        stated_on=dt.date(2026, 10, 1),
+        stated_on=dt.date(2025, 10, 1),
         stated_on_precision=DatePrecision.MONTH.value,
     )
 
@@ -1883,9 +1892,9 @@ def test_an_approximate_record_reopens_on_its_period_and_never_on_its_anchor(
     )
     body = response.content.decode()
 
-    assert "01.10.2026" not in body
+    assert "01.10.2025" not in body
     assert _as_typed(timezone.localdate()) not in _stated_on_box(body)
-    assert 'value="2026"' in body
+    assert 'value="2025"' in body
 
 
 def test_a_correction_that_names_no_date_leaves_the_record_undated(
