@@ -268,6 +268,21 @@ class Submission(VisibilityInheritingModel):
         return self.final_version_id is not None
 
 
+class SubmissionRecipientQuerySet(models.QuerySet):
+    def addressees(self) -> SubmissionRecipientQuerySet:
+        """The rows that say who Koda **formally wrote to** — `Saaja` on every surface.
+
+        One definition for the `/arvamused/` filter and its option list, the
+        `Adressaat` cells, and Statistika's filter (`addressed_to`,
+        `addressee_organisations`, `addressee_prefetch` below). The register
+        used to match any recipient row, so an organisation that was only
+        copied in was offered as a `Saaja`, filtering by it listed a letter
+        whose `Adressaat` column did not name it, and the same filter counted
+        differently there and in Statistika (ENG-061).
+        """
+        return self.filter(role=RecipientRole.ADDRESSEE)
+
+
 class SubmissionRecipient(BaseModel):
     """One organisation on a submission, and why it is there.
 
@@ -296,6 +311,8 @@ class SubmissionRecipient(BaseModel):
     )
     note = models.CharField(max_length=200, blank=True, verbose_name="märkus")
 
+    objects = SubmissionRecipientQuerySet.as_manager()
+
     class Meta:
         verbose_name = "arvamuse saaja"
         verbose_name_plural = "arvamuse saajad"
@@ -309,6 +326,56 @@ class SubmissionRecipient(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.organisation_id} ({self.role})"
+
+
+#: Where :func:`addressee_prefetch` leaves each Submission's addressee rows,
+#: in `organisation__name` order (the model's own ordering within one role).
+ADDRESSEE_ROWS = "addressee_rows"
+
+
+def addressee_prefetch() -> models.Prefetch:
+    """The addressees of every Submission on a page, in one query.
+
+    A list prints `submission.addressee_rows` and nothing else: a cell that
+    walked every recipient row and printed only the addressees tested
+    `forloop.last` against the copies too, so a letter with a «teadmiseks»
+    recipient read `Ministry,` (ENG-061). `to_attr`, so it cannot be confused
+    with — or silently served in place of — the all-roles `recipient_rows`.
+    """
+    return models.Prefetch(
+        "recipient_rows",
+        queryset=SubmissionRecipient.objects.addressees().select_related("organisation"),
+        to_attr=ADDRESSEE_ROWS,
+    )
+
+
+def addressed_to(organisation_id: object) -> models.Q:
+    """A `Submission` filter: the ones this organisation was formally written to.
+
+    A subquery rather than a join, so a letter to three ministries stays one
+    row without a `distinct()` and the filter composes with any other.
+    """
+    return models.Q(
+        pk__in=SubmissionRecipient.objects.addressees()
+        .filter(organisation_id=organisation_id)
+        .values("submission_id")
+    )
+
+
+def addressee_organisations(submissions: models.QuerySet) -> models.QuerySet:
+    """The organisations that are an addressee of one of these Submissions.
+
+    The `Saaja` option list. The caller passes a population it has already
+    scoped with `visible_to`, so an option never names where a Submission the
+    reader cannot see was sent.
+    """
+    from app.organisations.models import Organisation
+
+    return Organisation.objects.filter(
+        pk__in=SubmissionRecipient.objects.addressees()
+        .filter(submission__in=submissions)
+        .values("organisation_id")
+    )
 
 
 class SubmissionJointSubmitter(BaseModel):

@@ -46,7 +46,7 @@ from app.reporting.selectors.base import (
     visible_matters,
 )
 from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
-from app.submissions.models import Submission
+from app.submissions.models import Submission, addressed_to, addressee_prefetch
 
 _ERA_NOTE = (
     "Struktuurne arvamuse kirje tekib alles selles süsteemis. Varasemate "
@@ -85,10 +85,9 @@ def sent_submissions(
         queryset = queryset.filter(sent_at__gte=start, sent_at__lt=end)
 
     if recipient_id is not None:
-        queryset = queryset.filter(
-            recipient_rows__organisation_id=recipient_id,
-            recipient_rows__role=RecipientRole.ADDRESSEE,
-        )
+        # The one addressee definition the `/arvamused/` register filters by as
+        # well, so `?saaja=` counts the same letters on both (ENG-061).
+        queryset = queryset.filter(addressed_to(recipient_id))
     if kind:
         queryset = queryset.filter(kind=kind)
 
@@ -353,7 +352,10 @@ def list_rows(context: ReportingContext, **filters: Any) -> QuerySet[Submission]
     return (
         sent_submissions(context, **filters)
         .select_related("matter", "matter__owner", "sent_by")
-        .prefetch_related("recipient_rows__organisation")
+        # What the list's `Adressaadid` cell prints, from the shared collection
+        # (`addressee_prefetch`, ENG-061). The CSV, which also writes the
+        # «teadmiseks» column, asks for the other role itself.
+        .prefetch_related(addressee_prefetch())
         .distinct()
         .order_by("-sent_at", "-created_at", "pk")
     )

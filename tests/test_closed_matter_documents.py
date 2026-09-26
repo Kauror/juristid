@@ -626,7 +626,10 @@ def test_reopening_restores_the_whole_surface(signed_in, specialist, organisatio
     draft.refresh_from_db()
     assert draft.final_version_id is not None
 
-    signed_in.post(reverse("submissions:mark_sent", kwargs={"pk": draft.pk}), {"channel": "EIS"})
+    signed_in.post(
+        reverse("submissions:mark_sent", kwargs={"pk": draft.pk}),
+        {"recipients": [str(organisation.pk)], "channel": "EIS"},
+    )
     draft.refresh_from_db()
     assert draft.status == SubmissionStatus.SENT
 
@@ -645,11 +648,14 @@ def test_reopening_restores_the_whole_surface(signed_in, specialist, organisatio
     assert Submission.objects.filter(matter=matter, status=SubmissionStatus.SENT).count() == 2
 
 
-def test_reopening_lets_a_draft_left_behind_be_finished(specialist):
+def test_reopening_lets_a_draft_left_behind_be_finished(specialist, organisation):
     """The route out of the refusal, stated as the product states it."""
     matter = factories.MatterFactory(owner=specialist)
     document = _opinion_file(matter, name="Valmis.pdf", actor=specialist)
-    draft = create_submission(matter=matter, title="Valmis arvamus", actor=specialist)
+    # Addressed, because a send names who it went to (ENG-041).
+    draft = create_submission(
+        matter=matter, title="Valmis arvamus", actor=specialist, recipients=[organisation]
+    )
     _close(matter, specialist)
 
     with pytest.raises(DomainError):

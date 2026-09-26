@@ -100,18 +100,38 @@ Matter's row lock — hiding them is courtesy, not the boundary
         {% endif %}
         {% if can_add_content %}
           {% if draft.final_version_id %}
-            <form class="draftrow__form" method="post"
-                  action="{% url 'submissions:mark_sent' pk=draft.pk %}">
-              {% csrf_token %}
-              <label class="field field--inline">
-                <span class="field__label">Kanal</span>
-                <input class="field__input field__input--compact" type="text" name="channel"
-                       value="{{ draft.channel }}" placeholder="EIS, e-post…">
-              </label>
-              <button class="button button--primary button--tiny" type="submit">
-                Märgi saadetuks
-              </button>
-            </form>
+            {% comment %}
+              **Who it goes to is asked here, because this is when it becomes a
+              fact.** A draft may be started addressed to nobody; a send may not,
+              and this form was the one door that let a SENT opinion name no
+              addressee (ENG-041). The control is the `Adressaadid` list box the
+              two panels below use, opening on whoever the draft already names.
+
+              The browser's own `required` refuses an empty choice beside the
+              box and puts the focus on it; the service refuses it again for any
+              post that did not come from here (`mark_submission_sent_on_open_matter`).
+              The draft's title is in the label's accessible name, because
+              several drafts mean several `Adressaadid` boxes on one page.
+            {% endcomment %}
+            {% with send=draft.send_form %}
+              <form class="draftrow__form draftrow__form--send" method="post"
+                    action="{% url 'submissions:mark_sent' pk=draft.pk %}">
+                {% csrf_token %}
+                <label class="field draftrow__addressees" for="{{ send.recipients.id_for_label }}">
+                  <span class="field__label">{{ send.recipients.label }}<span class="visually-hidden"> – {{ draft.title }}</span></span>
+                  {{ send.recipients }}
+                  <span class="field__help" id="{{ send.recipients.auto_id }}_helptext">{{ send.recipients.help_text }}</span>
+                </label>
+                <label class="field field--inline">
+                  <span class="field__label">Kanal</span>
+                  <input class="field__input field__input--compact" type="text" name="channel"
+                         value="{{ draft.channel }}" placeholder="EIS, e-post…">
+                </label>
+                <button class="button button--primary button--tiny" type="submit">
+                  Märgi saadetuks
+                </button>
+              </form>
+            {% endwith %}
           {% else %}
             {% comment %}
               **Two controls, two names.** The chooser's label was visually
