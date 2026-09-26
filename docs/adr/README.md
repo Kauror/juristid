@@ -29,7 +29,7 @@ consequences and reversibility.
 | [0018](0018-structured-matter-facts.md) | Structured Matter facts, and the generated department views | Accepted |
 | [0019](0019-opinion-archive-reconciliation.md) | Reconstructing historical submissions from the opinions archive | Accepted |
 | [0020](0020-historical-cutover-current-state.md) | The historical cutover, and what a closed archive row may claim | Accepted |
-| [0021](0021-final-register-cutover.md) | The final register cutover, and the two columns that mean different things | Accepted |
+| [0021](0021-final-register-cutover.md) | The final register cutover, and the two columns that mean different things | Accepted, amended 2026-09-26 |
 | [0022](0022-deployment-backup-and-recovery.md) | Deployment, backup and recovery on the Unraid host | Accepted |
 | [0023](0023-searchable-opinion-archive.md) | Making the whole opinions archive searchable evidence | Accepted |
 | [0024](0024-test-data-classification.md) | Test data is a stored class on the Matter, and purging it is a later decision | Accepted |
@@ -142,7 +142,7 @@ Naming: `NNNN-short-decision-title.md`.
 - 0018 — Stage 2G structured Matter facts
 - 0019 — Stage 2H opinion archive and historical submissions
 - 0020 — Stage 2I historical cutover state
-- 0021 — the final register cutover
+- 0021 — the final register cutover — **amended 2026-09-26**: «Arvamus koostamisel» is one per-Matter definition (`register_filters.opinion_state_q`) behind Osakond's ARVAMUS KOOSTAMISEL column, its drill-through and `?arvamus=`: a DRAFT Submission the reader may see, or a CURRENT register row with a blank `VÄLJA` that no readable SENT Submission has overtaken; `saadetud` is a readable SENT Submission or a `VÄLJA` mark; native Matters count, a native send retires a stale blank cell, `VÄLJA` itself means what it meant, and WITHDRAWN/SUPERSEDED populations are left to ENG-062
 - 0022 — deployment, backup and recovery on the host the system actually runs on
 - 0023 — Stage 2H.2, the searchable opinion archive
 - 0024 — real/test data classification and the purge plan that precedes a purge

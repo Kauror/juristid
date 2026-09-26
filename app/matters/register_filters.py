@@ -62,14 +62,14 @@ SOURCE_ABSENT = "puudub"
 #: and 402 Matters in the real corpus have it (Stage-2D brief 12).
 SOURCE_SEVERAL = "mitu"
 
-#: What `?arvamus=` selects: the drafting step, as the register recorded it.
+#: What `?arvamus=` selects: is an opinion being written on the file, or has one
+#: gone out — from the canonical Submissions and the register's VÄLJA column
+#: together (:func:`opinion_state_q`, ENG-019).
 #:
-#: `koostamisel` is the condition behind the *Arvamusi koostamisel* card, and it
-#: lives here rather than in the dashboard so the card's count and the list it
-#: opens are one query. The lifecycle half of the question — open, FULL, visible
-#: — is asked by the ordinary parameters beside it, and `dashboard` is the
-#: authority on why the register's VÄLJA column answers this and
-#: `Submission.sent_at` does not (ADR 0021).
+#: `koostamisel` is the condition behind Osakond's *Arvamus koostamisel*
+#: column, and it lives here rather than in the dashboard so the column's count
+#: and the list it opens are one query. The lifecycle half of the question —
+#: open, FULL, visible — is asked by the ordinary parameters beside it.
 OPINION_DRAFTING = "koostamisel"
 OPINION_SENT = "saadetud"
 
@@ -298,24 +298,95 @@ def apply_date_filters(queryset: Any, params: Any) -> tuple[Any, dict[str, str]]
     return queryset, echo
 
 
-def filter_by_opinion_state(queryset: QuerySet[Matter], value: str) -> QuerySet[Matter]:
-    """Apply `?arvamus=`: has the drafting step been recorded as finished.
+def opinion_state_q(user: Any, value: str) -> Q:
+    """The one definition of «Arvamus koostamisel» and «Arvamus saadetud», per Matter.
 
-    Read from the derived ``CurrentRegisterState`` row, and only about the one
-    fact that table is authoritative for. ``opinion_sent_recorded`` asks whether
-    the register *wrote* anything in VÄLJA, not whether what it wrote parses as
-    a date. Those differ on fourteen current Matters in the approved snapshot,
-    and reading the parsed date's nullability reported all fourteen as
-    unfinished work (app/matters/dashboard.py).
+    Osakond's ARVAMUS KOOSTAMISEL column counts it, each cell's link opens it,
+    and the register's ``?arvamus=`` *is* it. It used to read only the imported
+    register's VÄLJA column, so a native Matter — which never has a register
+    row — counted nowhere however many drafts it held, and a register-backed
+    Matter whose opinion then went out *here* stayed «koostamisel» beside the
+    send that finished it (ENG-019). Two sources, one rule:
+
+    **koostamisel** — either
+
+    * a DRAFT :class:`~app.submissions.models.Submission` on the Matter that this
+      reader may see — the canonical record of an opinion being written, and the
+      population /arvamused/ counts as «koostamisel», taken from the same
+      :func:`app.submissions.workspace.drafting` (ADR 0033 §4); or
+    * a CURRENT ``CurrentRegisterState`` row whose VÄLJA is blank — the register
+      era's way of saying the same thing (ADR 0021) — **unless** the Matter has a
+      SENT Submission this reader may see.
+
+    That exception is what makes the register half go stale correctly. A blank
+    VÄLJA says the register had not recorded a send *when it was last read*.
+    Once a canonical SENT Submission exists it is the outbound record and VÄLJA
+    is source metadata beside it (ADR 0021), so the blank cell no longer
+    describes the file. A DRAFT is never retired that way: a second opinion in
+    preparation after the first went out is drafting, which is why the
+    exception applies to the register half only.
+
+    **saadetud** — a SENT Submission this reader may see, **or** a CURRENT
+    register row with something written in VÄLJA.
+
+    The two may both hold for one Matter (sent once, drafting again), and a
+    Matter satisfying either half of one of them is one row: both halves are
+    correlated ``EXISTS`` subqueries, so there is no join to fan out and nothing
+    for ``distinct()`` to repair.
+
+    **"SENT" is ``Submission.objects.sent()`` — status SENT, the opinion that
+    currently stands** — the reading `work_items._discharge_exists` already uses
+    for the response obligation. What a WITHDRAWN or SUPERSEDED opinion should
+    count as is a different question (ENG-062) and is deliberately not decided
+    here.
+
+    **The Submission halves are scoped to the reader; the register half is not.**
+    A Submission can be restricted below its Matter, and letting one this
+    reader may not open move a readable Matter between the two states would
+    disclose that it exists — so a hidden send leaves a blank VÄLJA standing for
+    that reader, exactly as if it had not happened. ``CurrentRegisterState`` has
+    no visibility of its own beyond its Matter's, which the caller's queryset
+    has already applied (``Matter.objects.visible_to``).
+
+    **Not «an open FULL Matter without a sent opinion».** That would pull in
+    every WAIT, MONITOR and information-only file, which are not opinions being
+    written. The lifecycle half — open, FULL, visible — is the caller's, asked
+    by the register's ordinary parameters or by ``active_matters``.
+
+    ``VÄLJA`` is read for presence (``opinion_sent_recorded``), never for
+    whether it parses as a date: fourteen current Matters in the approved
+    snapshot hold something the parser cannot read, and treating those as
+    unsent put them all back into this population (ADR 0021).
+
+    An unknown ``value`` matches nothing.
     """
-    from app.legacy_import.current_state import RegisterCurrency
+    from app.legacy_import.current_state import CurrentRegisterState
+    from app.submissions.models import Submission
+    from app.submissions.workspace import drafting
 
     if value not in {OPINION_DRAFTING, OPINION_SENT}:
-        return queryset.none()
-    return queryset.filter(
-        current_register_state__currency=RegisterCurrency.CURRENT,
-        current_register_state__opinion_sent_recorded=value == OPINION_SENT,
+        return Q(pk__in=[])
+
+    readable = Submission.objects.visible_to(user).filter(matter=OuterRef("pk"))
+    register = CurrentRegisterState.objects.filter(matter=OuterRef("pk"))
+    sent_here = Q(Exists(readable.sent()))
+    if value == OPINION_SENT:
+        return sent_here | Q(Exists(register.current().filter(opinion_sent_recorded=True)))
+    # `drafting()` on both sides: the Submission population /arvamused/ counts,
+    # and the register rows the cutover counts — imported, not restated.
+    return Q(Exists(drafting(user, visible=readable))) | (
+        Q(Exists(register.drafting())) & ~sent_here
     )
+
+
+def filter_by_opinion_state(queryset: QuerySet[Matter], user: Any, value: str) -> QuerySet[Matter]:
+    """Apply `?arvamus=`: is an opinion being written here, or has one gone out.
+
+    The condition is :func:`opinion_state_q`, which Osakond's column reaches
+    through ``dashboard.drafting_matters`` — so the figure, the link under it and
+    this filter are one definition rather than three similar ones.
+    """
+    return queryset.filter(opinion_state_q(user, value))
 
 
 def filter_by_work_victory(queryset: QuerySet[Matter], user: Any, value: str) -> QuerySet[Matter]:
@@ -624,7 +695,7 @@ def apply_register_filters(
     if action_filter := params.get("tegevus"):
         queryset = selectors.filter_by_next_action(queryset, user, action_filter, today)
     if opinion := params.get("arvamus"):
-        queryset = filter_by_opinion_state(queryset, opinion)
+        queryset = filter_by_opinion_state(queryset, user, opinion)
     if work_state := params.get(WORK_PARAM):
         queryset = filter_by_work_state(
             queryset,

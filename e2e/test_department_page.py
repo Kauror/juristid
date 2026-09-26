@@ -31,7 +31,18 @@ from app.core.management.commands.seed_e2e_data import (
     SUPERSEDED_DEADLINE_TITLE,
 )
 from app.matters.department_dashboard import OUTSIDE_DEPARTMENT_NAME as OUTSIDE_NAME
-from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
+from e2e.conftest import (
+    ADMIN,
+    HEAD,
+    MARTIN,
+    READER,
+    SANDRA,
+    create_matter,
+    go_to,
+    sign_in,
+    sign_out,
+    unique_title,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -403,6 +414,72 @@ def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
     figure.click()
     page.wait_for_load_state("networkidle")
     expect(page.locator(".registercount strong")).to_have_text(str(expected))
+
+
+def drafting_count(page, name: str) -> int:
+    """One person's ARVAMUS KOOSTAMISEL cell, read off the row by its own label."""
+    cell = team_row(page, name).locator(".uxstat__num").filter(has_text="Arvamus koostamisel")
+    return cell_value(cell.first.inner_text())
+
+
+def test_a_native_draft_is_counted_and_opens_in_the_drafting_list(page, base_url):
+    """«Arvamus koostamisel» counts an opinion written here, and opens it (ENG-019).
+
+    The column used to read only the imported register's VÄLJA cell, which a
+    Matter created in this system never has — so Martin could be writing an
+    opinion in DRAFT and his cell would not move. Read as a before/after pair on
+    one row, because the shard's world is shared and other files file drafts
+    too; the only claim is that *this* draft adds exactly one.
+
+    The drill-through is the path the page offers: the row opens Martin's desk,
+    the desk's «avatud teemat» opens his register, and the register's own
+    Arvamus control narrows it — to exactly as many rows as the cell counted,
+    with this Matter among them.
+    """
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+    before = drafting_count(page, MARTIN.display_name)
+    sign_out(page, base_url)
+
+    title = unique_title("Omamustand")
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, title, owner=MARTIN)
+    page.locator(".tabs__tab", has_text="Dokumendid").click()
+    block = page.locator("#arvamuste-haldus")
+    if block.get_attribute("open") is None:
+        block.locator(".accordion__head").click()
+    block.locator("summary", has_text="Uus arvamus").click()
+    page.locator("#id_arvamus-title").fill(f"{title} arvamus")
+    page.locator("#id_arvamus-kind").select_option("FORMAL_OPINION")
+    page.get_by_role("button", name="Loo arvamus").click()
+    expect(page.locator(".draftrow", has_text=f"{title} arvamus")).to_be_visible()
+    sign_out(page, base_url)
+
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+    after = drafting_count(page, MARTIN.display_name)
+    assert after == before + 1
+
+    team_row(page, MARTIN.display_name).click()
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("heading", name=f"{MARTIN.display_name} · asjad")).to_be_visible()
+    page.locator(".seis__figure").filter(has_text="avatud teemat").first.click()
+    page.wait_for_load_state("networkidle")
+
+    panel = page.locator("#tapsem-otsing")
+    panel.locator("summary.filterpanel__trigger").click()
+    panel.locator("select[name='arvamus']").select_option("koostamisel")
+    panel.get_by_role("button", name="Filtreeri").click()
+    page.wait_for_load_state("networkidle")
+
+    assert "arvamus=koostamisel" in page.url
+    expect(page.locator(".registercount strong")).to_have_text(str(after))
+
+    # Every row rather than page one, for the reason `late_work` gives.
+    address, _, fragment = page.url.partition("#")
+    page.goto(address + "&kaupa=koik" + (f"#{fragment}" if fragment else ""))
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#teemad-tulemused").get_by_role("link", name=title)).to_have_count(1)
 
 
 def test_a_departed_colleague_is_counted_without_being_named(page, base_url):
