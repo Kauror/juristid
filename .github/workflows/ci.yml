@@ -235,6 +235,7 @@ jobs:
           uv run python manage.py migrate matters 0011 --noinput
           uv run python manage.py migrate audit 0015 --noinput
           uv run python manage.py migrate reporting 0001 --noinput
+          uv run python manage.py migrate organisations 0001 --noinput
           uv run python manage.py migrate --noinput
 
       - name: Estonian search capabilities are available

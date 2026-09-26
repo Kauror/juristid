@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -33,7 +33,7 @@ from typing import Any
 from django.db.models import Q
 
 from app.accounts.models import User
-from app.core.text import normalize_for_matching
+from app.core.text import normalize_for_matching, normalize_organisation_name
 from app.organisations.models import Organisation
 from app.workflow.models import LegacyStatusMapping, StageVocabulary, resolve_legacy_status
 
@@ -80,16 +80,26 @@ class MappingTables:
 
         return cls(
             owners=_normalised_section(raw, "owners", file_path),
-            organisations=_normalised_section(raw, "organisations", file_path),
+            # Keyed the way the catalogue is, so a source spelling carrying an
+            # invisible character reaches the mapping written without one (ENG-045).
+            organisations=_normalised_section(
+                raw, "organisations", file_path, fold=normalize_organisation_name
+            ),
             record_modes=_normalised_section(raw, "record_modes", file_path),
         )
 
 
-def _normalised_section(raw: dict[str, Any], key: str, path: Path) -> dict[str, str]:
+def _normalised_section(
+    raw: dict[str, Any],
+    key: str,
+    path: Path,
+    *,
+    fold: Callable[[str], str] = normalize_for_matching,
+) -> dict[str, str]:
     section = raw.get(key, {})
     if not isinstance(section, dict):
         raise MappingFileError(f"{path.name}: [{key}] must be a table of source value -> target.")
-    return {normalize_for_matching(str(k)): str(v) for k, v in section.items()}
+    return {fold(str(k)): str(v) for k, v in section.items()}
 
 
 #: How an owner lookup succeeded. Recorded on every assignment the backfill
@@ -270,14 +280,17 @@ def resolve_organisation(raw_name: str, mappings: MappingTables) -> Resolution:
     """Find the institution a source name refers to. Never creates one.
 
     Conservative normalised comparison — casefolded, diacritic-stripped,
-    whitespace-collapsed — is allowed because it changes spelling, not identity.
-    Anything beyond that is guessing.
+    whitespace-collapsed, invisible format characters ignored — is allowed
+    because it changes spelling, not identity. It is the catalogue's own key
+    (`app.core.text.normalize_organisation_name`), so a source spelling with a
+    pasted zero-width space still meets the row it names. Anything beyond that
+    is guessing.
     """
     name = raw_name.strip()
     if not name:
         return BLANK
 
-    normalized = normalize_for_matching(name)
+    normalized = normalize_organisation_name(name)
 
     if (target := mappings.organisations.get(normalized)) is not None:
         organisation = Organisation.objects.filter(

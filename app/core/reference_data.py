@@ -44,7 +44,7 @@ from typing import Any
 
 from django.db import transaction
 
-from app.core.text import normalize_for_matching
+from app.core.text import normalize_organisation_name
 
 # -- outcome vocabularies ---------------------------------------------------
 #
@@ -110,7 +110,7 @@ class OrganisationFinding:
     def digest_row(self) -> dict[str, Any]:
         return {
             "kind": "organisation",
-            "key": normalize_for_matching(self.name),
+            "key": normalize_organisation_name(self.name),
             "name": self.name,
             "type": self.organisation_type,
             "aliases": sorted(self.aliases_to_add),
@@ -286,7 +286,7 @@ def _resolve_organisations() -> tuple[OrganisationFinding, ...]:
 
     findings: list[OrganisationFinding] = []
     for entry in PUBLIC_REFERENCE_ORGANISATIONS:
-        normalized = normalize_for_matching(entry.name)
+        normalized = normalize_organisation_name(entry.name)
         by_name = list(Organisation.objects.filter(normalized_name=normalized)[:3])
         if len(by_name) > 1:
             findings.append(
@@ -328,7 +328,7 @@ def _resolve_organisations() -> tuple[OrganisationFinding, ...]:
         to_add: list[str] = []
         claimed: list[str] = []
         for alias in entry.aliases:
-            alias_norm = normalize_for_matching(alias)
+            alias_norm = normalize_organisation_name(alias)
             holders = OrganisationAlias.objects.filter(normalized_alias=alias_norm)
             if organisation is not None:
                 if holders.filter(organisation=organisation).exists():
@@ -452,7 +452,7 @@ def apply_reference_plan(*, expected_sha256: str) -> ReferenceApplyResult:
 def _existing_for(name: str) -> Any:
     from app.organisations.models import Organisation
 
-    normalized = normalize_for_matching(name)
+    normalized = normalize_organisation_name(name)
     exact = list(Organisation.objects.filter(normalized_name=normalized)[:2])
     if len(exact) == 1:
         return exact[0]
@@ -528,7 +528,7 @@ def verify_reference_data() -> VerifyReport:
     # and `plan` only sees it from the manifest's side.
     seen: dict[str, str] = {}
     for entry in PUBLIC_REFERENCE_ORGANISATIONS:
-        normalized = normalize_for_matching(entry.name)
+        normalized = normalize_organisation_name(entry.name)
         if normalized in seen:
             problems.append(
                 f"Alusandmestik ise on vastuoluline: {entry.name} ja {seen[normalized]} "

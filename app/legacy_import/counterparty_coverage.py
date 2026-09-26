@@ -40,7 +40,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.text import normalize_for_matching
+from app.core.text import normalize_organisation_name
 
 #: The whole cell resolves to exactly one reviewed canonical name.
 EXACT_CANONICAL = "EXACT_CANONICAL"
@@ -168,9 +168,9 @@ def _reference_index() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     canonical: dict[str, set[str]] = {}
     aliases: dict[str, set[str]] = {}
     for entry in PUBLIC_REFERENCE_ORGANISATIONS:
-        canonical.setdefault(normalize_for_matching(entry.name), set()).add(entry.name)
+        canonical.setdefault(normalize_organisation_name(entry.name), set()).add(entry.name)
         for alias in entry.aliases:
-            aliases.setdefault(normalize_for_matching(alias), set()).add(entry.name)
+            aliases.setdefault(normalize_organisation_name(alias), set()).add(entry.name)
     return canonical, aliases
 
 
@@ -180,7 +180,7 @@ def classify(
     aliases: dict[str, set[str]],
 ) -> str:
     """One whole cell, against the reviewed set. Never split, never scored."""
-    normalized = normalize_for_matching(raw)
+    normalized = normalize_organisation_name(raw)
     if not normalized:
         return BLANK
     hits = canonical.get(normalized)
@@ -235,7 +235,7 @@ def build_coverage_report(*, snapshot_sha256: str = "") -> CoverageReport:
         report.counts[(contract.era, column.direction, classification)] += 1
 
         if classification in (UNMATCHED, AMBIGUOUS):
-            key = normalize_for_matching(raw)
+            key = normalize_organisation_name(raw)
             spelling, occurrences, matters = report.unresolved.get(key, (raw.strip(), 0, set()))
             matters.add(reference["matter_id"])
             report.unresolved[key] = (spelling, occurrences + 1, matters)
