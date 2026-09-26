@@ -255,18 +255,25 @@ not permission to skip the target-image preflight at 0.3.
 
 The distinction in 5.5 is the one worth internalising: **derived state is never
 a reason to restore.** `REBUILDABLE_MODELS` in `app/core/deployment.py` is the
-authoritative list — today `SearchDocument`, `DocumentDerivative`,
-`OpinionArchiveSearchDocument` and `OpinionArchiveText` — and it is what a
-restore comparison is allowed to find empty. Everything else is canonical until
+authoritative list — today `SearchDocument`, `SearchGeneration`,
+`DocumentDerivative` and its `DocumentTextFragment` rows,
+`OpinionArchiveSearchDocument`, `OpinionArchiveText` and `CurrentRegisterState`
+— and it is what a restore comparison is allowed to find empty. A table that
+CASCADEs from one of these is one of these; a test holds that rule, because the
+fragments were once counted as canonical and a derivative rebuild read as lost
+rows (ENG-118). Everything else is canonical until
 somebody argues otherwise, which is the safe default rather than an assessment
 of each table.
 
 `OPERATIONAL_MODELS` beside it is a shorter list with a different meaning:
-`SearchRebuildDebt`, and nothing else. Those rows *are* restored — the dump has
-no table list — but their number is never compared, because it says what the
-system owed itself at one instant rather than what the register holds. Without
-that, a restore taken seconds after somebody renamed a Valdkond reported
-canonical divergence for a queue that was about to empty itself (ADR 0041).
+`SearchRebuildDebt`, the shared-gate throttle (`SharedGateThrottle`) and
+unfinished Uus teema forms (`MatterIntakeSession`, `MatterIntakeFile`). Those
+rows *are* restored — the dump has no table list — but their number is never
+compared, because it says what the system owed itself, or who was mid-form, at
+one instant rather than what the register holds. Without that, a restore taken
+seconds after somebody renamed a Valdkond reported canonical divergence for a
+queue that was about to empty itself (ADR 0041), and one mistyped gate password
+did the same (ENG-118).
 
 ## Current state — read it from the instance, not from here
 

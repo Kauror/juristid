@@ -144,9 +144,17 @@ class MigrationState:
     #: Applied and not on disk. Non-empty means old code, new schema — the
     #: rollback case, and the one that is invisible unless asked for.
     unknown: tuple[str, ...]
-    #: The leaf of every migrated app. A backup manifest records these so a
-    #: restore can be matched to the code that wrote it.
+    #: The leaf of every migrated app *on disk*: where this code would migrate
+    #: the database to. A statement about the code, not about the database —
+    #: `deployment_readiness` reports it beside `pending`.
     leaves: tuple[str, ...]
+    #: The last *applied* migration of every migrated app: what the database's
+    #: schema actually is. This is what `recovery_fingerprint` records and
+    #: compares (ENG-116). The on-disk leaves passed a restore with a migration
+    #: missing, because they describe the code in the process rather than the
+    #: rows in `django_migrations`, and they would fail a correct restore onto a
+    #: newer build for the opposite reason.
+    applied_leaves: tuple[str, ...] = ()
 
     @property
     def is_consistent(self) -> bool:
@@ -312,7 +320,41 @@ def migration_state() -> MigrationState:
     )
 
     leaves = tuple(sorted(f"{app_label}.{name}" for app_label, name in targets))
-    return MigrationState(pending=tuple(pending), unknown=unknown, leaves=leaves)
+    return MigrationState(
+        pending=tuple(pending),
+        unknown=unknown,
+        leaves=leaves,
+        applied_leaves=_applied_leaves(loader, unknown),
+    )
+
+
+def _applied_leaves(loader: Any, unknown: tuple[str, ...]) -> tuple[str, ...]:
+    """The last applied migration of every migrated app, read from the database.
+
+    An applied node is a leaf of the applied set when none of its children *in
+    the same app* is applied. Children in other apps are other apps' migrations
+    that depend on this one (`matters.0001` on `auth.0012`), and counting them
+    would make almost no app have a leaf at all.
+
+    Rows the code does not know (`unknown` — a database ahead of the code) are
+    part of what the schema is, so they are named too: two databases that
+    differ only there are different schemas.
+    """
+    graph = loader.graph
+    applied = {
+        key
+        for key in loader.applied_migrations
+        if key[0] in loader.migrated_apps and key in graph.nodes
+    }
+    applied_leaves = {
+        f"{app_label}.{name}"
+        for app_label, name in applied
+        if not any(
+            child.key[0] == app_label and child.key in applied
+            for child in graph.node_map[(app_label, name)].children
+        )
+    }
+    return tuple(sorted(applied_leaves | set(unknown)))
 
 
 # --------------------------------------------------------------------------
@@ -426,6 +468,17 @@ REBUILDABLE_MODELS = frozenset(
         # the extraction in an environment that forbids it writes back the same
         # BLOCKED rows rather than a different answer.
         "legacy_import.OpinionArchiveText",
+        # The located pieces of a derivative's text. CASCADE from
+        # `DocumentDerivative`, so they cannot be anything the derivative is not:
+        # counted as canonical, a derivative rebuild between two fingerprints
+        # read as `DocumentTextFragment: 2 -> 1` (ENG-118). A guard test holds
+        # the rule for any future child (tests/test_deployment_state.py).
+        "documents.DocumentTextFragment",
+        # One interpretation of the final approved register snapshot, rebuilt
+        # from the immutable `MatterSourceReference` rows by
+        # `refresh_current_register`; its own module calls it derived data "in
+        # exactly the sense SearchDocument is" (app/legacy_import/current_state.py).
+        "legacy_import.CurrentRegisterState",
     }
 )
 
@@ -448,9 +501,20 @@ REBUILDABLE_MODELS = frozenset(
 #:
 #: It is deliberately not `REBUILDABLE_MODELS`: nothing rebuilds a debt row.
 #: Rebuilding is what *clears* one.
+#:
+#: The same reasoning covers state the system keeps about people's sessions
+#: rather than about the register (ENG-118). One mistyped shared-gate password
+#: between two fingerprints was reported as
+#: `canonical_counts.accounts.SharedGateThrottle: 0 -> 1`, and an unfinished
+#: Uus teema form is ephemeral by design — it expires and is swept.
 OPERATIONAL_MODELS = frozenset(
     {
         "search.SearchRebuildDebt",
+        # Failed shared-password attempts per client: a lockout clock.
+        "accounts.SharedGateThrottle",
+        # An unfinished Uus teema form and the files staged on it.
+        "matters.MatterIntakeSession",
+        "matters.MatterIntakeFile",
     }
 )
 

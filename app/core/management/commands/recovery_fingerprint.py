@@ -12,10 +12,15 @@ Three properties make it useful rather than decorative:
   database is *supposed* to have an empty search projection until
   `rebuild_search_index` runs, so comparing those would fail every correct
   restore. Rebuildable counts are reported and never compared (docs/adr/0014).
-  Operational rows — the system's record of work it owes itself, which today is
-  `SearchRebuildDebt` alone — are reported and never compared for a different
-  reason: they *are* restored, and their number is a statement about a queue at
-  one instant rather than about the register (docs/adr/0041).
+  Operational rows — the system's record of work it owes itself
+  (`SearchRebuildDebt`) and of people's sessions (the shared-gate throttle, an
+  unfinished Uus teema form) — are reported and never compared for a different
+  reason: they *are* restored, and their number is a statement about one
+  instant rather than about the register (docs/adr/0041, ENG-118).
+* **The schema is read from the database.** `migration_leaves` is the last
+  applied migration of every app, from `django_migrations` — not the leaves of
+  the code in this process, which passed a restore with a migration missing
+  (ENG-116).
 * **Evidence is verified against its own recorded hash**, not merely counted.
   A row whose bytes did not come back is exactly the failure a count cannot
   see. Every canonical holder of evidence is walked, not only
@@ -126,7 +131,11 @@ class Command(BaseCommand):
             "environment": identity.environment,
             "postgresql_major": major,
             "postgresql_minor": minor,
-            "migration_leaves": list(state.leaves),
+            # Applied, not on disk (ENG-116). Unchanged in meaning for a fully
+            # migrated database — the only kind a fingerprint is taken of before
+            # a deploy — so fingerprints written by earlier builds still compare
+            # and `FINGERPRINT_VERSION` stays where it is.
+            "migration_leaves": list(state.applied_leaves),
             "migrations_consistent": state.is_consistent,
             "canonical_counts": deployment.model_counts(canonical),
             "rebuildable_counts": deployment.model_counts(rebuildable),
@@ -255,23 +264,20 @@ class Command(BaseCommand):
             before: Any = earlier.get(field)
             after: Any = current[field]
             if field == "canonical_counts":
-                # A fingerprint written before `OPERATIONAL_MODELS` existed
-                # still carries the debt table under `canonical_counts`, and a
-                # key present on one side only is reported as a difference. Drop
-                # it from both, so an older fingerprint compares correctly
-                # instead of being refused by a version bump it does not
-                # otherwise need — the field counts the same models, minus one
-                # that never belonged in it.
+                # A fingerprint written before a model was classified still
+                # carries it under `canonical_counts` — the debt table before
+                # `OPERATIONAL_MODELS` existed, the five tables of ENG-118 before
+                # they joined the lists — and a key present on one side only is
+                # reported as a difference. Drop every classified label from
+                # both, so an older fingerprint compares correctly instead of
+                # being refused by a version bump it does not otherwise need:
+                # the field counts the same models, minus ones that never
+                # belonged in it.
+                not_canonical = deployment.OPERATIONAL_MODELS | deployment.REBUILDABLE_MODELS
                 before = {
-                    key: value
-                    for key, value in (before or {}).items()
-                    if key not in deployment.OPERATIONAL_MODELS
+                    key: value for key, value in (before or {}).items() if key not in not_canonical
                 }
-                after = {
-                    key: value
-                    for key, value in after.items()
-                    if key not in deployment.OPERATIONAL_MODELS
-                }
+                after = {key: value for key, value in after.items() if key not in not_canonical}
             if field == "evidence":
                 # `objects_verified` and `bytes_verified` describe how hard this
                 # run looked, not what it found.
