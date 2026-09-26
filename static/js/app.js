@@ -141,44 +141,76 @@
   document.body.addEventListener("htmx:beforeSwap", function (event) {
     var detail = event.detail || {};
     var elt = detail.elt;
-    placement = null;
     if (!elt || !elt.closest || !detail.xhr || detail.xhr.status >= 300) {
       return;
     }
     if (elt.classList && elt.classList.contains("uxtl__older")) {
-      placement = { kind: "inserted", parent: elt.parentNode, before: elt.previousElementSibling };
+      placement = {
+        kind: "inserted",
+        parent: elt.parentNode,
+        before: elt.previousElementSibling,
+        target: detail.target,
+      };
       return;
     }
-    var form = elt.closest(".uxtl__removeform");
+    /* The removal re-renders `#teema-vaade`, so `detail.elt` is that target;
+     * the form that asked is the request's own element. */
+    var asker = detail.requestConfig && detail.requestConfig.elt;
+    var form = asker && asker.closest ? asker.closest(".uxtl__removeform") : null;
     if (form) {
       var row = form.closest("article.uxtl__item");
-      var rows = Array.prototype.slice.call(document.querySelectorAll("article.uxtl__item"));
       if (row) {
-        placement = { kind: "neighbour", index: rows.indexOf(row) };
+        placement = { kind: "neighbour", index: visibleRows().indexOf(row), target: detail.target };
       }
     }
   }, true);
+
+  /* A chronology row is `display: contents` — the grid lays out its children
+   * directly — so the row itself has no box and cannot hold focus. The landing
+   * is inside it: its first visible control, or else its first visible part,
+   * made focusable for the purpose. */
+  var focusableIn = function (row) {
+    var controls = row.querySelectorAll("a[href], button:not([disabled]), summary");
+    for (var i = 0; i < controls.length; i += 1) {
+      if (controls[i].getClientRects().length) {
+        return controls[i];
+      }
+    }
+    var parts = row.children;
+    for (var j = 0; j < parts.length; j += 1) {
+      if (parts[j].getClientRects().length && parts[j].getAttribute("aria-hidden") !== "true") {
+        return parts[j];
+      }
+    }
+    return null;
+  };
+
+  var visibleRows = function () {
+    return Array.prototype.filter.call(document.querySelectorAll("article.uxtl__item"), function (row) {
+      return focusableIn(row) !== null;
+    });
+  };
 
   var placedLanding = function (place) {
     if (place.kind === "inserted") {
       var node = place.before ? place.before.nextElementSibling : place.parent && place.parent.firstElementChild;
       while (node && document.contains(node)) {
-        if (node.matches && node.matches("article.uxtl__item")) {
-          return node;
-        }
-        var inner = node.querySelector && node.querySelector("article.uxtl__item");
-        if (inner) {
-          return inner;
+        var row = node.matches && node.matches("article.uxtl__item")
+          ? node
+          : node.querySelector && node.querySelector("article.uxtl__item");
+        var landing = row ? focusableIn(row) : null;
+        if (landing) {
+          return landing;
         }
         node = node.nextElementSibling;
       }
       return null;
     }
-    var rows = document.querySelectorAll("article.uxtl__item");
+    var rows = visibleRows();
     if (!rows.length || place.index < 0) {
       return null;
     }
-    return rows[Math.min(place.index, rows.length - 1)];
+    return focusableIn(rows[Math.min(place.index, rows.length - 1)]);
   };
 
   document.body.addEventListener("htmx:afterSettle", function (event) {
@@ -198,11 +230,17 @@
       active === document.documentElement ||
       !document.contains(active);
     if (!lost) {
-      placement = null;
+      if (placement && placement.target === target) {
+        placement = null;
+      }
       return;
     }
-    var place = placement;
-    placement = null;
+    /* Only the swap that recorded it: another request settling in between
+     * must neither use nor discard it. */
+    var place = placement && placement.target === target ? placement : null;
+    if (place) {
+      placement = null;
+    }
     var placed = place ? placedLanding(place) : null;
     if (placed) {
       if (!placed.hasAttribute("tabindex")) {

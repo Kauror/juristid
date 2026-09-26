@@ -83,7 +83,9 @@ def _load_older_and_read(page) -> tuple[dict, dict]:
 
 
 def _assert_landed_on_the_first_new_row(before: dict, after: dict) -> None:
-    assert after["isRow"], after
+    # Inside the row: a chronology row is `display: contents` and has no box of
+    # its own, so the landing is its first control (or its first visible part).
+    assert after["inRow"], after
     assert after["index"] == before["rows"], (before, after)
     assert 0 <= after["top"] < after["viewport"], after
     assert abs(after["scrollY"] - before["scrollY"]) < 200, (before, after)
@@ -119,10 +121,11 @@ def test_removing_a_row_lands_on_its_neighbour(page, base_url):
     _matter_with_rows(page, base_url, 8)
     rows = page.locator("article.uxtl__item")
     victim_index = 5
-    victim = rows.nth(victim_index)
-    victim.scroll_into_view_if_needed()
-    victim.locator("summary.uxtl__edit", has_text="Kustuta").click()
-    victim.get_by_role("button", name="Eemalda").focus()
+    # The row is `display: contents`, so it is reached through its own control.
+    remove = rows.nth(victim_index).locator("summary.uxtl__edit", has_text="Kustuta")
+    remove.scroll_into_view_if_needed()
+    remove.click()
+    rows.nth(victim_index).get_by_role("button", name="Eemalda").focus()
     count = rows.count()
     scroll_before = page.evaluate("window.scrollY")
     page.keyboard.press("Enter")
@@ -132,7 +135,7 @@ def test_removing_a_row_lands_on_its_neighbour(page, base_url):
     page.wait_for_timeout(300)
 
     after = page.evaluate(ACTIVE)
-    assert after["isRow"], after
+    assert after["inRow"], after
     assert after["index"] == victim_index, after
     assert 0 <= after["top"] < after["viewport"], after
     assert abs(after["scrollY"] - scroll_before) < 200, (scroll_before, after)

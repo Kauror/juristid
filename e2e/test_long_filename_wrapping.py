@@ -122,7 +122,7 @@ def test_ordinary_headings_are_laid_out_as_before_at_desktop(page, base_url):
     """`anywhere` breaks inside a word only when the word cannot fit: a normal
     title still occupies one line at 1440."""
     sign_in(page, base_url, MARTIN)
-    url = create_matter(page, base_url, unique_title("Tavaline pealkiri"))
+    url = create_matter(page, base_url, unique_title("Harilik pealkiri"))
     page.set_viewport_size({"width": 1440, "height": 900})
     page.goto(f"{url}muuda/")
     page.wait_for_load_state("networkidle")
