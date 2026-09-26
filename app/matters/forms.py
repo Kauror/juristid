@@ -256,6 +256,30 @@ def refuse_deadline_before_engagement(form: forms.Form, cleaned: dict[str, Any])
         form.add_error("feedback_deadline", DEADLINE_BEFORE_ENGAGEMENT)
 
 
+def refuse_future_engagement(form: forms.Form, cleaned: dict[str, Any]) -> None:
+    """The service's future-date rule for a `Kaasamine`, under the date box (ENG-004).
+
+    `add_engagement` and `update_engagement` refuse a round whose period begins
+    after today, with the same sentence; this asks the same question earlier so
+    the person reads it beside `Kaasamise kuupäev` with everything they typed
+    still on the form. Read from the **resolved** period, like the deadline rule
+    above, and judged only when it differs from what the record stores — a round
+    filed with a future date before the rule existed stays correctable.
+    """
+    from app.matters.services import ENGAGEMENT_CANNOT_BE_FUTURE
+
+    value = cleaned.get("occurred_on_value")
+    precision = cleaned.get("occurred_on_precision") or DatePrecision.EXACT.value
+    record = getattr(form, "record", None)
+    if record is not None and (value, precision) == (
+        record.occurred_on,
+        record.occurred_on_precision,
+    ):
+        return
+    if period_starts_after(value, precision, day=timezone.localdate()):
+        form.add_error("occurred_on", ENGAGEMENT_CANNOT_BE_FUTURE)
+
+
 def assignable_users() -> Any:
     """Who a person may be handed work on this form.
 
@@ -3931,6 +3955,7 @@ class EngagementForm(forms.Form):
         else:
             cleaned["occurred_on_value"] = None
             cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
+        refuse_future_engagement(self, cleaned)
         refuse_deadline_before_engagement(self, cleaned)
         return cleaned
 
@@ -4557,6 +4582,7 @@ class CompactEngagementForm(forms.Form):
         cleaned = super().clean() or {}
         cleaned["occurred_on_value"] = cleaned.get("occurred_on")
         cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
+        refuse_future_engagement(self, cleaned)
         # No `refuse_deadline_before_engagement` here any more: this panel has no
         # reply-by box to relate to the engagement date. The rule is unchanged and
         # is kept by the two surfaces that still write one — `EngagementForm` and
@@ -5008,6 +5034,13 @@ class CompactWebsiteOverviewForm(forms.Form):
         if not url:
             self.add_error("url", WEBSITE_OVERVIEW_NEEDS_LINK)
 
+        # The day the page went up cannot be tomorrow (ENG-004): the service's
+        # rule, beside the box it was typed into.
+        if published_on is not None and published_on > timezone.localdate():
+            from app.matters.services import WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE
+
+            self.add_error("published_on", WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE)
+
         # What the view acts on: an address and the day, which is a publication.
         # The second member may still be `None` — somebody who clears the box is
         # recording a page whose publication day they do not know, which is a
@@ -5097,11 +5130,32 @@ class WebsiteOverviewLinkForm(forms.Form):
             raise forms.ValidationError(WEBSITE_OVERVIEW_NEEDS_LINK)
         return url
 
-    # There is deliberately **no `clean_published_on`**. It used to refuse an
-    # empty box with `WEBSITE_OVERVIEW_NEEDS_DATE`; since docs/adr/0089 §8 an
-    # empty box is a valid answer meaning *the day is unknown*, on a publication
-    # and on a correction alike. `EstonianDateField` still refuses a value that
-    # is not a date, which is the only thing left to refuse here.
+    def __init__(self, *args: Any, stored_published_on: Any = None, **kwargs: Any) -> None:
+        """``stored_published_on`` is what the row already says, or `None`.
+
+        The one fact about the record this form is told, and only so the
+        future-date rule below can be the service's rule: a day that did not
+        move is not a new claim. Which operation the POST is still is decided by
+        the route and the record under its lock, never here (docs/adr/0081 §3).
+        """
+        super().__init__(*args, **kwargs)
+        self.stored_published_on = stored_published_on
+
+    def clean_published_on(self) -> Any:
+        """An empty box is still *unknown* (docs/adr/0089 §8); a future day is not.
+
+        It used to refuse an empty box with `WEBSITE_OVERVIEW_NEEDS_DATE`, and
+        that is not coming back. What is refused is a day after today that the
+        save would *put* on the record — the service's rule (ENG-004), under the
+        box. A publication stored with a future day before the rule existed can
+        still have its address corrected without the box refusing what it holds.
+        """
+        from app.matters.services import WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE
+
+        day = self.cleaned_data.get("published_on")
+        if day is not None and day != self.stored_published_on and day > timezone.localdate():
+            raise forms.ValidationError(WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE)
+        return day
 
 
 def _external_position_organisation_field() -> forms.ModelChoiceField:
@@ -5467,6 +5521,27 @@ class ExternalPositionFieldsMixin:
             anchor, precision = external_position_period(cast(Any, self))
         else:
             anchor, precision = cleaned.get("stated_on"), DatePrecision.EXACT.value
+        # **Not in the future** (ENG-004), the service's rule and sentence, on the
+        # control the answer was typed into. Judged only when the period moved
+        # from what the record stores, so a position filed with a future date
+        # before the rule existed can still be corrected in everything else.
+        record = getattr(self, "record", None)
+        stored = (
+            (record.stated_on, record.stated_on_precision) if record is not None else (None, None)
+        )
+        if (anchor, precision) != stored and period_starts_after(
+            anchor, precision, day=timezone.localdate()
+        ):
+            from app.matters.services import EXTERNAL_POSITION_CANNOT_BE_FUTURE
+
+            field = (
+                _precision_controls(EXTERNAL_POSITION_PREFIX, "stated_on").get(
+                    precision, "stated_on"
+                )
+                if self.offers_precision
+                else "stated_on"
+            )
+            self.add_error(field, EXTERNAL_POSITION_CANNOT_BE_FUTURE)
         cleaned["stated_on_value"] = anchor
         cleaned["stated_on_precision"] = precision
         return cleaned
