@@ -8,6 +8,7 @@ ID (docs/adr/0004-authentication-direction.md).
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import uuid
 from typing import Any
@@ -16,6 +17,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.core.cache import cache
+from django.db import connection, transaction
 from django.db.models import QuerySet
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect, render
@@ -76,6 +78,31 @@ def _attempt_key(request: HttpRequest) -> str:
     return f"dev-login-pin-attempts:{_client_address(request)}"
 
 
+#: Advisory-lock namespace for the PIN counter. Arbitrary but fixed, and not the
+#: search subsystem's (`app.search.indexing._LOCK_NAMESPACE`), so the two can
+#: never wait on each other.
+_PIN_LOCK_NAMESPACE = 31337
+
+
+def _hold_attempt_counter(request: HttpRequest) -> None:
+    """Take this client's PIN counter for the rest of the transaction.
+
+    The counter lives in Django's database cache, whose ``incr`` is a ``get``
+    followed by a ``set`` with nothing making two writers take turns, and whose
+    rows cannot be locked before they exist. A PostgreSQL advisory lock keyed on
+    the client is what serialises them instead: no schema, released by the
+    transaction's end whatever happens, and per client — two keys only share a
+    lock if their 32-bit digests collide, which makes two strangers take turns
+    for a moment and locks nobody out.
+    """
+    digest = hashlib.sha256(_attempt_key(request).encode("utf-8")).digest()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            [_PIN_LOCK_NAMESPACE, int.from_bytes(digest[:4], "big", signed=True)],
+        )
+
+
 def _is_locked_out(request: HttpRequest) -> bool:
     if not settings.DEV_LOGIN_PIN:
         return False
@@ -84,8 +111,14 @@ def _is_locked_out(request: HttpRequest) -> bool:
 
 def _record_failure(request: HttpRequest) -> None:
     key = _attempt_key(request)
-    # add() only sets when absent, so the window starts at the first failure and
-    # does not slide forward with every later one.
+    # add() only sets when absent, so the window starts at the first failure.
+    # (On the database cache the deployments use, `incr` is a get and a `set`
+    # with the cache's default timeout, so each counted miss also moves the
+    # window's end to that timeout from now — with the shipped 300/300, the
+    # lockout ends five minutes after the miss that armed it. Unchanged here.)
+    #
+    # Only ever called under `_hold_attempt_counter`: that lock is what makes
+    # the get-and-set inside `incr` safe against a concurrent miss.
     cache.add(key, 0, timeout=settings.DEV_LOGIN_PIN_LOCKOUT_SECONDS)
     try:
         cache.incr(key)
@@ -99,6 +132,33 @@ def _pin_is_correct(supplied: str) -> bool:
     return hmac.compare_digest(supplied.strip(), settings.DEV_LOGIN_PIN)
 
 
+def _spend_pin_attempt(request: HttpRequest) -> str:
+    """Check the lockout, compare the PIN and count a miss, as one step.
+
+    Returns ``"locked_out"``, ``"bad_pin"``, or ``""`` for a correct PIN.
+
+    Under the client's counter lock, because the three used to be separate: the
+    lockout was read, the PIN compared, and the miss counted with a
+    read-then-write increment. Attempts fired together all read "not locked",
+    all had their PIN compared, and could overwrite each other's increments — a
+    burst got more than `DEV_LOGIN_PIN_MAX_ATTEMPTS` guesses at a four-digit
+    secret (ENG-070). Taking turns, the attempt after the one that reaches the
+    limit finds it reached and is refused without its PIN being compared.
+
+    The window is what it was: it starts at the first miss, the limit-th miss is
+    still compared and counted, and every attempt after it is refused until the
+    window expires or a correct PIN signs somebody in.
+    """
+    with transaction.atomic():
+        _hold_attempt_counter(request)
+        if _is_locked_out(request):
+            return "locked_out"
+        if not _pin_is_correct(request.POST.get("pin", "")):
+            _record_failure(request)
+            return "bad_pin"
+    return ""
+
+
 @require_http_methods(["GET", "POST"])
 def dev_login(request: HttpRequest) -> HttpResponse:
     _require_dev_login()
@@ -106,7 +166,10 @@ def dev_login(request: HttpRequest) -> HttpResponse:
     users = User.objects.filter(is_synthetic=True, is_active=True).order_by("display_name")
 
     if request.method == "POST":
-        if _is_locked_out(request):
+        # No PIN, no counter: the environments without one have no cache table
+        # either, and the sign-in must not reach for it (see the success path).
+        refusal = _spend_pin_attempt(request) if settings.DEV_LOGIN_PIN else ""
+        if refusal == "locked_out":
             _record_denied(request, reason="locked_out")
             return render(
                 request,
@@ -119,8 +182,7 @@ def dev_login(request: HttpRequest) -> HttpResponse:
                 status=429,
             )
 
-        if settings.DEV_LOGIN_PIN and not _pin_is_correct(request.POST.get("pin", "")):
-            _record_failure(request)
+        if refusal == "bad_pin":
             _record_denied(request, reason="bad_pin")
             return render(
                 request,
@@ -226,16 +288,13 @@ def gate(request: HttpRequest) -> HttpResponse:
     context: dict[str, Any] = {}
 
     if request.method == "POST":
-        try:
-            shared_gate.require_not_locked(request)
-        except shared_gate.GateLocked as locked:
-            return _gate_refused(request, context, reason="locked_out", wait=locked.seconds)
+        # The lockout check, the verification and the count are one step under
+        # this client's lock, so parallel attempts cannot all be verified before
+        # the one that arms the lockout is counted (ENG-070).
+        outcome = shared_gate.attempt(request, request.POST.get("password", ""))
+        if not outcome.passed:
+            return _gate_refused(request, context, reason=outcome.reason, wait=outcome.wait)
 
-        if not shared_gate.verify_password(request.POST.get("password", "")):
-            wait = shared_gate.record_failure(request)
-            return _gate_refused(request, context, reason="bad_password", wait=wait)
-
-        shared_gate.record_success(request)
         shared_gate.open_gate(request)
         record_security_event(
             event_type=SecurityEventType.SHARED_GATE_PASSED,
