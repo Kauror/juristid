@@ -93,7 +93,10 @@ def _in_the_server(script: str, matter_id: str) -> str:
     )
     report = "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
     assert result.returncode == 0, report
-    return result.stdout.strip()
+    # The last line is the script's own: `shell` may first announce the
+    # objects it imported automatically on stdout.
+    lines = result.stdout.strip().splitlines()
+    return lines[-1].strip() if lines else ""
 
 
 def _a_waiting_matter(page, base_url: str) -> tuple[str, str, str]:
@@ -187,10 +190,15 @@ def test_the_review_control_fits_every_width(page, base_url, width):
     sign_in(page, base_url, SANDRA)
     _title, matter_url, _matter_id = _a_waiting_matter(page, base_url)
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(f"{matter_url}#vaatasin-ule")
+    page.goto(matter_url)
     page.wait_for_load_state("networkidle")
 
+    # Opened by hand: arrival by fragment is the other test's subject, and a
+    # `goto` to the page already shown plus a fragment is a same-document
+    # navigation that fires no load for the arrival script to answer.
     panel = page.locator("#vaatasin-ule")
+    panel.locator("summary").click()
+    expect(panel).to_have_attribute("open", "")
     expect(panel.get_by_label("Järgmine ülevaatus")).to_be_visible()
     expect(panel.get_by_role("button", name="Salvesta ülevaatus")).to_be_visible()
     overflow = page.evaluate(
