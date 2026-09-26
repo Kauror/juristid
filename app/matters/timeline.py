@@ -1861,25 +1861,35 @@ class _ChronologySources:
         """
         moments: list[datetime] = []
         # One query, whichever sources this view reads: the newest `batch`
-        # anchor moments of each, as one UNION ALL.
+        # anchor moments of each, as one UNION ALL, each row tagged with the
+        # source it came from.
         reads: list[Any] = []
+
+        def newest(queryset: Any) -> None:
+            source = models.Value(len(reads), output_field=models.IntegerField())
+            reads.append(
+                queryset.annotate(anchor_source=source)
+                .order_by("-occurred_at")
+                .values_list("occurred_at", "anchor_source")[:batch]
+            )
+
         if self.only != TIMELINE_FILTER_ENTRIES:
             moments.extend(item.occurred_at for item in self.projected)
-            reads.append(
-                self.event_scope.filter(self.anchor_q)
-                .order_by("-occurred_at")
-                .values_list("occurred_at", flat=True)[:batch]
-            )
+            newest(self.event_scope.filter(self.anchor_q))
         if self.entry_scope is not None:
-            reads.append(
-                self.entry_scope.order_by("-occurred_at").values_list("occurred_at", flat=True)[
-                    :batch
-                ]
-            )
+            newest(self.entry_scope)
+        per_source = [0] * len(reads)
         if reads:
             first, *rest = reads
-            moments.extend(first.union(*rest, all=True) if rest else first)
-        if len(moments) < batch:
+            for moment, source in first.union(*rest, all=True) if rest else first:
+                moments.append(moment)
+                per_source[source] += 1
+        # **Every source answered in full**: nothing older exists anywhere, so
+        # the whole chronology is what a bound would make the caller read anyway
+        # — and reading it as such trusts every row at once, where a bound on
+        # the oldest anchor would leave a page one row short whenever an anchor
+        # draws no row (the open step, above all) and cost a second round.
+        if len(moments) < batch or all(count < batch for count in per_source):
             return None
         moments.sort(reverse=True)
         return moments[batch - 1]
