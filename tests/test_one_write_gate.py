@@ -142,7 +142,6 @@ MOVED = [
     "matters:update_position",
     "matters:update_summary",
     "matters:add_working_document",
-    "matters:close",
     "intelligence:add_important_date",
     "intelligence:edit_important_date",
     "intelligence:cancel_important_date",
@@ -196,7 +195,7 @@ def test_a_non_writer_gets_the_same_answer_whatever_verb_they_try(client, verb):
     is unchanged for everybody entitled to use it.
     """
     matter = factories.MatterFactory()
-    url = reverse("matters:close", kwargs={"pk": matter.pk})
+    url = reverse("matters:reopen", kwargs={"pk": matter.pk})
 
     client.force_login(factories.ReaderFactory())
     assert getattr(client, verb)(url).status_code == 404

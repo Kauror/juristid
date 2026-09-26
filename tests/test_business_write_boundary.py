@@ -725,12 +725,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: Matter.objects.values_list("is_open", flat=True).get(pk=w["closed"].pk),
     ),
     WriteRoute(
-        name="matters:close",
-        label="Teema sulgemine",
-        request=lambda w: ({"pk": w["matter"].pk}, {"disposition": "COMPLETED"}),
-        probe=lambda w: Matter.objects.values_list("is_open", flat=True).get(pk=w["matter"].pk),
-    ),
-    WriteRoute(
         name="matters:update_position",
         label="Koja seisukoha salvestamine",
         request=lambda w: ({"pk": w["matter"].pk}, {"position_summary": "Loata seisukoht"}),

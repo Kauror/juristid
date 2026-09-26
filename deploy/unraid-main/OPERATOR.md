@@ -266,6 +266,14 @@ not happen here*: no real data leaves this host — not into Git, CI, a pull
 request comment, a screenshot, or a log uploaded anywhere. The repository is
 public.
 
+The container logs are built to make that rule easier to keep, not to retire
+it. The web access log records each request's path and never its query string
+or Referer, so a search term does not land in `docker logs`; upload filenames
+are not logged; and each container keeps at most 50 MB of log (`x-logging` in
+`compose.yml`). A path still carries record identifiers and a traceback can
+still carry what the code was holding, so a log is still not something to paste
+anywhere off this host (ENG-071).
+
 ## Handling the release artifact
 
 The release artifact is three files, and their digests are not interchangeable.

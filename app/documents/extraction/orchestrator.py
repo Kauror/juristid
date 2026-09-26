@@ -295,7 +295,13 @@ def parse_source(
         # verdict. It is logged with the row reference and *no content*, the
         # file is marked failed, and the loop continues: one malformed file
         # must never stop the queue (Stage-2B brief 67).
-        logger.exception("Parser %s crashed on %s", parser.name, reference or filename)
+        #
+        # The row reference or nothing: never the filename, which is business
+        # text and would otherwise reach the container log whenever a caller
+        # had no row to name (ENG-071).
+        logger.exception(
+            "Parser %s crashed on %s", parser.name, reference or "a file with no row reference"
+        )
         return ParseOutcome(
             state=ExtractionState.FAILED,
             note=f"Parser {parser.name} andis ootamatu vea ({type(error).__name__}).",

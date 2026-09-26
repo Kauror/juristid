@@ -7,7 +7,7 @@ window in which the system claims Koda sent an opinion it cannot produce.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from django.db import transaction
@@ -276,6 +276,36 @@ def select_final_evidence(
     return submission
 
 
+#: What a send dated after today is told — the sentence both `Saatmise kuupäev`
+#: forms print, and the one the services raise (ENG-043).
+SENT_DATE_IN_THE_FUTURE = "Saatmise kuupäev ei saa olla tulevikus."
+
+
+def _refuse_a_future_send(sent_at: date | None) -> None:
+    """A send is never in the future. The record says what happened.
+
+    **The Tallinn business day, not the instant.** A send stamped 22:30 UTC on
+    the 24th went out at 01:30 on the 25th in Tallinn, and on the 24th that is
+    tomorrow; a send later today is today whatever its hour. So the question is
+    whether the business date of ``sent_at`` is after
+    `timezone.localdate()` — the comparison both forms make on the day box, now
+    made where every writer passes (ENG-043).
+
+    ``None`` is «now» to `mark_submission_sent` and is never in the future. A
+    naive value is read as already being Tallinn time, which is what
+    `timezone.make_aware` would have made of it, and a bare day is already the
+    business date.
+    """
+    if sent_at is None:
+        return
+    sent_on: date = sent_at
+    if isinstance(sent_at, datetime):
+        aware = sent_at if timezone.is_aware(sent_at) else timezone.make_aware(sent_at)
+        sent_on = timezone.localdate(aware)
+    if sent_on > timezone.localdate():
+        raise DomainError(SENT_DATE_IN_THE_FUTURE)
+
+
 @transaction.atomic
 def mark_submission_sent(
     *,
@@ -336,6 +366,7 @@ def mark_submission_sent(
 
     if sent_at_precision not in SentAtPrecision.values:
         raise DomainError(f"Tundmatu saatmisaja täpsus {sent_at_precision!r}.")
+    _refuse_a_future_send(sent_at)
 
     locked.status = SubmissionStatus.SENT
     locked.sent_at = sent_at or timezone.now()
@@ -484,6 +515,12 @@ def correct_sent_opinion(
         "kind": kind,
     }
     changed = [field for field in after if before[field] != after[field]]
+    # **A correction may not move the send into the future** (ENG-043). Only
+    # when it moves the date: an archival row already carrying a future day is
+    # reported by `check_domain_invariants` and never rewritten here, and
+    # correcting its summary states no new send fact to refuse.
+    if "sent_at" in changed:
+        _refuse_a_future_send(sent_at)
     if changed:
         for field in changed:
             setattr(locked, field, after[field])
@@ -754,6 +791,10 @@ def register_sent_opinion(
         raise DomainError("Tõend peab kuuluma valitud dokumendi juurde.")
     if sent_at is None:
         raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
+    # Before anything is created, although `mark_submission_sent` asks again:
+    # the refusal is about the fact being registered, not about a draft this
+    # function would otherwise write and roll back (ENG-043).
+    _refuse_a_future_send(sent_at)
     if sent_at_precision != SentAtPrecision.DATE:
         raise DomainError("Registreeritud saatmise täpsus on kuupäev.")
     if not recipients:
