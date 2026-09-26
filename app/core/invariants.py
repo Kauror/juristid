@@ -22,6 +22,8 @@ things:
   rules are period questions — so they do not stop the migration. The services
   refuse to *write* them since ENG-043 and ENG-004; these are rows written before that, by a
   path that has since been closed or by a synthetic generator.
+  The three `closed-matter-*` kinds are the same shape for ENG-006: live work a
+  closure path left owed on a Matter that is no longer current.
 
 **Nothing is repaired.** A finding is a question about what a record was meant
 to say, and only somebody with the register in front of them can answer it. The
@@ -63,6 +65,9 @@ SERVICE_RULES = frozenset(
     {
         "engagement-deadline-before-round",
         "submission-sent-in-future",
+        "closed-matter-open-next-action",
+        "closed-matter-planned-website-overview",
+        "closed-matter-open-feedback-wait",
         "engagement-in-future",
         "external-position-in-future",
         "website-overview-published-in-future",
@@ -80,6 +85,15 @@ EXPLANATIONS: dict[str, str] = {
         "MatterEngagement.feedback_deadline falls before the whole period of occurred_on"
     ),
     "submission-sent-in-future": "Submission.sent_at is after today in Europe/Tallinn",
+    # ENG-006. Every path that makes a Matter inactive ends these through
+    # `end_live_work_for_closure`; a row here was left by one that did not.
+    "closed-matter-open-next-action": "An OPEN NextAction belongs to a closed Matter",
+    "closed-matter-planned-website-overview": (
+        "A PLANNED MatterWebsiteOverview belongs to a closed Matter"
+    ),
+    "closed-matter-open-feedback-wait": (
+        "A MatterEngagement feedback wait is still open on a closed Matter"
+    ),
     # ENG-004. Teema käik projects only what has happened, so each of these is
     # a row the file holds and its page does not show — nor the row's `Muuda`.
     "engagement-in-future": (
@@ -197,6 +211,46 @@ def _submission_findings(today: datetime.date) -> list[Finding]:
     ]
 
 
+def _closed_matter_findings() -> list[Finding]:
+    """Live work still owed on a Matter that is no longer current (ENG-006).
+
+    The engineering audit's Q02, Q16 and Q17. A closure — by a person, by the
+    final register or by the historical default — ends the open step, cancels a
+    planned write-up and closes a feedback wait; each row reported here is one a
+    closure path left behind before they all went through one helper.
+    """
+    next_action = apps.get_model("workflow", "NextAction")
+    overview = apps.get_model("matters", "MatterWebsiteOverview")
+    engagement = apps.get_model("matters", "MatterEngagement")
+    findings = [
+        Finding(kind="closed-matter-open-next-action", subject=str(pk), detail=f"matter={matter}")
+        for pk, matter in next_action.objects.filter(status="OPEN", matter__is_open=False)
+        .order_by("pk")
+        .values_list("pk", "matter_id")
+    ]
+    findings.extend(
+        Finding(
+            kind="closed-matter-planned-website-overview",
+            subject=str(pk),
+            detail=f"matter={matter}",
+        )
+        for pk, matter in overview.objects.filter(status="PLANNED", matter__is_open=False)
+        .order_by("pk")
+        .values_list("pk", "matter_id")
+    )
+    findings.extend(
+        Finding(kind="closed-matter-open-feedback-wait", subject=str(pk), detail=f"matter={matter}")
+        for pk, matter in engagement.objects.filter(
+            matter__is_open=False,
+            feedback_deadline__isnull=False,
+            feedback_closed_at__isnull=True,
+        )
+        .order_by("pk")
+        .values_list("pk", "matter_id")
+    )
+    return findings
+
+
 def _future_record_findings(today: datetime.date) -> list[Finding]:
     """Timeline records dated after today, written before the services refused it.
 
@@ -253,5 +307,6 @@ def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantR
     report.findings.extend(_next_action_findings())
     report.findings.extend(_engagement_findings())
     report.findings.extend(_submission_findings(day))
+    report.findings.extend(_closed_matter_findings())
     report.findings.extend(_future_record_findings(day))
     return report

@@ -755,6 +755,8 @@ class RefreshResult:
     actions_withdrawn: int
     engagements_created: int = 0
     engagements_updated: int = 0
+    #: RETIREs left current because native work arrived after the plan (ENG-006).
+    held_for_review: int = 0
 
 
 @transaction.atomic
@@ -865,6 +867,7 @@ def apply_refresh_plan(
         actions_withdrawn=action_result.withdrawn,
         engagements_created=engagements.created,
         engagements_updated=engagements.updated,
+        held_for_review=cutover.held_for_review,
     )
 
 

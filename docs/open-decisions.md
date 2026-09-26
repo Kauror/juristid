@@ -620,3 +620,60 @@ come round only once its period is over.
 **Owner:** department head. **Where it lands:** one branch in
 `app/workflow/lateness.py`'s review rule, which every surface — Minu asjad,
 Osakond, Kiirvaade, the register chip and the `REVIEW_DUE` statistic — reads.
+
+## Surfaced by engineering-audit remediation Round 9 (2026-09-26)
+
+### What does «Ava uuesti…» do to an archive Teema? (ENG-005)
+
+**Today.** «Ava uuesti…» is offered on every closed Teema to anybody who may
+write, and `reopen_matter` flips `is_open` without looking at `record_mode`. An
+imported ARCHIVE row reopened this way is open and still ARCHIVE. The work
+model counts only open FULL Matters (`app/matters/work_items.py`), so a step,
+a deadline or a Kaasamine wait on it reaches no one's Minu asjad, Osakond or
+person page. The register's «Avatud», Statistika's `open_actions` and
+`?tegevus=` read `is_open` alone, so they do count it. `set_next_action`
+accepts a step on it, because it refuses only a closed Matter.
+
+**What the repository already settles, and what it does not.** ADR 0020 names
+the way an archive file becomes live again: per Matter, by a person, through
+`reactivate_historical_matter` (reopen and promote to FULL together, with a
+written reason). It refuses a row carrying a real recorded closure and sends
+that row to «the ordinary reopen route», which is the route that produces an
+open ARCHIVE row. *Who* may record that written reason is itself still open
+(the Stage 2I row above: «Who may record a carry-over attestation»). Neither
+answer is the development agent's to choose.
+
+**Option A — reopening an archive Teema makes it current work.** «Ava uuesti…»
+on an ARCHIVE row goes through the attested reactivation: the reason typed
+there is the attestation, and the Teema becomes FULL and open. It then appears
+in Minu asjad, Osakond and every work count, and its steps are ordinary work.
+Reporting: the register, Statistika and the work queues agree, because there is
+no open ARCHIVE row any more. Import: every imported row carries the button,
+so after the historical import roughly 5,000 files can each be made current
+with one click, and each click is audited with its reason.
+
+**Option B — an archive Teema may be reopened but not worked.** «Ava uuesti…»
+keeps today's behaviour on an ARCHIVE row, but it accepts no new step, deadline
+or wait until somebody promotes it deliberately (a separate, attested action).
+Reporting: «Avatud» and `open_actions` must then say whether they include
+archive rows, or narrow to open FULL. Import: nothing becomes current work by
+accident. Reading an old file and adding a note to it stays possible, but
+working on it takes a second, explicit step.
+
+**Technical recommendation: A**, limited to rows without a real recorded
+closure (which is exactly the set `reactivate_historical_matter` accepts). It
+is ADR 0020's own exception path, it removes the "open but not current" state
+rather than labelling it, and the work model, the register and Statistika then
+need no second definition of "open". A row *with* a real recorded closure still
+needs an answer under either option.
+
+**Owner:** department head. **The one question:** when a lawyer presses
+«Ava uuesti…» on an archive (register-imported) Teema, should it become
+current work at once, with the reason recorded as the carry-over attestation
+(A), or reopen only as an archive record that takes no new work until it is
+separately promoted (B)?
+
+**Where it lands:** `reopen_matter` / the `reopen` view and
+`matter_banner.html`, `set_next_action`'s refusal, and — under B —
+`app/reporting/selectors/activity.py::open_actions`, `?tegevus=` and the
+register's «Avatud» label.

@@ -23,6 +23,13 @@ disposition, no ``closed_at`` — is exactly what the closure constraint was
 written to permit, and it reads *historical at cutover, exact closure fact
 unknown* (ADR 0020).
 
+It also may not strand what a Matter still owes. A row carrying live work —
+an open step, an open `Kaasamine` feedback wait or a planned `Ülevaade` — is
+held back for review rather than closed, and that question is asked again
+under the row lock when the plan is applied. Should one still be owed when
+`mark_historical_archive_inactive` runs, it is ended there with its own
+ordinary event, as every closure ends it (ENG-006).
+
 The exception is per-Matter and human: see
 :func:`app.matters.services.reactivate_historical_matter`. Whole older years are
 never activated.
@@ -90,6 +97,49 @@ class ReviewReason:
     OPEN_NEXT_ACTION = "OPEN_NEXT_ACTION"
     UNEXPECTED_ORIGIN = "UNEXPECTED_ORIGIN"
     MULTIPLE_SOURCE_YEARS = "MULTIPLE_SOURCE_YEARS"
+    # ENG-006: live obligations the planner did not know about.
+    OPEN_FEEDBACK_WAIT = "OPEN_FEEDBACK_WAIT"
+    PLANNED_WEBSITE_OVERVIEW = "PLANNED_WEBSITE_OVERVIEW"
+
+
+def live_work(matter_ids: list[Any]) -> dict[Any, str]:
+    """Which of these Matters still owe live work, and the first reason why.
+
+    The three obligations `end_live_work_for_closure` would otherwise end: an
+    open step, an open `Kaasamine` feedback wait and a planned `Ülevaade`. The
+    bulk default is not entitled to decide any of them, so each holds its Matter
+    back for review (ENG-006). Authored *history* on an archive row does not:
+    this default moves `is_open` on rows nobody has touched as current work,
+    and a record of what was done is not something still owed.
+    """
+    from app.matters.enums import WebsiteOverviewStatus
+    from app.matters.models import MatterEngagement, MatterWebsiteOverview
+    from app.workflow.models import NextAction
+
+    reasons: dict[Any, str] = {}
+    for reason, queryset in (
+        (
+            ReviewReason.OPEN_NEXT_ACTION,
+            NextAction.objects.filter(matter_id__in=matter_ids, status=ActionStatus.OPEN),
+        ),
+        (
+            ReviewReason.OPEN_FEEDBACK_WAIT,
+            MatterEngagement.objects.filter(
+                matter_id__in=matter_ids,
+                feedback_deadline__isnull=False,
+                feedback_closed_at__isnull=True,
+            ),
+        ),
+        (
+            ReviewReason.PLANNED_WEBSITE_OVERVIEW,
+            MatterWebsiteOverview.objects.filter(
+                matter_id__in=matter_ids, status=WebsiteOverviewStatus.PLANNED
+            ),
+        ),
+    ):
+        for matter_id in queryset.values_list("matter_id", flat=True).distinct():
+            reasons.setdefault(matter_id, reason)
+    return reasons
 
 
 class UnreviewedCutoverYear(Exception):
@@ -163,7 +213,7 @@ def _source_years(reference_sheets: list[str]) -> list[int]:
 
 
 def _classify(
-    matter: Matter, source_years: list[int], *, open_action: bool
+    matter: Matter, source_years: list[int], *, live_work_reason: str = ""
 ) -> HistoricalCutoverCandidate:
     """One Matter's outcome. The order of these tests is the whole safety story.
 
@@ -207,14 +257,15 @@ def _classify(
         )
 
     # Live operational work. The bulk default is not entitled to erase it, and
-    # closing the Matter would strand an action somebody is waiting on.
-    if open_action:
+    # closing the Matter would strand a step, a wait or a write-up somebody is
+    # counting on (`live_work`, ENG-006).
+    if live_work_reason:
         return HistoricalCutoverCandidate(
             matter=matter,
             source_year=latest,
             classification=Classification.REVIEW_REQUIRED,
-            reason="Arhiivikirjel on kehtiv jargmine tegevus.",
-            review_reason=ReviewReason.OPEN_NEXT_ACTION,
+            reason="Arhiivikirjel on pooleli olev töö.",
+            review_reason=live_work_reason,
         )
 
     # The measured corpus has one source reference per Matter, but that is an
@@ -261,18 +312,14 @@ def build_cutover_plan(*, cutover_year: int) -> HistoricalCutoverPlan:
         for matter in Matter.objects.filter(pk__in=list(pre_cutover)).select_related("stage")
     }
 
-    with_open_action = set(
-        Matter.objects.filter(
-            pk__in=list(pre_cutover), next_actions__status=ActionStatus.OPEN
-        ).values_list("pk", flat=True)
-    )
+    owed = live_work(list(pre_cutover))
 
     plan = HistoricalCutoverPlan(cutover_year=cutover_year)
     for matter_id, years in sorted(pre_cutover.items(), key=lambda item: str(item[0])):
         matter = matters.get(matter_id)
         if matter is None:  # pragma: no cover - referential integrity holds
             continue
-        plan.candidates.append(_classify(matter, years, open_action=matter_id in with_open_action))
+        plan.candidates.append(_classify(matter, years, live_work_reason=owed.get(matter_id, "")))
     return plan
 
 
@@ -281,6 +328,9 @@ class HistoricalCutoverResult:
     cutover_year: int
     closed: int
     examined: int
+    #: Planned to close, but live work had arrived by the time the row was
+    #: locked — so it was left open, for the next plan to hold for review.
+    held_for_review: int = 0
 
 
 @transaction.atomic
@@ -301,7 +351,7 @@ def apply_cutover_plan(
             "REVIEWED_HISTORICAL_CUTOVER_YEARS, not a flag."
         )
 
-    closed = 0
+    closed = held = 0
     touched: list[Any] = []
     for candidate in plan.closable:
         # Re-read under the lock. A plan is minutes old, and somebody may have
@@ -309,6 +359,12 @@ def apply_cutover_plan(
         # rather than a second write.
         matter = Matter.objects.select_for_update().get(pk=candidate.matter.pk)
         if matter.record_mode != RecordMode.ARCHIVE or not matter.is_open:
+            continue
+        # The planner's live-work question, asked again under the lock: every
+        # writer of a step, a wait or a plan takes this row's lock first, so a
+        # Matter that gained one since the plan is left open (ENG-006).
+        if live_work([matter.pk]):
+            held += 1
             continue
         mark_historical_archive_inactive(
             matter=matter,
@@ -325,7 +381,10 @@ def apply_cutover_plan(
         refresh_matters(indexable_matters().filter(pk__in=touched))
 
     return HistoricalCutoverResult(
-        cutover_year=plan.cutover_year, closed=closed, examined=len(plan.candidates)
+        cutover_year=plan.cutover_year,
+        closed=closed,
+        examined=len(plan.candidates),
+        held_for_review=held,
     )
 
 

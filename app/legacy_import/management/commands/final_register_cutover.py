@@ -49,6 +49,9 @@ _REVIEW_LABELS: dict[str, str] = {
     "AUTHORED_ENTRIES": "has entries somebody wrote here",
     "OPEN_NEXT_ACTION": "has an open next action",
     "NATIVE_SUBMISSION": "has a submission made here",
+    "OPEN_FEEDBACK_WAIT": "is waiting for Kaasamine feedback",
+    "PLANNED_WEBSITE_OVERVIEW": "still owes a planned Ülevaade",
+    "AUTHORED_RECORDS": "has records somebody wrote here",
 }
 
 
@@ -109,6 +112,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Applied"))
         self.stdout.write(f"  became current      {result.activated}")
         self.stdout.write(f"  left current        {result.retired}")
+        if result.held_for_review:
+            self.stdout.write(
+                f"  held for review     {result.held_for_review}"
+                " (native work arrived after the plan; left current)"
+            )
         self.stdout.write(f"  already current     {result.kept}")
         self.stdout.write(f"  fields refreshed    {result.refreshed}")
         self.stdout.write(f"  register state rows {result.state_rows}")

@@ -241,6 +241,10 @@ class ReviewReason:
     AUTHORED_ENTRIES = "AUTHORED_ENTRIES"
     OPEN_NEXT_ACTION = "OPEN_NEXT_ACTION"
     NATIVE_SUBMISSION = "NATIVE_SUBMISSION"
+    # ENG-006: the record families that arrived after this planner was written.
+    OPEN_FEEDBACK_WAIT = "OPEN_FEEDBACK_WAIT"
+    PLANNED_WEBSITE_OVERVIEW = "PLANNED_WEBSITE_OVERVIEW"
+    AUTHORED_RECORDS = "AUTHORED_RECORDS"
 
 
 @dataclass(frozen=True)
@@ -475,51 +479,94 @@ class NativeActivity:
     """Signals that a person has worked on a Matter inside Juristid.
 
     Every one of these is native by construction. No importer in this codebase
-    creates an ``Entry`` or a ``NextAction`` — deliberately, and stated in three
-    module docstrings — and the only importer that creates a ``Submission`` is
-    the opinion archive, whose submissions each carry an
-    ``OpinionSubmissionImport`` row (``archive_imports``) and are excluded here.
+    creates an ``Entry``, a ``NextAction``, a ``Menetluse areng``, a
+    ``Väline seisukoht`` or a ``Kodulehe ülevaade`` — each is written only by its
+    own service, from a person's save. The only importer that creates a
+    ``Submission`` is the opinion archive, whose submissions each carry an
+    ``OpinionSubmissionImport`` row (``archive_imports``) and are excluded here;
+    the only importer that creates a ``Kaasamine`` is the register outreach,
+    whose rounds each carry a ``RegisterEngagementImport`` row
+    (``register_imports``) and are excluded the same way.
+
+    **The planner was older than three of these families** (ENG-006): it asked
+    about entries, open steps and submissions only, so a Matter whose recorded
+    work was a `Märge`, an open feedback wait or a planned write-up was retired
+    as though nobody had touched it. Two of the answers below are live
+    obligations — a wait somebody is owed and a write-up the file still owes —
+    and one is authored history; each holds the Matter back for review, which
+    is the design this planner has always had for native work.
     """
 
     entries: frozenset[Any]
     open_actions: frozenset[Any]
     native_submissions: frozenset[Any]
+    open_feedback_waits: frozenset[Any] = frozenset()
+    planned_overviews: frozenset[Any] = frozenset()
+    authored_records: frozenset[Any] = frozenset()
 
     def reason_for(self, matter_id: Any) -> str:
         if matter_id in self.open_actions:
             return ReviewReason.OPEN_NEXT_ACTION
+        if matter_id in self.open_feedback_waits:
+            return ReviewReason.OPEN_FEEDBACK_WAIT
+        if matter_id in self.planned_overviews:
+            return ReviewReason.PLANNED_WEBSITE_OVERVIEW
         if matter_id in self.entries:
             return ReviewReason.AUTHORED_ENTRIES
+        if matter_id in self.authored_records:
+            return ReviewReason.AUTHORED_RECORDS
         if matter_id in self.native_submissions:
             return ReviewReason.NATIVE_SUBMISSION
         return ""
 
 
 def native_activity(matter_ids: list[Any]) -> NativeActivity:
-    """Which of these Matters carry work a person did here. Three queries."""
-    from app.matters.models import Entry
+    """Which of these Matters carry work a person did here. One query per family."""
+    from app.matters.enums import WebsiteOverviewStatus
+    from app.matters.models import (
+        Entry,
+        MatterEngagement,
+        MatterExternalPosition,
+        MatterProceduralDevelopment,
+        MatterWebsiteOverview,
+    )
     from app.submissions.models import Submission
     from app.workflow.models import NextAction
 
-    entries = set(
-        Entry.objects.filter(matter_id__in=matter_ids)
-        .values_list("matter_id", flat=True)
-        .distinct()
-    )
-    actions = set(
-        NextAction.objects.filter(matter_id__in=matter_ids, status=ActionStatus.OPEN)
-        .values_list("matter_id", flat=True)
-        .distinct()
-    )
-    submissions = set(
-        Submission.objects.filter(matter_id__in=matter_ids, archive_imports__isnull=True)
-        .values_list("matter_id", flat=True)
-        .distinct()
+    def matters_of(queryset: Any) -> frozenset[Any]:
+        return frozenset(queryset.values_list("matter_id", flat=True).distinct())
+
+    authored: set[Any] = set()
+    authored |= matters_of(MatterProceduralDevelopment.objects.filter(matter_id__in=matter_ids))
+    authored |= matters_of(MatterExternalPosition.objects.filter(matter_id__in=matter_ids))
+    authored |= matters_of(MatterWebsiteOverview.objects.filter(matter_id__in=matter_ids))
+    authored |= matters_of(
+        MatterEngagement.objects.filter(matter_id__in=matter_ids, register_imports__isnull=True)
     )
     return NativeActivity(
-        entries=frozenset(entries),
-        open_actions=frozenset(actions),
-        native_submissions=frozenset(submissions),
+        entries=matters_of(Entry.objects.filter(matter_id__in=matter_ids)),
+        open_actions=matters_of(
+            NextAction.objects.filter(matter_id__in=matter_ids, status=ActionStatus.OPEN)
+        ),
+        native_submissions=matters_of(
+            Submission.objects.filter(matter_id__in=matter_ids, archive_imports__isnull=True)
+        ),
+        # Any wait, imported round or not: a reply-by date is opened by a
+        # person (`open_engagement_feedback_wait`), and the outreach never
+        # writes one.
+        open_feedback_waits=matters_of(
+            MatterEngagement.objects.filter(
+                matter_id__in=matter_ids,
+                feedback_deadline__isnull=False,
+                feedback_closed_at__isnull=True,
+            )
+        ),
+        planned_overviews=matters_of(
+            MatterWebsiteOverview.objects.filter(
+                matter_id__in=matter_ids, status=WebsiteOverviewStatus.PLANNED
+            )
+        ),
+        authored_records=frozenset(authored),
     )
 
 
@@ -728,6 +775,9 @@ class CutoverResult:
     refreshed: int
     state_rows: int
     examined: int
+    #: Planned RETIRE, but native work had arrived by the time the row was
+    #: locked — so it was left current, for the next plan to hold for review.
+    held_for_review: int = 0
 
 
 def resolved_fields(
@@ -800,7 +850,7 @@ def apply_cutover_plan(plan: CutoverPlan, *, actor: Any = None) -> CutoverResult
     people = KnownPeople.load()
     mappings = MappingTables.empty()
 
-    activated = retired = kept = refreshed = 0
+    activated = retired = kept = refreshed = held = 0
     touched: list[Any] = []
 
     for candidate in plan.candidates:
@@ -813,6 +863,15 @@ def apply_cutover_plan(plan: CutoverPlan, *, actor: Any = None) -> CutoverResult
             touched.append(matter.pk)
         elif candidate.action == Action.RETIRE:
             if matter.record_mode == RecordMode.FULL and matter.is_open:
+                # **The planner's question, asked again under the lock** (ENG-006,
+                # H-19). A plan is minutes old; a step, a `Märge` or a wait added
+                # since then was never seen by it. Every writer of those takes
+                # this row's lock first, so what this reads now is what the
+                # retirement would act on — and native work found here leaves
+                # the Matter current, exactly as the planner would have.
+                if native_activity([matter.pk]).reason_for(matter.pk):
+                    held += 1
+                    continue
                 retire_from_current_register(matter=matter, actor=actor, provenance=provenance)
                 retired += 1
                 touched.append(matter.pk)
@@ -846,6 +905,7 @@ def apply_cutover_plan(plan: CutoverPlan, *, actor: Any = None) -> CutoverResult
         refreshed=refreshed,
         state_rows=state_rows,
         examined=len(plan.candidates),
+        held_for_review=held,
     )
 
 
