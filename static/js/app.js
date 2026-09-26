@@ -53,6 +53,27 @@
      */
     window.htmx.config.historyCacheSize = 0;
     window.htmx.config.refreshOnHistoryMiss = true;
+
+    /* ---- htmx runs no code it did not ship with ------------------------
+     * Every page is served with `script-src 'self'` (app/core/browser_policy.py,
+     * ENG-124), and these three keep htmx inside that rather than tripping
+     * over it:
+     *
+     * - `allowEval`: no `hx-on`, no `js:` values, no `[...]` trigger filter.
+     *   Each of those is a string compiled into a function, which is exactly
+     *   what the policy refuses. The one filter this application had — the
+     *   `Sarnased teemad` chips — is decided below instead.
+     * - `allowScriptTags`: a swapped fragment's `<script>` is never run. No
+     *   fragment carries one; behaviour lives in this file and is bound on
+     *   `htmx:afterSwap`.
+     * - `includeIndicatorStyles`: htmx would otherwise add its own `<style>`
+     *   to every page. Nothing here uses `.htmx-indicator` — the spinners and
+     *   the dimming are styled from `.htmx-request` in static/css/app.css —
+     *   so the injected rules only ever cost an inline style.
+     */
+    window.htmx.config.allowEval = false;
+    window.htmx.config.allowScriptTags = false;
+    window.htmx.config.includeIndicatorStyles = false;
   }
 
   /* And whatever an earlier version left behind. A zero cache size removes
@@ -1069,6 +1090,31 @@
          a page simply being shown. `hx-trigger` names this event beside the
          typing ones (templates/matters/matter_create.html). */
       region.dispatchEvent(new CustomEvent("sarnased:restored"));
+    });
+
+    /* The three chip sets are heard at the form and filtered by `name`
+       (ENG-090). The filter used to be htmx's own —
+       `change[target.name==='policy_areas'||…] from:closest form` — but a
+       trigger filter is a string compiled into a function, which
+       `allowEval = false` and the page's `script-src 'self'` both refuse
+       (ENG-124). So the decision is made here, over the names the region
+       lists in `data-similar-chips`, and the region hears one plain event;
+       its `delay:250ms` still folds a burst of ticks into one request. */
+    document.addEventListener("change", function (event) {
+      var region = document.getElementById("sarnased-teemad");
+      var target = event.target;
+      if (!region || !target || !target.name) {
+        return;
+      }
+      var form = region.closest("form");
+      if (!form || !form.contains(target)) {
+        return;
+      }
+      var names = (region.getAttribute("data-similar-chips") || "").split(/\s+/);
+      if (names.indexOf(target.name) === -1) {
+        return;
+      }
+      region.dispatchEvent(new CustomEvent("sarnased:chips"));
     });
   })();
 

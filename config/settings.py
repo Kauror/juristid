@@ -77,6 +77,11 @@ INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Content-Security-Policy and Permissions-Policy, beside the headers
+    # SecurityMiddleware sets. HTML responses only, and never over a policy a
+    # view already chose, so a served document keeps its stricter one
+    # (app/core/browser_policy.py, ENG-124).
+    "app.core.browser_policy.BrowserPolicyMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",

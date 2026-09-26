@@ -130,6 +130,59 @@ def screenshots():
     return take
 
 
+#: What Chromium writes to the console when a page's own policy refused
+#: something, and what htmx writes when `allowEval = false` refused a string.
+#: Lower-cased: the wording is the browser's, not ours.
+BROWSER_POLICY_REFUSALS = (
+    "content security policy",
+    "permissions-policy",
+    "permissions policy",
+    "evaldisallowederror",
+)
+
+
+@pytest.fixture(autouse=True)
+def the_browser_policy_refuses_nothing(request):
+    """Fail any browser test on whose pages the browser policy refused something.
+
+    Every HTML page is served with a Content-Security-Policy and a
+    Permissions-Policy (app/core/browser_policy.py, ENG-124). A refusal does
+    not raise: the browser drops the script, the style or the request, writes
+    one line to the console, and the feature that needed it simply stops —
+    which a test may or may not happen to notice. So every test that drives a
+    page is also a check that the policy cost that workflow nothing, and a
+    console line is enough to fail it.
+
+    Every page of the test's context is watched, not only the first, because a
+    link can open another. A test that means to provoke a refusal builds a
+    context of its own (`e2e/test_browser_policy.py`), which this does not see.
+    """
+    if "page" not in request.fixturenames:
+        yield
+        return
+    page = request.getfixturevalue("page")
+    refused: list[str] = []
+
+    def watch(target) -> None:
+        target.on(
+            "console",
+            lambda message: (
+                refused.append(f"{message.type}: {message.text}")
+                if any(marker in message.text.lower() for marker in BROWSER_POLICY_REFUSALS)
+                else None
+            ),
+        )
+
+    watch(page)
+    page.context.on("page", watch)
+    yield
+    assert not refused, (
+        "the browser policy refused something on this test's pages — a workflow "
+        "that depends on inline code, an evaluated string or another origin:\n  "
+        + "\n  ".join(refused)
+    )
+
+
 def sign_in(page, base_url: str, persona: Persona) -> None:
     """Sign in through the development login page.
 

@@ -23,12 +23,11 @@ from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import (
-    REVIEW_KINDS,
     ActionKind,
     ActionStatus,
     DateSemantics,
 )
-from app.workflow.lateness import overdue_date_q
+from app.workflow.lateness import overdue_date_q, review_due_q
 from app.workflow.models import NextAction
 
 HORIZON_DAYS = 7
@@ -210,11 +209,11 @@ def _open_action_condition(value: str, today: date) -> Q:
             & overdue_date_q(today)
         )
     if value == REVIEW_DUE:
-        return open_now & Q(
-            kind__in=REVIEW_KINDS,
-            target_date__isnull=False,
-            target_date__lte=today,
-        )
+        # `review_due_q`, the rule `is_review_ripe` reads on every work surface:
+        # a review comes round when its recorded period begins, so this chip,
+        # the `REVIEW_DUE` statistic and Minu asjad's *Ülevaatamiseks* hold the
+        # same rows (ADR 0079 §6, ENG-040).
+        return open_now & review_due_q(today)
     return open_now
 
 

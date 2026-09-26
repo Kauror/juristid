@@ -219,6 +219,12 @@ def drafting(user: Any, visible: QuerySet[Submission] | None = None) -> QuerySet
     the figure on Ülevaade and the list at ``/arvamused/?olek=DRAFT`` hold the
     same rows — and ``tests/test_overview_drilldowns.py`` asserts that against
     the view rather than trusting this comment.
+
+    It is also the Submission half of the per-Matter «koostamisel» that Osakond
+    and the register's ``?arvamus=`` count
+    (``app.matters.register_filters.opinion_state_q``, ENG-019): a Matter is
+    being drafted there exactly when this returns a row on it for that reader,
+    or its register row still says so.
     """
     rows = Submission.objects.visible_to(user) if visible is None else visible
     return rows.filter(status=DRAFTING_STATUS)

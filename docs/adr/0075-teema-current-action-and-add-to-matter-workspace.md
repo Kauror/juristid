@@ -214,6 +214,10 @@ they are reachable, tested, and `matters:complete_work_item` on Minu asjad
 already offers the same one-click completion from a work list, which is a
 different surface with its own decision.
 
+**Superseded on 2026-09-26 for which of these routes a page reaches, and for
+what `Muuda` (§10) carries through an edit — see the amendment at the end of
+this document.**
+
 Only presentation was retired. No canonical rule, service or record moved.
 
 ## 12. The chronology gains file links and nothing else
@@ -341,3 +345,65 @@ ellipsis `Vaatasin üle…` beside it already uses for the same reason, and only
 where the click *navigates*. `Muuda` is unchanged.
 
 No migration. `documents/0008` is untouched, and this amendment adds none.
+
+---
+
+## Amendment, 2026-09-26 — a step that waits can be reviewed, and `Muuda` keeps what it is
+
+- Status: accepted, amending §11's claim that `matters:review_action` and
+  `matters:defer_action` are reachable, and §10's `Muuda` as far as a step's
+  kind and date meaning are concerned.
+- Scope: engineering audit ENG-021. One control on `PRAEGUNE TEGEVUS`, what
+  `NextActionForm` carries through an edit, and one idempotency rule in
+  `acknowledge_review`. No schema change, no migration, no search change.
+
+### What was decided before
+
+§11 kept `complete_action`, `defer_action`, `review_action` and
+`next_action_row.html` as compatibility surfaces and called them reachable. §10
+made `Muuda` post to `matters:set_action`, which supersedes the open step, and
+the form wrote every save as `DO` / `DEADLINE` (ADR 0052 §3).
+
+### Why it is superseded
+
+Reproduced on `9df0da63`. No page had posted to `review_action` or
+`defer_action` since the row controls left (ADR 0074 §20). Minu asjad's
+«Vaatasin üle…» landed on `#praegune-tegevus`, which offered `Muuda` and
+completion, so the only way to move a ripe `WAIT` or `MONITOR` on was `Muuda` —
+and `Muuda` re-classified it: a typo fix in «Ootame ministeeriumi vastust»,
+review date 22.9, stored a `DO` deadline `2 p` late, counted on Osakond, in
+`?tegevus=hilinenud` and on the red rail. A second POST of the same review wrote
+a second `NEXT_ACTION_REVIEWED`.
+
+### What is decided now
+
+1. **`Vaatasin üle` sits beside a step that waits.** In `PRAEGUNE TEGEVUS`, for
+   a writer on an open Matter whose step is a `WAIT` or `MONITOR`: a disclosure
+   (`#vaatasin-ule`) with one optional date box, `Järgmine ülevaatus`, the three
+   spans `Ootan tagasisidet` offers, and `Salvesta ülevaatus`, posting to
+   `matters:review_action` → `acknowledge_review`. The step keeps its identity,
+   text, kind and date meaning; only its review date moves. Minu asjad's
+   «Vaatasin üle…» links to it and `ux.js` opens it on arrival. The stored kind
+   is not printed (ADR 0054).
+2. **`Muuda` keeps the kind and date meaning of the step it replaces**, exactly
+   as it already kept its precision (ADR 0079 §9). New work is still `DO` /
+   `DEADLINE`: `set_action` on a Matter with no step the reader can see,
+   `+ Märge`'s `Järgmine tegevus`, and every other native creation path.
+3. **A review that would leave the step exactly as it is writes nothing** — so a
+   double press is one entry in the history, and a later review with a new date
+   is a second one.
+4. `defer_action`, `complete_action` and `next_action_row.html` remain
+   compatibility surfaces that **no page posts to**. Whether they stay is the
+   dead-route cleanup's question (ENG-050), not this one's.
+
+**Open, OWNER DECISION REQUIRED:** whether deliberately choosing a *different
+date* in `Muuda` should turn a review into a plan. ADR 0052 §3 calls every step
+saved from this form a native `DO`; ADR 0052 §6 and ADR 0079 §9 say an edit
+does not re-classify what nobody touched. Until it is decided it does not, and
+`Vaatasin üle` is the ordinary way to move a waiting step on.
+
+### What this amendment does not change
+
+§3's completion, §4's locking, the one-open-step invariant, which combination
+may be late (only `DO` + `DEADLINE`), the date rules of ADR 0079, and every
+stored row. Nothing is migrated or backfilled.

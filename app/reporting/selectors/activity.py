@@ -36,7 +36,7 @@ from app.reporting.selectors.base import (
     visible_matters,
 )
 from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
-from app.workflow.lateness import overdue_date_q
+from app.workflow.lateness import overdue_date_q, review_due_q
 from app.workflow.models import NextAction
 
 
@@ -195,11 +195,10 @@ def review_due(context: ReportingContext) -> MetricResult:
     classification the product no longer asks a reader to hold (ADR 0054).
     """
     spec = definition(keys.REVIEW_DUE)
-    due = open_actions(context).filter(
-        kind__in=REVIEW_KINDS,
-        target_date__isnull=False,
-        target_date__lte=context.today,
-    )
+    # `review_due_q` — the one review rule, which the register chip this figure
+    # links to and Minu asjad's *Ülevaatamiseks* both read. A review comes
+    # round when its recorded period begins (ADR 0079 §6, ENG-040).
+    due = open_actions(context).filter(review_due_q(context.today))
     return simple_result(
         spec,
         context=context,

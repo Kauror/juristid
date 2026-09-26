@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
@@ -632,14 +633,34 @@ def assign_matter(
     # deliberately made responsible for one step on a colleague's file stays
     # responsible — reassigning that would be the system overruling a decision
     # a person made (Teema QA §4).
-    moved = None
-    if previous is not None:
-        moved = NextAction.objects.filter(
-            matter=matter, status=ActionStatus.OPEN, responsible=previous
-        ).first()
-        if moved is not None:
-            moved.responsible = owner
-            moved.save(update_fields=["responsible", "updated_at"])
+    #
+    # And on the **first** assignment, the step nobody holds. A step written on
+    # an unowned Matter is stored with no responsible person — there is no owner
+    # for `set_next_action` to fall back to, and `responsible_for_new_work`
+    # deliberately stores nobody rather than inventing somebody (docs/adr/0036
+    # §5). The Uus teema «Koostan arvamuse» step is the common case. It is the
+    # same default arriving late: had the owner existed when the step was
+    # written, the step would have been theirs. Left behind, it sat on nobody's
+    # Minu asjad while Osakond counted it against the new owner (ENG-023).
+    #
+    # Nothing here takes a step a person holds: a named colleague keeps it on
+    # the first assignment exactly as on every later one. A step nobody holds on
+    # a file that *already had* an owner is not adopted — no write path produces
+    # that shape any more, and whether a later hand-over should repair one left
+    # from before this rule is not decided here.
+    #
+    # Read under the Matter lock taken above. Every NextAction writer takes the
+    # Matter first (`set_next_action`, `_lock_for_transition`), so the step
+    # cannot be replaced or finished between this read and the save below.
+    follows_the_file = (
+        Q(responsible=previous) if previous is not None else Q(responsible__isnull=True)
+    )
+    moved = NextAction.objects.filter(
+        follows_the_file, matter=matter, status=ActionStatus.OPEN
+    ).first()
+    if moved is not None:
+        moved.responsible = owner
+        moved.save(update_fields=["responsible", "updated_at"])
 
     record_change_event(
         event_type=ChangeEventType.MATTER_ASSIGNED,

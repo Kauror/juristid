@@ -39,7 +39,7 @@
       <div class="formgrid">
         <label class="field">
           <span class="field__label">Klass</span>
-          <select class="field__input" name="klass" onchange="this.form.submit()">
+          <select class="field__input" name="klass" data-autosubmit>
             <option value="">Kõik</option>
             {% for value, label in classes %}
               <option value="{{ value }}" {% if value == match_class %}selected{% endif %}>{{ label }}</option>
@@ -48,7 +48,7 @@
         </label>
         <label class="field">
           <span class="field__label">Olek</span>
-          <select class="field__input" name="olek" onchange="this.form.submit()">
+          <select class="field__input" name="olek" data-autosubmit>
             {% for value, label in states %}
               <option value="{{ value }}" {% if value == state %}selected{% endif %}>{{ label }}</option>
             {% endfor %}

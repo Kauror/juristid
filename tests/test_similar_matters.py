@@ -776,13 +776,19 @@ def test_the_region_listens_for_a_restored_form(client, specialist):
         assert f"from:{field}" in region
     # The chips are checkboxes with an id each, so they are heard by name at
     # the form — and every name heard is one the form really renders (ENG-090).
-    for name in ("policy_areas", "legal_instruments", "source_organisations"):
-        assert f"target.name==='{name}'" in region
+    # The names are listed for `app.js`, which says `sarnased:chips` for them:
+    # an htmx `change[…]` filter would be evaluated JavaScript, which the
+    # page's CSP refuses (ENG-124).
+    chips = region.split('data-similar-chips="')[1].split('"')[0].split()
+    assert chips == ["policy_areas", "legal_instruments", "source_organisations"]
+    for name in chips:
         assert f'name="{name}"' in body
+    assert "sarnased:chips" in region
+    assert "change[" not in region
     assert "from:#id_policy_areas" not in region
     # And still nothing that cannot change the answer.
     assert "from:#id_stage" not in region
-    assert "target.name==='notes'" not in region
+    assert "notes" not in chips
 
 
 def test_the_restore_asks_the_same_read_only_route(client, specialist, pakend, ministry):

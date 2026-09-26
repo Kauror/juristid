@@ -581,6 +581,9 @@ one row on the page that has to be readable at a glance. `matters:defer_action`,
 `defer_choices` and `defer_base` are untouched and still reached from a work row
 elsewhere.
 
+**Superseded on 2026-09-26 for where deferring and reviewing are reached — see
+the amendment at the end of this document.**
+
 ### 21. `Seotud materjalid` is one `Lisa` disclosure
 
 The search and the suggestions were two controls that did not know about each
@@ -668,3 +671,36 @@ exactly as much as its worst entry.
 Rejected: two ways to close a file is how two people record the same closure
 differently. The four retired questions have surfaces of their own —
 `+ Töövõit`, `+ Jõustumine`, and Dokumendid for the sent opinion.
+
+---
+
+## Amendment, 2026-09-26 — no work row reaches `Lükka edasi`; the review is back beside the step
+
+- Status: accepted, amending the last sentence of §20.
+- Scope: engineering audit ENG-021. Where a waiting step's review is reached.
+  §20's decision — `Lükka edasi` leaves the `Järgmiseks` row — stands.
+
+### What was decided before
+
+§20 took `Lükka edasi` off the row and said `matters:defer_action` was «still
+reached from a work row elsewhere».
+
+### Why it is superseded
+
+It was not. No template posted to `defer_action` or `review_action` after this
+decision shipped; Minu asjad's «Vaatasin üle…» landed on a zone offering only
+`Muuda` and completion, and `Muuda` re-classified a waiting step as a late plan
+(ENG-021, reproduced on `9df0da63`).
+
+### What is decided now
+
+The review half of what `Lükka edasi` did for a `WAIT` or `MONITOR` is reachable
+again as `Vaatasin üle`, beside the step in `PRAEGUNE TEGEVUS` — ADR 0075, its
+amendment of 2026-09-26. Deferring a plan by a day or a week has no control on
+any page; a plan's date is changed through `Muuda`. `defer_action`,
+`defer_choices` and `defer_base` remain as unreachable compatibility code.
+
+### What this amendment does not change
+
+The `Järgmiseks` row's contents, the approved target, every service, and every
+stored row.
