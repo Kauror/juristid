@@ -198,6 +198,19 @@ def is_department_head(user: object | None) -> bool:
     return acting_role(user) == UserRole.DEPARTMENT_HEAD.value
 
 
+def may_review_historical_matches(user: object | None) -> bool:
+    """Whether this reader may work the historical reconciliation queue.
+
+    Migration work rather than legal work, and it can create Matters, so it is
+    the ADMINISTRATOR's (Stage-2D brief 39). Through `acting_role`, like every
+    other role question: the gate on the queue and the link to it on the
+    quality page used to compare the raw `User.role` each on its own, which
+    agreed with this today and would not have followed it the day `acting_role`
+    learns about another kind of non-person (ENG-128).
+    """
+    return acting_role(user) == UserRole.ADMINISTRATOR.value
+
+
 def department_scope() -> Scope:
     """Everything NORMAL, and nothing that depends on knowing who you are.
 

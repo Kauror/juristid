@@ -8,17 +8,6 @@ urlpatterns = [
     # `/osakonna-too/` answered the same question — «kus osakond seisab» — and
     # printed several of the same numbers twice (docs/adr/0049).
     path("osakond/", department_views.department, name="department"),
-    # The name Ülevaade's route carried, resolving to the page that replaced it.
-    #
-    # A second name on the canonical path rather than on the compatibility
-    # redirect below, and deliberately: `app/core/views.py::home` and the
-    # sign-in redirect in `app/accounts/views.py` both reverse `matters:overview`
-    # to decide where somebody lands, and those two lines belong to the parallel
-    # branch that is moving the root to Minu asjad. Pointing the name here means
-    # neither file had to be touched and neither now sends a reader through a
-    # 301 they do not need. Resolution is unaffected — `/osakond/` resolves to
-    # the entry above, which is the one that names the view.
-    path("osakond/", department_views.department, name="overview"),
     # Both old addresses, permanently, with their query strings. Every bookmark,
     # every pasted link and every `?vaade=`, `?periood=` or custom date range
     # somebody saved still opens the page it described: `?vaade=valdkonniti` is
@@ -110,14 +99,6 @@ urlpatterns = [
     # record in one transaction, so a partial swap would be describing something
     # the save does not do (app/matters/views.py, `matter_edit`).
     path("teemad/<uuid:pk>/muuda/", views.matter_edit, name="matter_edit"),
-    # `Kustuta teema` — one address, two methods. GET describes the deletion
-    # and POST performs it, so following a link can never remove a Matter and
-    # the CSRF token is what stands between the two (docs/adr/0096 §10).
-    #
-    # Under the Matter rather than behind a `haldus/` prefix: it is an ordinary
-    # operation a lawyer performs on their own file, reached from
-    # `TEEMA TOIMINGUD` on the Teema page.
-    path("teemad/<uuid:pk>/kustuta/", views.matter_delete, name="matter_delete"),
     # The same edit page with what the documents say beside it. Its own route
     # and GET-only: it computes and shows, and the form on it posts to
     # `matter_edit` like the plain one, so there is one write path
@@ -133,6 +114,10 @@ urlpatterns = [
     # cannot be undone. The GET writes nothing; the POST goes through
     # `app.matters.deletion`, which refuses in full or removes in full
     # (docs/adr/0096 §4.3).
+    #
+    # Under the Matter rather than behind a `haldus/` prefix: it is an ordinary
+    # operation a lawyer performs on their own file, reached from
+    # `TEEMA TOIMINGUD` on the Teema page.
     path("teemad/<uuid:pk>/kustuta/", views.matter_delete, name="matter_delete"),
     # -- the Teema workspace ------------------------------------------------
     #
