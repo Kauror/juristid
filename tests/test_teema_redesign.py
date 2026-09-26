@@ -1638,6 +1638,14 @@ def test_the_matter_page_does_not_explode_into_queries(
     hold: doubling the updates and the engagements leaves all seven where they
     are, and `tests/test_substantive_matter_history.py` measures the projection's
     own shape directly at two populations under one budget.
+
+    **Measured at 51 since ENG-018**, and the one it added is where `Teema käik`
+    may stop reading: the newest page's worth of possible row anchors, entries
+    and events together in one UNION, which sets the time bound the page is
+    read up to. It replaces a cap on change events that made the chronology
+    drop and repeat rows, and it is flat in the population — the same single
+    read on a file with twelve updates and on one with a thousand
+    (`tests/test_timeline_pagination_walk.py`).
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
@@ -1650,5 +1658,5 @@ def test_the_matter_page_does_not_explode_into_queries(
             actor=specialist,
         )
 
-    with django_assert_max_num_queries(50):
+    with django_assert_max_num_queries(51):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

@@ -1683,17 +1683,33 @@ def matter_timeline(
 
     Returns the page and whether more items exist.
     """
-    # Fetch one extra of each so "is there more" needs no second count query.
+    # **One page is the first `offset + limit` rows of the whole chronology**, and
+    # one more row says whether anything follows (ENG-018). Which rows those are
+    # is decided on the merged population, never on a count of change events. An
+    # event is not a row: the event saying which operation wrote a record, a file
+    # already shown on its record, and a stage move or next step folded into the
+    # Märge that caused it all consume a source slot and draw nothing. A cap on
+    # events (three per row, for a while) therefore ran out before the rows did
+    # on a file-heavy Matter: early history vanished with «Teema loodud» first,
+    # folded clauses were lost, a split operation left a stray row, and pages
+    # read under different caps repeated or skipped rows.
+    #
+    # So the sources are read up to a *time* bound instead, and every operation
+    # they touch is read whole (`_ChronologySources.load`). Every row whose key
+    # is at or after the bound is then exactly the row the unbounded chronology
+    # has, because every source it is built from is at or after the bound or
+    # belongs to an operation that was read whole. Rows older than the bound are
+    # not trusted. The bound starts where a page's worth of possible row anchors
+    # lies and moves back until the page and one more row are trusted — so a
+    # page reads what it needs, and never the whole history merely to show 30
+    # rows (master specification §13.4).
     window = offset + limit + 1
 
-    entries: list[Entry] = []
-    if only != TIMELINE_FILTER_EVENTS:
-        entries = list(
-            Entry.objects.filter(matter=matter)
-            .visible_to(user)
-            .select_related("author", "organisation")
-            .chronological()[:window]
-        )
+    entry_scope = (
+        Entry.objects.filter(matter=matter).visible_to(user)
+        if only != TIMELINE_FILTER_EVENTS
+        else None
+    )
 
     # ENTRY_ADDED is fetched and not rendered. It is the only thing that says
     # which operation an entry belongs to — the Entry table carries no such
@@ -1704,33 +1720,11 @@ def matter_timeline(
     # step's text — and a restricted document properly hidden from Dokumendid
     # was still naming itself here, because the row describing it was selected
     # by the Matter alone (AUTH-003, app/audit/visibility.py).
-    events = list(
-        scope_change_events(ChangeEvent.objects.filter(matter=matter), user)
-        .filter(
-            models.Q(event_type__in=TIMELINE_EVENT_TYPES)
-            | models.Q(event_type__in=SUPPRESSED_WHEN_ENTRY_SHOWN)
-            | models.Q(event_type__in=RECORD_OPERATION_EVENT_TYPES)
-        )
-        .select_related("actor")
-        .order_by("-occurred_at", "-created_at", "-id")[: window * 3]
+    event_scope = scope_change_events(ChangeEvent.objects.filter(matter=matter), user).filter(
+        models.Q(event_type__in=TIMELINE_EVENT_TYPES)
+        | models.Q(event_type__in=SUPPRESSED_WHEN_ENTRY_SHOWN)
+        | models.Q(event_type__in=RECORD_OPERATION_EVENT_TYPES)
     )
-
-    entry_operations: dict[Any, uuid.UUID] = {
-        event.object_id: event.operation_id
-        for event in events
-        if event.event_type == ChangeEventType.ENTRY_ADDED and event.operation_id is not None
-    }
-    # The same trick an entry uses, for a record that is projected rather than
-    # authored: the row saying which operation wrote it is fetched and never
-    # rendered. `RECORD_OPERATION_EVENT_TYPES` explains why the record cannot
-    # carry the identifier itself.
-    record_operations: dict[Any, uuid.UUID] = {
-        event.object_id: event.operation_id
-        for event in events
-        if event.event_type in RECORD_OPERATION_EVENT_TYPES and event.operation_id is not None
-    }
-    suppressed = frozenset(SUPPRESSED_WHEN_ENTRY_SHOWN) | frozenset(RECORD_OPERATION_EVENT_TYPES)
-    renderable = [event for event in events if event.event_type not in suppressed]
 
     # The structured facts, as their own rows, **before** the events are
     # assembled. Which effects fold onto which row depends on which records this
@@ -1759,6 +1753,234 @@ def matter_timeline(
             if item.submission is not None and item.record.final_version_id
         },
     )
+    # The open step, which `_assemble_timeline` keeps off the chronology as a
+    # row of its own (docs/adr/0092 §8).
+    open_action = (
+        current_action
+        if current_action is not _UNREAD
+        else selectors.current_action_of(matter, user)
+    )
+    open_action_pk = getattr(open_action, "pk", None)
+
+    sources = _ChronologySources(
+        entry_scope=entry_scope,
+        event_scope=event_scope,
+        projected=projected,
+        shown_on_their_record=frozenset(shown_on_their_record),
+        only=only,
+    )
+    batch = window
+    while True:
+        bound = sources.bound(batch)
+        entries, events = sources.load(bound)
+        items = _assemble_timeline(
+            entries=entries,
+            events=events,
+            projected=list(projected),
+            shown_on_their_record=shown_on_their_record,
+            open_action_pk=open_action_pk,
+            only=only,
+        )
+        if bound is not None:
+            items = [item for item in items if item.occurred_at >= bound]
+        if bound is None or len(items) >= window:
+            break
+        batch *= 2
+
+    page = items[offset : offset + limit]
+    has_more = len(items) > offset + limit
+    return (
+        _disambiguate_files(
+            _with_linked_files(_with_files(_with_next_steps(page, user), user), user)
+        ),
+        has_more,
+    )
+
+
+@dataclass
+class _ChronologySources:
+    """Where one Matter's chronology rows come from, read up to a time bound.
+
+    A row's key is the moment of the one source it is anchored on: an entry's
+    `occurred_at`, a projected record's date, a lone or milestone event's
+    `occurred_at`, or the earliest event of an operation that has neither an
+    entry nor a record. So a bound on those moments is a bound on rows — as long
+    as everything a row is *assembled* from arrives with its anchor. `load`
+    guarantees that by reading whole every operation it touches, plus the two
+    kinds of event that decide how a row is assembled without ever being one:
+    the `ENTRY_ADDED` that ties an entry to its operation, and the
+    `PROCEDURAL_DEVELOPMENT_RECORDED` that ties a record to its.
+    """
+
+    entry_scope: Any
+    event_scope: Any
+    projected: list[TimelineItem]
+    shown_on_their_record: frozenset[Any]
+    only: str
+    record_pks: list[Any] = field(init=False)
+    anchor_q: models.Q = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.record_pks = [item.record.pk for item in self.projected if item.record is not None]
+        # Events that can never anchor a row, left out of both the bound and the
+        # seed. Each exclusion mirrors a rule `_assemble_timeline` applies
+        # exactly, so nothing a row is anchored on is left out; an excluded
+        # event a row still *needs* arrives with its operation.
+        anchor = ~models.Q(event_type__in=SUPPRESSED_WHEN_ENTRY_SHOWN) & ~models.Q(
+            event_type__in=RECORD_OPERATION_EVENT_TYPES
+        )
+        if self.shown_on_their_record:
+            anchor &= ~models.Q(
+                event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
+                object_id__in=self.shown_on_their_record,
+            )
+        if self.record_pks:
+            anchor &= ~models.Q(
+                event_type__in=OPERATION_EFFECT_EVENT_TYPES,
+                operation_id__in=self._record_operations(self.record_pks),
+            )
+        self.anchor_q = anchor
+
+    def _record_operations(self, record_pks: list[Any]) -> Any:
+        return (
+            self.event_scope.filter(
+                event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=record_pks
+            )
+            .exclude(operation_id=None)
+            .values("operation_id")
+        )
+
+    def bound(self, batch: int) -> datetime | None:
+        """The moment of the `batch`-th newest possible row anchor, or ``None``.
+
+        Every row is anchored on a distinct source, so there are at most as
+        many rows at or after this moment as there are anchors — the bound is
+        where a page *might* be complete, and the caller moves it back when it
+        is not. ``None`` means fewer anchors exist than asked for: read
+        everything.
+        """
+        moments: list[datetime] = []
+        # One query, whichever sources this view reads: the newest `batch`
+        # anchor moments of each, as one UNION ALL, each row tagged with the
+        # source it came from.
+        reads: list[Any] = []
+
+        def newest(queryset: Any) -> None:
+            source = models.Value(len(reads), output_field=models.IntegerField())
+            reads.append(
+                queryset.annotate(anchor_source=source)
+                .order_by("-occurred_at")
+                .values_list("occurred_at", "anchor_source")[:batch]
+            )
+
+        if self.only != TIMELINE_FILTER_ENTRIES:
+            moments.extend(item.occurred_at for item in self.projected)
+            newest(self.event_scope.filter(self.anchor_q))
+        if self.entry_scope is not None:
+            newest(self.entry_scope)
+        per_source = [0] * len(reads)
+        if reads:
+            first, *rest = reads
+            for moment, source in first.union(*rest, all=True) if rest else first:
+                moments.append(moment)
+                per_source[source] += 1
+        # **Every source answered in full**: nothing older exists anywhere, so
+        # the whole chronology is what a bound would make the caller read anyway
+        # — and reading it as such trusts every row at once, where a bound on
+        # the oldest anchor would leave a page one row short whenever an anchor
+        # draws no row (the open step, above all) and cost a second round.
+        if len(moments) < batch or all(count < batch for count in per_source):
+            return None
+        moments.sort(reverse=True)
+        return moments[batch - 1]
+
+    def load(self, bound: datetime | None) -> tuple[list[Entry], list[ChangeEvent]]:
+        order = ("-occurred_at", "-created_at", "-id")
+        if bound is None:
+            everything = (
+                list(self.entry_scope.select_related("author", "organisation").chronological())
+                if self.entry_scope is not None
+                else []
+            )
+            return everything, list(self.event_scope.select_related("actor").order_by(*order))
+
+        recent_records = [
+            item.record.pk
+            for item in self.projected
+            if item.record is not None and item.occurred_at >= bound
+        ]
+        # What the rows at or after the bound are anchored on or assembled from.
+        seed = (self.anchor_q & models.Q(occurred_at__gte=bound)) | models.Q(
+            event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=recent_records
+        )
+        if self.entry_scope is not None:
+            seed |= models.Q(
+                event_type=ChangeEventType.ENTRY_ADDED,
+                object_id__in=self.entry_scope.filter(occurred_at__gte=bound).values("pk"),
+            )
+        operations = self.event_scope.filter(seed).exclude(operation_id=None).values("operation_id")
+        events = list(
+            self.event_scope.filter(
+                seed
+                # Which operation wrote each projected record: one row each,
+                # and what decides whether a stage move is folded or a row.
+                | models.Q(
+                    event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=self.record_pks
+                )
+                # Every operation touched, whole.
+                | models.Q(operation_id__in=operations)
+            )
+            .select_related("actor")
+            .order_by(*order)
+        )
+        entries: list[Entry] = []
+        if self.entry_scope is not None:
+            entries = list(
+                self.entry_scope.filter(
+                    models.Q(occurred_at__gte=bound)
+                    | models.Q(
+                        pk__in=self.event_scope.filter(
+                            event_type=ChangeEventType.ENTRY_ADDED, operation_id__in=operations
+                        ).values("object_id")
+                    )
+                )
+                .select_related("author", "organisation")
+                .chronological()
+            )
+        return entries, events
+
+
+def _assemble_timeline(
+    *,
+    entries: list[Entry],
+    events: list[ChangeEvent],
+    projected: list[TimelineItem],
+    shown_on_their_record: Any,
+    open_action_pk: Any,
+    only: str,
+) -> list[TimelineItem]:
+    """The chronology rows these sources make, in the one order.
+
+    Pure: no query. `matter_timeline` decides which sources to read and which of
+    the rows this returns it can trust.
+    """
+    entry_operations: dict[Any, uuid.UUID] = {
+        event.object_id: event.operation_id
+        for event in events
+        if event.event_type == ChangeEventType.ENTRY_ADDED and event.operation_id is not None
+    }
+    # The same trick an entry uses, for a record that is projected rather than
+    # authored: the row saying which operation wrote it is fetched and never
+    # rendered. `RECORD_OPERATION_EVENT_TYPES` explains why the record cannot
+    # carry the identifier itself.
+    record_operations: dict[Any, uuid.UUID] = {
+        event.object_id: event.operation_id
+        for event in events
+        if event.event_type in RECORD_OPERATION_EVENT_TYPES and event.operation_id is not None
+    }
+    suppressed = frozenset(SUPPRESSED_WHEN_ENTRY_SHOWN) | frozenset(RECORD_OPERATION_EVENT_TYPES)
+    renderable = [event for event in events if event.event_type not in suppressed]
+
     if shown_on_their_record:
         renderable = [
             event
@@ -1801,12 +2023,6 @@ def matter_timeline(
     # row of its own — a note, a `Menetluse areng` — keeps its `→ …` strip
     # there, because that is the act's own consequence rather than a second copy
     # of the instruction (docs/adr/0092 §8).
-    open_action = (
-        current_action
-        if current_action is not _UNREAD
-        else selectors.current_action_of(matter, user)
-    )
-    open_action_pk = getattr(open_action, "pk", None)
     if open_action_pk is not None:
         acts_with_a_row = set(entry_operations.values())
         renderable = [
@@ -1937,14 +2153,7 @@ def matter_timeline(
     # rows either side of it in time (docs/adr/0105 §1).
     items.sort(key=lambda item: (item.occurred_at, item.created_at, item.sort_key), reverse=True)
 
-    page = items[offset : offset + limit]
-    has_more = len(items) > offset + limit
-    return (
-        _disambiguate_files(
-            _with_linked_files(_with_files(_with_next_steps(page, user), user), user)
-        ),
-        has_more,
-    )
+    return items
 
 
 def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
