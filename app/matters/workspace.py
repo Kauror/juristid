@@ -763,31 +763,40 @@ def add_procedural_development(
     refuses about content.** ``title`` is optional since docs/adr/0105 §4 — a
     paper that arrived, the file moving to `Riigikogus`, «vaatan uue versiooni
     üle, 25.09» are each a whole record and none of them needs a headline — but a
-    press that carries no sentence, no file, no stage *and* no step would leave a
-    dated row on the file saying nothing at all. This is where the four can be
-    seen together, which is why the rule is here rather than on any one of the
-    services below, and it is raised **before** the Matter is locked: refusing a
-    save that was never going to write anything should not queue behind a row
-    lock.
+    press that writes no sentence, no note, no file, no stage change *and* no
+    step would leave a dated row on the file saying nothing at all. This is where
+    the effects can be seen together, which is why the rule is here rather than
+    on any one of the services below (`development_save_says_something`).
+
+    **Decided on the locked Matter, by what the save would write** (ENG-060). A
+    stage counts only when it *moves* the file: choosing the one the file already
+    has makes `change_stage` write nothing, so «Uus hetkeseis: <the current one>»
+    and nothing else is a press with nothing in it. And «the one it already has»
+    is read from the row `lock_open_matter_for_business_write` returns, never from
+    ``matter`` — the view fetched that before the lock, and a colleague's stage
+    change committed in between would make it answer for a moment that has
+    passed. So the refusal now queues behind the row lock, which is the price of
+    it being right (docs/adr/0105 §4, as amended 2026-09-26).
     """
     from app.matters.services import (
         DEVELOPMENT_NEEDS_SOMETHING,
         change_stage,
+        development_save_says_something,
         record_procedural_development,
         record_procedural_development_document,
     )
 
-    if not any(
-        (
-            (title or "").strip(),
-            _uploads(uploads),
-            stage is not None,
-            (next_text or "").strip(),
-        )
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    moves_stage = stage is not None and stage.pk != locked_matter.stage_id
+    if not development_save_says_something(
+        title=title,
+        note=note,
+        has_files=bool(_uploads(uploads)),
+        moves_stage=moves_stage,
+        next_text=next_text,
     ):
         raise DomainError(DEVELOPMENT_NEEDS_SOMETHING)
 
-    locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         development = record_procedural_development(
@@ -810,7 +819,7 @@ def add_procedural_development(
             record_procedural_development_document(
                 development=development, document=document, actor=author
             )
-        if stage is not None:
+        if moves_stage:
             change_stage(matter=locked_matter, stage=stage, actor=author)
         text = (next_text or "").strip()
         if text:

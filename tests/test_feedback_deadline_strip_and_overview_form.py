@@ -300,7 +300,8 @@ def test_a_reply_by_date_reaches_no_search_or_watched_deadline_surface(signed_in
 
 def test_nothing_completes_or_cancels_because_the_day_passed(normal_matter, specialist):
     """No automatic transition hangs off the date."""
-    engagement = _round(normal_matter, deadline=dt.date(2020, 1, 1))
+    # Asked before its reply-by day, as every round is (ENG-043).
+    engagement = _round(normal_matter, deadline=dt.date(2020, 1, 1), occurred=dt.date(2019, 12, 1))
 
     process_steps(matter=normal_matter, user=specialist)
 

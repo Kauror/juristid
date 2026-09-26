@@ -96,7 +96,6 @@ from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
     BriefSummaryForm,
-    CloseMatterForm,
     CompactClosureForm,
     CompactEffectiveDateForm,
     CompactEngagementForm,
@@ -191,7 +190,6 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
-    close_matter,
     compose_update,
     correct_engagement,
     correct_external_position,
@@ -5356,26 +5354,6 @@ def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
     else:
         messages.error(request, "Kontrolli töödokumendi nime ja aadressi.")
     return redirect("matters:matter_documents", pk=matter.pk)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def close(request: HttpRequest, pk: Any) -> HttpResponse:
-    matter = get_visible_matter(request, pk)
-    form = CloseMatterForm(request.POST)
-    if form.is_valid():
-        try:
-            close_matter(
-                matter=matter,
-                disposition=form.cleaned_data["disposition"],
-                reason=form.cleaned_data["reason"],
-                actor=request.user,
-            )
-            messages.success(request, "Teema on suletud.")
-        except DomainError as error:
-            messages.error(request, str(error))
-    return redirect("matters:matter_detail", pk=matter.pk)
 
 
 @login_required
