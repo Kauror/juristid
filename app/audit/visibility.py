@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -341,6 +341,17 @@ def scope_change_events(events: QuerySet[ChangeEvent], user: Any) -> QuerySet[Ch
     that scope is the same rule at a fraction of the cost, and is what
     `app.matters.activity.annotate_last_activity` already documents for the same
     reason.
+
+    **Asked per event, not per child table (ENG-076).** Each family was an
+    uncorrelated ``object_id IN (SELECT pk FROM <child> WHERE <visible>)``.
+    For the lawyer roles the predicate is empty, so every Matter page, chronology
+    page and change-log page built a set of *every* entry, next step, document
+    and development in the database to test a handful of events against it —
+    a cost that grew with the corpus, not with the Matter being read. The same
+    test is now a correlated ``EXISTS`` on the event's own ``object_id``: one
+    primary-key probe per event read, with the visibility predicate unchanged.
+    Same rows, same rule — an event about a child this reader may not see, or
+    about a child that no longer exists, is still hidden.
     """
     scope = scope_for_user(user)
     known = child_event_types()
@@ -348,9 +359,8 @@ def scope_change_events(events: QuerySet[ChangeEvent], user: Any) -> QuerySet[Ch
     eligible = ~Q(event_type__in=known)
     for event_types, model, paths in _child_families():
         population = apply_scope(model._default_manager.all(), child_visibility_q(scope, **paths))
-        eligible |= Q(
-            event_type__in=event_types,
-            object_id__in=population.values("pk"),
+        eligible |= Q(event_type__in=event_types) & Q(
+            Exists(population.filter(pk=OuterRef("object_id")))
         )
 
     return events.filter(eligible)
