@@ -4049,17 +4049,6 @@ class WorkingDocumentForm(forms.Form):
     )
 
 
-class CloseMatterForm(forms.Form):
-    disposition = forms.ChoiceField(
-        label="Lõpetamise põhjus", choices=Disposition.choices, widget=SELECT_WIDGET
-    )
-    reason = forms.CharField(
-        label="Selgitus",
-        required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
-    )
-
-
 class TagAssignmentForm(forms.Form):
     tag = forms.ModelChoiceField(label="Silt", queryset=Tag.objects.none(), widget=SELECT_WIDGET)
 

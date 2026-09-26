@@ -4751,9 +4751,20 @@ def close_matter(
     "Algataja loobus" would record a claim nobody made. It is a real
     relationship rather than a sentence in ``reason``, so "what became of this
     file" is a question a query can answer (Teema redesign §16).
+
+    **And required with it** (ENG-065, HAF-04). «Work continues under another
+    Matter» naming none is the claim the composer refuses to make by leaving the
+    choice out (`CLOSURE_CHOICES`); stating the rule only there left every other
+    caller able to make it. The successor must be another Matter, not deleted,
+    and one the person closing can read — a closure may not assert a
+    relationship with a file its author cannot see, and the refusal names it no
+    more than a missing one. `DUPLICATE` asks for nothing: no decision ties a
+    duplicate to a successor, and this does not invent one.
     """
     if disposition not in Disposition.values:
         raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
+    if disposition == Disposition.SUPERSEDED and successor is None:
+        raise DomainError(SUPERSEDED_NEEDS_A_SUCCESSOR)
     if successor is not None:
         if disposition != Disposition.SUPERSEDED:
             raise DomainError("Järglase saab määrata ainult siis, kui töö jätkub teise teema all.")
@@ -4791,6 +4802,13 @@ def close_matter(
         if locked.deleted_at is not None:
             raise Matter.DoesNotExist(matter.pk)
         if successor.deleted_at is not None:
+            raise DomainError(SUCCESSOR_DELETED_REFUSAL)
+        if (
+            actor is not None
+            and not Matter.objects.visible_to(actor).filter(pk=successor.pk).exists()
+        ):
+            # The same sentence as a deleted one: a refusal that said «you may
+            # not see that file» would confirm the file exists (anti-oracle).
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
@@ -4846,6 +4864,9 @@ def close_matter(
     )
     return matter
 
+
+#: What `Jätkub teise teema all` naming no Matter is told (ENG-065).
+SUPERSEDED_NEEDS_A_SUCCESSOR = "Kui töö jätkub teise teema all, vali teema, mille all see jätkub."
 
 #: What a closure naming a successor that has since been deleted is told.
 SUCCESSOR_DELETED_REFUSAL = (
