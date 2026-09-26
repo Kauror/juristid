@@ -39,7 +39,7 @@ consequences and reversibility.
 | [0028](0028-development-archive-workspace-access.md) | The archive is readable behind the shared gate; the register is not | Accepted |
 | [0029](0029-reference-data-foundation.md) | Reference data is governed, additive, and never invented from source strings | Accepted |
 | [0030](0030-teema-workspace-redesign.md) | The Teema workspace: one page, two tabs, and one save per professional update | Accepted |
-| [0031](0031-teema-human-qa-corrections.md) | What hands-on use changed about the Teema workspace | Accepted |
+| [0031](0031-teema-human-qa-corrections.md) | What hands-on use changed about the Teema workspace | Accepted, amended 2026-09-26 |
 | [0032](0032-uus-teema-redesign.md) | The approved Uus teema redesign: one screen, one chip control | Accepted, amended 2026-09-16 |
 | [0033](0033-overview-drilldown-parity.md) | Ülevaade drill-down parity: every number opens a list of its own kind | Accepted |
 | [0034](0034-persona-candidates-and-the-top-bar-switcher.md) | Persona candidates are a role-based population, and switching happens from the bar | Accepted |
@@ -152,7 +152,7 @@ Naming: `NNNN-short-decision-title.md`.
 - 0028 — the development archive workspace: who may read the corpus behind the shared gate, and why that is not the register
 - 0029 — the reviewed reference-data baseline: nine policy areas, the core public institutions, and why no backfill yet
 - 0030 — the approved Teema workspace redesign: two tabs, one composer save, grouped-not-merged history, and the twenty-three working Valdkonnad
-- 0031 — what a working session on real data changed: the position back in the rail, one dated work list, a full edit page beside the inline controls
+- 0031 — what a working session on real data changed: the position back in the rail, one dated work list, a full edit page beside the inline controls — **amended 2026-09-26**: the first owner an unowned Matter gets also takes the open step nobody holds (`responsible` NULL), so an Uus teema «Koostan arvamuse» step triaged to a lawyer lands on their Minu asjad; a step a named colleague holds is still never taken, and the MATTER_ASSIGNED `next_action_moved` names exactly the step that moved
 - 0032 — the approved Uus teema redesign: one screen, one chip control, two Valdkonnad withdrawn, and Hetkeseis explaining itself on the row
 - 0033 — Ülevaade drill-down parity: a number opens a list of its own kind, `?too=` makes the dated-work populations addressable, and "Ootab pahavarakontrolli" stops telling readers their archive might be infected
 - 0034 — who may be offered as a persona: one role-based population read by both the page and the endpoint, technical accounts excluded, and a top-bar switcher that keeps the page somebody was reading

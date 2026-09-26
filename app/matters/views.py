@@ -1670,7 +1670,8 @@ def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
     Nothing is done differently here from the header's own owner control: the
     same form validates the choice against `assignable_including`, and the same
     `assign_matter` service writes it, moves the open step that was following
-    the previous owner, and records the change event. What is different is only
+    the previous owner — or, on a first assignment, the one nobody held — and
+    records the change event. What is different is only
     where the reader ends up — back on the register, with their filters intact,
     because triaging four unassigned files should not cost four round trips
     through four Matter pages (app/matters/services.py, docs/adr/0036).
