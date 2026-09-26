@@ -122,6 +122,97 @@
    * detached and the event has no path to bubble along — a listener on `body`
    * in the bubble phase never runs. Capture reaches it; measured, not assumed.
    */
+  /* ---- Where a swap happened, for the two swaps that are not saves -------
+   * ENG-095. The rule below was written for saves, and its one landing on a
+   * Teema is `Lisa teemale`, near the top. Two swaps are not saves and lose
+   * focus deep in the chronology:
+   *
+   *   - «Näita varasemaid» replaces itself with the older rows, so a keyboard
+   *     user was sent up to `Lisa teemale` (a reader, who has no landing, to
+   *     `body`) and the next Tab skipped every row just loaded;
+   *   - «Kustuta» on a row re-renders the whole Teema column, and focus went
+   *     to `Lisa teemale` from a row a page further down.
+   *
+   * So each remembers where it stood before the swap, and the settle handler
+   * lands on the first row that arrived, or on the row that took the removed
+   * one's place. Only a successful swap: a refusal keeps the field focus its
+   * own handler gives it. */
+  var placement = null;
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail || {};
+    var elt = detail.elt;
+    if (!elt || !elt.closest || !detail.xhr || detail.xhr.status >= 300) {
+      return;
+    }
+    if (elt.classList && elt.classList.contains("uxtl__older")) {
+      placement = {
+        kind: "inserted",
+        parent: elt.parentNode,
+        before: elt.previousElementSibling,
+        target: detail.target,
+      };
+      return;
+    }
+    /* The removal re-renders `#teema-vaade`, so `detail.elt` is that target;
+     * the form that asked is the request's own element. */
+    var asker = detail.requestConfig && detail.requestConfig.elt;
+    var form = asker && asker.closest ? asker.closest(".uxtl__removeform") : null;
+    if (form) {
+      var row = form.closest("article.uxtl__item");
+      if (row) {
+        placement = { kind: "neighbour", index: visibleRows().indexOf(row), target: detail.target };
+      }
+    }
+  }, true);
+
+  /* A chronology row is `display: contents` — the grid lays out its children
+   * directly — so the row itself has no box and cannot hold focus. The landing
+   * is inside it: its first visible control, or else its first visible part,
+   * made focusable for the purpose. */
+  var focusableIn = function (row) {
+    var controls = row.querySelectorAll("a[href], button:not([disabled]), summary");
+    for (var i = 0; i < controls.length; i += 1) {
+      if (controls[i].getClientRects().length) {
+        return controls[i];
+      }
+    }
+    var parts = row.children;
+    for (var j = 0; j < parts.length; j += 1) {
+      if (parts[j].getClientRects().length && parts[j].getAttribute("aria-hidden") !== "true") {
+        return parts[j];
+      }
+    }
+    return null;
+  };
+
+  var visibleRows = function () {
+    return Array.prototype.filter.call(document.querySelectorAll("article.uxtl__item"), function (row) {
+      return focusableIn(row) !== null;
+    });
+  };
+
+  var placedLanding = function (place) {
+    if (place.kind === "inserted") {
+      var node = place.before ? place.before.nextElementSibling : place.parent && place.parent.firstElementChild;
+      while (node && document.contains(node)) {
+        var row = node.matches && node.matches("article.uxtl__item")
+          ? node
+          : node.querySelector && node.querySelector("article.uxtl__item");
+        var landing = row ? focusableIn(row) : null;
+        if (landing) {
+          return landing;
+        }
+        node = node.nextElementSibling;
+      }
+      return null;
+    }
+    var rows = visibleRows();
+    if (!rows.length || place.index < 0) {
+      return null;
+    }
+    return focusableIn(rows[Math.min(place.index, rows.length - 1)]);
+  };
+
   document.body.addEventListener("htmx:afterSettle", function (event) {
     var target = event.detail && event.detail.target;
     if (!target || !target.querySelector) {
@@ -139,6 +230,27 @@
       active === document.documentElement ||
       !document.contains(active);
     if (!lost) {
+      if (placement && placement.target === target) {
+        placement = null;
+      }
+      return;
+    }
+    /* Only the swap that recorded it: another request settling in between
+     * must neither use nor discard it. */
+    var place = placement && placement.target === target ? placement : null;
+    if (place) {
+      placement = null;
+    }
+    var placed = place ? placedLanding(place) : null;
+    if (placed) {
+      if (!placed.hasAttribute("tabindex")) {
+        placed.setAttribute("tabindex", "-1");
+      }
+      try {
+        placed.focus({ preventScroll: true });
+      } catch (error) {
+        placed.focus();
+      }
       return;
     }
     /* **Search the live document where the swapped element is gone.**
