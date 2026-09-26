@@ -889,6 +889,68 @@
         });
       });
 
+      /* `Loo teema` waits for an upload that is still on its way. The form
+         carries the session from its first render (ENG-074), and the input is
+         emptied only when the stage answer arrives, so a press mid-upload used
+         to post both — the session the server had just staged the files into
+         *and* the same files again — and every one became two Documents.
+
+         Held until the queue settles, then submitted again by the same button.
+         By then the input is empty if staging kept the files, or still holds
+         them if it did not, so exactly one copy of each is sent either way.
+         Bounded, because a stuck request must not strand a finished form: past
+         the limit the post goes anyway and `matter_create` drops any chosen
+         file this session had already staged under the same name and bytes. */
+      var MAX_SUBMIT_WAIT_MS = 20000;
+      var submitWaiting = false;
+      var submitForced = false;
+      createForm.addEventListener("submit", function (event) {
+        if (submitForced || !(inFlight > 0)) {
+          return;
+        }
+        event.preventDefault();
+        if (submitWaiting) {
+          return;
+        }
+        submitWaiting = true;
+        var submitter = event.submitter || null;
+        if (submitter) {
+          submitter.disabled = true;
+        }
+        var released = false;
+        /* Submitted again rather than let through, so a file picked while
+           this one waited is waited for too: the listener sees it in flight
+           and holds the press once more. Only the limit forces it past. */
+        var release = function (forced) {
+          if (released) {
+            return;
+          }
+          released = true;
+          window.clearTimeout(limit);
+          submitWaiting = false;
+          if (submitter) {
+            submitter.disabled = false;
+          }
+          if (!createForm.requestSubmit) {
+            createForm.submit();
+            return;
+          }
+          submitForced = forced;
+          try {
+            createForm.requestSubmit(submitter);
+          } finally {
+            submitForced = false;
+          }
+        };
+        var limit = window.setTimeout(function () {
+          release(true);
+        }, MAX_SUBMIT_WAIT_MS);
+        var settle = function () {
+          release(false);
+        };
+        queue.then(settle, settle);
+      });
+
       dropzone.addEventListener("click", function (event) {
         var button = event.target.closest ? event.target.closest("[data-intake-remove]") : null;
         if (!button) {

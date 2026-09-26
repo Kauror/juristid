@@ -1829,7 +1829,10 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     Three paths into the same place, and they compose. Staged files first, then
     what a refusal is holding, then anything chosen again — the order somebody
     offered them in. With scripting off the first is simply empty and the page
-    behaves exactly as it did before.
+    behaves exactly as it did before. The one overlap that is not a choice — a
+    file staged into this form's session *and* still in its input, because the
+    save was pressed while the upload was in flight — is filed once
+    (`intake_staging.without_staged_copies`).
     """
     form = MatterCreateForm(request.POST or None, viewer=request.user)
     # **No second form for the first step, and no second date.**
@@ -1911,7 +1914,9 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             # the good half of a batch whose other half was rejected. Files
             # already held stay held — `resume` reads without consuming — so
             # only what arrived on this request has to be added.
-            newly_held = pending_uploads.hold(request.session, chosen)
+            newly_held = pending_uploads.hold(
+                request.session, _not_already_staged(chosen, intake_session)
+            )
             held_keys = [*held_keys, *(item.key for item in newly_held)]
             return render(
                 request,
@@ -2019,6 +2024,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     promoted = intake_staging.promote_intake_files(
                         session=intake_session, matter=matter, actor=request.user
                     )
+                    # A press while the upload was still in flight posts the
+                    # session *and* the files it had just staged. Promoted
+                    # once is filed once; held uploads are never compared
+                    # (`without_staged_copies`).
+                    uploads = [
+                        *resumed,
+                        *intake_staging.without_staged_copies(chosen, promoted),
+                    ]
                 for upload in uploads:
                     _attach_incoming_file(matter, upload, actor=request.user)
 
@@ -2117,7 +2130,9 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             # institution the catalogue means, and it is no more a reason to
             # take their attachment away than a mistyped valdkond is.
             form.add_error(None, str(error))
-            newly_held = pending_uploads.hold(request.session, chosen)
+            newly_held = pending_uploads.hold(
+                request.session, _not_already_staged(chosen, intake_session)
+            )
             return render(
                 request,
                 "matters/matter_create.html",
@@ -2545,6 +2560,18 @@ def intake_remove(request: HttpRequest) -> HttpResponse:
     if not intake_staging.remove_file(session=session, file_id=(request.POST.get("fail") or "")):
         raise Http404
     return _intake_fragment(request, session)
+
+
+def _not_already_staged(chosen: list[Any], intake_session: Any) -> list[Any]:
+    """What a refused save should hold: the chosen files not already staged.
+
+    Staged files survive a refusal in their session, so holding a copy of one
+    as well would put it on the re-rendered form twice and file it twice on
+    the next press (`intake_staging.without_staged_copies`).
+    """
+    if intake_session is None:
+        return chosen
+    return intake_staging.without_staged_copies(chosen, intake_staging.live_files(intake_session))
 
 
 def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], tuple[str, ...]]:
