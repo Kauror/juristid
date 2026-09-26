@@ -321,7 +321,11 @@ def intervention_rows(
                     value=f"{item.days_late} p üle",
                     # Compact, because the cell is 96px and the meaning must be
                     # readable in full: a truncated meaning is a bare date.
-                    meaning=f"{item.meaning} {_short(item.period_end or item.when)}",
+                    #
+                    # `day_month`: `14.08` for a day, the recorded period for a
+                    # period. A *september 2026* plan printed its last day as
+                    # `30.09` here — a day nobody named (ADR 0079 §2, §3).
+                    meaning=f"{item.meaning} {item.day_month}",
                     matter=item.matter,
                     detail=item.text,
                     owner=item.responsible,
@@ -334,10 +338,14 @@ def intervention_rows(
                     reason=REASON_RIPE,
                     value="üle vaadata",
                     # The *date's* meaning — VAATAN ÜLE, OODATAV AEG — and
-                    # the day it fell on. Never the stored action kind: TEEN /
-                    # OOTAN / JÄLGIN is not a category this product asks a
-                    # reader to hold (ADR 0054).
-                    meaning=f"{item.meaning} {_short(item.when)}",
+                    # the date at the precision it was recorded to. Never the
+                    # stored action kind: TEEN / OOTAN / JÄLGIN is not a
+                    # category this product asks a reader to hold (ADR 0054).
+                    #
+                    # Never the anchor as a day: a review for *september 2026*
+                    # read `VAATAN ÜLE 01.09`, which is a date nobody chose
+                    # (ADR 0079 §2, §3, ENG-040).
+                    meaning=f"{item.meaning} {item.day_month}",
                     matter=item.matter,
                     detail=item.text,
                     owner=item.responsible,

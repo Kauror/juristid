@@ -30,7 +30,13 @@ from app.workflow.enums import (
     Disposition,
     Track,
 )
-from app.workflow.lateness import days_past_period, is_past_period, overdue_date_q
+from app.workflow.lateness import (
+    days_past_period,
+    is_past_period,
+    is_review_due,
+    overdue_date_q,
+    review_due_q,
+)
 
 
 class StageVocabulary(BaseModel):
@@ -187,11 +193,10 @@ class NextActionQuerySet(models.QuerySet):
         )
 
     def due_for_review(self, today: date | None = None) -> NextActionQuerySet:
-        return self.open().filter(
-            kind__in=REVIEW_KINDS,
-            target_date__isnull=False,
-            target_date__lte=today or timezone.localdate(),
-        )
+        """Open reviews that have come round — exactly the rows
+        ``is_due_for_review`` below answers ``True`` for, because both read
+        :func:`~app.workflow.lateness.review_due_q`'s one rule (ADR 0079 §6)."""
+        return self.open().filter(review_due_q(today or timezone.localdate()))
 
 
 #: What a step with no recorded day prints where its date would go.
@@ -368,11 +373,24 @@ class NextAction(VisibilityInheritingModel):
         return is_past_period(self.target_date, self.date_precision, today or timezone.localdate())
 
     def is_due_for_review(self, today: date | None = None) -> bool:
-        if not self.is_open or self.target_date is None:
+        """Whether this review has come round: a review kind whose recorded
+        period has begun, today included.
+
+        *oktoober 2026* is due from 1 October — not from 1 November, where the
+        work surfaces used to put it by borrowing the deadline rule above. A
+        reminder is not a promise, and the two boundaries are a month apart on
+        purpose (ADR 0079 §6, ENG-040). Every work surface's ``is_review_ripe``
+        is this answer, and ``due_for_review`` is the same rule in SQL
+        (:mod:`app.workflow.lateness`).
+        """
+        if not self.is_open:
             return False
-        if self.kind not in REVIEW_KINDS:
-            return False
-        return self.target_date <= (today or timezone.localdate())
+        return is_review_due(
+            kind=self.kind,
+            value=self.target_date,
+            precision=self.date_precision,
+            today=today or timezone.localdate(),
+        )
 
     @property
     def is_review_kind(self) -> bool:
