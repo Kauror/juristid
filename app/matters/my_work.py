@@ -612,6 +612,10 @@ class MyWork:
     quiet_total: int = 0
     undated: list[wi.WorkItem] = field(default_factory=list)
     undated_total: int = 0
+    #: The register list behind *Kuupäevata*'s «Näita kõiki N»: exactly the N
+    #: undated steps this person is responsible for, not every Matter they own
+    #: (ENG-059).
+    undated_url: str = ""
     changes: list[ChangeRow] = field(default_factory=list)
     entries: list[Entry] = field(default_factory=list)
     quick: list[QuickRow] = field(default_factory=list)
@@ -797,6 +801,7 @@ def build_my_work(
         quiet_total=quiet_total,
         undated=undated,
         undated_total=undated_total,
+        undated_url=_work_url(subject, wi.WORK_UNDATED),
         changes=recent_changes(user, subject),
         entries=recent_entries(user, subject),
         quick=quick,

@@ -32,9 +32,12 @@ from urllib.parse import urlencode
 from django.db.models import Q, QuerySet
 from django.urls import reverse
 
-from app.accounts.enums import UserRole
 from app.core.authorization import apply as apply_scope
-from app.core.authorization import matter_visibility_q, scope_for_user
+from app.core.authorization import (
+    matter_visibility_q,
+    may_review_historical_matches,
+    scope_for_user,
+)
 from app.legacy_import.source_pages import CandidateClass, CandidateState, HistoricalMatchCandidate
 from app.matters.selectors import MISSING
 from app.reporting import metric_catalogue as keys
@@ -70,7 +73,8 @@ def visible_candidates(context: ReportingContext) -> QuerySet[HistoricalMatchCan
 
 
 def can_open_review_queue(context: ReportingContext) -> bool:
-    return getattr(context.viewer, "role", None) == UserRole.ADMINISTRATOR
+    """The link to the queue, asked the way the queue's own gate asks it (ENG-128)."""
+    return may_review_historical_matches(context.viewer)
 
 
 def _review_url(context: ReportingContext, **params: str) -> str:

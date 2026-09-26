@@ -1478,6 +1478,13 @@ WORK_DEADLINE_WINDOW = "tahtaeg-vahemik"
 #: read from the derived last-activity fact, which is why it is resolved as a
 #: queryset in `work_population_ids` rather than out of the item list.
 WORK_QUIET_30 = "muutusteta-30"
+#: Open steps with no date at all, as Minu asjad's *Kuupäevata* rail counts them
+#: (ENG-059). Not a date population either — an undated step has no place in the
+#: dated read model — so it is resolved as a queryset, from `undated_actions`,
+#: the same selector the rail's count reads. Narrowed by the person
+#: *responsible* for the step, which is what the rail counts: not the Matter's
+#: owner, whose list the rail used to open instead.
+WORK_UNDATED = "kuupaevata"
 
 #: How long silence has to last before it is worth a line on a manager's page.
 #: A month, which is the review rhythm the department actually keeps.
@@ -1497,6 +1504,7 @@ WORK_POPULATION_LABELS: dict[str, str] = {
     WORK_DEADLINE_WINDOW: "Tähtaeg ees",
     WORK_NEEDS_ATTENTION: "Vajab sekkumist",
     WORK_QUIET_30: f"Muutusteta {QUIET_DAYS} p",
+    WORK_UNDATED: "Kuupäevata",
 }
 
 WORK_POPULATIONS: tuple[str, ...] = tuple(WORK_POPULATION_LABELS)
@@ -1638,6 +1646,16 @@ def work_population_ids(
             else owned.filter(owner=responsible)
         )
         return set(owned.values_list("pk", flat=True))
+    if key == WORK_UNDATED:
+        # The rail's own selector, so its count and this list are one query
+        # asked twice. `undated_actions(responsible=None)` means *anyone*, so
+        # the unassigned half is its own filter rather than that argument.
+        undated = undated_actions(user)
+        if responsible is None:
+            undated = undated.filter(responsible__isnull=True)
+        elif responsible is not ANY_PERSON:
+            undated = undated.filter(responsible=responsible)
+        return set(undated.values_list("matter_id", flat=True))
     if items is None:
         items = work_items(user, today=today)
     ids = {item.matter_id for item in work_population_items(items, key, today, window=window)}
@@ -1764,6 +1782,7 @@ __all__ = [
     "WORK_POPULATION_LABELS",
     "WORK_QUIET_30",
     "WORK_RIPE",
+    "WORK_UNDATED",
     "ActionKind",
     "ResponseObligation",
     "WorkBand",

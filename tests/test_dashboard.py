@@ -241,7 +241,7 @@ def test_the_page_is_reached_by_its_own_address(world, client, specialist) -> No
     caller holding the old name lands directly (docs/adr/0049 §2).
     """
     client.force_login(specialist)
-    response = client.get(reverse("matters:overview"))
+    response = client.get(reverse("matters:department"))
     assert response.status_code == 200
     assert response.request["PATH_INFO"] == "/osakond/"
     assert response.resolver_match.view_name == "matters:department"

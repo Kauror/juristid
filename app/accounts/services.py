@@ -161,7 +161,12 @@ def grant_break_glass(
         raise DomainError("A break-glass grant must last a positive amount of time.")
     if duration > MAX_BREAK_GLASS_DURATION:
         raise DomainError(f"A break-glass grant may not exceed {MAX_BREAK_GLASS_DURATION}.")
-    if granted_by.role != UserRole.DEPARTMENT_HEAD and not granted_by.is_superuser:
+    from app.core.authorization import is_department_head
+
+    # The canonical role question (ENG-128): an inactive head, a DepartmentViewer
+    # or an anonymous caller is not "the department head" here either. Who may
+    # grant, and whether break-glass is used at all, is ENG-069's open policy.
+    if not is_department_head(granted_by) and not granted_by.is_superuser:
         raise DomainError(
             "Only the department head or a system owner may grant break-glass access."
         )
