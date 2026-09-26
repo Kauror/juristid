@@ -331,6 +331,38 @@ class NextAction(VisibilityInheritingModel):
                 ),
                 name="workflow_next_action_visibility_vocabulary",
             ),
+            # **The four vocabularies, and the one rule relating two columns**
+            # (ENG-043). Every sibling precision column has had its vocabulary
+            # `CHECK` since Stage 2G (`matters_engagement_occurred_precision_
+            # vocabulary` and the rest); this table predates the pattern and was
+            # never retrofitted, so `'BOGUS'` was storable and printed as a day.
+            # The services refuse all of these first, with a sentence
+            # (`set_next_action`, `acknowledge_review`); these are the backstop
+            # for a writer that goes around them.
+            models.CheckConstraint(
+                condition=models.Q(kind__in=ActionKind.values),
+                name="workflow_next_action_kind_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(date_semantics__in=DateSemantics.values),
+                name="workflow_next_action_date_semantics_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(date_precision__in=DatePrecision.values),
+                name="workflow_next_action_precision_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=ActionStatus.values),
+                name="workflow_next_action_status_vocabulary",
+            ),
+            # **An undated step is `EXACT`**, and only that. docs/adr/0106's
+            # `target_date IS NULL` stays legal — a step whose day nobody knows
+            # yet — and a period with nothing to qualify does not.
+            models.CheckConstraint(
+                condition=models.Q(target_date__isnull=False)
+                | models.Q(date_precision=DatePrecision.EXACT),
+                name="workflow_next_action_undated_is_exact",
+            ),
         ]
         indexes = [
             models.Index(

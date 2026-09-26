@@ -226,51 +226,33 @@ def clean_provider_link(form: forms.Form, field: str) -> str:
         raise forms.ValidationError(str(error)) from error
 
 
-#: What a reply-by date typed before the round it belongs to is told.
-#:
-#: One string, because two forms ask the same question and a refusal worded
-#: twice is a refusal that drifts (`CompactEngagementForm`, `EngagementForm`).
-DEADLINE_BEFORE_ENGAGEMENT = "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva."
-
-
 def refuse_deadline_before_engagement(form: forms.Form, cleaned: dict[str, Any]) -> None:
-    """The one relationship between the two engagement dates, and no other rule.
+    """The service's date-order rule, reported under the box it is about.
 
-    A reply-by date *before* the day the round started is not a late
-    consultation, it is a slip of the keyboard — nothing was ever asked to be
-    answered before it was asked. Same day is fine («vastake tänaseks»), later
-    is the normal case, and a deadline with no engagement date at all is
-    accepted because a person who does not remember when they wrote may still
-    remember what they asked for. A deadline already in the past is accepted
-    too: a consultation recorded months late had its deadline months ago
-    (docs/adr/0078 §3).
+    **The rule is not this form's.** `add_engagement`, `update_engagement` (and
+    so `correct_engagement`) and `open_engagement_feedback_wait` refuse a reply-by
+    date before the round's whole period began, with the same sentence
+    (`app.matters.services.feedback_deadline_precedes_engagement`, ENG-043). This
+    asks the same function earlier, so a person reads the refusal beside
+    `Tagasisidet ootame kuni` — the box they would correct — rather than above
+    the form, and so the form can never be stricter or laxer than the service.
 
-    Reported on `feedback_deadline`, because that is the box the person would
-    correct: the engagement date is the anchor and the deadline is what is
-    being placed against it.
-
-    **Read from `occurred_on_value`, which is the resolved anchor rather than
-    the day box.** Since docs/adr/0082 the engagement date may be a month, a
-    quarter or a year, and those leave the day box empty — a rule reading it
-    directly would simply stop firing for three of the four precisions.
-
-    **And the anchor is the right end of the period to compare against.** The
-    anchor is the period's *first* day, so an approximate round refuses only a
-    deadline that falls before the whole period began — «kaasamine oktoobris,
-    vastused 20. septembriks» — and accepts every day inside it. Comparing
-    against the period's end would refuse «kaasamine oktoobris, vastused
-    15. oktoobriks», which is not a typo but the commonest thing a consultation
-    run over a month actually says.
-
-    Shared by the `+ Kaasamine` panel and the correction form. The panel writes
-    a new record and the correction form rewrites one, and the rule about what
-    the two dates may say to each other is the same rule either way — a copy
-    per form is how a record becomes correctable into a state it could never
-    have been created in.
+    **Read from `occurred_on_value` and `occurred_on_precision`, the resolved
+    period rather than the day box.** Since docs/adr/0082 the engagement date
+    may be a month, a quarter or a year, and those leave the day box empty — a
+    rule reading it directly would simply stop firing for three of the four
+    precisions.
     """
-    occurred_on = cleaned.get("occurred_on_value")
-    feedback_deadline = cleaned.get("feedback_deadline")
-    if occurred_on and feedback_deadline and feedback_deadline < occurred_on:
+    from app.matters.services import (
+        DEADLINE_BEFORE_ENGAGEMENT,
+        feedback_deadline_precedes_engagement,
+    )
+
+    if feedback_deadline_precedes_engagement(
+        cleaned.get("occurred_on_value"),
+        cleaned.get("occurred_on_precision"),
+        cleaned.get("feedback_deadline"),
+    ):
         form.add_error("feedback_deadline", DEADLINE_BEFORE_ENGAGEMENT)
 
 
@@ -6172,9 +6154,11 @@ class KodaOpinionForm(forms.Form):
         `RegisterSentOpinionForm`'s, because it is the same act asked on a
         different page — two wordings for one refusal is two things to learn.
         """
+        from app.submissions.services import SENT_DATE_IN_THE_FUTURE
+
         value = self.cleaned_data.get("sent_on")
         if value is not None and value > timezone.localdate():
-            raise forms.ValidationError("Saatmise kuupäev ei saa olla tulevikus.")
+            raise forms.ValidationError(SENT_DATE_IN_THE_FUTURE)
         return value
 
     def clean(self) -> dict[str, Any]:

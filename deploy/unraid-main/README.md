@@ -1226,6 +1226,32 @@ It is named here rather than left to a release note because the condition is a
 fact about the database in front of you: `migration_plan` from step 6 lists
 them as pending, and that listing is what makes this step apply.
 
+**RUN INVARIANT PREFLIGHT BEFORE MIGRATING** — on the release that carries
+`workflow/0009_next_action_values_are_checked`. That migration installs five
+`CHECK` constraints on `workflow_nextaction` (its `kind`, `date_semantics`,
+`date_precision` and `status` vocabularies, and «no date means `EXACT`»), and
+`migration_plan` lists it as consequential (`AddConstraint`). A row already
+breaking one of them makes `migrate` fail half way through step 9. So ask first,
+from the target image, against the still-unmigrated database:
+
+```bash
+docker compose -p juristid-main -f compose.yml run --rm web python manage.py check_domain_invariants
+```
+
+It reads and never writes: no repair, no audit row, and the output is primary
+keys and offending values only — never a title or a name. Exit 0 prints
+«No invariant violations found.» and the release proceeds. Exit 1 lists what it
+found under a kind name, and **the kind decides, not the exit status**:
+
+| It reported | Which means | What to do |
+| --- | --- | --- |
+| `next-action-kind`, `next-action-date-semantics`, `next-action-precision`, `next-action-status`, `next-action-undated-period` | `workflow/0009` would fail on these rows | **Stop. Do not migrate.** Which value a step was meant to carry is a decision for somebody who knows the work; nothing here repairs it, and nothing should. |
+| `engagement-deadline-before-round`, `submission-sent-in-future` | a row breaks a rule the services now refuse to write; no constraint guards it | These do **not** block the migration. Record the identifiers for review and carry on. Imported archive rows are reported, never rewritten. |
+
+A preflight that did not finish — the command missing from the image, a
+traceback instead of a report — is **not a pass**, exactly as for the evidence
+check above.
+
 ### 8. Back up
 
 Always, and immediately before the migration rather than that morning:
