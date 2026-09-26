@@ -43,6 +43,10 @@ POPULATED_PROOFS: dict[tuple[str, str], str] = {
         "tests/test_multiple_senders_migration.py::"
         "test_reversing_refuses_once_a_matter_has_two_senders"
     ),
+    ("organisations", "0002_recompute_organisation_keys"): (
+        "tests/test_organisation_identity.py::"
+        "test_the_key_migration_recomputes_the_derived_columns_both_ways"
+    ),
     ("taxonomy", "0002_reference_policy_areas"): (
         "tests/test_migration_data_proof.py::"
         "test_reference_areas_reverse_and_reapply_over_classified_matters"
