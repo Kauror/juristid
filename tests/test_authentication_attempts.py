@@ -63,7 +63,8 @@ ATTEMPTS_PER_CONNECTION = 3
 
 PIN = "4821"
 
-#: The deployments' cache backend, under a table name no deployment uses.
+#: The deployments' cache backend, under a table name no deployment uses. Spelled
+#: out again in the two raw statements below, which are SQL and not f-strings.
 CACHE_TABLE = "test_authentication_attempt_cache"
 
 
@@ -355,7 +356,7 @@ def database_cache(settings):
     call_command("createcachetable", verbosity=0)
     yield
     with connection.cursor() as cursor:
-        cursor.execute(f"DROP TABLE IF EXISTS {CACHE_TABLE}")
+        cursor.execute("DROP TABLE IF EXISTS test_authentication_attempt_cache")
 
 
 @pytest.fixture
@@ -417,8 +418,7 @@ def test_a_burst_of_wrong_pins_gets_exactly_the_limit_compared(pin_check, person
     assert errors == [], errors
     total = CONNECTIONS * ATTEMPTS_PER_CONNECTION
     assert pin_check.calls == LIMIT, (
-        f"{pin_check.calls} of {total} parallel wrong PINs were compared "
-        f"against a limit of {LIMIT}"
+        f"{pin_check.calls} of {total} parallel wrong PINs were compared against a limit of {LIMIT}"
     )
     assert Counter(statuses) == Counter({400: LIMIT, 429: total - LIMIT})
     assert refusal_reasons() == Counter({"bad_pin": LIMIT, "locked_out": total - LIMIT})
@@ -435,7 +435,7 @@ def test_a_burst_of_wrong_pins_gets_exactly_the_limit_compared(pin_check, person
     # When the window expires the counter goes with it, and the PIN works.
     with connection.cursor() as cursor:
         cursor.execute(
-            f"UPDATE {CACHE_TABLE} SET expires = %s WHERE cache_key LIKE %s",
+            "UPDATE test_authentication_attempt_cache SET expires = %s WHERE cache_key LIKE %s",
             [timezone.now() - timedelta(seconds=1), f"%dev-login-pin-attempts:{address}"],
         )
         assert cursor.rowcount == 1
