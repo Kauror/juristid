@@ -253,9 +253,11 @@ class RegisterSentOpinionForm(SubmissionCreateForm):
         and in the future is still a different refusal from one that is absent,
         and both still refuse.
         """
+        from app.submissions.services import SENT_DATE_IN_THE_FUTURE
+
         value = self.cleaned_data.get("sent_on")
         if value is not None and value > timezone.localdate():
-            raise forms.ValidationError("Saatmise kuupäev ei saa olla tulevikus.")
+            raise forms.ValidationError(SENT_DATE_IN_THE_FUTURE)
         return value
 
 

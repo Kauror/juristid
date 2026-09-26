@@ -69,7 +69,7 @@ from app.matters.models import (
     TagAssignment,
 )
 from app.submissions.models import Submission
-from app.workflow.dates import period_starts_after
+from app.workflow.dates import period_bounds, period_starts_after
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
 from app.workflow.models import NextAction
 from app.workflow.services import (
@@ -1797,6 +1797,54 @@ def _engagement_precision(occurred_on: Any, value: Any) -> str:
     return precision
 
 
+#: What a reply-by date typed before the round it belongs to is told.
+#:
+#: One string, beside the one rule, because every writer of the two dates says
+#: it: the `+ Kaasamine` correction form, `Ootan tagasisidet`, and the services
+#: under both (ENG-043).
+DEADLINE_BEFORE_ENGAGEMENT = "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva."
+
+
+def feedback_deadline_precedes_engagement(
+    occurred_on: Any, occurred_on_precision: Any, feedback_deadline: Any
+) -> bool:
+    """Does `Tagasisidet ootame kuni` fall before the round could have begun?
+
+    **The one relationship between the two engagement dates, and no other rule.**
+    A reply-by day *before* the day the round started is not a late
+    consultation, it is a slip of the keyboard — nothing was ever asked to be
+    answered before it was asked. Same day is fine («vastake tänaseks»), later is
+    the normal case, and either date on its own relates to nothing: a deadline
+    with no engagement date is a person who remembers what they asked for and not
+    when, and a deadline already in the past is a consultation recorded late
+    (docs/adr/0078 §3).
+
+    **Period semantics, not the stored number** (docs/adr/0079 §2). Since
+    docs/adr/0082 the engagement date may be a month, a quarter, a half-year or a
+    year, and such a date *covers* every day of its period; the reply-by day
+    stays an exact day (docs/adr/0079 §11). So «cannot precede» means the
+    deadline falls before the **first day of the whole period** — «kaasamine
+    oktoobris, vastused 20. septembriks» is refused, «kaasamine oktoobris,
+    vastused 15. oktoobriks» is the commonest thing a round run over a month
+    says and is accepted. Comparing against the period's end would refuse that;
+    comparing against the raw value would too, for a caller that stored 20
+    October at `MONTH`. The period is read through `period_bounds`, so a row
+    whose anchor was never normalised is still read as the period it names.
+    `EXACT` and `INFERRED` are days, and their period is the day itself.
+    """
+    if occurred_on is None or feedback_deadline is None:
+        return False
+    start, _end = period_bounds(occurred_on, occurred_on_precision or DatePrecision.EXACT)
+    return bool(feedback_deadline < start)
+
+
+def _refuse_deadline_before_engagement(
+    occurred_on: Any, occurred_on_precision: Any, feedback_deadline: Any
+) -> None:
+    if feedback_deadline_precedes_engagement(occurred_on, occurred_on_precision, feedback_deadline):
+        raise DomainError(DEADLINE_BEFORE_ENGAGEMENT)
+
+
 @transaction.atomic
 def _engagement_response_count(value: Any) -> int | None:
     """`Vastuseid`, or nothing at all.
@@ -1942,11 +1990,17 @@ def add_engagement(
     stored `MONTH` beside it would be a period with nothing to qualify — a row
     that renders as neither a date nor «kuupäev teadmata» but as whichever of
     the two the reading surface guessed. Absence has no precision.
+
+    **A reply-by date before the round began is refused here**, not only on the
+    form that happened to render it (:func:`feedback_deadline_precedes_engagement`,
+    ENG-043). A form is what one browser was shown; this is what every writer
+    goes through.
     """
     clean_title = title.strip()
     if not clean_title:
         raise DomainError("Kaasamisel peab olema pealkiri.")
     precision = _engagement_precision(occurred_on, occurred_on_precision)
+    _refuse_deadline_before_engagement(occurred_on, precision, feedback_deadline)
 
     engagement = MatterEngagement.objects.create(
         matter=matter,
@@ -2168,6 +2222,21 @@ def update_engagement(
     changed = [field for field, value in proposed.items() if getattr(locked, field) != value]
     if not changed:
         return locked
+
+    # **The two dates are checked against what this save results in**, so a
+    # correction moving the round past a deadline somebody set months ago is
+    # refused as surely as one typing the deadline wrong (ENG-043). Only when
+    # the save moves one of them: a row that already holds the impossible pair
+    # — written before the rule reached this service — is a finding for
+    # `check_domain_invariants`, and refusing a correction of its title would
+    # freeze it without making it any less wrong. The same reasoning
+    # `correct_procedural_development` gives for its future-date rule.
+    if {"occurred_on", "occurred_on_precision", "feedback_deadline"} & set(changed):
+        _refuse_deadline_before_engagement(
+            proposed.get("occurred_on", locked.occurred_on),
+            proposed.get("occurred_on_precision", locked.occurred_on_precision),
+            proposed.get("feedback_deadline", locked.feedback_deadline),
+        )
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "kind" in changed:
@@ -2541,19 +2610,12 @@ def open_engagement_feedback_wait(
     if current.feedback_deadline is not None:
         raise DomainError(ENGAGEMENT_FEEDBACK_ALREADY_AWAITED)
 
-    # The one relationship between the two dates, and the same one the panel and
-    # the correction form keep: a reply-by day *before* the round began is not a
-    # late consultation, it is a slip of the keyboard. The anchor is the period's
-    # first day, so an approximate round refuses only a deadline falling before
-    # the whole period began (docs/adr/0078 §3, `refuse_deadline_before_engagement`).
-    #
-    # Stated here as well as on the form because this is the service boundary and
-    # the form is what one browser was shown. The sentence is imported rather than
-    # rewritten so the two cannot drift.
-    from app.matters.forms import DEADLINE_BEFORE_ENGAGEMENT
-
-    if current.occurred_on and deadline < current.occurred_on:
-        raise DomainError(DEADLINE_BEFORE_ENGAGEMENT)
+    # The one relationship between the two dates, and the same rule every other
+    # writer of them keeps: a reply-by day before the round's whole period began
+    # is refused (:func:`feedback_deadline_precedes_engagement`, ENG-043). It was
+    # a copy here comparing the stored number, which refused a deadline inside a
+    # month whose value had not been normalised to the month's first day.
+    _refuse_deadline_before_engagement(current.occurred_on, current.occurred_on_precision, deadline)
 
     current.feedback_deadline = deadline
     current.save(update_fields=["feedback_deadline", "updated_at"])
@@ -4148,6 +4210,53 @@ def correct_external_position(
 DEVELOPMENT_NEEDS_SOMETHING = (
     "Kirjuta, mis juhtus, või lisa fail, uus hetkeseis või järgmine tegevus."
 )
+#: What a `Muuda` that would take the last words off a file-less `Märge` is told.
+#:
+#: Its own sentence, because the correction form has no file control, no
+#: `Hetkeseis` and no next step to offer: telling somebody to add one of those
+#: would point at controls the form does not have. The way out of a row that
+#: should not be there at all is `Kustuta` (docs/adr/0102), and the sentence says
+#: so (ENG-060).
+DEVELOPMENT_CORRECTION_LEAVES_NOTHING = (
+    "Märge ei saa jääda tühjaks. Kirjuta, mis juhtus, või kustuta märge, kui see on vale."
+)
+
+
+def development_row_says_something(*, title: Any, note: Any, has_files: bool) -> bool:
+    """What a `Märge` row itself holds: a sentence, a note, or a file.
+
+    **The row's own content, and nothing the save beside it did.** A `Märge` may
+    also have moved the `Hetkeseis` or set the next step, and those are real
+    effects of the operation that wrote it — but they are facts about the Matter
+    and the `NextAction`, correctable on their own surfaces, not something this
+    row says. Reading them as row content would make a correction's answer depend
+    on whether removing the `Märge` should take them with it, which is an open
+    question this rule must not decide (ENG-020). The date and `Etapp` are not
+    content either: the panel fills both in, so every press would carry them.
+    """
+    return bool((title or "").strip() or (note or "").strip() or has_files)
+
+
+def development_save_says_something(
+    *, title: Any, note: Any, has_files: bool, moves_stage: bool, next_text: Any
+) -> bool:
+    """docs/adr/0105 §4: a `Märge` saves if it writes *something*.
+
+    The row's own content (:func:`development_row_says_something`), or a
+    `Hetkeseis` that actually **moves**, or a next step. ``moves_stage`` is the
+    effect and not the request: choosing the stage the file already has makes
+    `change_stage` write nothing, so it is not content (ENG-060). The operation
+    answers it on the Matter row it has locked; the panel answers it early, from
+    the stage the page was drawn with, so a person reads the refusal beside the
+    controls — and whichever answer is later decides.
+    """
+    return (
+        development_row_says_something(title=title, note=note, has_files=has_files)
+        or moves_stage
+        or bool((next_text or "").strip())
+    )
+
+
 #: What somebody filing next month's committee sitting as a development is told.
 #:
 #: `Menetluse areng` records something that **has happened** (docs/adr/0092 §3,
@@ -4557,6 +4666,19 @@ def correct_procedural_development(
         # Nothing moved, so nothing is recorded. An audit row for a save that
         # changed no value would be a history of somebody pressing a button.
         return current
+    # **A correction may not take the last words off a file-less row** (ENG-060).
+    # `+ Märge` refuses to create a row saying nothing, and a correction that
+    # could produce one would be the same row by a second door. Only when this
+    # save removes words: a row whose content was always somewhere else — a
+    # `Märge` that was only a stage change — stays correctable in its date, since
+    # correcting it takes nothing off it. What the original save moved is not
+    # counted as this row's content (`development_row_says_something`).
+    if {"title", "note"} & set(changed) and not development_row_says_something(
+        title=proposed["title"],
+        note=proposed["note"],
+        has_files=current.document_links.exists(),
+    ):
+        raise DomainError(DEVELOPMENT_CORRECTION_LEAVES_NOTHING)
     # **A correction may not move the date into the future**, the same invariant
     # `record_procedural_development` states and the same sentence.
     #
@@ -4629,9 +4751,20 @@ def close_matter(
     "Algataja loobus" would record a claim nobody made. It is a real
     relationship rather than a sentence in ``reason``, so "what became of this
     file" is a question a query can answer (Teema redesign §16).
+
+    **And required with it** (ENG-065, HAF-04). «Work continues under another
+    Matter» naming none is the claim the composer refuses to make by leaving the
+    choice out (`CLOSURE_CHOICES`); stating the rule only there left every other
+    caller able to make it. The successor must be another Matter, not deleted,
+    and one the person closing can read — a closure may not assert a
+    relationship with a file its author cannot see, and the refusal names it no
+    more than a missing one. `DUPLICATE` asks for nothing: no decision ties a
+    duplicate to a successor, and this does not invent one.
     """
     if disposition not in Disposition.values:
         raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
+    if disposition == Disposition.SUPERSEDED and successor is None:
+        raise DomainError(SUPERSEDED_NEEDS_A_SUCCESSOR)
     if successor is not None:
         if disposition != Disposition.SUPERSEDED:
             raise DomainError("Järglase saab määrata ainult siis, kui töö jätkub teise teema all.")
@@ -4669,6 +4802,13 @@ def close_matter(
         if locked.deleted_at is not None:
             raise Matter.DoesNotExist(matter.pk)
         if successor.deleted_at is not None:
+            raise DomainError(SUCCESSOR_DELETED_REFUSAL)
+        if (
+            actor is not None
+            and not Matter.objects.visible_to(actor).filter(pk=successor.pk).exists()
+        ):
+            # The same sentence as a deleted one: a refusal that said «you may
+            # not see that file» would confirm the file exists (anti-oracle).
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
@@ -4724,6 +4864,9 @@ def close_matter(
     )
     return matter
 
+
+#: What `Jätkub teise teema all` naming no Matter is told (ENG-065).
+SUPERSEDED_NEEDS_A_SUCCESSOR = "Kui töö jätkub teise teema all, vali teema, mille all see jätkub."
 
 #: What a closure naming a successor that has since been deleted is told.
 SUCCESSOR_DELETED_REFUSAL = (

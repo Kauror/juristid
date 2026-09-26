@@ -72,12 +72,15 @@ def _waiting(matter, *, days: int = 7, actor=None, **extra):
     today, so a hard-coded deadline is a test that changes meaning depending on
     when it runs.
     """
+    deadline = timezone.localdate() + dt.timedelta(days=days)
     return add_engagement(
         matter=matter,
         kind=EngagementKind.SURVEY,
         title="liikmed",
-        occurred_on=timezone.localdate() - dt.timedelta(days=1),
-        feedback_deadline=timezone.localdate() + dt.timedelta(days=days),
+        # A round is asked before its reply-by day, never after it (ENG-043):
+        # a wait whose deadline has long passed began at least that long ago.
+        occurred_on=min(timezone.localdate() - dt.timedelta(days=1), deadline),
+        feedback_deadline=deadline,
         actor=actor,
         **extra,
     )
