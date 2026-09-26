@@ -47,7 +47,7 @@ from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
-from app.workflow.lateness import overdue_date_q
+from app.workflow.lateness import overdue_date_q, review_due_q
 from app.workflow.models import NextAction
 
 #: The summary cards look this far ahead. Fixed: the card is a KPI, not a view
@@ -212,15 +212,13 @@ def overdue_actions(user: Any, today: date) -> QuerySet[NextAction]:
 
 
 def reviews_due(user: Any, today: date) -> QuerySet[NextAction]:
-    """WAIT and MONITOR whose review date has arrived. Never called overdue."""
+    """WAIT and MONITOR whose review date has come round. Never called overdue.
+
+    `review_due_q`, the one review rule (ADR 0079 §6, ENG-040).
+    """
     return (
         NextAction.objects.visible_to(user)
-        .filter(
-            status=ActionStatus.OPEN,
-            kind__in=(ActionKind.WAIT, ActionKind.MONITOR),
-            target_date__isnull=False,
-            target_date__lte=today,
-        )
+        .filter(review_due_q(today), status=ActionStatus.OPEN)
         .select_related("matter", "matter__owner", "matter__stage", "responsible")
     )
 
