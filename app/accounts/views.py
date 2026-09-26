@@ -386,7 +386,7 @@ def act_as(request: HttpRequest) -> HttpResponse:
         # with the application's usual redirect to this page, which is the
         # honest outcome rather than a page invented for a reader who has not
         # said who they are (Vali kasutaja brief 19, 23).
-        return HttpResponseRedirect(_safe_next(request) or reverse("matters:overview"))
+        return HttpResponseRedirect(_safe_next(request) or reverse("matters:department"))
 
     # The central candidate population, not "every active account". A crafted
     # POST carrying an administrator's, a superuser's or a reader's identifier
