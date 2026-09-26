@@ -330,9 +330,9 @@ def test_the_first_page_does_not_read_the_whole_history(specialist, monkeypatch)
     original = timeline._ChronologySources.load
 
     def counting(self, bound):
-        entries, events = original(self, bound)
+        entries, events, projected = original(self, bound)
         loaded.append((len(entries), len(events)))
-        return entries, events
+        return entries, events, projected
 
     monkeypatch.setattr(timeline._ChronologySources, "load", counting)
     page, more = matter_timeline(matter=matter, user=specialist, limit=TIMELINE_PAGE_SIZE)
