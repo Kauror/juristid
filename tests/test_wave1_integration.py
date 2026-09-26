@@ -169,7 +169,9 @@ def test_a_development_record_moves_no_published_number(world, reporting_context
         data_class=MatterDataClass.TEST,
     )
 
-    assert compute(key, context).value == before
+    # Asked again as the next request would: a context remembers its own
+    # answers for the life of its request (ENG-078), and this one wrote data.
+    assert compute(key, reporting_context(world.admin)).value == before
 
 
 def test_a_real_record_does_move_the_number(world, reporting_context):
@@ -186,7 +188,9 @@ def test_a_real_record_does_move_the_number(world, reporting_context):
         data_class=MatterDataClass.REAL,
     )
 
-    assert compute(keys.ACTIVE_FULL_MATTERS, context).value == before + 1
+    # Asked again as the next request would: a context remembers its own
+    # answers for the life of its request (ENG-078), and this one wrote data.
+    assert compute(keys.ACTIVE_FULL_MATTERS, reporting_context(world.admin)).value == before + 1
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +230,11 @@ def test_a_letter_linked_only_to_a_development_matter_is_not_linked_work(
     )
     _archive_link(_archive_binary(payload), test_matter)
 
-    after = compute(keys.OPINION_ARCHIVE_LINK_COVERAGE, context)
+    # Asked again as the next request would: a context remembers its own
+    # answers for the life of its request (ENG-078), and this one wrote data.
+    after = compute(
+        keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.admin, period="koik")
+    )
 
     assert after.coverage_count == before.coverage_count, (
         "a development Matter cannot raise link coverage"
@@ -252,7 +260,11 @@ def test_a_letter_linked_to_a_real_matter_is_linked_work(world, reporting_contex
     )
     _archive_link(_archive_binary(payload), world.native_open)
 
-    after = compute(keys.OPINION_ARCHIVE_LINK_COVERAGE, context)
+    # Asked again as the next request would: a context remembers its own
+    # answers for the life of its request (ENG-078), and this one wrote data.
+    after = compute(
+        keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.admin, period="koik")
+    )
 
     assert after.coverage_count == before.coverage_count + 1
     assert after.coverage_denominator == before.coverage_denominator + 1
