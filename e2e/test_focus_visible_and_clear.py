@@ -33,8 +33,17 @@ OBSCURED = """() => {
     const barBottom = bar.getBoundingClientRect().bottom;
     const box = active.getBoundingClientRect();
     if (box.width === 0 && box.height === 0) return null;
-    // Wholly under the bar: its bottom edge is above the bar's bottom edge.
-    return box.bottom <= barBottom ? active.outerHTML.slice(0, 120) : null;
+    // Wholly within the bar's band: its bottom edge is above the bar's bottom edge.
+    if (box.bottom > barBottom) return null;
+    // Scrolled off above the viewport: hidden whatever the stacking.
+    if (box.bottom <= 0) return active.outerHTML.slice(0, 120);
+    // In the band but painted ABOVE the bar is not hidden — the skip link does
+    // exactly that (z-index 50 over the bar's 30). What the browser shows at
+    // the control's visible middle decides: the control itself, or the bar.
+    const y = (Math.max(box.top, 0) + box.bottom) / 2;
+    const x = Math.min(Math.max(box.left + box.width / 2, 0), window.innerWidth - 1);
+    const hit = document.elementFromPoint(x, y);
+    return hit && (hit === active || active.contains(hit)) ? null : active.outerHTML.slice(0, 120);
 }"""
 
 
