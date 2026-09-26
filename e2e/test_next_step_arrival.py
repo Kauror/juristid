@@ -58,10 +58,25 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     sign_in(page, base_url, SANDRA)
 
     matter_url = _matter_on_sandras_desk(page, base_url, "UX-003 koostajasse saabumine")
-    matter_path = re.sub(r"^https?://[^/]+", "", matter_url)
+    own_path = re.sub(r"^https?://[^/]+", "", matter_url)
 
     page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
+
+    # **This Matter's row if the block shows it, otherwise the block's first.**
+    # The block lists the `RAIL_LIMIT` quietest Matters, oldest first
+    # (`my_work.quiet_matters`), and the browser world is one database shared by
+    # the whole shard. On 2026-09-26 a reshuffled partition ran
+    # `e2e/test_correction_round_surfaces.py` ahead of this file: Sandra had
+    # twenty-two quiet Matters, and the one made above — the newest, so the least
+    # quiet — was rightly behind «Näita kõiki 22 →». Where `Määra` lands does not
+    # depend on which quiet Matter it names; the Matter made above guarantees the
+    # block is not empty, and it is still accounted for — listed, or counted
+    # behind the block's own «Näita kõiki».
+    quiet = page.locator('section.railblock[aria-label="Järgmise tegevuseta"]')
+    own = quiet.locator(f'a.quietrow__cta[href="{own_path}#lisa-marge"]')
+    if not own.count():
+        expect(quiet.locator("a.railblock__more")).to_be_visible()
 
     # `#lisa-marge`, not `#lisa-jargmine`. These rows are Matters with **no**
     # open step, and `PRAEGUNE TEGEVUS` draws its `Muuda` disclosure only
@@ -70,8 +85,11 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     # answers a missing fragment by scrolling nowhere. The one ordinary way to
     # set a first step is the optional `Järgmine tegevus` inside `+ Märge`
     # (docs/adr/0097 §8.2).
-    cta = page.locator(f'a.quietrow__cta[href="{matter_path}#lisa-marge"]')
+    cta = own if own.count() else quiet.locator("a.quietrow__cta")
     assert cta.count(), "Minu asjad does not offer Määra for a Matter with no next step"
+    href = cta.first.get_attribute("href") or ""
+    assert href.endswith("#lisa-marge"), href
+    matter_path = href.removesuffix("#lisa-marge")
     cta.first.click()
     page.wait_for_url(re.compile(re.escape(matter_path)))
 
