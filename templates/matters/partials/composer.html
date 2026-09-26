@@ -74,7 +74,7 @@ field with no visible focus at all (static/css/app.css).
     </label>
     {{ composer_form.body }}
     {% if composer_form.body.errors %}
-      <p class="field__error">{{ composer_form.body.errors|first }}</p>
+      <p class="field__error" id="{{ composer_form.body.auto_id }}_error">{{ composer_form.body.errors|first }}</p>
     {% endif %}
 
     {% comment %}
@@ -90,7 +90,7 @@ field with no visible focus at all (static/css/app.css).
     </label>
     {{ composer_form.next_text }}
     {% if composer_form.next_text.errors %}
-      <p class="field__error">{{ composer_form.next_text.errors|first }}</p>
+      <p class="field__error" id="{{ composer_form.next_text.auto_id }}_error">{{ composer_form.next_text.errors|first }}</p>
     {% endif %}
 
     {% comment %}
@@ -123,7 +123,7 @@ field with no visible focus at all (static/css/app.css).
         <span class="cx-drop__text" data-filedrop-text>Lohista fail siia või <span class="cx-drop__pick">vali arvutist</span></span>
       </label>
       {% if composer_form.attachment.errors %}
-        <p class="field__error">{{ composer_form.attachment.errors|first }}</p>
+        <p class="field__error" id="{{ composer_form.attachment.auto_id }}_error">{{ composer_form.attachment.errors|first }}</p>
       {% endif %}
 
       <span class="uxcomp__q" id="koostaja-millal">Millal?</span>
@@ -164,7 +164,7 @@ field with no visible focus at all (static/css/app.css).
         (ADR 0052 §5).
       {% endcomment %}
       {% if composer_form.next_date.errors %}
-        <p class="field__error">{{ composer_form.next_date.errors|first }}</p>
+        <p class="field__error" id="{{ composer_form.next_date.auto_id }}_error">{{ composer_form.next_date.errors|first }}</p>
       {% endif %}
     </div>
 
@@ -193,7 +193,7 @@ field with no visible focus at all (static/css/app.css).
             {{ composer_form.deadline_title }}
           </label>
           {% if composer_form.deadline_title.errors %}
-            <p class="field__error">{{ composer_form.deadline_title.errors|first }}</p>
+            <p class="field__error" id="{{ composer_form.deadline_title.auto_id }}_error">{{ composer_form.deadline_title.errors|first }}</p>
           {% endif %}
           {% comment %}
             `Täpsus` — the same four chips the Teema page offers, from the same
@@ -221,10 +221,10 @@ field with no visible focus at all (static/css/app.css).
             </label>
           </div>
           {% if composer_form.effective_title.errors %}
-            <p class="field__error">{{ composer_form.effective_title.errors|first }}</p>
+            <p class="field__error" id="{{ composer_form.effective_title.auto_id }}_error">{{ composer_form.effective_title.errors|first }}</p>
           {% endif %}
           {% if composer_form.effective_on.errors %}
-            <p class="field__error">{{ composer_form.effective_on.errors|first }}</p>
+            <p class="field__error" id="{{ composer_form.effective_on.auto_id }}_error">{{ composer_form.effective_on.errors|first }}</p>
           {% endif %}
         </div>
       </details>
@@ -238,7 +238,7 @@ field with no visible focus at all (static/css/app.css).
             {{ composer_form.victory_change }}
           </label>
           {% if composer_form.victory_change.errors %}
-            <p class="field__error">{{ composer_form.victory_change.errors|first }}</p>
+            <p class="field__error" id="{{ composer_form.victory_change.auto_id }}_error">{{ composer_form.victory_change.errors|first }}</p>
           {% endif %}
           {% include "matters/partials/period_composer.html" with chips=composer_form.victory_precision_chips date_field=composer_form.victory_date month_field=composer_form.victory_month quarter_field=composer_form.victory_quarter year_field=composer_form.victory_year only %}
         </div>
@@ -340,7 +340,7 @@ field with no visible focus at all (static/css/app.css).
             {{ composer_form.closing_words }}
           </label>
           {% if composer_form.disposition.errors %}
-            <p class="field__error">{{ composer_form.disposition.errors|first }}</p>
+            <p class="field__error" id="{{ composer_form.disposition.auto_id }}_error">{{ composer_form.disposition.errors|first }}</p>
           {% endif %}
           <p class="cx-note">Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.</p>
         </div>

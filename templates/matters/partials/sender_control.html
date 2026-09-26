@@ -159,13 +159,13 @@ an id — and `data-choicefilter` finds its list by that id.
     <span class="field__label">{{ form.sender_name.label }}</span>
     {{ form.sender_name }}
     {% if form.sender_name.errors %}
-      <span class="field__error">{{ form.sender_name.errors|first }}</span>
+      <span class="field__error" id="{{ form.sender_name.auto_id }}_error">{{ form.sender_name.errors|first }}</span>
     {% endif %}
   </label>
 
   {% if form.source_organisations.errors %}
-    <span class="field__error">{{ form.source_organisations.errors|first }}</span>
+    <span class="field__error" id="{{ form.source_organisations.auto_id }}_error">{{ form.source_organisations.errors|first }}</span>
   {% elif form.source_organisations_other.errors %}
-    <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
+    <span class="field__error" id="{{ form.source_organisations_other.auto_id }}_error">{{ form.source_organisations_other.errors|first }}</span>
   {% endif %}
 </fieldset>

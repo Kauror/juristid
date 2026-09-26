@@ -70,7 +70,7 @@ rendering and is what every existing opinion opens to (docs/adr/0093 §1, §2).
         </div>
         <span class="field__help"
               id="{{ form.tags.auto_id }}_helptext">{{ form.tags.help_text }}</span>
-        {% if form.tags.errors %}<span class="field__error">{{ form.tags.errors|first }}</span>{% endif %}
+        {% if form.tags.errors %}<span class="field__error" id="{{ form.tags.auto_id }}_error">{{ form.tags.errors|first }}</span>{% endif %}
       </fieldset>
     </div>
 
@@ -104,7 +104,7 @@ rendering and is what every existing opinion opens to (docs/adr/0093 §1, §2).
         <span class="field__help"
               id="{{ form.website_overviews.auto_id }}_helptext">{{ form.website_overviews.help_text }}</span>
         {% if form.website_overviews.errors %}
-          <span class="field__error">{{ form.website_overviews.errors|first }}</span>
+          <span class="field__error" id="{{ form.website_overviews.auto_id }}_error">{{ form.website_overviews.errors|first }}</span>
         {% endif %}
       </fieldset>
     </div>

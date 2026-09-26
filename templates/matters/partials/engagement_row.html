@@ -62,7 +62,7 @@ before the closure.
         {{ engagement_edit_form.title }}
       </label>
       {% if engagement_edit_form.title.errors %}
-        <p class="field__error">{{ engagement_edit_form.title.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.title.auto_id }}_error">{{ engagement_edit_form.title.errors|first }}</p>
       {% endif %}
 
       {% comment %}
@@ -91,7 +91,7 @@ before the closure.
         {{ engagement_edit_form.response_count }}
       </label>
       {% if engagement_edit_form.response_count.errors %}
-        <p class="field__error">{{ engagement_edit_form.response_count.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.response_count.auto_id }}_error">{{ engagement_edit_form.response_count.errors|first }}</p>
       {% endif %}
 
       {% comment %}
@@ -147,10 +147,10 @@ before the closure.
         </label>
       {% endif %}
       {% if engagement_edit_form.occurred_on.errors %}
-        <p class="field__error">{{ engagement_edit_form.occurred_on.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.occurred_on.auto_id }}_error">{{ engagement_edit_form.occurred_on.errors|first }}</p>
       {% endif %}
       {% if engagement_edit_form.feedback_deadline.errors %}
-        <p class="field__error">{{ engagement_edit_form.feedback_deadline.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.feedback_deadline.auto_id }}_error">{{ engagement_edit_form.feedback_deadline.errors|first }}</p>
       {% endif %}
 
       {% comment %}
@@ -166,7 +166,7 @@ before the closure.
         {{ engagement_edit_form.feedback_received }}
       </label>
       {% if engagement_edit_form.feedback_received.errors %}
-        <p class="field__error">{{ engagement_edit_form.feedback_received.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.feedback_received.auto_id }}_error">{{ engagement_edit_form.feedback_received.errors|first }}</p>
       {% endif %}
 
       <div class="cx-grid cx-grid--links">
@@ -180,18 +180,26 @@ before the closure.
         </label>
       </div>
       {% if engagement_edit_form.smaily_url.errors %}
-        <p class="field__error">{{ engagement_edit_form.smaily_url.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.smaily_url.auto_id }}_error">{{ engagement_edit_form.smaily_url.errors|first }}</p>
       {% endif %}
       {% if engagement_edit_form.alchemer_url.errors %}
-        <p class="field__error">{{ engagement_edit_form.alchemer_url.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.alchemer_url.auto_id }}_error">{{ engagement_edit_form.alchemer_url.errors|first }}</p>
       {% endif %}
 
       <label class="cx-f" for="{{ engagement_edit_form.url.id_for_label }}">
         <span class="cx-f__lab">{{ engagement_edit_form.url.label }}</span>
         {{ engagement_edit_form.url }}
       </label>
+      {% comment %}
+        The field's own `help_text`, under the id Django's `aria-describedby` on
+        the box already names. Visually hidden, so the row looks exactly as it
+        did, and outside the `<label>`, so it describes the box without becoming
+        part of its name (ENG-092).
+      {% endcomment %}
+      <span class="visually-hidden"
+            id="{{ engagement_edit_form.url.auto_id }}_helptext">{{ engagement_edit_form.url.help_text }}</span>
       {% if engagement_edit_form.url.errors %}
-        <p class="field__error">{{ engagement_edit_form.url.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.url.auto_id }}_error">{{ engagement_edit_form.url.errors|first }}</p>
       {% endif %}
 
       <label class="cx-f" for="{{ engagement_edit_form.note.id_for_label }}">
@@ -199,7 +207,7 @@ before the closure.
         {{ engagement_edit_form.note }}
       </label>
       {% if engagement_edit_form.note.errors %}
-        <p class="field__error">{{ engagement_edit_form.note.errors|first }}</p>
+        <p class="field__error" id="{{ engagement_edit_form.note.auto_id }}_error">{{ engagement_edit_form.note.errors|first }}</p>
       {% endif %}
 
       {{ engagement_edit_form.revision }}
@@ -408,7 +416,7 @@ before the closure.
               </label>
             </div>
             {% if engagement.wait_form.feedback_deadline.errors %}
-              <p class="field__error">{{ engagement.wait_form.feedback_deadline.errors|first }}</p>
+              <p class="field__error" id="{{ engagement.wait_form.feedback_deadline.auto_id }}_error">{{ engagement.wait_form.feedback_deadline.errors|first }}</p>
             {% endif %}
             {{ engagement.wait_form.revision }}
             {% if engagement_edit_error %}
@@ -454,7 +462,7 @@ before the closure.
               {{ engagement.feedback_form.feedback_received }}
             </label>
             {% if engagement.feedback_form.feedback_received.errors %}
-              <p class="field__error">{{ engagement.feedback_form.feedback_received.errors|first }}</p>
+              <p class="field__error" id="{{ engagement.feedback_form.feedback_received.auto_id }}_error">{{ engagement.feedback_form.feedback_received.errors|first }}</p>
             {% endif %}
             {% include "matters/partials/add_files.html" with field=engagement.feedback_form.attachments %}
             {{ engagement.feedback_form.revision }}

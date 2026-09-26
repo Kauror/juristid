@@ -69,7 +69,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {{ development_edit_form.title }}
       </label>
       {% if development_edit_form.title.errors %}
-        <p class="field__error">{{ development_edit_form.title.errors|first }}</p>
+        <p class="field__error" id="{{ development_edit_form.title.auto_id }}_error">{{ development_edit_form.title.errors|first }}</p>
       {% endif %}
 
       {% comment %}
@@ -104,7 +104,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {{ development_edit_form.note }}
       </label>
       {% if development_edit_form.note.errors %}
-        <p class="field__error">{{ development_edit_form.note.errors|first }}</p>
+        <p class="field__error" id="{{ development_edit_form.note.auto_id }}_error">{{ development_edit_form.note.errors|first }}</p>
       {% endif %}
 
       {% if development_edit_form.process_phase %}
@@ -128,7 +128,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
           {{ development_edit_form.process_phase }}
         </label>
         {% if development_edit_form.process_phase.errors %}
-          <p class="field__error">{{ development_edit_form.process_phase.errors|first }}</p>
+          <p class="field__error" id="{{ development_edit_form.process_phase.auto_id }}_error">{{ development_edit_form.process_phase.errors|first }}</p>
         {% endif %}
       {% endif %}
 

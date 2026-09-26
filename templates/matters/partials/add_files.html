@@ -29,10 +29,14 @@ timestamp or a filename (app/documents/links.py, brief §21, §22).
 </label>
 {% if field.errors %}
   {% comment %}
-    `describe_errors` names the paragraph the id Django's `aria-describedby`
-    already points at, so a refused control says why to a screen reader too.
-    Opt-in, because most of these forms share `id_attachments` and only a form
-    with its own ids may claim `…_error` without two elements sharing it.
+    The id is the one Django's `aria-describedby` on the refused control
+    already names, so it is always there: without it the control points at
+    nothing (ENG-092). Several panels share `id_attachments`, but only the one
+    form a request posted is ever bound, so a response holds at most one
+    refused upload and the id stays unique in it.
+
+    `describe_errors` only adds `role="alert"`, for the forms that announce a
+    refused upload the moment it lands.
   {% endcomment %}
-  <p class="field__error"{% if describe_errors %} id="{{ field.auto_id }}_error" role="alert"{% endif %}>{{ field.errors|first }}</p>
+  <p class="field__error" id="{{ field.auto_id }}_error"{% if describe_errors %} role="alert"{% endif %}>{{ field.errors|first }}</p>
 {% endif %}

@@ -57,7 +57,7 @@
             {{ closure_form.closing_words }}
           </label>
           {% if closure_form.disposition.errors %}
-            <p class="field__error">{{ closure_form.disposition.errors|first }}</p>
+            <p class="field__error" id="{{ closure_form.disposition.auto_id }}_error">{{ closure_form.disposition.errors|first }}</p>
           {% endif %}
           <p class="cx-note">Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.</p>
           <div class="addform__actions">

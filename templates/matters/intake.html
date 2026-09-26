@@ -64,13 +64,13 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
       <label class="field">
         <span class="field__label">{{ form.title.label }}</span>
         {{ form.title }}
-        {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
+        {% if form.title.errors %}<span class="field__error" id="{{ form.title.auto_id }}_error">{{ form.title.errors|first }}</span>{% endif %}
       </label>
       <label class="field">
         <span class="field__label">{{ form.brief_summary.label }}</span>
         {{ form.brief_summary }}
         {% if form.brief_summary.errors %}
-          <span class="field__error">{{ form.brief_summary.errors|first }}</span>
+          <span class="field__error" id="{{ form.brief_summary.auto_id }}_error">{{ form.brief_summary.errors|first }}</span>
         {% endif %}
       </label>
     </div>
@@ -81,14 +81,14 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
         <span class="field__label">{{ form.received_date.label }}</span>
         {{ form.received_date }}
         {% if form.received_date.errors %}
-          <span class="field__error">{{ form.received_date.errors|first }}</span>
+          <span class="field__error" id="{{ form.received_date.auto_id }}_error">{{ form.received_date.errors|first }}</span>
         {% endif %}
       </label>
       <label class="field">
         <span class="field__label">{{ form.response_deadline.label }}</span>
         {{ form.response_deadline }}
         {% if form.response_deadline.errors %}
-          <span class="field__error">{{ form.response_deadline.errors|first }}</span>
+          <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
         {% endif %}
       </label>
     </div>
@@ -105,7 +105,7 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
             </label>
           {% endfor %}
         </div>
-        {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
+        {% if form.owner.errors %}<span class="field__error" id="{{ form.owner.auto_id }}_error">{{ form.owner.errors|first }}</span>{% endif %}
       </fieldset>
 
       {% include "matters/partials/sender_control.html" with list_id="saabunud-saatja-nimekiri" %}
@@ -127,7 +127,7 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
         <span class="field__label">{{ form.handover_note.label }}</span>
         {{ form.handover_note }}
         {% if form.handover_note.errors %}
-          <span class="field__error">{{ form.handover_note.errors|first }}</span>
+          <span class="field__error" id="{{ form.handover_note.auto_id }}_error">{{ form.handover_note.errors|first }}</span>
         {% endif %}
       </label>
     </div>
