@@ -47,13 +47,11 @@ is the number the chart showed.
                   <span class="muted">· {{ submission.matter.title }}</span>
                 </td>
                 <td>
-                  {% for row in submission.recipient_rows.all %}
-                    {% if row.role == "ADDRESSEE" %}
-                      {{ row.organisation.name }}{% if not forloop.last %}, {% endif %}
-                    {% endif %}
-                  {% empty %}
-                    <span class="table__missing">—</span>
-                  {% endfor %}
+                  {% comment %}
+                    The same addressee collection the `?saaja=` filter reads,
+                    so the comma is tested against addressees alone (ENG-061).
+                  {% endcomment %}
+                  {% for row in submission.addressee_rows %}{{ row.organisation.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="table__missing">—</span>{% endfor %}
                 </td>
               </tr>
             {% endfor %}

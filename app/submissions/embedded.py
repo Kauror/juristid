@@ -146,19 +146,14 @@ def _decorate(submissions: list[Any], viewer: Any) -> None:
     it, because a Document carries its own override. A filename is frequently
     the most telling thing about a file (AUTH-003 §21).
     """
-    from app.submissions.enums import RecipientRole
-
     mark_final_version_readable(submissions, viewer)
     for submission in submissions:
-        # Off the prefetch `sent_queryset` already pays for, not a second query:
-        # the addressees are the half of the recipients a reporting count asks
-        # about, and splitting them in Python costs nothing here
-        # (app/submissions/workspace.py).
-        submission.addressee_list = [
-            row.organisation
-            for row in submission.recipient_rows.all()
-            if row.role == RecipientRole.ADDRESSEE
-        ]
+        # Off the addressee prefetch `sent_queryset` already pays for, not a
+        # second query: the addressees are the half of the recipients a
+        # reporting count asks about, and the one collection every `Saaja`
+        # surface reads (app/submissions/models.py `addressee_prefetch`,
+        # ENG-061).
+        submission.addressee_list = [row.organisation for row in submission.addressee_rows]
 
 
 def _archive_rows(viewer: Any, query: str) -> tuple[Any, int, str]:
