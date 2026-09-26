@@ -3344,7 +3344,10 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     documents = (
         Document.objects.filter(matter=matter)
         .visible_to(request.user)
-        .select_related("current_version", "created_by")
+        # `matter` too (ENG-079): every row's Piiratud badge asks
+        # `is_restricted`, which reads the parent Matter's visibility, and without
+        # the join that was one query per document — 70 on a dense `?koik=1`.
+        .select_related("current_version", "created_by", "matter")
         .order_by("-created_at")
     )
 
