@@ -10,12 +10,23 @@ UI drifted in the first place.
 
 Why it is narrow
 ----------------
-Ten scenarios, chosen because each is a component family rather than a page:
-the shell, the register, a Matter header, a Matter in a special state, the
-position surface, the evidence surface, the create form, the search results, a
-generated reading surface, and a refused save. A screenshot of every route would
+Each scenario is a component family rather than a page: the shell, the
+register, a Matter header, a Matter in a special state, the position surface,
+the evidence surface, the create form, the search results, a generated reading
+surface, a refused save, the persona switcher, and the same workspaces at the
+widths they have to hold. That is 36 captures today, each with a committed
+baseline — `e2e/baselines/` is the inventory. A screenshot of every route would
 lock in a hundred baselines that nobody re-reads, and a suite nobody re-reads
 approves a bad design as efficiently as a good one.
+
+How close is close enough
+-------------------------
+`e2e/visual_compare.py`: a pixel differs when one of its channels moved by more
+than 16, and a scenario may have at most 24 such pixels — an absolute count, not
+a share of the image, measured from eleven CI runs of the same code (ENG-037).
+A removed control, a changed label or a lost surface colour fails on a tall page
+exactly as it does on a short one. `tests/test_visual_comparator.py` is the
+contract.
 
 Determinism
 -----------
@@ -106,6 +117,7 @@ from e2e.conftest import (
     pass_the_gate,
     sign_in,
 )
+from e2e.visual_compare import CHANNEL_THRESHOLD, PIXEL_BUDGET, judge
 
 #: The seeded department head, mirroring `seed_e2e_data.PERSONAS`. Named here
 #: rather than looked up, because this suite has no database access.
@@ -117,13 +129,12 @@ BASELINE_DIR = pathlib.Path(__file__).parent / "baselines"
 CANDIDATE_DIR = pathlib.Path(os.environ.get("E2E_SCREENSHOT_DIR", "artifacts/screenshots"))
 UPDATING = os.environ.get("E2E_UPDATE_BASELINES") == "1"
 
-#: Chromium's own anti-aliasing is not bit-stable between runs on the same
-#: image, so an exactly-equal comparison would flake. The tolerance is per
-#: channel and deliberately tight: it absorbs a rasterisation wobble on a glyph
-#: edge and nothing else. A moved element, a changed colour or a lost rule all
-#: differ by far more than this on far more than 0.2% of the page.
-CHANNEL_TOLERANCE = 24
-MAX_DIFFERING_FRACTION = 0.002
+#: How a candidate is judged: a per-channel threshold and an **absolute** pixel
+#: budget, both measured from real CI runs (`e2e/visual_compare.py`, ENG-037).
+#: The old limit was 0.2% of the image, so the taller the capture the larger the
+#: change it could swallow — a removed control, a changed label or a lost
+#: surface colour passed on most full-page scenarios. See `CHANNEL_THRESHOLD`,
+#: `PIXEL_BUDGET` and `judge`, imported above.
 
 #: Everything whose text is derived from the clock. Masked as narrowly as
 #: possible: the date's digits, not the cell, the label or the row — so the
@@ -232,8 +243,8 @@ CLOCK_DEPENDENT = [
     # ---- Three values the list above missed, each found by rendering the page
     # and asking which selector covered it rather than by reading class names.
     #
-    # None of them was ever big enough on its own to cross
-    # MAX_DIFFERING_FRACTION, which is the whole reason they survived: a mask
+    # None of them was ever big enough on its own to cross the old 0.2% limit
+    # (since replaced by `PIXEL_BUDGET`), which is the whole reason they survived: a mask
     # that stops matching fails loudly the next morning, but a value that was
     # *never* masked just makes the baseline quietly stale. The cost lands on
     # somebody else — the next unrelated change adds enough differing pixels to
@@ -706,6 +717,22 @@ def _held_still(
     )
 
 
+#: Statistika's «Uued teemad kuude kaupa»: which months it lists, and how many
+#: arrived in each, follow the calendar — the seeded Matters are received
+#: *N days ago*, so on the first of every month the first row changes name and
+#: its count moves to the next one (ENG-037). The table's shape is what this
+#: capture is for, and the rows it shows are held at a fixed label and a fixed
+#: count; the figures themselves are asserted by the reporting tests, which can
+#: check them against a clock. «Näita veel N» grows by one each month too.
+#: Still annual: on 1 January the period is a new year and the table restarts,
+#: like every other «Käesolev aasta» figure on this page.
+STATISTIKA_MONTHS = 'section[aria-labelledby="stat-new_native_full_matters_by_month-heading"]'
+STATISTIKA_MONTH_TABLE: tuple[tuple[str, str], ...] = (
+    (f"{STATISTIKA_MONTHS} tbody:not(.uxextra) td:first-child", "Kuu"),
+    (f"{STATISTIKA_MONTHS} tbody:not(.uxextra) td.table__date", "0"),
+    (f"{STATISTIKA_MONTHS} details.pw-more > summary", "Näita veel 3 ▾"),
+)
+
 SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # The closed Matter: created and closed by the run, so both classes hold a
     # run-day value in every slot and the bare class is the correct scope.
@@ -734,6 +761,7 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # which is `REQUIRED_NORMALISATIONS` working rather than a reason to widen
     # the entry.
     "teema-arhiiv": ((CHRONOLOGY_RUN_DAY[0], CANONICAL_RUN_DAY),),
+    "statistika-3440": STATISTIKA_MONTH_TABLE,
 }
 
 
@@ -764,6 +792,9 @@ def normalisations_for(name: str) -> tuple[tuple[str, str], ...]:
 #: normalisation a scenario depends on is declared», and a rule with two
 #: exceptions is a rule nobody applies to the fifth entry.
 REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
+    # The seeded world always receives work this year, so the month table and
+    # its «Näita veel» are on this page on every run (`STATISTIKA_MONTH_TABLE`).
+    "statistika-3440": tuple(selector for selector, _ in STATISTIKA_MONTH_TABLE),
     "minu-too": HORIZON_LABEL,
     "minu-too-3440": HORIZON_LABEL,
     "teemad-1280": (*OPINION_SENT, *MONTH_VIEW_CHIP),
@@ -1054,7 +1085,7 @@ def compare(name: str, candidate: bytes) -> None:
     """Fail when the rendered page differs from its committed baseline."""
     from io import BytesIO
 
-    from PIL import Image, ImageChops
+    from PIL import Image
 
     baseline_path = BASELINE_DIR / f"{name}.png"
     if UPDATING:
@@ -1076,21 +1107,17 @@ def compare(name: str, candidate: bytes) -> None:
         f"{name}: the page is now {actual.size}, baseline is {expected.size}"
     )
 
-    difference = ImageChops.difference(actual, expected)
-    beyond_tolerance = difference.convert("L").point(
-        lambda value: 255 if value > CHANNEL_TOLERANCE else 0
-    )
-    differing = sum(1 for pixel in beyond_tolerance.getdata() if pixel)
-    fraction = differing / (expected.width * expected.height)
-
-    if fraction > MAX_DIFFERING_FRACTION:
+    verdict, difference = judge(expected, actual)
+    if not verdict.passed:
         CANDIDATE_DIR.mkdir(parents=True, exist_ok=True)
         difference.save(CANDIDATE_DIR / f"{name}.diff.png")
         pytest.fail(
-            f"{name}: {fraction:.4%} of pixels differ from the baseline "
-            f"(limit {MAX_DIFFERING_FRACTION:.2%}). "
-            f"The rendering and the difference are in the browser artifacts. "
-            f"If the change is intended, regenerate the baseline."
+            f"{name}: {verdict.differing} pixels differ from the baseline by more "
+            f"than {CHANNEL_THRESHOLD} in some channel (budget {PIXEL_BUDGET}, "
+            f"largest channel change {verdict.peak}). The candidate and the "
+            f"difference are in this run's `test-report-visual` upload. If the "
+            f"change is intended, adopt that candidate's exact bytes — never a "
+            f"local re-render, a higher budget or a new mask."
         )
 
 

@@ -314,6 +314,17 @@ other. No assertion in that file is a guessed pixel offset — the only
 measurement it makes is the one that is genuinely geometric, that the document
 does not scroll sideways.
 
+> **Amended 2026-09-26 (ENG-037).** The tolerance this section left unchanged
+> was 0.2% of the image's area, so a move, a removed control, a changed label or
+> a lost surface colour could all sit under it on a full-page capture, and six
+> baselines had gone stale on `main` while the job stayed green. It is now a
+> per-channel threshold of 16 and an **absolute** budget of 24 differing pixels
+> per scenario, measured from eleven CI runs of the same code
+> (`e2e/visual_compare.py`, `tests/test_visual_comparator.py`). A move is now
+> something the screenshots do see; the structural assertions above stay,
+> because they say *which* placement is right, and a screenshot only says that
+> something changed.
+
 ### Consequences of the amendment
 
 - No migration, no schema change, no new model field, no search or index change.
