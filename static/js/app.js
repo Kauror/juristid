@@ -122,6 +122,65 @@
    * detached and the event has no path to bubble along — a listener on `body`
    * in the bubble phase never runs. Capture reaches it; measured, not assumed.
    */
+  /* ---- Where a swap happened, for the two swaps that are not saves -------
+   * ENG-095. The rule below was written for saves, and its one landing on a
+   * Teema is `Lisa teemale`, near the top. Two swaps are not saves and lose
+   * focus deep in the chronology:
+   *
+   *   - «Näita varasemaid» replaces itself with the older rows, so a keyboard
+   *     user was sent up to `Lisa teemale` (a reader, who has no landing, to
+   *     `body`) and the next Tab skipped every row just loaded;
+   *   - «Kustuta» on a row re-renders the whole Teema column, and focus went
+   *     to `Lisa teemale` from a row a page further down.
+   *
+   * So each remembers where it stood before the swap, and the settle handler
+   * lands on the first row that arrived, or on the row that took the removed
+   * one's place. Only a successful swap: a refusal keeps the field focus its
+   * own handler gives it. */
+  var placement = null;
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail || {};
+    var elt = detail.elt;
+    placement = null;
+    if (!elt || !elt.closest || !detail.xhr || detail.xhr.status >= 300) {
+      return;
+    }
+    if (elt.classList && elt.classList.contains("uxtl__older")) {
+      placement = { kind: "inserted", parent: elt.parentNode, before: elt.previousElementSibling };
+      return;
+    }
+    var form = elt.closest(".uxtl__removeform");
+    if (form) {
+      var row = form.closest("article.uxtl__item");
+      var rows = Array.prototype.slice.call(document.querySelectorAll("article.uxtl__item"));
+      if (row) {
+        placement = { kind: "neighbour", index: rows.indexOf(row) };
+      }
+    }
+  }, true);
+
+  var placedLanding = function (place) {
+    if (place.kind === "inserted") {
+      var node = place.before ? place.before.nextElementSibling : place.parent && place.parent.firstElementChild;
+      while (node && document.contains(node)) {
+        if (node.matches && node.matches("article.uxtl__item")) {
+          return node;
+        }
+        var inner = node.querySelector && node.querySelector("article.uxtl__item");
+        if (inner) {
+          return inner;
+        }
+        node = node.nextElementSibling;
+      }
+      return null;
+    }
+    var rows = document.querySelectorAll("article.uxtl__item");
+    if (!rows.length || place.index < 0) {
+      return null;
+    }
+    return rows[Math.min(place.index, rows.length - 1)];
+  };
+
   document.body.addEventListener("htmx:afterSettle", function (event) {
     var target = event.detail && event.detail.target;
     if (!target || !target.querySelector) {
@@ -139,6 +198,21 @@
       active === document.documentElement ||
       !document.contains(active);
     if (!lost) {
+      placement = null;
+      return;
+    }
+    var place = placement;
+    placement = null;
+    var placed = place ? placedLanding(place) : null;
+    if (placed) {
+      if (!placed.hasAttribute("tabindex")) {
+        placed.setAttribute("tabindex", "-1");
+      }
+      try {
+        placed.focus({ preventScroll: true });
+      } catch (error) {
+        placed.focus();
+      }
       return;
     }
     /* **Search the live document where the swapped element is gone.**

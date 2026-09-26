@@ -459,11 +459,21 @@
   font-size: var(--typography-size-page-title);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: var(--typography-tracking-title);
+  /* ENG-094. A document heading is its filename, and an underscore-joined one
+     is a single token; in a flex row only `anywhere` together with
+     `min-width: 0` lets it shrink below that token's width, so at phone width
+     it pushed the page 1,196px sideways. Ordinary words still wrap at spaces
+     first — `anywhere` breaks inside a word only when the word cannot fit. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pagehead__context {
   font-size: var(--typography-size-base);
   color: var(--text-muted);
+  /* The same, for the Matter title `Muuda teemat` and `Kustuta teema` name. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Outside `.app__main` — it is a band, not page content — so it repeats the
@@ -1535,7 +1545,11 @@ th[aria-sort="descending"] .colhead__mark::after {
   font-weight: var(--typography-weight-semibold);
   line-height: var(--typography-line-tight);
   max-width: 1080px;
-  overflow-wrap: break-word;
+  /* `anywhere`, not `break-word` (ENG-094): on the Teema page this heading is a
+     flex container, and only `anywhere` shrinks a flex item's min-content
+     width, so a long compound title could not wrap at phone width. */
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 /* Hetkeseis sits on the title's baseline rather than on its own row: the badge
@@ -11856,6 +11870,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-15);
+  /* ENG-094. The filename is one token when it is joined by underscores, and an
+     inline-flex link sized itself to it: 658px past the right edge at 375.
+     Bounded by the row and allowed to break inside the name. */
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin-top: 3px;
   font-size: 12.5px;
   line-height: 1.4;
