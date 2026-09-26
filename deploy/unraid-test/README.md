@@ -37,7 +37,10 @@ A four-digit PIN is 10,000 guesses. What makes it more than decorative is the
 lockout: wrong attempts from one address are refused for
 `DEV_LOGIN_PIN_LOCKOUT_SECONDS` after `DEV_LOGIN_PIN_MAX_ATTEMPTS` failures, and
 the counter lives in a database cache so it is shared across gunicorn workers
-rather than counted three times over. An attacker who rotates source addresses
+rather than counted three times over. Attempts from one address take turns: the
+lockout check, the PIN comparison and the count are one step under a
+per-address lock, so a burst of parallel requests gets no more guesses than the
+same requests sent one after another. An attacker who rotates source addresses
 still gets through eventually — that is the honest limit of a PIN, and it is
 acceptable here only because everything behind it is invented.
 
