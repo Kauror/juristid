@@ -18,7 +18,7 @@
           {{ important_date_form.deadline_title }}
         </label>
         {% if important_date_form.deadline_title.errors %}
-          <p class="field__error">{{ important_date_form.deadline_title.errors|first }}</p>
+          <p class="field__error" id="{{ important_date_form.deadline_title.auto_id }}_error">{{ important_date_form.deadline_title.errors|first }}</p>
         {% endif %}
         {% include "matters/partials/period_composer.html" with chips=important_date_form.precision_chips date_field=important_date_form.deadline_date month_field=important_date_form.deadline_month quarter_field=important_date_form.deadline_quarter year_field=important_date_form.deadline_year only %}
         {% include "matters/partials/add_files.html" with field=important_date_form.attachments %}

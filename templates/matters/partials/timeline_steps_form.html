@@ -59,7 +59,8 @@ whose phases carry dates it changes what the rail says about all of them.
             reason is what turns a control that does not respond into one that
             explains itself (app/matters/forms.py, `_protection`).
           {% endcomment %}
-          <span class="kulgform__protected">{{ row.protected }}</span>
+          <span class="kulgform__protected"
+                id="{{ row.shown_field.auto_id }}_helptext">{{ row.protected }}</span>
         {% endif %}
 
         <label class="cx-f cx-f--date kulgform__date"
@@ -68,7 +69,7 @@ whose phases carry dates it changes what the rail says about all of them.
           {{ row.date_field }}
         </label>
         {% if row.date_field.errors %}
-          <p class="field__error">{{ row.date_field.errors|first }}</p>
+          <p class="field__error" id="{{ row.date_field.auto_id }}_error">{{ row.date_field.errors|first }}</p>
         {% endif %}
       </li>
     {% endfor %}

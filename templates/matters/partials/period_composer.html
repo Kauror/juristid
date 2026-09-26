@@ -79,7 +79,7 @@ would submit an empty year. It is its own group, revealed by any of the three.
         {{ date_field }}
       </label>
       {% if date_field.errors %}
-        <p class="field__error">{{ date_field.errors|first }}</p>
+        <p class="field__error" id="{{ date_field.auto_id }}_error">{{ date_field.errors|first }}</p>
       {% endif %}
     </div>
   {% endif %}
@@ -90,7 +90,7 @@ would submit an empty year. It is its own group, revealed by any of the three.
       {{ month_field }}
     </label>
     {% if month_field.errors %}
-      <p class="field__error">{{ month_field.errors|first }}</p>
+      <p class="field__error" id="{{ month_field.auto_id }}_error">{{ month_field.errors|first }}</p>
     {% endif %}
   </div>
 
@@ -100,7 +100,7 @@ would submit an empty year. It is its own group, revealed by any of the three.
       {{ quarter_field }}
     </label>
     {% if quarter_field.errors %}
-      <p class="field__error">{{ quarter_field.errors|first }}</p>
+      <p class="field__error" id="{{ quarter_field.auto_id }}_error">{{ quarter_field.errors|first }}</p>
     {% endif %}
   </div>
 
@@ -110,7 +110,7 @@ would submit an empty year. It is its own group, revealed by any of the three.
       {{ year_field }}
     </label>
     {% if year_field.errors %}
-      <p class="field__error">{{ year_field.errors|first }}</p>
+      <p class="field__error" id="{{ year_field.auto_id }}_error">{{ year_field.errors|first }}</p>
     {% endif %}
   </div>
 </fieldset>

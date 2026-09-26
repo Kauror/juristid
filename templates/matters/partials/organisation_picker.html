@@ -272,6 +272,6 @@ picked before a refused save are the three states this already draws, and
   <p class="visually-hidden" id="{{ picker_id }}-seis" role="status" aria-live="polite"></p>
 
   {% if typed_field.errors %}
-    <span class="field__error">{{ typed_field.errors|first }}</span>
+    <span class="field__error" id="{{ typed_field.auto_id }}_error">{{ typed_field.errors|first }}</span>
   {% endif %}
 </div>

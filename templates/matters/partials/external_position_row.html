@@ -68,7 +68,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       {% endcomment %}
       {% include "matters/partials/organisation_picker.html" with picker_id=external_position_picker_id legend=external_position_edit_form.organisation.label chips=external_position_edit_form.organisation_chip_choices tail=external_position_edit_form.organisation_tail_choices typed_field=external_position_edit_form.organisation_name add_label="Lisa uus organisatsioon" single=True clears_group="organisation" only %}
       {% if external_position_edit_form.organisation.errors %}
-        <p class="field__error">{{ external_position_edit_form.organisation.errors|first }}</p>
+        <p class="field__error" id="{{ external_position_edit_form.organisation.auto_id }}_error">{{ external_position_edit_form.organisation.errors|first }}</p>
       {% endif %}
 
       {% include "matters/partials/period_composer.html" with chips=external_position_edit_form.precision_chips date_field=external_position_edit_form.stated_on month_field=external_position_edit_form.position_month quarter_field=external_position_edit_form.position_quarter year_field=external_position_edit_form.position_year only %}
@@ -93,7 +93,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {{ external_position_edit_form.summary }}
       </label>
       {% if external_position_edit_form.summary.errors %}
-        <p class="field__error">{{ external_position_edit_form.summary.errors|first }}</p>
+        <p class="field__error" id="{{ external_position_edit_form.summary.auto_id }}_error">{{ external_position_edit_form.summary.errors|first }}</p>
       {% endif %}
 
       <label class="cx-f" for="{{ external_position_edit_form.url.id_for_label }}">
@@ -101,7 +101,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {{ external_position_edit_form.url }}
       </label>
       {% if external_position_edit_form.url.errors %}
-        <p class="field__error">{{ external_position_edit_form.url.errors|first }}</p>
+        <p class="field__error" id="{{ external_position_edit_form.url.auto_id }}_error">{{ external_position_edit_form.url.errors|first }}</p>
       {% endif %}
 
       {% comment %}
@@ -117,7 +117,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {{ external_position_edit_form.lawyer_note }}
       </label>
       {% if external_position_edit_form.lawyer_note.errors %}
-        <p class="field__error">{{ external_position_edit_form.lawyer_note.errors|first }}</p>
+        <p class="field__error" id="{{ external_position_edit_form.lawyer_note.auto_id }}_error">{{ external_position_edit_form.lawyer_note.errors|first }}</p>
       {% endif %}
 
       {% comment %}
@@ -140,7 +140,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
           {{ external_position_edit_form.source_label }}
         </label>
         {% if external_position_edit_form.source_label.errors %}
-          <p class="field__error">{{ external_position_edit_form.source_label.errors|first }}</p>
+          <p class="field__error" id="{{ external_position_edit_form.source_label.auto_id }}_error">{{ external_position_edit_form.source_label.errors|first }}</p>
         {% endif %}
       {% endif %}
 
@@ -160,7 +160,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
             <span class="chip__name">{{ external_position_edit_form.member_mark.label }}</span>
           </label>
           {% if external_position_edit_form.member_mark.errors %}
-            <p class="field__error">{{ external_position_edit_form.member_mark.errors|first }}</p>
+            <p class="field__error" id="{{ external_position_edit_form.member_mark.auto_id }}_error">{{ external_position_edit_form.member_mark.errors|first }}</p>
           {% endif %}
         </div>
       {% endif %}
@@ -171,7 +171,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         {{ external_position_edit_form.engagement }}
       </label>
       {% if external_position_edit_form.engagement.errors %}
-        <p class="field__error">{{ external_position_edit_form.engagement.errors|first }}</p>
+        <p class="field__error" id="{{ external_position_edit_form.engagement.auto_id }}_error">{{ external_position_edit_form.engagement.errors|first }}</p>
       {% endif %}
 
       {{ external_position_edit_form.revision }}

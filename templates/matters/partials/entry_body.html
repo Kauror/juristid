@@ -33,7 +33,7 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
       {{ entry_edit_form.body }}
       {{ entry_edit_form.revision }}
       {% if entry_edit_form.body.errors %}
-        <p class="formerror" role="alert">{{ entry_edit_form.body.errors|first }}</p>
+        <p class="formerror" role="alert" id="{{ entry_edit_form.body.auto_id }}_error">{{ entry_edit_form.body.errors|first }}</p>
       {% elif entry_edit_error %}
         <p class="formerror" role="alert">{{ entry_edit_error }}</p>
       {% endif %}

@@ -58,12 +58,22 @@ saying so, which is the same treatment every external link on this page gets.
               >{{ website_overview_link_form.published_on.help_text }}</span>
       </label>
       {{ website_overview_link_form.revision }}
+      {% comment %}
+        Each field's error under the id Django's `aria-describedby` on that box
+        already names. Two `if`s rather than `if`/`elif`: when both boxes are
+        refused, both controls point at their own sentence, and a sentence that
+        was not rendered is a pointer to nothing (ENG-092).
+      {% endcomment %}
       {% if website_overview_link_form.url.errors %}
-        <p class="formerror" role="alert">{{ website_overview_link_form.url.errors|first }}</p>
-      {% elif website_overview_link_form.published_on.errors %}
-        <p class="formerror" role="alert">
+        <p class="formerror" role="alert"
+           id="{{ website_overview_link_form.url.auto_id }}_error">{{ website_overview_link_form.url.errors|first }}</p>
+      {% endif %}
+      {% if website_overview_link_form.published_on.errors %}
+        <p class="formerror" role="alert"
+           id="{{ website_overview_link_form.published_on.auto_id }}_error">
           {{ website_overview_link_form.published_on.errors|first }}</p>
-      {% elif website_overview_link_error %}
+      {% endif %}
+      {% if website_overview_link_error and not website_overview_link_form.url.errors and not website_overview_link_form.published_on.errors %}
         <p class="formerror" role="alert">{{ website_overview_link_error }}</p>
       {% endif %}
 

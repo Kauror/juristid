@@ -33,7 +33,7 @@ because the anchor is not a fact — it is how the database sorts
     {% for choice in form.kind %}
       <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
     {% endfor %}
-    {% for error in form.kind.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+    {% for error in form.kind.errors %}<span class="field__error"{% if forloop.first %} id="{{ form.kind.auto_id }}_error"{% endif %}>{{ error }}</span>{% endfor %}
   </fieldset>
 {% endif %}
 
@@ -43,7 +43,7 @@ because the anchor is not a fact — it is how the database sorts
     {% for choice in form.precision %}
       <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
     {% endfor %}
-    {% for error in form.precision.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+    {% for error in form.precision.errors %}<span class="field__error"{% if forloop.first %} id="{{ form.precision.auto_id }}_error"{% endif %}>{{ error }}</span>{% endfor %}
   </fieldset>
 
   <div class="periodfields" id="perioodi-valjad">
