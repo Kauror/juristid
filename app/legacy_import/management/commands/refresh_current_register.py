@@ -337,6 +337,7 @@ class Command(BaseCommand):
             ("became current", result.activated),
             ("stayed current", result.kept),
             ("left current work", result.retired),
+            ("held for review", result.held_for_review),
             ("fields refreshed", result.refreshed),
             ("derived state rows", result.state_rows),
             ("next actions created", result.actions_created),

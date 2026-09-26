@@ -40,6 +40,8 @@ _REVIEW_LABELS: dict[str, str] = {
     "OPEN_NEXT_ACTION": "has an open next action",
     "UNEXPECTED_ORIGIN": "unexpected origin",
     "MULTIPLE_SOURCE_YEARS": "appears in several register years",
+    "OPEN_FEEDBACK_WAIT": "is waiting for Kaasamine feedback",
+    "PLANNED_WEBSITE_OVERVIEW": "still owes a planned Ülevaade",
 }
 
 
@@ -93,6 +95,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Applied"))
         self.stdout.write(f"  became historical  {result.closed}")
         self.stdout.write(f"  matters examined   {result.examined}")
+        if result.held_for_review:
+            self.stdout.write(f"  held for review    {result.held_for_review}")
         self.stdout.write("  no disposition, no closure date and no closing person were invented.")
 
     # -- output ------------------------------------------------------------

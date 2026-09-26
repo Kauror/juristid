@@ -4750,6 +4750,49 @@ def correct_procedural_development(
     return current
 
 
+def end_live_work_for_closure(*, matter: Matter, actor: Any = None) -> None:
+    """End what a Matter owes only while it is active work. Every closure owes it (ENG-006).
+
+    Three obligations exist because a Matter is current work, and none of them
+    survives it stopping being current:
+
+    * **the open `Järgmiseks` step**, cancelled — a closed Matter must not keep
+      sitting in somebody's work list (`end_open_action_for_closure`);
+    * **every planned `Kodulehe ülevaade / uudis`**, cancelled — a file does not
+      go on owing the website a summary nobody may publish any more
+      (docs/adr/0081 §5);
+    * **every open `Kaasamine` feedback wait**, closed — nobody can record the
+      answers any more (docs/adr/0086 §7).
+
+    None of them *blocks* the closure; each is ended in the caller's transaction
+    and under its lock, so the file either stops being current with all three
+    ended or does not stop at all.
+
+    **One place, and every path that makes a Matter inactive calls it.** It used
+    to be three calls inside `close_matter` alone, so the register's retirement
+    and the historical default — which change the same lifecycle without a
+    person closing anything — left the step, the planned write-up and the wait
+    owed on a closed file: shown there, cancellable nowhere (both cancel paths
+    refuse a closed Matter), and back in somebody's queue the day the register
+    re-activated it.
+
+    **It writes no lifecycle event.** Each obligation records the event its own
+    operation records — `NEXT_ACTION_CANCELLED`, `WEBSITE_OVERVIEW_CANCELLED`,
+    `ENGAGEMENT_FEEDBACK_CLOSED` — and the *cause* is the caller's to record:
+    `MATTER_CLOSED` for a person closing it, `MATTER_REGISTER_CUTOVER_RETIRED`
+    for the final register, `MATTER_HISTORICAL_CUTOVER_CLOSED` for the historical
+    default. Nothing here invents a disposition, a closing person or a time.
+
+    **Repeatable.** Each helper selects only what is still live, under its own
+    row locks, so a second call — a re-run cutover, a repeated refresh — finds
+    nothing and writes nothing. The caller holds the Matter's row lock, taken
+    first, which is the order `close_matter` has always used.
+    """
+    end_open_action_for_closure(matter=matter, actor=actor)
+    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor)
+    close_open_feedback_waits_for_closure(matter=matter, actor=actor)
+
+
 @transaction.atomic
 def close_matter(
     *,
@@ -4853,24 +4896,10 @@ def close_matter(
         ]
     )
 
-    # A closed Matter must not keep sitting in somebody's work list.
-    end_open_action_for_closure(matter=matter, actor=actor)
-
-    # Nor keep owing the website a summary nobody is allowed to publish any
-    # more. Every planned `Ülevaade / uudis` is cancelled here, in this
-    # transaction and under this lock, each with its own audit event naming the
-    # closure — so the file either shuts with its plans dropped or does not shut
-    # at all. Closure is never *blocked* by them: an open plan is not a
-    # precondition and there is nothing here that can refuse
-    # (docs/adr/0081 §5).
-    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor)
-
-    # Nor keep waiting for answers nobody can record any more. Every open
-    # `Kaasamine` feedback wait is ended here, in this transaction and under
-    # this lock, each with its own audit event naming the closure — so the file
-    # either shuts with its waits ended or does not shut at all. Closure is
-    # never *blocked* by one (docs/adr/0086 §7).
-    close_open_feedback_waits_for_closure(matter=matter, actor=actor)
+    # The step, the planned write-ups and the feedback waits end here, in this
+    # transaction and under this lock — the same helper every other path that
+    # makes a Matter inactive calls (ENG-006).
+    end_live_work_for_closure(matter=matter, actor=actor)
 
     record_change_event(
         event_type=ChangeEventType.MATTER_CLOSED,
@@ -4981,7 +5010,15 @@ def mark_historical_archive_inactive(
     Refuses anything that is not an open ARCHIVE record. A FULL Matter is
     current work somebody activated, and the bulk historical default is not
     entitled to demote it.
+
+    **Under the Matter's row lock, and it ends what the Matter owed.** The state
+    is re-read here, locked, so the decision and the write see the same row
+    whoever the caller is. Then `end_live_work_for_closure`, as every closure
+    does (ENG-006): a step, a planned write-up or a feedback wait is live work,
+    and none of it may stay owed on a Matter that is no longer current. Each is
+    ended with its own ordinary event; the closure itself is still unrecorded.
     """
+    matter = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
     if matter.record_mode != RecordMode.ARCHIVE:
         raise DomainError("Ainult arhiivikirje saab muutuda ajalooliseks.")
     if not matter.is_open:
@@ -4989,6 +5026,7 @@ def mark_historical_archive_inactive(
 
     matter.is_open = False
     matter.save(update_fields=["is_open", "updated_at"])
+    end_live_work_for_closure(matter=matter, actor=actor)
 
     record_change_event(
         event_type=ChangeEventType.MATTER_HISTORICAL_CUTOVER_CLOSED,
@@ -5081,7 +5119,14 @@ def retire_from_current_register(
     Refuses a native Matter, and refuses one carrying a real recorded closure —
     reversing or restating a professional decision is that person's call. The
     caller classifies both as REVIEW_REQUIRED rather than catching an exception.
+
+    **Under the Matter's row lock, and it ends what the Matter owed** — the rule
+    `mark_historical_archive_inactive` states, for the same reason (ENG-006).
+    The planner holds a Matter with live native work back for review; this is
+    what guarantees that anything still owed when the retirement does happen is
+    ended with its ordinary event rather than stranded on a closed file.
     """
+    matter = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
     if matter.origin not in REGISTER_MANAGED_ORIGINS:
         raise DomainError("Registri operatsioon ei muuda kohapeal loodud teemat.")
     if matter.disposition or matter.closed_at is not None:
@@ -5098,6 +5143,7 @@ def retire_from_current_register(
     matter.record_mode = RecordMode.ARCHIVE
     matter.is_open = False
     matter.save(update_fields=["record_mode", "is_open", "updated_at"])
+    end_live_work_for_closure(matter=matter, actor=actor)
 
     record_change_event(
         event_type=ChangeEventType.MATTER_REGISTER_CUTOVER_RETIRED,
