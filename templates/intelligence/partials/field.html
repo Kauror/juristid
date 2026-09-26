@@ -20,6 +20,6 @@ IV kvartal". CI found it: a browser test could not address the field at all.
     {% endcomment %}
     {% if field.help_text %}<span class="field__help"
       id="{{ field.auto_id }}_helptext">{{ field.help_text }}</span>{% endif %}
-    {% for error in field.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+    {% for error in field.errors %}<span class="field__error"{% if forloop.first %} id="{{ field.auto_id }}_error"{% endif %}>{{ error }}</span>{% endfor %}
   </div>
 {% endif %}

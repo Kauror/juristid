@@ -57,8 +57,16 @@ anything changed.
         <span class="cx-f__lab">{{ sent_opinion_edit_form.sent_on.label }}</span>
         {{ sent_opinion_edit_form.sent_on }}
       </label>
+      {% comment %}
+        The field's own `help_text`, under the id Django's `aria-describedby` on
+        the box already names. Visually hidden, so the row looks as it did, and
+        outside the `<label>`, so it describes the box without becoming part of
+        its name (ENG-092). `Kokkuvõte` below gets the same.
+      {% endcomment %}
+      <span class="visually-hidden"
+            id="{{ sent_opinion_edit_form.sent_on.auto_id }}_helptext">{{ sent_opinion_edit_form.sent_on.help_text }}</span>
       {% if sent_opinion_edit_form.sent_on.errors %}
-        <p class="field__error">{{ sent_opinion_edit_form.sent_on.errors|first }}</p>
+        <p class="field__error" id="{{ sent_opinion_edit_form.sent_on.auto_id }}_error">{{ sent_opinion_edit_form.sent_on.errors|first }}</p>
       {% endif %}
 
       <label class="cx-f" for="{{ sent_opinion_edit_form.kind.id_for_label }}">
@@ -66,7 +74,7 @@ anything changed.
         {{ sent_opinion_edit_form.kind }}
       </label>
       {% if sent_opinion_edit_form.kind.errors %}
-        <p class="field__error">{{ sent_opinion_edit_form.kind.errors|first }}</p>
+        <p class="field__error" id="{{ sent_opinion_edit_form.kind.auto_id }}_error">{{ sent_opinion_edit_form.kind.errors|first }}</p>
       {% endif %}
 
       <label class="cx-f" for="{{ sent_opinion_edit_form.summary.id_for_label }}">
@@ -74,8 +82,10 @@ anything changed.
           <span class="cx-f__opt">valikuline</span></span>
         {{ sent_opinion_edit_form.summary }}
       </label>
+      <span class="visually-hidden"
+            id="{{ sent_opinion_edit_form.summary.auto_id }}_helptext">{{ sent_opinion_edit_form.summary.help_text }}</span>
       {% if sent_opinion_edit_form.summary.errors %}
-        <p class="field__error">{{ sent_opinion_edit_form.summary.errors|first }}</p>
+        <p class="field__error" id="{{ sent_opinion_edit_form.summary.auto_id }}_error">{{ sent_opinion_edit_form.summary.errors|first }}</p>
       {% endif %}
 
       <label class="cx-f" for="{{ sent_opinion_edit_form.recipients.id_for_label }}">
@@ -90,7 +100,7 @@ anything changed.
       <p class="uxtl__formhint"
          id="{{ sent_opinion_edit_form.recipients.auto_id }}_helptext">{{ sent_opinion_edit_form.recipients.help_text }}</p>
       {% if sent_opinion_edit_form.recipients.errors %}
-        <p class="field__error">{{ sent_opinion_edit_form.recipients.errors|first }}</p>
+        <p class="field__error" id="{{ sent_opinion_edit_form.recipients.auto_id }}_error">{{ sent_opinion_edit_form.recipients.errors|first }}</p>
       {% endif %}
 
       {{ sent_opinion_edit_form.revision }}

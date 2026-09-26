@@ -23,7 +23,7 @@
           {{ work_victory_form.victory_change }}
         </label>
         {% if work_victory_form.victory_change.errors %}
-          <p class="field__error">{{ work_victory_form.victory_change.errors|first }}</p>
+          <p class="field__error" id="{{ work_victory_form.victory_change.auto_id }}_error">{{ work_victory_form.victory_change.errors|first }}</p>
         {% endif %}
         <div class="cx-grid cx-grid--links">
           <label class="cx-f cx-f--date">

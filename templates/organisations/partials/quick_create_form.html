@@ -13,7 +13,7 @@ institution exists, so nothing else on the surrounding form is disturbed.
     <label class="field">
       <span class="field__label">Nimi</span>
       {{ form.name }}
-      {% if form.name.errors %}<span class="field__error">{{ form.name.errors|first }}</span>{% endif %}
+      {% if form.name.errors %}<span class="field__error" id="{{ form.name.auto_id }}_error">{{ form.name.errors|first }}</span>{% endif %}
     </label>
     <label class="field">
       <span class="field__label">Tüüp</span>

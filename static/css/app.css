@@ -23,6 +23,19 @@
   background: var(--surface-base);
 }
 
+/* ENG-097. The bar is sticky above 860px, so anything the browser scrolls
+   into view — a control reached by Tab or Shift+Tab, a fragment, a refusal —
+   has to stop below it, or focus sits hidden under the bar (WCAG 2.4.11).
+   One declaration on the scroller rather than a margin on every target; the
+   few targets that carried the bar's height in their own `scroll-margin-top`
+   now carry only their extra gap, because the two add. Below 860px the bar
+   is static and there is nothing to clear. */
+@media (min-width: 861px) {
+  html {
+    scroll-padding-top: calc(var(--layout-topbar) + var(--spacing-2));
+  }
+}
+
 .topbar {
   height: var(--layout-topbar);
   flex: none;
@@ -878,6 +891,13 @@ p.formnote {
 .segmented__count {
   color: var(--text-muted);
   font-weight: var(--typography-weight-regular);
+}
+
+/* ENG-101. `--text-muted` is 4.29:1 on `--surface-selected`, under WCAG AA's
+   4.5:1 for text this small; `--text-secondary` is 6.09:1. Only the selected
+   option: on the unselected ones the muted count is 4.92:1 and stays muted. */
+.segmented__option.is-active .segmented__count {
+  color: var(--text-secondary);
 }
 
 .filterbar {
@@ -1893,6 +1913,16 @@ th[aria-sort="descending"] .colhead__mark::after {
 
 .composer__body:focus {
   outline: none;
+}
+
+/* ENG-096. «Mida tegid?» on the open step borrows `composer__body` but sits in
+   `.curact__form`, which is not a `.composer` card — so the card's
+   `:focus-within` ring never came, and the rule above had already taken the
+   field's own. A keyboard user saw only the caret (WCAG 2.4.7). The base ring,
+   given back to this one field, on keyboard focus only. */
+.curact__form .composer__body:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
 }
 
 /* `:focus-within` on the card, not `:focus` on the field. Keyed to the field,
@@ -2999,7 +3029,9 @@ fieldset.field > legend {
  * retired Minu tiim — docs/adr/0039.) */
 #tulemused,
 #vastutajata-valdkonnad {
-  scroll-margin-top: 96px;
+  /* 96px under the top, as before: 56px of it is `html`'s scroll padding
+     (ENG-097), which adds to this. */
+  scroll-margin-top: 40px;
 }
 
 
@@ -5781,7 +5813,10 @@ a.barchart__row:hover {
 .button--primary[data-inactive="true"] {
   background: var(--surface-elevated);
   border-color: var(--border-control);
-  color: var(--text-muted);
+  /* `--text-secondary`, not `--text-muted` (ENG-101): muted is 4.49:1 on the
+     elevated surface, under AA, and this button still submits — it is a
+     control with a label somebody must read, not a disabled one. 6.38:1. */
+  color: var(--text-secondary);
 }
 
 /* -- a refused save --------------------------------------------------------- */
@@ -5800,7 +5835,10 @@ fieldset,
 .uxcomp__row,
 .createform__row,
 .formerror {
-  scroll-margin-top: calc(var(--layout-topbar) + var(--spacing-6));
+  /* The bar's own height is `html`'s `scroll-padding-top` now (ENG-097), and
+     the two add up; this is only the breathing room beyond it, so a refusal
+     still lands the same 24px under the bar it always did. */
+  scroll-margin-top: var(--spacing-4);
 }
 
 /* The field that was refused, marked on the box as well as under it. Colour is
@@ -9683,7 +9721,9 @@ section:has(.pw-more[open]) tbody.uxextra {
   justify-content: space-between;
   gap: var(--spacing-2);
   font-size: var(--typography-size-label);
-  color: var(--text-muted);
+  /* Secondary, not muted (ENG-101): the pad is `--surface-elevated`, where
+     muted is 4.49:1 at 11px — under AA. 6.38:1. */
+  color: var(--text-secondary);
 }
 
 /* The refused autosave, beside the pad whose text it could not replace.
@@ -10254,10 +10294,10 @@ section:has(.pw-more[open]) tbody.uxextra {
   border-top: 1px solid var(--border-subtle);
 }
 
-/* The bar is sticky and 48px tall. Without this, a day reached by the keyboard
-   or by a fragment opens underneath it. */
+/* The bar is sticky and 48px tall; `html`'s scroll padding clears it (ENG-097),
+   and this adds the remaining 8px the day used to land with. */
 .relnotes__day {
-  scroll-margin-top: 64px;
+  scroll-margin-top: 8px;
 }
 
 /* Prose, not table cells. `ul` carries its inset and bottom margin from

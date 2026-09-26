@@ -11,7 +11,7 @@
           {{ effective_date_form.effective_title }}
         </label>
         {% if effective_date_form.effective_title.errors %}
-          <p class="field__error">{{ effective_date_form.effective_title.errors|first }}</p>
+          <p class="field__error" id="{{ effective_date_form.effective_title.auto_id }}_error">{{ effective_date_form.effective_title.errors|first }}</p>
         {% endif %}
         {% include "matters/partials/period_composer.html" with chips=effective_date_form.precision_chips date_field=effective_date_form.effective_on month_field=effective_date_form.effective_month quarter_field=effective_date_form.effective_quarter year_field=effective_date_form.effective_year only %}
         {% include "matters/partials/add_files.html" with field=effective_date_form.attachments %}
