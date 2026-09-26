@@ -336,22 +336,44 @@ class Command(BaseCommand):
             MatterSourcePage,
             ResourceImportState,
             SourceMatchMethod,
+            SourceSystem,
         )
         from app.matters.enums import MatterOrigin
         from app.matters.models import Matter
 
         problems: list[str] = []
 
-        from django.db.models import Count
+        from django.db.models import Count, F
 
-        duplicates = (
-            LegacySourcePage.objects.values("source_page_id")
+        # Every check below is one the schema does not already make impossible
+        # (ENG-038). "A page imported twice" used to be a GROUP BY source_page_id,
+        # which `legacy_one_row_per_source_page` answers before verify can ask;
+        # the two ways it can still be true are these.
+        #
+        # Only ONENOTE_DESKTOP may be imported. A row from any other source —
+        # the discredited Graph export above all — is wrong on its own, whether
+        # or not its page id happens to coincide with a desktop row's.
+        foreign = LegacySourcePage.objects.exclude(source_system=SourceSystem.ONENOTE_DESKTOP)
+        if foreign.exists():
+            problems.append(
+                f"{foreign.count()} source page(s) from a source that may not be imported: "
+                + ", ".join(foreign.values_list("page_key", flat=True).order_by("page_key")[:20])
+            )
+        # One page, two OneNote-only Matters: the duplicate the schema permits
+        # (the link is unique per Matter *and* page, not per page) and apply
+        # guards against only by looking first.
+        doubled = (
+            MatterSourcePage.objects.filter(match_method=SourceMatchMethod.ONENOTE_ONLY_MATTER)
+            .values("source_page__page_key")
             .annotate(n=Count("pk"))
             .filter(n__gt=1)
-            .count()
+            .order_by("source_page__page_key")
         )
-        if duplicates:
-            problems.append(f"{duplicates} source page(s) imported more than once")
+        for row in doubled:
+            problems.append(
+                f"{row['source_page__page_key']}: became {row['n']} OneNote-only Matters, "
+                "expected 1"
+            )
 
         for matter in Matter.objects.filter(origin=MatterOrigin.LEGACY_ONENOTE):
             if matter.reference_year is not None or matter.reference_number is not None:
@@ -363,17 +385,34 @@ class Command(BaseCommand):
                 problems.append(f"{matter.pk}: {primaries} primary source pages, expected 1")
 
         mismatched = 0
+        # IMPORTED is what `status` and `materialise` count as in. A row that
+        # says so and names no stored version is not in, and used to pass here
+        # because the SHA-256 comparison below skipped it.
+        hollow = 0
         for record in LegacySourceResourceImport.objects.filter(
             state=ResourceImportState.IMPORTED
         ).select_related("resource", "document_version"):
-            if record.document_version and record.document_version.sha256 != record.resource.sha256:
+            if record.document_version is None or record.document_id is None:
+                hollow += 1
+            elif record.document_version.sha256 != record.resource.sha256:
                 mismatched += 1
         if mismatched:
             problems.append(f"{mismatched} document(s) whose SHA-256 differs from the archive")
+        if hollow:
+            problems.append(f"{hollow} file(s) recorded as imported with no stored document")
 
-        orphan_links = MatterSourcePage.objects.filter(source_page__isnull=True).count()
-        if orphan_links:
-            problems.append(f"{orphan_links} link(s) with no source page")
+        # A file belongs to the page it was attached to. An import row whose
+        # resource sits on another page has put that file in the wrong Matter —
+        # the Graph export's failure, and nothing in the schema forbids it. (It
+        # replaces a "link with no source page" check, which the non-null
+        # PROTECT foreign key made impossible.)
+        crossed = LegacySourceResourceImport.objects.exclude(
+            resource__source_page=F("matter_source_page__source_page")
+        ).count()
+        if crossed:
+            problems.append(
+                f"{crossed} imported file(s) filed under a page they are not attached to"
+            )
 
         files = materialisation_state()
         if files.failed:
