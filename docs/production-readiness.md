@@ -172,7 +172,7 @@ takes to notice.
 | --- | --- | --- |
 | 4.1 | Counts reconcile | the operation's own `status` / `verify` phase |
 | 4.2 | Evidence is present and is what was hashed | `manage.py check_evidence_integrity --verify-sha` — every holder in `EVIDENCE_REFERENCES`: document versions and the opinion archive's letters |
-| 4.3 | Nothing is holding bytes nobody references | `manage.py prune_orphaned_evidence` (no `--delete`) |
+| 4.3 | Nothing is holding bytes nobody references | `manage.py prune_orphaned_evidence` (no `--delete`); for renders, `manage.py check_derivative_integrity` and `manage.py prune_orphaned_derivatives` (no `--delete`) |
 | 4.4 | Search is complete, current and not stale | `manage.py check_search_integrity --full` — the default samples each kind's text; only `--full` recomputes every row and can prove "current" |
 | 4.4a | Nothing is owed to the search index | `manage.py check_search_freshness` |
 | 4.5 | Archive search matches what is held | `manage.py opinion_archive_search verify` |
