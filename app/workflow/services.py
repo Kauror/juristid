@@ -550,6 +550,15 @@ def acknowledge_review(
     On the locked row, like completing and cancelling: a review recorded on an
     action that a replacement has just superseded would be a REVIEWED event on a
     step nobody is following any more (ENG-072).
+
+    **A review that would leave the step exactly as it is records nothing.**
+    The lock serialises a double submit, but a transition that stays OPEN is
+    not refused by the status check the way a second completion is — so the
+    second POST of the same `Vaatasin üle` used to find the date it had just
+    set, set it again, and write a second NEXT_ACTION_REVIEWED for one look at
+    the file. Compared on the locked row, date and precision both, and answered
+    with the action rather than a refusal: the person's review did land, once
+    (ENG-021).
     """
     refusal = "Ainult kehtivat tegevust saab üle vaadata."
     action = _lock_for_transition(action, refusal)
@@ -558,6 +567,8 @@ def acknowledge_review(
     if action.kind not in REVIEW_KINDS:
         raise DomainError("Üle vaadata saab ainult ootamist või jälgimist.")
     refuse_an_unsupported_precision(next_review_date, date_precision)
+    if (action.target_date, action.date_precision) == (next_review_date, date_precision):
+        return action
 
     previous = action.target_date
     action.target_date = next_review_date

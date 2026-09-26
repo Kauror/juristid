@@ -78,6 +78,34 @@ task above it is a form asking about work nobody has named. The route to work is
         {{ current_action.date_display }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
       </span>
 
+      {% if can_write and current_action.is_review_kind %}
+        {% comment %}
+          `Vaatasin üle` — only beside a step that waits on somebody else.
+
+          The one act such a step needs and the page did not offer. Completing
+          it says the wait is over, and `Muuda` says the plan changed; somebody
+          who checked whether the ministry has answered and found it has not did
+          neither. They looked, and the step stays what it is with a later
+          review date (`acknowledge_review`, ENG-021). Minu asjad's
+          `Vaatasin üle…` lands here, and `ux.js` opens it on arrival.
+
+          The words are the product's own — «Vaatan üle» is what the date is
+          labelled on every work surface — and the stored kind is never printed:
+          a WAIT and a MONITOR get the same control (ADR 0054). First on the
+          line, before `Muuda`, because for a step like this it is the ordinary
+          thing to do.
+        {% endcomment %}
+        <details class="cx-panel curact__edit" id="vaatasin-ule" data-addpanel
+                 {% if open_panel == "vaatasin-ule" %}open{% endif %}>
+          <summary class="disclosure-chip disclosure-chip--quiet">Vaatasin üle</summary>
+          <div class="cx-panel__body">
+            {% if open_panel == "vaatasin-ule" and workspace_error %}
+              <p class="formerror" role="alert">{{ workspace_error }}</p>
+            {% endif %}
+            {% include "matters/partials/review_action_form.html" %}
+          </div>
+        </details>
+      {% endif %}
       {% if can_write %}
         {% comment %}
           `Muuda` — change what the task is or when it is due. **Beside the

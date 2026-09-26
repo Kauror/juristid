@@ -119,10 +119,12 @@ the first textarea (static/js/ux.js, `data-koostaja-toggle`).
         (TEEMA_TARGET_SPEC §C.1, docs/adr/0074 §20).
 
         **The capability did not go.** `matters:defer_action`, `defer_choices`
-        and `defer_base` are untouched, the service still moves the date from the
-        step rather than from today, and `Vaatasin üle…` on a work row elsewhere
-        still reaches it. What went is a control the target does not have, from
-        the one row on the page that has to be readable at a glance.
+        and `defer_base` are untouched and the service still moves the date from
+        the step rather than from today — though no page posts to it now. A
+        waiting step's review is `Vaatasin üle` beside it in `PRAEGUNE TEGEVUS`
+        (docs/adr/0075, amendment of 2026-09-26). What went is a control the
+        target does not have, from the one row on the page that has to be
+        readable at a glance.
       {% endcomment %}
       {% comment %}
         "Muuda" focuses the composer rather than opening a second editor for the

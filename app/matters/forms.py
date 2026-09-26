@@ -1797,7 +1797,9 @@ class NextActionForm(forms.Form):
     the day they will do it. There is no action kind and no date meaning on
     this form, because a next step recorded natively is always `DO` /
     `DEADLINE` / `EXACT` — the date means *the day this gets done*, which is
-    exactly what that combination already says (ADR 0052 §3).
+    exactly what that combination already says (ADR 0052 §3). Editing an
+    existing step through `Muuda` keeps the kind and the date meaning that
+    step already has (`as_service_kwargs`, ENG-021).
 
     **The classification left the contract, rather than hiding in the
     template.** `kind` and `date_semantics` are not fields, so a crafted POST
@@ -2020,12 +2022,29 @@ class NextActionForm(forms.Form):
     def as_service_kwargs(self, *, default_responsible: Any = None) -> dict[str, Any]:
         """What ``set_next_action`` needs.
 
-        The kind and the date meaning are the canonical compatibility values,
-        written here and never read from the POST. They are honest rather than
-        merely convenient: on this surface the date is the day the work gets
-        done, and a lawyer who has to remember to chase a ministry writes that
-        as an action — «Kontrollida, kas ministeerium vastas» — rather than as a
-        workflow classification (ADR 0052 §1, §3).
+        The kind and the date meaning are never read from the POST. For **new
+        work** they are the canonical compatibility values, `DO` / `DEADLINE`:
+        on this surface the date is the day the work gets done, and a lawyer who
+        has to remember to chase a ministry writes that as an action —
+        «Kontrollida, kas ministeerium vastas» — rather than as a workflow
+        classification (ADR 0052 §1, §3).
+
+        **An edit keeps the step's own.** With a step open this form is
+        `Muuda`, and `Muuda` changes what the step says or when — it does not
+        re-classify it. Writing `DO` / `DEADLINE` here turned an imported
+        «ootame ministeeriumi vastust» into a deadline on a typo fix, and a
+        review date that had come round into a step `2 p` late on Osakond, in
+        the register's «Üle aja» and on the red rail (ENG-021). So the replaced
+        step's kind and date meaning travel with the edit exactly as its
+        precision does, and for the same reason: an unrelated edit never
+        coerces a value nobody touched (docs/adr/0079 §9). Whether choosing a
+        *different date* in `Muuda` should nonetheless make a review into a
+        plan is not settled by the ADRs; until it is, it does not
+        (OWNER DECISION REQUIRED, ENG-021).
+
+        ``self.current`` is the step this reader can see — the one `Muuda` was
+        drawn beside. A step restricted below the Matter is not one they are
+        editing, so a save that supersedes it is new work and stays `DO`.
 
         **The precision now comes from the person**, which is the half of §3
         docs/adr/0079 supersedes. The stored date is the anchor `bounds_for`
@@ -2039,10 +2058,13 @@ class NextActionForm(forms.Form):
         read. Everywhere else the service's own fallback to ``matter.owner``
         already does this, and passing nothing keeps that behaviour exactly.
         """
+        replaced = self.current
         return {
             "text": self.cleaned_data["text"].strip()[:2000],
-            "kind": ActionKind.DO,
-            "date_semantics": DateSemantics.DEADLINE,
+            "kind": replaced.kind if replaced is not None else ActionKind.DO,
+            "date_semantics": (
+                replaced.date_semantics if replaced is not None else DateSemantics.DEADLINE
+            ),
             "target_date": self.cleaned_data.get("next_anchor"),
             "date_precision": self.cleaned_data.get("next_precision_value")
             or DatePrecision.EXACT.value,
@@ -4361,6 +4383,43 @@ class CompleteCurrentActionForm(forms.Form):
 
     def clean_body(self) -> str:
         return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mida tegid.")
+
+
+class ReviewActionForm(forms.Form):
+    """`Vaatasin üle` — I looked, and this is when I look again.
+
+    The act a step that waits on somebody else actually needs. Completing it
+    would say the wait is over, and `Muuda` would say the plan changed; a lawyer
+    who checked whether the ministry has answered and found it has not did
+    neither. They looked, and the step stays what it was with a later date on
+    it (`app.workflow.services.acknowledge_review`, ENG-021).
+
+    **One question, and it may be left empty.** An empty box is «no next review
+    date yet», which is the answer the service has always accepted and the one
+    `Muuda` accepts too (docs/adr/0106); nothing is defaulted to today or to a
+    week from now. A value that is not a day is refused on the box rather than
+    read as empty — read as empty, `31.02.2026` used to *clear* the date somebody
+    was trying to set (ENG-046).
+
+    The POST field keeps the name the route has always read, so a link or a
+    test written against `next_review_date` still works. The *ids* are this
+    panel's own (`auto_id`), so the `…_helptext` and `…_error` paragraphs
+    Django's `aria-describedby` points at cannot collide with another form's on
+    the same page.
+    """
+
+    use_required_attribute = False
+
+    next_review_date = EstonianDateField(
+        label="Järgmine ülevaatus",
+        required=False,
+        widget=DATE_WIDGET,
+        help_text="Tühjaks jättes jääb järgmise ülevaatuse aeg määramata.",
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_ulevaatus_%s")
+        super().__init__(*args, **kwargs)
 
 
 class CompactEngagementForm(forms.Form):

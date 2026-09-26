@@ -588,3 +588,35 @@ Whether the contracts should record the heading each sheet actually carries is a
 question for whoever owns the era contracts, checked against the *approved
 snapshot* rather than against a working copy. This branch changed only the
 column's `authority` and `notes`.
+
+## Surfaced by engineering-audit remediation Round 7 (2026-09-26)
+
+### Does a new date chosen in `Muuda` turn a review into a plan? (ENG-021)
+
+`Muuda` on a waiting step (`WAIT` / `MONITOR`) now keeps its kind and date
+meaning, because a typo fix was turning «ootame ministeeriumi vastust» into a
+late deadline. What the ADRs do not settle is the case where the lawyer
+deliberately picks a **different date** in `Muuda`: ADR 0052 §3 says a step saved
+from that form is a native `DO` / `DEADLINE`, while ADR 0052 §6 and ADR 0079 §9
+say an edit does not re-classify what nobody touched.
+
+Until it is answered the edit keeps what the step is, and the ordinary way to
+move a waiting step on is `Vaatasin üle` beside it (ADR 0075, amendment of
+2026-09-26). **Owner:** department head. **Where it lands:** one line in
+`NextActionForm.as_service_kwargs`, and the test that pins today's behaviour
+(`tests/test_wait_monitor_review_path.py`).
+
+### When does an expectation come round for review? (ENG-040)
+
+Every surface now reads one review rule (`app/workflow/lateness.py`): a review
+date comes round on the first day of the period it names — *oktoober 2026* on
+1 October, an exact date on its own day (ADR 0079 §6). A waiting step whose date
+means *expected around* rather than *review on* («vastust oodatakse
+III kvartalis») reads the same boundary, because §6 is stated of
+`due_for_review`, which has never read the date meaning, and it rejects the
+period-end alternative by name. An owner could still prefer that an expectation
+come round only once its period is over.
+
+**Owner:** department head. **Where it lands:** one branch in
+`app/workflow/lateness.py`'s review rule, which every surface — Minu asjad,
+Osakond, Kiirvaade, the register chip and the `REVIEW_DUE` statistic — reads.

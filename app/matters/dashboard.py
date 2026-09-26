@@ -47,7 +47,7 @@ from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
-from app.workflow.lateness import overdue_date_q
+from app.workflow.lateness import overdue_date_q, review_due_q
 from app.workflow.models import NextAction
 
 #: The summary cards look this far ahead. Fixed: the card is a KPI, not a view
@@ -212,15 +212,13 @@ def overdue_actions(user: Any, today: date) -> QuerySet[NextAction]:
 
 
 def reviews_due(user: Any, today: date) -> QuerySet[NextAction]:
-    """WAIT and MONITOR whose review date has arrived. Never called overdue."""
+    """WAIT and MONITOR whose review date has come round. Never called overdue.
+
+    `review_due_q`, the one review rule (ADR 0079 §6, ENG-040).
+    """
     return (
         NextAction.objects.visible_to(user)
-        .filter(
-            status=ActionStatus.OPEN,
-            kind__in=(ActionKind.WAIT, ActionKind.MONITOR),
-            target_date__isnull=False,
-            target_date__lte=today,
-        )
+        .filter(review_due_q(today), status=ActionStatus.OPEN)
         .select_related("matter", "matter__owner", "matter__stage", "responsible")
     )
 
@@ -646,36 +644,30 @@ def owner_inventory(user: Any) -> list[CountRow]:
 
 
 def drafting_matters(user: Any) -> QuerySet[Matter]:
-    """Current work whose opinion has not been recorded as sent.
+    """Current work with an opinion still being written.
 
-    ``Arvamusi koostamisel``. Both halves are required and they come from
-    different places on purpose.
+    ``Arvamus koostamisel``, as Matters. Two halves, from different places on
+    purpose.
 
-    The lifecycle half is canonical: ``active_matters`` — open FULL records this
-    reader may see. The source half is the register's ``VÄLJA`` column, held on
-    the derived ``CurrentRegisterState`` row. Leading with the canonical half is
-    what makes the number self-correcting: a lawyer who closes a Matter today
-    drops out of this count on the next page load, without anybody re-running
-    the cutover, because the derived table is only ever consulted about the one
-    fact it is authoritative for.
+    The lifecycle half is ``active_matters`` — open FULL records this reader may
+    see. Leading with it is what makes the number self-correcting: a lawyer who
+    closes a Matter today drops out of this count on the next page load, without
+    anybody re-running the cutover.
 
-    ``VÄLJA`` is not ``Submission.sent_at`` and this is not a count of
-    submissions. It answers a narrower question — has the drafting step been
-    recorded as finished — and a Matter can legitimately have a send date while
-    its proceeding runs on for months (ADR 0021).
+    The opinion half is the register's own ``?arvamus=koostamisel``, which is
+    :func:`app.matters.register_filters.opinion_state_q`: a DRAFT Submission
+    this reader may see, or a CURRENT register row with a blank ``VÄLJA`` that no
+    readable SENT Submission has since overtaken (ENG-019). It is applied rather
+    than restated here, which is what lets Osakond's column, this function and
+    the list a lawyer lands on be the same query: a second copy of the
+    condition, written next door, is how a count and its drill-through start
+    disagreeing.
 
-    The source half asks whether the register *wrote* anything in ``VÄLJA``, not
-    whether what it wrote parses as a date. Those differ on fourteen current
-    Matters in the approved snapshot, and reading the parsed date's nullability
-    reported all fourteen as unfinished work.
-
-    The source half is applied by the register's own ``?arvamus=koostamisel``
-    rather than restated here. That is what lets the card, this function and the
-    list a lawyer lands on be the same query: a second copy of the condition,
-    written next door, is how a count and its drill-through start disagreeing
-    (app/matters/register_filters.py).
+    Not a count of Submissions — a Matter with two drafts is one file being
+    worked on — and not «open without a sent opinion», which would count every
+    file somebody is merely waiting on or watching.
     """
-    return filter_by_opinion_state(active_matters(user), OPINION_DRAFTING)
+    return filter_by_opinion_state(active_matters(user), user, OPINION_DRAFTING)
 
 
 def drafting_by_responsibility(user: Any) -> list[CountRow]:

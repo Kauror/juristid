@@ -14,9 +14,11 @@ page would do nothing with JavaScript off. The panel that is present is the one
 the situation calls for.
 
 **What, when, and how exactly the when is known.** Still no `TEEN`/`OOTAN`/
-`JÄLGIN` and still no date meaning: a step recorded here is `DO`/`DEADLINE`,
-which is exactly "the day this gets done" (ADR 0052 §1, §3). `NextActionForm`
-carries no field for either, so a crafted POST cannot name one.
+`JÄLGIN` and still no date meaning: new work recorded here is `DO`/`DEADLINE`,
+which is exactly "the day this gets done" (ADR 0052 §1, §3), and an edit keeps
+the kind and meaning the step already has — a typo fix does not turn a step
+that waits into a deadline (ENG-021). `NextActionForm` carries no field for
+either, so a crafted POST cannot name one.
 
 The precision is new, and it is the half of ADR 0052 §3 that docs/adr/0079
 supersedes. `Täpne päev` is selected first and the quick spans sit inside it

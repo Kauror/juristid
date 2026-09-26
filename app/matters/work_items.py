@@ -123,7 +123,6 @@ from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.dates import format_at_precision
 from app.workflow.enums import (
-    REVIEW_KINDS,
     ActionKind,
     ActionStatus,
     DatePrecision,
@@ -643,12 +642,13 @@ def action_item(action: NextAction, today: date) -> WorkItem:
     # beside it cannot be answering two different questions.
     end = None if anchor is None else period_end_for(anchor, action.date_precision)
     overdue = action.is_overdue(today)
-    ripe = (
-        action.kind in REVIEW_KINDS
-        and action.target_date is not None
-        and end is not None
-        and end < today
-    )
+    # Ripeness is the model's review rule and not the period end above. A
+    # review comes round when its period *begins* — *oktoober 2026* on
+    # 1 October, an exact review on its own day — while a deadline is missed
+    # only once its period is over; copying the second boundary here put every
+    # work surface a day to a year behind the register filter and the statistic
+    # that count the same rows (ADR 0079 §6, ENG-040).
+    ripe = action.is_due_for_review(today)
     return WorkItem(
         source_type=SOURCE_NEXT_ACTION,
         object_id=action.pk,

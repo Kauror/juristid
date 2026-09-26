@@ -132,6 +132,10 @@ So `VÄLJA` never closes anything. What it answers is
 
 which is 15 on this snapshot.
 
+**Superseded on 2026-09-26 for the definition of «Arvamus koostamisel» — see the
+amendment at the end of this document.** What `VÄLJA` means is unchanged; it is
+now one of two sources for the population rather than the only one.
+
 It also never becomes a `Submission`. A SENT submission needs a defensible date
 *and* immutable final evidence (ADR 0011); a date alone would create a sent
 opinion nobody can produce. Where a canonical SENT Submission exists, that
@@ -305,3 +309,86 @@ is what people navigate by.
 - One new derived table, one new migration, no change to any canonical schema.
 - `promote_current_register` and `historical_cutover_state` are untouched and
   still describe what they did; this operation is additive and idempotent.
+
+---
+
+## Amendment, 2026-09-26 — «Arvamus koostamisel» counts native drafts, and a native send retires a blank VÄLJA
+
+- Status: accepted, amending *`VÄLJA` decides whether the opinion is still being
+  drafted* above
+- Scope: the per-Matter population behind Osakond's ARVAMUS KOOSTAMISEL column,
+  the list each of its cells opens, and the register's `?arvamus=koostamisel` /
+  `?arvamus=saadetud` filter (engineering audit ENG-019). Nothing about what
+  `VÄLJA` means, how it is read or what it may create changes.
+
+### What was decided before
+
+*Arvamusi koostamisel* was «current Matter **and** no recorded send date»: an
+open FULL Matter this reader may see whose CURRENT `CurrentRegisterState` row has
+nothing in `VÄLJA`. `?arvamus=saadetud` was the other half — something in
+`VÄLJA`. Both asked the register and nothing else.
+
+ADR 0033 §4 separately defined the Ülevaade figure of the same name as canonical
+`Submission` rows in DRAFT, counted as Submissions and opened at
+`/arvamused/?olek=DRAFT`.
+
+### Why it is superseded
+
+The register was the only source, and a Matter created in this system never has
+a register row. So a native Matter with a real opinion in DRAFT counted nowhere:
+Martin's Osakond cell stayed at one while /arvamused/ printed «2 koostamisel»,
+and `?arvamus=` returned an empty list for native work without saying why. The
+pilot database holds no register rows at all (the 2026-09-21 reset), so the
+column was structurally nought there. And a register-backed Matter whose opinion
+was then sent *here* stayed «koostamisel», on the same Osakond row that counted
+the send under ARVAMUSI VÄLJA.
+
+One label had two definitions, each written down in its own ADR, and the column
+had picked the one that cannot see the system's own work.
+
+### What is decided now
+
+One per-Matter definition, `app.matters.register_filters.opinion_state_q`, and
+the column, each cell's link and the register filter all use it:
+
+- **koostamisel** — a DRAFT `Submission` on the Matter that this reader may see
+  (the population `submissions.workspace.drafting` already defines for
+  /arvamused/), **or** a CURRENT register row with a blank `VÄLJA` **unless** the
+  Matter has a SENT `Submission` this reader may see.
+- **saadetud** — a SENT `Submission` this reader may see, **or** a CURRENT
+  register row with something written in `VÄLJA`.
+
+The exception is what makes the register half go stale correctly. A blank
+`VÄLJA` says the register had not recorded a send when it was last read; once a
+canonical SENT Submission exists it is the outbound record and `VÄLJA` is source
+metadata beside it (the rule this ADR already stated). A DRAFT is never retired
+that way, because a second opinion in preparation after the first went out is
+drafting. A Matter may therefore be in both populations, and a Matter satisfying
+both halves of one population is one row — the halves are correlated `EXISTS`
+subqueries, not joins.
+
+"SENT" is status SENT — `Submission.objects.sent()`, the opinion that currently
+stands, the reading `work_items._discharge_exists` already uses. How a WITHDRAWN
+or SUPERSEDED opinion should count is ENG-062's question and is not decided here.
+
+The Submission halves are scoped to the reader through `Submission.visible_to`;
+the register half needs no scope of its own beyond its Matter's. A send this
+reader may not open therefore leaves a blank `VÄLJA` standing for them, exactly
+as if it had not happened, rather than moving a readable Matter between states
+and disclosing that a hidden opinion exists.
+
+It is deliberately **not** «an open FULL Matter without a sent opinion», which
+would count every file somebody is waiting on, watching, or keeping for
+information.
+
+### What this amendment does not change
+
+- What `VÄLJA` means, that it is read for presence and never for whether it
+  parses, and that it never closes a Matter or creates a `Submission`.
+- ADR 0033 §4: the Submission-count figure and `/arvamused/?olek=DRAFT` are
+  unchanged, and `submissions.workspace.drafting` is now also the Submission half
+  of the per-Matter rule rather than a second definition beside it.
+- ADR 0059: what discharges an `Arvamuse tähtaeg` is its own rule and is not
+  touched.
+- Every Osakond column other than ARVAMUS KOOSTAMISEL, the lifecycle half (open,
+  FULL, visible) and the search index. No migration, no backfill, no rebuild.
