@@ -1,0 +1,55 @@
+{% comment %}
+`Vaatasin üle` — the date to look again, and one save.
+
+Posts to `matters:review_action`, which reviews through the canonical
+`acknowledge_review`: the step keeps its identity, its sentence and its kind,
+and only its review date moves (ENG-021). A review that would leave the step
+exactly as it is writes nothing, so a double press is one entry in the history.
+
+The three spans are the ones `Ootan tagasisidet` offers — «1 nädal»,
+«2 nädalat», «1 kuu» from today — for the same question: when to look again.
+They write into the box and store nothing of their own, so the server sees one
+value however it was chosen and the control works with scripting off; each
+label grows to carry the day it lands on once pressed (`static/js/ux.js`,
+`bindQuickDates`).
+
+The box may be left empty, and that is said beside it rather than discovered:
+«no next review date yet» is an answer the step can hold (docs/adr/0106).
+
+`Salvesta ülevaatus`, not `Vaatasin üle`: the disclosure already answers to
+those words, and two controls in one region sharing an accessible name is a
+control a screen reader cannot tell apart.
+{% endcomment %}
+<form class="addform" data-addform aria-label="Ülevaatuse salvestamine"
+      hx-post="{% url 'matters:review_action' pk=matter.pk action_id=current_action.pk %}"
+      hx-target="#teema-vaade"
+      hx-swap="outerHTML">
+  {% csrf_token %}
+  <div class="cx-grid cx-grid--links"
+       data-quickdate-group="{{ review_form.next_review_date.id_for_label }}">
+    <div class="cx-when">
+      {% for choice in feedback_deadline_choices %}
+        <button type="button" class="uxchip" aria-pressed="false"
+                data-quickdate="{{ choice.value }}"
+                data-label-default="{{ choice.label }}"
+                data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+      {% endfor %}
+    </div>
+    <label class="cx-f cx-f--date" for="{{ review_form.next_review_date.id_for_label }}">
+      <span class="cx-f__lab">{{ review_form.next_review_date.label }}</span>
+      {{ review_form.next_review_date }}
+    </label>
+  </div>
+  {% comment %}
+    Both ids are the ones Django's `aria-describedby` on the box already names
+    (`<auto_id>_helptext`, `<auto_id>_error`), so a screen reader reading the
+    box reads the sentence under it, and a refused date is announced with why.
+  {% endcomment %}
+  {% if review_form.next_review_date.errors %}
+    <p class="field__error" id="{{ review_form.next_review_date.auto_id }}_error">{{ review_form.next_review_date.errors|first }}</p>
+  {% endif %}
+  <p class="field__help" id="{{ review_form.next_review_date.auto_id }}_helptext">{{ review_form.next_review_date.help_text }}</p>
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">Salvesta ülevaatus</button>
+  </div>
+</form>

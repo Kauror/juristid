@@ -52,7 +52,6 @@ from app.core.dates import (
     add_months,
     format_estonian_date,
     parse_flexible_date,
-    read_flexible_date,
     short_day_month,
     weekday_letter,
 )
@@ -127,6 +126,7 @@ from app.matters.forms import (
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
     ReceivedFeedbackForm,
+    ReviewActionForm,
     TimelineStepsForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
@@ -4214,33 +4214,42 @@ def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpRespon
 @business_write_required
 @require_http_methods(["POST"])
 def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
-    """Record that a WAIT or MONITOR was checked, and when to check again.
+    """`Vaatasin üle` — a WAIT or MONITOR was checked, and when to check again.
 
     Reviewing is not completing: the Matter is still waiting on the same thing,
     so the action keeps its identity and only its review date moves.
+
+    **Posted from `PRAEGUNE TEGEVUS`**, where the control sits beside the step
+    it reviews, and where Minu asjad's `Vaatasin üle…` lands. From 2026-09-11
+    until ENG-021 no template posted here at all: the row controls went with
+    ADR 0074 §20 and the work row's link was left pointing at a zone that
+    offered only `Muuda` and completion.
+
+    The box is the Estonian date control like every other one, so `7.9.2026`
+    reaches here as a date and ISO still parses. Empty means "no next review
+    date" and is an ordinary answer. A value that is not a day is refused on the
+    box with nothing written: read as empty, `31.02.2026` used to *clear* the
+    date somebody was trying to set (ENG-046). Both refusals — the box's and the
+    service's — come back through `_workspace_refusal`, into the panel that was
+    pressed, or into the workspace slot when a replacement means that panel is
+    no longer drawn.
     """
     matter = get_visible_matter(request, pk)
     action = get_object_or_404(
         NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
     )
-    # The box beside "Vaatasin üle" is the Estonian date control like every
-    # other one, so `7.9.2026` has to reach here as a date. ISO still parses:
-    # this route was posted to with ISO before the control changed.
-    #
-    # Empty means "no next review date" and is an ordinary answer. A value that
-    # is not a day is refused with nothing written: read as empty, `31.02.2026`
-    # used to *clear* the date somebody was trying to set (ENG-046).
-    reading = read_flexible_date(request.POST.get("next_review_date"))
+    form = ReviewActionForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="review_form", form=form)
 
     try:
-        if reading.invalid:
-            raise DomainError("Kirjuta kuupäev kujul 7.9.2026.")
-        acknowledge_review(action=action, actor=request.user, next_review_date=reading.value)
+        acknowledge_review(
+            action=action,
+            actor=request.user,
+            next_review_date=form.cleaned_data.get("next_review_date"),
+        )
     except DomainError as error:
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["composer_error"] = str(error)
-        return render(request, "matters/partials/overview.html", context, status=400)
+        return _workspace_refusal(request, matter, key="review_form", form=form, error=str(error))
 
     return _render_overview(request, matter)
 
@@ -6099,6 +6108,8 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "closure_form": ("teema-lopeta", ""),
     # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher either.
     "action_form": ("lisa-jargmine", ""),
+    # `PRAEGUNE TEGEVUS` → `Vaatasin üle`, beside a step that waits (ENG-021).
+    "review_form": ("vaatasin-ule", ""),
 }
 
 
@@ -6212,6 +6223,11 @@ def workspace_forms(
                 else None
             ),
         ),
+        # `Vaatasin üle` beside a step that waits on somebody else. Unbound and
+        # empty: the next review date is a decision, and a box pre-filled with
+        # the date that has just come round would invite saving it back — a
+        # review that moves nothing (ENG-021).
+        "review_form": ReviewActionForm(),
         "add_engagement_form": CompactEngagementForm(),
         "important_date_form": CompactImportantDateForm(),
         "effective_date_form": CompactEffectiveDateForm(),
@@ -6365,10 +6381,14 @@ def _workspace_refusal(
     # launcher: its panel is `Muuda` inside `PRAEGUNE TEGEVUS`, which
     # `current_action.html` draws only under `{% elif current_action %}`
     # (docs/adr/0097 §8.2).
-    needs_current_action = {"current_action_form", "action_form"}
+    needs_current_action = {"current_action_form", "action_form", "review_form"}
     panel_is_rendered = matter.is_open and (
         key not in needs_current_action or context["current_action"] is not None
     )
+    if key == "review_form" and panel_is_rendered:
+        # `Vaatasin üle` is drawn only beside a step that waits: a replacement
+        # that is a plan has no such panel to print the refusal in (ENG-021).
+        panel_is_rendered = context["current_action"].is_review_kind
     if not error and not panel_is_rendered:
         # A *validation* refusal whose panel is not on the fresh column.
         #

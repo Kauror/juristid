@@ -731,10 +731,12 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     presentation pass that quietly loses `Vastuseid` or `Lõppsõna` is the exact
     failure this asserts against.
 
-    Read off **two** renders. `PRAEGUNE TEGEVUS` only exists while a step is
+    Read off **three** renders. `PRAEGUNE TEGEVUS` only exists while a step is
     open, and `+ Järgmine tegevus` only appears once none is — the page is
-    deliberately never both at once, and the union of the two states is what
-    "every control is reachable" means here (brief §8, §15).
+    deliberately never both at once, and the union of the states is what
+    "every control is reachable" means here (brief §8, §15). The third is a
+    step that waits on somebody else, because `Vaatasin üle` is drawn beside
+    that kind of step and no other (ENG-021).
     """
     from app.matters.views import workspace_forms
 
@@ -757,9 +759,18 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
         actor=specialist,
     )
     without_action = factories.MatterFactory(owner=specialist)
+    waiting = factories.MatterFactory(owner=specialist)
+    set_next_action(
+        matter=waiting,
+        text="Ootan ministeeriumi vastust",
+        kind=ActionKind.WAIT,
+        date_semantics=DateSemantics.REVIEW_ON,
+        target_date=timezone.localdate() + timedelta(days=3),
+        actor=specialist,
+    )
 
     markup = ""
-    for matter in (with_action, without_action):
+    for matter in (with_action, without_action, waiting):
         url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
         markup += _workspace_markup(client.get(url).content.decode())
 
