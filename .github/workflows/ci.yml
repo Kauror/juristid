@@ -1372,6 +1372,29 @@ jobs:
       - name: Synthetic data was seeded
         run: docker compose exec -T web python manage.py shell -c "from app.matters.models import Matter; assert Matter.objects.exists(), 'seed produced no Matters'"
 
+      # ENG-071, proved on the wire rather than by reading a flag. Each deployed
+      # stack's access-log format, exactly as `docker compose config` resolves
+      # it, is handed to the image's own gunicorn serving this running
+      # application, and one request carries a secret in its query string and
+      # another in its Referer. The probe first runs gunicorn's default format
+      # and requires both secrets to *appear*, so it cannot pass by being blind.
+      # `config` also validates both deployment files, `logging:` blocks
+      # included; it builds nothing and starts nothing.
+      - name: The deployed access-log formats record paths, never query strings
+        run: |
+          set -euo pipefail
+          JURISTID_ENV_FILE="$(mktemp)"
+          echo "POSTGRES_PASSWORD=x" > "$JURISTID_ENV_FILE"
+          export JURISTID_ENV_FILE
+          for stack in unraid-main unraid-test; do
+            docker compose -p "juristid-logcheck-$stack" -f "deploy/$stack/compose.yml" \
+              config --format json > "$stack.resolved.json"
+            FORMAT="$(python3 -c 'import json, sys; command = json.load(open(sys.argv[1]))["services"]["web"]["command"]; print(command[command.index("--access-logformat") + 1])' "$stack.resolved.json")"
+            echo "--- $stack: $FORMAT"
+            docker compose exec -T -e ACCESS_LOG_FORMAT="$FORMAT" web \
+              python scripts/ci/assert_access_log_privacy.py
+          done
+
       # The deployment identity, resolved by Compose itself rather than by a test
       # that re-implements `${VAR:-default}`. `config` reads the file and
       # interpolates; it builds nothing, starts nothing and reaches no host.
