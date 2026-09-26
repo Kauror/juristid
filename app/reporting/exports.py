@@ -159,7 +159,11 @@ def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
 
 def submissions_csv(context: ReportingContext, **filters: Any) -> StreamingHttpResponse:
     """Sent Submissions, addressees and copies kept in separate columns."""
-    queryset = submission_selectors.list_rows(context, **filters)
+    # Both roles, because this file keeps addressees and copies in two columns;
+    # the list page reads only the addressees `list_rows` prefetches.
+    queryset = submission_selectors.list_rows(context, **filters).prefetch_related(
+        "recipient_rows__organisation"
+    )
 
     def rows() -> Iterator[list[Any]]:
         yield [

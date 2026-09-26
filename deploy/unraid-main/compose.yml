@@ -43,11 +43,24 @@
 
 name: juristid-main
 
+# Every long-lived container's log is bounded (ENG-071). Unbounded, `docker
+# logs` grows for as long as the container lives, and whatever reached it — the
+# access log included — stays there with it. json-file is Docker's own default
+# driver; it is named rather than assumed so that the two options below are
+# always valid for it. Five files of 10 MB is at most 50 MB a container, which
+# at this stack's traffic is weeks of history rather than hours.
+x-logging: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   db:
     image: postgres:18
     container_name: juristid-main-db
     restart: unless-stopped
+    logging: *bounded-logs
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
@@ -94,6 +107,7 @@ services:
     image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
     container_name: juristid-main-web
     restart: unless-stopped
+    logging: *bounded-logs
     command:
       - gunicorn
       - config.wsgi:application
@@ -105,6 +119,13 @@ services:
       - "120"
       - --access-logfile
       - "-"
+      # The path, never the query string, and no Referer. gunicorn's default
+      # `%(r)s` is the raw URI, and a search term or a filter value typed into
+      # this application is business text that must not reach `docker logs`
+      # (ENG-071). deploy/unraid-test/compose.yml carries the same format, and
+      # tests/test_access_log_privacy.py holds both to it.
+      - --access-logformat
+      - '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms'
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
@@ -194,6 +215,7 @@ services:
     image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
     container_name: juristid-main-intake-reader
     restart: unless-stopped
+    logging: *bounded-logs
     # The image's HEALTHCHECK asks an HTTP port this container does not have, so
     # inherited it can only ever be red — and a container that is always red
     # makes a container that *becomes* unhealthy indistinguishable.
@@ -270,6 +292,7 @@ services:
     image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
     container_name: juristid-main-searchindex
     restart: unless-stopped
+    logging: *bounded-logs
     # Convergence, not liveness: the probe asks whether anything has been owed
     # too long, which is the failure that reaches a reader. A stopped worker
     # with nothing owed is green here and correctly so — the index is complete —
@@ -331,6 +354,7 @@ services:
     image: cloudflare/cloudflared:2026.8.2
     container_name: juristid-main-tunnel
     restart: unless-stopped
+    logging: *bounded-logs
     command:
       - tunnel
       - --config
