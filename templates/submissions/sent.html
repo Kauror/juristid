@@ -184,11 +184,15 @@
                 {% endif %}
               </td>
               <td>
-                {% for row in submission.recipient_rows.all %}
-                  {% if row.role == "ADDRESSEE" %}{{ row.organisation.name }}{% if not forloop.last %}, {% endif %}{% endif %}
-                {% empty %}
-                  <span class="table__missing">—</span>
-                {% endfor %}
+                {% comment %}
+                  The addressees and only they, off the one collection the
+                  `Saaja` filter above also reads. Walking every recipient row
+                  and printing the addressees tested `forloop.last` against the
+                  copies too, so a letter with a «teadmiseks» row read
+                  `Ministry,`, and one with only a copy printed an empty cell
+                  rather than the dash (ENG-061).
+                {% endcomment %}
+                {% for row in submission.addressee_rows %}{{ row.organisation.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="table__missing">—</span>{% endfor %}
               </td>
               <td>
                 {% if submission.final_version_id and submission.final_version_readable %}
