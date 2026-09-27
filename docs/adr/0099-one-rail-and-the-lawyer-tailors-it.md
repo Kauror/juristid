@@ -82,6 +82,13 @@ window a point still sorts against any phase that *is* dated, so a recorded
 `Kooskõlastusring` in January and a file opened in September read in the order
 they happened rather than in the order the pattern lists them.
 
+**Refined on 2026-09-27 for where, inside that window, an undated past point
+lands — see the amendment at the end of docs/adr/0100.** «Up to and including
+the current node» was implemented as *just before* it, which on a file still
+standing on its first phase drew a sent `Koja arvamus` before `Algus`. A past
+point now never reads before the pattern's first phase unless an explicit
+roadmap date puts it there, and two past points never overtake each other.
+
 ## 2 — The words go, and nothing becomes colour-only
 
 Removed: `Praegu`, `Kirjas`, `Teadmata`, `Võimalik`, `Ees võib olla`,

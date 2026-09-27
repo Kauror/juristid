@@ -700,6 +700,22 @@ def matter_rail(
     opened in September read in the order they happened rather than in the order
     the pattern lists them.
 
+    **A phase node marks where its phase begins, and nothing reads before the
+    beginning.** A point that has happened, with nothing in its window to date
+    it, reads immediately before the current phase: the file may have reached
+    that phase after the act, and nothing says otherwise. The one phase every act
+    is known to follow is the pattern's *first*, because it is the beginning the
+    procedure has (docs/adr/0100 §1) and an act on the file belongs to a
+    procedure that has begun. So on a file still standing on its first phase the
+    point reads inside it, after the node — never `Koja arvamus → Algus` on a
+    file whose opinions went out after it opened. Only an explicit roadmap date
+    on that phase can put a point before it, because that date is a person
+    stating when the procedure began (docs/adr/0100, amended 2026-09-27).
+
+    **Dated points never overtake each other.** Past points are placed earliest
+    first, and each one's window runs on over the points already placed after
+    the current phase, so two sent opinions read in the order they were sent.
+
     **Where a future point lands when nothing dates it** is the one rule that
     round got wrong. A phase nobody has dated is not a point in time, so a
     deadline placed *after* the undated rest of the pattern was being ordered by
@@ -786,7 +802,18 @@ def matter_rail(
             len(steps),
         )
         if milestone.sort_on <= today:
-            window, default = (0, min(current + 1, len(steps))), current
+            # Up to and including the current phase, and on over the dated
+            # points already placed after it — without them in the window a
+            # later send was scanned against the phase alone and inserted in
+            # front of the earlier send it followed.
+            high = min(current + 1, len(steps))
+            while high < len(steps) and not steps[high].is_phase:
+                high += 1
+            # Just before the current phase, but never before the beginning:
+            # on a file still on its first phase, the point reads inside it.
+            beginning = _beginning_slot(steps, rail)
+            default = current if beginning is None else max(current, beginning + 1)
+            window = (0, high)
         else:
             # **A future point with no phase of its own belongs beside the
             # current one, not at the end of the road.**
@@ -815,13 +842,17 @@ def matter_rail(
             # **The window starts at whichever phase the point belongs beside**,
             # and that is what makes the anchor do anything at all. `_slot_for`
             # scans backwards over every dated step in its window, and the
-            # window running from the current phase holds the file's *past*
-            # dated points — `Alustatud`, a sent opinion. A commencement in 2027
-            # then anchored to whichever of those it was not earlier than, which
-            # on the ordinary open file drew it between `Alustatud` and
+            # window running from the current phase can hold the file's *past*
+            # dated points — a sent opinion read inside the first phase, or
+            # after a dated current phase. A commencement in 2027 then anchored
+            # to whichever of those it was not earlier than, drawing it before
             # `Valitsuses`: a date two years out, before two phases nobody has
             # reached. Narrowed to its own phase, the only things it can sort
             # against are that phase and the commencements already beside it.
+            #
+            # A deadline with no phase of its own keeps the current phase's
+            # window, and that is right: scanning it finds the sends already
+            # read inside that phase and places the deadline after them.
             anchor = _phase_slot(steps, milestone)
             beside = current if anchor is None else max(anchor, current)
             window, default = (beside, len(steps)), min(beside + 1, len(steps))
@@ -984,6 +1015,24 @@ def _phase_slot(steps: list[RailStep], milestone: Any) -> int | None:
     )
 
 
+def _beginning_slot(steps: list[RailStep], rail: LegalProcessRail | None) -> int | None:
+    """Where the pattern's first phase is drawn, or ``None`` where it is not.
+
+    The first phase is the beginning the procedure has (docs/adr/0100 §1), and
+    the one phase every act on the file is known to follow. Found by its key on
+    the *pattern*, never by taking whatever happens to be leftmost: a first phase
+    somebody took off this file's rail is not replaced by the next one, and a
+    rail with no pattern has no beginning to respect.
+    """
+    if rail is None or not rail.nodes:
+        return None
+    first = rail.nodes[0].key
+    return next(
+        (index for index, placed in enumerate(steps) if placed.is_phase and placed.key == first),
+        None,
+    )
+
+
 def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], default: int) -> int:
     """Where a dated point sits among steps that mostly have no date.
 
@@ -994,9 +1043,11 @@ def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], defaul
     dated step at all falls back to ``default``.
 
     ``default`` is the caller's answer to «and where does it go when nothing in
-    the window dates anything»: the current phase for a point already behind us,
-    and the slot just past the current phase — or just past the point's own
-    phase, where its kind names one — for a point still ahead.
+    the window dates anything»: for a point already behind us, just before the
+    current phase — or just after it, where the current phase is the pattern's
+    first and therefore the beginning; for a point still ahead, the slot just
+    past the current phase, or just past the point's own phase where its kind
+    names one.
     """
     low, high = window
     position = default

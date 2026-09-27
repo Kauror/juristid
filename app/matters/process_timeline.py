@@ -186,9 +186,10 @@ CLOSED_LABEL = "Lõpetatud"
 #: decides what «the same day» means, so two renders of one unchanged Matter
 #: cannot disagree and a same-day pair does not read backwards.
 #:
-#: The sequence is the procedure's own. A file cannot act before it started; an
-#: opinion sent *on* the deadline day was sent by the deadline, so it precedes
-#: the deadline rather than appearing to have missed it; an answer falls due
+#: The sequence is the procedure's own. Answers asked of members fall due before
+#: this office's own answer goes out; an opinion sent *on* the deadline day was
+#: sent by the deadline, so it precedes the deadline rather than appearing to
+#: have missed it; an answer falls due
 #: before the act it concerns takes effect; and nothing happens to a file after
 #: it closes.
 #:

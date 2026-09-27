@@ -54,7 +54,15 @@ def choose_organisation(page, picker: str, name: str = MINISTRY) -> None:
     page.locator(f"#{picker}-tulemused").get_by_role("option", name=name, exact=True).click()
 
 
-def a_procedure_matter(page, base_url: str, label: str, *, deadline: str = "") -> str:
+def a_procedure_matter(
+    page,
+    base_url: str,
+    label: str,
+    *,
+    deadline: str = "",
+    instruments: tuple[str, ...] = ("Seadus",),
+    hetkeseis: str = "Kooskõlastusringil",
+) -> str:
     """A `Seadus` on `Kooskõlastusringil`, filed through the real form.
 
     The shape the removed `Etapp` select rendered on, and the one whose rail has
@@ -64,9 +72,10 @@ def a_procedure_matter(page, base_url: str, label: str, *, deadline: str = "") -
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title(label))
-    page.get_by_role("checkbox", name="Seadus", exact=True).check()
+    for instrument in instruments:
+        page.get_by_role("checkbox", name=instrument, exact=True).check()
     open_hetkeseis(page)
-    page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
+    page.get_by_role("radio", name=hetkeseis, exact=True).check()
     if deadline:
         page.fill("#id_response_deadline", deadline)
     page.get_by_role("button", name="Loo teema").click()
@@ -313,3 +322,114 @@ def test_nine_columns_at_768_never_print_one_label_over_another(page, base_url):
             assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, (width, geometry)
         else:
             assert geometry["scrollWidth"] > geometry["clientWidth"], (width, geometry)
+
+
+# ---------------------------------------------------------------------------
+# `Menetluse kulg` starts at `Algus` on a file still standing on it
+# ---------------------------------------------------------------------------
+
+
+def typed(day: date) -> str:
+    return f"{day.day:02d}.{day.month:02d}.{day.year}"
+
+
+def drawn_left_to_right(page) -> list[tuple[str, str, str]]:
+    """Every rail column as the browser lays it out: label, date, kind.
+
+    Ordered by each column's own left edge rather than by the markup, so the
+    assertion is about what a reader sees. The DOM order is asserted to agree,
+    which is what makes the arrow on the rail read the same way to a screen
+    reader.
+    """
+    columns = page.locator(".lprail .tl-step").evaluate_all(
+        """nodes => nodes.map((n, i) => ({
+          dom: i,
+          left: n.getBoundingClientRect().left,
+          label: n.querySelector('.tl-step__what').textContent.trim(),
+          date: (n.querySelector('.tl-step__date') || {textContent: ''}).textContent.trim(),
+          kind: n.classList.contains('tl-step--current') ? 'C'
+            : n.classList.contains('tl-step--milestone') ? 'M' : 'P',
+        }))"""
+    )
+    by_left = sorted(columns, key=lambda column: column["left"])
+    assert [column["dom"] for column in by_left] == list(range(len(columns))), by_left
+    lefts = [column["left"] for column in by_left]
+    assert all(b > a for a, b in pairwise(lefts)), lefts
+    return [(column["label"], column["date"], column["kind"]) for column in by_left]
+
+
+@pytest.mark.parametrize("width", (1440, 768))
+def test_opinions_sent_after_the_file_opened_read_after_algus(page, base_url, width):
+    """The production defect, in the browser that found it.
+
+    A native VTK-and-bill file still on `Idee`, with two opinions sent after it
+    opened and an answer due later, drew
+
+        Koja arvamus → Koja arvamus → Algus → Arvamuse tähtaeg → VTK → …
+
+    and must draw
+
+        Algus → Koja arvamus (earlier) → Koja arvamus (later) → Arvamuse tähtaeg → VTK → …
+
+    Dates relative to the day the suite runs, so the rail's reading of today —
+    both sends behind us, the deadline ahead — holds on any date.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": width, "height": 900})
+    today = date.today()
+    first, second, due = (
+        today - timedelta(days=5),
+        today - timedelta(days=4),
+        today + timedelta(days=3),
+    )
+    a_procedure_matter(
+        page,
+        base_url,
+        f"Algusest {width}",
+        deadline=typed(due),
+        instruments=("VTK", "Seadus"),
+        hetkeseis="Idee",
+    )
+    record_koja_arvamus(page, sent_on=typed(first))
+    record_koja_arvamus(page, sent_on=typed(second))
+    page.reload()
+    page.wait_for_load_state("networkidle")
+
+    rail = page.locator(".lprail .tl-strip")
+    expect(rail.locator(".tl-step--current")).to_have_text(re.compile("Algus"))
+    columns = drawn_left_to_right(page)
+
+    def short(day: date) -> str:
+        return f"{day.day}.{day.month}.{day.year}"
+
+    assert [(label, when) for label, when, _kind in columns] == [
+        ("Algus", ""),
+        ("Koja arvamus", short(first)),
+        ("Koja arvamus", short(second)),
+        ("Arvamuse tähtaeg", short(due)),
+        ("VTK", ""),
+        ("Kooskõlastusring", ""),
+        ("Valitsuses", ""),
+        ("Riigikogus", ""),
+        ("Jõustumine", ""),
+    ], columns
+    assert columns[0][2] == "C", columns
+
+    # One continuous reached run from `Algus` through both sends, today's place
+    # in the segment towards the deadline, and nothing reached after it.
+    shape = "".join("0" if r == 0 else "1" if r == 1 else "p" for r in reaches(page))
+    assert re.fullmatch(r"11p0{6}", shape), shape
+
+    # The geometry the 768 round fixed, on this file too.
+    boxes = label_boxes(page)
+    assert overprinted(boxes) == [], (width, overprinted(boxes))
+    for box in boxes:
+        assert box["right"] <= box["columnRight"] + 0.5, (width, box)
+    for before, after in pairwise(boxes):
+        assert abs(after["columnLeft"] - before["columnRight"]) <= 0.5, (width, before, after)
+    assert_no_sideways_scroll(page)
+    geometry = rail.evaluate(
+        "node => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
+    )
+    # Nine columns fit at 768 and above, so the rail itself does not scroll.
+    assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, (width, geometry)
