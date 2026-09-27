@@ -27,8 +27,8 @@ basis = "deployment"
 #
 # **Sama päeva parandus pärast väljalaset:** omaniku kasutajatestis leitud
 # viga — «Alguses» oleval teemal joonistas menetluse kulg saadetud arvamused
-# «Alguse» ette. Ainult kuvamine; andmeid ei muudetud.
-prs = [309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337]
+# «Alguse» ette (#339). Ainult kuvamine; andmeid ei muudetud.
+prs = [309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 339]
 changes = [
   "«+ Märke» vormil ei ole enam «Etapi» valikut. Varasemate märgete etapid jäävad alles ja «Muuda» pakub etappi ainult real, millel see juba on.",
   "«+ Märke» ja «+ Arvamuse / tagasiside» kuupäevaväli on nüüd kompaktne ega veni enam üle kogu vormi.",
