@@ -1106,7 +1106,6 @@ p.formnote {
 }
 
 
-
 .table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -1870,37 +1869,6 @@ th[aria-sort="descending"] .colhead__mark::after {
   max-width: 72ch;
 }
 
-.nextaction__note {
-  font-size: var(--typography-size-meta-sm);
-  color: var(--text-muted);
-  margin: 0;
-}
-
-/* Same rule on the Matter page: shown only in the absence of a structured
- * action, and visibly the register's words rather than the department's. */
-.nextaction__source {
-  margin: var(--spacing-2) 0 0;
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-.nextaction__source-label {
-  font-style: normal;
-  font-weight: var(--typography-weight-medium);
-  color: var(--text-muted);
-  margin-right: var(--spacing-1);
-}
-
-/* Which approved snapshot the sentence above came from. Quieter than the
- * instruction it dates, because it is context rather than content: the reader
- * needs it when they are wondering whether Excel has moved on, and not
- * before. */
-.nextaction__source-snapshot {
-  font-style: normal;
-  color: var(--text-muted);
-  font-size: var(--typography-size-sm);
-  white-space: nowrap;
-}
 
 /* ====================================================================
  * Composer
@@ -2019,19 +1987,6 @@ th[aria-sort="descending"] .colhead__mark::after {
   gap: var(--spacing-1);
 }
 
-/* Authored entries are cards; system events are one-liners. The difference is
-   the point: a person wrote one and the system recorded the other. */
-
-
-.entrycard__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  flex-wrap: wrap;
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-  margin: 0;
-}
 
 /* Authored bodies. Only the allowlist in app/core/richtext.py can appear. */
 .richtext {
@@ -2097,10 +2052,6 @@ th[aria-sort="descending"] .colhead__mark::after {
   gap: 2px;
 }
 
-.submission--superseded .submission__title {
-  text-decoration: line-through;
-  color: var(--text-muted);
-}
 
 .submission__head {
   display: flex;
@@ -2115,10 +2066,6 @@ th[aria-sort="descending"] .colhead__mark::after {
   font-weight: var(--typography-weight-semibold);
 }
 
-.submission__kind {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
 
 /* The file, on its own line under the Teema it belongs to and against the same
    left edge. It used to be the last item on the meta line, pushed there with
@@ -2168,24 +2115,6 @@ th[aria-sort="descending"] .colhead__mark::after {
   white-space: nowrap;
 }
 
-/* Immutable evidence reads as authoritative; a working file must not. */
-.evidenceblock {
-  border: 1px solid var(--status-success-border);
-  background: var(--status-success-soft);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-2) var(--spacing-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-  font-size: var(--typography-size-meta);
-}
-
-.evidenceblock__hash {
-  font-family: var(--typography-font-mono);
-  font-size: var(--typography-size-label);
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
 
 .sharepointrow {
   border: 1px dashed var(--border-strong);
@@ -2732,9 +2661,6 @@ fieldset.field > legend {
 }
 
 @media (max-width: 1320px) {
-  .worklayout {
-    grid-template-columns: minmax(0, 1fr) 340px;
-  }
 
   .searchfield {
     flex-basis: 240px;
@@ -2767,12 +2693,6 @@ fieldset.field > legend {
   }
 }
 
-@media (max-width: 1100px) {
-  .worklayout,
-  .matterlayout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 
 /* The register gives up its columns in the order the design names: "viimane
    tegevus" first, then "hetkeseis" — rather than shrinking every column into
@@ -2856,19 +2776,6 @@ fieldset.field > legend {
   border-bottom: none;
 }
 
-.countrow:hover .countrow__label {
-  color: var(--accent-hover);
-}
-
-.countrow__label {
-  font-size: var(--typography-size-base);
-}
-
-.countrow__value {
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
-}
 
 /* The organisation quick-create sits inside another form, so it is a block
    rather than a nested <form>: nesting forms is invalid HTML and submits the
@@ -3212,20 +3119,6 @@ fieldset.field > legend {
   color: var(--status-warning);
   border-color: var(--status-warning-border);
 }
-
-/* ====================================================================
- * Vali kasutaja — the persona pill, its popover, and the full page
- *
- * Named, not reduced to an avatar. In shared-gate mode this is a *selected
- * view*, not "you", and somebody reading a dashboard needs to know whose it is
- * before they read it (docs/adr/0016, docs/adr/0034).
- *
- * Every class here is scoped to this component. The pill sits on the bar
- * between the environment badge and Välju, and nothing below is allowed to
- * reach a table, a form or the navigation: this is one control and one page,
- * and a broad selector added here is a regression somewhere nobody was looking
- * (Vali kasutaja brief 28).
- * ==================================================================== */
 
 /* ---- the pill ------------------------------------------------------ */
 
@@ -4168,12 +4061,6 @@ a.barchart__row:hover {
  * rail, where a visible native box beside a full-width label is the right
  * density and a 13px pill would not be.
  */
-.checkitems {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-15);
-}
 .checkitem {
   display: inline-flex;
   align-items: center;
@@ -4209,25 +4096,6 @@ a.barchart__row:hover {
   margin: 0;
 }
 
-/* Andmeklass on Uus teema: the label and its box, and nothing drawn round
-   them. The bordered `.checkitem` is a control in a row of controls; this is
-   one declaration on its own. */
-.createform .checkitem--plain {
-  border: 0;
-  background: none;
-  padding: 0;
-}
-
-/* Two or three short fields on one line, and one per line as soon as they stop
-   fitting. `auto-fit` rather than a breakpoint: the rule is "when a field would
-   be narrower than 16rem, stack", which is the actual constraint — a media
-   query would have to guess it from a viewport width and would be wrong inside
-   the narrow page column. */
-
-
-.field--narrow {
-  max-width: 16rem;
-}
 
 .disclosure--inline {
   margin-top: var(--spacing-2);
@@ -4539,47 +4407,6 @@ a.barchart__row:hover {
   color: var(--text-muted);
 }
 
-.periodfilter {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-2);
-  flex-wrap: wrap;
-}
-
-.periodfilter__label {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
-
-.periodfilter__list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-15);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.periodfilter__option {
-  font-size: var(--typography-size-meta);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  text-decoration: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  padding: 1px 6px;
-}
-
-.periodfilter__option:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.periodfilter__option.is-active {
-  background: var(--surface-selected);
-  border-color: var(--accent-border);
-  color: var(--text-primary);
-}
 
 .choiceset {
   border: 1px solid var(--border-default);
@@ -4616,15 +4443,6 @@ a.barchart__row:hover {
   display: none;
 }
 
-
-/* ====================================================================
- * Components the templates were already asking for
- *
- * Every rule below was reachable from a class in a template that had no CSS at
- * all, so the element fell back to whatever its tag happened to do. They are
- * gathered here rather than invented as new vocabulary: each one is the
- * smallest definition that makes the existing markup mean what it says.
- * ==================================================================== */
 
 /* ======================================================================
  * Uus teema
@@ -4691,13 +4509,6 @@ a.barchart__row:hover {
   grid-template-columns: 246px minmax(0, 1fr);
 }
 
-.createform__pair--class {
-  grid-template-columns: minmax(0, 1fr) 130px;
-}
-
-.createform__trio {
-  grid-template-columns: minmax(0, 1fr) 146px 146px;
-}
 
 /* The file row, which is a pair again.
  *
@@ -5236,23 +5047,6 @@ a.barchart__row:hover {
   color: var(--text-primary);
 }
 
-/* Adressaat's typed half: the way a body that is not in the catalogue gets
-   onto this form without leaving it. Under the chips rather than beside them,
-   because it answers what the chips could not, and bounded like
-   `.createform__other` — an institution name is a line of text, not a
-   paragraph, and a box the width of a stacked row would read as the most
-   important field on the page. */
-.createform__newname {
-  margin-top: var(--spacing-3);
-  max-width: 30rem;
-}
-
-.createform__newname .field__input {
-  /* `--compact` sets `width: auto`, which on a text input is the browser's
-     twenty-character default and too short for a ministry. The padding is what
-     is wanted from it; the width is not. */
-  width: 100%;
-}
 
 .createform__other {
   margin-top: var(--spacing-3);
@@ -5327,43 +5121,6 @@ a.barchart__row:hover {
   max-width: 20rem;
 }
 
-/* Adressaat's own disclosure, which is a whole field rather than a long tail.
-   `inline-block` is right for a door standing in a row of chips and wrong for
-   one standing on a row of its own: shrink-to-fit measures the widest chip
-   inside and leaves the open panel an island in a field with the whole row to
-   spend. The summary keeps its own `inline-block`, so the closed state is still
-   a pill and only the open body takes the width (templates/matters/matter_create.html). */
-.chipdetails--field {
-  display: block;
-}
-
-/* What the door opens onto. No border, no fill and no second panel: the field
-   inside already draws its own chips and its own `Uus adressaat` box, and
-   wrapping them in `.chipdetails__body` would put a bordered panel inside a
-   bordered panel for the long tail sitting one level further in. */
-.createform__addressee {
-  margin-top: var(--spacing-2);
-}
-
-/* -- what only an existing record is asked --------------------------------- *
- *
- * `Muuda teemat` follows `Uus teema` for every fact the two pages share, and
- * carries three the master deliberately does not ask — Menetlusliik, Kellele,
- * Sildid. They stand below the master's own questions under this heading, so
- * that a reader comparing the two screens reads the difference as a rule
- * rather than as an inconsistency (docs/adr/0096 §1).
- *
- * A `<p>` and not an `<h2>`: this is a label over a group of fields inside a
- * form, and inserting a heading level between the page title and nothing would
- * put a rung in the document outline that leads nowhere. */
-.createform__section {
-  margin: var(--spacing-6) 0 0;
-  font-size: var(--typography-size-meta);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
 
 /* -- deleting a Teema ------------------------------------------------------ *
  *
@@ -5446,37 +5203,11 @@ a.barchart__row:hover {
   min-width: 0;
 }
 
-.senderpick__search {
-  max-width: 20rem;
-  margin-top: var(--spacing-1);
-}
 
 .senderpick__new {
   max-width: 20rem;
 }
 
-/* A catalogue of ministries is long, and it is on the page now rather than
-   behind a door. It scrolls inside its own box rather than lengthening the form
-   under everything below it — the same 220px the disclosure gave it, so a row
-   that was reachable by scrolling still is. */
-.chiprow--catalogue {
-  margin-top: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  align-content: flex-start;
-  padding: var(--spacing-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-panel);
-}
-
-/* `.chiprow` sets `display: flex`, and an author rule beats the user agent's
-   `[hidden] { display: none }` — so a list the filter has emptied would stay a
-   bordered empty panel without this. It is what makes the result area absent at
-   rest rather than merely blank. */
-.chiprow--catalogue[hidden] {
-  display: none;
-}
 
 /* -- the unified organisation picker --------------------------------------- *
  *
@@ -5761,20 +5492,6 @@ a.barchart__row:hover {
   border-radius: var(--radius-md);
 }
 
-/* The two quiet sentences inside `Koostan arvamuse`: what the step will say, and
- * what leaving the box empty means.
- *
- * Muted and small, because they are facts about the control rather than
- * instructions — a lawyer who already knows what this box does should be able to
- * skip past them, and one who does not should not have to open anything to find
- * out. `--text-muted` on `--surface-capture` is the pairing every other hint on
- * this form uses (docs/adr/0091 §1.4). */
-.nextpanel__hint {
-  margin: 0;
-  font-size: var(--typography-size-meta);
-  line-height: 1.45;
-  color: var(--text-muted);
-}
 
 /* Two stacked questions, and nothing laid out beside them.
 
@@ -5914,9 +5631,6 @@ fieldset,
   color: var(--text-muted);
 }
 
-/* -- department work ------------------------------------------------------- */
-
-
 /* -- reconciliation queues ------------------------------------------------- */
 
 .reviewcard {
@@ -5933,13 +5647,6 @@ fieldset,
   flex-direction: column;
   gap: var(--spacing-1);
   min-width: 0;
-}
-
-/* -- submissions ----------------------------------------------------------- */
-
-.submission__provenance {
-  font-size: var(--typography-size-meta-sm);
-  max-width: 88ch;
 }
 
 /* -- small placements ------------------------------------------------------ */
@@ -5986,17 +5693,6 @@ fieldset,
 
 /* A date column that carries only the number, no inline meaning label. */
 
-
-/* -- responsibility rows ---------------------------------------------------
- *
- * Inventory that deliberately does not link: the rail counts the register's
- * own VASTUTAJA text while the register filters on the resolved owner, so a
- * link would open a list disagreeing with the number beside it (ADR 0021).
- * A span with no hover affordance, so it does not promise a destination.
- */
-.countrow--plain:hover .countrow__label {
-  color: inherit;
-}
 
 /* ====================================================================
  * Opinion review — decided states
@@ -6229,48 +5925,6 @@ fieldset,
   gap: var(--spacing-2);
 }
 
-.comparison__change {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--spacing-2);
-  margin: 0;
-}
-
-.comparison__delta {
-  font-size: var(--typography-size-row);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.comparison__percent {
-  font-size: var(--typography-size-meta);
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.comparison__percent--none {
-  font-style: italic;
-  color: var(--text-muted);
-}
-
-.comparison__periods {
-  margin: 0;
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
-
-.comparison__periods dt {
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
-  margin-top: var(--spacing-1);
-}
-
-.comparison__periods dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
 
 /* ---------------------------------------------------------------------------
    The Estonian date control
@@ -6726,14 +6380,6 @@ fieldset,
   gap: var(--spacing-25);
 }
 
-.composer__sublabel {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  flex: none;
-}
 
 .teema .composer__body {
   width: 100%;
@@ -6747,16 +6393,6 @@ fieldset,
   resize: vertical;
 }
 
-.composer__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-35);
-  flex-wrap: wrap;
-}
-
-.composer__spacer {
-  flex: 1;
-}
 
 /* `+ Lõpeta teema` is visually last and quieter than its neighbours: finishing
    a file is not a routine capture. */
@@ -6764,92 +6400,6 @@ fieldset,
   color: var(--text-muted);
 }
 
-.composer__group {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-3);
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-}
-
-/* `Muu` — the recipients somebody types while closing a file.
-
-   A chip list above a search box, because a closing opinion may go to seven
-   bodies that are not in the catalogue yet and the person needs to see what
-   they have added so far. The row keeps the box and its button on one line
-   until there is genuinely no space, so adding a seventh name is the same
-   gesture as adding the first (Teema closing redesign §7B). */
-.recipientadd {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-15);
-}
-
-.recipientadd__chosen {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-15);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.recipientadd__chosen:empty {
-  display: none;
-}
-
-.recipientadd__item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-1);
-  padding: var(--spacing-05) var(--spacing-15);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-chip);
-  background: var(--surface-raised);
-  font-size: var(--typography-size-sm);
-  color: var(--text-primary);
-}
-
-.recipientadd__name {
-  white-space: nowrap;
-}
-
-.recipientadd__remove {
-  border: 0;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--typography-size-base);
-  line-height: 1;
-}
-
-.recipientadd__remove:hover,
-.recipientadd__remove:focus-visible {
-  color: var(--text-primary);
-}
-
-/* The commencement date belongs to `Töövõit = Jah`. It is hidden by the
-   `hidden` attribute rather than by a class, so it stays hidden with no script
-   running; this rule only gives it its own spacing when it is shown. */
-.composer__victorydate {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-15);
-}
-
-.recipientadd__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-15);
-}
-
-.recipientadd__row .field__input {
-  flex: 1 1 16rem;
-}
 
 /* -- Koja seisukoht --------------------------------------------------- */
 
@@ -6900,16 +6450,6 @@ fieldset,
   transform: rotate(90deg);
 }
 
-.accordion__label {
-  margin: 0;
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  flex: none;
-  min-width: 132px;
-}
 
 .accordion__title {
   margin: 0;
@@ -6928,9 +6468,6 @@ fieldset,
   white-space: nowrap;
 }
 
-.accordion__summary--empty {
-  color: var(--text-muted);
-}
 
 .accordion__spacer {
   flex: 1;
@@ -6987,13 +6524,6 @@ button.accordion__action:focus-visible {
   gap: var(--spacing-2);
 }
 
-.factrow__note {
-  font-size: var(--typography-size-meta);
-  line-height: 1.5;
-  color: var(--text-muted);
-}
-
-/* -- Saadetud arvamused ----------------------------------------------- */
 
 /* -- historical material row ------------------------------------------ */
 
@@ -8002,11 +7532,6 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
-.railcard__more {
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  align-self: flex-start;
-}
 
 /* ====================================================================
  * Minu töö and Ülevaade — the banded work surfaces
@@ -8869,27 +8394,6 @@ button.accordion__action:focus-visible {
   color: var(--text-primary);
 }
 
-.feedrow {
-  display: grid;
-  grid-template-columns: 74px 20px minmax(0, 1fr);
-  gap: var(--spacing-2);
-  align-items: center;
-  padding: 4px 0;
-  font-size: var(--typography-size-meta);
-  color: var(--text-body);
-}
-
-.feedrow__when {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.feedrow__text {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ---- Valdkonniti --------------------------------------------------- */
 
@@ -9404,19 +8908,6 @@ button.accordion__action:focus-visible {
   text-align: right;
 }
 
-/* The Matter column on the Jälgimine tables. Its own width because the three
-   pages put the file beside a fact about it, and a title that takes whatever is
-   left pushes the owner off the row (02-EKRAANID §D). */
-.table--register .table__matter {
-  width: 300px;
-}
-
-.table__matter .table__clip {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* ---- the manager's crumb and person switcher ------------------------ */
 
@@ -10195,16 +9686,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-top: var(--spacing-25);
   border-top: 1px dashed var(--border-subtle);
 }
-.relatedmaterials__head .sectionlabel {
-  flex: none;
-}
-.relatedmaterials__hint {
-  font-size: 12.5px;
-  color: var(--text-muted);
-}
-.relatedmaterials__spacer {
-  flex: 1;
-}
 .relatedmaterials__notice {
   margin: var(--spacing-2) var(--spacing-3) 0;
 }
@@ -10404,10 +9885,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-right: var(--spacing-8);
 }
 
-#teema-vaade-wrap .uxcomp__form {
-  padding-left: 0;
-  padding-right: 0;
-}
 
 /* -- zone A: one action unit ----------------------------------------------
  *
@@ -10450,11 +9927,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   box-shadow: inset 3px 0 0 var(--accent-border);
 }
 
-/* The collapsed prompt row keeps the composer's own padding and adds the
- * shared edge on top of it, which is where the approved design draws it. */
-.teemamain .uxcomp__collapsed {
-  padding-left: var(--spacing-8);
-}
 
 /* Two lines at rest instead of three. `.composer__body` is `height` rather
  * than `min-height` precisely so it can be shrunk, and it still grows on
@@ -10597,13 +10069,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   order: 1;
 }
 
-/* The superseded composer's `+ Lõpeta teema`, which is still the last chip in
- * `matters/partials/composer.html`. No page includes that template any more
- * (docs/adr/0075 §11); the rule stays with the markup that names the class, so
- * the stylesheet keeps describing what the repository actually contains. */
-#teema-vaade-wrap .cx-panel--last:not([open]) {
-  order: 0;
-}
 
 #teema-vaade-wrap .cx-panel > summary {
   list-style: none;
@@ -10888,12 +10353,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   cursor: pointer;
 }
 
-#teema-vaade-wrap .cx-drop--corner {
-  position: absolute;
-  right: 0;
-  bottom: 100%;
-  margin-bottom: -34px;
-}
 
 #teema-vaade-wrap .cx-drop:hover,
 #teema-vaade-wrap .cx-drop:focus-within,
@@ -11049,20 +10508,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   gap: var(--spacing-2);
 }
 
-.teema .rail .relatedmaterials__head {
-  margin: 0;
-}
-
-.teema .rail .relatedmaterials__hint {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
-
-/* In 300px there is no room for a control beside the heading, and none is
- * wanted: opening `Lisa` is what a reader does here. */
-.teema .rail .relatedmaterials__spacer {
-  display: none;
-}
 
 .teema .rail .relatedmaterials__sub {
   font-size: var(--typography-size-meta);
@@ -11137,41 +10582,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-left: 0;
   margin-left: 0;
 }
-
-/* -- the process strip ----------------------------------------------------
- *
- * `Teema käik` — the course a file is on: the major acts it has been through
- * and the next dated point it is known to be heading for, above the chronology
- * that explains them. The columns share the width evenly however many there
- * are, so the strip is a proportion rather than a scale: what it says is *how
- * far along*, and a fixed column width would say *how long* instead
- * (TEEMA_TARGET_SPEC §D).
- *
- * The connector is the step's own `::before`, running from its dot's right edge
- * to the next column, and `:last-child` draws none — so the accent line ends at
- * the rightmost dot, and one milestone renders one dot and no connector.
- *
- * **Reached, today, ahead (2026-09-12).** Three drawn states and no fourth. A
- * column behind us keeps the filled accent dot; one still ahead is muted, dot
- * and rail alike; one dated today is ringed with `--accent-glow`. The previous
- * rule drew a future milestone exactly like a past one, on the reasoning that
- * muting the destination would make it the least legible thing on the rail —
- * which was true, and cost less than a new Matter reading as though its
- * deadline and its commencement had both already happened.
- *
- * This is not `is-current` / `is-todo` coming back. Those were a *domain*
- * grammar — a step the file was standing on, a sixty-day horizon and an `N p`
- * countdown, all read off sources the strip no longer has. These three are
- * presentation over the same five milestones, decided against the calendar
- * alone: nothing is named as the current step, and no text changes
- * (docs/adr/0074 §12.2, amended).
- *
- * The connector is a two-colour rail rather than a flat one. `--tl-reach` is
- * how far today has come *inside this segment*, in per cent, computed on the
- * server from the two milestone dates and handed down per column; the hard stop
- * between the two colours is where today sits. Because it is the step's own
- * `::before`, it scrolls with the rail at narrow widths and needs no geometry
- * of its own. */
 
 /* -- KÕIK MUUDATUSED -------------------------------------------------------
  *
@@ -11291,7 +10701,6 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 
-
 #teema-vaade-wrap .lprail__head {
   display: flex;
   align-items: baseline;
@@ -11304,133 +10713,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
-#teema-vaade-wrap .lprail__template {
-  font-weight: var(--typography-weight-regular);
-  letter-spacing: 0.02em;
-  text-transform: none;
-  opacity: 0.85;
-}
-
-/* The rail, and the air under it.
- *
- * Each of the section's three blocks is a separate answer with its own quiet
- * heading, and without the bottom margin the next heading sits on the last line
- * of this one — `EES VÕIB OLLA` landed directly under `Kirjas` and read as a
- * sixth node's caption rather than as a new question. */
-#teema-vaade-wrap .lprail__nodes {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  margin: 0 0 var(--spacing-4);
-  padding: 0;
-  list-style: none;
-}
-
-#teema-vaade-wrap .lprail__node {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding-right: var(--spacing-2);
-  min-width: 0;
-}
-
-/* The connector. Solid as far as the file can prove it got, dotted where the
- * rail is only saying that a step exists — which is the same distinction the
- * words make, drawn. */
-#teema-vaade-wrap .lprail__node::before {
-  content: "";
-  position: absolute;
-  left: 11px;
-  right: 0;
-  top: 4px;
-  border-top: 2px solid var(--border-strong);
-}
-
-#teema-vaade-wrap .lprail__node--recorded::before,
-#teema-vaade-wrap .lprail__node--current::before {
-  border-top-color: var(--accent-link);
-}
-
-#teema-vaade-wrap .lprail__node--unknown::before,
-#teema-vaade-wrap .lprail__node--possible::before {
-  border-top-style: dotted;
-}
-
-#teema-vaade-wrap .lprail__node:last-child::before {
-  display: none;
-}
-
-#teema-vaade-wrap .lprail__dot {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-circle);
-  border: 2px solid var(--border-strong);
-  background: var(--surface-base);
-}
-
-/* `Praegu` — the one node that is filled *and* ringed, because it is the one
- * answer to «where is this now» and a reader looks for it first. */
-#teema-vaade-wrap .lprail__node--current .lprail__dot {
-  border-color: var(--accent-link);
-  background: var(--accent-link);
-  box-shadow: 0 0 0 3px var(--accent-border);
-}
-
-#teema-vaade-wrap .lprail__node--recorded .lprail__dot {
-  border-color: var(--accent-link);
-  background: var(--accent-link);
-}
-
-/* `Teadmata` and `Võimalik` are both hollow, and the *text* says which. They
- * are deliberately not two shades of the same hollow dot: the difference
- * between «may have happened» and «may yet happen» is not a difference in
- * brightness, and a reader who could only see the dot would have to guess. */
-#teema-vaade-wrap .lprail__node--unknown .lprail__dot {
-  border-style: dashed;
-}
-
-#teema-vaade-wrap .lprail__what {
-  font-size: 12.5px;
-  line-height: 1.3;
-  color: var(--text-body);
-}
-
-#teema-vaade-wrap .lprail__node--unknown .lprail__what,
-#teema-vaade-wrap .lprail__node--possible .lprail__what {
-  color: var(--text-muted);
-}
-
-#teema-vaade-wrap .lprail__node--current .lprail__what {
-  font-weight: var(--typography-weight-semibold);
-}
-
-#teema-vaade-wrap .lprail__state {
-  font-size: 11px;
-  line-height: 1.3;
-  color: var(--text-muted);
-}
-
-#teema-vaade-wrap .lprail__node--current .lprail__state {
-  color: var(--accent-link);
-  font-weight: var(--typography-weight-semibold);
-}
-
-/* The explicit `Hetkeseis` under `Praegu`, on the current node only.
- *
- * Body ink rather than muted, and a size between the node's name and its state:
- * it is the most specific true thing the rail says about where the file is, and
- * on the two collapsing nodes it is the only thing distinguishing «ootel» from
- * «jõustunud». Muting it would put the sharper answer behind the vaguer one. */
-#teema-vaade-wrap .lprail__stage {
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--text-body);
-}
 
 #teema-vaade-wrap .lprail__aside {
   display: flex;
@@ -11611,16 +10893,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
-/* The canonical `Hetkeseis`, under the current phase's name.
- *
- * Body ink and a size between the name and the date: it is the most specific
- * true thing the rail says about where the file is, and on a phase that holds
- * two stages it is the only thing telling them apart. */
-#teema-vaade-wrap .tl-step__stage {
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--text-body);
-}
 
 /* A dated point, beside the phases. Italic is the whole distinction: it is the
  * same kind of object on the same rail, and what differs is that a date is
@@ -12113,15 +11385,6 @@ section:has(.pw-more[open]) tbody.uxextra {
     flex-wrap: wrap;
   }
 
-  #teema-vaade-wrap .cx-drop--corner {
-    position: static;
-    order: 1;
-    flex: 1 1 100%;
-    box-sizing: border-box;
-    justify-content: center;
-    margin-bottom: 0;
-    margin-top: var(--spacing-2);
-  }
 
   /* A two-column field grid does not fit beside a 12px gutter. */
   #teema-vaade-wrap .cx-grid {
@@ -12142,15 +11405,7 @@ section:has(.pw-more[open]) tbody.uxextra {
     overflow-x: auto;
   }
 
-  /* The rail keeps every node for the same reason the strip keeps every
-     milestone: a procedure with a step missing is a different procedure. It
-     scrolls itself rather than the page, so the document never scrolls
-     sideways at 420px or at 375px (TEEMA_TARGET_SPEC §H). */
-  #teema-vaade-wrap .lprail__nodes {
-    grid-auto-columns: minmax(104px, 1fr);
-    overflow-x: auto;
   }
-}
 
 /* -- PRAEGUNE TEGEVUS ------------------------------------------------------
  *
@@ -12406,12 +11661,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   gap: 9px;
 }
 
-.addform__when {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-15);
-}
 
 /* The save sits at the right end of its own row. One button per panel, and it
  * is the only thing that commits that panel — there is no global save left on
@@ -12650,33 +11899,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: block;
 }
 
-/* `Kustuta teema`, which is a link rather than a form control and is the one
- * destructive thing on this page.
- *
- * Quiet by default and never red at rest: a control nobody is about to press
- * should not be shouting, and colour is what this design reserves for state
- * rather than for danger. The warning belongs on the confirmation page, where
- * somebody is actually deciding. What it does get here is the danger colour on
- * hover and on focus, so the intent is unmistakable at the moment of pressing
- * it (docs/adr/0096 §4). */
-#teema-vaade-wrap .addzone__danger {
-  margin-left: auto;
-}
-
-#teema-vaade-wrap .addzone__danger:hover,
-#teema-vaade-wrap .addzone__danger:focus-visible {
-  color: var(--status-danger);
-  border-color: var(--status-danger);
-}
-
-/* `TEEMA TOIMINGUD` — separated from the launcher above it by more than a
- * heading, because the whole point of the section is that it is not the
- * launcher (docs/adr/0097 §9). */
-.addzone--ops {
-  margin-top: var(--spacing-4);
-  padding-top: var(--spacing-3);
-  border-top: 1px solid var(--border-subtle);
-}
 
 /* A request that failed for a reason the server did not render: the network,
  * a 5xx, an expired session, a stale CSRF token (static/js/app.js, «Workspace

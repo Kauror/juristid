@@ -161,7 +161,6 @@ UPDATING = os.environ.get("E2E_UPDATE_BASELINES") == "1"
 CLOCK_DEPENDENT = [
     ".app__footer",
     ".dateline",
-    ".workrow__date",
     # The rebuilt work surfaces. Every one of these renders a value derived
     # from today — "10 p üle", "TÄHTAEG 14.08", a feed timestamp — and a mask
     # selector that stops matching does not fail. It silently unmasks a value
@@ -171,11 +170,9 @@ CLOCK_DEPENDENT = [
     # daily peeking past its mask turns every baseline red the next morning.
     ".workrow2__datecell",
     ".interrow__reason",
-    ".feedrow__when",
     ".entryline__when",
     ".arealine__date",
     ".quietrow__meta",
-    ".disclosure__meta",
     ".factrow__date",
     ".table__lastactivity .muted",
     # The Teema header's one deadline, the Järgmiseks row's date, the sent

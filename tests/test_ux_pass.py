@@ -891,9 +891,18 @@ def test_the_l_shortcut_has_an_obvious_click_equivalent() -> None:
     for: `ux.js` still binds it, and it still refuses to fire inside a text
     control.
     """
-    composer = (TEMPLATE_DIR / "matters" / "partials" / "composer.html").read_text(encoding="utf-8")
-    assert "<summary" in composer, "the click equivalent is the summary itself"
-    assert '<kbd class="key">L</kbd>' not in composer, "the hint was retired, not the shortcut"
+    # What `L` opens, and its click equivalent on the page as it renders now:
+    # `Mida tegid?` on the current step, else the `+ Märge` chip. (This read the
+    # never-rendered `composer.html` until that template was deleted, ENG-106.)
+    add = (TEMPLATE_DIR / "matters" / "partials" / "add_to_matter.html").read_text(encoding="utf-8")
+    current = (TEMPLATE_DIR / "matters" / "partials" / "current_action.html").read_text(
+        encoding="utf-8"
+    )
+    assert 'for="lisa-marge-valik">+ Märge</label>' in add, "the chip is the click equivalent"
+    assert 'aria-controls="lisa-marge"' in add
+    assert 'id="praegune-tegevus"' in current
+    for template in (add, current):
+        assert '<kbd class="key">L</kbd>' not in template, "the hint was retired, not the shortcut"
 
     script = (JS_DIR / "ux.js").read_text(encoding="utf-8")
     assert '"l"' in script.lower(), "the shortcut is still bound"
