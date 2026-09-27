@@ -454,13 +454,3 @@ def historical_summary(matter: Matter, user: Any) -> dict[str, Any]:
         "sections": sections,
         "first": links[0],
     }
-
-
-def historical_documents(matter: Matter, user: Any) -> Any:
-    """Documents on this Matter that came out of the historical corpus."""
-    return (
-        Document.objects.visible_to(user)
-        .filter(matter=matter, legacy_imports__isnull=False)
-        .distinct()
-        .select_related("current_version")
-    )

@@ -45,7 +45,3 @@ RESTRICTED_VISIBILITY_HELP = (
     "teemale märgitud vastutaja ja kaastöötajad. Väljapoole osakonda teema ei "
     "paista. Sissekanded, arvamused ja tõendid pärivad sama piirangu."
 )
-
-#: The banner's opening, kept beside the sentence it introduces so the two are
-#: read — and changed — together.
-RESTRICTED_VISIBILITY_BANNER_TITLE = "Piiratud nähtavus."

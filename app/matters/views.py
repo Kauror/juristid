@@ -257,7 +257,7 @@ from app.submissions.opinions import (
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
-from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
+from app.workflow.enums import REVIEW_KINDS, Disposition, Track
 from app.workflow.models import NextAction, StageVocabulary
 from app.workflow.selectors import stages_including
 from app.workflow.services import (
@@ -6095,9 +6095,6 @@ def correct_website_overview_view(request: HttpRequest, pk: Any, overview_id: An
 
 def matter_url(matter: Matter) -> str:
     return reverse("matters:matter_detail", kwargs={"pk": matter.pk})
-
-
-ACTION_KIND_LABELS = dict(ActionKind.choices)
 
 
 # ---------------------------------------------------------------------------

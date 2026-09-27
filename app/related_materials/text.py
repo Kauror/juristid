@@ -330,7 +330,6 @@ _SUFFIXES: tuple[str, ...] = tuple(
     )
 )
 
-_ACT_HEADS: tuple[str, ...] = ("seadustik", "seadus")
 _COMPOUND_ACT = re.compile(
     r"^(?P<stem>[a-zõäöüšž][a-zõäöüšž\-]{2,})(?P<head>seadustik|seadus)(?P<suffix>[a-zõäöü]{0,5})$"
 )
