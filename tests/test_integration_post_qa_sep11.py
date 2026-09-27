@@ -73,6 +73,7 @@ from app.submissions.services import (
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -397,7 +398,7 @@ def test_a_drafts_final_evidence_is_still_refused_on_a_closed_matter(normal_matt
     select_final_evidence(submission=draft, version=document.current_version, actor=specialist)
     _close_elsewhere(normal_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused("See fail on juba koostatava arvamuse lõplik tõend."):
         register_sent_opinion(
             document=document,
             version=document.current_version,

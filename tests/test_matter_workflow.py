@@ -16,7 +16,6 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.matters import selectors
 from app.matters.models import Matter
 from app.matters.services import (
@@ -33,6 +32,7 @@ from app.matters.services import (
 from app.workflow.enums import Track
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -68,7 +68,7 @@ def test_creation_is_audited(specialist):
 
 
 def test_an_empty_title_is_refused(specialist):
-    with pytest.raises(DomainError):
+    with refused("Teema vajab pealkirja."):
         create_matter(title="   ", actor=specialist)
 
 
@@ -106,7 +106,7 @@ def test_changing_track_is_validated(normal_matter, specialist):
     normal_matter.refresh_from_db()
     assert normal_matter.track == Track.DOMESTIC
 
-    with pytest.raises(DomainError):
+    with refused("Tundmatu menetlusliik 'NONSENSE'."):
         change_track(matter=normal_matter, track="NONSENSE", actor=specialist)
 
 
@@ -177,7 +177,7 @@ def test_position_and_rationale_are_separate(normal_matter, specialist):
 
 
 def test_closing_requires_a_known_disposition(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Tundmatu lõpetamise põhjus 'MADE_UP'."):
         close_matter(matter=normal_matter, disposition="MADE_UP", actor=specialist)
 
 

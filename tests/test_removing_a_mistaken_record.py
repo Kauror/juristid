@@ -30,6 +30,7 @@ from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import (
     Entry,
     MatterEngagement,
@@ -47,6 +48,7 @@ from app.matters.workspace import add_procedural_development
 from app.search.models import SearchDocument, SearchSourceKind
 from app.search.services import search_documents
 from app.workflow.enums import DatePrecision
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -276,14 +278,13 @@ def test_a_closed_matter_refuses(normal_matter, specialist):
     page from before the closure still has every button on it
     (docs/adr/0076 §2).
     """
-    from app.core.errors import DomainError
     from app.matters.services import close_matter
     from app.workflow.enums import Disposition
 
     development = _note(normal_matter, specialist)
     close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         _remove(normal_matter, "marge", development, specialist)
 
     assert (

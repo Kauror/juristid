@@ -46,6 +46,7 @@ from app.documents.models import Document
 from app.matters import work_items
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.forms import ProceduralDevelopmentEditForm
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import (
     EXTERNAL_POSITION_LEGACY_HEADLINE,
     Entry,
@@ -90,6 +91,7 @@ from app.workflow.services import (
     establish_opinion_preparation_action,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -226,7 +228,7 @@ def test_the_initial_action_is_created_from_the_supplied_date(normal_matter, spe
 
 def test_the_initial_action_refuses_to_invent_a_date(normal_matter, specialist):
     """No date, no step. Not today, not +7, and not an undated commitment."""
-    with pytest.raises(DomainError):
+    with refused("Koostan arvamuse vajab kuupäeva."):
         establish_opinion_preparation_action(
             matter=normal_matter, prepare_by=None, actor=specialist
         )
@@ -1366,7 +1368,7 @@ def test_a_development_is_refused_on_a_closed_matter(normal_matter, specialist):
 
     close_matter(matter=normal_matter, disposition=Disposition.RESPONSE_COMPLETE, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         add_procedural_development(
             matter=normal_matter,
             author=specialist,
@@ -1623,7 +1625,7 @@ def test_the_title_falls_back_to_the_filename(normal_matter, specialist, ministr
 def test_a_koda_opinion_refuses_to_invent_the_send_date(
     normal_matter, specialist, ministry, evidence_root
 ):
-    with pytest.raises(DomainError):
+    with refused("Saatmise registreerimiseks on vaja saatmise kuupäeva."):
         add_matter_koda_opinion(
             matter=normal_matter,
             author=specialist,
@@ -1710,7 +1712,7 @@ def test_a_koda_opinion_is_refused_on_a_closed_matter(
 
     close_matter(matter=normal_matter, disposition=Disposition.RESPONSE_COMPLETE, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         add_matter_koda_opinion(
             matter=normal_matter,
             author=specialist,

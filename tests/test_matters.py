@@ -7,11 +7,11 @@ from django.db import IntegrityError, transaction
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.models import Matter, MatterReferenceSequence
 from app.workflow.enums import Disposition
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -186,7 +186,7 @@ def test_creating_a_matter_records_a_change_event(specialist):
 def test_a_matter_without_a_title_is_refused():
     from app.matters.services import create_matter
 
-    with pytest.raises(DomainError):
+    with refused("Teema vajab pealkirja."):
         create_matter(title="   ")
 
 

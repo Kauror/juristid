@@ -35,6 +35,7 @@ from app.workflow.enums import ActionStatus, Disposition
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -98,7 +99,7 @@ def test_superseded_with_a_successor_closes_and_points_at_it(working_matter, spe
 def test_a_matter_cannot_continue_under_itself(working_matter, specialist):
     before = _events(working_matter)
 
-    with pytest.raises(DomainError):
+    with refused("Teema ei saa jätkuda iseenda all."):
         close_matter(
             matter=working_matter,
             disposition=Disposition.SUPERSEDED,
@@ -152,7 +153,7 @@ def test_a_successor_the_closer_cannot_read_is_refused_as_if_absent(working_matt
 def test_a_successor_with_another_reason_is_still_refused(working_matter, specialist):
     before = _events(working_matter)
 
-    with pytest.raises(DomainError):
+    with refused("Järglase saab määrata ainult siis, kui töö jätkub teise teema all."):
         close_matter(
             matter=working_matter,
             disposition=Disposition.COMPLETED,

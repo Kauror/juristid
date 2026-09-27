@@ -44,6 +44,7 @@ from app.matters.services import resolve_addressee
 from app.organisations.models import Organisation, OrganisationAlias, OrganisationType
 from app.organisations.services import resolve_organisation_name
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -122,7 +123,7 @@ def test_two_rows_under_one_spelling_are_refused_rather_than_guessed():
     factories.OrganisationFactory(name="Ministeerium")
     factories.OrganisationFactory(name="ministeerium")
 
-    with pytest.raises(DomainError):
+    with refused("«Ministeerium» sobib mitme organisatsiooniga — vali nimekirjast."):
         resolve_organisation_name(name="Ministeerium")
 
     assert Organisation.objects.count() == 2

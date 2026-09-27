@@ -40,6 +40,9 @@ from app.core.errors import DomainError
 from app.matters.enums import WebsiteOverviewStatus
 from app.matters.models import MatterWebsiteOverview
 from app.matters.services import (
+    WEBSITE_OVERVIEW_CANCELLED_IS_FINAL,
+    WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE,
+    WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS,
     WebsiteOverviewConflict,
     cancel_website_overview,
     close_matter,
@@ -54,6 +57,17 @@ from app.search.indexing import rebuild_all
 from app.search.models import SearchDocument
 from app.workflow.enums import Disposition
 from tests import factories
+from tests.refusals import refused
+
+
+def _overview_refusal(url: str) -> str:
+    """Which of the three address refusals a case names: scheme, host, credential."""
+    if not url.startswith(("http://", "https://")):
+        return "Ülevaate või uudise link peab algama http:// või https:// aadressiga."
+    if "@" in url:
+        return "Ülevaate või uudise link ei tohi sisaldada kasutajanime ega parooli."
+    return "Ülevaate või uudise link peab olema täielik veebiaadress."
+
 
 pytestmark = pytest.mark.django_db
 
@@ -267,7 +281,7 @@ def test_what_is_still_refused(url, because):
     if url == "":
         assert normalize_overview_news_url(url) == ""
         return
-    with pytest.raises(DomainError):
+    with refused(_overview_refusal(url)):
         normalize_overview_news_url(url)
 
 
@@ -291,7 +305,7 @@ def test_the_widening_took_nothing_away_from_the_engagement_or_position_rules():
     credentialed = "https://kasutaja:parool@kampaania.example/x"
     assert normalize_engagement_url(credentialed) == credentialed
     assert normalize_external_position_url(credentialed) == credentialed
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS):
         normalize_overview_news_url(credentialed)
 
 
@@ -509,16 +523,16 @@ def test_a_refusal_comes_back_holding_exactly_what_was_submitted(signed_in, norm
 def test_the_lifecycle_transitions_are_what_they_were(normal_matter, specialist):
     """§4. Published is terminal for cancellation; cancelled is terminal outright."""
     published = _published(normal_matter, specialist)
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE):
         cancel_website_overview(overview=published, actor=specialist)
 
     cancelled = plan_website_overview(matter=normal_matter, actor=specialist)
     cancel_website_overview(overview=cancelled, actor=specialist)
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL):
         publish_website_overview(
             overview=cancelled, url=NEWS_HTTPS_URL, published_on=PUBLISHED_ON, actor=specialist
         )
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL):
         cancel_website_overview(overview=cancelled, actor=specialist)
 
     published.refresh_from_db()

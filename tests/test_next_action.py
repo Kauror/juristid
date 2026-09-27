@@ -15,7 +15,6 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.matters.services import close_matter
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
@@ -26,6 +25,7 @@ from app.workflow.services import (
     set_next_action,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -90,7 +90,7 @@ def test_a_completed_action_cannot_be_completed_again(normal_matter, specialist)
         matter=normal_matter, text="Saada kiri", actor=specialist, target_date=_tomorrow()
     )
     complete_next_action(action=action, actor=specialist)
-    with pytest.raises(DomainError):
+    with refused("Ainult kehtivat tegevust saab lõpetada."):
         complete_next_action(action=action, actor=specialist)
 
 
@@ -107,7 +107,7 @@ def test_closing_a_matter_ends_its_open_action(normal_matter, specialist):
 
 def test_a_closed_matter_rejects_a_new_action(normal_matter, specialist):
     close_matter(matter=normal_matter, disposition="COMPLETED", actor=specialist)
-    with pytest.raises(DomainError):
+    with refused("Suletud teemale ei saa järgmist tegevust määrata."):
         set_next_action(matter=normal_matter, text="Veel midagi", actor=specialist)
 
 
@@ -356,12 +356,12 @@ def test_responsibility_can_be_given_to_someone_else(normal_matter, specialist, 
 
 
 def test_empty_text_is_refused(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Järgmiseks vajab teksti."):
         set_next_action(matter=normal_matter, text="   ", actor=specialist)
 
 
 def test_an_unknown_kind_is_refused(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Tundmatu tegevuse liik 'SOMETHING'."):
         set_next_action(matter=normal_matter, text="Tekst", kind="SOMETHING", actor=specialist)
 
 

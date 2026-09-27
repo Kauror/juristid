@@ -22,7 +22,6 @@ from __future__ import annotations
 import pytest
 from django.urls import reverse
 
-from app.core.errors import DomainError
 from app.matters import person_work
 from app.matters.models import MatterPersonalNote, PersonalScratchpad
 from app.matters.services import (
@@ -31,6 +30,7 @@ from app.matters.services import (
     save_personal_note,
 )
 from app.matters.views import NOTE_PREFIX
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -333,5 +333,5 @@ def test_the_desk_pad_still_refuses_a_body_it_cannot_hold(specialist):
 
 def test_an_anonymous_note_save_is_still_a_domain_refusal(normal_matter):
     """Unchanged, and not swallowed by the new conflict branch."""
-    with pytest.raises(DomainError):
+    with refused("Märkmeid saab salvestada ainult sisselogitud kasutaja."):
         save_personal_note(matter=normal_matter, author=None, body=A_TEXT, expected_revision="")

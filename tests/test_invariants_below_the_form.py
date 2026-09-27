@@ -40,6 +40,7 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.matters import services as matter_services
 from app.matters.models import MatterEngagement
+from app.matters.services import DEADLINE_BEFORE_ENGAGEMENT
 from app.submissions import services as submission_services
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.models import Submission
@@ -47,6 +48,7 @@ from app.workflow import services as workflow_services
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -137,7 +139,7 @@ def test_the_same_day_and_a_later_day_are_ordinary(normal_matter, specialist):
 
 
 @pytest.mark.parametrize(
-    ("occurred_on", "precision", "deadline", "refused"),
+    ("occurred_on", "precision", "deadline", "refuses"),
     [
         # *oktoober 2025*: a deadline inside the month is the commonest thing a
         # round run over a month says; one before the month began is a slip.
@@ -161,7 +163,7 @@ def test_the_same_day_and_a_later_day_are_ordinary(normal_matter, specialist):
     ],
 )
 def test_an_approximate_round_refuses_only_a_deadline_before_its_whole_period(
-    normal_matter, specialist, occurred_on, precision, deadline, refused
+    normal_matter, specialist, occurred_on, precision, deadline, refuses
 ):
     """docs/adr/0079: a period covers its days. «Cannot precede» therefore means
     the reply-by day (always exact, docs/adr/0079 §11) falls before the first day
@@ -171,8 +173,8 @@ def test_an_approximate_round_refuses_only_a_deadline_before_its_whole_period(
         "occurred_on_precision": precision,
         "feedback_deadline": deadline,
     }
-    if refused:
-        with pytest.raises(DomainError):
+    if refuses:
+        with refused(DEADLINE_BEFORE_ENGAGEMENT):
             _add(normal_matter, specialist, **kwargs)
         assert not MatterEngagement.objects.filter(matter=normal_matter).exists()
     else:
@@ -196,12 +198,12 @@ def test_correct_engagement_refuses_moving_the_round_past_its_deadline(normal_ma
         )
     assert str(refusal.value) == matter_services.DEADLINE_BEFORE_ENGAGEMENT
 
-    with pytest.raises(DomainError):
+    with refused(DEADLINE_BEFORE_ENGAGEMENT):
         matter_services.correct_engagement(
             engagement=engagement, feedback_deadline=datetime.date(2026, 8, 31), actor=specialist
         )
 
-    with pytest.raises(DomainError):
+    with refused(DEADLINE_BEFORE_ENGAGEMENT):
         # A precision that moves the period's start past the deadline.
         matter_services.correct_engagement(
             engagement=engagement,
@@ -472,7 +474,14 @@ def test_set_next_action_refuses_a_precision_it_cannot_mean(
 ):
     before = _events(ChangeEventType.NEXT_ACTION_SET)
 
-    with pytest.raises(DomainError):
+    # A dated step with a word that is no precision, or an undated step with any
+    # precision but EXACT: two refusals, each named.
+    expected = (
+        f"Tundmatu kuupäeva täpsus {precision!r}."
+        if target_date is not None
+        else "Kuupäevata tegevusel ei saa olla kuupäeva täpsust."
+    )
+    with refused(expected):
         _set(normal_matter, target_date=target_date, date_precision=precision, actor=specialist)
 
     assert not NextAction.objects.filter(matter=normal_matter).exists()
@@ -502,9 +511,9 @@ def test_every_supported_shape_is_still_accepted(normal_matter, specialist, targ
 
 def test_kind_and_date_meaning_were_already_the_services_own(normal_matter, specialist):
     """Revalidated rather than duplicated: these two refusals predate ENG-043."""
-    with pytest.raises(DomainError):
+    with refused("Tundmatu tegevuse liik 'NOPE'."):
         _set(normal_matter, kind="NOPE", actor=specialist)
-    with pytest.raises(DomainError):
+    with refused("Tundmatu kuupäeva tähendus 'NOPE'."):
         _set(normal_matter, date_semantics="NOPE", actor=specialist)
     assert not NextAction.objects.filter(matter=normal_matter).exists()
 
@@ -533,7 +542,12 @@ def test_acknowledge_review_refuses_a_precision_it_cannot_mean(
     action = _waiting(normal_matter, specialist)
     before = _events(ChangeEventType.NEXT_ACTION_REVIEWED)
 
-    with pytest.raises(DomainError):
+    expected = (
+        f"Tundmatu kuupäeva täpsus {precision!r}."
+        if next_review is not None
+        else "Kuupäevata tegevusel ei saa olla kuupäeva täpsust."
+    )
+    with refused(expected):
         workflow_services.acknowledge_review(
             action=action, actor=specialist, next_review_date=next_review, date_precision=precision
         )

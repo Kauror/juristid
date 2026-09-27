@@ -50,6 +50,7 @@ from app.submissions.services import (
     select_final_evidence,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -1317,13 +1318,12 @@ def test_the_service_refuses_a_blank_send_date_on_this_route(specialist, organis
     — but the composition that *registers* a historical send may not reach it
     without a date.
     """
-    from app.core.errors import DomainError
     from app.submissions.services import register_sent_opinion
 
     matter = factories.MatterFactory(owner=specialist)
     document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Saatmise registreerimiseks on vaja saatmise kuupäeva."):
         register_sent_opinion(
             document=document,
             version=document.current_version,
@@ -1386,14 +1386,13 @@ def test_a_crafted_post_cannot_register_a_drafts_final_evidence(
 
 def test_the_service_itself_refuses_a_drafts_final_evidence(specialist, organisation):
     """Stated where it is decided, not only where it is posted."""
-    from app.core.errors import DomainError
     from app.submissions.services import register_sent_opinion
 
     matter = factories.MatterFactory(owner=specialist)
     document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
     _draft_owning(matter, document, actor=specialist, organisation=organisation)
 
-    with pytest.raises(DomainError):
+    with refused("See fail on juba koostatava arvamuse lõplik tõend."):
         register_sent_opinion(
             document=document,
             version=document.current_version,

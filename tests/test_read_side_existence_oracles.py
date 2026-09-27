@@ -41,17 +41,35 @@ import uuid
 from datetime import timedelta
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
 from app.core.enums import Visibility
+from app.documents.links import DocumentLink
 from app.documents.models import Document
 from app.intelligence.enums import FactStatus
-from app.matters.enums import EngagementKind
-from app.matters.models import MatterEngagement
+from app.matters.enums import EngagementKind, ProceduralLinkKind
+from app.matters.models import (
+    MatterEngagement,
+    MatterExternalPosition,
+    MatterProceduralDevelopment,
+    MatterProceduralLink,
+    MatterTimelineStep,
+    MatterWebsiteOverview,
+)
+from app.matters.process_phases import PHASE_VALITSUS
+from app.matters.services import set_timeline_steps
+from app.matters.workspace import (
+    add_matter_external_position,
+    add_matter_procedural_link,
+    add_matter_website_overview,
+    add_procedural_development,
+)
 from app.submissions.enums import SubmissionStatus
+from app.taxonomy.models import LegalInstrumentType
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from tests import factories
 from tests import synthetic_corpus as corpus
@@ -80,6 +98,14 @@ HIDDEN_SMAILY_HOST = "salakiri-7731.example"
 HIDDEN_ALCHEMER_HOST = "salakysitlus-7731.example"
 HIDDEN_SMAILY_URL = f"https://{HIDDEN_SMAILY_HOST}/c/8842?token=SALA-VOTI-ESIMENE"
 HIDDEN_ALCHEMER_URL = f"https://{HIDDEN_ALCHEMER_HOST}/s3/8842?k=SALA-VOTI-TEINE"
+#: The record kinds that joined the register after this file was written
+#: (ENG-135): an external position, a procedural development with its file, a
+#: procedural link, a timeline step and a published overview.
+HIDDEN_LINK_HOST = "salamenetlus-7731.example"
+HIDDEN_LINK_URL = f"https://{HIDDEN_LINK_HOST}/eelnou/8842"
+HIDDEN_OVERVIEW_HOST = "salauudis-7731.example"
+HIDDEN_OVERVIEW_URL = f"https://{HIDDEN_OVERVIEW_HOST}/uudised/8842"
+HIDDEN_FILE = "salajane-areng.pdf"
 
 #: A word the visible and the hidden records share, so a hidden row that was
 #: counted or ranked would move the visible rows around it.
@@ -125,6 +151,10 @@ def world(db, capture_evidence, extract):
         matters.append(matter)
 
     first = matters[0]
+    # The Matter the restricted children go on reads a procedure, so its rail
+    # has the phases a timeline step is placed on — in both worlds, so the rail
+    # itself is not the difference.
+    matters[1].legal_instruments.set([LegalInstrumentType.objects.get(key="seadus")])
     factories.EntryFactory(matter=first, author=owner, body=f"<p>Avalik märge {SHARED_WORD}.</p>")
     factories.NextActionFactory(
         matter=first,
@@ -254,7 +284,66 @@ def _children(matter, world, capture_evidence, extract, *, override: str):
         created_by=world["owner"],
         visibility_override=override,
     )
-    return {"submission": submission, "document": version.document, "version": version}
+
+    # The five kinds that joined after this file was written, and the file link
+    # a development carries (ENG-135). Written through the services, as a person
+    # would, then restricted — the services take no override — exactly the way
+    # each kind's own tests restrict one.
+    author = world["owner"]
+    position = add_matter_external_position(
+        matter=matter,
+        author=author,
+        organisation=world["hidden_org"],
+        summary=f"{HIDDEN_PHRASE} {SHARED_WORD}",
+        stated_on=today,
+    ).record
+    development = add_procedural_development(
+        matter=matter,
+        author=author,
+        title=f"{HIDDEN_PHRASE} {SHARED_WORD}",
+        occurred_on=today,
+        uploads=[SimpleUploadedFile(HIDDEN_FILE, b"%PDF-1.4 salajane areng", content_type=PDF)],
+    ).record
+    link = add_matter_procedural_link(
+        matter=matter,
+        author=author,
+        kind=ProceduralLinkKind.RIIGIKOGU,
+        url=HIDDEN_LINK_URL,
+        label=HIDDEN_PHRASE,
+    ).record
+    overview = add_matter_website_overview(
+        matter=matter, author=author, url=HIDDEN_OVERVIEW_URL, published_on=today
+    ).record
+    set_timeline_steps(
+        matter=matter,
+        steps=[(PHASE_VALITSUS, False, today, DatePrecision.EXACT)],
+        actor=author,
+    )
+    step = MatterTimelineStep.objects.get(matter=matter, phase_key=PHASE_VALITSUS)
+    linked = DocumentLink.objects.filter(procedural_development=development)
+    assert linked.exists(), "the development's file carries no link; this adds nothing"
+    if override:
+        for model, pk in (
+            (MatterExternalPosition, position.pk),
+            (MatterProceduralDevelopment, development.pk),
+            (MatterProceduralLink, link.pk),
+            (MatterWebsiteOverview, overview.pk),
+            (MatterTimelineStep, step.pk),
+        ):
+            model.objects.filter(pk=pk).update(visibility_override=override)
+        Document.objects.filter(pk__in=linked.values("document_id")).update(
+            visibility_override=override
+        )
+    return {
+        "submission": submission,
+        "document": version.document,
+        "version": version,
+        "position": position,
+        "development": development,
+        "link": link,
+        "overview": overview,
+        "step": step,
+    }
 
 
 def add_restricted_matter(world, capture_evidence, extract):
@@ -272,6 +361,7 @@ def add_restricted_matter(world, capture_evidence, extract):
     )
     matter.source_organisations.set([world["hidden_org"]])
     matter.collaborators.set([world["colleague"]])
+    matter.legal_instruments.set([LegalInstrumentType.objects.get(key="seadus")])
     return {"matter": matter, **_children(matter, world, capture_evidence, extract, override="")}
 
 
@@ -402,6 +492,9 @@ def surfaces(world) -> list[str]:
         SHARED_WORD,
         "Avalik",
         "salajane.pdf",
+        HIDDEN_LINK_HOST,
+        HIDDEN_OVERVIEW_HOST,
+        HIDDEN_FILE,
     ):
         urls.append(f"{search}?q={term}")
         urls.append(f"{suggest}?q={term}")
@@ -504,6 +597,15 @@ def test_the_participant_still_sees_the_hidden_work(world, capture_evidence, ext
     search = reverse("search:search")
     assert HIDDEN_PHRASE in after[f"{search}?q={HIDDEN_PHRASE}"][2]
 
+    if hidden == "restricted-children":
+        # The kinds added for ENG-135 really reach the page they must stay off
+        # for everybody else — otherwise the reader's identical capture would
+        # prove nothing about them.
+        page = client.get(reverse("matters:matter_detail", kwargs={"pk": world["host"].pk}))
+        body = page.content.decode()
+        for marker in (HIDDEN_LINK_HOST, HIDDEN_OVERVIEW_HOST, HIDDEN_FILE):
+            assert marker in body, f"{marker} is not on the participant's page"
+
 
 # ---------------------------------------------------------------------------
 # Crafted requests: a hidden id must look exactly like a nonexistent one
@@ -527,6 +629,22 @@ def _crafted_routes(hidden) -> list[tuple[str, dict[str, object]]]:
         ("documents:add_version", {"pk": hidden["document"].pk}),
         ("submissions:attach_evidence", {"pk": hidden["submission"].pk}),
         ("submissions:mark_sent", {"pk": hidden["submission"].pk}),
+        (
+            "matters:update_external_position",
+            {"pk": matter.pk, "position_id": hidden["position"].pk},
+        ),
+        (
+            "matters:add_external_position_evidence",
+            {"pk": matter.pk, "position_id": hidden["position"].pk},
+        ),
+        (
+            "matters:update_development",
+            {"pk": matter.pk, "development_id": hidden["development"].pk},
+        ),
+        (
+            "matters:correct_website_overview",
+            {"pk": matter.pk, "overview_id": hidden["overview"].pk},
+        ),
     ]
 
 
@@ -540,7 +658,13 @@ def test_a_hidden_id_is_indistinguishable_from_a_random_one(
     routes = _crafted_routes(created)
     if hidden == "restricted-children":
         # The Matter itself is visible here; only its children are hidden.
-        routes = [route for route in routes if route[0].startswith(("documents:", "submissions:"))]
+        routes = [
+            route
+            for route in routes
+            if route[0].startswith(("documents:", "submissions:"))
+            # The new kinds' own routes: the Matter is visible, the record is not.
+            or any(key in route[1] for key in ("position_id", "development_id", "overview_id"))
+        ]
 
     for name, kwargs in routes:
         real = client.get(reverse(name, kwargs=kwargs), HTTP_HX_REQUEST="true")
@@ -554,7 +678,15 @@ def test_a_hidden_id_is_indistinguishable_from_a_random_one(
         )
         assert dict(real.headers) == dict(fake.headers), f"{name}: headers differ"
         assert _normalize(real_body) == _normalize(fake_body), f"{name}: bodies differ"
-        for token in (HIDDEN_TITLE, HIDDEN_PHRASE, HIDDEN_ACTION, "salajane.pdf"):
+        for token in (
+            HIDDEN_TITLE,
+            HIDDEN_PHRASE,
+            HIDDEN_ACTION,
+            "salajane.pdf",
+            HIDDEN_FILE,
+            HIDDEN_LINK_HOST,
+            HIDDEN_OVERVIEW_HOST,
+        ):
             assert token.encode() not in real_body, f"{token} reached {persona} via {name}"
 
     # The hidden document is invisible at its source, under either Matter.

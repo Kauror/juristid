@@ -54,6 +54,7 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
 from app.matters.enums import EngagementKind
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import MatterEngagement
 from app.matters.services import (
     ENGAGEMENT_EDIT_CONFLICT,
@@ -66,6 +67,7 @@ from app.matters.services import (
 from app.matters.timeline import ENGAGEMENT_DATE_UNKNOWN, matter_timeline
 from app.workflow.enums import DatePrecision, Disposition
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -922,11 +924,10 @@ def test_a_closed_matter_shows_no_muuda_control(signed_in, normal_matter, engage
 def test_the_guard_is_the_row_lock_and_not_the_rendered_page(normal_matter, engagement, specialist):
     """A stale tab posts to a server with no memory of which page it came from,
     so the refusal has to live under the Matter's own lock."""
-    from app.core.errors import DomainError
 
     _close(normal_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         correct_engagement(engagement=engagement, title="Otse teenuse kaudu", actor=specialist)
 
     engagement.refresh_from_db()

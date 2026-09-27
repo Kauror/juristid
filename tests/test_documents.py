@@ -17,7 +17,6 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.documents.enums import DocumentRole, MalwareScanState
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import (
@@ -28,6 +27,7 @@ from app.documents.services import (
     set_legal_hold,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -116,7 +116,7 @@ def test_operational_state_on_a_version_stays_editable(specialist):
 def test_unaccepted_formats_are_refused(specialist):
     """An executable is not a document, whatever somebody names it."""
     document = _document(created_by=specialist)
-    with pytest.raises(DomainError):
+    with refused("MIME type 'application/x-msdownload' is not an accepted evidence format."):
         add_evidence_version(
             document=document,
             content=bytes([77, 90, 144, 0]),
@@ -149,13 +149,13 @@ def test_historical_html_is_storable_but_only_ever_a_download(specialist, client
 
 def test_empty_and_oversized_files_are_refused(specialist, settings):
     document = _document(created_by=specialist)
-    with pytest.raises(DomainError):
+    with refused("Refusing to store an empty evidence file."):
         add_evidence_version(
             document=document, content=b"", original_filename="a.txt", mime_type=PLAIN_TEXT
         )
 
     settings.MAX_EVIDENCE_UPLOAD_BYTES = 4
-    with pytest.raises(DomainError):
+    with refused("Evidence file exceeds the 4 byte limit."):
         add_evidence_version(
             document=document,
             content=b"liiga pikk",
@@ -218,7 +218,7 @@ def test_working_document_and_evidence_are_distinguishable(specialist):
 
 def test_legal_hold_requires_a_reason(specialist):
     document = _document(created_by=specialist)
-    with pytest.raises(DomainError):
+    with refused("A legal hold requires a written reason."):
         set_legal_hold(document=document, on=True, reason="", actor=specialist)
 
     set_legal_hold(document=document, on=True, reason="Kohtuvaidlus 12/2026", actor=specialist)
