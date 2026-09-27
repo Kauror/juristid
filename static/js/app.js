@@ -4263,7 +4263,127 @@
     });
   });
 
+  /* ---- Teema käik: one row open at a time --------------------------------
+   * Every row renders closed, as its one line, and the button laid over that
+   * line opens it; opening one closes whichever was open (docs/adr/0074 §14,
+   * amended 2026-09-27). The state is the row's `uxtl__item--open` and its
+   * toggle's `aria-expanded`, always set together, here and nowhere else — the
+   * stylesheet reads the class, assistive technology reads the attribute.
+   *
+   * Three things open a row besides a click, because a closed row hides
+   * everything but its line:
+   *
+   *   - the row a link points at — `#sissekanne-…` is what a search hit for an
+   *     entry scrolls to, and landing on a closed row would show no text;
+   *   - a row holding a form: a refused `+ Lisa fail` re-renders the whole
+   *     column with the picker and its error inside one row, and a draft
+   *     carried across a swap (docs/adr/0107) lands in a row drawn closed;
+   *   - a row that was open when the column was re-rendered around it, so a
+   *     file just added to a row is still in view when the answer lands.
+   *
+   * A row holding a form is never closed by *another* row opening: that would
+   * put somebody's unsaved words out of sight. Its own toggle may close it —
+   * the form stays in the page, only hidden. */
+  var KAIK_OPEN = "uxtl__item--open";
+  var kaikCarried = null;
+
+  function setKaikRow(row, open) {
+    row.classList.toggle(KAIK_OPEN, open);
+    var toggle = row.querySelector(".uxtl__toggle");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+  }
+
+  function kaikHoldsInput(row) {
+    return !!row.querySelector("form.uxtl__editform, details[open]:not(.uxtl__remove)");
+  }
+
+  /* Opening one row closes the others, and a row closing *above* it would pull
+   * the one just pressed up out from under the pointer. So the pressed row's
+   * line is held where it was, and the page scrolls by what moved. */
+  function openKaikRow(row, open) {
+    var toggle = row.querySelector(".uxtl__toggle");
+    var before = toggle ? toggle.getBoundingClientRect().top : 0;
+    if (open) {
+      Array.prototype.forEach.call(document.querySelectorAll("article." + KAIK_OPEN), function (other) {
+        if (other !== row && !kaikHoldsInput(other)) {
+          setKaikRow(other, false);
+        }
+      });
+    }
+    setKaikRow(row, open);
+    if (toggle && toggle.getClientRects().length) {
+      var moved = toggle.getBoundingClientRect().top - before;
+      if (moved) {
+        window.scrollBy(0, moved);
+      }
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    var toggle = event.target && event.target.closest ? event.target.closest(".uxtl__toggle") : null;
+    var row = toggle ? toggle.closest("article.uxtl__item") : null;
+    if (row) {
+      openKaikRow(row, !row.classList.contains(KAIK_OPEN));
+    }
+  });
+
+  function openKaikTarget() {
+    var id = window.location.hash.slice(1);
+    var node = null;
+    if (id) {
+      try {
+        node = document.getElementById(decodeURIComponent(id));
+      } catch (error) {
+        node = null;
+      }
+    }
+    var row = node && node.closest ? node.closest("article.uxtl__item") : null;
+    if (row && !row.classList.contains(KAIK_OPEN)) {
+      openKaikRow(row, true);
+    }
+  }
+
+  /* Which rows were open, taken before a swap that replaces rows: the column
+   * (`#teema-vaade`) after a removal, a refused or accepted `+ Lisa fail`, or
+   * any other save. Keyed by the request, like the drafts above, so a
+   * response that was never swapped cannot reopen anything later. */
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail || {};
+    var target = detail.target;
+    if (!target || !target.querySelectorAll) {
+      return;
+    }
+    var open = Array.prototype.map.call(target.querySelectorAll("article." + KAIK_OPEN), function (row) {
+      return row.getAttribute("data-kaik-rida");
+    });
+    kaikCarried = open.length ? { xhr: detail.xhr, keys: open } : null;
+  });
+
+  function syncKaik(detail) {
+    var carried = kaikCarried && detail && kaikCarried.xhr === detail.xhr ? kaikCarried.keys : [];
+    if (detail) {
+      kaikCarried = null;
+    }
+    document.querySelectorAll("article.uxtl__item").forEach(function (row) {
+      var open =
+        row.classList.contains(KAIK_OPEN) ||
+        kaikHoldsInput(row) ||
+        carried.indexOf(row.getAttribute("data-kaik-rida")) !== -1;
+      setKaikRow(row, open);
+    });
+  }
+
+  window.addEventListener("hashchange", openKaikTarget);
+
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    syncKaik(event.detail || {});
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
+    syncKaik(null);
+    openKaikTarget();
     bind(document);
     bindLiveSearch(document);
     bindPeriodFields(document);

@@ -265,9 +265,14 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
     {% comment %}
       The headline, the day and the row's own controls, on **one line**
       (docs/adr/0105 §2, `static/css/ux.css` `.uxtl__head`).
+
+      The line `Teema käik` shows while this row is closed, and the name of the
+      toggle that opens it: the row's button is `aria-labelledby` this id
+      (`kaik-<record pk>-rida`, `TimelineItem.row_key`), so a corrected
+      headline renames it with no second copy to update.
     {% endcomment %}
     <div class="uxtl__head">
-      <p class="uxtl__ms">
+      <p class="uxtl__ms" id="kaik-{{ position.pk }}-rida">
         <span class="uxtl__mswhat" id="valine-seisukoht-{{ position.pk }}-pealkiri">{{ milestone.what }}</span>
         <span class="uxtl__msdate">{{ milestone.display_date }}</span>
       </p>

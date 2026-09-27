@@ -241,8 +241,14 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       </p>
     </form>
   {% else %}
+    {% comment %}
+      The line `Teema käik` shows while this row is closed, and the name of the
+      toggle that opens it: the row's button is `aria-labelledby` this id
+      (`kaik-<record pk>-rida`, `TimelineItem.row_key`), so a corrected
+      headline renames it with no second copy to update.
+    {% endcomment %}
     <div class="uxtl__head">
-      <p class="uxtl__ms">
+      <p class="uxtl__ms" id="kaik-{{ development.pk }}-rida">
         <span class="uxtl__mswhat" id="menetluse-areng-{{ development.pk }}-pealkiri">{{ milestone.what }}</span>
         <span class="uxtl__msdate">{{ milestone.display_date }}</span>
       </p>

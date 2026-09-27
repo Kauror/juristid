@@ -527,6 +527,26 @@ class TimelineItem:
         )
 
     @property
+    def row_key(self) -> str:
+        """The row's own name on the page, stable across re-renders.
+
+        `Teema käik` is an accordion (docs/adr/0074 §14, amended 2026-09-27):
+        each row is one line until somebody opens it, and the toggle that opens
+        it is named by that line. The line's id is built from this key, and so
+        is the `data-kaik-rida` the script reads to reopen a row after the
+        column is re-rendered around it — a `+ Lisa fail` that closed the row it
+        was added to would hide the file it just attached.
+
+        The record's own pk where the row stands for a record, because four of
+        those rows draw their line inside their own correction element
+        (`engagement_row.html` and its siblings), which knows the record and
+        nothing about the item. `add()` sets `sort_key` to the same value, so
+        the two spellings cannot disagree; an event-projected row or a work
+        entry has no record and uses the key it was sorted by.
+        """
+        return str(self.record.pk) if self.record is not None else self.sort_key
+
+    @property
     def removable(self) -> str:
         """The URL key for `Kustuta` on this row, or `""` where there is none.
 
