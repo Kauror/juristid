@@ -1507,11 +1507,24 @@ a.uxstat__row:hover {
     right: 0;
   }
 
+  /* Anchored to the row of views rather than to its own chip (ENG-099). The
+     chip wraps to wherever the row has room, 128 px in at 375 px, and a box
+     hanging from it ran 73 px off the screen. The row is the page's width, so
+     the box spans it and cannot. */
+  .uxviews {
+    position: relative;
+  }
+
+  .uxviews__save {
+    position: static;
+  }
+
   .uxviews__savebody {
     left: 0;
-    right: auto;
+    right: 0;
     min-width: 0;
-    width: min(320px, calc(100vw - var(--spacing-6)));
+    width: auto;
+    max-width: none;
   }
 
   /* The closed timeline's three facts do not all fit on a narrow row. The

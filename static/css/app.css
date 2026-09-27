@@ -186,12 +186,17 @@
   box-shadow: inset 0 -2px 0 0 var(--accent-primary);
 }
 
+/* Anchored at the trigger's right edge (ENG-099). «Veel» is the last item on
+   the bar, so a menu hanging rightwards from its left edge ran 66 px off a
+   375 px screen; hanging leftwards it stays on it at every width. */
 .topnav__menu {
   position: absolute;
   top: 44px;
-  left: 0;
+  left: auto;
+  right: 0;
   z-index: 40;
   min-width: 180px;
+  max-inline-size: calc(100vw - 2 * var(--spacing-4));
   display: flex;
   flex-direction: column;
   gap: var(--spacing-1);
@@ -865,8 +870,14 @@ p.formnote {
   gap: var(--spacing-3);
 }
 
+/* Wraps rather than clips (ENG-099). Statistika's period switch is four
+   options wide, and at phone width «Kõik aastad» was cut off by the
+   `overflow: hidden` that rounds the corners. Where everything fits nothing
+   changes. */
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-inline-size: 100%;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -1686,10 +1697,16 @@ th[aria-sort="descending"] .colhead__mark::after {
   gap: var(--spacing-2);
 }
 
+/* A `<fieldset>` is `min-inline-size: min-content` by default, so a list of
+   senders grew to its longest ministry name — 640 px on a 320 px screen —
+   and widened the whole page (ENG-099). Allowed to shrink, it takes the
+   popover's width and a long name wraps inside its own chip. */
 .inlineform__group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-2);
+  min-inline-size: 0;
+  max-inline-size: 100%;
   max-height: 14rem;
   overflow-y: auto;
   padding: 0;
@@ -6556,6 +6573,18 @@ fieldset,
 /* A Valdkond the department has retired, still ticked on an old Matter. It is
    offered so that correcting one field never silently drops the filing, and it
    is marked so nobody reads it as a current option. */
+/* Inside a list that is allowed to shrink (`.inlineform__group`), a chip is
+   too, and a long name wraps inside it (ENG-099). */
+.inlineform__group .checkitem {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.inlineform__group .checkitem__name {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
 .checkitem--retired .checkitem__name {
   color: var(--text-muted);
 }
@@ -7468,25 +7497,33 @@ button.accordion__action:focus-visible {
   background: transparent;
 }
 
+/* **Visible at rest (ENG-098).** The actions used to sit at `opacity: 0`
+   until the row was hovered or focused, which is a hover-only control: on a
+   phone or a tablet nothing reveals them, and a mouse user had to know to look.
+   Spec §3 allows no hover-only interaction, so they are simply shown.
+
+   **Targets of at least 24×24 px** (WCAG 2.5.8). The download and manage links
+   are single glyphs, 6 and 10 px wide, eight pixels apart; the padding below is
+   the target, and the glyph sits centred in it. */
 .doctable__actions {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-2);
+  gap: var(--spacing-1);
   margin-left: var(--spacing-2);
-  opacity: 0;
-  transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
 }
 
-.doctable tbody tr:hover .doctable__actions,
-.doctable tbody tr:focus-within .doctable__actions {
-  opacity: 1;
+.doctable .doctable__actions .quietlink,
+.doctable .doctable__actions .opinionmenu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  margin-left: 0;
 }
 
-/* An open opinion menu keeps its row's controls visible. Without this the
-   panel stays in the DOM while everything around it fades the moment the
-   pointer leaves the row — including the button the reader is reaching for. */
-.doctable__actions:has(.opinionmenu[open]) {
-  opacity: 1;
+.doctable .doctable__actions .button--tiny {
+  min-height: 24px;
 }
 
 /* The `.versions*` disclosure that used to live in this table's `Versioon`
