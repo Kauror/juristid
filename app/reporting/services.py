@@ -32,6 +32,7 @@ from app.reporting.selectors import (
 )
 from app.reporting.selectors import matters as matter_selectors
 from app.reporting.selectors import submissions as submission_selectors
+from app.reporting.selectors.base import answering
 
 Computer = Callable[[ReportingContext], MetricResult]
 
@@ -150,7 +151,8 @@ def compute(key: str, context: ReportingContext) -> MetricResult:
         computer = COMPUTERS[key]
     except KeyError as exc:  # pragma: no cover - programming error
         raise KeyError(f"No implementation for metric {key!r}.") from exc
-    return computer(context)
+    with answering(context):
+        return computer(context)
 
 
 def compute_many(metric_keys: list[str], context: ReportingContext) -> list[MetricResult]:

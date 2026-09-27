@@ -27,9 +27,13 @@ underneath a chip that says one person's name.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 from urllib.parse import urlencode
 
+from django.core.exceptions import EmptyResultSet
 from django.db.models import Count, Q, QuerySet
 from django.urls import reverse
 
@@ -57,9 +61,49 @@ from app.reporting.metric_types import (
 TOP_N = 12
 
 
+#: The context whose metric is being computed, so `count` can reuse its memo.
+#: Set only for the duration of one `compute` call (`answering`), never across
+#: requests: the memo belongs to the per-request `ReportingContext`.
+_ANSWERING: ContextVar[ReportingContext | None] = ContextVar("reporting_answering", default=None)
+
+
+@contextmanager
+def answering(context: ReportingContext) -> Iterator[None]:
+    """Let `count` remember answers on this context while one metric is computed."""
+    token = _ANSWERING.set(context)
+    try:
+        yield
+    finally:
+        _ANSWERING.reset(token)
+
+
 def count(queryset: QuerySet[Any]) -> int:
-    """A count that a join cannot inflate."""
-    return queryset.distinct().count()
+    """A count that a join cannot inflate — of distinct keys, asked once per page.
+
+    **Distinct primary keys, not distinct rows (ENG-078).** A join can repeat a
+    row, and `DISTINCT` is what stops it inflating a count. Spelled as
+    ``queryset.distinct().count()`` it made PostgreSQL de-duplicate every column
+    of every row — ``COUNT(*) FROM (SELECT DISTINCT <every matters_matter
+    column> …)`` — to answer a question the primary key answers alone. Ordering
+    is cleared for the same reason: an ``ORDER BY`` column would join the
+    ``DISTINCT``.
+
+    **Asked once per page.** A page's metrics rebuild the same populations —
+    one identical statement ran eleven times on `Teemad`. While a metric is
+    computed (`answering`), the count is remembered on the request's
+    `ReportingContext`, keyed by its exact SQL and parameters: the same
+    statement is the same population, and a different filter state is a
+    different context that cannot see the memo. Nothing outlives the request.
+    """
+    keys = queryset.order_by().values("pk").distinct()
+    context = _ANSWERING.get()
+    if context is None:
+        return keys.count()
+    try:
+        sql, params = keys.query.sql_with_params()
+    except EmptyResultSet:
+        return 0
+    return context.shared(f"count:{sql}:{params!r}", keys.count)
 
 
 def grouped_count() -> Count:
