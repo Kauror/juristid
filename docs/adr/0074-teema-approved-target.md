@@ -502,6 +502,12 @@ events that are now either milestones in their own right (`Teema loodud`,
 `latest_authored` remain as tested projection helpers; the Teema page stopped
 calling them.
 
+**Superseded on 2026-09-27 for which rows draw the 12 px accent dot — see the
+amendment at the end of this document.** The dot now follows
+`TimelineItem.is_primary`, the same decision as the headline weight: the three
+outcomes Koda put out draw it, and every other row — milestones included — draws
+the 6 px muted one.
+
 Milestone events take a row of their own even when they share a composer
 operation with an entry. A save that wrote a note *and* changed the stage did two
 separable things to the record.
@@ -704,3 +710,50 @@ any page; a plan's date is changed through `Muuda`. `defer_action`,
 
 The `Järgmiseks` row's contents, the approved target, every service, and every
 stored row.
+
+---
+
+## Amendment, 2026-09-27 — one prominence hierarchy: the dot follows `is_primary`
+
+- Status: accepted, amending the first sentence of §14.
+- Scope: which rows of `Teema käik` draw the 12 px accent dot. §14's decision —
+  two row kinds and no third — stands.
+
+### What was decided before
+
+§14: «A 12 px accent dot for a milestone, a 6 px muted dot for a work entry.»
+The template read the dot off `TimelineItem.is_milestone`. On 2026-09-27 the
+owner's Teema page cleanup added a second rule for the same rows: only the three
+outcomes Koda itself put out — a sent `Koja arvamus` («Arvamus välja»), a
+*published* `Ülevaade / uudis`, the closure — keep the semibold headline, and
+every other row is set in the regular weight (`TimelineItem.is_primary`).
+
+### Why it is superseded
+
+Two rules drew one hierarchy. «Märge», «Meile saadetud tagasiside», «Teiste
+arvamus» and «Teema loodud» are milestones and supporting rows at once, so on the
+live page they drew the big accent dot beside a regular headline: the dot said
+important and the type said supporting. Found in human UI acceptance on the
+release of 2026-09-27.
+
+### What is decided now
+
+One semantic property decides both halves of a row's prominence:
+
+    PRIMARY     `is_primary`      12 px accent dot + semibold headline
+    SECONDARY   not `is_primary`   6 px muted dot  + regular headline
+
+The dot's modifier is `uxtl__dot--primary` (it was `uxtl__dot--ms`) and is set by
+the same test as the row's `uxtl__item--primary`. `is_milestone` still decides
+what a row *says* — a date and no clock time, and a milestone's own correction
+element — and no longer how loudly it is drawn. Primary stays exactly the three
+outcomes above; this amendment does not widen it.
+
+### What this amendment does not change
+
+`is_primary` itself, `is_milestone` and what counts as a milestone; the
+chronology's membership, order and pagination (`matter_timeline`); every row's
+headline, date, links, files, `Juristi märkus`, `Muuda`, `Kustuta` and
+`Lisa fail`; visibility and RESTRICTED filtering; the 6 px and 12 px sizes and
+the two colours; `Menetluse kulg`; every service, and every stored row. No
+migration, no search-index change.

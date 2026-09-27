@@ -9,7 +9,10 @@ what only a layout engine can say about it:
 * `+ Lõpeta teema` opens straight onto its chips, with no heading row above them;
 * `Menetluse kulg` on a file that sent three opinions draws one solid run ending
   at the current phase, and the browser resolves it that way;
-* `Teema käik` draws «Arvamus välja» semibold and a `Märge` regular;
+* `Teema käik` draws «Arvamus välja» semibold and a `Märge` regular, and every
+  row's dot agrees with its headline — the 12 px accent dot beside a primary
+  row, the 6 px muted one beside every other, on one aligned spine at 1440 and
+  768;
 * at 768 the same file with a future `Arvamuse tähtaeg` draws nine columns and
   no label on the rail prints over its neighbour's;
 * neither section's heading takes any room, and both are still headings.
@@ -239,6 +242,167 @@ def test_three_opinions_draw_one_run_and_the_page_reads_quietly(page, base_url):
         page.wait_for_timeout(100)
         assert_no_sideways_scroll(page)
         expect(rail.locator(".tl-step--current")).to_have_count(1)
+
+
+# ---------------------------------------------------------------------------
+# `Teema käik`: one hierarchy — the dot and the headline weight are one decision
+# ---------------------------------------------------------------------------
+
+#: What the browser resolves each row's dot, headline and spine to. Read off
+#: the laid-out page, not off class names, so a rule that stopped matching —
+#: a renamed modifier, a lost `#teema-vaade-wrap` scope — fails here.
+ROW_GEOMETRY = """rows => {
+  const scope = document.querySelector('#teema-vaade-wrap');
+  const resolve = (token) => {
+    const probe = document.createElement('span');
+    probe.style.background = `var(${token})`;
+    scope.appendChild(probe);
+    const colour = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return colour;
+  };
+  const accent = resolve('--accent-link');
+  const muted = resolve('--text-muted');
+  return rows.map(row => {
+    const dot = row.querySelector('.uxtl__dot');
+    const d = dot.getBoundingClientRect();
+    const line = row.querySelector('.uxtl__line').getBoundingClientRect();
+    const rail = row.querySelector('.uxtl__rail').getBoundingClientRect();
+    const body = row.querySelector('.uxtl__body').getBoundingClientRect();
+    const head = row.querySelector('.uxtl__mswhat') || row.querySelector('.uxtl__author');
+    return {
+      text: row.textContent.replace(/\\s+/g, ' ').trim().slice(0, 90),
+      primary: row.classList.contains('uxtl__item--primary'),
+      secondary: row.classList.contains('uxtl__item--secondary'),
+      width: d.width, height: d.height,
+      dotX: d.left + d.width / 2,
+      background: getComputedStyle(dot).backgroundColor,
+      accent, muted,
+      lineX: line.left + line.width / 2,
+      lineBottom: line.bottom, railTop: rail.top,
+      bodyLeft: body.left,
+      weight: head ? Number(getComputedStyle(head).fontWeight) : null,
+    };
+  });
+}"""
+
+
+def record_marge(page, title: str) -> None:
+    open_add_panel(page, "marge-tavaline")
+    page.locator("#marge-tavaline [name=title]").fill(title)
+    page.locator("#marge-tavaline").get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#ajalugu-loend")).to_contain_text(title)
+
+
+def record_feedback(page, summary: str) -> None:
+    """`Meile saadetud tagasiside`, as `e2e/test_correction_round_surfaces.py` does."""
+    open_add_panel(page, "arvamus-tagasiside")
+    page.fill("#id_tagasiside_summary", summary)
+    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#ajalugu-loend")).to_contain_text(summary)
+
+
+def record_other_position(page, summary: str) -> None:
+    """`Teiste arvamus`, as `e2e/test_external_position.py` does."""
+    open_add_panel(page, "arvamus-teiste")
+    choose_organisation(page, "valine-seisukoht")
+    page.locator("#arvamus-teiste [name=summary]").fill(summary)
+    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta").click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#ajalugu-loend")).to_contain_text(summary)
+
+
+def record_publication(page) -> None:
+    """A published `Ülevaade / uudis`: both boxes filled files it as published."""
+    open_add_panel(page, "lisa-koduleht")
+    panel = page.locator("#lisa-koduleht")
+    panel.locator("[name=url]").fill("https://koda.ee/uudised/e2e-uks-hierarhia")
+    panel.locator("[name=published_on]").fill("14.03.2026")
+    panel.get_by_role("button", name="Lisa ülevaade / uudis").click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#ajalugu-loend")).to_contain_text("koda.ee/uudised/e2e-uks-hierarhia")
+
+
+def test_teema_kaik_draws_one_hierarchy_in_the_dot_and_the_headline(page, base_url):
+    """PRIMARY = 12 px accent dot + semibold; SECONDARY = 6 px muted dot + regular.
+
+    The owner's screenshot of 2026-09-27, rebuilt through the real forms: two
+    outcomes — «Arvamus välja» and a published `Ülevaade / uudis` — among a
+    `Märge`, «Meile saadetud tagasiside», «Teiste arvamus» and «Teema loodud»,
+    each of which drew the big accent dot beside a regular headline
+    (docs/adr/0074 §14, amended 2026-09-27).
+    """
+    sign_in(page, base_url, SANDRA)
+    a_procedure_matter(page, base_url, "Üks hierarhia")
+    record_koja_arvamus(page, sent_on="15.05.2025")
+    record_publication(page)
+    record_marge(page, "Rääkisin ministeeriumiga")
+    record_feedback(page, "Liige toetab eelnõu")
+    record_other_position(page, "Ministeeriumi seisukoht")
+
+    history = page.locator("#ajalugu-loend")
+    rows = history.locator("article.uxtl__item")
+
+    for width in (1440, 768):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.wait_for_timeout(150)
+        geometry = rows.evaluate_all(ROW_GEOMETRY)
+        assert geometry, "the chronology drew no rows"
+        accent, muted = geometry[0]["accent"], geometry[0]["muted"]
+        assert accent != muted, (accent, muted)
+
+        # The screenshot's rows, by what they say.
+        primary = [row["text"] for row in geometry if row["primary"]]
+        secondary = [row["text"] for row in geometry if row["secondary"]]
+        assert len(primary) == 2, primary
+        assert any("Arvamus välja" in text for text in primary), primary
+        assert any("Ülevaade / uudis" in text for text in primary), primary
+        for words in (
+            "Rääkisin ministeeriumiga",
+            "Meile saadetud tagasiside",
+            "Teiste arvamus",
+            "Teema loodud",
+        ):
+            assert any(words in text for text in secondary), (width, words, secondary)
+        assert len(primary) + len(secondary) == len(geometry)
+
+        # One hierarchy: if primary, the big accent dot and a semibold
+        # headline; if not, the small muted dot and a regular one.
+        for row in geometry:
+            if row["primary"]:
+                assert abs(row["width"] - 12) <= 0.5 and abs(row["height"] - 12) <= 0.5, row
+                assert row["background"] == accent, row
+                assert row["weight"] == 600, row
+            else:
+                assert abs(row["width"] - 6) <= 0.5 and abs(row["height"] - 6) <= 0.5, row
+                assert row["background"] == muted, row
+                assert row["weight"] in (None, 400), row
+
+        # One spine: every dot centred on one vertical line, each row's line
+        # running on into the next row, and no row's text moved sideways by its
+        # dot changing size.
+        spine = geometry[0]["lineX"]
+        for row in geometry:
+            assert abs(row["lineX"] - spine) <= 0.5, (width, row)
+            assert abs(row["dotX"] - spine) <= 0.5, (width, row)
+            assert abs(row["bodyLeft"] - geometry[0]["bodyLeft"]) <= 0.5, (width, row)
+        for above, below in pairwise(geometry):
+            assert above["lineBottom"] >= below["railTop"] - 1, (width, above, below)
+
+        assert_no_sideways_scroll(page)
+
+        # The quieter rows keep every control, and each one still takes a click.
+        for words in ("Rääkisin ministeeriumiga", "Liige toetab eelnõu", "Ministeeriumi seisukoht"):
+            row = rows.filter(has_text=words)
+            expect(row).to_have_count(1)
+            muuda = row.get_by_role("button", name=re.compile("Muuda"))
+            expect(muuda).to_be_visible()
+            muuda.click(trial=True)
+            kustuta = row.locator("summary", has_text="Kustuta")
+            expect(kustuta).to_be_visible()
+            kustuta.click(trial=True)
 
 
 # ---------------------------------------------------------------------------
