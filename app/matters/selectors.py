@@ -296,21 +296,6 @@ def matter_list_queryset(user: Any) -> QuerySet[Matter]:
     )
 
 
-def matter_engagements(matter: Matter, user: Any) -> list[Any]:
-    """The `Kaasamine` records of one Matter, scoped to this reader.
-
-    Ordered by the model, evaluated once, and `select_related` on the author so
-    a section with five rows costs one query rather than six. The template
-    iterates this list and never asks the database a question of its own
-    (Agent-F brief 55).
-    """
-    from app.matters.models import MatterEngagement
-
-    return list(
-        MatterEngagement.objects.filter(matter=matter).visible_to(user).select_related("created_by")
-    )
-
-
 def planned_website_overviews(matter: Matter, user: Any) -> list[Any]:
     """The `Ülevaated / uudised` this Matter still owes, scoped to this reader.
 
@@ -831,43 +816,6 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
     # and repeating them here would make the same task look like two problems.
 
     return items
-
-
-@dataclass(frozen=True)
-class AttentionGroup:
-    """One Matter and every reason it needs attention.
-
-    Grouping happens here rather than in the template because the panel now
-    produces several kinds of reason, and one Matter can legitimately carry
-    three of them — no owner recorded, no status, and a deadline gone by. Three
-    separate rows for one file would make the panel look three times as bad as
-    it is and leave the reader to work out that they are the same Matter.
-    """
-
-    matter: Matter
-    items: tuple[AttentionItem, ...]
-
-    @property
-    def labels(self) -> tuple[str, ...]:
-        return tuple(item.label for item in self.items)
-
-
-def group_attention(items: list[AttentionItem]) -> list[AttentionGroup]:
-    """One entry per Matter, reasons in the order they were detected.
-
-    Insertion-ordered rather than sorted: the detection order is already the
-    order the panel wants — a missing next step first, then a missing status,
-    then a passed deadline — and re-sorting would put the tidiest problem at the
-    top of somebody's day.
-    """
-    grouped: dict[Any, list[AttentionItem]] = {}
-    matters: dict[Any, Matter] = {}
-    for item in items:
-        grouped.setdefault(item.matter.pk, []).append(item)
-        matters.setdefault(item.matter.pk, item.matter)
-    return [
-        AttentionGroup(matter=matters[key], items=tuple(values)) for key, values in grouped.items()
-    ]
 
 
 def my_active_matters(user: Any) -> QuerySet[Matter]:

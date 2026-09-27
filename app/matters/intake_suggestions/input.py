@@ -58,7 +58,6 @@ from app.documents.enums import (
     DerivativeKind,
     DerivativeStatus,
     DocumentRole,
-    ExtractionState,
     LocatorKind,
     TextSource,
 )
@@ -659,7 +658,3 @@ def _stored_fragments(rows: list[Any]) -> list[Any]:
             )
         )
     return fragments
-
-
-def is_done(document: SourceDocument) -> bool:
-    return document.extraction_state == ExtractionState.DONE

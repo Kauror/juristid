@@ -40,7 +40,7 @@ from django.urls import reverse
 from app.core.authorization import scoped_count
 from app.matters.enums import REGISTER_YEAR_ORIGINS, RecordMode
 from app.matters.models import Matter
-from app.matters.selectors import UNKNOWN_YEAR, register_year_q, unknown_register_year_q
+from app.matters.selectors import UNKNOWN_YEAR, register_year_q
 from app.reporting.context import ReportingContext
 from app.reporting.metric_types import (
     Comparison,
@@ -233,10 +233,6 @@ def in_reporting_year(queryset: QuerySet[Matter], context: ReportingContext) -> 
     return queryset.filter(register_year_q(start=start, end=end))
 
 
-def unknown_year_matters(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
-    return queryset.filter(unknown_register_year_q())
-
-
 def in_received_date(queryset: QuerySet[Matter], context: ReportingContext) -> QuerySet[Matter]:
     """Narrow to the period on the day the material actually arrived."""
     if context.period.is_all:
@@ -423,14 +419,3 @@ def top_segments(
     remainder = sum(segment.value for segment in tail)
     note = f"{len(tail)} muud rühma"
     return (*head, Segment(label=remainder_label, value=remainder, note=note))
-
-
-def coverage_note(missing: int, what: str) -> tuple[str, ...]:
-    """One sentence about what the number could not include, or nothing."""
-    if missing <= 0:
-        return ()
-    return (f"{missing} {what}",)
-
-
-def exclude_q(queryset: QuerySet[Any], condition: Q) -> QuerySet[Any]:
-    return queryset.exclude(condition)

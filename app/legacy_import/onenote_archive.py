@@ -42,7 +42,6 @@ from pathlib import Path
 #: the guard is a directory name check rather than trust (Stage-2D brief 4).
 EXPECTED_ARCHIVE_MARKER = "archive.json"
 
-TEXT_BLOCK_TYPES = frozenset({"TEXT", "LIST_ITEM", "TABLE"})
 FILE_BLOCK_TYPES = frozenset({"FILE_ATTACHMENT", "IMAGE"})
 
 

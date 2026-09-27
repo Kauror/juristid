@@ -63,7 +63,3 @@ def most_restrictive(*values: str) -> str:
     if any(not is_known_visibility(value) for value in values):
         return Visibility.RESTRICTED.value
     return max(values, key=restrictiveness)
-
-
-def is_at_least_as_restrictive(child: str, parent: str) -> bool:
-    return restrictiveness(child) >= restrictiveness(parent)

@@ -127,15 +127,6 @@ RAIL_LIMIT = 6
 AREA_MATTER_PREVIEW = 4
 
 
-#: The one figure on this page that counts something the register does not list
-#: — policy areas. It opens the list of exactly those, which is on this page.
-#:
-#: There was a second, ``#inimesed``, for *N inimest* on the retired Minu tiim.
-#: The Koormus rail still lists people; it carries no figure claiming a total,
-#: so it needs no landing point (docs/adr/0033, docs/adr/0039).
-UNOWNED_ANCHOR = "#vastutajata-valdkonnad"
-
-
 def _teemad(**params: Any) -> str:
     """A link into the register with filters already applied.
 
@@ -436,7 +427,6 @@ FEED_FILTERS: tuple[tuple[str, str], ...] = (
     (FEED_STATUS, "Teema muudatused"),
 )
 
-FEED_PARAM = "voog"
 
 # ---------------------------------------------------------------------------
 # What counts as a change to the department's work

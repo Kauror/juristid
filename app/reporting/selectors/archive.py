@@ -48,7 +48,6 @@ from django.db.models import QuerySet
 from app.core.dates import format_estonian_date
 from app.legacy_import.opinion_archive import OpinionArchiveItem
 from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
-from app.matters.models import Matter
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import OPINION_ARCHIVE_FIRST_YEAR, definition
@@ -567,12 +566,3 @@ def opinion_archive_linked_by_month_and_responsibility(context: ReportingContext
         matrix=matrix,
         notes=tuple(notes),
     )
-
-
-def visible_linked_matters(context: ReportingContext) -> QuerySet[Matter]:
-    """Matters this reader may see that carry at least one archive link.
-
-    Exported for tests and for any later drill-through: the population is
-    derived from the same scoped link rows the metrics group.
-    """
-    return visible_matters(context).filter(opinion_archive_links__isnull=False).distinct()

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date
 from typing import Any, cast
 
 from django import forms
@@ -71,37 +71,6 @@ from app.workflow.enums import (
 )
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
-
-
-def _entry_moment(value: date | None) -> datetime | None:
-    """When an entry happened, given the day somebody chose.
-
-    Today means *now*. The box is pre-filled with today, so leaving it alone is
-    the ordinary case, and turning that into midnight would stamp 00:00 on
-    something written at half past two — a small untruth on every routine save.
-    Passing ``None`` lets `add_entry` record the actual moment.
-
-    Any other day is that day, at its start. Somebody writing up Friday's
-    meeting on Monday knows the day and not the hour, and the chronology sorts
-    by day with a deterministic tie-break behind it (app/matters/models.py).
-    """
-    if value is None or value == timezone.localdate():
-        return None
-    return _as_datetime(value)
-
-
-def _as_datetime(value: date | None) -> datetime | None:
-    """A chosen day, as the aware midnight the submission stores.
-
-    `Submission.sent_at` is a moment, and a person recording that an opinion
-    went out on the 12th knows the day and not the hour. Midnight in the
-    department's own timezone is the honest reading of that day; using
-    `timezone.now()` instead would silently stamp today onto a letter sent last
-    month.
-    """
-    if value is None:
-        return None
-    return timezone.make_aware(datetime.combine(value, time.min))
 
 
 class UserChoiceField(forms.ModelChoiceField):
@@ -881,18 +850,6 @@ def organisation_alias_terms() -> dict[str, str]:
         if normalized:
             terms.setdefault(str(organisation_id), []).append(normalized)
     return {key: "|".join(sorted(set(values))) for key, values in terms.items()}
-
-
-def _raw_value(form: Any, name: str) -> Any:
-    """What the request said about one field, before any validation ran.
-
-    The widget's own reader rather than `form.data.get`, for the reason
-    a bound form's data is a `QueryDict` from a real POST and an ordinary dict
-    from a caller constructing one, and only the widget knows how to read both —
-    and how to honour a form prefix.
-    """
-    field = form.fields[name]
-    return field.widget.value_from_datadict(form.data, form.files, form.add_prefix(name))
 
 
 class MatterCreateForm(
@@ -2126,18 +2083,6 @@ class NextActionForm(forms.Form):
         }
 
 
-#: The Valdkonnad-free part of the composer's period control, shared by the
-#: next step and the important deadline. Both ask the same question — how
-#: exactly is this date known — and both answer it with `app.workflow.dates`,
-#: so a quarter typed into either normalises to the same anchor.
-COMPOSER_PRECISION_CHOICES: tuple[tuple[str, str], ...] = (
-    (DatePrecision.EXACT.value, "Täpne kuupäev"),
-    (DatePrecision.MONTH.value, "Kuu täpsusega"),
-    (DatePrecision.QUARTER.value, "Kvartali täpsusega"),
-    (DatePrecision.HALF_YEAR.value, "Poolaasta täpsusega"),
-    (DatePrecision.YEAR.value, "Aasta täpsusega"),
-)
-
 #: What a person may choose when stating a date they are recording now.
 #:
 #: Four, and the labels are the four things somebody actually knows: a day, a
@@ -2323,51 +2268,6 @@ COMPOSER_CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
     (Disposition.INITIATIVE_WITHDRAWN.value, "Menetlus lõppes"),
     (Disposition.MONITORING_STOPPED.value, "Loobuti"),
 )
-
-#: `Töövõit` is a decision, so it has no default. A Matter closed without
-#: anybody answering would silently count as "no win", which is a claim the
-#: person never made (Teema closing redesign §10).
-WORK_VICTORY_CHOICES: tuple[tuple[str, str], ...] = (("JAH", "Jah"), ("EI", "Ei"))
-
-
-class MultiTextInput(forms.TextInput):
-    """One text box that may be submitted many times under one name.
-
-    The `Muu` recipient control is a search box plus however many chips
-    somebody has added, and every one of them posts as `final_recipient_names`.
-    Django's default widget reads a single value, so seven typed parties would
-    arrive as one.
-
-    Reading `getlist` rather than replacing the control with a textarea keeps
-    the no-JavaScript path honest: the visible box carries the same name, so
-    typing one recipient and saving works with nothing bound to it.
-    """
-
-    def value_from_datadict(self, data: Any, files: Any, name: str) -> list[str]:
-        if hasattr(data, "getlist"):
-            return list(data.getlist(name))
-        value = data.get(name)
-        if value in (None, ""):
-            return []
-        return [value] if isinstance(value, str) else list(value)
-
-
-class RecipientNamesField(forms.Field):
-    """The typed half of the recipient set: names, cleaned of whitespace only.
-
-    Deliberately not a `ModelMultipleChoiceField` and deliberately not resolved
-    here. A form validates; the institutions these names mean are created by
-    `app.organisations.services.resolve_recipients` inside the closure's own
-    transaction, so a refused save leaves no rows behind (§7E, §17).
-    """
-
-    widget = MultiTextInput
-
-    def clean(self, value: Any) -> list[str]:
-        if value in (None, ""):
-            return []
-        raw = value if isinstance(value, list) else [value]
-        return [cleaned for cleaned in (" ".join(str(item).split()) for item in raw) if cleaned]
 
 
 def _precision_controls(prefix: str, exact_name: str) -> dict[str, str]:
