@@ -46,6 +46,24 @@ GATE_PASSWORD = os.environ.get("E2E_GATE_PASSWORD", "")
 pytestmark = pytest.mark.skipif(not BASE_URL, reason="E2E_BASE_URL is not set")
 
 
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Run every `writes_last` test after everything else, in collection order.
+
+    **Last in its file is not last in the run.** pytest runs parametrised items
+    in waves: every test's first parameter, then every test's second, and so on
+    (see the ordering note in `e2e/test_ui_regression.py`). A scenario defined
+    at the foot of the visual suite ran before `teemad-1280`, `teemad-3440` and
+    `statistika-3440`, and the Matter it filed moved all three.
+
+    `trylast`, so this reads the order pytest has already settled on — fixture
+    reordering included — and only moves the marked items to its end.
+    """
+    last = [item for item in items if item.get_closest_marker("writes_last")]
+    if last:
+        items[:] = [item for item in items if not item.get_closest_marker("writes_last")] + last
+
+
 @dataclass(frozen=True)
 class Persona:
     upn: str

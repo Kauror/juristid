@@ -113,14 +113,17 @@ def test_a_phase_is_not_dated_by_the_step_filed_under_it(matter_with_pattern, sp
     said `alates 20.08.2026`.
     """
     from app.matters.workspace import add_procedural_development
+    from tests import factories
 
-    add_procedural_development(
-        matter=matter_with_pattern,
-        author=specialist,
-        title="Eelnõu saadeti kooskõlastusringile",
-        occurred_on=datetime.date(2026, 4, 2),
-        occurred_on_precision=DatePrecision.EXACT.value,
-        process_phase="kooskolastus",
+    factories.historical_phase(
+        add_procedural_development(
+            matter=matter_with_pattern,
+            author=specialist,
+            title="Eelnõu saadeti kooskõlastusringile",
+            occurred_on=datetime.date(2026, 4, 2),
+            occurred_on_precision=DatePrecision.EXACT.value,
+        ).record,
+        "kooskolastus",
     )
 
     phase = next(

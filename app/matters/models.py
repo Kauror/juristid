@@ -2449,18 +2449,20 @@ class MatterProceduralDevelopment(VisibilityInheritingModel, RemovableRecord):
     #: part of the story is this act in».
     #:
     #: **Optional, and blank is an ordinary answer.** Blank means nobody has
-    #: placed this step, the record still reads in the chronology under
-    #: `Etapiga sidumata`, and nothing asks anybody to clear a backlog of them.
+    #: placed this step, the record reads in the chronology exactly as any other,
+    #: and nothing asks anybody to clear a backlog of them.
     #: Every row written before this column existed is blank and stays blank:
     #: there is no backfill, because there is nothing to backfill *from* —
     #: guessing a phase out of a title is the prose-matching this repository
     #: refuses (docs/adr/0092 §13).
     #:
-    #: **Visible when it is proposed, never an invisible guess.** `+ Märge`
-    #: pre-selects the phase the file's own `Hetkeseis` places it on, in a select
-    #: the person is looking at while they type the date, and `Muuda` on the row
-    #: corrects it afterwards. Nothing writes this column without the value having
-    #: been on screen first.
+    #: **No longer asked when a `Märge` is written, and never inferred**
+    #: (docs/adr/0105, amended 2026-09-27). The owner decided an ordinary note is
+    #: not classified under a procedural phase, so a new row stores blank, and
+    #: nothing — `Hetkeseis`, `Õigusakt`, the words, the date — fills it in
+    #: instead. The rows that do carry one keep it: they still mark their node
+    #: `Kirjas` on `Menetluse kulg`, and `Muuda` on such a row still corrects or
+    #: clears it.
     process_phase = models.CharField(
         max_length=32,
         blank=True,

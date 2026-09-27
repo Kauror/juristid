@@ -277,7 +277,7 @@ def test_a_reader_walks_the_whole_chronology_too(specialist, reader):
 # -- over HTTP -------------------------------------------------------------------
 
 
-ROW = re.compile(r'<article class="uxtl__item"')
+ROW = re.compile(r'<article class="uxtl__item[ "]')
 
 
 def test_the_pages_a_browser_walks_hold_every_row_once(client, specialist):

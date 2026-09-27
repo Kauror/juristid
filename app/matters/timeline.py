@@ -477,6 +477,42 @@ class TimelineItem:
         return isinstance(self.record, MatterEngagement)
 
     @property
+    def is_primary(self) -> bool:
+        """Whether this row is one of the few acts the chronology speaks up for.
+
+        **Three, and the default is no.** A sent `Koja arvamus` — «Arvamus
+        välja», the work this office exists to produce; a *published*
+        `Ülevaade / uudis`, which is Koda saying something in public; and the
+        Matter's closure, which ends the file. Each is an outcome Koda itself
+        put out into the world, and a reader scanning six months of a file is
+        looking for exactly those.
+
+        Everything else is supporting: a `Märge`, feedback that reached us,
+        somebody else's position, a consultation, a stage change, a deadline, a
+        note. All of it still reads in full, in date order, with every control
+        it had; it is only no longer drawn as loudly as the outcomes. Before
+        this every milestone headline and every author's name was semibold, and
+        a row saying «Märge» competed with one saying «Arvamus välja» (owner
+        feedback, 2026-09-27).
+
+        Decided on the record's type and the event's type, never on the words
+        the row prints: a label is translated, renamed and shared between
+        kinds, and a planned or cancelled `Ülevaade / uudis` carries the same
+        headline as a published one.
+        """
+        if self.submission is not None:
+            return True
+        overview = self.website_overview
+        if overview is not None:
+            return bool(overview.is_published)
+        return (
+            self.milestone is not None
+            and self.record is None
+            and self.event is not None
+            and self.event.event_type == ChangeEventType.MATTER_CLOSED
+        )
+
+    @property
     def removable(self) -> str:
         """The URL key for `Kustuta` on this row, or `""` where there is none.
 
@@ -1692,10 +1728,11 @@ def matter_timeline(
     stands is that section's question and this one answers «what happened», in
     the order it happened (docs/adr/0105 §1).
 
-    The association itself is untouched: `MatterProceduralDevelopment.
-    process_phase` is still asked on `+ Märge`, still corrected on the row, and
-    is still what marks a node `Kirjas` on the rail
-    (`app.matters.legal_process.recorded_phases`).
+    The association itself is untouched where it is stored:
+    `MatterProceduralDevelopment.process_phase` is still corrected on a row that
+    carries one and is still what marks a node `Kirjas` on the rail
+    (`app.matters.legal_process.recorded_phases`). `+ Märge` no longer asks for
+    it (docs/adr/0105, amended 2026-09-27).
 
     Entries are filtered through their own visibility so a restricted entry
     inside an otherwise visible Matter stays hidden. The change-event stream is

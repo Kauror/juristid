@@ -2412,3 +2412,39 @@ def test_the_column_guard_only_looks_at_what_is_photographed(page):
     assert_no_clock_value_sizes_a_column(page, "kaasamine-kirjed", root="#clip")
     with pytest.raises(AssertionError, match="size a column"):
         assert_no_clock_value_sizes_a_column(page, "kaasamine-kirjed")
+
+
+# ---------------------------------------------------------------------------
+# `Menetluse kulg` on a file that sent several opinions
+# ---------------------------------------------------------------------------
+#
+# **It runs last, and the marker is what makes it.** It is the one scenario
+# that writes: it files a Matter and three opinions through the real panels,
+# because the seeded world holds no file of this shape and adding one to
+# `seed_e2e_data` would move every register, Osakond and Minu asjad baseline.
+# Being defined last in this file is not enough — pytest runs parametrised
+# scenarios in later waves, and on the first CI run of this scenario
+# `teemad-1280`, `teemad-3440` and `statistika-3440` photographed its Matter.
+# `writes_last` moves it behind every other item (`e2e/conftest.py`).
+
+
+@pytest.mark.writes_last
+def test_menetluse_kulg_with_several_opinions(page, base_url):
+    """The owner's case: three `Koja arvamus`, a current phase, the road ahead.
+
+    It drew several blue runs — each opinion's connector filled by the strip's
+    measurement against a *different* neighbour, and the current phase starting a
+    second run into the phase after it. A proportion across a whole row is what
+    a baseline holds and an assertion does not; the run's *shape* is asserted in
+    `e2e/test_teema_page_cleanup.py` and `tests/test_teema_page_cleanup.py`.
+
+    Clipped to `.lprail`, and every date in it is a fixed day in 2025 typed into
+    the panel, so the image does not depend on when the suite runs.
+    """
+    from e2e.test_teema_page_cleanup import a_matter_with_three_opinions
+
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size(DESKTOP_VIEWPORT)
+    a_matter_with_three_opinions(page, base_url)
+    _at_rest(page)
+    compare("teema-kulg-arvamused", capture(page, "teema-kulg-arvamused", clip_to=".lprail"))

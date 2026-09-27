@@ -96,7 +96,12 @@ from app.matters.process_phases import (
     ProcessPattern,
     pattern_for,
 )
-from app.matters.process_timeline import PHASE_EFFECTIVE, PHASE_TRANSPOSITION
+from app.matters.process_timeline import (
+    PHASE_EFFECTIVE,
+    PHASE_TRANSPOSITION,
+    STATE_REACHED,
+    STATE_TODAY,
+)
 from app.workflow.enums import Disposition
 
 # ---------------------------------------------------------------------------
@@ -571,8 +576,8 @@ class RailStep:
     #: under it, and the text is text (docs/adr/0100 §3).
     notes: tuple[str, ...] = ()
     #: How much of the connector running from this item to the next is behind
-    #: us. A milestone measures it against today; a phase has no measurement
-    #: because it is not a date, and takes what its state implies.
+    #: us. Decided for the whole rail at once by `_one_backbone`, never per item:
+    #: an item does not know which neighbour the merge will give it.
     reach: float = 1.0
 
     @property
@@ -744,12 +749,8 @@ def matter_rail(
                     state=node.state,
                     display_date=display,
                     sort_on=when,
-                    # A phase the file has reached joins the solid rail; one it
-                    # has not does not. `Teadmata` — an earlier phase with no
-                    # evidence — draws no solid connector either, because a
-                    # connector behind it would be the completed milestone the
-                    # late-entry rule refuses (docs/adr/0092 §13).
-                    reach=1.0 if node.state in (STATE_CURRENT, STATE_RECORDED) else 0.0,
+                    # No `reach` here: every connector on this rail is decided
+                    # once, after the dated points are placed (`_one_backbone`).
                 )
             )
 
@@ -776,8 +777,6 @@ def matter_rail(
             state=milestone.state,
             display_date=milestone.display,
             sort_on=milestone.sort_on,
-            # The strip already measured this one against today.
-            reach=milestone.reach,
             detail=milestone.detail,
         )
         # Recomputed rather than carried, because placing a dated point that has
@@ -827,7 +826,94 @@ def matter_rail(
             beside = current if anchor is None else max(anchor, current)
             window, default = (beside, len(steps)), min(beside + 1, len(steps))
         steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
-    return steps
+    return _one_backbone(steps, today)
+
+
+def _one_backbone(steps: list[RailStep], today: date) -> list[RailStep]:
+    """Decide every connector on the merged rail at once: one solid run, then muted.
+
+    **The solid run starts at the first node something proves was reached** — a
+    `Kirjas` or `Praegu` phase, or a dated point already behind us — and **ends
+    at the file's position**: the `Praegu` node, or a dated point that happened
+    after it. Everything inside the run is solid, everything outside is muted,
+    and only the connector leaving the last node of the run may be part-filled.
+    So the rail reads reached → current → ahead exactly once, whatever it holds.
+
+    It used to be decided per node, and on a file with several sent opinions
+    that drew several runs. Each dated point carried the fill the strip had
+    measured against *its own* next dated point — so the last `Koja arvamus`
+    before the current phase was filled a third of the way towards a deadline
+    three columns further on, stopped, and the current phase then started a
+    second solid run into the phase after it. Four solid connectors, a gap, and
+    accent leading into a node nobody has reached. The fill is a fraction of
+    *that segment's* days (docs/adr/0074 §12.2), and after the merge a dated
+    point's next neighbour is frequently a phase.
+
+    Presentation only, as the strip's own reading is: no node changes state,
+    label, date or position here, and the input is the already-scoped list, so a
+    restricted child a reader may not see cannot move a single connector
+    (docs/adr/0074 §13).
+
+    **The late-entry rule is untouched** (docs/adr/0092 §13). An earlier phase
+    with no evidence keeps its hollow, dashed `Teadmata` node. On the file that
+    rule is about — first filed when the bill was already in the Riigikogu —
+    nothing before `Praegu` is reached, so the run is empty and every connector
+    before it stays muted, as it always did. A `Teadmata` node *between* two
+    reached nodes sits on the run, because the line is the file's course
+    through time and time did pass there; the node still says, in its own
+    drawing and words, that nobody recorded it.
+
+    A rail with no phases is the strip exactly as it was: the run ends at the
+    last dated point behind us, and today's place in the next segment is its
+    part-filled connector.
+    """
+    if not steps:
+        return steps
+    current = next((index for index, step in enumerate(steps) if step.state == STATE_CURRENT), None)
+    reached = [
+        index
+        for index, step in enumerate(steps)
+        if (step.is_phase and step.state in (STATE_CURRENT, STATE_RECORDED))
+        or (not step.is_phase and step.state in (STATE_REACHED, STATE_TODAY))
+    ]
+    if not reached:
+        return [replace(step, reach=0.0) for step in steps]
+    # A `Kirjas` phase to the right of `Praegu` — a file that went back — keeps
+    # its filled node but does not pull the run past where the file now stands.
+    ends = [
+        index
+        for index in reached
+        if current is None or index == current or not steps[index].is_phase
+    ]
+    start, end = reached[0], max(ends)
+    decided: list[RailStep] = []
+    for index, step in enumerate(steps):
+        if start <= index < end:
+            reach = 1.0
+        elif index == end and index + 1 < len(steps):
+            reach = _reach_between(step.sort_on, steps[index + 1].sort_on, today)
+        else:
+            reach = 0.0
+        decided.append(replace(step, reach=reach))
+    return decided
+
+
+def _reach_between(start: date | None, end: date | None, today: date) -> float:
+    """How far today has come along one segment, 0 to 1, if both ends are dated.
+
+    An undated end is not a point in time, so it divides nothing and the segment
+    leaving the position stays muted: the file is *at* its current phase, and a
+    connector already coloured towards the next one would say it had moved on.
+    The whole-segment answers come first, so a zero-length segment never
+    divides (docs/adr/0074 §12.2).
+    """
+    if start is None or end is None:
+        return 0.0
+    if today >= end:
+        return 1.0
+    if today <= start:
+        return 0.0
+    return (today - start).days / (end - start).days
 
 
 #: Which phase of the pattern each *kind* of dated point belongs to.

@@ -265,13 +265,15 @@ def test_a_past_dated_point_cannot_drag_a_commencement_in_front_of_the_phases(sp
     """
     today = timezone.localdate()
     matter = _matter(specialist, instruments=("seadus",))
-    add_procedural_development(
-        matter=matter,
-        author=specialist,
-        title="Eelnõu kooskõlastusringile",
-        occurred_on=today,
-        process_phase=PHASE_KOOSKOLASTUS,
-        stage=_stage("consultation"),
+    factories.historical_phase(
+        add_procedural_development(
+            matter=matter,
+            author=specialist,
+            title="Eelnõu kooskõlastusringile",
+            occurred_on=today,
+            stage=_stage("consultation"),
+        ).record,
+        PHASE_KOOSKOLASTUS,
     )
     factories.EffectiveDateFactory(
         matter=matter,

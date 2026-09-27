@@ -38,8 +38,15 @@ record, not professional chronology (master specification 16.5).
   {% comment %}
     The id is what a search result for an entry scrolls to. Server-rendered
     anchor, no router: the timeline is already one page (Stage-2B brief 77).
+
+    `--primary` or `--secondary` is how loudly the row's own line is drawn, and
+    nothing else: the same content, controls and order either way. Primary is
+    the three outcomes Koda itself put out — «Arvamus välja», a published
+    `Ülevaade / uudis`, the closure — and everything else is supporting
+    (`TimelineItem.is_primary`). On the article rather than the headline,
+    because a correction swaps the row's inside and the article stays.
   {% endcomment %}
-  <article class="uxtl__item"
+  <article class="uxtl__item {% if item.is_primary %}uxtl__item--primary{% else %}uxtl__item--secondary{% endif %}"
            {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
     <span class="uxtl__rail" aria-hidden="true">
       <span class="uxtl__dot {% if item.is_milestone %}uxtl__dot--ms{% endif %}"></span>

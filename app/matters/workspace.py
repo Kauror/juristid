@@ -708,7 +708,6 @@ def add_procedural_development(
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     note: str = "",
-    process_phase: str = "",
     stage: Any = None,
     next_text: str = "",
     next_date: Any = None,
@@ -777,6 +776,16 @@ def add_procedural_development(
     change committed in between would make it answer for a moment that has
     passed. So the refusal now queues behind the row lock, which is the price of
     it being right (docs/adr/0105 §4, as amended 2026-09-26).
+
+    **No `Etapp`, and none is inferred** (docs/adr/0105, amended 2026-09-27). A
+    `Märge` is a record of what happened, and the owner decided the lawyer is not
+    asked to file it under a phase of somebody else's procedure. There is no
+    parameter for one, so no caller of this use case — the panel, a crafted POST,
+    a script — can place the record on a phase, and nothing is derived in its
+    place: not from `Hetkeseis`, the stage chosen here, the `Õigusakt`, the words
+    or the date. The row stores the column's empty value. A phase already stored
+    on an older row is untouched, and `Muuda` on that row still corrects it
+    (`correct_procedural_development`).
     """
     from app.matters.services import (
         DEVELOPMENT_NEEDS_SOMETHING,
@@ -805,7 +814,6 @@ def add_procedural_development(
             occurred_on=occurred_on,
             occurred_on_precision=occurred_on_precision,
             note=note,
-            process_phase=process_phase,
             actor=author,
         )
         result.record = development

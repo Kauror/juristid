@@ -48,9 +48,16 @@ dashboard decoration with no decision behind it (AGENTS.md).
 {% if rail_steps %}
   <section class="lprail" aria-labelledby="menetluse-kulg-heading">
     <div class="lprail__bar">
-      <h2 class="lprail__head" id="menetluse-kulg-heading">Menetluse kulg</h2>
+      <h2 class="lprail__head visually-hidden" id="menetluse-kulg-heading">Menetluse kulg</h2>
       {% comment %}
-        `Muuda`, at the far end of the heading and quiet.
+        **The heading is for assistive technology only** (owner decision,
+        2026-09-27). The rail is recognisable without a caption over it, and a
+        screen reader still reaches the section by its name: the `<h2>` stays in
+        the outline and `aria-labelledby` still points at it. So the bar is
+        `Muuda` alone, and on a page with no `Muuda` it takes no room at all.
+      {% endcomment %}
+      {% comment %}
+        `Muuda`, at the far end of the bar and quiet.
 
         Only for a writer, and only where there is a procedure to tailor: a file
         read against no pattern has no phases to hide and nothing to date, so the

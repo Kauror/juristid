@@ -171,7 +171,7 @@ as late (docs/adr/0084 §5).
         Clearing it is still a real answer: `NULL`, and «Kuupäev teadmata» on
         every surface that reads it.
       {% endcomment %}
-      <label class="cx-f cx-f--date" for="{{ form.stated_on.id_for_label }}">
+      <label class="cx-f cx-f--date cx-f--solo" for="{{ form.stated_on.id_for_label }}">
         <span class="cx-f__lab">{{ form.stated_on.label }}</span>
         {{ form.stated_on }}
       </label>

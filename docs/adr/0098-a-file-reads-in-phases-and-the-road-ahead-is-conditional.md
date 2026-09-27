@@ -150,6 +150,9 @@ looking at the word while they type the year. «Etapp määramata» is one click
 away, `Muuda` corrects it afterwards, and the select offers only the phases this
 file's own procedure has — a ministerial regulation is not offered `Riigikogus`.
 `Uus teema` is not touched and nothing is mandatory anywhere.
+**Superseded on 2026-09-27 for `+ Märge` — see docs/adr/0105's amendment of that
+date.** The panel no longer proposes or asks for a phase; `process_phase` itself,
+the rows that carry one and their correction on `Muuda` are unchanged.
 
 ## 4 — An interval must be unambiguous, or the row is unplaced
 

@@ -34,7 +34,14 @@ when somebody asks for it.
 <details class="accordion accordion--timeline" id="ajajoon" open>
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
-    <h2 class="accordion__title">Teema käik</h2>
+    {% comment %}
+      **The name is for assistive technology only** (owner decision,
+      2026-09-27). Sighted readers know what the list under `Menetluse kulg`
+      is; a screen reader still gets a level-two heading to navigate by, and
+      the summary is still named «Teema käik N kirjet». The caret and the count
+      stay visible, so the section still has something to press to fold it.
+    {% endcomment %}
+    <h2 class="accordion__title visually-hidden">Teema käik</h2>
     {% comment %}
       The count is reader-visible chronology content and nothing else. A
       restricted child contributes no row and is not counted here either, so the
