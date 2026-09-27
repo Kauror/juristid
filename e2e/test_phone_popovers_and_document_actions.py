@@ -70,7 +70,8 @@ def test_a_long_sender_name_does_not_widen_the_page(page, base_url):
     picker.locator("summary").click()
     name = (
         "Majandus- ja Kommunikatsiooniministeeriumi Ettevõtluse ja Innovatsiooni "
-        "Sihtasutuse Nõukogu Pikaajalise Arengukava Ettevalmistuskomisjon " + unique_title("Nõukogu")
+        "Sihtasutuse Nõukogu Pikaajalise Arengukava Ettevalmistuskomisjon "
+        + unique_title("Nõukogu")
     )
     picker.locator('input[name="sender_name"]').fill(name)
     picker.get_by_role("button", name="Salvesta saatjate muudatus").click()

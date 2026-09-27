@@ -7512,8 +7512,8 @@ button.accordion__action:focus-visible {
   margin-left: var(--spacing-2);
 }
 
-.doctable__actions .quietlink,
-.doctable__actions .opinionmenu > summary {
+.doctable .doctable__actions .quietlink,
+.doctable .doctable__actions .opinionmenu > summary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7522,7 +7522,7 @@ button.accordion__action:focus-visible {
   margin-left: 0;
 }
 
-.doctable__actions .button--tiny {
+.doctable .doctable__actions .button--tiny {
   min-height: 24px;
 }
 
