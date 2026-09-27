@@ -8,6 +8,40 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-27
+basis = "deployment"
+# Üks väljalase: inseneriauditi paranduste ringid 9–19 (#309–#334), teema
+# lehe puhastus (#335), väikese kirja «i»-täpi parandus (#337) ja menetluse
+# kulu siltide kattumise parandus (#336). Suur osa ringidest on turvalisus,
+# lukustus, varundus, kontrollid, testid ja CI — neist siin punkte ei ole,
+# sest jurist seda ei näe. Punktid on ainult see, mida ta märkab.
+#
+# **Hiireklõps muutub ka.** #311 järel ei salvesta teema päise vastutaja ja
+# hetkeseis enam valiku muutmisel, ka mitte hiirega valides — ainult
+# «Salvesta». Sellepärast on see oma punkt, mitte ainult klaviatuuri oma.
+#
+# **Meelega punktita:** #310 (registri uuendamisel arhiivi mineva teema
+# avatud töö lõpetamine) juhtub ainult operaatori registriuuendusel; #322 ja
+# #323 on kiirus, mida lugeja ei mõõda; #332/#333 eemaldavad kasutamata koodi
+# ilma nähtava muutuseta.
+prs = [309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337]
+changes = [
+  "«+ Märke» vormil ei ole enam «Etapi» valikut. Varasemate märgete etapid jäävad alles ja «Muuda» pakub etappi ainult real, millel see juba on.",
+  "«+ Märke» ja «+ Arvamuse / tagasiside» kuupäevaväli on nüüd kompaktne ega veni enam üle kogu vormi.",
+  "«Lõpeta teema» on lihtsam: selgitavad lisatekstid on ära võetud, valikud ja nende mõju on samad.",
+  "«Menetluse kulu» sinine joon kulgeb nüüd ühe katkematu joonena kuni praeguse kohani. Pikk etapinimi, näiteks «Kooskõlastusring», ei kirjutu enam kõrvaloleva nime peale; kui kõik etapid ei mahu, kerib ainult menetluse kulg, mitte kogu leht.",
+  "«Teema käigus» on esile tõstetud ainult välja saadetud arvamus, avaldatud ülevaade ja teema lõpetamine, nii et olulisemad sündmused on kergemini leitavad.",
+  "Pika ajalooga teemal näitab «Näita varasemaid» nüüd kogu teema käigu; varem võis tihedalt täidetud teemal mõni rida vahele jääda.",
+  "Kaasamisele, välisele seisukohale ja avaldatud kodulehe ülevaatele ei saa enam panna tulevast kuupäeva: vorm ütleb seda ja sisestatud tekst jääb alles. Varem kirje salvestus, kuid ei olnud teema käigus näha enne seda päeva.",
+  "Teema päises salvestub vastutaja ja hetkeseisu muutus nüüd alles «Salvesta» vajutamisel, ja klaviatuuriga valikute vahel liikumine ei muuda enam kogemata teemat ega filtrit.",
+  "«Minu asjade» «Kuupäevata» plokis avab «Näita kõiki» nüüd täpselt need kuupäevata tegevused, mille eest sina vastutad.",
+  "Teema dokumentide loetelus on rea tegevused — allalaadimine, «⋯» ja «Ava» — nüüd alati näha, ka puuteekraanil, ja neid on lihtsam tabada.",
+  "Telefonis ja kitsal ekraanil ei lükka pikad failinimed ja pealkirjad lehte enam külili, ning «Veel» menüü, salvestatud vaate aken ja saatja valik jäävad ekraanile.",
+  "Klaviatuuriga liikudes on fookus paremini näha: «Mida tegid?» väljal on taas fookuse raam, ülemine riba ei kata enam fookuses olevat välja ja «Näita varasemaid» järel jääb fookus esimesele uuele reale.",
+  "Väike hall tekst on paremini loetav ja Windowsis ei sulandu väikese kirja «i» ja «j» täpp enam tähe sisse.",
+]
+
+[[day]]
 date = 2026-09-26
 basis = "deployment"
 # Üks väljalase inseneriauditi paranduste ringide tööst. Suur osa
