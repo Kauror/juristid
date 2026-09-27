@@ -10,6 +10,8 @@ what only a layout engine can say about it:
 * `Menetluse kulg` on a file that sent three opinions draws one solid run ending
   at the current phase, and the browser resolves it that way;
 * `Teema käik` draws «Arvamus välja» semibold and a `Märge` regular;
+* at 768 the same file with a future `Arvamuse tähtaeg` draws nine columns and
+  no label on the rail prints over its neighbour's;
 * neither section's heading takes any room, and both are still headings.
 
 Everything here is synthetic.
@@ -18,6 +20,8 @@ Everything here is synthetic.
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
+from itertools import pairwise
 
 import pytest
 from playwright.sync_api import expect
@@ -50,11 +54,12 @@ def choose_organisation(page, picker: str, name: str = MINISTRY) -> None:
     page.locator(f"#{picker}-tulemused").get_by_role("option", name=name, exact=True).click()
 
 
-def a_procedure_matter(page, base_url: str, label: str) -> str:
+def a_procedure_matter(page, base_url: str, label: str, *, deadline: str = "") -> str:
     """A `Seadus` on `Kooskõlastusringil`, filed through the real form.
 
     The shape the removed `Etapp` select rendered on, and the one whose rail has
-    a current phase with phases ahead of it.
+    a current phase with phases ahead of it. ``deadline`` fills `Arvamuse
+    tähtaeg`, the one date `Uus teema` asks for, as a lawyer types it.
     """
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
@@ -62,6 +67,8 @@ def a_procedure_matter(page, base_url: str, label: str) -> str:
     page.get_by_role("checkbox", name="Seadus", exact=True).check()
     open_hetkeseis(page)
     page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
+    if deadline:
+        page.fill("#id_response_deadline", deadline)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     page.wait_for_load_state("networkidle")
@@ -223,3 +230,86 @@ def test_three_opinions_draw_one_run_and_the_page_reads_quietly(page, base_url):
         page.wait_for_timeout(100)
         assert_no_sideways_scroll(page)
         expect(rail.locator(".tl-step--current")).to_have_count(1)
+
+
+# ---------------------------------------------------------------------------
+# `Menetluse kulg` at 768: nine columns, and no label over its neighbour's
+# ---------------------------------------------------------------------------
+
+
+def label_boxes(page) -> list[dict]:
+    """Every rail label's own box, and the column it belongs to.
+
+    The label's box and not the column's: a flex item in the column is as wide
+    as its longest word whatever the column is, so a word that does not fit is
+    a box running on past the column edge — which is exactly what overprinted.
+    """
+    return page.locator(".lprail .tl-step").evaluate_all(
+        """nodes => nodes.map(n => {
+          const what = n.querySelector('.tl-step__what').getBoundingClientRect();
+          const column = n.getBoundingClientRect();
+          return {
+            label: n.querySelector('.tl-step__what').textContent.trim(),
+            left: what.left, right: what.right, top: what.top, bottom: what.bottom,
+            columnLeft: column.left, columnRight: column.right,
+          };
+        })"""
+    )
+
+
+def overprinted(boxes: list[dict]) -> list[tuple[str, str]]:
+    return [
+        (a["label"], b["label"])
+        for i, a in enumerate(boxes)
+        for b in boxes[i + 1 :]
+        if a["left"] < b["right"] - 0.5
+        and b["left"] < a["right"] - 0.5
+        and a["top"] < b["bottom"] - 0.5
+        and b["top"] < a["bottom"] - 0.5
+    ]
+
+
+def test_nine_columns_at_768_never_print_one_label_over_another(page, base_url):
+    """The owner's shape plus a deadline still ahead: nine columns on the rail.
+
+    With equal shares at 768 each column was 78px, and the current phase's
+    semibold «Kooskõlastusring» — one word, about 95px — ran on into the next
+    column and printed over «Arvamuse tähtaeg». A column is never narrower than
+    its own longest word now (`static/css/app.css`, `.tl-strip`), so at 768 the
+    long one is wider and the rest share what is left; the page itself never
+    scrolls sideways, and on a phone the rail scrolls itself as it always did.
+    """
+    sign_in(page, base_url, SANDRA)
+    ahead = date.today() + timedelta(days=30)
+    a_procedure_matter(
+        page, base_url, "Üheksa veergu", deadline=f"{ahead.day}.{ahead.month}.{ahead.year}"
+    )
+    for day in OPINION_DAYS:
+        record_koja_arvamus(page, sent_on=day)
+
+    rail = page.locator(".lprail .tl-strip")
+    expect(rail.locator(".tl-step--current")).to_have_text(re.compile("Kooskõlastusring"))
+    expect(rail.locator(".tl-step--milestone").filter(has_text="Koja arvamus")).to_have_count(3)
+    expect(rail.locator(".tl-step--milestone").filter(has_text="Arvamuse tähtaeg")).to_have_count(1)
+
+    for width in (768, 1440, 375):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.wait_for_timeout(150)
+        boxes = label_boxes(page)
+        assert len(boxes) == 9, [box["label"] for box in boxes]
+        assert overprinted(boxes) == [], (width, overprinted(boxes))
+        for box in boxes:
+            assert box["right"] <= box["columnRight"] + 0.5, (width, box)
+        # Contiguous columns, so the one solid run is one line with no gap.
+        for before, after in pairwise(boxes):
+            assert abs(after["columnLeft"] - before["columnRight"]) <= 0.5, (width, before, after)
+        assert_no_sideways_scroll(page)
+
+        geometry = rail.evaluate(
+            "node => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
+        )
+        if width >= 768:
+            # Nine floors fit at 768, so the rail does not scroll there.
+            assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, (width, geometry)
+        else:
+            assert geometry["scrollWidth"] > geometry["clientWidth"], (width, geometry)

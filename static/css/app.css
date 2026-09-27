@@ -10931,18 +10931,48 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-style: italic;
 }
 
+/* **No column is narrower than its own longest word, and the strip scrolls
+ * itself when that does not fit.**
+ *
+ * The columns used to be `minmax(0, 1fr)`: equal shares, as narrow as the row
+ * demanded. A label is one or two words and cannot wrap inside a word, so once
+ * a share fell below the longest one the word ran on into the next column. A
+ * `Seadus` on `Kooskõlastusringil` that had sent three `Koja arvamus` and was
+ * waiting on an `Arvamuse tähtaeg` draws nine columns; at 768px each was 78px,
+ * and the current phase's semibold «Kooskõlastusring» — about 95px — printed
+ * straight over «Arvamuse tähtaeg» beside it.
+ *
+ * `min-content` is that longest word (or date), so a label may still wrap
+ * between its words and never runs out of its column. Where every floor fits,
+ * `1fr` shares out the rest and the columns are equal exactly as before; where
+ * one is longer, that column alone is wider. Where the floors together do not
+ * fit, the row is wider than its box and the strip scrolls itself rather than
+ * the page, which is what it already did on a phone (TEEMA_TARGET_SPEC §H).
+ * Nothing changes for a row that fitted: at 1024 and 1440 the nine-column file
+ * renders pixel-identical to the old rule.
+ *
+ * A scroller clips at its padding edge, and the first column's dot sits on that
+ * edge: the 3px ring of a `Praegu` or today node there would lose its left
+ * side. So the strip reaches 4px out to the left and pads the same 4px back —
+ * every column stays where it was — and the hairline under it is a background
+ * drawn from that 4px onwards instead of a border, which would have started 4px
+ * left of the page's one left edge. The extra pixel of bottom padding is the
+ * border's own height, so the strip keeps its height too. */
 #teema-vaade-wrap .tl-strip {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-columns: minmax(min-content, 1fr);
+  overflow-x: auto;
   /* No side margin. The design export inset the strip by 32px itself because
      its accordion body had none; production's body is already padded by the
      one-edge rule above, and keeping both put the strip at 64 — the single
      most visible rule of the redesign, visibly broken by the element that
-     leads the section (TEEMA_TARGET_SPEC, VISUAL PRECISION). */
-  margin: 0 0 14px;
-  padding: var(--spacing-3) 0 var(--spacing-2);
-  border-bottom: 1px solid var(--border-subtle);
+     leads the section (TEEMA_TARGET_SPEC, VISUAL PRECISION). The -4px is the
+     ring's room (see above), not an inset: the columns start where they did. */
+  margin: 0 0 14px -4px;
+  padding: var(--spacing-3) 0 calc(var(--spacing-2) + 1px) 4px;
+  background: linear-gradient(var(--border-subtle), var(--border-subtle)) left 4px bottom /
+    calc(100% - 4px) 1px no-repeat;
 }
 
 #teema-vaade-wrap .tl-step {
@@ -11460,10 +11490,16 @@ section:has(.pw-more[open]) tbody.uxextra {
      width the strip scrolls itself rather than the page — never dropped steps,
      never abbreviated nonsense, and never a horizontally scrolling document
      (TEEMA_TARGET_SPEC §H). Its inset is still the accordion body's, which
-     follows `--layout-gutter` down to 12px with every other row. */
-  #teema-vaade-wrap .tl-strip {
-    grid-auto-columns: minmax(96px, 1fr);
-    overflow-x: auto;
+     follows `--layout-gutter` down to 12px with every other row.
+
+     The scrolling itself is the strip's at every width now; what a phone adds
+     is a 96px floor, so a two-word label keeps a legible line rather than one
+     word per line. It is the column's `min-width` rather than the track's
+     minimum because the track's minimum is already its longest word, and a
+     `min-content` track honours the item's `min-width` — so a column is the
+     wider of the two and «Kooskõlastusring» still does not overprint here. */
+  #teema-vaade-wrap .tl-step {
+    min-width: 96px;
   }
 
   }
