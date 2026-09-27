@@ -35,7 +35,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, give_first_step, open_add_panel, sign_in
+from e2e.conftest import KAIK_ROW, SANDRA, give_first_step, open_add_panel, open_kaik_row, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -167,6 +167,10 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_with_a_staged_file(
 
     # The record landed, and the standalone route redirected back to the Matter.
     assert page.url.startswith(where.rstrip("/"))
+    # The win's words are its row's sub-line, behind the row's toggle: a
+    # `Teema käik` row arrives closed as its one line (docs/adr/0074 §14,
+    # amended 2026-09-27).
+    open_kaik_row(page.locator(KAIK_ROW).filter(has_text="Erisus jäi rakendusmäärusesse").first)
     expect(page.get_by_text("Erisus jäi rakendusmäärusesse").first).to_be_visible()
 
 

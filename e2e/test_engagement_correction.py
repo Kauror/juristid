@@ -36,6 +36,7 @@ from e2e.conftest import (
     READER,
     create_matter,
     open_add_panel,
+    open_kaik_row,
     open_matter,
     sign_in,
     unique_title,
@@ -122,9 +123,14 @@ def _open_a_wait(page, reply_by: str) -> None:
 
 
 def _row(page):
-    """The one `Kaasamine` row on a freshly filed Matter."""
+    """The one `Kaasamine` row on a freshly filed Matter, opened.
+
+    `Teema käik` rows arrive closed as their one line (docs/adr/0074 §14,
+    amended 2026-09-27); everything this file presses is behind the toggle.
+    """
     row = page.locator(".uxtl__ms-body").first
     row.wait_for()
+    open_kaik_row(row)
     return row
 
 
@@ -364,7 +370,12 @@ def test_a_reader_is_offered_no_correction(page, base_url):
     chronology = page.locator("#ajalugu-loend")
     expect(chronology).to_be_visible()
     expect(chronology.get_by_text("Kaasamine:", exact=False).first).to_be_visible()
-    expect(chronology.get_by_role("button", name="Muuda", exact=False)).to_have_count(0)
+    # Opened first, so an absent `Muuda` is absent rather than merely behind a
+    # closed row's toggle — and nothing in the markup either, open or closed.
+    engagement = chronology.locator("article.uxtl__item").filter(has_text="Kaasamine:").first
+    open_kaik_row(engagement)
+    expect(engagement.get_by_role("button", name="Muuda", exact=False)).to_have_count(0)
+    expect(chronology.locator("button", has_text="Muuda")).to_have_count(0)
 
 
 # ---------------------------------------------------------------------------

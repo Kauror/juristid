@@ -33,6 +33,7 @@ from e2e.conftest import (
     MARTIN,
     create_matter,
     open_add_panel,
+    open_kaik_row,
     sign_in,
     unique_title,
 )
@@ -94,9 +95,12 @@ def _file_a_development(page, *, occurred_on: str = HAPPENED) -> None:
 
 
 def _row(page):
-    """The one `Menetluse areng` row on a freshly filed Matter."""
+    """The one `Menetluse areng` row on a freshly filed Matter, opened: a
+    `Teema käik` row arrives closed as its one line (docs/adr/0074 §14,
+    amended 2026-09-27)."""
     row = page.locator(".uxtl__ms-body").first
     row.wait_for()
+    open_kaik_row(row)
     return row
 
 

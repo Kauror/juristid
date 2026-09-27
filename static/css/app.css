@@ -10474,12 +10474,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
-/* `.uxtl__item` is `display: contents`, so the space between entries has to
- * live on the body. */
-.teemamain .uxtl__body {
-  padding-bottom: var(--spacing-2);
-}
-
 /* An entry's kind badge is hidden; an event's is not. A badge on almost every
  * row carried no information — every note said «Märkus» — while «Järgmiseks
  * tehtud» and «Väljasaadetud · arvamus» each say something that is nowhere
@@ -11149,17 +11143,21 @@ section:has(.pw-more[open]) tbody.uxextra {
  * instead, so a `Märge` or `Teema loodud` drew the big accent dot beside a
  * regular headline (docs/adr/0074 §14, amended 2026-09-27). */
 
+/* Both margins sit 5px lower than the line's own centre would suggest: the
+ * row's box carries 1px of (transparent) border and 4px of padding above its
+ * line, so that opening a row draws its panel without moving the line
+ * (`.uxtl__body` below, the accordion). */
 #teema-vaade-wrap .uxtl__dot {
   width: 6px;
   height: 6px;
-  margin-top: 7px;
+  margin-top: 12px;
   background: var(--text-muted);
 }
 
 #teema-vaade-wrap .uxtl__dot--primary {
   width: 12px;
   height: 12px;
-  margin-top: 5px;
+  margin-top: 10px;
   background: var(--accent-link);
   border: 0;
 }
@@ -11211,16 +11209,168 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-weight: var(--typography-weight-semibold);
 }
 
+/* And one step down in ink as well as weight, since the list became an
+ * accordion (docs/adr/0074 §14, amended 2026-09-27). Closed, every row is one
+ * line and nothing else, so the weight of that one line is the whole of the
+ * hierarchy a reader scans — and a regular headline in the primary ink still
+ * read as loud as the outcome beside it. `--text-secondary` keeps the
+ * contrast of body copy; nothing here is faint. */
 #teema-vaade-wrap .uxtl__item--secondary .uxtl__mswhat,
 #teema-vaade-wrap .uxtl__item--secondary .uxtl__author {
   font-weight: var(--typography-weight-regular);
+  color: var(--text-secondary);
 }
 
+/* A date is metadata and never the headline: regular weight on every row, and
+ * muted. A primary row's day takes the step up to `--text-secondary` — the
+ * day an opinion went out is what a reader of that line is scanning for —
+ * while a secondary row's stays at the muted ink, so its date is as quiet as
+ * its headline. */
 #teema-vaade-wrap .uxtl__msdate {
   font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-regular);
   line-height: 1.4;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+#teema-vaade-wrap .uxtl__item--primary .uxtl__msdate {
+  color: var(--text-secondary);
+}
+
+/* -- the accordion ------------------------------------------------------------
+ *
+ * Every row of `Teema käik` is one line until somebody opens it: the dot, the
+ * headline and the date for a milestone, the author, the act and the time for a
+ * work entry — and at the right a chevron. The body, the files, `Juristi
+ * märkus`, the links and `Muuda` / `+ Lisa fail` / `Kustuta` are behind it.
+ * One row is open at a time (`static/js/app.js`), and the open one is the only
+ * panel on the list (docs/adr/0074 §14, amended 2026-09-27).
+ *
+ * **A closed row has no box.** Its border is there and transparent, so opening
+ * it draws a panel without moving the line a pixel: the top border and padding
+ * are the same in both states and only the bottom grows. The dots above are
+ * placed against that same offset.
+ *
+ * **The toggle is a button laid over the row's own line** rather than a
+ * `<summary>` holding a copy of it — the line lives inside four correction
+ * elements that `Muuda` swaps whole (`timeline_items.html` says why). Closed,
+ * it covers the whole row, so the row is the hit area; open, only the line,
+ * so the text in the panel can be selected and its controls pressed. It is
+ * positioned, and the text under it is not, so it paints over the line and
+ * takes the click; the row's own controls are lifted above it. */
+
+/* `.uxtl__item` is `display: contents`, so the space between rows lives on
+ * the body — as a margin now, outside the panel's edge. */
+#teema-vaade-wrap .uxtl__body {
+  position: relative;
+  margin-bottom: 2px;
+  padding: 4px 32px 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+
+#teema-vaade-wrap .uxtl__item--open > .uxtl__body {
+  margin-bottom: var(--spacing-2);
+  padding-bottom: var(--spacing-25);
+  border-color: var(--border-default);
+  background: var(--surface-panel);
+}
+
+/* The accent edge is the primary row's, open as well as closed: the one
+ * panel that may draw in the accent is the one whose dot already does. */
+#teema-vaade-wrap .uxtl__item--primary.uxtl__item--open > .uxtl__body {
+  border-color: var(--accent-border);
+}
+
+#teema-vaade-wrap .uxtl__toggle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+#teema-vaade-wrap .uxtl__toggle:focus-visible {
+  outline-offset: 0;
+}
+
+#teema-vaade-wrap .uxtl__toggle:hover {
+  color: var(--text-primary);
+}
+
+/* Open, the toggle is the line and no more: 4px of padding over one 17.5px
+ * line, and the line's descenders. A headline long enough to wrap keeps its
+ * first line and the chevron as the way to close it. */
+#teema-vaade-wrap .uxtl__item--open > .uxtl__body > .uxtl__toggle {
+  bottom: auto;
+  height: 28px;
+}
+
+/* The row's own controls, above the toggle that covers their line. */
+#teema-vaade-wrap .uxtl__body .uxtl__editactions,
+#teema-vaade-wrap .uxtl__body .uxtl__editform {
+  position: relative;
+  z-index: 1;
+}
+
+/* Drawn rather than a glyph: two borders of a square turned 45°, which point
+ * down while the row is closed and up while it is open. It is the only mark on
+ * a closed row that says «there is more», so it keeps the muted ink until the
+ * row is reached for. */
+#teema-vaade-wrap .uxtl__chevron {
+  position: absolute;
+  top: 9px;
+  right: 13px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+#teema-vaade-wrap .uxtl__toggle[aria-expanded="true"] > .uxtl__chevron {
+  top: 12px;
+  transform: rotate(-135deg);
+}
+
+/* **A row with nothing behind its line draws no toggle.** `Teema loodud` is
+ * a headline and a date and nothing else, and a chevron that opened an empty
+ * panel would be a promise the row cannot keep. Decided here, off what the row
+ * actually holds — anything the closed state below would hide — so the answer
+ * cannot drift from the markup the way a template condition listing the ten
+ * kinds of detail would. */
+#teema-vaade-wrap .uxtl__body:not(:has(
+  > :not(.uxtl__toggle, .uxtl__head, .uxtl__meta, .uxtl__ms-body),
+  > .uxtl__ms-body > :not(.uxtl__head),
+  .uxtl__head > .uxtl__editactions
+)) > .uxtl__toggle {
+  display: none;
+}
+
+/* The closed state, on screen and only where scripting runs. Without it no
+ * toggle could open a row, so every row stays open and no toggle is drawn;
+ * and a printed Teema is the whole record. `(scripting: enabled)` matches from
+ * the first paint, before `app.js` has run, so a page never flashes open. */
+@media screen and (scripting: enabled) {
+  #teema-vaade-wrap .uxtl__item:not(.uxtl__item--open) .uxtl__body > :not(.uxtl__toggle, .uxtl__head, .uxtl__meta, .uxtl__ms-body),
+  #teema-vaade-wrap .uxtl__item:not(.uxtl__item--open) .uxtl__ms-body > :not(.uxtl__head, .uxtl__editform),
+  #teema-vaade-wrap .uxtl__item:not(.uxtl__item--open) .uxtl__ms-body > .uxtl__editform > :not(.uxtl__ms),
+  #teema-vaade-wrap .uxtl__item:not(.uxtl__item--open) .uxtl__head > .uxtl__editactions {
+    display: none;
+  }
+}
+
+@media not screen, (scripting: none) {
+  #teema-vaade-wrap .uxtl__toggle {
+    display: none;
+  }
 }
 
 #teema-vaade-wrap .uxtl__mssub {

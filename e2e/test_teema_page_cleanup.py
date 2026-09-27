@@ -33,6 +33,7 @@ from e2e.conftest import (
     SANDRA,
     open_add_panel,
     open_hetkeseis,
+    open_kaik_row,
     sign_in,
     unique_title,
 )
@@ -227,6 +228,7 @@ def test_three_opinions_draw_one_run_and_the_page_reads_quietly(page, base_url):
     assert weight(opinion) == 600
     assert weight(note) == 400
     expect(note).to_have_class(re.compile(r"\buxtl__item--secondary\b"))
+    open_kaik_row(note)
     expect(note.get_by_role("button", name=re.compile("Muuda"))).to_be_visible()
 
     # Neither heading takes room, and both are still level-two headings.
@@ -397,6 +399,7 @@ def test_teema_kaik_draws_one_hierarchy_in_the_dot_and_the_headline(page, base_u
         for words in ("Rääkisin ministeeriumiga", "Liige toetab eelnõu", "Ministeeriumi seisukoht"):
             row = rows.filter(has_text=words)
             expect(row).to_have_count(1)
+            open_kaik_row(row)
             muuda = row.get_by_role("button", name=re.compile("Muuda"))
             expect(muuda).to_be_visible()
             muuda.click(trial=True)

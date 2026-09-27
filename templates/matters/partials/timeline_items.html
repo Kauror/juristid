@@ -59,12 +59,45 @@ record, not professional chronology (master specification 16.5).
     article stays.
   {% endcomment %}
   <article class="uxtl__item {% if item.is_primary %}uxtl__item--primary{% else %}uxtl__item--secondary{% endif %}"
+           data-kaik-rida="{{ item.row_key }}"
            {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
     <span class="uxtl__rail" aria-hidden="true">
       <span class="uxtl__dot {% if item.is_primary %}uxtl__dot--primary{% endif %}"></span>
       <span class="uxtl__line"></span>
     </span>
     <div class="uxtl__body">
+      {% comment %}
+        **The row is an accordion, and this is its toggle** (docs/adr/0074 §14,
+        amended 2026-09-27). Closed, a row is its one line — the headline and
+        the date for a milestone, the author and the time for a work entry —
+        and nothing else: no body, no file, no `Muuda`. Open, it is the only
+        panel on the list. Every row renders closed; `static/js/app.js` opens
+        one at a time.
+
+        **A button laid over the line, not a `<details>`.** The line a closed
+        row shows is drawn *inside* four correction elements
+        (`engagement_row.html`, `external_position_row.html`,
+        `development_row.html`, `submission_row.html`), and each of those is a
+        swap target that `Muuda` replaces whole. A `<summary>` would have to
+        hold that line, and so hold half of a swap target — or print the
+        headline a second time and go stale the moment a correction renamed it.
+        So the line stays where it is, and this button covers it: named by the
+        line itself (`aria-labelledby`, an id every branch below draws on its
+        own line), so a corrected headline renames the toggle with no second
+        copy to update.
+
+        First in the row, so it is the first thing Tab reaches and the landing
+        `app.js` gives a row after a swap. A row with nothing behind its line —
+        `Teema loodud` — draws no toggle at all; that is decided by the
+        stylesheet from what the row actually holds, so no condition here can
+        drift from the markup under it. Without scripting the stylesheet shows
+        every row open and no toggle (`@media (scripting: none)`).
+      {% endcomment %}
+      <button type="button" class="uxtl__toggle" aria-expanded="false"
+              aria-labelledby="kaik-{{ item.row_key }}-rida">
+        <span class="visually-hidden">Kirje üksikasjad</span>
+        <span class="uxtl__chevron" aria-hidden="true"></span>
+      </button>
       {% if item.is_milestone %}
         {% comment %}
           A milestone carries a **date and no clock time**. Two notes on one
@@ -135,7 +168,7 @@ record, not professional chronology (master specification 16.5).
             `static/css/ux.css` `.uxtl__head`).
           {% endcomment %}
           <div class="uxtl__head">
-            <p class="uxtl__ms">
+            <p class="uxtl__ms" id="kaik-{{ item.row_key }}-rida">
               <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
               {% comment %}
                 An `Ülevaade / uudis` row names its date cell, and nothing else
@@ -303,7 +336,7 @@ record, not professional chronology (master specification 16.5).
           page and left a gutter of dates nobody reads down
           (TEEMA_TARGET_SPEC §E).
         {% endcomment %}
-        <p class="uxtl__meta">
+        <p class="uxtl__meta" id="kaik-{{ item.row_key }}-rida">
           {% if item.actor %}
             <span class="uxtl__author">{{ item.actor.display_name }}</span>
           {% endif %}

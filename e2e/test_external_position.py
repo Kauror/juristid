@@ -40,7 +40,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_title
+from e2e.conftest import SANDRA, create_matter, open_add_panel, open_kaik_row, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -58,6 +58,16 @@ def panel(page):
 
 def chronology(page):
     return page.locator("#ajalugu-loend")
+
+
+def position_row(page):
+    """The one `Teiste arvamus` row on a fresh Matter.
+
+    A `Teema käik` row arrives closed as its one line (docs/adr/0074 §14,
+    amended 2026-09-27), so its link, its summary and its `Muuda` are read and
+    pressed after `open_kaik_row`.
+    """
+    return chronology(page).locator("article.uxtl__item").filter(has_text="Teiste arvamus:").first
 
 
 #: The picker's own id inside the panel. Every control the shared organisation
@@ -97,6 +107,7 @@ def record_one(page, base_url: str, *, url: str = POSITION_URL, summary: str = "
         panel(page).locator("[name=summary]").fill(summary)
     panel(page).get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
+    open_kaik_row(position_row(page))
 
 
 def today_in_estonian(page) -> str:
@@ -270,6 +281,7 @@ def test_a_recorded_position_reopens_on_its_own_date_and_never_on_today(page, ba
     panel(page).get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("Kuupäev teadmata").first.wait_for()
 
+    open_kaik_row(position_row(page))
     chronology(page).get_by_role("button", name="Muuda").first.click()
     form = chronology(page).locator("form[aria-label='Välise seisukoha parandamine']")
     form.wait_for(state="visible")

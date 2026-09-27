@@ -42,6 +42,7 @@ from e2e.conftest import (
     add_panel_is_open,
     create_matter,
     open_add_panel,
+    open_kaik_row,
     open_matter,
     sign_in,
 )
@@ -883,6 +884,7 @@ def record_a_round(page, matter_url: str, *, audience: str, deadline: str) -> No
     page.wait_for_load_state("networkidle")
 
     row = page.locator(".uxtl__ms-body").filter(has_text=audience).first
+    open_kaik_row(row)
     row.get_by_text("Ootan tagasisidet", exact=True).click()
     row.locator("input[name=feedback_deadline]").fill(deadline)
     with page.expect_response(

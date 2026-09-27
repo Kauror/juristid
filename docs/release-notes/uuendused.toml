@@ -30,7 +30,12 @@ basis = "deployment"
 # «Alguse» ette (#339); ja «Teema käigus» joonistati ka toetavad kirjed
 # (märge, tagasiside, teiste arvamus, «Teema loodud») suure sinise punktiga
 # tavalise kirja kõrval (#340). Mõlemad ainult kuvamine; andmeid ei muudetud.
-prs = [309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 339, 340]
+#
+# **Samal päeval veel:** omaniku tagasiside järel on «Teema käik» kompaktne
+# akordion (#341) — iga kirje on vaikimisi üks rida ning üksikasjad, failid ja
+# «Muuda» avanevad kirjel klõpsates. Ainult kuvamine ja avamine; andmeid,
+# järjekorda ega õigusi ei muudetud.
+prs = [309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 339, 340, 341]
 changes = [
   "«+ Märke» vormil ei ole enam «Etapi» valikut. Varasemate märgete etapid jäävad alles ja «Muuda» pakub etappi ainult real, millel see juba on.",
   "«+ Märke» ja «+ Arvamuse / tagasiside» kuupäevaväli on nüüd kompaktne ega veni enam üle kogu vormi.",
@@ -39,6 +44,7 @@ changes = [
   "«Menetluse kulus» on välja saadetud Koja arvamused nüüd õiges kohas: pärast teema algust saadetud arvamus ei ole enam «Alguse» ees ja mitu arvamust on alati saatmise järjekorras.",
   "«Teema käigus» on esile tõstetud ainult välja saadetud arvamus, avaldatud ülevaade ja teema lõpetamine, nii et olulisemad sündmused on kergemini leitavad.",
   "«Teema käigus» on suur sinine punkt nüüd ainult välja saadetud arvamusel, avaldatud ülevaatel ja teema lõpetamisel; märked, saabunud tagasiside, teiste arvamused ja muud toetavad kirjed on väiksema halli punktiga.",
+  "«Teema käik» on nüüd kompaktsem: iga kirje on vaikimisi üks rida pealkirja ja kuupäevaga ning üksikasjad, failid ja «Muuda» avanevad kirjel klõpsates; olulisemad kirjed on endiselt teistest selgemalt esile tõstetud.",
   "Pika ajalooga teemal näitab «Näita varasemaid» nüüd kogu teema käigu; varem võis tihedalt täidetud teemal mõni rida vahele jääda.",
   "Kaasamisele, välisele seisukohale ja avaldatud kodulehe ülevaatele ei saa enam panna tulevast kuupäeva: vorm ütleb seda ja sisestatud tekst jääb alles. Varem kirje salvestus, kuid ei olnud teema käigus näha enne seda päeva.",
   "Teema päises salvestub vastutaja ja hetkeseisu muutus nüüd alles «Salvesta» vajutamisel, ja klaviatuuriga valikute vahel liikumine ei muuda enam kogemata teemat ega filtrit.",

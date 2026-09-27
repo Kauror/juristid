@@ -19,7 +19,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, READER, create_matter, sign_in
+from e2e.conftest import MARTIN, READER, create_matter, open_kaik_row, sign_in
 from e2e.titles import unique_title
 
 pytestmark = pytest.mark.e2e
@@ -50,6 +50,7 @@ ACTIVE = """() => {
     isRow: !!(a && a.matches && a.matches('article.uxtl__item')),
     inRow: !!(a && a.closest && a.closest('article.uxtl__item')),
     index: a ? rows.indexOf(a.closest ? a.closest('article.uxtl__item') : null) : -1,
+    audit: !!(a && a.closest && a.closest('.uxtl__audit')),
     rows: rows.length,
     top: box ? box.top : null,
     scrollY: window.scrollY,
@@ -97,10 +98,13 @@ def test_a_writer_lands_on_the_first_older_row(page, base_url):
     before, after = _load_older_and_read(page)
     _assert_landed_on_the_first_new_row(before, after)
 
-    # And the next Tab continues from there, not from the top of the page.
+    # And the next Tab continues from there, not from the top of the page: to
+    # the next row that has a toggle, or — every row after the landing being
+    # closed or holding nothing to open (docs/adr/0074 §14, amended
+    # 2026-09-27) — on to «Kõik muudatused» directly under the list.
     page.keyboard.press("Tab")
     step = page.evaluate(ACTIVE)
-    assert step["inRow"] and step["index"] >= after["index"], step
+    assert (step["inRow"] and step["index"] >= after["index"]) or step["audit"], step
     assert abs(step["scrollY"] - after["scrollY"]) < after["viewport"], (after, step)
 
 
@@ -121,6 +125,7 @@ def test_removing_a_row_lands_on_its_neighbour(page, base_url):
     _matter_with_rows(page, base_url, 8)
     rows = page.locator("article.uxtl__item")
     victim_index = 5
+    open_kaik_row(rows.nth(victim_index))
     # The row is `display: contents`, so it is reached through its own control.
     remove = rows.nth(victim_index).locator("summary.uxtl__edit", has_text="Kustuta")
     remove.scroll_into_view_if_needed()

@@ -740,6 +740,9 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # `REQUIRED_NORMALISATIONS` insist on all of them.
     "teema-kaik": _held_still(STRIP_RUN_DAY, STRIP_EXPECTED_DAY),
     "teema-ajajoon": _held_still(CHRONOLOGY_RUN_DAY, CHRONOLOGY_EXPECTED_DAY),
+    # The same clip with the one outcome opened (docs/adr/0074 §14, amended
+    # 2026-09-27): the same two rows are on it, closed or open.
+    "teema-ajajoon-avatud": _held_still(CHRONOLOGY_RUN_DAY, CHRONOLOGY_EXPECTED_DAY),
     # The same open Matter, whole, at both widths. These two carry the strip and
     # the chronology together, and they were drifting exactly as the clipped
     # pair were — more quietly, because a few hundred differing pixels is a far
@@ -829,6 +832,7 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # the seed adds it to this Matter on every run.
     "teema-kaik": (*STRIP_RUN_DAY, *STRIP_EXPECTED_DAY),
     "teema-ajajoon": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
+    "teema-ajajoon-avatud": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ulevaade": (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
     "teema-1024": (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
     # The archive row draws no process strip and has sent no opinion, so
@@ -1349,6 +1353,27 @@ def test_the_chronology_shows_its_two_row_kinds(page, base_url):
     signed_in_matter(page, base_url, OPEN_TITLE)
     _at_rest(page)
     compare("teema-ajajoon", capture(page, "teema-ajajoon", clip_to="#ajalugu-loend"))
+
+
+def test_the_chronology_with_its_one_outcome_open(page, base_url):
+    """`Teema käik` is an accordion, and this is its other state.
+
+    `teema-ajajoon` photographs the list as it arrives: every row closed, one
+    line each, and no box around any of them. Here the one primary row —
+    «Arvamus välja» — is open: the only panel on the list, drawn with the accent
+    edge its dot already carries, with its sub-line, its file and its `Muuda`
+    inside, while every other row stays one flat line (docs/adr/0074 §14,
+    amended 2026-09-27).
+    """
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    toggle = page.locator("#ajalugu-loend article.uxtl__item--primary .uxtl__toggle").first
+    toggle.click()
+    assert toggle.get_attribute("aria-expanded") == "true"
+    _at_rest(page)
+    compare(
+        "teema-ajajoon-avatud",
+        capture(page, "teema-ajajoon-avatud", clip_to="#ajalugu-loend"),
+    )
 
 
 def test_matter_documents(page, base_url):

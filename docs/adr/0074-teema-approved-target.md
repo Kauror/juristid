@@ -508,6 +508,12 @@ amendment at the end of this document.** The dot now follows
 outcomes Koda put out draw it, and every other row — milestones included — draws
 the 6 px muted one.
 
+**Amended again on 2026-09-27 for how much of a row is shown — see the
+accordion amendment at the end of this document.** Every row now arrives closed
+as its one line — the headline and the date, or the author and the time — and
+its detail and controls are behind a toggle; one row is open at a time. The two
+kinds, and what makes a row one or the other, are unchanged.
+
 Milestone events take a row of their own even when they share a composer
 operation with an entry. A save that wrote a note *and* changed the stage did two
 separable things to the record.
@@ -757,3 +763,99 @@ headline, date, links, files, `Juristi märkus`, `Muuda`, `Kustuta` and
 `Lisa fail`; visibility and RESTRICTED filtering; the 6 px and 12 px sizes and
 the two colours; `Menetluse kulg`; every service, and every stored row. No
 migration, no search-index change.
+
+---
+
+## Amendment, 2026-09-27 — `Teema käik` is an accordion: one line per row until it is opened
+
+- Status: accepted, amending how §14's rows are presented.
+- Scope: the presentation and interaction of `Teema käik`'s rows. §14's two row
+  kinds and the one hierarchy of the amendment above stand.
+
+### What was decided before
+
+Every row of `Teema käik` rendered in full, open, all the time: the headline and
+the date, the sub-line, `Juristi märkus`, the links, the files, the next-step
+and stage pills, a work entry's body, and the row's own `Muuda`, `+ Lisa fail`
+and `Kustuta`. A secondary row's headline was set in the regular weight with
+the primary ink unchanged («quieter, not faint»).
+
+### Why it is superseded
+
+Owner feedback on the release of 2026-09-27: the list was too tall and too noisy
+to scan. A lawyer reading six months of a file looks down the chronology for
+*what happened when*, and every row answering that question also printed its
+detail and its controls, so the outcomes the hierarchy speaks up for were spread
+over several screens of supporting text. The regular-weight secondary headline
+still read almost as loud as the outcome beside it once every row was one line.
+
+### What is decided now
+
+**Each row is an accordion item, closed by default.** Closed, a row is its one
+line — the dot, the headline and the date for a milestone, or the author, the
+act and the time for a work entry — and a chevron. Nothing else: no body, no
+file, no sub-line, no pill and no control. Open, it shows everything it showed
+before, unchanged, and it is the only panel on the list.
+
+**One row is open at a time.** Opening a row closes whichever was open, except a
+row that holds a form — an open correction editor, a `+ Lisa fail` picker, an
+open `Lõpeta kaasamine` — which is never closed by *another* row opening, so
+nobody's unsaved words are put out of sight. The pressed row is held under the
+pointer when a row above it closes.
+
+**Closed rows have no box.** The row's border is there and transparent, so
+opening it draws a panel without moving its line. The open panel carries the
+neutral `--border-default` edge on a secondary row and the `--accent-border`
+edge on a primary one: the only rows that may draw in the accent are the ones
+whose dot already does.
+
+**The hierarchy is sharper on the closed line.** Primary is unchanged — the
+12 px accent dot and the semibold headline. A secondary headline and a work
+entry's author are regular *and* one step down in ink, to `--text-secondary`
+(body-copy contrast, not faint). No date is bold: `.uxtl__msdate` is regular and
+muted, and only a primary row's date takes the step up to `--text-secondary`.
+
+**The toggle is a button laid over the row's own line, not a `<details>`.** The
+line a closed row shows is drawn inside four correction elements
+(`engagement_row.html`, `external_position_row.html`, `development_row.html`,
+`submission_row.html`) that `Muuda` swaps whole. A `<summary>` would have had to
+hold half of a swap target, or print the headline a second time and go stale
+when a correction renamed it. So the button is the first child of the row's
+body, positioned over the line — the whole row while closed, the line alone
+while open, so text in the panel stays selectable — and named by that line
+through `aria-labelledby` (`kaik-<row key>-rida`, `TimelineItem.row_key`); a
+corrected headline renames the toggle with no second copy to update. It carries
+`aria-expanded`, a visible focus ring around the row, and a drawn chevron that
+turns. The row's own controls are lifted above it.
+
+**What a closed row hides is decided by the stylesheet, from what the row
+holds.** Inside `@media screen and (scripting: enabled)`: every child of the
+row's body except the toggle, the line and a correction element; inside a
+correction element everything but its line; and the line's own controls. A row
+holding nothing else — `Teema loodud` — draws no toggle. `(scripting: enabled)`
+matches from the first paint, so the page never flashes open; with scripting off
+every row reads open and no toggle is drawn, and a printed Teema is the whole
+record.
+
+**The script is small and owns the state.** `static/js/app.js` toggles the
+row's `uxtl__item--open` and its button's `aria-expanded` together, one
+delegated listener for the life of the page. Besides a press, three things open
+a row: a link that points at it (`#sissekanne-…`, where a search hit lands); a
+row holding a form after a swap (a refused `+ Lisa fail` re-renders the whole
+column with the picker inside one row; a draft carried across a swap by
+docs/adr/0107 arrives in a row drawn closed); and a row that was open when the
+column was re-rendered around it, so a file just added is still in view.
+
+### What this amendment does not change
+
+`TimelineItem.is_primary`, `is_milestone` and what counts as either; the two row
+kinds, the 6 px and 12 px dots and their two colours; the chronology's
+membership, order and pagination (`matter_timeline`, «Näita varasemaid»), and
+the rows «Näita varasemaid» brings, which arrive closed like the first page's;
+every row's headline, date, sub-line, links, files, `Juristi märkus`, pills,
+body, `Muuda`, `Kustuta` and `+ Lisa fail`, and who is offered each; every
+correction element and its swap; visibility, RESTRICTED filtering and the count
+in the section head; the section's own `<details>`, its hidden heading and the
+`#ajajoon` anchor; `Menetluse kulg` and every other part of the Teema page;
+every service, every audit event and every stored row. No migration, no
+`INDEX_VERSION` change, no search rebuild.

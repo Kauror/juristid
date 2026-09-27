@@ -147,9 +147,14 @@ anything changed.
       the single word `Muuda`, and the paper — and the third of those was chrome
       on a surface that is read far more often than it is corrected
       (docs/adr/0105 §2, `static/css/ux.css` `.uxtl__head`).
+
+      The line `Teema käik` shows while this row is closed, and the name of the
+      toggle that opens it: the row's button is `aria-labelledby` this id
+      (`kaik-<record pk>-rida`, `TimelineItem.row_key`), so a corrected
+      headline renames it with no second copy to update.
     {% endcomment %}
     <div class="uxtl__head">
-      <p class="uxtl__ms">
+      <p class="uxtl__ms" id="kaik-{{ submission.pk }}-rida">
         <span class="uxtl__mswhat" id="koja-arvamus-{{ submission.pk }}-pealkiri">{{ milestone.what }}</span>
         <span class="uxtl__msdate">{{ milestone.display_date }}</span>
       </p>

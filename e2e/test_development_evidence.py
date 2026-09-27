@@ -27,7 +27,7 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, create_matter, open_add_panel, sign_in, unique_title
+from e2e.conftest import MARTIN, create_matter, open_add_panel, open_kaik_row, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -64,8 +64,12 @@ def _file_a_development(page, base_url: str) -> str:
 
 
 def _row(page):
-    """The chronology article this development draws, files and all."""
-    return page.locator("article.uxtl__item").filter(has_text=HEADLINE)
+    """The chronology article this development draws, files and all — opened,
+    because a `Teema käik` row arrives closed as its one line (docs/adr/0074
+    §14, amended 2026-09-27)."""
+    row = page.locator("article.uxtl__item").filter(has_text=HEADLINE)
+    open_kaik_row(row)
+    return row
 
 
 def _action(page, suffix: str):

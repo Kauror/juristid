@@ -39,6 +39,7 @@ from e2e.conftest import (
     MARTIN,
     open_add_panel,
     open_hetkeseis,
+    open_kaik_row,
     sign_in,
     unique_title,
 )
@@ -391,6 +392,7 @@ def test_the_chronology_row_offers_lisa_fail_and_never_lisa_toend(page, base_url
     page.get_by_text(headline).first.wait_for()
 
     row = page.locator("article.uxtl__item").filter(has_text=headline)
+    open_kaik_row(row)
     action = row.locator("button.uxtl__edit[id$='-toend']")
     expect(action).to_have_text("+ Lisa fail")
     expect(row).not_to_contain_text("Lisa tõend")
@@ -514,6 +516,7 @@ def test_the_chronology_row_with_lisa_fail_does_not_overflow(page, base_url: str
     page.get_by_text(headline).first.wait_for()
 
     row = page.locator("article.uxtl__item").filter(has_text=headline)
+    open_kaik_row(row)
     expect(row.locator("button.uxtl__edit[id$='-toend']")).to_have_text("+ Lisa fail")
     overflows = page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
