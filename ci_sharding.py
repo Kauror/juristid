@@ -92,6 +92,20 @@ def load_timings(path: Path | None = None) -> dict[str, Measurement]:
     }
 
 
+def load_session_setup(path: Path | None = None) -> dict[str, float]:
+    """The seconds each suite's shard pays once before its first file, by suite.
+
+    Measured beside the file weights and kept out of them (ENG-139): every
+    shard pays it, so it moves no file between shards, but a prediction of a
+    shard's duration that left it out would be wrong by exactly that much.
+    """
+    location = TIMINGS_PATH if path is None else path
+    if not location.exists():
+        return {}
+    raw = json.loads(location.read_text(encoding="utf-8"))
+    return {str(key): float(value) for key, value in raw.get("session_setup_seconds", {}).items()}
+
+
 def median_file_seconds(timings: dict[str, Measurement]) -> float:
     """What a file with no measurement and no known test count is worth."""
     if not timings:
