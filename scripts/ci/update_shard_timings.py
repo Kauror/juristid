@@ -25,6 +25,7 @@ import collections
 import datetime
 import json
 import pathlib
+import statistics
 import sys
 import xml.etree.ElementTree as ElementTree
 
@@ -62,8 +63,59 @@ def case_path(case: ElementTree.Element) -> str | None:
     return None
 
 
-def read_reports(directory: pathlib.Path) -> tuple[dict[str, float], dict[str, int]]:
-    """Total seconds and test count per file, across every report found."""
+def _cases(report: pathlib.Path) -> list[tuple[str, float]]:
+    """One report's test cases, in the order pytest ran them, with their seconds."""
+    # The reports are this repository's own CI artifacts, produced by pytest
+    # minutes earlier and downloaded by the person running this. Reaching for
+    # defusedxml here would be theatre.
+    cases = []
+    for case in ElementTree.parse(report).getroot().iter("testcase"):  # noqa: S314
+        path = case_path(case)
+        if path is not None:
+            cases.append((path, float(case.get("time", "0") or 0)))
+    return cases
+
+
+def session_setup(reports: list[list[tuple[str, float]]]) -> dict[str, float]:
+    """The one-off cost of a shard starting, per suite: creating and migrating the
+    test database, starting the application — whatever the session pays once.
+
+    ENG-139. JUnit books a test's setup to the test, so that cost landed on the
+    first test of every shard, and so on whichever file happened to run first.
+    `test_approximate_lateness.py` was weighed at 21.5 s in the table and took
+    5.1 s when it did not run first; the file that did run first then carried
+    unpredicted seconds of its own. The partition read those as file weight.
+
+    It is modelled as a constant per shard instead: in each report, how much
+    longer the first test took than the other tests of its own file, and the
+    median of that across the suite's shards — the median, so a first file that
+    really is heavy (a module that builds a world once) does not become every
+    shard's setup.
+    """
+    excess: dict[str, list[float]] = collections.defaultdict(list)
+    for cases in reports:
+        if not cases:
+            continue
+        first_path, first_seconds = cases[0]
+        siblings = [seconds for path, seconds in cases[1:] if path == first_path]
+        typical = (
+            statistics.median(siblings)
+            if siblings
+            else statistics.median(seconds for _, seconds in cases)
+        )
+        suite = first_path.split("/", 1)[0]
+        excess[suite].append(max(0.0, first_seconds - typical))
+    return {suite: round(statistics.median(values), 3) for suite, values in excess.items()}
+
+
+def read_reports(
+    directory: pathlib.Path,
+) -> tuple[dict[str, float], dict[str, int], dict[str, float]]:
+    """Seconds and test count per file, and the session setup per suite.
+
+    The session setup is taken off the first test of each report, so no file
+    carries it — it is recorded beside the files as a per-shard constant.
+    """
     seconds: dict[str, float] = collections.defaultdict(float)
     counts: dict[str, int] = collections.defaultdict(int)
 
@@ -71,18 +123,16 @@ def read_reports(directory: pathlib.Path) -> tuple[dict[str, float], dict[str, i
     if not reports:
         raise SystemExit(f"no JUnit reports under {directory}")
 
-    for report in reports:
-        # The reports are this repository's own CI artifacts, produced by pytest
-        # minutes earlier and downloaded by the person running this. Reaching for
-        # defusedxml here would be theatre.
-        for case in ElementTree.parse(report).getroot().iter("testcase"):  # noqa: S314
-            path = case_path(case)
-            if path is None:
-                continue
-            seconds[path] += float(case.get("time", "0") or 0)
+    all_cases = [_cases(report) for report in reports]
+    setup = session_setup(all_cases)
+    for cases in all_cases:
+        for index, (path, case_seconds) in enumerate(cases):
+            if index == 0:
+                case_seconds = max(0.0, case_seconds - setup.get(path.split("/", 1)[0], 0.0))
+            seconds[path] += case_seconds
             counts[path] += 1
 
-    return dict(seconds), dict(counts)
+    return dict(seconds), dict(counts), setup
 
 
 def main() -> int:
@@ -101,7 +151,11 @@ def main() -> int:
     parser.add_argument("--out", type=pathlib.Path, default=OUTPUT)
     arguments = parser.parse_args()
 
-    seconds, counts = read_reports(arguments.reports)
+    seconds, counts, setup = read_reports(arguments.reports)
+    for suite, value in sorted(setup.items()):
+        print(
+            f"session setup in {suite}/: {value:.1f}s per shard, taken off each shard's first file"
+        )
 
     known = {path for path in seconds if (ROOT / path).exists()}
     vanished = sorted(set(seconds) - known)
@@ -116,6 +170,10 @@ def main() -> int:
             "scripts/ci/update_shard_timings.py. Nothing about which tests run "
             "depends on it; see docs/ci-architecture.md."
         ),
+        # Paid once per shard, not by any file (ENG-139). Balance does not use
+        # it — every shard pays it — but a prediction of how long a shard takes
+        # does, and `report_shard_health.py` adds it.
+        "session_setup_seconds": setup,
         "files": {
             path: {"seconds": round(seconds[path], 3), "tests": counts[path]}
             for path in sorted(known)
@@ -128,7 +186,12 @@ def main() -> int:
     )
 
     total = sum(seconds[path] for path in known)
-    print(f"wrote {arguments.out.relative_to(ROOT)}: {len(known)} files, {total:.0f}s measured")
+    shown = (
+        arguments.out.resolve().relative_to(ROOT)
+        if arguments.out.resolve().is_relative_to(ROOT)
+        else arguments.out
+    )
+    print(f"wrote {shown}: {len(known)} files, {total:.0f}s measured")
     return 0
 
 

@@ -223,7 +223,22 @@ tests have no measurement, how many files hold a different number of tests than
 the table records, the predicted load of each shard, and the slowest/median
 ratio. Given a directory of downloaded JUnit reports (`--durations`) it also
 prints what those runners actually did, which is the only honest check on the
-prediction.
+prediction — and the `shard-balance` job now does exactly that on every build,
+with the reports the same run's shards uploaded: predicted and actual seconds
+per shard, side by side, and each column's slowest/median (ENG-139). It is not
+a required check and cannot fail the build.
+
+**Session setup is modelled apart from the files.** JUnit books a test's setup
+to the test, so the one-off cost of a shard starting — creating and migrating
+the test database — landed on the first test of every shard, and so on whichever
+file happened to run first: a 5 s file weighed 21.5 s in the table because it
+had once run first. `update_shard_timings.py` now measures that cost in each
+report as the first test's excess over the other tests of its own file, takes
+the median across the suite's shards, removes it from each shard's first file
+and records it as `session_setup_seconds` beside the files. Balance does not
+use it — every shard pays it — but a predicted shard duration includes it. On
+run 36282670062 it came to 21.5 s per PostgreSQL shard and 1.4 s per browser
+shard.
 
 When something crosses a threshold it says `CI SHARD TIMINGS NEED REFRESH` and
 names which one, with the two commands above. The thresholds are the numbers the
@@ -241,7 +256,9 @@ Note which threshold does the work. The predicted slowest/median ratio is close
 to 1.00 almost always, *including when the table is badly stale* — the greedy
 schedule balances its own model, and a wrong model balances perfectly against
 itself. Under the 2026-08-30 table it predicted six equal 242s shards for a
-suite whose shards actually ranged over 100s. The unmeasured fraction is what
+suite whose shards actually ranged over 100s, and on 2026-09-27 the committed
+table predicted 368 s and 1.00 for PostgreSQL shards that took 332-570 s (1.14)
+in the same run — which is why the actual column is printed beside it now. The unmeasured fraction is what
 detects staleness; the ratio detects the different fault of a shard count raised
 past what whole-file granularity can balance.
 

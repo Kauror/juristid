@@ -38,6 +38,7 @@ import collections
 import datetime
 import json
 import pathlib
+import re
 import statistics
 import subprocess
 import sys
@@ -161,11 +162,32 @@ def actual_durations(directory: pathlib.Path) -> dict[str, float]:
     return durations
 
 
+#: Where each suite's files live, which is how its session setup is keyed.
+SUITE_DIRECTORY = {"tests": "tests", "browser": "e2e"}
+
+#: `junit-tests-3.xml`, `junit-browser-2.xml`: the job and the 1-based shard.
+REPORT_NAME = re.compile(r"^junit-(?P<job>[a-z]+)-(?P<shard>\d+)$")
+
+
+def predicted_shards(
+    job: str,
+    counts: dict[str, int],
+    shard_count: int,
+    timings: dict[str, ci_sharding.Measurement],
+    setup: dict[str, float],
+) -> list[float]:
+    """Seconds each shard is predicted to take, in shard order, setup included."""
+    loads = ci_sharding.predicted_load(sorted(counts), shard_count, timings, counts)
+    fixed = setup.get(SUITE_DIRECTORY.get(job, job), 0.0)
+    return [load + fixed for load in loads]
+
+
 def report_suite(
     label: str,
     counts: dict[str, int],
     shard_count: int,
     timings: dict[str, ci_sharding.Measurement],
+    setup: float = 0.0,
 ) -> list[str]:
     """Print one suite's health, and return whatever is worth warning about."""
     warnings: list[str] = []
@@ -198,7 +220,11 @@ def report_suite(
         f"  moved since measured {grown} files hold a different number of tests than the table says"
     )
 
-    loads = ci_sharding.predicted_load(files, shard_count, timings, counts)
+    loads = [
+        load + setup for load in ci_sharding.predicted_load(files, shard_count, timings, counts)
+    ]
+    if setup:
+        print(f"  session setup       {setup:.0f}s per shard, modelled apart from the files")
     slowest, median = max(loads), statistics.median(loads)
     ratio = slowest / median if median else 0.0
     print(
@@ -223,6 +249,55 @@ def report_suite(
             "so the shard count is past what whole-file granularity supports"
         )
     return warnings
+
+
+def report_durations(
+    directory: pathlib.Path,
+    collected: dict[str, dict[str, int]],
+    shard_counts_by_job: dict[str, int],
+    timings: dict[str, ci_sharding.Measurement],
+    setup: dict[str, float],
+) -> None:
+    """What this run's shards were predicted to take, beside what they took.
+
+    ENG-139. The build printed only the prediction, and a model balances
+    perfectly against itself: «slowest / median 1.00» while the same run's
+    PostgreSQL shards took 338/283/384/275/344/286 s. Read from the reports the
+    shards of *this* run uploaded, so the two columns describe one run.
+    """
+    print("\npredicted against actual, this run")
+    durations = actual_durations(directory)
+    by_job: dict[str, dict[int, float]] = collections.defaultdict(dict)
+    for name, seconds in durations.items():
+        match = REPORT_NAME.match(name)
+        if match:
+            by_job[match.group("job")][int(match.group("shard"))] = seconds
+    if not by_job:
+        print(f"  no shard JUnit reports under {directory}")
+        return
+    for job in SUITES:
+        actual = by_job.get(job)
+        if not actual:
+            continue
+        count = shard_counts_by_job[job]
+        predicted = (
+            predicted_shards(job, collected[job], count, timings, setup)
+            if collected.get(job)
+            else []
+        )
+        print(f"\n  {SUITES[job][0]}")
+        print("    shard   predicted     actual")
+        for index in range(1, count + 1):
+            guess = f"{predicted[index - 1]:9.0f}s" if predicted else "        ?"
+            took = f"{actual[index]:9.0f}s" if index in actual else "  missing"
+            print(f"    {index:5d}  {guess}  {took}")
+        for name, values in (("predicted", predicted), ("actual", list(actual.values()))):
+            if values:
+                slowest, median = max(values), statistics.median(values)
+                print(
+                    f"    {name:<10} slowest / median {slowest:.0f}s / {median:.0f}s "
+                    f"= {slowest / median:.2f}"
+                )
 
 
 def main() -> int:
@@ -271,22 +346,23 @@ def main() -> int:
         print(f"           {len(entries)} files weighed")
 
     timings = ci_sharding.load_timings()
+    setup = ci_sharding.load_session_setup()
     counts = shard_counts()
+    collected: dict[str, dict[str, int]] = {}
     for job, (label, arguments_for_pytest) in SUITES.items():
-        warnings.extend(report_suite(label, collect(arguments_for_pytest), counts[job], timings))
+        collected[job] = collect(arguments_for_pytest)
+        warnings.extend(
+            report_suite(
+                label,
+                collected[job],
+                counts[job],
+                timings,
+                setup.get(SUITE_DIRECTORY.get(job, job), 0.0),
+            )
+        )
 
     if arguments.durations is not None:
-        print("\nwhat those runners actually did")
-        durations = actual_durations(arguments.durations)
-        if not durations:
-            print(f"  no JUnit reports under {arguments.durations}")
-        else:
-            for name, seconds in sorted(durations.items()):
-                print(f"  {seconds:7.0f}s  {name}")
-            values = sorted(durations.values())
-            median = statistics.median(values)
-            slowest = max(values)
-            print(f"  slowest / median    {slowest:.0f}s / {median:.0f}s = {slowest / median:.2f}")
+        report_durations(arguments.durations, collected, counts, timings, setup)
 
     print()
     if warnings:
