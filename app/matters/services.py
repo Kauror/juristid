@@ -1963,6 +1963,7 @@ def record_engagement(
     )
 
 
+@transaction.atomic
 def add_engagement(
     *,
     matter: Matter,
@@ -3871,6 +3872,7 @@ def _external_position_authorship(
     return value, label
 
 
+@transaction.atomic
 def record_external_position(
     *,
     matter: Matter,
@@ -4400,6 +4402,7 @@ def _development_precision(occurred_on: Any, value: Any) -> str:
     return precision
 
 
+@transaction.atomic
 def record_procedural_development(
     *,
     matter: Matter,
