@@ -45,11 +45,6 @@ DIRECTIONS: tuple[tuple[str, str], ...] = (
 SOURCE_ALL = "koik"
 SOURCE_IMPORTANT = "tahtajad"
 SOURCE_EFFECTIVE = "joustumised"
-CALENDAR_SOURCES: tuple[tuple[str, str], ...] = (
-    (SOURCE_ALL, "Kõik sündmused"),
-    (SOURCE_IMPORTANT, "Ainult tähtajad"),
-    (SOURCE_EFFECTIVE, "Ainult jõustumised"),
-)
 
 #: The `?aasta=` sentinel for work victories nobody has dated. A word, for the
 #: same reason as above, and resolved before any lookup — a sentinel reaching a
@@ -214,19 +209,6 @@ def important_date_years(user: Any) -> list[int]:
         if value is not None
     )
     return sorted(years, reverse=True)
-
-
-def effective_date_years(user: Any) -> list[int]:
-    return sorted(
-        {
-            value
-            for value in MatterEffectiveDate.objects.visible_to(user).values_list(
-                "date_value__year", flat=True
-            )
-            if value is not None
-        },
-        reverse=True,
-    )
 
 
 def work_victory_years(user: Any, *, status: str = "") -> list[int]:
@@ -482,17 +464,6 @@ def group_by_period(entries: list[Any]) -> list[PeriodGroup]:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class EffectiveDateEntry:
-    """A commencement row, wrapped so it groups like a calendar entry."""
-
-    effective_date: MatterEffectiveDate
-
-    @property
-    def period_label(self) -> str:
-        return period_label(self.effective_date.date_value, self.effective_date.date_precision)
-
-
 #: The two commencement kinds that have no date, and never will have one until
 #: somebody changes the kind.
 UNDATED_KINDS = (EffectiveDateKind.GENERAL_ORDER, EffectiveDateKind.UNKNOWN)
@@ -502,12 +473,6 @@ UNDATED_KINDS = (EffectiveDateKind.GENERAL_ORDER, EffectiveDateKind.UNKNOWN)
 #: chronological axis at all (Stage-2G brief 17).
 HORIZON = "eesolevad"
 UNDATED = "tapsustamisel"
-EFFECTIVE_DIRECTIONS: tuple[tuple[str, str], ...] = (
-    (HORIZON, "Eesolevad 12 kuud"),
-    (ALL, "Kõik"),
-    (PAST, "Möödunud"),
-    (UNDATED, "Kuupäev täpsustamisel"),
-)
 
 
 def horizon_end(today: date) -> date:
@@ -597,11 +562,3 @@ def work_victory_counts(user: Any) -> dict[str, int]:
     """
     queryset = MatterWorkVictory.objects.visible_to(user)
     return {value: queryset.filter(status=value).count() for value in WorkVictoryStatus.values}
-
-
-def has_any_undated_victory(user: Any, *, status: str = "") -> bool:
-    """Whether *Teadmata periood* is worth offering, over the same population.
-
-    Scoped like :func:`work_victory_years`, and for the same reason.
-    """
-    return work_victories(user=user, status=status).filter(period_date__isnull=True).exists()

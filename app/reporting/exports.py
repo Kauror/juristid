@@ -273,17 +273,6 @@ def quality_csv(context: ReportingContext) -> StreamingHttpResponse:
     return _stream(rows(), "andmekvaliteet.csv")
 
 
-#: What the export links offer, and what each one calls. Kept as a table so a
-#: URL cannot name an export that does not exist and the view has no branching
-#: of its own.
-EXPORTS: dict[str, str] = {
-    "teemad": "Teemade populatsioon",
-    "arvamused": "Saadetud arvamused",
-    "materjalid": "Ajalooline materjal",
-    "andmekvaliteet": "Andmekvaliteedi järjekorrad",
-}
-
-
 def export_url(context: ReportingContext, slug: str, **extra: str) -> str:
     params = {**context.query_params(), **{k: v for k, v in extra.items() if v}}
     return f"{reverse('reporting:export', kwargs={'slug': slug})}?{urlencode(params)}"

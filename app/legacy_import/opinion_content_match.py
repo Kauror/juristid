@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import datetime
 import re
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -353,14 +352,3 @@ def _write(
                 "explanation": explanation,
             },
         )
-
-
-def content_coverage() -> dict[str, int]:
-    """How much of the archive the second pass can even look at."""
-    from app.legacy_import.opinion_binary import OpinionArchiveText
-
-    counts: dict[str, int] = defaultdict(int)
-    counts["binaries"] = OpinionArchiveBinary.objects.count()
-    for state, _ in ArchiveTextState.choices:
-        counts[state] = OpinionArchiveText.objects.filter(state=state).count()
-    return dict(counts)

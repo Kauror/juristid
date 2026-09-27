@@ -589,7 +589,7 @@ def test_registering_a_send_creates_one_canonical_submission(signed_in, speciali
     assert submission.sent_at_precision == SentAtPrecision.DATE
     # `localdate`, because the stored moment is aware midnight in the
     # department's timezone and reading `.date()` off the UTC value it comes
-    # back as would report the day before (app/matters/forms.py `_as_datetime`).
+    # back as would report the day before (app/submissions/views.py `as_midnight`).
     assert timezone.localdate(submission.sent_at) == datetime.date(2026, 6, 1)
     assert submission.channel == "EIS"
     assert submission.reference == "1-2/26-9"

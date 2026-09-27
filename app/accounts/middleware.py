@@ -32,7 +32,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from django.conf import settings
 from django.contrib.auth import login, logout
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
@@ -171,14 +170,3 @@ class AuthenticationModeMiddleware:
             status=403,
             content_type="text/plain; charset=utf-8",
         )
-
-
-def authentication_settings() -> dict[str, object]:
-    """What the deployment thinks it is doing, for an operator reading `check`."""
-    mode = shared_gate.current_mode()
-    return {
-        "mode": mode,
-        "shared_gate_configured": shared_gate.is_configured(),
-        "cloudflare_team_domain": getattr(settings, "CF_ACCESS_TEAM_DOMAIN", ""),
-        "cloudflare_audience_configured": bool(getattr(settings, "CF_ACCESS_AUDIENCE", "")),
-    }

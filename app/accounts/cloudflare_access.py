@@ -55,14 +55,6 @@ class AccessDenied(Exception):
     """The request carries no assertion this deployment is willing to trust."""
 
 
-def is_enabled() -> bool:
-    """Access is on exactly when the deployment's mode says so."""
-    from app.accounts.enums import AuthMode
-    from app.accounts.shared_gate import current_mode
-
-    return current_mode() == AuthMode.CLOUDFLARE_ACCESS
-
-
 def _configuration() -> tuple[str, str]:
     team_domain = (getattr(settings, "CF_ACCESS_TEAM_DOMAIN", "") or "").strip().rstrip("/")
     audience = (getattr(settings, "CF_ACCESS_AUDIENCE", "") or "").strip()

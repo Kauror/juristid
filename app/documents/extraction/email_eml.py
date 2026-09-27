@@ -31,9 +31,6 @@ from app.documents.extraction.email_common import (
 from app.documents.extraction.errors import ExtractionFailed
 from app.documents.extraction.limits import current_limits
 
-#: MIME types we will store as a nested message Document rather than flatten.
-MESSAGE_TYPES = frozenset({"message/rfc822", "application/vnd.ms-outlook"})
-
 
 class EmlParser:
     name = "eml"

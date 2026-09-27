@@ -112,10 +112,6 @@ def _hash_for(raw: str) -> str:
     return make_password(raw)
 
 
-def is_configured() -> bool:
-    return bool(configured_password())
-
-
 def verify_password(supplied: str) -> bool:
     """Constant-time check of one attempt against the configured password."""
     configured = configured_password()

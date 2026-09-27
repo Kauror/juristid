@@ -32,7 +32,7 @@ from openpyxl.cell.cell import Cell
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.legacy_import.contracts import EraContract, contract_for_year, load_contracts
+from app.legacy_import.contracts import EraContract, load_contracts
 
 #: Bumped whenever the reader's output changes shape or meaning. Stored on every
 #: batch and every source reference.
@@ -379,7 +379,3 @@ class RegisterWorkbook:
             explanation = serialize_cell_value(worksheet.cell(row=number, column=2).value).strip()
             entries.append((label, explanation))
         return entries
-
-
-def contract_or_none(year: int | None) -> EraContract | None:
-    return contract_for_year(year) if year is not None else None

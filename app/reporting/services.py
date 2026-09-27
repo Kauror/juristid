@@ -402,16 +402,6 @@ PAGE_GROUPS: tuple[tuple[str, list[str]], ...] = (
 )
 
 
-def overview_page(context: ReportingContext) -> Page:
-    return Page(
-        cards=compute_many(OVERVIEW_CARDS, context),
-        comparisons=compute_many(OVERVIEW_COMPARISONS, context),
-        trends=compute_many(OVERVIEW_TRENDS, context),
-        charts=compute_many(OVERVIEW_PORTFOLIO, context),
-        groups={"coverage": compute_many(OVERVIEW_COVERAGE, context)},
-    )
-
-
 def matters_page(context: ReportingContext) -> Page:
     return Page(
         cards=compute_many(MATTERS_CARDS, context),

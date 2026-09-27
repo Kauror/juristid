@@ -120,16 +120,6 @@ OPERATION_EFFECT_EVENT_TYPES: tuple[str, ...] = (
     ChangeEventType.NEXT_ACTION_SET,
 )
 
-#: **Nothing, since the approved target** — and kept as a name so the reasoning
-#: survives. The two facts below were read here and rendered as a *clause* on the
-#: save that produced them, never a row, because each had a standing section on
-#: the Matter page showing it. Those sections are gone and
-#: :func:`projected_milestones` now gives each canonical record a row of its own,
-#: which makes the clause the duplicate: «Marko lisas märkuse ja lisas kaasamise»
-#: directly above «Kaasamine: liikmed» states one act twice. So they are no
-#: longer read at all, and the fact is stated exactly once, off the record that
-#: owns it (docs/adr/0074 §14, superseding Stage-2G brief 34, Agent-F brief 20).
-GROUPED_ONLY_EVENT_TYPES: tuple[str, ...] = ()
 
 #: An entry the composer just created also produces an ENTRY_ADDED change event.
 #: The entry itself is the richer of the two, so the event is not rendered
@@ -697,17 +687,6 @@ class TimelineRow:
 
         days = [_local_day(item.occurred_at) for item in self.items]
         return short_range(min(days), max(days))
-
-
-def latest_authored(items: list[TimelineItem]) -> TimelineItem | None:
-    """The newest line a colleague wrote, for the closed accordion's quote.
-
-    An authored entry, not merely the newest item. Quoting a stage change back
-    at somebody as "the last thing that happened here" is the application
-    talking about itself, and the closed row exists to answer *what did we last
-    say about this file* (design handoff 1b).
-    """
-    return next((item for item in items if item.is_entry), None)
 
 
 #: How many system events have to sit together before folding them is worth it.
