@@ -951,8 +951,7 @@ def _pdf(filename: str):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def world(db):
+def _build_world():
     from app.documents.services import add_evidence_version
     from app.matters.enums import EngagementKind
     from app.matters.services import (
@@ -1134,51 +1133,90 @@ def _post(client, route: WriteRoute, world: dict):
     return client.post(route.url(world), data)
 
 
-# ---------------------------------------------------------------------------
-# The matrix
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def world(db):
+    """A fresh world per test, for the tests that write to it."""
+    return _build_world()
 
 
-@pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: f"{r.name}:{r.label}")
-@pytest.mark.parametrize("actor_name", sorted(FORBIDDEN))
-def test_a_forbidden_actor_cannot_execute_a_business_write(client, world, route, actor_name):
-    """Refused, and nothing moved.
+@pytest.fixture(scope="class")
+def _unchanged_world(django_db_setup, django_db_blocker):
+    from tests.conftest import built_once
 
-    The state assertion is the one that matters. A route that answered 404 and
-    wrote anyway would satisfy a status check and fail the product, and that is
-    exactly the shape a decorator applied to the wrong line would produce.
+    with built_once(django_db_blocker, _build_world) as built:
+        yield built
+
+
+@pytest.fixture
+def unchanged_world(db, _unchanged_world):
+    """One world for the forbidden-actor matrices, built once (ENG-136).
+
+    Those tests assert that nothing changed — a refused write leaves the state
+    and the audit trail exactly as they were — so one world serves all of them.
+    Even a write that slipped through would be rolled back with the test's own
+    savepoint before the next test runs; the assertion inside the test is what
+    catches it. The authorised-actor matrix writes, and keeps `world`.
     """
-    factory, expected = FORBIDDEN[actor_name]
-    actor = factory()
-    client.force_login(actor)
-    before = route.probe(world)
-
-    response = _post(client, route, world)
-
-    assert response.status_code == expected, (
-        f"{actor_name} was not refused by {route.name} ({route.label}): {response.status_code}"
-    )
-    assert route.probe(world) == before, f"{actor_name} changed state through {route.name}"
+    return _unchanged_world
 
 
-@pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: f"{r.name}:{r.label}")
-@pytest.mark.parametrize("actor_name", sorted(FORBIDDEN))
-def test_a_refused_write_records_no_business_history(client, world, route, actor_name):
-    """No `ChangeEvent` may claim a refused action happened.
+class TestRefusedWrites:
+    """The forbidden-actor matrices, over one world built for the class (ENG-136).
 
-    An audit trail that records work nobody was allowed to do is worse than one
-    that records nothing: somebody reading it later cannot tell the difference
-    between a change and an attempt.
+    A class rather than the module, so the shared world is gone before the
+    writing tests below build worlds of their own: the two cannot coexist,
+    because every world files the same human references.
     """
-    factory, _ = FORBIDDEN[actor_name]
-    actor = factory()
-    client.force_login(actor)
-    before = ChangeEvent.objects.count()
 
-    _post(client, route, world)
+    # ---------------------------------------------------------------------------
+    # The matrix
+    # ---------------------------------------------------------------------------
 
-    assert ChangeEvent.objects.count() == before
-    assert not ChangeEvent.objects.filter(actor=actor).exists()
+    @pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: f"{r.name}:{r.label}")
+    @pytest.mark.parametrize("actor_name", sorted(FORBIDDEN))
+    def test_a_forbidden_actor_cannot_execute_a_business_write(
+        self, client, unchanged_world, route, actor_name
+    ):
+        """Refused, and nothing moved.
+
+        The state assertion is the one that matters. A route that answered 404 and
+        wrote anyway would satisfy a status check and fail the product, and that is
+        exactly the shape a decorator applied to the wrong line would produce.
+        """
+        factory, expected = FORBIDDEN[actor_name]
+        actor = factory()
+        client.force_login(actor)
+        before = route.probe(unchanged_world)
+
+        response = _post(client, route, unchanged_world)
+
+        assert response.status_code == expected, (
+            f"{actor_name} was not refused by {route.name} ({route.label}): {response.status_code}"
+        )
+        assert route.probe(unchanged_world) == before, (
+            f"{actor_name} changed state through {route.name}"
+        )
+
+    @pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: f"{r.name}:{r.label}")
+    @pytest.mark.parametrize("actor_name", sorted(FORBIDDEN))
+    def test_a_refused_write_records_no_business_history(
+        self, client, unchanged_world, route, actor_name
+    ):
+        """No `ChangeEvent` may claim a refused action happened.
+
+        An audit trail that records work nobody was allowed to do is worse than one
+        that records nothing: somebody reading it later cannot tell the difference
+        between a change and an attempt.
+        """
+        factory, _ = FORBIDDEN[actor_name]
+        actor = factory()
+        client.force_login(actor)
+        before = ChangeEvent.objects.count()
+
+        _post(client, route, unchanged_world)
+
+        assert ChangeEvent.objects.count() == before
+        assert not ChangeEvent.objects.filter(actor=actor).exists()
 
 
 @pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: f"{r.name}:{r.label}")
