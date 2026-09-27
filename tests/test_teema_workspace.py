@@ -25,12 +25,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
-from app.core.errors import DomainError
 from app.documents.links import DocumentLink
 from app.documents.models import Document
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, MatterWorkVictory
 from app.matters import workspace
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, MatterEngagement, MatterProceduralDevelopment
 from app.matters.services import close_matter, compose_update
 from app.matters.timeline import matter_timeline
@@ -38,6 +38,7 @@ from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSema
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -875,7 +876,7 @@ def test_a_document_cannot_be_linked_to_a_record_on_another_matter(specialist):
     document = create_document(matter=matter_a, title="a.pdf", created_by=specialist)
     entry_on_b = add_entry(matter=matter_b, body="<p>B teema.</p>", author=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Dokumendi ja kirje teema peavad olema samad."):
         link_document_to_record(document=document, record=entry_on_b, actor=specialist)
 
     assert not DocumentLink.objects.exists()
@@ -1270,7 +1271,7 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
         ),
         lambda: compose_update(matter=normal_matter, author=specialist, body="<p>x</p>"),
     ):
-        with pytest.raises(DomainError):
+        with refused(CLOSED_MATTER_REFUSAL):
             call()
 
     assert Entry.objects.filter(matter=normal_matter).count() == 0

@@ -10,7 +10,6 @@ from __future__ import annotations
 import pytest
 from django.urls import reverse
 
-from app.core.errors import DomainError
 from app.matters.services import create_matter
 from app.organisations.models import Organisation, OrganisationAlias, OrganisationType
 from app.organisations.reference_data import MINISTRIES
@@ -21,6 +20,7 @@ from app.organisations.services import (
 )
 from app.search.services import search_matters
 from app.submissions.services import create_submission
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -146,12 +146,12 @@ def test_a_registry_code_clash_reuses_the_existing_row() -> None:
 
 
 def test_an_empty_name_is_refused() -> None:
-    with pytest.raises(DomainError):
+    with refused("Organisatsioon vajab nime."):
         get_or_create_organisation(name="   ")
 
 
 def test_an_unknown_type_is_refused() -> None:
-    with pytest.raises(DomainError):
+    with refused("Tundmatu organisatsiooni tüüp 'NOT_A_TYPE'."):
         get_or_create_organisation(name="Midagi", organisation_type="NOT_A_TYPE")
 
 

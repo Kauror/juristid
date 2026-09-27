@@ -39,6 +39,7 @@ from app.matters.staging import MatterIntakeFile, MatterIntakeSession
 from app.organisations.models import Organisation, OrganisationType
 from tests import factories
 from tests import synthetic_corpus as corpus
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -888,8 +889,6 @@ def test_promotion_refuses_rather_than_files_something_that_is_not_the_file(
     """Silent corruption of evidence is the one failure this may not have."""
     from django.core.files.base import ContentFile
 
-    from app.core.errors import DomainError
-
     session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
     staged = MatterIntakeFile.objects.get(session=session)
     storage = intake_staging.staging_storage()
@@ -897,7 +896,7 @@ def test_promotion_refuses_rather_than_files_something_that_is_not_the_file(
     storage.save(staged.storage_key, ContentFile(b"%PDF-1.4 keegi kirjutas ule"))
 
     matter = factories.MatterFactory()
-    with pytest.raises(DomainError):
+    with refused("Faili „kaaskiri.pdf” sisu on muutunud. Vali see uuesti."):
         intake_staging.promote_intake_files(session=session, matter=matter, actor=session.owner)
 
 
@@ -1388,8 +1387,8 @@ def test_every_refused_file_is_named_with_its_own_reason(signed_in, evidence_roo
     assert answer.status_code == 400
     reported = _refusals(answer)
     assert len(reported) == 3, reported
-    for refused in ("paha.exe", "tyhi.pdf", "vale.pdf"):
-        assert any(line.startswith(f"{refused} — ") for line in reported), reported
+    for filename in ("paha.exe", "tyhi.pdf", "vale.pdf"):
+        assert any(line.startswith(f"{filename} — ") for line in reported), reported
     # Each line carries a reason of its own, not just a filename.
     assert all(len(line.split(" — ", 1)[1].strip()) > 0 for line in reported)
 

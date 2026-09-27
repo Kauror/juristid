@@ -28,13 +28,13 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
-from app.core.errors import DomainError
 from app.matters import my_work, selectors, work_items
 from app.matters.forms import ComposerForm, MatterProgressForm, NextActionForm
 from app.matters.models import MatterProceduralDevelopment
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NO_DATE_LABEL, NextAction
 from app.workflow.services import set_next_action, set_next_action_for_new_work
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -101,9 +101,9 @@ def test_the_text_constraint_is_untouched(normal_matter, specialist):
 
 def test_blank_text_is_still_refused_by_the_service(normal_matter, specialist):
     """8. Both blank and text-blank-with-a-date reach the same refusal."""
-    with pytest.raises(DomainError):
+    with refused("Järgmiseks vajab teksti."):
         set_next_action(matter=normal_matter, text="   ", actor=specialist)
-    with pytest.raises(DomainError):
+    with refused("Järgmiseks vajab teksti."):
         set_next_action(
             matter=normal_matter,
             text="",
@@ -598,7 +598,7 @@ def test_the_prepare_by_flow_still_invents_no_action(normal_matter, specialist):
     """
     from app.workflow.services import establish_opinion_preparation_action
 
-    with pytest.raises(DomainError):
+    with refused("Koostan arvamuse vajab kuupäeva."):
         establish_opinion_preparation_action(
             matter=normal_matter, prepare_by=None, actor=specialist
         )

@@ -16,7 +16,6 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.intelligence import selectors
 from app.intelligence.enums import EffectiveDateKind, FactStatus
 from app.intelligence.models import MatterEffectiveDate
@@ -28,6 +27,7 @@ from app.intelligence.services import (
 from app.workflow.dates import quarter_bounds
 from app.workflow.enums import DatePrecision
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -61,7 +61,7 @@ def test_one_matter_can_commence_in_stages(normal_matter, specialist):
 
 
 def test_a_known_commencement_requires_a_date(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Teadaoleva jõustumise puhul on kuupäev kohustuslik."):
         add_effective_date(
             matter=normal_matter, kind=EffectiveDateKind.KNOWN_DATE, actor=specialist
         )
@@ -91,7 +91,7 @@ def test_an_unknown_commencement_is_a_state_rather_than_a_gap(normal_matter, spe
 
 def test_a_dateless_kind_may_not_carry_a_date(normal_matter, specialist):
     """No placeholder day, at any layer. This is the whole point of the model."""
-    with pytest.raises(DomainError):
+    with refused("Sellel jõustumise liigil ei saa kuupäeva olla."):
         add_effective_date(
             matter=normal_matter,
             kind=EffectiveDateKind.GENERAL_ORDER,

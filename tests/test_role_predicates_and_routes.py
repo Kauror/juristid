@@ -25,8 +25,8 @@ from django.urls import URLPattern, URLResolver, get_resolver, resolve, reverse
 
 from app.accounts.services import grant_break_glass
 from app.core.authorization import DepartmentViewer, may_review_historical_matches
-from app.core.errors import DomainError
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -78,7 +78,7 @@ def test_break_glass_is_granted_by_an_acting_department_head_only(department_hea
     )
     assert granted.pk
 
-    with pytest.raises(DomainError):
+    with refused("Only the department head or a system owner may grant break-glass access."):
         grant_break_glass(
             user=department_head,
             granted_by=specialist,
@@ -87,7 +87,7 @@ def test_break_glass_is_granted_by_an_acting_department_head_only(department_hea
         )
 
     department_head.is_active = False
-    with pytest.raises(DomainError):
+    with refused("Only the department head or a system owner may grant break-glass access."):
         grant_break_glass(
             user=specialist,
             granted_by=department_head,

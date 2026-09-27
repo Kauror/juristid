@@ -17,12 +17,12 @@ from django.utils import timezone
 from app.accounts.services import grant_break_glass
 from app.core.authorization import UNRESTRICTED_OVERRIDE_VALUES, scope_for_user
 from app.core.enums import Visibility, most_restrictive
-from app.core.errors import DomainError
 from app.documents.models import Document
 from app.documents.services import create_document
 from app.matters.models import Matter
 from app.matters.services import set_matter_visibility
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -270,7 +270,7 @@ def test_the_sql_annotation_agrees_with_the_python_property(
 
 
 def test_unknown_visibility_is_rejected(normal_matter):
-    with pytest.raises(DomainError):
+    with refused("Tundmatu nähtavus 'SECRET'."):
         set_matter_visibility(matter=normal_matter, visibility="SECRET")
 
 

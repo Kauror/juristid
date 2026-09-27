@@ -15,7 +15,6 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.matters import selectors
 from app.matters.services import close_matter
 from app.submissions.enums import RecipientRole
@@ -29,6 +28,7 @@ from app.submissions.services import (
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.services import acknowledge_review, set_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -155,7 +155,7 @@ def test_a_do_action_cannot_be_reviewed(normal_matter, specialist):
     action = set_next_action(
         matter=normal_matter, text="Koosta arvamus", target_date=_days(3), actor=specialist
     )
-    with pytest.raises(DomainError):
+    with refused("Üle vaadata saab ainult ootamist või jälgimist."):
         acknowledge_review(action=action, actor=specialist, next_review_date=_days(10))
 
 
@@ -165,7 +165,7 @@ def test_a_closed_action_cannot_be_reviewed(normal_matter, specialist):
     )
     close_matter(matter=normal_matter, disposition="COMPLETED", actor=specialist)
     action.refresh_from_db()
-    with pytest.raises(DomainError):
+    with refused("Ainult kehtivat tegevust saab üle vaadata."):
         acknowledge_review(action=action, actor=specialist)
 
 
@@ -204,7 +204,7 @@ def test_the_same_organisation_cannot_be_both(normal_matter, specialist):
     ministry = factories.OrganisationFactory()
     submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Sama organisatsioon ei saa olla korraga adressaat ja teadmiseks saaja."):
         set_recipients(
             submission=submission,
             addressees=[ministry],

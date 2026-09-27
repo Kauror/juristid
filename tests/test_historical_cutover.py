@@ -19,7 +19,6 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.legacy_import.current_register import build_promotion_plan
 from app.legacy_import.historical_cutover import (
     HISTORICAL_CUTOVER_VERSION,
@@ -44,6 +43,7 @@ from app.search.models import SearchDocument
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 from app.workflow.models import NextAction
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -435,7 +435,7 @@ def test_the_summary_is_aggregate_only() -> None:
 def test_the_service_refuses_a_full_matter(specialist) -> None:
     """A FULL Matter is work somebody activated. Not the default's business."""
     matter = factories.MatterFactory(record_mode=RecordMode.FULL, owner=specialist)
-    with pytest.raises(DomainError):
+    with refused("Ainult arhiivikirje saab muutuda ajalooliseks."):
         mark_historical_archive_inactive(matter=matter)
 
 
@@ -444,7 +444,7 @@ def test_the_service_refuses_an_already_closed_matter() -> None:
     mark_historical_archive_inactive(matter=matter)
     matter.refresh_from_db()
 
-    with pytest.raises(DomainError):
+    with refused("Teema on juba suletud."):
         mark_historical_archive_inactive(matter=matter)
 
 
@@ -496,7 +496,7 @@ def test_reactivation_requires_an_attestation(specialist) -> None:
     apply_cutover_plan(build_cutover_plan(cutover_year=CUTOVER))
     matter.refresh_from_db()
 
-    with pytest.raises(DomainError):
+    with refused("Ajaloolise teema taasavamine vajab põhjendust."):
         reactivate_historical_matter(matter=matter, actor=specialist, attestation="   ")
 
 
@@ -508,7 +508,7 @@ def test_a_real_closure_cannot_use_the_carry_over_shortcut(specialist) -> None:
     )
     matter.refresh_from_db()
 
-    with pytest.raises(DomainError):
+    with refused("Sellel teemal on tegelik salvestatud sulgemine; kasuta tavalist taasavamist."):
         reactivate_historical_matter(
             matter=matter, actor=specialist, attestation="Tahaks tagasi avada."
         )

@@ -58,6 +58,7 @@ from app.core.errors import DomainError
 from app.documents.links import DocumentLink
 from app.documents.models import Document, DocumentVersion
 from app.documents.uploads import UploadRejected
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import MatterProceduralDevelopment
 from app.matters.services import close_matter
 from app.matters.timeline import matter_timeline
@@ -65,6 +66,7 @@ from app.matters.workspace import add_development_evidence, add_procedural_devel
 from app.workflow.enums import ActionStatus, Disposition
 from app.workflow.models import NextAction
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -449,7 +451,7 @@ def test_j_a_closed_matter_refuses_the_addition(normal_matter, development, spec
     """
     close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         add_development_evidence(
             development=development, author=specialist, uploads=[_pdf(LATER_FILE)]
         )

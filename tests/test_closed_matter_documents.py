@@ -89,6 +89,7 @@ from app.submissions.services import (
 )
 from app.workflow.enums import Disposition
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -292,7 +293,7 @@ def test_a_further_version_of_an_existing_file_is_refused_too(specialist, eviden
     _close(matter, specialist)
     census = Census(matter, evidence_root)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         add_version_on_open_matter(
             document=document,
             content=b"%PDF-1.4 teine versioon",
@@ -658,7 +659,7 @@ def test_reopening_lets_a_draft_left_behind_be_finished(specialist, organisation
     )
     _close(matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         select_final_evidence_on_open_matter(
             submission=draft, version=document.current_version, actor=specialist
         )

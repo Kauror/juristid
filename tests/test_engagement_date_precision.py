@@ -50,7 +50,6 @@ from app.matters.enums import EngagementKind
 from app.matters.models import Matter, MatterEngagement
 from app.matters.my_work import recent_changes
 from app.matters.services import (
-    DomainError,
     add_engagement,
     close_matter,
     correct_engagement,
@@ -59,6 +58,7 @@ from app.matters.timeline import ENGAGEMENT_DATE_UNKNOWN, matter_timeline
 from app.workflow.enums import DatePrecision, Disposition
 from app.workflow.models import NextAction
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -870,7 +870,7 @@ def test_the_service_refuses_a_precision_outside_the_vocabulary():
     constraint."""
     matter = factories.MatterFactory()
 
-    with pytest.raises(DomainError):
+    with refused("Tundmatu kuupäeva täpsus 'SOMETIME'."):
         add_engagement(
             matter=matter,
             kind=EngagementKind.SURVEY,

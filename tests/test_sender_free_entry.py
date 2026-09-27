@@ -28,12 +28,12 @@ import pytest
 from django.urls import reverse
 
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.matters.forms import MatterCreateForm, MatterEditForm, organisations_by_usage
 from app.matters.models import Matter
 from app.matters.services import resolve_source_organisations
 from app.organisations.models import AliasType, Organisation
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -85,7 +85,7 @@ def test_an_ambiguous_name_is_refused_rather_than_guessed():
     factories.OrganisationFactory(name="Ministeerium")
     factories.OrganisationFactory(name="ministeerium")
 
-    with pytest.raises(DomainError):
+    with refused("«Ministeerium» sobib mitme organisatsiooniga — vali nimekirjast."):
         resolve_source_organisations(chosen=[], typed_name="Ministeerium")
 
     assert Organisation.objects.count() == 2
