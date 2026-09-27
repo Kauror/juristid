@@ -6,8 +6,16 @@ own root, and deliberately absent from `EVIDENCE_REFERENCES`, because losing one
 costs a rebuild rather than a record. That is why `check_evidence_integrity`
 does not look here — and why, until this module, nothing did (ENG-032, ENG-144).
 
-Two questions, both read-only:
+Three questions, all read-only:
 
+* **done-without-text-derivative** — a version is marked DONE and holds no
+  ACTIVE text derivative. Every parser that succeeds writes one — extracted or
+  recognised text — in the same transaction that says DONE (`_publish`), and a
+  parse that finds no text fails rather than succeeding empty. So a DONE
+  version without one lost it afterwards: its text has dropped out of search,
+  `check_search_integrity` lowered its expectation with it, and
+  `pending_versions` never hands a DONE version back (ENG-144). Repaired by
+  `rebuild_document_derivatives --version-id`.
 * **missing-derivative-object** — a `DocumentDerivative` row names a key the
   store does not hold. A thumbnail that will not load; repaired by
   `rebuild_document_derivatives`, never by editing the row.
@@ -26,8 +34,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db.models import Exists, OuterRef
+
 from app.documents.integrity import UNREADABLE_PREFIX, Finding, IntegrityReport, walk_storage
 
+DONE_WITHOUT_TEXT_DERIVATIVE = "done-without-text-derivative"
 MISSING_DERIVATIVE_OBJECT = "missing-derivative-object"
 ORPHAN_DERIVATIVE_OBJECT = "orphan-derivative-object"
 
@@ -48,13 +59,37 @@ def referenced_derivative_keys() -> set[str]:
     )
 
 
+def _done_without_text() -> list[Finding]:
+    """DONE versions with no ACTIVE extracted or recognised text. Ids only."""
+    from app.documents.enums import DerivativeKind, DerivativeStatus, ExtractionState
+    from app.documents.models import DocumentDerivative, DocumentVersion
+
+    text = DocumentDerivative._base_manager.filter(
+        version=OuterRef("pk"),
+        status=DerivativeStatus.ACTIVE,
+        kind__in=[DerivativeKind.EXTRACTED_TEXT, DerivativeKind.OCR_TEXT],
+    )
+    versions = (
+        DocumentVersion._base_manager.filter(extraction_state=ExtractionState.DONE)
+        .exclude(Exists(text))
+        .order_by("pk")
+        .values_list("pk", "mime_type")
+    )
+    return [
+        Finding(kind=DONE_WITHOUT_TEXT_DERIVATIVE, subject=f"version {pk}", detail=mime_type)
+        for pk, mime_type in versions
+    ]
+
+
 def check_derivatives(*, scan_storage: bool = True) -> IntegrityReport:
-    """Rows against the derivative store, in both directions. Reads only."""
+    """Versions against their rows, and rows against the store both ways. Reads only."""
     from app.documents.extraction.orchestrator import derivative_storage
     from app.documents.models import DocumentDerivative
 
     report = IntegrityReport()
     storage: Any = derivative_storage()
+
+    report.findings.extend(_done_without_text())
 
     rows = (
         DocumentDerivative._base_manager.exclude(storage_key="")

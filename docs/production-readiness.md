@@ -172,11 +172,13 @@ takes to notice.
 | --- | --- | --- |
 | 4.1 | Counts reconcile | the operation's own `status` / `verify` phase |
 | 4.2 | Evidence is present and is what was hashed | `manage.py check_evidence_integrity --verify-sha` — every holder in `EVIDENCE_REFERENCES`: document versions and the opinion archive's letters |
-| 4.3 | Nothing is holding bytes nobody references | `manage.py prune_orphaned_evidence` (no `--delete`); for renders, `manage.py check_derivative_integrity` and `manage.py prune_orphaned_derivatives` (no `--delete`) |
+| 4.3 | Nothing is holding bytes nobody references, and no DONE version lost its text | `manage.py prune_orphaned_evidence` (no `--delete`); for renders, `manage.py check_derivative_integrity` and `manage.py prune_orphaned_derivatives` (no `--delete`) |
 | 4.4 | Search is complete, current and not stale | `manage.py check_search_integrity --full` — the default samples each kind's text; only `--full` recomputes every row and can prove "current" |
 | 4.4a | Nothing is owed to the search index | `manage.py check_search_freshness` |
 | 4.5 | Archive search matches what is held | `manage.py opinion_archive_search verify` |
 | 4.6 | Era contracts still describe the workbook | `manage.py check_era_contracts` |
+| 4.6a | No row breaks a rule the services keep | `manage.py check_domain_invariants` |
+| 4.6b | The derived register state is what today's code would derive | `manage.py check_current_register_state` — a difference means a cutover rerun is owed |
 | 4.7 | Canonical state changed the way the plan said | `manage.py recovery_fingerprint --compare before.json` |
 | 4.8 | It is usable | the A–M browser list in `deploy/unraid-main/README.md` |
 

@@ -23,7 +23,9 @@ things:
   refuse to *write* them since ENG-043 and ENG-004; these are rows written before that, by a
   path that has since been closed or by a synthetic generator.
   The three `closed-matter-*` kinds are the same shape for ENG-006: live work a
-  closure path left owed on a Matter that is no longer current.
+  closure path left owed on a Matter that is no longer current. The last four
+  are ENG-144's: a record joined to or described under another Matter's file,
+  and a person's closure with no event behind it.
 
 **Nothing is repaired.** A finding is a question about what a record was meant
 to say, and only somebody with the register in front of them can answer it. The
@@ -40,9 +42,11 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, field
+from typing import Any
 
 from django.apps import apps
-from django.db.models import F, Q
+from django.core.exceptions import FieldDoesNotExist
+from django.db.models import Exists, F, OuterRef, Q, Subquery
 from django.utils import timezone
 
 #: The migration that installs the `NextAction` constraints, named in the report
@@ -71,6 +75,10 @@ SERVICE_RULES = frozenset(
         "engagement-in-future",
         "external-position-in-future",
         "website-overview-published-in-future",
+        "document-link-crosses-matter",
+        "external-position-crosses-matter",
+        "change-event-on-another-matter",
+        "closed-matter-without-closure-event",
     }
 )
 
@@ -104,6 +112,20 @@ EXPLANATIONS: dict[str, str] = {
     ),
     "website-overview-published-in-future": (
         "MatterWebsiteOverview.published_on is after today in Europe/Tallinn"
+    ),
+    # ENG-144. The audit's reproduced HARD queries no check above covered; each
+    # is a rule every service keeps and no constraint can.
+    "document-link-crosses-matter": (
+        "A DocumentLink joins a document to a record on a different Matter"
+    ),
+    "external-position-crosses-matter": (
+        "A live MatterExternalPosition answers a MatterEngagement of a different Matter"
+    ),
+    "change-event-on-another-matter": (
+        "A ChangeEvent about a Matter's record is filed under a different Matter"
+    ),
+    "closed-matter-without-closure-event": (
+        "A closed FULL Matter has no MATTER_CLOSED event: it was closed around close_matter"
     ),
 }
 
@@ -300,6 +322,132 @@ def _future_record_findings(today: datetime.date) -> list[Finding]:
     return findings
 
 
+def _event_subjects() -> list[tuple[Any, str]]:
+    """Every model a `ChangeEvent` can be about that belongs to exactly one Matter.
+
+    Derived from the registry rather than listed, so a Matter-owned model added
+    later is checked without anybody remembering to add it here — the audit's
+    own caution about its hand-written list (ENG-144). A nullable `matter` is a
+    staging row whose Matter is chosen later, and is left out: its events are
+    not about a record on a file. A version belongs to its document's Matter.
+    """
+    subjects: list[tuple[Any, str]] = []
+    for model in apps.get_models():
+        if model._meta.label == "audit.ChangeEvent":
+            continue
+        try:
+            owner = model._meta.get_field("matter")
+        except FieldDoesNotExist:
+            continue
+        related = getattr(owner, "related_model", None)
+        if owner.concrete and not owner.null and related is not None:
+            if related._meta.label == "matters.Matter":
+                subjects.append((model, "matter_id"))
+    subjects.append((apps.get_model("documents", "DocumentVersion"), "document__matter_id"))
+    return subjects
+
+
+def _cross_matter_findings() -> list[Finding]:
+    """A record joined to, or described under, another Matter's file (ENG-144).
+
+    The engineering audit's Q29, Q43 and Q46, each reproduced there through a
+    path since closed (ENG-008's admin, ENG-047's removal). Every service that
+    writes one of these refuses the cross-Matter case — `link_document_to_record`,
+    the `Väline seisukoht` form's own list of rounds, `record_change_event`
+    called with the record's own Matter — and nothing in the schema can, so a
+    row here arrived around them. A position answering a round *taken off the
+    file* is not one of them: that link is kept on purpose (ENG-047).
+    """
+    from app.documents.links import TARGET_FIELDS
+
+    link = apps.get_model("documents", "DocumentLink")
+    position = apps.get_model("matters", "MatterExternalPosition")
+    event = apps.get_model("audit", "ChangeEvent")
+
+    findings: list[Finding] = []
+    for field_name in TARGET_FIELDS:
+        rows = (
+            link._base_manager.filter(**{f"{field_name}__isnull": False})
+            .exclude(**{f"{field_name}__matter_id": F("document__matter_id")})
+            .order_by("pk")
+            .values_list("pk", "document__matter_id", f"{field_name}__matter_id")
+        )
+        findings.extend(
+            Finding(
+                kind="document-link-crosses-matter",
+                subject=str(pk),
+                detail=f"{field_name}: document matter={document}, record matter={record}",
+            )
+            for pk, document, record in rows
+        )
+
+    findings.extend(
+        Finding(
+            kind="external-position-crosses-matter",
+            subject=str(pk),
+            detail=f"matter={matter}, engagement matter={engagement}",
+        )
+        for pk, matter, engagement in position._base_manager.filter(
+            engagement__isnull=False, removed_at__isnull=True
+        )
+        .exclude(engagement__matter_id=F("matter_id"))
+        .order_by("pk")
+        .values_list("pk", "matter_id", "engagement__matter_id")
+    )
+
+    for model, owner_path in _event_subjects():
+        owner = model._base_manager.filter(pk=OuterRef("object_id")).values(owner_path)[:1]
+        events = (
+            event.objects.filter(object_type=model._meta.label, object_id__isnull=False)
+            .annotate(owner=Subquery(owner))
+            .filter(owner__isnull=False)
+            .filter(Q(matter__isnull=True) | ~Q(matter_id=F("owner")))
+            .order_by("occurred_at", "pk")
+            .values_list("pk", "event_type", "matter_id", "owner")
+        )
+        findings.extend(
+            Finding(
+                kind="change-event-on-another-matter",
+                subject=str(pk),
+                detail=(
+                    f"{event_type} about {model._meta.label}: "
+                    f"filed under matter={matter}, record matter={owner_id}"
+                ),
+            )
+            for pk, event_type, matter, owner_id in events
+        )
+    return findings
+
+
+def _unrecorded_closure_findings() -> list[Finding]:
+    """A person's closure with no `MATTER_CLOSED` behind it (ENG-144, the audit's Q59).
+
+    `close_matter` is the only path that leaves a FULL Matter closed — the
+    register's retirements and the historical default leave it ARCHIVE, the
+    importer creates FULL Matters open, and promotion refuses a closed one — and
+    it writes the event in the same transaction. So a closed FULL Matter without
+    one was closed around the service, which is how the audit made it: the
+    admin that ENG-008 has since made read-only. Tombstones are Q14's business.
+    """
+    from app.audit.enums import ChangeEventType
+    from app.matters.enums import RecordMode
+
+    matter = apps.get_model("matters", "Matter")
+    event = apps.get_model("audit", "ChangeEvent")
+    closed = event.objects.filter(
+        matter_id=OuterRef("pk"), event_type=ChangeEventType.MATTER_CLOSED
+    )
+    return [
+        Finding(kind="closed-matter-without-closure-event", subject=str(pk), detail="")
+        for pk in matter._base_manager.filter(
+            is_open=False, record_mode=RecordMode.FULL, deleted_at__isnull=True
+        )
+        .exclude(Exists(closed))
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    ]
+
+
 def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantReport:
     """Every row breaking one of the rules above. Reads; never writes."""
     day = today or timezone.localdate()
@@ -309,4 +457,6 @@ def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantR
     report.findings.extend(_submission_findings(day))
     report.findings.extend(_closed_matter_findings())
     report.findings.extend(_future_record_findings(day))
+    report.findings.extend(_cross_matter_findings())
+    report.findings.extend(_unrecorded_closure_findings())
     return report
