@@ -48,6 +48,7 @@ from e2e.conftest import (
     create_matter,
     open_add_panel,
     open_hetkeseis,
+    open_kaik_row,
     sign_in,
     unique_title,
 )
@@ -372,6 +373,7 @@ def test_an_approximate_act_prints_its_period_and_not_a_day(page, base_url):
     # `.uxtl__edit` rather than the accessible name: the button's name is
     # composed by `aria-labelledby` from its own word *and* the headline above
     # it, so an exact match on «Muuda» finds nothing.
+    open_kaik_row(row)
     row.locator(".uxtl__edit").first.click()
     form = page.locator(".uxtl__editform")
     form.wait_for()
@@ -425,6 +427,7 @@ def test_received_and_discovered_feedback_are_visibly_different_things(page, bas
     # the correction path still asks for it and the row still renders it apart
     # from the position (docs/adr/0091 §4, docs/adr/0095 §3).
     row = history(page).locator("article.uxtl__item").filter(has_text="Teiste arvamus:")
+    open_kaik_row(row)
     row.get_by_role("button", name="Muuda").first.click()
     correction = row.locator("form[aria-label='Välise seisukoha parandamine']")
     correction.wait_for(state="visible")
@@ -976,6 +979,7 @@ def test_a_milestone_row_puts_its_controls_on_the_headline_line(page, base_url):
     _record_development(page, title="Ministeerium saatis uue versiooni", occurred_on="09.01.2026")
 
     row = history(page).locator("article.uxtl__item").filter(has_text="uue versiooni").first
+    open_kaik_row(row)
     headline = row.locator(".uxtl__mswhat")
     muuda = row.get_by_role("button", name=re.compile("Muuda"))
     expect(headline).to_be_visible()

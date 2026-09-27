@@ -27,10 +27,12 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    KAIK_ROW,
     MARTIN,
     create_matter,
     finish_current_action,
     open_add_panel,
+    open_kaik_row,
     pass_the_gate,
     set_next_step,
     sign_in,
@@ -96,7 +98,14 @@ def _drop_session(page) -> None:
 
 
 def _history(page) -> str:
-    return page.locator("#ajajoon").inner_text()
+    """Everything `Teema käik` holds, open rows and closed.
+
+    `text_content` rather than `inner_text`: a row arrives closed as its one
+    line (docs/adr/0074 §14, amended 2026-09-27), and `inner_text` leaves out
+    what a closed row keeps behind its toggle — so «is it in the history» would
+    miss a saved entry's text, and «is it not» would pass without looking.
+    """
+    return page.locator("#ajajoon").text_content() or ""
 
 
 # -- ENG-012: failures are told, in Estonian, beside the form ----------------
@@ -316,6 +325,7 @@ def test_an_open_row_editor_survives_an_unrelated_save(page, base_url):
     page.locator(MARGE_SAVE).click()
     wait_for_htmx(page)
 
+    open_kaik_row(page.locator(KAIK_ROW).filter(has_text="Rida üks").first)
     page.locator(".uxtl__edit").first.click()
     wait_for_htmx(page)
     editor = page.locator(".uxtl__editform textarea[name=note]")

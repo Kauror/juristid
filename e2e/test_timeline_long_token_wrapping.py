@@ -53,10 +53,12 @@ from datetime import date, timedelta
 import pytest
 
 from e2e.conftest import (
+    KAIK_ROW,
     MARTIN,
     create_matter,
     finish_current_action,
     open_add_panel,
+    open_kaik_row,
     set_next_step,
     sign_in,
     unique_title,
@@ -129,6 +131,13 @@ def _readings(page, url: str, selector: str) -> list[dict]:
         page.set_viewport_size({"width": width, "height": 900})
         page.goto(url)
         page.wait_for_load_state("networkidle")
+        # A `Teema käik` row arrives closed as its one line (docs/adr/0074
+        # §14, amended 2026-09-27), and an element behind the toggle measures
+        # zero — which would pass every check below without reading anything.
+        # So the row carrying the paste is opened first, as a reader would.
+        carrier = page.locator(KAIK_ROW).filter(has_text=NEEDLE)
+        if selector.startswith(".uxtl") and carrier.count():
+            open_kaik_row(carrier.first)
         reading = page.evaluate(MEASURE, [selector, NEEDLE])
         reading["width"] = width
         reading["selector"] = selector
@@ -141,6 +150,9 @@ def _the_page_does_not_scroll_sideways(readings: list[dict]) -> None:
     for r in readings:
         assert r["found"], (
             f"{r['selector']} carrying the pasted address was not on the page at {r['width']}px"
+        )
+        assert r["elClient"] > 0, (
+            f"{r['selector']} at {r['width']}px is not rendered, so nothing was measured"
         )
         assert r["docScroll"] <= r["docClient"] + ROUNDING, (
             f"{r['selector']} at {r['width']}px took the document to {r['docScroll']}px "
@@ -192,6 +204,7 @@ def _file_a_development(page, url: str, note: str = "", **fields: str) -> None:
     if note:
         row = page.locator(".uxtl__ms-body").first
         row.wait_for()
+        open_kaik_row(row)
         # `.uxtl__edit`, not the accessible name: the button's name is built
         # by `aria-labelledby` from its own word *and* the headline above it,
         # so an exact match on «Muuda» finds nothing (`development_row.html`).
@@ -318,6 +331,7 @@ def test_a_corrected_development_row_still_wraps_what_it_puts_back(page, base_ur
     page.goto(url)
     page.wait_for_load_state("networkidle")
 
+    open_kaik_row(page.locator(".uxtl__ms-body").first)
     page.locator(".uxtl__ms-body").first.get_by_role("button", name="Muuda", exact=False).click()
     form = page.locator(".uxtl__editform")
     form.wait_for()

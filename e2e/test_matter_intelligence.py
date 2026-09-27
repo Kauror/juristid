@@ -35,11 +35,13 @@ from app.core.management.commands.seed_e2e_data import (
 from e2e.conftest import (
     ADMIN,
     HEAD,
+    KAIK_ROW,
     MARTIN,
     READER,
     SANDRA,
     create_matter,
     go_to,
+    open_kaik_row,
     sign_in,
 )
 
@@ -338,6 +340,9 @@ def test_a_person_adding_a_victory_gets_a_confirmed_one(page, base_url, screensh
     screenshots(page, "teema-toovoit-kohapeal")
 
     # It reads on the Matter as an ordinary win, with no proposal state on it.
+    # Its words are the row's sub-line, behind the row's toggle: a `Teema käik`
+    # row arrives closed as its one line (docs/adr/0074 §14, amended 2026-09-27).
+    open_kaik_row(page.locator(KAIK_ROW).filter(has_text="Erisus jäi eelnõusse sisse").first)
     expect(page.get_by_text("Erisus jäi eelnõusse sisse").first).to_be_visible()
     expect(page.locator(".victorystate")).to_have_count(0)
 

@@ -33,6 +33,7 @@ from e2e.conftest import (
     SANDRA,
     open_add_panel,
     open_hetkeseis,
+    open_kaik_row,
     sign_in,
     unique_title,
 )
@@ -397,6 +398,7 @@ def test_teema_kaik_draws_one_hierarchy_in_the_dot_and_the_headline(page, base_u
         for words in ("Rääkisin ministeeriumiga", "Liige toetab eelnõu", "Ministeeriumi seisukoht"):
             row = rows.filter(has_text=words)
             expect(row).to_have_count(1)
+            open_kaik_row(row)
             muuda = row.get_by_role("button", name=re.compile("Muuda"))
             expect(muuda).to_be_visible()
             muuda.click(trial=True)

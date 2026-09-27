@@ -25,6 +25,7 @@ from e2e.conftest import (
     MARTIN,
     create_matter,
     open_add_panel,
+    open_kaik_row,
     set_next_step,
     sign_in,
     wait_for_htmx,
@@ -105,6 +106,7 @@ def _file_position(page, summary: str) -> None:
 
 
 def _refuse_an_empty_picker_on(page, row) -> None:
+    open_kaik_row(row)
     row.locator("button.uxtl__edit[id$='-toend']").click()
     wait_for_htmx(page)
     row.locator("form.uxtl__editform").get_by_role("button", name="Lisa fail", exact=True).click()

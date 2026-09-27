@@ -31,7 +31,7 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_title
+from e2e.conftest import SANDRA, create_matter, open_add_panel, open_kaik_row, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -184,6 +184,7 @@ def test_the_explicit_wait_is_where_the_spans_went(page, base_url):
 
     row = page.locator("#ajalugu-loend .uxtl__ms-body").filter(has_text="Kaasamine: liikmed")
     expect(row).to_have_count(1)
+    open_kaik_row(row)
     row.get_by_text("Ootan tagasisidet", exact=True).click()
 
     box = row.locator("[name=feedback_deadline]")
@@ -369,6 +370,7 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
     form.get_by_role("button", name="Salvesta arvamus").click()
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
 
+    open_kaik_row(chronology(page).locator(".uxtl__ms-body").first)
     chronology(page).get_by_role("button", name="Muuda").first.click()
     correction = chronology(page).locator("form[aria-label='Välise seisukoha parandamine']")
     correction.wait_for(state="visible")
@@ -707,6 +709,7 @@ def test_a_developments_lawyer_note_reads_on_the_row_under_its_own_label(page, b
     # chronology of a dozen rows does not offer a dozen buttons all called
     # «Muuda» — which makes an exact name match miss every one of them
     # (`development_row.html`).
+    open_kaik_row(row)
     row.locator(".uxtl__edit").first.click()
     editor = page.locator(".uxtl__editform")
     editor.locator("textarea[name=note]").wait_for()
@@ -800,6 +803,7 @@ def _open_the_editor(page):
     by `aria-labelledby` from its own word *and* the headline above it, so an
     exact match on «Muuda» finds nothing (`development_row.html`).
     """
+    open_kaik_row(chronology(page).locator(".uxtl__ms-body").first)
     chronology(page).locator(".uxtl__ms-body").first.locator(".uxtl__edit").first.click()
     form = page.locator(".uxtl__editform")
     form.wait_for()

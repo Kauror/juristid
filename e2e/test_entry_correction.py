@@ -33,6 +33,7 @@ from e2e.conftest import (
     create_matter,
     finish_current_action,
     open_add_panel,
+    open_kaik_row,
     open_matter,
     set_next_step,
     sign_in,
@@ -68,9 +69,15 @@ def _file_an_entry(page, text: str) -> None:
 
 
 def _entry_row(page):
-    """The one work entry on a freshly filed Matter."""
+    """The one work entry on a freshly filed Matter, with its row opened.
+
+    The entry's text and its `Muuda` are behind the row's toggle: a `Teema
+    käik` row arrives closed as its one line (docs/adr/0074 §14, amended
+    2026-09-27).
+    """
     row = page.locator(".uxtl__entry").first
-    row.wait_for()
+    row.wait_for(state="attached")
+    open_kaik_row(row)
     return row
 
 
@@ -204,6 +211,12 @@ def test_a_reader_is_offered_no_correction(page, base_url):
     sign_in(page, base_url, READER)
     open_matter(page, base_url, OPEN_TITLE)
 
-    expect(page.locator("#ajalugu-loend")).to_be_visible()
-    expect(page.locator("#ajalugu-loend").get_by_text("Avalik sissekanne")).to_be_visible()
+    history = page.locator("#ajalugu-loend")
+    expect(history).to_be_visible()
+    # Opened first, so an absent `Muuda` is absent rather than merely behind a
+    # closed row's toggle — and not in the markup either, open or closed.
+    entry = history.locator("article.uxtl__item").filter(has_text="Avalik sissekanne").first
+    open_kaik_row(entry)
+    expect(history.get_by_text("Avalik sissekanne")).to_be_visible()
     expect(page.get_by_role("button", name="Muuda", exact=True)).to_have_count(0)
+    expect(history.locator("button", has_text="Muuda")).to_have_count(0)

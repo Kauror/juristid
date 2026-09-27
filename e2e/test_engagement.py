@@ -21,7 +21,7 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, RESTRICTED_TITLE
-from e2e.conftest import SANDRA, open_add_panel, open_composer, sign_in
+from e2e.conftest import SANDRA, open_add_panel, open_composer, open_kaik_row, sign_in
 
 
 def panel(page):
@@ -157,6 +157,7 @@ def test_the_wait_is_a_separate_act_on_the_rounds_own_row(page, base_url):
     # Nothing is waiting yet: the round was filed and that is all it did.
     expect(row).not_to_contain_text("Ootame tagasisidet kuni")
 
+    open_kaik_row(row)
     row.get_by_text("Ootan tagasisidet", exact=True).click()
     field = row.locator("[name=feedback_deadline]")
     expect(field).to_have_count(1)
@@ -320,6 +321,7 @@ def test_both_provider_links_are_saved_and_read_back_by_their_provider_name(page
 
     row = chronology(page).locator(".uxtl__item", has_text=f"Kaasamine: {audience}").first
     expect(row).to_be_visible()
+    open_kaik_row(row)
 
     smaily = row.get_by_role("link", name="Smaily")
     alchemer = row.get_by_role("link", name="Alchemer")
@@ -411,6 +413,7 @@ def test_a_file_attached_to_lopeta_kaasamine_survives_the_save(page, base_url):
     row = chronology(page).locator(
         ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="faili proov")
     )
+    open_kaik_row(row)
     row.get_by_text("Ootan tagasisidet", exact=True).click()
     row.locator("[data-quickdate]", has_text="1 kuu").click()
     row.get_by_role("button", name="Salvesta ootus").click()
@@ -453,6 +456,7 @@ def test_a_file_attached_to_lopeta_kaasamine_survives_the_save(page, base_url):
     item = chronology(page).locator(
         ".uxtl__item", has=page.locator(".uxtl__mswhat", has_text="faili proov")
     )
+    open_kaik_row(item)
     attachment = item.get_by_role("link", name="liidu-vastuskiri.pdf")
     expect(attachment).to_have_count(1)
     assert attachment.first.get_attribute("href"), "the filename is text, not a link to evidence"
@@ -477,6 +481,7 @@ def test_finishing_a_round_with_no_file_is_unchanged(page, base_url):
     row = chronology(page).locator(
         ".uxtl__ms-body", has=page.locator(".uxtl__mswhat", has_text="tühja vastuse proov")
     )
+    open_kaik_row(row)
     row.get_by_text("Ootan tagasisidet", exact=True).click()
     row.locator("[data-quickdate]", has_text="1 kuu").click()
     row.get_by_role("button", name="Salvesta ootus").click()

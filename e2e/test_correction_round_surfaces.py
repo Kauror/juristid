@@ -17,7 +17,7 @@ import re
 
 import pytest
 
-from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
+from e2e.conftest import SANDRA, create_matter, open_kaik_row, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -82,7 +82,7 @@ def test_feedback_saves_with_no_organisation_at_all(page, base_url):
     _open_feedback(page)
     page.fill("#id_tagasiside_summary", "Helistas liige: üleminekuaeg on liiga lühike.")
     page.get_by_role("button", name="Salvesta tagasiside").click()
-    page.wait_for_selector("text=Helistas liige")
+    page.wait_for_selector("text=Helistas liige", state="attached")
 
     assert "Meile saadetud tagasiside" in page.locator("#ajalugu-loend").inner_text()
 
@@ -97,7 +97,7 @@ def test_feedback_saves_with_no_organisation_and_the_member_mark(page, base_url)
     page.locator("#id_tagasiside_source_is_member").check()
     page.fill("#id_tagasiside_summary", "Liikme vastuseis, allikas jääb nimetamata.")
     page.get_by_role("button", name="Salvesta tagasiside").click()
-    page.wait_for_selector("text=Liikme vastuseis")
+    page.wait_for_selector("text=Liikme vastuseis", state="attached")
 
     row = page.locator("#ajalugu-loend").inner_text()
     # Stated, and with no empty punctuation where the author would have been.
@@ -137,10 +137,11 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
     page.locator("#id_tagasiside_source_is_member").check()
     page.fill("#id_tagasiside_summary", "Märgitud liikmeks ekslikult.")
     page.get_by_role("button", name="Salvesta tagasiside").click()
-    page.wait_for_selector("text=Märgitud liikmeks ekslikult")
+    page.wait_for_selector("text=Märgitud liikmeks ekslikult", state="attached")
     assert "· Liige" in page.locator("#ajalugu-loend").inner_text()
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Märgitud liikmeks ekslikult").first
+    open_kaik_row(row)
     row.get_by_text("Muuda", exact=True).click()
     # Scoped to the row: the capture panel renders its own `source_is_member`
     # on the same page, and that one is hidden inside a closed disclosure.
@@ -356,6 +357,7 @@ def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
     row = page.locator(
         "#ajalugu-loend .uxtl__item", has_text="Vale teema peale kirjutatud märge"
     ).first
+    open_kaik_row(row)
     row.get_by_text("Kustuta", exact=True).click()
     # The confirmation names what is going and offers a way out.
     page.wait_for_selector("text=Eemaldan selle märke teema käigust")
@@ -379,6 +381,7 @@ def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
     page.wait_for_selector("text=See märge jääb alles")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="See märge jääb alles").first
+    open_kaik_row(row)
     row.get_by_text("Kustuta", exact=True).click()
     page.wait_for_selector("text=Eemaldan selle märke teema käigust")
     row.get_by_role("button", name="Loobu", exact=True).click()
@@ -401,6 +404,7 @@ def test_the_removal_is_still_in_the_change_log(page, base_url):
     page.wait_for_selector("text=Eemaldatav märge logis")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Eemaldatav märge logis").first
+    open_kaik_row(row)
     row.get_by_text("Kustuta", exact=True).click()
     row.get_by_role("button", name="Eemalda", exact=True).click()
     page.wait_for_timeout(800)
@@ -471,6 +475,7 @@ def test_the_koja_arvamus_row_can_be_corrected_like_every_other(page, base_url):
     page.goto(url)
     page.wait_for_load_state("networkidle")
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Arvamus välja").first
+    open_kaik_row(row)
     assert row.count(), "the chronology holds no recorded send to correct"
 
     row.get_by_text("Muuda", exact=True).click()
@@ -485,6 +490,7 @@ def test_the_koja_arvamus_row_can_be_corrected_like_every_other(page, base_url):
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
+    open_kaik_row(page.locator("#ajalugu-loend .uxtl__item", has_text="Arvamus välja").first)
     chronology = page.locator("#ajalugu-loend").inner_text()
     assert "15.5.2026" in chronology
     assert "Toetame eelnõu pikema üleminekuajaga." in chronology
@@ -502,6 +508,7 @@ def test_a_recorded_send_offers_no_kustuta(page, base_url):
     page.goto(url)
     page.wait_for_load_state("networkidle")
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Arvamus välja").first
+    open_kaik_row(row)
 
     assert row.get_by_text("Muuda", exact=True).count() == 1
     assert row.get_by_text("Kustuta", exact=True).count() == 0
@@ -528,7 +535,7 @@ def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_
     picker.locator("[data-orgfind-add]").click()
     page.fill("#id_tagasiside_summary", "Uue liidu seisukoht.")
     page.get_by_role("button", name="Salvesta tagasiside").click()
-    page.wait_for_selector("text=Uue liidu seisukoht")
+    page.wait_for_selector("text=Uue liidu seisukoht", state="attached")
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -625,6 +632,7 @@ def test_kustuta_sits_beside_muuda_in_the_chronology(page, base_url):
     page.wait_for_selector("text=Märge, mille nupud peavad")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Märge, mille nupud peavad").first
+    open_kaik_row(row)
     actions = row.locator(".uxtl__editactions").first
     # The disclosure is a child of the row of controls, not its sibling.
     assert actions.locator("> details.uxtl__remove").count() == 1
@@ -655,9 +663,10 @@ def test_a_correction_opened_and_saved_keeps_the_member_mark(page, base_url):
     page.locator("#id_tagasiside_source_is_member").check()
     page.fill("#id_tagasiside_summary", "Liikme tagasiside, mis vajab pisiparandust.")
     page.get_by_role("button", name="Salvesta tagasiside").click()
-    page.wait_for_selector("text=Liikme tagasiside, mis vajab")
+    page.wait_for_selector("text=Liikme tagasiside, mis vajab", state="attached")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Liikme tagasiside, mis vajab").first
+    open_kaik_row(row)
     assert "· Liige" in row.inner_text()
 
     row.get_by_role("button", name=re.compile("^Muuda")).first.click()
