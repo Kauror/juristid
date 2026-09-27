@@ -197,6 +197,10 @@ it is also what marks a node `Kirjas` on `Menetluse kulg`, which is now the only
 place the phases are drawn. It is one pre-selected select beside the date box, and
 removing it would have made the rail unfillable from the control that records the
 steps.
+**Superseded on 2026-09-27 for `+ Märge` — see the amendment of that date at the
+end of this document.** The panel no longer asks for `Etapp` and nothing infers
+one; a phase an older row stores is still read by the rail and still corrected on
+the row.
 
 `ProceduralDevelopmentEditForm` takes the same change, so a title can be cleared
 as well as written: a record that can be created in a shape and not corrected into
@@ -302,3 +306,52 @@ rule exists to prevent.
 save; the titleless row reading `Märge`; `ProceduralDevelopmentEditForm` being
 able to clear a title; docs/adr/0106's undated next step; no schema, no
 migration and no search-index version change.
+
+---
+
+## Amendment, 2026-09-27 — an ordinary `Märge` is not filed under a phase
+
+- Status: accepted, amending §4's paragraph «`Etapp` **stays on the panel**» (and
+  docs/adr/0098 §3's «Proposed visibly, never guessed invisibly»)
+- Scope: the `+ Märge` capture panel and the use case behind it
+  (`MatterProgressForm`, `workspace.add_procedural_development`), and the `Etapp`
+  control on `Muuda`. Owner decision.
+
+### What was decided before
+
+`+ Märge` carried an `Etapp` select beside the date box, pre-selected on the
+phase the file's `Hetkeseis` placed it on, because a recorded phase is what marks
+a node `Kirjas` on `Menetluse kulg` and the panel was the only control that
+recorded one.
+
+### Why it is superseded
+
+The owner's reading: a `Märge` is a record of what happened, and classifying it
+under a phase of somebody else's procedure is metadata the lawyer should not have
+to supply. A select that arrives pre-filled is still a question on every save,
+and its default is still a claim nobody made. Where the procedure stands is
+`Hetkeseis`, which the same panel already moves.
+
+### What is decided now
+
+- `MatterProgressForm` has no `process_phase` field, the panel renders no `Etapp`
+  control, label or hidden input, and `workspace.add_procedural_development` has
+  no `process_phase` parameter. A crafted `process_phase` in the POST reaches a
+  form that never cleans it and a use case that cannot accept it.
+- **Nothing is inferred in its place** — not from `Hetkeseis`, the chosen stage,
+  `Õigusakt`, the words or the date. A new row stores the column's empty value.
+- `Muuda` offers `Etapp` only on a row that already stores a phase, opening on
+  that phase and able to move or clear it. A row with none is offered no control,
+  so correcting a new `Märge` cannot place it either (the old proposal branch in
+  `attach_phase_choices` is gone).
+- `Kuupäev` is alone on its row and the width of a date (`.cx-f--solo`).
+
+### What this amendment does not change
+
+`MatterProceduralDevelopment.process_phase`, its constraint and every stored
+value; the rows written before this decision, which still mark their node
+`Kirjas`; `record_procedural_development` and `correct_procedural_development`,
+which still accept a phase; the rail's states and the late-entry rule
+(docs/adr/0092 §13); the rest of §4 and its 2026-09-26 amendment. No schema, no
+migration, no data change and no search-index version change.
+

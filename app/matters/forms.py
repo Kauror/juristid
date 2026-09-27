@@ -2517,58 +2517,54 @@ def external_position_period(form: forms.Form) -> tuple[date | None, str]:
 DEVELOPMENT_PREFIX = "areng"
 
 
-#: What `Etapp` reads when nobody has placed the record, and when nobody has to.
+#: What `Etapp` reads on a correction when the stored phase is being cleared.
 #:
 #: «Määramata» would name a defect. This names an ordinary answer: the step is
-#: recorded, it is readable, it reads under `Etapiga sidumata`, and nothing asks
-#: anybody to come back and fix it.
+#: recorded, it is readable, and nothing asks anybody to come back and fix it.
 PHASE_UNSET_LABEL = "Etapp määramata"
 
 
 def attach_phase_choices(form: forms.Form, *, phases: Any = None, keep: str = "") -> None:
-    """Give a form the `Etapp` select, or take the control away entirely.
+    """Give a correction form the `Etapp` select for a stored phase, or no control.
+
+    **Only a record that already stores a phase is offered one** (docs/adr/0105,
+    amended 2026-09-27). A `Märge` is no longer filed under a phase when it is
+    written, so an `Etapp` select on the correction of one that has none would be
+    the question the owner removed, asked a second time — and it used to arrive
+    pre-selected on the phase `Hetkeseis` proposed, so correcting the *title* of
+    a new `Märge` would have placed it on a phase nobody chose. With no stored
+    phase the field is removed, the view passes ``None``, and the column is left
+    exactly as it is (`correct_procedural_development`).
 
     **The pattern's own phases and no others.** A `Määrus` is not offered
     `Riigikogus`, because a regulation is not adopted by Parliament and a select
     offering it invites somebody to record a phase the procedure does not have.
 
     **No pattern, no control.** A file whose `Õigusakt` and `Menetlusliik` choose
-    no procedure has no vocabulary to answer from, and a generic list of eleven
-    phases would be this form asking a question the product cannot use the answer
-    to. The field is removed rather than rendered empty, so a crafted
-    `process_phase=riigikogu` on such a Matter reaches a form that never cleaned
-    it and is discarded (`app/matters/process_phases.py`).
+    no procedure has no vocabulary to answer from. The field is removed rather
+    than rendered empty, so a crafted `process_phase=riigikogu` on such a Matter
+    reaches a form that never cleaned it and is discarded
+    (`app/matters/process_phases.py`).
 
-    ``keep`` is a phase the record already stores. It is offered even when the
-    pattern no longer contains it — a file reclassified from `Seadus` to `Määrus`
-    keeps a stored `Riigikogus` — because a select that silently dropped the
-    stored value would turn the next correction of the *title* into a silent
-    clearing of the phase.
+    ``keep`` is the phase the record stores. It is offered even when the pattern
+    no longer contains it — a file reclassified from `Seadus` to `Määrus` keeps a
+    stored `Riigikogus` — because a select that silently dropped the stored value
+    would turn the next correction of the title into a silent clearing of the
+    phase. The correction form opens on it: the caller passes the same value as
+    `initial`.
     """
     from app.matters.process_phases import phase_choices, phase_label
 
-    if phases is None or getattr(phases, "pattern", None) is None:
+    if not keep or phases is None or getattr(phases, "pattern", None) is None:
         form.fields.pop("process_phase", None)
         return
     choices = [("", PHASE_UNSET_LABEL), *phase_choices(phases.pattern)]
-    if keep and keep not in {value for value, _label in choices}:
+    if keep not in {value for value, _label in choices}:
         label = phase_label(keep)
         if label:
             choices.append((keep, label))
     field = form.fields["process_phase"]
     field.choices = choices  # type: ignore[attr-defined]
-    if keep:
-        # A correction form opens on what the record stores. The caller passes the
-        # same value as `initial`; this is here so the two cannot drift.
-        return
-    if not form.is_bound and form.initial.get("process_phase") in (None, ""):
-        # **The proposal.** The phase the file's own `Hetkeseis` already places it
-        # on, pre-selected so the ordinary save needs no answer — and pre-selected
-        # *visibly*, in a control beside the date box, which is the difference
-        # between a proposal and a silent guess. Empty when the current stage maps
-        # to no phase on this pattern (`Muu`, or a stage the pattern cannot hold),
-        # because there is then nothing honest to propose.
-        form.initial["process_phase"] = phases.current_phase
 
 
 def attach_development_precision(form: forms.Form, *, record: Any = None) -> None:
@@ -6501,15 +6497,14 @@ class ProceduralDevelopmentEditForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"class": "field__input field__input--compact", "rows": "2"}),
     )
-    #: `Muuda etappi` — the correction affordance, on the record that carries the
-    #: association and through the edit pattern every other correction uses.
+    #: `Muuda etappi` — the correction affordance for a phase an older record
+    #: already stores, through the edit pattern every other correction uses.
     #:
-    #: A phase proposed at capture has to be correctable, or the proposal is a
-    #: guess somebody is stuck with. This is where a step filed under the wrong
-    #: round is moved, and where an unplaced history is *placed*: recording or
-    #: correcting the development that opened a phase re-groups everything dated
-    #: inside it, which is the one correction that fixes a whole section rather
-    #: than a row (§7 of the brief).
+    #: A `Märge` stopped being filed under a phase when it is written
+    #: (docs/adr/0105, amended 2026-09-27), so this is offered only on a record
+    #: that carries one: a step filed under the wrong round is moved, or the
+    #: phase is cleared. A record with none is offered no control
+    #: (`attach_phase_choices`).
     process_phase = forms.ChoiceField(
         label="Etapp",
         required=False,
@@ -7334,49 +7329,27 @@ class MatterProgressForm(forms.Form):
         required=False,
         widget=EstonianDateInput(),
     )
-    #: `Etapp` — which part of the procedure this step belongs to.
-    #:
-    #: **Optional, and it is the one association the grouped history is built
-    #: from.** `Teema käik` reads a file's activity in phases, and nothing else
-    #: in the domain says which phase an act belongs to: `Hetkeseis` says where
-    #: the file stands *now*, and it cannot place an opinion sent last spring
-    #: (`app/matters/phase_history.py`).
-    #:
-    #: **Pre-selected, and visibly so.** The default is the phase the file's own
-    #: `Hetkeseis` already places it on, so the ordinary save — writing up what
-    #: happened this morning on a file that is where it says it is — needs no
-    #: answer at all. That is a *proposal on screen beside the date box*, never an
-    #: invisible guess: somebody writing up a step from 2019 is looking at the
-    #: word while they type the year, and «Etapp määramata» is one click away.
-    #: `Muuda` on the row corrects it afterwards.
-    #:
-    #: **Only the phases this file's own procedure has.** A ministerial
-    #: regulation is not offered `Riigikogus`. A file whose `Õigusakt` and
-    #: `Menetlusliik` choose no pattern is offered nothing and the control does
-    #: not render — there is no vocabulary to answer from, and a generic list of
-    #: eleven would invite somebody to record a phase the procedure never had
-    #: (`app/matters/process_phases.py`).
-    process_phase = forms.ChoiceField(
-        label="Etapp",
-        required=False,
-        choices=(),
-        widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
-    )
+    #: **No `Etapp`.** A `Märge` is a record of what happened, and the owner
+    #: decided it is not filed under a phase of somebody else's procedure: the
+    #: control is gone from the form, not hidden, so a crafted `process_phase`
+    #: reaches a form that never cleans it and a use case that has no parameter
+    #: for it (`workspace.add_procedural_development`). Nothing is inferred in its
+    #: place. A phase an older row already stores is corrected on the row
+    #: (`ProceduralDevelopmentEditForm`), and the procedure's position is
+    #: `Hetkeseis` (docs/adr/0105, amended 2026-09-27).
     attachments = workspace_attachments("id_marge_failid")
 
     def __init__(self, *args: Any, phases: Any = None, **kwargs: Any) -> None:
         kwargs.setdefault("auto_id", "id_marge_%s")
-        #: The file's pattern and current stage, resolved by the page that draws
-        #: this panel. Passed in rather than read here for the reason the rail and
-        #: the history share one: a form offering phases from a second read could
-        #: offer a vocabulary the section above it is not using.
+        #: The file's current stage as the page drew it, resolved by the view that
+        #: draws this panel. Read for one thing: whether a chosen `Uus hetkeseis`
+        #: moves the file at all (`clean`).
         self.phases = phases
         super().__init__(*args, **kwargs)
         # The active vocabulary, in the department's reviewed order, read
         # through the canonical selector rather than from a list in this module
         # (`app/workflow/selectors.py`, docs/adr/0091 §8).
         set_choices(self, "stage", active_stages())
-        attach_phase_choices(self, phases=phases)
 
     def clean_title(self) -> str:
         return (self.cleaned_data.get("title") or "").strip()

@@ -44,14 +44,21 @@
               hx-post="{% url 'matters:close_from_workspace' pk=matter.pk %}"
               hx-target="#teema-vaade" hx-swap="outerHTML">
           {% csrf_token %}
-          <div class="cx-when" data-chipgroup="{{ closure_form.disposition.html_name }}">
-            <span class="cx-f__lab">Kuidas lõppes</span>
+          {% comment %}
+            The three outcomes, with no visible heading over them: the chips say
+            what they are, and the owner asked for the label off the screen. A
+            `<fieldset>` whose `<legend>` is visually hidden, so a screen reader
+            still hears «Kuidas lõppes» before the first chip and the three are
+            one group rather than three loose buttons.
+          {% endcomment %}
+          <fieldset class="cx-fieldset cx-when" data-chipgroup="{{ closure_form.disposition.html_name }}">
+            <legend class="visually-hidden">{{ closure_form.disposition.label }}</legend>
             {% for chip in closure_form.closure_chips %}
               <button type="button" class="uxchip {% if chip.selected %}is-selected{% endif %}"
                       data-chipvalue="{{ chip.value }}">{{ chip.label }}</button>
             {% endfor %}
             {{ closure_form.disposition }}
-          </div>
+          </fieldset>
           <label class="cx-f">
             <span class="cx-f__lab">Lõppsõna <span class="cx-f__opt">valikuline</span></span>
             {{ closure_form.closing_words }}
@@ -59,7 +66,6 @@
           {% if closure_form.disposition.errors %}
             <p class="field__error" id="{{ closure_form.disposition.auto_id }}_error">{{ closure_form.disposition.errors|first }}</p>
           {% endif %}
-          <p class="cx-note">Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.</p>
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
           </div>

@@ -10144,6 +10144,16 @@ section:has(.pw-more[open]) tbody.uxextra {
   min-width: 0;
 }
 
+/* A date standing alone on its row — `Kuupäev` under `+ Märge` and under
+ * `+ Arvamus / tagasiside`. The form is a flex column, so a bare field is
+ * stretched to the panel and a `7.9.2026` box ran almost the whole width.
+ * Capped at the width `Muuda kulgu` already gives its date column, the
+ * calendar button included; `max-width` rather than `width`, so a panel
+ * narrower than that still shrinks it instead of overflowing. */
+#teema-vaade-wrap .cx-f--solo {
+  max-width: 160px;
+}
+
 /* `Vastuseid` is a count, and a count does not need a text field's width. */
 #teema-vaade-wrap .cx-f--num {
   max-width: 110px;
@@ -10754,12 +10764,17 @@ section:has(.pw-more[open]) tbody.uxextra {
  *
  * The edit control sits at the *right* of the heading rather than under the
  * rail, because it acts on the whole section and a control below the thing it
- * edits reads as another step on it. */
+ * edits reads as another step on it.
+ *
+ * **The name is visually hidden since 2026-09-27** (owner decision), so the bar
+ * is `Muuda` alone — and nothing at all for a reader who cannot tailor the
+ * rail, because the hidden heading is out of flow. Its bottom margin separated
+ * the heading from the strip and went with it: the strip's own top padding is
+ * the gap now, so the section no longer opens on an empty band. */
 #teema-vaade-wrap .lprail__bar {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-2);
-  margin-bottom: var(--spacing-3);
 }
 
 #teema-vaade-wrap .lprail__bar .lprail__head {
@@ -10769,6 +10784,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .lprail__edit {
   margin-left: auto;
 }
+
 
 /* -- Muuda kulgu ----------------------------------------------------------
  *
@@ -11117,6 +11133,33 @@ section:has(.pw-more[open]) tbody.uxextra {
      against. Ordinary prose is untouched: a break inside a word is the last
      resort. */
   overflow-wrap: anywhere;
+}
+
+/* -- how loudly a row's own line is drawn ------------------------------------
+ *
+ * Two levels, set on the row by `TimelineItem.is_primary`. **Primary** is the
+ * three outcomes Koda itself put out — «Arvamus välja», a published
+ * `Ülevaade / uudis`, the closure — and keeps the semibold headline.
+ * **Secondary** is everything else, and it is the ordinary row: the headline
+ * and a work entry's author name are set in the regular weight. Before this
+ * every milestone headline and every author's name was semibold, and a `Märge`
+ * competed with the opinion the file exists to produce (owner feedback,
+ * 2026-09-27).
+ *
+ * Quieter, not faint: the ink is unchanged, so nothing loses contrast, and no
+ * size changes, so the rows keep their height.
+ *
+ * **Regular rather than medium, on purpose.** Barlow Medium at this row's
+ * 13px drops the dot off every «i» under Windows font rendering — «Teiste»
+ * reads «Telste», «Näidisministeerium» reads «Näldlsmlnlsteerlum» — while 400
+ * and 600 keep it. Measured in Chromium on the department's own platform. */
+#teema-vaade-wrap .uxtl__item--primary .uxtl__mswhat {
+  font-weight: var(--typography-weight-semibold);
+}
+
+#teema-vaade-wrap .uxtl__item--secondary .uxtl__mswhat,
+#teema-vaade-wrap .uxtl__item--secondary .uxtl__author {
+  font-weight: var(--typography-weight-regular);
 }
 
 #teema-vaade-wrap .uxtl__msdate {

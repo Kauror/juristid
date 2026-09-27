@@ -33,8 +33,12 @@ baseline depend on test order.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
@@ -51,6 +55,53 @@ from e2e.conftest import (
 pytestmark = pytest.mark.e2e
 
 MINISTRY = "Näidisministeerium"
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+#: The `Etapp` an older `Märge` carries, planted on the row named by
+#: `E2E_PHASE_TITLE` on the Matter `E2E_PHASE_MATTER`. A literal with its values
+#: in the environment, so the `subprocess.run` below has no constructed
+#: arguments — the shape `e2e/test_review_waiting_step.py` uses.
+_PHASE_SCRIPT = (
+    "import os;"
+    "from app.matters.models import MatterProceduralDevelopment as D;"
+    "from app.matters.process_phases import PHASE_KEYS, phase_label;"
+    "key = next(k for k in PHASE_KEYS if phase_label(k) == os.environ['E2E_PHASE_LABEL']);"
+    "row = D.objects.get(matter_id=os.environ['E2E_PHASE_MATTER'],"
+    " title=os.environ['E2E_PHASE_TITLE']);"
+    "D.objects.filter(pk=row.pk).update(process_phase=key);"
+    "print(key)"
+)
+
+
+def _plant_historical_phase(page, *, title: str, phase: str) -> None:
+    """Give the `Märge` titled ``title`` the phase an older row would carry.
+
+    `+ Märge` stopped asking for `Etapp` (docs/adr/0105, amended 2026-09-27) and
+    nothing a person can reach writes one any more, so a browser test about how
+    the page *reads* recorded phases plants them in the server's own database.
+    `DJANGO_SETTINGS_MODULE` is forced for the reason `run_worker` gives: pytest
+    sets `config.test_settings` for itself and a child would inherit it.
+    """
+    matter_id = re.search(r"/teemad/([0-9a-f-]{36})/", page.url).group(1)
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "manage.py", "shell", "-c", _PHASE_SCRIPT],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "config.settings",
+            "E2E_PHASE_MATTER": matter_id,
+            "E2E_PHASE_TITLE": title,
+            "E2E_PHASE_LABEL": phase,
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
+    page.reload()
+    page.wait_for_load_state("networkidle")
 
 
 def _estonian(on: date) -> str:
@@ -654,14 +705,19 @@ def _headlines(page) -> list[str]:
 
 
 def _record_phase_development(
-    page, *, title: str, occurred_on: str, phase: str, stage: str | None = None
+    page, *, title: str, occurred_on: str, phase: str | None, stage: str | None = None
 ) -> None:
-    """One step, filed under a phase, through the panel a lawyer actually uses."""
+    """One step through the panel a lawyer uses, then — where ``phase`` is given —
+    the phase an older row of that step would carry (`_plant_historical_phase`).
+
+    The panel itself asks for no phase since docs/adr/0105 was amended on
+    2026-09-27; what these scenarios read is how the page draws the rows that do
+    hold one.
+    """
     open_add_panel(page, "marge-tavaline")
     form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill(title)
     form.locator("[name=occurred_on]").fill(occurred_on)
-    form.locator("[name=process_phase]").select_option(label=phase)
     if stage is not None:
         form.locator("[name=stage]").select_option(label=stage)
     form.get_by_role("button", name="Salvesta", exact=True).click()
@@ -673,6 +729,9 @@ def _record_phase_development(
     # assertions these tests make about ordering do not, so they wait here
     # instead (e2e/conftest.py `open_add_panel`).
     expect(history(page)).to_contain_text(title)
+    if phase is not None:
+        _plant_historical_phase(page, title=title, phase=phase)
+        expect(history(page)).to_contain_text(title)
 
 
 def test_the_history_reads_as_one_list_and_the_rail_holds_the_phases(page, base_url):
@@ -871,11 +930,13 @@ def test_one_save_updates_the_rail_and_the_row_together(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
+    # No phase: the claim is about the stage the save moves, and planting one
+    # would reload the page this test needs to read after a single swap.
     _record_phase_development(
         page,
         title="Eelnõu jõudis Riigikokku",
         occurred_on=_past(5),
-        phase="Riigikogus",
+        phase=None,
         stage="Riigikogus",
     )
 
@@ -884,25 +945,21 @@ def test_one_save_updates_the_rail_and_the_row_together(page, base_url):
     assert _headlines(page)[0] == "Märge: Eelnõu jõudis Riigikokku"
 
 
-def test_the_phase_control_is_beside_the_date_box_and_optional(page, base_url):
-    """§7. A proposal on screen, never an invisible guess.
+def test_the_marge_panel_asks_for_no_phase(page, base_url):
+    """§7, reversed by the owner on 2026-09-27 (docs/adr/0105, amended).
 
-    It stays on the panel after docs/adr/0105 §1 because it is now the only way
-    `Menetluse kulg` gets filled: the history no longer reads it, the rail does.
+    The panel offered this file's phases pre-selected on `Hetkeseis`. On the
+    same file — a `Seadus` on `Kooskõlastusringil`, where the select rendered —
+    there is now no control, no label and no hidden input to post one.
     """
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
     open_add_panel(page, "marge-tavaline")
 
     form = panel(page, "marge-tavaline")
-    select = form.locator("[name=process_phase]")
-    expect(select).to_be_visible()
-    expect(form.locator("label[for$=process_phase]")).to_contain_text("valikuline")
-    # Pre-selected on the phase the file's own `Hetkeseis` places it on …
-    assert select.input_value() == "kooskolastus"
-    # … and clearable, in one click, to an ordinary answer.
-    select.select_option(value="")
-    assert select.input_value() == ""
+    expect(form.locator("[name=title]")).to_be_visible()
+    expect(form.locator("[name=process_phase]")).to_have_count(0)
+    expect(form).not_to_contain_text("Etapp")
 
 
 def test_a_milestone_row_puts_its_controls_on_the_headline_line(page, base_url):

@@ -4,6 +4,7 @@ The domain suite proves the rules; this proves that a person can actually
 perform them.
 
 **The panel asks two questions since the approved Teema target**: `Kuidas lõppes`
+— three chips, whose name is left to assistive technology since 2026-09-27 —
 and an optional `Lõppsõna`. Seven-new-recipients-in-one-save and the chip that
 removes a mistyped one went with the sent-opinion half of the closure — closing a
 Matter is not a claim that an opinion was sent, and requiring the PDF made the
@@ -63,12 +64,19 @@ def test_the_closing_panel_asks_only_the_approved_questions(page, base_url):
 
     panel = open_closing_panel(page)
 
-    expect(panel).to_contain_text("Kuidas lõppes")
+    # Three chips with no visible heading over them, still one named group for
+    # a screen reader: the legend is visually hidden, not removed (owner
+    # decision, 2026-09-27).
+    group = panel.get_by_role("group", name="Kuidas lõppes")
+    expect(group).to_have_count(1)
+    expect(group.locator("legend")).to_have_class("visually-hidden")
     for label in ("Jõustus", "Menetlus lõppes", "Loobuti"):
-        expect(panel.locator(".uxchip", has_text=label)).to_have_count(1)
+        expect(group.locator(".uxchip", has_text=label)).to_have_count(1)
     expect(panel.locator("[name=closing_words]")).to_be_visible()
     expect(panel).to_contain_text("valikuline")
-    expect(panel).to_contain_text("Teema läheb arhiivi. Avatud järgmised sammud tühistatakse.")
+    # And no explanatory sentence under it.
+    expect(panel).not_to_contain_text("Teema läheb arhiivi")
+    expect(panel).not_to_contain_text("sammud tühistatakse")
 
     # And the four that went with the sent-opinion half.
     for gone in ("[name=final_file]", "[name=final_sent_on]", "[name=work_victory]"):

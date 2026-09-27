@@ -343,3 +343,17 @@ class WorkVictoryFactory(factory.django.DjangoModelFactory):
     status = WorkVictoryStatus.CANDIDATE
     title = factory.Sequence(lambda n: f"Naidistoovoit {n}")
     date_precision = DatePrecision.YEAR
+
+
+def historical_phase(development, phase: str):
+    """Give a `Märge` the `Etapp` an older row carries, and hand it back.
+
+    `+ Märge` stopped asking for a phase and the use case behind it has no
+    parameter for one (docs/adr/0105, amended 2026-09-27), so a test that needs
+    a *recorded* phase — the rail's `Kirjas`, a correction of a stored phase —
+    plants it the way the rows written before that decision hold it: in the
+    column, and through nothing a person can reach today.
+    """
+    type(development).objects.filter(pk=development.pk).update(process_phase=phase)
+    development.refresh_from_db()
+    return development

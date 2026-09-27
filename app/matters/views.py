@@ -6543,11 +6543,10 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
     `Menetluse link`.
     """
     matter = get_visible_matter(request, pk)
-    # The same pattern the panel was drawn from, so the select's options on the
-    # way in and the values accepted on the way back are one decision. A Matter
-    # whose `Õigusakt` chooses no procedure has no field at all, and a crafted
-    # `process_phase` on one reaches a form that never cleaned it
-    # (`app.matters.forms.attach_phase_choices`).
+    # The stage the panel was drawn with, so the form can tell whether a chosen
+    # `Uus hetkeseis` moves the file. The form has no `Etapp`: a crafted
+    # `process_phase` reaches a form that never cleans it and a use case with no
+    # parameter for it (docs/adr/0105, amended 2026-09-27).
     form = MatterProgressForm(
         request.POST, request.FILES, phases=legal_process.phase_context(matter=matter)
     )
@@ -6570,14 +6569,6 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
             # `ProceduralDevelopmentEditForm` still offers the box on a record
             # that has one (docs/adr/0097 §6.2).
             note="",
-            # `Etapp` — which part of the procedure this step belongs to, as the
-            # person left it in the select. Pre-selected from the file's own
-            # `Hetkeseis` and visible beside the date box, so a step being filed
-            # from 2019 is not silently taking today's phase; empty is an ordinary
-            # answer and the row reads in the chronology exactly the same way.
-            # What the value places is a node on `Menetluse kulg`
-            # (`app.matters.legal_process.recorded_phases`, docs/adr/0105 §1).
-            process_phase=form.cleaned_data.get("process_phase") or "",
             stage=form.cleaned_data.get("stage"),
             next_text=form.cleaned_data.get("next_text") or "",
             next_date=form.cleaned_data.get("next_date"),
@@ -7339,9 +7330,10 @@ def _development_edit_form(
     to re-save (docs/adr/0079 §2, `development_period_initial`).
     """
     auto_id = f"id_menetluse_areng_{development.pk}_%s"
-    # The Matter's own pattern, so `Etapp` offers this file's procedure and not a
-    # generic list — and so the record's stored phase survives a reclassification
-    # that took it out of the pattern (`attach_phase_choices`).
+    # The Matter's own pattern, so `Etapp` — offered only on a record that already
+    # stores a phase — lists this file's procedure and not a generic one, and the
+    # stored phase survives a reclassification that took it out of the pattern
+    # (`attach_phase_choices`).
     phases = legal_process.phase_context(matter=development.matter)
     if data is not None:
         return ProceduralDevelopmentEditForm(

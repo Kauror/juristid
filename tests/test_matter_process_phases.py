@@ -100,19 +100,21 @@ def _matter(owner, *, instruments: tuple[str, ...] = (), **kwargs):
 
 
 def _step(matter, actor, title: str, on: date, phase: str, *, stage: str | None = None):
-    """One `Menetluse areng`, through the ordinary use case.
+    """One `Menetluse areng`, through the ordinary use case, carrying ``phase``.
 
-    The *only* way a phase enters the system: a person recorded a step and said
-    which part of the procedure it belongs to.
+    A phase no longer enters through `+ Märge` (docs/adr/0105, amended
+    2026-09-27), so a non-empty ``phase`` is planted the way an older row holds
+    one (`factories.historical_phase`). The scenarios below are about reading
+    those rows, which the decision keeps valid.
     """
-    return add_procedural_development(
+    record = add_procedural_development(
         matter=matter,
         author=actor,
         title=title,
         occurred_on=on,
-        process_phase=phase,
         stage=_stage(stage) if stage else None,
     ).record
+    return factories.historical_phase(record, phase) if phase else record
 
 
 def _opinion(matter, actor, organisation, on: date, title: str = "Koja arvamus"):
@@ -737,7 +739,6 @@ def test_an_undated_record_reads_in_full_and_says_the_day_is_unknown(specialist)
         author=specialist,
         title="Ministeerium saatis uue versiooni",
         occurred_on=None,
-        process_phase="",
     )
 
     headlines = _headlines(matter, specialist)
@@ -758,13 +759,15 @@ def test_an_approximate_date_places_a_row_on_its_anchor_and_still_prints_the_per
     """Test 9. A month is a month wherever it lands in a sort."""
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
-    add_procedural_development(
-        matter=matter,
-        author=specialist,
-        title="Valitsus arutas",
-        occurred_on=date(2026, 4, 1),
-        occurred_on_precision=DatePrecision.MONTH.value,
-        process_phase=PHASE_VALITSUS,
+    factories.historical_phase(
+        add_procedural_development(
+            matter=matter,
+            author=specialist,
+            title="Valitsus arutas",
+            occurred_on=date(2026, 4, 1),
+            occurred_on_precision=DatePrecision.MONTH.value,
+        ).record,
+        PHASE_VALITSUS,
     )
 
     items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
@@ -823,7 +826,6 @@ def test_no_phase_heading_and_no_etapiga_sidumata_reach_the_page(
         author=specialist,
         title="Midagi juhtus, kuupäev teadmata",
         occurred_on=None,
-        process_phase="",
     )
 
     response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
@@ -1125,7 +1127,6 @@ def test_an_unplaced_step_marks_no_node(specialist):
         author=specialist,
         title="Midagi juhtus",
         occurred_on=date(2025, 2, 10),
-        process_phase="",
     )
     _step(
         matter,
@@ -1375,13 +1376,13 @@ def test_a_stage_recorded_ahead_and_then_corrected_is_still_demoted(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_the_marge_panel_offers_this_files_own_phases_preselected(signed_in, specialist):
-    """§7. Proposed visibly, beside the date box, and only this file's procedure.
+def test_the_marge_panel_offers_no_phase_even_where_the_procedure_has_phases(signed_in, specialist):
+    """§7, reversed by the owner on 2026-09-27 (docs/adr/0105, amended).
 
-    A ministerial regulation is not offered `Riigikogus`, and a file already on
-    `Kooskõlastusringil` opens with `Kooskõlastusring` chosen — so the ordinary
-    save needs no answer and a backdated one is corrected by somebody who can see
-    the word while they type the year.
+    It used to offer this file's own phases, pre-selected on the one `Hetkeseis`
+    placed it on. A `Märge` is a record of what happened and is no longer filed
+    under a phase: a regulation on `Kooskõlastusringil` — a file with a pattern
+    and a current phase, where the control *would* have rendered — gets none.
     """
     matter = _matter(specialist, instruments=("maarus",))
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
@@ -1389,12 +1390,9 @@ def test_the_marge_panel_offers_this_files_own_phases_preselected(signed_in, spe
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
-    panel = body[body.index('id="id_marge_process_phase"') :][:1200]
-    assert 'value="kooskolastus" selected' in panel
-    assert "Etapp määramata" in panel
-    # The pattern's own phases, and the one a regulation never reaches is absent.
-    assert 'value="riigikogu"' not in panel
-    assert 'value="valitsus"' in panel
+    assert 'id="id_marge_title"' in body
+    assert 'id="id_marge_process_phase"' not in body
+    assert "Etapp määramata" not in body
 
 
 def test_the_correction_form_opens_on_the_records_own_phase(signed_in, specialist):
@@ -1452,13 +1450,17 @@ def test_a_crafted_phase_outside_the_vocabulary_stores_nothing(specialist):
     A key this product does not know — crafted, or retired by a later vocabulary
     — places nothing and is not an error. The record still saves.
     """
-    development = add_procedural_development(
+    from app.matters.services import record_procedural_development
+
+    # The service, because it is the one layer that still accepts a phase at
+    # all: `+ Märge` has no parameter for one (docs/adr/0105, amended).
+    development = record_procedural_development(
         matter=_matter(specialist, instruments=("seadus",)),
-        author=specialist,
         title="Midagi juhtus",
         occurred_on=date(2026, 1, 9),
         process_phase="riigikohus",
-    ).record
+        actor=specialist,
+    )
 
     assert development.pk is not None
     assert development.process_phase == ""

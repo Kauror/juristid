@@ -247,13 +247,15 @@ def test_the_rail_carries_arvamuse_tahtaeg_beside_the_phases(specialist):
 def test_a_milestone_is_slotted_by_its_date_among_the_phases(specialist):
     """§E. Two orderings reconciled: the pattern's, with dates slotted into it."""
     matter = _matter(specialist, instruments=("seadus",))
-    add_procedural_development(
-        matter=matter,
-        author=specialist,
-        title="Eelnõu kooskõlastusringile",
-        occurred_on=date(2026, 1, 9),
-        process_phase=PHASE_KOOSKOLASTUS,
-        stage=_stage("consultation"),
+    factories.historical_phase(
+        add_procedural_development(
+            matter=matter,
+            author=specialist,
+            title="Eelnõu kooskõlastusringile",
+            occurred_on=date(2026, 1, 9),
+            stage=_stage("consultation"),
+        ).record,
+        PHASE_KOOSKOLASTUS,
     )
 
     labels = _labels(matter, specialist)
@@ -391,13 +393,15 @@ def test_a_phase_is_dated_by_the_roadmap_and_not_by_the_step_filed_under_it(spec
         steps=[(PHASE_KOOSKOLASTUS, False, date(2027, 6, 1), "EXACT")],
         actor=specialist,
     )
-    add_procedural_development(
-        matter=matter,
-        author=specialist,
-        title="Eelnõu kooskõlastusringile",
-        occurred_on=date(2026, 1, 9),
-        process_phase=PHASE_KOOSKOLASTUS,
-        stage=_stage("consultation"),
+    factories.historical_phase(
+        add_procedural_development(
+            matter=matter,
+            author=specialist,
+            title="Eelnõu kooskõlastusringile",
+            occurred_on=date(2026, 1, 9),
+            stage=_stage("consultation"),
+        ).record,
+        PHASE_KOOSKOLASTUS,
     )
 
     step = next(s for s in _rail(matter, specialist) if s.label == "Kooskõlastusring")
@@ -417,13 +421,15 @@ def test_the_editor_offers_a_date_box_on_every_phase(signed_in, specialist):
     and no way to give it one (docs/adr/0100 §2).
     """
     matter = _matter(specialist, instruments=("seadus",))
-    add_procedural_development(
-        matter=matter,
-        author=specialist,
-        title="Eelnõu kooskõlastusringile",
-        occurred_on=date(2026, 1, 9),
-        process_phase=PHASE_KOOSKOLASTUS,
-        stage=_stage("consultation"),
+    factories.historical_phase(
+        add_procedural_development(
+            matter=matter,
+            author=specialist,
+            title="Eelnõu kooskõlastusringile",
+            occurred_on=date(2026, 1, 9),
+            stage=_stage("consultation"),
+        ).record,
+        PHASE_KOOSKOLASTUS,
     )
 
     panel = signed_in.get(

@@ -143,10 +143,14 @@ def test_the_closing_panel_asks_the_two_approved_questions(signed_in, normal_mat
     assert "+ Lõpeta teema" in body
     assert "Lõpeta see teema" not in body
 
-    # `Kuidas lõppes` — three chips over one hidden field, so an unanswered
-    # question is representable and a crafted POST still validates against the
-    # whole stored vocabulary.
-    assert "Kuidas lõppes" in body
+    # Three chips over one hidden field, so an unanswered question is
+    # representable and a crafted POST still validates against the whole stored
+    # vocabulary. `Kuidas lõppes` names the group for assistive technology only
+    # (owner decision, 2026-09-27): a visually hidden legend, never a visible
+    # label.
+    panel = body[body.index('id="teema-lopeta"') :]
+    assert '<legend class="visually-hidden">Kuidas lõppes</legend>' in panel
+    assert '<span class="cx-f__lab">Kuidas lõppes</span>' not in panel
     assert 'name="disposition"' in body
     for label in ("Jõustus", "Menetlus lõppes", "Loobuti"):
         assert f">{label}<" in body
@@ -157,8 +161,11 @@ def test_the_closing_panel_asks_the_two_approved_questions(signed_in, normal_mat
     assert "valikuline" in body
     assert "Mis sellest teemast lõpuks sai?" in body
 
-    # And the note the target ends the panel with.
-    assert "Teema läheb arhiivi. Avatud järgmised sammud tühistatakse." in body
+    # And no explanatory note under it: the owner took «Teema läheb arhiivi.
+    # Avatud järgmised sammud tühistatakse.» off the panel on 2026-09-27. What
+    # closing does is unchanged (`close_matter`); only the sentence is gone.
+    assert "Teema läheb arhiivi" not in body
+    assert "sammud tühistatakse" not in body
 
 
 def test_the_three_offered_outcomes_map_onto_stored_dispositions():

@@ -24,8 +24,9 @@ anybody asked for — it is an implementation abstraction that reached the scree
 
 `Mis juhtus?` leads, because it is the answer on nearly every save and because a
 panel opening on a date box asks for bookkeeping before it asks what happened.
-`Kuupäev` and `Etapp` follow the sentence rather than preceding it: the day
-arrives filled with today and needs no answer at all on the ordinary save.
+`Kuupäev` follows the sentence rather than preceding it: the day arrives filled
+with today and needs no answer at all on the ordinary save. There is no `Etapp`
+(docs/adr/0105, amended 2026-09-27).
 
 **Every control is optional, and any one of them is a whole save.** A file that
 just arrived, the file reaching the Riigikogu, «vaatan uue versiooni üle, 25.09»
@@ -70,50 +71,29 @@ and what still offers it (`Muuda` on the record, which decides per row).
   {% endcomment %}
   {% include "matters/partials/add_files.html" with field=progress_form.attachments %}
   {% comment %}
-    **When, and which part of the procedure** — under the sentence they describe.
+    **When** — under the sentence it dates.
 
     The date opens on today, in the box where it can be read, changed and
     emptied, which is the one shape docs/adr/0078 §2 allows a date default to
     take. An emptied box stores `NULL` and the row reads «Kuupäev teadmata».
 
-    `Etapp` is **beside the date box** and that is the whole reason it is honest:
-    somebody filing a step from 2019 is looking at the word «Kooskõlastusring»
-    while they type the year, which is a proposal on screen rather than an
-    invisible guess about a backdated record. It arrives pre-selected on the
-    phase the file's own `Hetkeseis` already places it on, so the ordinary save
-    needs no answer, and «Etapp määramata» is one click away.
+    **No `Etapp`.** A `Märge` is a record of what happened, and the owner decided
+    it is not filed under a phase of somebody else's procedure. The control is
+    gone from the form rather than hidden, and nothing is inferred in its place;
+    where the procedure stands is `Uus hetkeseis` below (docs/adr/0105, amended
+    2026-09-27).
 
-    It is what marks a node `Kirjas` on `Menetluse kulg` above — which is now the
-    only place the phases are drawn, since `Teema käik` stopped grouping itself
-    into them (docs/adr/0105 §1, `app.matters.legal_process.recorded_phases`).
-
-    Rendered only when this file's `Õigusakt` or `Menetlusliik` chooses a
-    procedure. Without one there is no vocabulary to answer from and the field
-    does not exist on the form at all — a generic list of eleven phases would
-    invite somebody to record one the procedure never had
-    (`app/matters/process_phases.py`).
+    Alone on its row, so `cx-f--solo` keeps it the width of a date rather than
+    of the panel.
   {% endcomment %}
-  <div class="cx-grid cx-grid--links">
-    <label class="cx-f cx-f--date" for="{{ progress_form.occurred_on.id_for_label }}">
-      <span class="cx-f__lab">{{ progress_form.occurred_on.label }}</span>
-      {{ progress_form.occurred_on }}
-      {% if progress_form.occurred_on.errors %}
-        <p class="field__error" id="{{ progress_form.occurred_on.auto_id }}_error">
-          {{ progress_form.occurred_on.errors|first }}</p>
-      {% endif %}
-    </label>
-    {% if progress_form.process_phase %}
-      <label class="cx-f" for="{{ progress_form.process_phase.id_for_label }}">
-        <span class="cx-f__lab">{{ progress_form.process_phase.label }}
-          <span class="cx-f__opt">valikuline</span></span>
-        {{ progress_form.process_phase }}
-        {% if progress_form.process_phase.errors %}
-          <p class="field__error" id="{{ progress_form.process_phase.auto_id }}_error">
-            {{ progress_form.process_phase.errors|first }}</p>
-        {% endif %}
-      </label>
+  <label class="cx-f cx-f--date cx-f--solo" for="{{ progress_form.occurred_on.id_for_label }}">
+    <span class="cx-f__lab">{{ progress_form.occurred_on.label }}</span>
+    {{ progress_form.occurred_on }}
+    {% if progress_form.occurred_on.errors %}
+      <p class="field__error" id="{{ progress_form.occurred_on.auto_id }}_error">
+        {{ progress_form.occurred_on.errors|first }}</p>
     {% endif %}
-  </div>
+  </label>
   {% comment %}
     **Has the state changed.**
 
