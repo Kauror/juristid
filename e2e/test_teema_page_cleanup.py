@@ -228,6 +228,7 @@ def test_three_opinions_draw_one_run_and_the_page_reads_quietly(page, base_url):
     assert weight(opinion) == 600
     assert weight(note) == 400
     expect(note).to_have_class(re.compile(r"\buxtl__item--secondary\b"))
+    open_kaik_row(note)
     expect(note.get_by_role("button", name=re.compile("Muuda"))).to_be_visible()
 
     # Neither heading takes room, and both are still level-two headings.

@@ -731,9 +731,17 @@ def open_kaik_row(row) -> None:
     `.filter(has_text=…)` on `KAIK_ROW` is the usual shape. Idempotent: an open
     row is left open, and one row opening may close another, which is the
     accordion working.
+
+    A row with nothing behind its line — `Teema loodud`, or a round on a
+    closed Teema that offers no control — draws no toggle, because its line is
+    all it has. Such a row is already showing everything, so it is left as it
+    is rather than pressed.
     """
     article = row.locator("xpath=ancestor-or-self::article[contains(@class,'uxtl__item')]").first
     toggle = article.locator(".uxtl__toggle").first
+    toggle.wait_for(state="attached")
+    if toggle.is_hidden():
+        return
     if toggle.get_attribute("aria-expanded") != "true":
         toggle.click()
     assert toggle.get_attribute("aria-expanded") == "true"
