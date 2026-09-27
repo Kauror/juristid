@@ -170,11 +170,12 @@ def started_on(page, matter_url: str) -> str:
 def assert_fits(page, width: int) -> None:
     """No sideways scroll, every column real, and nothing clipped away.
 
-    **The document never scrolls sideways; the rail may scroll itself.** Below
-    720px `grid-auto-columns` takes a 96px floor and `.tl-strip` becomes its own
-    `overflow-x: auto` container, so a file with more milestones than the width
-    holds — five at 420, where four fit — keeps every one of them at a legible
-    width and the reader reaches the rightmost by scrolling the rail: never
+    **The document never scrolls sideways; the rail may scroll itself.**
+    `.tl-strip` is its own `overflow-x: auto` container, no column is narrower
+    than its longest word, and below 720px every column takes a 96px floor too,
+    so a file with more milestones than the width holds — five at 420, where
+    four fit — keeps every one of them at a legible width and the reader
+    reaches the rightmost by scrolling the rail: never
     dropped steps, never abbreviated nonsense, and never a horizontally
     scrolling page (TEEMA_TARGET_SPEC §H, `static/css/app.css` @media
     max-width 720).
@@ -528,8 +529,8 @@ def test_a_long_strip_scrolls_itself_and_never_the_page(page, base_url):
     Four columns are exactly what 420px holds — the seeded Matter's own shape,
     and `396 / 4` is a whisker over the 96px floor. A **fifth** does not fit, and
     the design's answer is neither to drop one nor to abbreviate it: below 720px
-    `grid-auto-columns` takes that floor and `.tl-strip` becomes its own
-    `overflow-x: auto` container. Every milestone stays, at a legible width, and
+    every column takes that floor, and `.tl-strip` is its own `overflow-x: auto`
+    container. Every milestone stays, at a legible width, and
     the reader reaches the rightmost by scrolling the rail rather than the page
     (TEEMA_TARGET_SPEC §H).
 
@@ -564,7 +565,7 @@ def test_a_long_strip_scrolls_itself_and_never_the_page(page, base_url):
     assert_fits(page, 420)
 
     # And the rule does not fire where it is not needed: the same five columns
-    # fit at 1024, so the rail is not a scroller there.
+    # fit at 1024, so the rail has nothing to scroll there.
     page.set_viewport_size({"width": 1024, "height": 900})
     page.wait_for_timeout(200)
     wide = strip(page).evaluate(
