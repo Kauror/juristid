@@ -809,6 +809,50 @@ jobs:
           done
           echo "all 7 browser shards and the visual suite passed"
 
+  shard-balance:
+    # What this run's shards were predicted to take, beside what they took
+    # (ENG-139). The quality job prints the prediction alone, and a model
+    # balances perfectly against itself: «slowest / median 1.00» while the same
+    # run's PostgreSQL shards ranged 332-570 s. This reads the JUnit reports the
+    # shards of *this* run uploaded, against the table committed at this commit.
+    #
+    # Informational, twice over: not a required check, and `continue-on-error`
+    # with a script that exits 0 whatever it finds. Hosted runners have slow
+    # days, and a red build over runner noise would teach people to ignore it.
+    name: Shard balance, predicted against actual (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [tests, browser]
+    if: always()
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+
+      - name: This run's PostgreSQL shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-report-tests-*
+          path: junit
+
+      - name: This run's browser shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-report-browser-*
+          path: junit
+
+      - name: Predicted against actual
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: localhost
+          E2E_BASE_URL: http://127.0.0.1:8000
+          E2E_GATE_BASE_URL: http://127.0.0.1:8001
+        run: uv run python scripts/ci/report_shard_health.py --durations junit
+
   recovery:
     name: Backup and restore rehearsal
     runs-on: ubuntu-latest
