@@ -711,3 +711,29 @@ def open_matter(page, base_url: str, title: str) -> str:
     page.goto(f"{base_url}{link.get_attribute('href')}")
     page.wait_for_load_state("networkidle")
     return page.url
+
+
+#: A `Teema käik` row: the `<article>` itself, which `display: contents` gives
+#: no box of its own.
+KAIK_ROW = "#ajalugu-loend article.uxtl__item"
+
+
+def open_kaik_row(row) -> None:
+    """Open one `Teema käik` row the way a reader does — with its toggle.
+
+    The chronology is an accordion since docs/adr/0074 §14 was amended on
+    2026-09-27: every row renders closed, as its one line, and its body, files,
+    `Juristi märkus` and `Muuda` / `+ Lisa fail` / `Kustuta` are behind the
+    toggle laid over that line. So a test that reads or presses anything inside
+    a row opens the row first, exactly as a person has to.
+
+    ``row`` is the row's `article` locator, or anything inside one — a
+    `.filter(has_text=…)` on `KAIK_ROW` is the usual shape. Idempotent: an open
+    row is left open, and one row opening may close another, which is the
+    accordion working.
+    """
+    article = row.locator("xpath=ancestor-or-self::article[contains(@class,'uxtl__item')]").first
+    toggle = article.locator(".uxtl__toggle").first
+    if toggle.get_attribute("aria-expanded") != "true":
+        toggle.click()
+    assert toggle.get_attribute("aria-expanded") == "true"
