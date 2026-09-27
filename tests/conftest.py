@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import zipfile
 from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import pytest
@@ -327,18 +328,56 @@ def extract():
 # ---------------------------------------------------------------------------
 
 
+@contextmanager
+def built_once(django_db_blocker, build):
+    """Build a world once for a whole module, inside a transaction nobody commits.
+
+    ENG-136. The Statistika world took 97 % of its tests' time being built again
+    for every test that only reads it. Built here instead, once per module, in an
+    outer transaction that is rolled back when the module ends; every test still
+    runs inside its own savepoint (pytest-django's ``db``), so whatever a test
+    writes is gone before the next one starts, and the world it reads is the
+    world as built. What cannot be rolled back is Python state: a test that edits
+    one of these objects in memory must fetch its own copy instead.
+    """
+    from django.db import transaction
+
+    with django_db_blocker.unblock():
+        atomic = transaction.atomic()
+        atomic.__enter__()
+        try:
+            built = build()
+        except BaseException:
+            transaction.set_rollback(True)
+            atomic.__exit__(None, None, None)
+            raise
+        try:
+            yield built
+        finally:
+            transaction.set_rollback(True)
+            atomic.__exit__(None, None, None)
+
+
+@pytest.fixture(scope="module")
+def _statistics_world(django_db_setup, django_db_blocker):
+    from tests.synthetic_statistics import build_world
+
+    with built_once(django_db_blocker, build_world) as built:
+        yield built
+
+
 @pytest.fixture
-def world(db):
+def world(db, _statistics_world):
     """The synthetic department the Statistika suite reads.
 
     One fixture rather than a factory call per test: the metrics are about
     *populations*, and a test that built its own three records would assert
     against a world too small for the buckets that matter — Teadmata aasta, a
     duplicate SHA-256, a file waiting on a scanner (tests/synthetic_statistics.py).
-    """
-    from tests.synthetic_statistics import build_world
 
-    return build_world()
+    Built once per module and read by every test in it (`built_once`, ENG-136).
+    """
+    return _statistics_world
 
 
 @pytest.fixture

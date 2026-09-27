@@ -134,8 +134,11 @@ def test_the_stage_label_is_kept_as_text_beside_the_foreign_key(world):
     assert row.stage_key == world.stage.key
     assert row.stage_label == world.stage.label_et
 
-    world.stage.label_et = "Hoopis midagi muud"
-    world.stage.save(update_fields=["label_et"])
+    # Its own copy: the world is shared by the module (ENG-136), and renaming
+    # the shared instance would rename it for every later test too.
+    stage = type(world.stage).objects.get(pk=world.stage.pk)
+    stage.label_et = "Hoopis midagi muud"
+    stage.save(update_fields=["label_et"])
     row.refresh_from_db()
     assert row.stage_label == "Kooskõlastusringil"
 
