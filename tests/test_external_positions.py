@@ -46,10 +46,12 @@ from app.documents.links import TARGET_FIELDS, DocumentLink
 from app.documents.models import Document
 from app.matters import work_items
 from app.matters.enums import EngagementKind
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, MatterExternalPosition
 from app.matters.my_work import build_my_work
 from app.matters.services import (
     EXTERNAL_POSITION_EDIT_CONFLICT,
+    EXTERNAL_POSITION_ENGAGEMENT_ELSEWHERE,
     EXTERNAL_POSITION_NEEDS_ORGANISATION,
     EXTERNAL_POSITION_NEEDS_SOURCE,
     ExternalPositionConflict,
@@ -70,6 +72,7 @@ from app.search.indexing import rebuild_all
 from app.search.models import SearchDocument
 from app.workflow.enums import DatePrecision, Disposition
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -327,7 +330,7 @@ def test_an_undated_row_cannot_carry_a_precision(normal_matter, ministry):
 
 
 def test_an_unknown_precision_is_refused_by_the_service(normal_matter, specialist, ministry):
-    with pytest.raises(DomainError):
+    with refused("Tundmatu kuupäeva täpsus 'MIDAGI_MUUD'."):
         _recorded(
             normal_matter,
             ministry,
@@ -357,7 +360,14 @@ def test_an_unknown_precision_is_refused_by_the_service(normal_matter, specialis
     ],
 )
 def test_a_hostile_or_malformed_address_is_refused(url):
-    with pytest.raises(DomainError):
+    # A web scheme with nothing after it is a missing host; everything else
+    # here is refused for its scheme.
+    expected = (
+        "Link peab sisaldama veebiaadressi."
+        if url.startswith("https://")
+        else "Link peab algama http:// või https:// aadressiga."
+    )
+    with refused(expected):
         normalize_external_position_url(url)
 
 
@@ -374,7 +384,9 @@ def test_a_public_http_address_is_accepted(url):
 
 
 def test_an_over_long_address_is_refused_rather_than_truncated():
-    with pytest.raises(DomainError):
+    with refused(
+        "Link on liiga pikk — kuni 1000 tähemärki. Lühenda aadressi või salvesta see märkusesse."
+    ):
         normalize_external_position_url("https://example.org/" + "a" * 1200)
 
 
@@ -452,7 +464,7 @@ def test_a_document_cannot_be_linked_across_matters(specialist, ministry, eviden
     position = _recorded(here, ministry, specialist, url=POSITION_URL)
     stray = factories.DocumentFactory(matter=elsewhere)
 
-    with pytest.raises(DomainError):
+    with refused("Dokumendi ja kirje teema peavad olema samad."):
         link_document_to_record(document=stray, record=position, actor=specialist)
 
 
@@ -498,7 +510,7 @@ def test_an_engagement_on_another_matter_is_refused(specialist, ministry):
         matter=elsewhere, kind=EngagementKind.EMAIL_CAMPAIGN, title="liikmed", actor=specialist
     )
 
-    with pytest.raises(DomainError):
+    with refused(EXTERNAL_POSITION_ENGAGEMENT_ELSEWHERE):
         _recorded(here, ministry, specialist, url=POSITION_URL, engagement=stray)
 
     assert not MatterExternalPosition.objects.filter(matter=here).exists()
@@ -916,7 +928,7 @@ def closed_matter(normal_matter, specialist):
 
 
 def test_a_closed_matter_refuses_a_new_position(closed_matter, specialist, ministry):
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         _recorded(closed_matter, ministry, specialist, url=POSITION_URL)
 
     assert not MatterExternalPosition.objects.filter(matter=closed_matter).exists()
@@ -926,7 +938,7 @@ def test_a_closed_matter_refuses_a_correction(normal_matter, specialist, ministr
     position = _recorded(normal_matter, ministry, specialist, url=POSITION_URL)
     close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         correct_external_position(
             position=position,
             organisation=ministry,

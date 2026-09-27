@@ -14,7 +14,6 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.matters.intake import register_incoming, role_for, title_from_filename, validate_uploads
@@ -23,6 +22,7 @@ from app.matters.services import set_matter_visibility
 from app.organisations.models import Organisation, OrganisationType
 from app.search.services import search_matters
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -126,7 +126,7 @@ def test_no_stage_is_invented(db, specialist) -> None:
 
 
 def test_uploading_nothing_is_refused(db, specialist) -> None:
-    with pytest.raises(DomainError):
+    with refused("Vali vähemalt üks fail."):
         validate_uploads([])
 
 

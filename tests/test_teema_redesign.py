@@ -50,6 +50,7 @@ from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSema
 from app.workflow.models import NextAction
 from app.workflow.services import current_next_action, set_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -633,11 +634,10 @@ def test_one_save_can_write_everything_at_once(normal_matter, specialist, organi
 
 def test_an_invalid_sub_action_rolls_back_the_whole_save(normal_matter, specialist):
     """Atomicity is the substance of the composer, not a technicality."""
-    from app.core.errors import DomainError
 
     before = Entry.objects.filter(matter=normal_matter).count()
 
-    with pytest.raises(DomainError):
+    with refused("Kaasamisel peab olema pealkiri."):
         compose_update(
             matter=normal_matter,
             author=specialist,
@@ -650,9 +650,8 @@ def test_an_invalid_sub_action_rolls_back_the_whole_save(normal_matter, speciali
 
 
 def test_the_composer_refuses_an_empty_save(normal_matter, specialist):
-    from app.core.errors import DomainError
 
-    with pytest.raises(DomainError):
+    with refused("Täida sissekanne või vali, mida veel salvestada."):
         compose_update(matter=normal_matter, author=specialist)
 
 
@@ -964,11 +963,10 @@ def test_a_successor_is_a_real_relationship(normal_matter, specialist):
 
 
 def test_a_successor_needs_the_disposition_that_asserts_one(normal_matter, specialist):
-    from app.core.errors import DomainError
 
     successor = factories.MatterFactory(owner=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Järglase saab määrata ainult siis, kui töö jätkub teise teema all."):
         close_matter(
             matter=normal_matter,
             disposition=Disposition.COMPLETED,
@@ -1471,9 +1469,8 @@ def test_a_working_reference_is_not_evidence(signed_in, specialist):
 
 
 def test_a_working_reference_refuses_a_non_web_address(normal_matter, specialist):
-    from app.core.errors import DomainError
 
-    with pytest.raises(DomainError):
+    with refused("Viide peab algama http:// või https:// aadressiga."):
         link_working_document(
             matter=normal_matter,
             title="Fail",

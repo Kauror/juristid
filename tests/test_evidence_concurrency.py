@@ -59,6 +59,7 @@ from app.submissions.services import (
     select_final_evidence,
 )
 from tests import factories
+from tests.refusals import refused
 
 # Real transactions, so the teardown is a flush rather than a rollback and the
 # migrated reference data goes with it. `serialized_rollback=True` is how the
@@ -268,7 +269,7 @@ def test_sending_holds_the_matter_lock_too(specialist):
     matter, submission, _document, version = _restricted_world(specialist)
     select_final_evidence(submission=submission, version=version, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("arvamuse lõplik tõend arvamusest endast vähem piiratuks"):
         set_matter_visibility(matter=matter, visibility=Visibility.NORMAL, actor=specialist)
 
     submission.refresh_from_db()

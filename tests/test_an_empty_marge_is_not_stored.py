@@ -39,11 +39,16 @@ from app.core.dates import format_estonian_date
 from app.core.errors import DomainError
 from app.matters import services as matter_services
 from app.matters.models import Matter, MatterProceduralDevelopment
-from app.matters.services import DEVELOPMENT_NEEDS_SOMETHING, change_stage
+from app.matters.services import (
+    DEVELOPMENT_CORRECTION_LEAVES_NOTHING,
+    DEVELOPMENT_NEEDS_SOMETHING,
+    change_stage,
+)
 from app.matters.workspace import add_procedural_development
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -180,7 +185,7 @@ def test_the_stage_is_read_from_the_locked_row_not_the_callers_instance(
     Matter.objects.filter(pk=staged_matter.pk).update(stage=moved_to)
 
     # Against the stale copy this *looks* like a change; on the row it is not.
-    with pytest.raises(DomainError):
+    with refused(DEVELOPMENT_NEEDS_SOMETHING):
         add_procedural_development(
             matter=stale, author=specialist, title="", occurred_on=HAPPENED, stage=moved_to
         )
@@ -303,7 +308,7 @@ def test_clearing_every_field_of_a_file_less_marge_is_refused(normal_matter, spe
 def test_clearing_the_note_of_a_note_only_marge_is_refused(normal_matter, specialist):
     development = _record(normal_matter, specialist, note="Uus versioon ei arvesta meid.")
 
-    with pytest.raises(DomainError):
+    with refused(DEVELOPMENT_CORRECTION_LEAVES_NOTHING):
         _correct(development, specialist, note="")
 
     development.refresh_from_db()
@@ -355,7 +360,7 @@ def test_what_the_original_save_moved_is_not_row_content(normal_matter, speciali
         next_text="Jälgin komisjoni arutelu",
     )
 
-    with pytest.raises(DomainError):
+    with refused(DEVELOPMENT_CORRECTION_LEAVES_NOTHING):
         _correct(result.record, specialist, title="")
 
     # And the refused correction rewound nothing the original save wrote.

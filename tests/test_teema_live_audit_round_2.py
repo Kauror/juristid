@@ -56,6 +56,7 @@ from app.taxonomy.models import PolicyArea
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action_for_new_work
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -635,7 +636,7 @@ def test_a_corrected_entry_refuses_the_deletion(rich_matter, specialist):
     plan = plan_matter_deletion(rich_matter)
     assert BLOCKED_BY_APPEND_ONLY_CHILD in {blocker.code for blocker in plan.blockers}
 
-    with pytest.raises(DomainError):
+    with refused("mille muudatuslugu on jäädavalt salvestatud"):
         delete_matter(matter=rich_matter, actor=specialist)
     assert Entry.objects.filter(matter=rich_matter).count() == 2
 
@@ -652,7 +653,7 @@ def test_a_successor_matter_refuses_the_deletion(rich_matter, specialist):
     plan = plan_matter_deletion(rich_matter)
     assert BLOCKED_BY_RELATED_MATTER in {blocker.code for blocker in plan.blockers}
 
-    with pytest.raises(DomainError):
+    with refused("Mõni teine teema viitab sellele teemale"):
         delete_matter(matter=rich_matter, actor=specialist)
     assert Matter.objects.filter(pk=successor.pk).exists()
     assert Matter.objects.filter(pk=rich_matter.pk).exists()

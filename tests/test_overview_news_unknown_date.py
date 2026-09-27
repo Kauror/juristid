@@ -38,6 +38,8 @@ from app.audit.models import ChangeEvent
 from app.matters.enums import WebsiteOverviewStatus
 from app.matters.models import MatterWebsiteOverview
 from app.matters.services import (
+    WEBSITE_OVERVIEW_ALREADY_PUBLISHED,
+    WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE,
     correct_website_overview_link,
     plan_website_overview,
     publish_website_overview,
@@ -45,6 +47,7 @@ from app.matters.services import (
 from app.matters.timeline import WEBSITE_OVERVIEW_DATE_UNKNOWN, matter_timeline
 from app.search.indexing import rebuild_all
 from app.search.models import SearchDocument
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -343,11 +346,10 @@ def test_an_undated_publication_is_published_and_not_planned_or_cancelled(
 
 def test_an_undated_publication_still_refuses_a_second_publication(normal_matter, specialist):
     """`PUBLISHED → PUBLISHED` is a correction, not a republication."""
-    from app.core.errors import DomainError
 
     overview = _undated(normal_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_ALREADY_PUBLISHED):
         publish_website_overview(
             overview=overview, url=NEWS_URL, published_on=PUBLISHED_ON, actor=specialist
         )
@@ -356,12 +358,11 @@ def test_an_undated_publication_still_refuses_a_second_publication(normal_matter
 def test_an_undated_publication_still_refuses_cancellation(normal_matter, specialist):
     """The page is up, and a record denying it would be the file disagreeing
     with the world — a rule a missing date does not touch."""
-    from app.core.errors import DomainError
     from app.matters.services import cancel_website_overview
 
     overview = _undated(normal_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE):
         cancel_website_overview(overview=overview, actor=specialist)
 
 

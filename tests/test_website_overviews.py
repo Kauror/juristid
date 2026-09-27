@@ -35,7 +35,11 @@ from app.matters.models import Entry, MatterWebsiteOverview
 from app.matters.my_work import build_my_work
 from app.matters.services import (
     WEBSITE_OVERVIEW_ADDRESS_TAKEN,
+    WEBSITE_OVERVIEW_ALREADY_PUBLISHED,
+    WEBSITE_OVERVIEW_CANCELLED_IS_FINAL,
     WEBSITE_OVERVIEW_NEEDS_LINK,
+    WEBSITE_OVERVIEW_NOT_PUBLISHED,
+    WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE,
     WebsiteOverviewConflict,
     cancel_website_overview,
     close_matter,
@@ -50,6 +54,17 @@ from app.search.indexing import rebuild_all
 from app.search.models import SearchDocument
 from app.workflow.enums import Disposition
 from tests import factories
+from tests.refusals import refused
+
+
+def _overview_refusal(url: str) -> str:
+    """Which of the three address refusals a case names: scheme, host, credential."""
+    if not url.startswith(("http://", "https://")):
+        return "Ülevaate või uudise link peab algama http:// või https:// aadressiga."
+    if "@" in url:
+        return "Ülevaate või uudise link ei tohi sisaldada kasutajanime ega parooli."
+    return "Ülevaate või uudise link peab olema täielik veebiaadress."
+
 
 pytestmark = pytest.mark.django_db
 
@@ -184,7 +199,7 @@ def test_a_published_overview_cannot_be_cancelled(normal_matter, specialist):
     the file disagreeing with the world."""
     overview = _published(normal_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_PUBLISHED_IS_NOT_CANCELLABLE):
         cancel_website_overview(overview=overview, actor=specialist)
 
     overview.refresh_from_db()
@@ -197,11 +212,11 @@ def test_a_cancelled_overview_is_terminal(normal_matter, specialist):
         overview=_planned(normal_matter, specialist), actor=specialist
     )
 
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL):
         publish_website_overview(
             overview=overview, url=KODA_URL, published_on=PUBLISHED_ON, actor=specialist
         )
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL):
         cancel_website_overview(overview=overview, actor=specialist)
 
     overview.refresh_from_db()
@@ -214,7 +229,7 @@ def test_publishing_an_already_published_overview_is_refused(normal_matter, spec
     the audit trail can say which of the two happened."""
     overview = _published(normal_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_ALREADY_PUBLISHED):
         publish_website_overview(
             overview=overview,
             url=f"{KODA_URL}-uus",
@@ -262,7 +277,7 @@ def test_an_address_that_is_not_a_public_web_page_is_refused(url):
     check, and a password in a stored address is a password in an audit payload
     and in everybody's browser history.
     """
-    with pytest.raises(DomainError):
+    with refused(_overview_refusal(url)):
         normalize_overview_news_url(url)
 
 
@@ -294,7 +309,7 @@ def test_an_over_long_address_is_refused_rather_than_truncated():
     """A link cut off at a thousand characters is a link that no longer
     resolves, and a stored pointer that is quietly wrong is worse than a refusal
     (red-team finding F-1)."""
-    with pytest.raises(DomainError):
+    with refused("Ülevaate või uudise link on liiga pikk — kuni 1000 tähemärki."):
         normalize_overview_news_url("https://koda.ee/" + "a" * 1000)
 
 
@@ -308,7 +323,7 @@ def test_publishing_without_an_address_is_refused(normal_matter, specialist):
     """
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_NEEDS_LINK):
         publish_website_overview(
             overview=overview, url="", published_on=PUBLISHED_ON, actor=specialist
         )
@@ -470,7 +485,7 @@ def test_a_correction_is_refused_on_a_record_that_was_never_published(normal_mat
     one, and this one can only move an address that already exists."""
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(WEBSITE_OVERVIEW_NOT_PUBLISHED):
         correct_website_overview_link(
             overview=overview, url=KODA_URL, published_on=PUBLISHED_ON, actor=specialist
         )
@@ -563,7 +578,7 @@ def test_the_closure_and_its_cancellations_are_one_transaction(normal_matter, sp
     """
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
 
-    with pytest.raises(DomainError), transaction.atomic():
+    with refused("Tundmatu lõpetamise põhjus 'EI_OLE_OLEMAS'."), transaction.atomic():
         close_matter(matter=normal_matter, disposition="EI_OLE_OLEMAS", actor=specialist)
 
     normal_matter.refresh_from_db()

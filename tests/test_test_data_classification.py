@@ -26,7 +26,6 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document, set_legal_hold
@@ -43,6 +42,7 @@ from app.matters.timeline import TIMELINE_EVENT_TYPES
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -122,7 +122,7 @@ def test_the_database_refuses_test_on_an_imported_row():
 
 
 def test_the_service_refuses_to_create_an_imported_test_matter():
-    with pytest.raises(DomainError):
+    with refused("Testandmeteks saab märkida ainult süsteemis loodud teema."):
         create_matter(
             title="Ajalooline",
             origin=MatterOrigin.LEGACY_IMPORT,
@@ -133,7 +133,7 @@ def test_the_service_refuses_to_create_an_imported_test_matter():
 
 def test_the_service_refuses_to_reclassify_an_imported_row(specialist):
     archive = factories.ArchiveMatterFactory()
-    with pytest.raises(DomainError):
+    with refused("Testandmeteks saab märkida ainult süsteemis loodud teema."):
         set_matter_data_class(matter=archive, data_class=MatterDataClass.TEST, actor=specialist)
     archive.refresh_from_db()
     assert archive.data_class == MatterDataClass.REAL
@@ -141,9 +141,9 @@ def test_the_service_refuses_to_reclassify_an_imported_row(specialist):
 
 def test_an_unknown_class_is_refused_by_the_service(specialist):
     matter = factories.MatterFactory()
-    with pytest.raises(DomainError):
+    with refused("Tundmatu andmeklass ''."):
         set_matter_data_class(matter=matter, data_class="", actor=specialist)
-    with pytest.raises(DomainError):
+    with refused("Tundmatu andmeklass 'MAYBE'."):
         set_matter_data_class(matter=matter, data_class="MAYBE", actor=specialist)
 
 

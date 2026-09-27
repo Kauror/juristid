@@ -13,7 +13,6 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.documents.services import add_evidence_version, create_document
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission
@@ -26,6 +25,7 @@ from app.submissions.services import (
     withdraw_submission,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -91,7 +91,7 @@ def test_matter_has_no_canonical_opinion_sent_date(normal_matter):
 
 
 def test_an_empty_title_is_refused(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Arvamus vajab pealkirja."):
         create_submission(matter=normal_matter, title="  ", actor=specialist)
 
 
@@ -119,7 +119,7 @@ def test_recipients_and_joint_submitters_are_separate(normal_matter, specialist)
 
 def test_sending_requires_final_evidence(normal_matter, specialist):
     submission = _draft(normal_matter, specialist)
-    with pytest.raises(DomainError):
+    with refused("Saadetud arvamus vajab täpset lõplikku tõendit. Lisa või vali saadetud fail."):
         mark_submission_sent(submission=submission, actor=specialist)
 
     submission.refresh_from_db()
@@ -162,14 +162,14 @@ def test_a_submission_cannot_be_sent_twice(normal_matter, specialist):
     submission = _with_evidence(_draft(normal_matter, specialist), specialist)
     mark_submission_sent(submission=submission, actor=specialist)
     submission.refresh_from_db()
-    with pytest.raises(DomainError):
+    with refused("Arvamus on juba saadetud."):
         mark_submission_sent(submission=submission, actor=specialist)
 
 
 def test_final_evidence_cannot_be_swapped_once_captured(normal_matter, specialist):
     """Replacing what was relied upon would rewrite history."""
     submission = _with_evidence(_draft(normal_matter, specialist), specialist)
-    with pytest.raises(DomainError):
+    with refused("Sellel arvamusel on juba lõplik tõend."):
         attach_final_evidence(
             submission=submission,
             content=b"%PDF-1.4 second file",
@@ -216,7 +216,7 @@ def test_evidence_from_another_matter_is_refused(normal_matter, specialist):
         uploaded_by=specialist,
     )
     submission = _draft(normal_matter, specialist)
-    with pytest.raises(DomainError):
+    with refused("Tõend peab kuuluma sama teema juurde."):
         select_final_evidence(submission=submission, version=version, actor=specialist)
 
 
@@ -239,7 +239,7 @@ def test_withdrawing_keeps_the_evidence(normal_matter, specialist):
 
 def test_a_draft_cannot_be_withdrawn(normal_matter, specialist):
     submission = _draft(normal_matter, specialist)
-    with pytest.raises(DomainError):
+    with refused("Tagasi võtta saab ainult saadetud arvamust."):
         withdraw_submission(submission=submission, actor=specialist)
 
 

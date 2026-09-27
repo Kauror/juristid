@@ -43,6 +43,7 @@ from app.matters import work_items
 from app.matters.enums import ProceduralLinkKind
 from app.matters.models import MatterProceduralLink
 from app.matters.services import (
+    PROCEDURAL_LINK_NEEDS_URL,
     ProceduralLinkConflict,
     close_matter,
     correct_procedural_link,
@@ -54,6 +55,7 @@ from app.search.indexing import rebuild_all
 from app.search.models import SearchDocument
 from app.workflow.enums import Disposition
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -279,9 +281,9 @@ def test_an_address_past_the_column_is_refused_rather_than_truncated(normal_matt
 
 def test_an_empty_address_is_refused(normal_matter, specialist):
     """There is no state of this record that legitimately has no address."""
-    with pytest.raises(DomainError):
+    with refused(PROCEDURAL_LINK_NEEDS_URL):
         _record(normal_matter, specialist, url="")
-    with pytest.raises(DomainError):
+    with refused(PROCEDURAL_LINK_NEEDS_URL):
         _record(normal_matter, specialist, url="   ")
 
 

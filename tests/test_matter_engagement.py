@@ -25,7 +25,6 @@ from django.urls import reverse
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.legacy_import.source_pages import (
     LegacySourcePage,
     MatterSourcePage,
@@ -49,6 +48,7 @@ from app.matters.services import (
 from app.matters.timeline import TIMELINE_EVENT_TYPES, matter_timeline
 from app.workflow.enums import Disposition
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -153,7 +153,7 @@ def test_a_campaign_with_no_durable_link_is_valid(normal_matter, specialist):
     ],
 )
 def test_a_link_that_is_not_http_is_refused(normal_matter, specialist, url):
-    with pytest.raises(DomainError):
+    with refused("Link peab algama http:// või https:// aadressiga."):
         add_engagement(
             matter=normal_matter, kind=EngagementKind.OTHER, title="Muu", url=url, actor=specialist
         )
@@ -173,7 +173,7 @@ def test_http_and_https_are_accepted(normal_matter, specialist, url):
 
 
 def test_a_title_is_required_by_the_service_and_by_the_database(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Kaasamisel peab olema pealkiri."):
         add_engagement(
             matter=normal_matter, kind=EngagementKind.OTHER, title="   ", actor=specialist
         )
@@ -183,7 +183,7 @@ def test_a_title_is_required_by_the_service_and_by_the_database(normal_matter, s
 
 
 def test_an_unknown_kind_is_refused(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Tundmatu kaasamise liik 'SENDSMAILY'."):
         add_engagement(matter=normal_matter, kind="SENDSMAILY", title="Kampaania", actor=specialist)
 
 
@@ -1064,7 +1064,7 @@ def test_both_provider_links_are_stored_independently(normal_matter, specialist)
 @pytest.mark.parametrize("url", ["javascript:alert(1)", "ftp://example.invalid/f", "kampaania"])
 def test_a_provider_link_goes_through_the_same_allow_list(normal_matter, specialist, field, url):
     """**E.** One rule for every address on this record, and no row survives it."""
-    with pytest.raises(DomainError):
+    with refused("Link peab algama http:// või https:// aadressiga."):
         add_engagement(
             matter=normal_matter,
             kind=EngagementKind.OTHER,
@@ -1077,7 +1077,7 @@ def test_a_provider_link_goes_through_the_same_allow_list(normal_matter, special
 
 def test_a_provider_link_does_not_make_an_engagement_valid_on_its_own(normal_matter, specialist):
     """**F.** `Keda kaasati` is what identifies the record, links or no links."""
-    with pytest.raises(DomainError):
+    with refused("Kaasamisel peab olema pealkiri."):
         add_engagement(
             matter=normal_matter,
             kind=EngagementKind.SURVEY,
@@ -1389,7 +1389,9 @@ def test_a_link_one_character_past_the_column_is_refused_before_postgresql(
     """
     assert len(TOO_LONG_URL) == 1001
 
-    with pytest.raises(DomainError):
+    with refused(
+        "Link on liiga pikk — kuni 1000 tähemärki. Lühenda aadressi või salvesta see märkusesse."
+    ):
         add_engagement(
             matter=normal_matter,
             kind=EngagementKind.EMAIL_CAMPAIGN,
@@ -1415,7 +1417,9 @@ def test_correcting_a_link_to_one_too_long_leaves_the_stored_one_alone(
         **{field: kept},
     )
 
-    with pytest.raises(DomainError):
+    with refused(
+        "Link on liiga pikk — kuni 1000 tähemärki. Lühenda aadressi või salvesta see märkusesse."
+    ):
         update_engagement(
             engagement=engagement,
             kind=EngagementKind.SURVEY,
@@ -1477,7 +1481,9 @@ def test_the_import_path_fails_as_a_domain_refusal_and_writes_nothing(specialist
         ]
     )
 
-    with pytest.raises(DomainError):
+    with refused(
+        "Link on liiga pikk — kuni 1000 tähemärki. Lühenda aadressi või salvesta see märkusesse."
+    ):
         apply_mapping(links=links, expect_mapping_sha256=mapping_digest(links))
 
     assert not MatterEngagement.objects.exists()
@@ -1490,7 +1496,7 @@ def test_a_link_with_no_host_at_all_is_refused(normal_matter, specialist, field)
     Nobody can follow it, and its "host" would be nothing but the credentials —
     the one shape where a fallback label leaks what the label exists to hide.
     """
-    with pytest.raises(DomainError):
+    with refused("Link peab sisaldama veebiaadressi."):
         add_engagement(
             matter=normal_matter,
             kind=EngagementKind.OTHER,
