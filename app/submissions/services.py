@@ -617,12 +617,16 @@ def supersede_submission(*, submission: Submission, actor: Any = None) -> Submis
     return submission
 
 
-@transaction.atomic
 def _audit_value(value: Any) -> Any:
     """A value as an audit payload stores it: JSON, and a datetime as ISO."""
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
+# Its own transaction (ENG-130). The decorator sat on `_audit_value` above for a
+# while — a helper inserted between it and this function took it — so the
+# delete, the bulk create and the audit row here were atomic only when a caller
+# happened to be.
+@transaction.atomic
 def set_recipients(
     *,
     submission: Submission,
