@@ -157,3 +157,91 @@ which it already did.
 
 **None.** Every change here is projection and presentation over data that
 already exists.
+
+---
+
+## Amendment, 2026-09-27 — nothing on the rail reads before the beginning
+
+- Status: accepted, amending the past-point placement docs/adr/0099 §1 states
+  («what has already happened is placed among the phases up to and including
+  it») in the light of §1 above.
+- Scope: `app/matters/legal_process.py` `matter_rail`, projection only. No
+  migration, no stored state, no change to any record or to `Teema käik`.
+
+### What was decided before
+
+0099 §1: the current node divides the row. A dated point that has already
+happened is placed among the phases up to and including the current one; inside
+that window it sorts against any phase that *is* dated, and where none is, it
+fell back to the slot **just before the current phase**.
+
+§1 of this record then retired `Alustatud` and said the pattern's own first
+phase is the beginning the procedure has. The placement rule was not revisited.
+
+### Why it is superseded
+
+Found in production during the owner's UI acceptance. A native file with a VTK
+and a bill, still on `Idee`, opened on 21.9 and sent two opinions on 22.9 and
+23.9. `Teema käik` read that correctly. The rail read
+
+```
+Koja arvamus 22.9 → Koja arvamus 23.9 → Algus → Arvamuse tähtaeg 30.9 → VTK → …
+```
+
+On a file standing on its first phase, «just before the current phase» is
+before the beginning. While `Alustatud` existed it hid the defect, because
+every native file had a dated point for later points to sort against. §1 was
+right to remove it, and the rule it had been covering for became visible.
+
+The same rule had a second defect in the same class. On a current phase with an
+explicit roadmap date earlier than two sends, each send's window stopped at the
+phase, so the later send was placed against the phase alone and inserted in
+front of the earlier one: `23.9 → 22.9`.
+
+### What is decided now
+
+A phase node marks where its phase **begins**. A dated point reads after every
+phase it is known to follow and before every phase it is not.
+
+1. **An explicit roadmap date is an anchor and sorts by date**, as before.
+2. **The pattern's first phase is the one undated phase every act is known to
+   follow.** It is the beginning (§1), and an act on the file belongs to a
+   procedure that has begun. An undated past point therefore never reads before
+   it. The first phase is found by its key on the pattern, so a hidden first
+   phase is not replaced by the next one.
+3. **No other undated phase dates anything.** A past point still reads
+   immediately before the current phase, because the file may have reached that
+   phase after the act and nothing says otherwise. Where the current phase *is*
+   the first phase, the point reads inside it, after the node.
+4. **Dated points never overtake each other.** A past point's window runs on
+   over the points already placed after the current phase, so two sent opinions
+   read in the order they were sent.
+
+The one exception to rule 2 is rule 1. `Algus 25.9`, typed into `Muuda`, is
+a person stating when the procedure began, and a point dated 22.9 is then
+earlier than it.
+
+### What this amendment does not change
+
+- **No node changes state.** The late-entry rule is untouched: a file first
+  entered in the Riigikogu still reads `Teadmata` on every earlier phase, never
+  completed, and its opinion still reads just before `Riigikogus`.
+- **A historical record is not pushed to the right.** A year-old opinion on a
+  file now on `Kooskõlastusring` still reads before it. Only the beginning
+  constrains it.
+- **No creation date is read.** The rule uses the pattern's own first phase,
+  not `Matter.created_at`, which §1 retired as a fact about this database
+  rather than about a procedure. Nothing is inferred from a title, a filename or
+  an organisation.
+- **`Alustatud` stays retired**, with no synonym.
+- The future-point rules are unchanged: an unanchored deadline reads beside the
+  current phase, after any sends already read inside it, and a commencement is
+  folded onto `Jõustumine` (§3).
+- Roadmap-date validation (§5), the two protected phases (§4), the
+  single-backbone connector rule and `Teema käik` are unchanged.
+
+Held by `tests/test_rail_milestones_follow_the_beginning.py` (the production
+shape, every pattern, and cases for late entry, backdated records, explicit
+roadmap dates and folded facts) and by
+`e2e/test_teema_page_cleanup.py::test_opinions_sent_after_the_file_opened_read_after_algus`
+at 1440 and 768 px.
