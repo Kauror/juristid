@@ -2418,14 +2418,17 @@ def test_the_column_guard_only_looks_at_what_is_photographed(page):
 # `Menetluse kulg` on a file that sent several opinions
 # ---------------------------------------------------------------------------
 #
-# **Last in this file, and it has to stay last.** It is the one scenario that
-# writes: it files a Matter and three opinions through the real panels, because
-# the seeded world holds no file of this shape and adding one to
+# **It runs last, and the marker is what makes it.** It is the one scenario
+# that writes: it files a Matter and three opinions through the real panels,
+# because the seeded world holds no file of this shape and adding one to
 # `seed_e2e_data` would move every register, Osakond and Minu asjad baseline.
-# This job runs its scenarios in order against its own fresh world, so nothing
-# photographed before this line can see what it adds.
+# Being defined last in this file is not enough — pytest runs parametrised
+# scenarios in later waves, and on the first CI run of this scenario
+# `teemad-1280`, `teemad-3440` and `statistika-3440` photographed its Matter.
+# `writes_last` moves it behind every other item (`e2e/conftest.py`).
 
 
+@pytest.mark.writes_last
 def test_menetluse_kulg_with_several_opinions(page, base_url):
     """The owner's case: three `Koja arvamus`, a current phase, the road ahead.
 

@@ -131,6 +131,7 @@ testpaths = ["tests"]
 addopts = "--ds=config.test_settings --strict-markers -ra"
 markers = [
     "e2e: browser test; requires a running server and E2E_BASE_URL",
+    "writes_last: a browser scenario that writes to a shared world; runs after everything else",
 ]
 
 [tool.coverage.run]
