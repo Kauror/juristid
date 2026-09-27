@@ -119,8 +119,8 @@ def test_a_refusal_below_the_fold_brings_the_person_to_it(page, base_url):
 #
 # That block is off the creation page (docs/adr/0094 §6), and with it went the
 # last `<details>` in the product holding a control that can be refused. Checked
-# rather than assumed: `templates/matters/partials/composer.html` still has one
-# and is included by nothing; `#lisa-jargmine` reaches its date through the
+# rather than assumed: `templates/matters/partials/composer.html`, which had one
+# and was included by nothing, is deleted (ENG-106); `#lisa-jargmine` reaches its date through the
 # `Täpsus` group rather than a disclosure (e2e/conftest.py
 # `open_next_action_form`); `Muuda teemat` folds nothing; and both `Uus teema`
 # menus deliberately keep every refusal *outside* the panel, precisely so that a
