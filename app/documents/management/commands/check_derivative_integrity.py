@@ -1,4 +1,4 @@
-"""Report derivative rows whose object is gone, and objects no row names.
+"""Report DONE versions with no text, rows whose object is gone, objects no row names.
 
 The derivative half of `check_evidence_integrity`, kept apart because the two
 stores make different promises: evidence is canonical and its loss is a
@@ -14,6 +14,7 @@ from typing import Any
 from django.core.management.base import BaseCommand
 
 from app.documents.derivative_integrity import (
+    DONE_WITHOUT_TEXT_DERIVATIVE,
     MISSING_DERIVATIVE_OBJECT,
     ORPHAN_DERIVATIVE_OBJECT,
     check_derivatives,
@@ -21,7 +22,10 @@ from app.documents.derivative_integrity import (
 
 
 class Command(BaseCommand):
-    help = "Check DocumentDerivative rows against the derivative store, both ways. Read-only."
+    help = (
+        "Check DONE versions against their text derivatives, and DocumentDerivative rows "
+        "against the derivative store both ways. Read-only."
+    )
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
@@ -59,6 +63,11 @@ class Command(BaseCommand):
             if len(findings) > len(shown):
                 self.stdout.write(f"  … and {len(findings) - len(shown)} more")
 
+        if DONE_WITHOUT_TEXT_DERIVATIVE in grouped:
+            self.stdout.write(
+                "\nDONE versions without text are out of search until rebuilt: "
+                "rebuild_document_derivatives --version-id <id> for the versions named."
+            )
         if MISSING_DERIVATIVE_OBJECT in grouped:
             self.stdout.write(
                 "\nMissing objects are rebuilt, not restored: "
