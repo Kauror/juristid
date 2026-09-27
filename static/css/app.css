@@ -1176,10 +1176,14 @@ p.formnote {
   min-width: 0;
 }
 
+/* Semibold, not medium: Barlow Medium at 13px fuses the dot of every «i» and
+   «j» into the stem under Windows font rendering («registrikirje» reads
+   «reglstrlklrje»). Not regular either, because every other cell in the row is
+   13px regular in the same ink and the title is what a reader scans for. */
 .table__titlelink {
   color: var(--text-primary);
   text-decoration: none;
-  font-weight: var(--typography-weight-medium);
+  font-weight: var(--typography-weight-semibold);
   min-width: 0;
   flex: 0 1 auto;
   white-space: nowrap;
@@ -7591,9 +7595,12 @@ button.accordion__action:focus-visible {
   gap: var(--spacing-1);
 }
 
+/* Regular at rest: Barlow Medium at 13px drops the dot off every «i» under
+   Windows font rendering («Valdkonniti» reads «Valdkonnitl»). The active tab
+   keeps its semibold, so the two states stay two weights apart. */
 .ovtabs__tab {
   font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-medium);
+  font-weight: var(--typography-weight-regular);
   color: var(--text-secondary);
   text-decoration: none;
   padding: 5px var(--spacing-3);
@@ -8173,7 +8180,11 @@ button.accordion__action:focus-visible {
   border-bottom: none;
 }
 
-/* Flex, so a title that wraps hangs off the mark instead of running under it. */
+/* Flex, so a title that wraps hangs off the mark instead of running under it.
+   Regular rather than medium: Barlow Medium at 13px fuses the dot of every «i»
+   into the stem under Windows font rendering. The red mark is what says
+   «unread», and the title stays the rail's plain row title, as in Järgmise
+   tegevuseta below. */
 .newasjarow__title {
   display: flex;
   align-items: baseline;
@@ -8184,7 +8195,7 @@ button.accordion__action:focus-visible {
   background: none;
   font: inherit;
   font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-medium);
+  font-weight: var(--typography-weight-regular);
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
@@ -8219,9 +8230,12 @@ button.accordion__action:focus-visible {
   border-bottom: none;
 }
 
+/* Regular rather than medium: Barlow Medium at 13px fuses the dot of every «i»
+   into the stem under Windows font rendering («riigihangete» reads
+   «rllglhangete»). The 12px muted meta line below still sets it apart. */
 .quietrow__title {
   font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-medium);
+  font-weight: var(--typography-weight-regular);
   color: var(--text-primary);
   text-decoration: none;
 }
@@ -11020,9 +11034,13 @@ section:has(.pw-more[open]) tbody.uxextra {
   border-color: var(--border-strong);
 }
 
+/* Regular, not medium: Barlow Medium at this label's 12.5px fuses the dot of
+   every «i» into the stem under Windows font rendering («avalikustamine» reads
+   «avallkustamlne»). A step still to come stays a weight below the semibold of
+   the steps already recorded. */
 #teema-vaade-wrap .tl-step--future .tl-step__what {
   color: var(--text-muted);
-  font-weight: var(--typography-weight-medium);
+  font-weight: var(--typography-weight-regular);
 }
 
 /* Today: the accent dot, ringed. `--accent-glow` exists for exactly this and
