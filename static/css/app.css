@@ -11140,9 +11140,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* -- the chronology's two kinds -------------------------------------------
  *
- * A 12px accent dot for something that happened to the file, a 6px muted one
- * for work somebody did on it. That is the whole hierarchy, and it is the one
- * thing a reader scanning six months uses (TEEMA_TARGET_SPEC §E). */
+ *   PRIMARY     12px accent dot + semibold headline
+ *   SECONDARY    6px muted dot  + regular headline
+ *
+ * One hierarchy, and both halves of it are set by `TimelineItem.is_primary`:
+ * the row's `uxtl__item--primary` and the dot's `uxtl__dot--primary` come from
+ * the same test in `timeline_items.html`. The dot used to follow `is_milestone`
+ * instead, so a `Märge` or `Teema loodud` drew the big accent dot beside a
+ * regular headline (docs/adr/0074 §14, amended 2026-09-27). */
 
 #teema-vaade-wrap .uxtl__dot {
   width: 6px;
@@ -11151,7 +11156,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   background: var(--text-muted);
 }
 
-#teema-vaade-wrap .uxtl__dot--ms {
+#teema-vaade-wrap .uxtl__dot--primary {
   width: 12px;
   height: 12px;
   margin-top: 5px;
@@ -11187,9 +11192,10 @@ section:has(.pw-more[open]) tbody.uxextra {
  *
  * Two levels, set on the row by `TimelineItem.is_primary`. **Primary** is the
  * three outcomes Koda itself put out — «Arvamus välja», a published
- * `Ülevaade / uudis`, the closure — and keeps the semibold headline.
- * **Secondary** is everything else, and it is the ordinary row: the headline
- * and a work entry's author name are set in the regular weight. Before this
+ * `Ülevaade / uudis`, the closure — and keeps the semibold headline and the
+ * 12px accent dot. **Secondary** is everything else, and it is the ordinary
+ * row: the 6px muted dot, and the headline and a work entry's author name set
+ * in the regular weight. Before this
  * every milestone headline and every author's name was semibold, and a `Märge`
  * competed with the opinion the file exists to produce (owner feedback,
  * 2026-09-27).

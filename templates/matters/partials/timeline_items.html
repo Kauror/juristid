@@ -1,14 +1,24 @@
 {% comment %}
 The chronology, in **two visual kinds and no third**.
 
-  MILESTONE     12 px accent dot   something that happened to the file
-  WORK ENTRY     6 px muted dot    something a colleague did on it
+  PRIMARY       12 px accent dot + semibold headline   an outcome Koda put out
+  SECONDARY      6 px muted dot  + regular headline    everything else
 
-That is the whole hierarchy, and it is the approved target's central claim about
-this list: a reader scanning six months sees the shape of the proceeding in the
-big dots and the work around it in the small ones. Everything used to draw the
-same dot, and a stage change, a note and a captured file were three lines of
-equal weight (TEEMA_TARGET_SPEC §E, docs/adr/0074 §14).
+Both halves of a row's prominence are read off **one** property,
+`TimelineItem.is_primary`, so the dot and the weight of the headline cannot
+disagree. Primary is the three outcomes Koda itself put out — «Arvamus välja», a
+published `Ülevaade / uudis`, the closure. Everything else is supporting: a
+`Märge`, feedback that reached us, somebody else's position, a consultation, a
+stage change, a deadline, `Teema loodud`, a note. A reader scanning six months
+sees the outcomes in the big dots and the work and the procedure around them in
+the small ones.
+
+Until 2026-09-27 the dot was read off `is_milestone` and the weight off
+`is_primary`, so «Märge», «Meile saadetud tagasiside», «Teiste arvamus» and
+«Teema loodud» drew the big accent dot beside a regular headline — the dot said
+important and the type said supporting (docs/adr/0074 §14, amended 2026-09-27).
+`is_milestone` still decides what a row *says* — a date and no clock time, its
+own correction element — and no longer how loudly it is drawn.
 
 **Milestones are projected from canonical records, never duplicated.** A work
 victory, an engagement, a commencement and a reached deadline each render off
@@ -39,17 +49,19 @@ record, not professional chronology (master specification 16.5).
     The id is what a search result for an entry scrolls to. Server-rendered
     anchor, no router: the timeline is already one page (Stage-2B brief 77).
 
-    `--primary` or `--secondary` is how loudly the row's own line is drawn, and
-    nothing else: the same content, controls and order either way. Primary is
-    the three outcomes Koda itself put out — «Arvamus välja», a published
-    `Ülevaade / uudis`, the closure — and everything else is supporting
-    (`TimelineItem.is_primary`). On the article rather than the headline,
-    because a correction swaps the row's inside and the article stays.
+    `--primary` or `--secondary` is how loudly the row is drawn, and nothing
+    else: the same content, controls and order either way. The dot's
+    `uxtl__dot--primary` is the other half of the same decision, read off the
+    same `item.is_primary` and never off `is_milestone`, so a big accent dot
+    beside a regular headline — or a small muted one beside a semibold headline
+    — cannot be rendered (`TimelineItem.is_primary`). On the article rather
+    than the headline, because a correction swaps the row's inside and the
+    article stays.
   {% endcomment %}
   <article class="uxtl__item {% if item.is_primary %}uxtl__item--primary{% else %}uxtl__item--secondary{% endif %}"
            {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
     <span class="uxtl__rail" aria-hidden="true">
-      <span class="uxtl__dot {% if item.is_milestone %}uxtl__dot--ms{% endif %}"></span>
+      <span class="uxtl__dot {% if item.is_primary %}uxtl__dot--primary{% endif %}"></span>
       <span class="uxtl__line"></span>
     </span>
     <div class="uxtl__body">

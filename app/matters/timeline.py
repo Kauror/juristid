@@ -149,8 +149,10 @@ _CLAUSES: tuple[tuple[str, str], ...] = (
     (ChangeEventType.NEXT_ACTION_COMPLETED, "märkis eelmise sammu tehtuks"),
 )
 
-#: The events that draw a 12 px accent dot: things that happened *to the file*,
-#: as opposed to work somebody did on it.
+#: The events projected as milestones: things that happened *to the file*, as
+#: opposed to work somebody did on it. Being a milestone decides what a row says
+#: (a date, no clock time) and not how loudly it is drawn — that is
+#: `TimelineItem.is_primary`, and of these only `MATTER_CLOSED` is primary.
 #:
 #: Each one takes a row of its own even when it shares a composer operation with
 #: an entry, which is the one place this projection deliberately does not group.
@@ -295,7 +297,11 @@ class ChronologyLink:
 
 @dataclass(frozen=True)
 class ChronologyMilestone:
-    """A 12 px accent row: something that happened to the file.
+    """A milestone row: something that happened to the file.
+
+    Whether it is drawn with the 12 px accent dot is not decided here but by
+    `TimelineItem.is_primary`; most milestones are supporting rows with the
+    6 px muted dot (docs/adr/0074 §14, amended 2026-09-27).
 
     ``what`` is the headline — `Töövõit`, `Hetkeseis: Valitsuses`,
     `Kaasamine: liikmed`. ``sub`` is the optional second line, and ``file_url``
@@ -388,10 +394,11 @@ class TimelineItem:
     #: What this save decided, when it decided anything. Attached after the
     #: page is assembled, in one query for the whole page.
     next_step: TimelineNextStep | None = None
-    #: Set on a milestone row and on nothing else. It is the whole switch the
-    #: chronology template reads: a row either has one and draws the 12 px accent
-    #: dot, or it has not and draws the 6 px muted one. There is no third kind
-    #: (TEEMA_TARGET_SPEC §E).
+    #: Set on a milestone row and on nothing else. It decides what the row
+    #: *says* — a headline and a date with no clock time, and the milestone's
+    #: own correction element — and not how loudly it is drawn: the dot and the
+    #: headline weight are both `is_primary` (docs/adr/0074 §14, amended
+    #: 2026-09-27).
     milestone: ChronologyMilestone | None = None
     #: Files this save captured, attached after the page is assembled in one
     #: query, like ``next_step``.
@@ -494,6 +501,13 @@ class TimelineItem:
         this every milestone headline and every author's name was semibold, and
         a row saying «Märge» competed with one saying «Arvamus välja» (owner
         feedback, 2026-09-27).
+
+        **Both halves of the row's prominence read this, and only this:** the
+        12 px accent dot and the semibold headline for a primary row, the 6 px
+        muted dot and the regular headline for every other. When the two weights
+        were introduced the dot still followed `is_milestone`, so a `Märge` drew
+        the big accent dot beside a regular headline (docs/adr/0074 §14,
+        amended 2026-09-27).
 
         Decided on the record's type and the event's type, never on the words
         the row prints: a label is translated, renamed and shared between
