@@ -606,6 +606,174 @@ def test_the_rows_carry_their_level_and_keep_their_controls(signed_in, busy_file
 
 
 # ---------------------------------------------------------------------------
+# E′ — one hierarchy: the dot and the headline weight are one decision
+# ---------------------------------------------------------------------------
+#
+# The owner's screenshot of 2026-09-27: «Meile saadetud tagasiside», «Märge»,
+# «Teiste arvamus» and «Teema loodud» drew the 12 px accent dot beside a regular
+# headline, because the dot was read off `is_milestone` and the weight off
+# `is_primary`. Both are `is_primary` now:
+#
+#   PRIMARY     12 px accent dot (`uxtl__dot--primary`) + semibold
+#   SECONDARY    6 px muted dot  (no modifier)          + regular
+
+
+@pytest.fixture
+def mixed_file(specialist, organisation, capture_evidence):
+    """The screenshot's chronology: two outcomes among five supporting rows.
+
+    Through the services, so `Teema loodud` is on it, and every row carries the
+    controls it carries on the real page.
+    """
+    from app.matters.services import (
+        add_entry,
+        create_matter,
+        plan_website_overview,
+        publish_website_overview,
+        record_external_position,
+    )
+    from app.matters.workspace import add_procedural_development
+
+    matter = create_matter(title="Pakendiseaduse muutmine", actor=specialist, owner=specialist)
+    _sent_opinion(matter, capture_evidence, days_ago=3)
+    overview = plan_website_overview(matter=matter, actor=specialist)
+    publish_website_overview(
+        overview=overview,
+        url="https://www.koda.ee/uudised/pakendid",
+        published_on=timezone.localdate(),
+        actor=specialist,
+    )
+    add_procedural_development(matter=matter, author=specialist, title="Rääkisin MKM-iga")
+    record_external_position(
+        matter=matter,
+        organisation=organisation,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+        summary="Liige toetab eelnõu",
+        actor=specialist,
+    )
+    record_external_position(
+        matter=matter,
+        organisation=organisation,
+        provenance=ExternalPositionProvenance.DISCOVERED.value,
+        summary="Ministeeriumi seisukoht",
+        actor=specialist,
+    )
+    add_entry(matter=matter, author=specialist, body="<p>Helistasin ministeeriumisse.</p>")
+    return matter
+
+
+def _kind(item) -> str:
+    """Which of the screenshot's rows this is, by record and event type only."""
+    from app.audit.enums import ChangeEventType
+    from app.matters.models import MatterExternalPosition
+    from app.submissions.models import Submission
+
+    if isinstance(item.record, Submission):
+        return "arvamus"
+    if item.website_overview is not None:
+        return "ulevaade"
+    if isinstance(item.record, MatterProceduralDevelopment):
+        return "marge"
+    if isinstance(item.record, MatterExternalPosition):
+        if item.record.provenance == ExternalPositionProvenance.RECEIVED:
+            return "tagasiside"
+        return "teiste"
+    if item.is_entry:
+        return "too"
+    if item.event is not None and item.event.event_type == ChangeEventType.MATTER_CREATED:
+        return "loodud"
+    return f"muu:{item.item_type}"
+
+
+def _articles(body: str) -> list[str]:
+    history = body[body.index('id="ajalugu-loend"') :]
+    return re.findall(r'<article class="uxtl__item .*?</article>', history, re.S)
+
+
+def _dot_classes(article: str) -> set[str]:
+    match = re.search(r'<span class="(uxtl__dot[^"]*)"', article)
+    assert match, article[:200]
+    return set(match.group(1).split())
+
+
+def test_the_dot_follows_the_same_decision_as_the_headline(signed_in, mixed_file, specialist):
+    """If a row is primary it has the big accent dot; if not, the small muted one.
+
+    Row by row against the projection, so the rendered page and
+    `TimelineItem.is_primary` are compared as one relation rather than as two
+    counts that could agree by accident.
+    """
+    rows = _rows(mixed_file, specialist)
+    articles = _articles(signed_in.get(_teema(mixed_file)).content.decode())
+
+    kinds = [_kind(item) for item in rows]
+    assert sorted(kinds) == sorted(
+        ["arvamus", "ulevaade", "marge", "tagasiside", "teiste", "too", "loodud"]
+    ), kinds
+    assert len(articles) == len(rows)
+
+    for item, article in zip(rows, articles, strict=True):
+        dot = _dot_classes(article)
+        if item.is_primary:
+            assert "uxtl__item--primary" in article.split(">", 1)[0], _kind(item)
+            assert "uxtl__dot--primary" in dot, _kind(item)
+        else:
+            assert "uxtl__item--secondary" in article.split(">", 1)[0], _kind(item)
+            assert dot == {"uxtl__dot"}, (_kind(item), dot)
+        # The retired switch is not drawn on anything.
+        assert "uxtl__dot--ms" not in article
+
+    # And exactly the two outcomes this file put out are the primary ones.
+    primary = {_kind(item) for item in rows if item.is_primary}
+    assert primary == {"arvamus", "ulevaade"}
+
+
+def test_a_milestone_that_is_not_an_outcome_draws_the_small_dot(signed_in, mixed_file, specialist):
+    """The screenshot's four rows, by name: milestones all, and all supporting."""
+    rows = _rows(mixed_file, specialist)
+    articles = _articles(signed_in.get(_teema(mixed_file)).content.decode())
+    by_kind = {_kind(item): (item, article) for item, article in zip(rows, articles, strict=True)}
+
+    for kind in ("marge", "tagasiside", "teiste", "loodud"):
+        item, article = by_kind[kind]
+        assert item.is_milestone, kind
+        assert item.is_primary is False, kind
+        assert _dot_classes(article) == {"uxtl__dot"}, kind
+
+
+def test_the_quieter_rows_keep_their_content_controls_and_order(signed_in, mixed_file, specialist):
+    """Presentation only: nothing a secondary row said or offered went with its dot."""
+    rows = _rows(mixed_file, specialist)
+    articles = _articles(signed_in.get(_teema(mixed_file)).content.decode())
+    by_kind = {_kind(item): (item, article) for item, article in zip(rows, articles, strict=True)}
+
+    # Order and content at once: the page draws the projection's own order, row
+    # for row, and each row still says what it said. Every marker is unique on
+    # the page, so a row drawn out of place would carry another row's words.
+    markers = {
+        "arvamus": "Arvamus välja",
+        "ulevaade": "koda.ee/uudised/pakendid",
+        "marge": "Rääkisin MKM-iga",
+        "tagasiside": "Liige toetab eelnõu",
+        "teiste": "Ministeeriumi seisukoht",
+        "too": "Helistasin ministeeriumisse.",
+        "loodud": "Teema loodud",
+    }
+    for item, article in zip(rows, articles, strict=True):
+        assert markers[_kind(item)] in article, _kind(item)
+    for kind, (item, article) in by_kind.items():
+        if item.milestone is not None:
+            assert item.milestone.what in article, kind
+
+    # Controls: each correctable supporting row still carries its `Muuda`, and
+    # each removable one its `Kustuta`.
+    for kind in ("marge", "tagasiside", "teiste", "too"):
+        assert ">Muuda<" in by_kind[kind][1], kind
+    for kind in ("marge", "tagasiside", "teiste"):
+        assert "Kustuta" in by_kind[kind][1], kind
+
+
+# ---------------------------------------------------------------------------
 # F — the two headings, off the screen and still in the outline
 # ---------------------------------------------------------------------------
 

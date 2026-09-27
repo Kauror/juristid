@@ -3899,7 +3899,7 @@ def _engagement_row(
     One renderer for both, because they swap the same element: `Muuda` replaces
     the milestone's text region with the form, and every answer replaces it
     again — with the corrected record, or with the form still open and what the
-    person typed still in it. The `<article>` around it, its 12 px dot, its
+    person typed still in it. The `<article>` around it, its dot, its
     spine and its attached files are never in the response, so a correction
     cannot move the row or turn into a second line in the chronology.
 
@@ -6802,7 +6802,7 @@ def _external_position_row(
     One renderer for both, because they swap the same element: `Muuda` replaces
     the milestone's text region with the form, and every answer replaces it
     again — with the corrected record, or with the form still open and what the
-    person typed still in it. The `<article>` around it, its 12 px dot, its
+    person typed still in it. The `<article>` around it, its dot, its
     spine and its attached files are never in the response, so a correction
     cannot move the row or turn into a second line in the chronology
     (`_engagement_row`, which this deliberately mirrors).
@@ -7381,7 +7381,7 @@ def _development_row(
     One renderer for both, because they swap the same element: `Muuda` replaces
     the milestone's text region with the form, and every answer replaces it
     again — with the corrected record, or with the form still open and what the
-    person typed still in it. The `<article>` around it, its 12 px dot, its spine
+    person typed still in it. The `<article>` around it, its dot, its spine
     and its attached files are never in the response, so a correction cannot move
     the row and cannot turn into a second line in the chronology
     (`_external_position_row`, which this deliberately mirrors).

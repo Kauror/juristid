@@ -2309,8 +2309,13 @@ def test_the_chronology_has_two_row_kinds_and_no_third(signed_in, normal_matter,
     body = _detail(signed_in, normal_matter)
     chronology = body[body.index('id="ajalugu-loend"') :]
 
-    assert "uxtl__dot--ms" in chronology, "milestone rows draw the 12px accent dot"
-    assert "uxtl__dot" in chronology, "work rows draw the 6px muted dot"
+    # Two kinds, and since docs/adr/0074 §14's amendment of 2026-09-27 both
+    # halves of the kind are `is_primary`: a `Kaasamine` is a milestone and a
+    # supporting row, so it draws the 6px muted dot like the note does. The big
+    # accent dot is only ever beside a primary row.
+    assert "uxtl__dot--ms" not in chronology, "no dot is chosen by being a milestone"
+    assert chronology.count('<span class="uxtl__dot ') == chronology.count("<article class=")
+    assert chronology.count("uxtl__dot--primary") == chronology.count("uxtl__item--primary")
     assert "uxtl__sysrow" not in chronology, "no folded run"
     assert "groupfacts" not in chronology
 
