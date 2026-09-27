@@ -1814,6 +1814,36 @@ def _display_many(model: Any, value: Any) -> str:
     return ", ".join(name for name in names if name) or "—"
 
 
+#: The refusal every next-step panel gives a step with no sentence.
+NEXT_STEP_NEEDS_SENTENCE = "Kirjuta järgmine tegevus."
+
+
+def clean_next_step_sentence(
+    form: forms.Form,
+    cleaned: dict[str, Any],
+    *,
+    text_field: str,
+    has_date: bool,
+    required: bool = False,
+) -> str:
+    """The next-step rule the panels share, and nothing they do not (ENG-127).
+
+    **A step is its sentence.** A date with no sentence is refused, and the
+    refusal is put on the sentence, because somebody who chose a day did ask for
+    a step and is told which half is missing (docs/adr/0106). The sentence
+    without a day is a whole step and is never refused for that.
+
+    ``required`` is the one legitimate difference, stated by the caller rather
+    than copied into it: `NextActionForm` *is* the step, so a missing sentence is
+    refused even with no date; the composer and `+ Märge` carry a step as an
+    extra, so both boxes empty means «no step». Returns the stripped sentence.
+    """
+    text = (cleaned.get(text_field) or "").strip()
+    if not text and (required or has_date):
+        form.add_error(text_field, NEXT_STEP_NEEDS_SENTENCE)
+    return text
+
+
 class NextActionForm(forms.Form):
     """`Järgmiseks` and `Millal?`, and nothing else asked about the next step.
 
@@ -1996,10 +2026,10 @@ class NextActionForm(forms.Form):
         `display_date` answers `""` and `date_label` answers `""` on a `None`.
         """
         cleaned = super().clean() or {}
-        text = (cleaned.get("text") or "").strip()
-
+        text = clean_next_step_sentence(
+            self, cleaned, text_field="text", has_date=False, required=True
+        )
         if not text:
-            self.add_error("text", "Kirjuta järgmine tegevus.")
             return cleaned
 
         anchor, precision = self._chosen_period()
@@ -3425,15 +3455,13 @@ class ComposerForm(forms.Form):
         decide anything, because `target_date=NULL` is now a thing the record
         can hold.
         """
-        text = (cleaned.get("next_text") or "").strip()
         target_date = cleaned.get("next_date")
-
-        if not text and target_date is None:
-            cleaned["next_action_kwargs"] = None
-            return
-
+        text = clean_next_step_sentence(
+            self, cleaned, text_field="next_text", has_date=target_date is not None
+        )
         if not text:
-            self.add_error("next_text", "Kirjuta järgmine tegevus.")
+            if target_date is None:
+                cleaned["next_action_kwargs"] = None
             return
 
         # The canonical compatibility values, and internal to this surface.
@@ -7502,11 +7530,11 @@ class MatterProgressForm(forms.Form):
         cleaned["occurred_on_value"] = when
         cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
 
-        text = (cleaned.get("next_text") or "").strip()
-        cleaned["next_text"] = text
         next_when = cleaned.get("next_date")
-        if next_when is not None and not text:
-            self.add_error("next_text", "Kirjuta järgmine tegevus.")
+        text = clean_next_step_sentence(
+            self, cleaned, text_field="next_text", has_date=next_when is not None
+        )
+        cleaned["next_text"] = text
 
         # **Answered last, and only when nothing else has failed.** A save that
         # already carries a field error has something in it, and adding «write
