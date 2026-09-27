@@ -10,12 +10,17 @@
     docs/adr/0091 §6).
 
     **One panel, one save, and the same service underneath.** This posts to
-    `register_sent_opinion_on_open_matter`, which is exactly what the
-    `Dokumendid` form posts to, so there is no second `KodaOpinion` record, no
-    second statistic and no second withdrawal path. The `Dokumendid` surface
-    keeps everything it has — drafts, `+ Uus arvamus`, `Võta tagasi`, the
-    channel and reference fields — and stays the place an opinion is *managed*
-    (docs/adr/0061).
+    `register_sent_opinion_on_open_matter`, which is exactly what the older
+    `Dokumendid` registration posts to, so there is no second `KodaOpinion`
+    record, no second statistic and no second withdrawal path.
+
+    **And it is the only way in.** Since 2026-09-27 this panel is the one place a
+    new Chamber opinion is recorded: `Dokumendid` no longer has `+ Uus arvamus`
+    or `+ Registreeri saatmine`, and `Lae dokument` no longer offers `Arvamus`.
+    `Dokumendid` stays where a sent opinion is *read* and managed — its row, its
+    `⋯` with the send's details, `Muuda` and `Võta tagasi` — and keeps a
+    `Lõpetamata arvamused` block only while an older draft or stranded upload is
+    waiting (docs/adr/0061, amendment of 2026-09-27).
 
     **Four questions, and each is a fact a send really has.** What went out,
     when, to whom, and — optionally — what to call it. Uploading a file here is

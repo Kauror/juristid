@@ -169,20 +169,24 @@ what somebody managing an opinion is asking about (§12, §28, §29).
       {% endcomment %}
       <p class="opinionmenu__label">Saatmist ei ole registreeritud.</p>
       {% comment %}
-        `can_add_content`, because the hint points at a control: on a closed
-        teema `+ Registreeri saatmine` is not in the Arvamused block, and a
-        sentence sending somebody to look for it would be directions to a place
-        that is not there. The fact above it — that no send is recorded — stays
-        either way; it is the useful part and it is true on a finished file too.
+        Only where the control it points at is really on the page: a stranded
+        upload, on an open teema, which `Lõpetamata arvamused` offers to
+        register. On a closed teema that block has no registration, and a
+        withdrawn opinion's file is complete and is not offered at all — a
+        sentence sending somebody to look for the control would be directions
+        to a place that is not there. The fact above it — that no send is
+        recorded — stays either way; it is the useful part and it is true on a
+        finished file too (docs/adr/0061, amendment of 2026-09-27).
 
         `Võta tagasi` above is deliberately still `can_write`. Withdrawing a
         send that was recorded is a correction of a historical fact rather than
         new business content, and that is a separate product question this
         round does not answer.
       {% endcomment %}
-      {% if can_add_content %}
+      {% if can_add_content and document in unregistered_opinions %}
         <p class="opinionmenu__hint">
-          Registreeri saatmine <a class="quietlink" href="#arvamuste-haldus">Arvamused</a> plokis.
+          Registreeri saatmine plokis
+          <a class="quietlink" href="#lopetamata-arvamused">Lõpetamata arvamused</a>.
         </p>
       {% endif %}
     {% endif %}

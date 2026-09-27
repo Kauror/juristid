@@ -283,14 +283,21 @@ def test_an_uploaded_opinion_appears_in_the_rail(signed_in, specialist):
     assert download in body
 
 
-def test_uploading_an_opinion_stores_one_document_and_asserts_no_send(signed_in, specialist):
-    """The `tagasi=teema` path still works; nothing in the rail posts to it now.
+def test_the_generic_upload_refuses_an_opinion_and_stores_nothing(signed_in, specialist):
+    """The `tagasi=teema` path still works; it no longer files an `Arvamus`.
 
-    Kept because the route's closed return vocabulary is what stops it becoming
-    an open redirect, and because the invariant under it is the one this whole
-    change rests on: a file uploaded as `Arvamus` records that Koda holds it and
-    never that Koda sent it (docs/adr/0061 §18).
+    A file uploaded under that role recorded that Koda held it and never that
+    Koda sent it (docs/adr/0061 §18) — and the only thing that could then say it
+    was sent, `Registreeri saatmine`, is retired as a way in. So the upload
+    refuses the role, names the one door that records an opinion with its send,
+    and leaves no document and no Submission behind (docs/adr/0061, amendment of
+    2026-09-27). The return vocabulary is still what stops the route becoming an
+    open redirect.
     """
+    from django.contrib.messages import get_messages
+
+    from app.documents.services import OPINION_UPLOAD_REFUSAL
+
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
@@ -300,13 +307,11 @@ def test_uploading_an_opinion_stores_one_document_and_asserts_no_send(signed_in,
 
     assert response.status_code == 302
     assert response.url == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    said = [str(message) for message in get_messages(response.wsgi_request)]
+    assert said == [OPINION_UPLOAD_REFUSAL]
+    assert "Lisa teemale → Koja arvamus" in OPINION_UPLOAD_REFUSAL
 
-    documents = Document.objects.filter(matter=matter, role=DocumentRole.KODA_SUBMISSION_FINAL)
-    assert documents.count() == 1
-    document = documents.get()
-    assert document.current_version is not None
-    assert document.current_version.original_filename == "Koja_arvamus.pdf"
-    # A file on the record is not a claim that anything was formally sent.
+    assert not Document.objects.filter(matter=matter).exists()
     assert not matter.submissions.exists()
 
 
@@ -331,7 +336,7 @@ def test_the_return_target_is_a_word_and_never_a_url(signed_in, specialist):
         reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk}),
         {
             "upload": _upload(),
-            "role": DocumentRole.KODA_SUBMISSION_FINAL,
+            "role": DocumentRole.INCOMING_AUTHORITY,
             "tagasi": "https://example.invalid/",
         },
     )

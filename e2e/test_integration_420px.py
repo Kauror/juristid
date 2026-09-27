@@ -29,6 +29,7 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, SANDRA, create_matter, open_add_panel, open_matter, sign_in
+from e2e.legacy_opinions import strand_an_opinion_upload
 
 NARROW = {"width": 420, "height": 900}
 
@@ -58,24 +59,6 @@ def inside(page, locator, *, width: int = 420) -> bool:
         and box["x"] >= -1
         and box["x"] + box["width"] <= width + 1
     )
-
-
-def open_opinions(page):
-    """Open `Arvamused` and return its summary.
-
-    The block is inside `<details class="accordion accordion--opinions">`,
-    closed at rest. A closed `<details>` still gives its descendants a bounding
-    box while reporting them invisible, so a width assertion taken without
-    opening it is measuring a layout nobody can see.
-    """
-    accordion = page.locator("details.accordion--opinions").first
-    assert accordion.count(), "Dokumendid no longer has an Arvamused accordion"
-    summary = accordion.locator("summary").first
-    if not accordion.evaluate("node => node.open"):
-        summary.click()
-        page.wait_for_timeout(200)
-    assert accordion.evaluate("node => node.open"), "the Arvamused accordion would not open"
-    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -156,61 +139,47 @@ def test_the_documents_page_and_its_opinion_area_fit_420px(page, base_url):
 
     assert not overflows(page), "Dokumendid scrolls sideways at 420px"
 
-    # And with the opinion accordion open, which is where this page's widest
-    # rows are: a filename, a badge, a date and an addressee on one line.
-    summary = open_opinions(page)
-
-    assert not overflows(page), "the open Arvamused accordion scrolls Dokumendid sideways at 420px"
-    assert inside(page, summary), "the Arvamused summary sits outside the 420px viewport"
+    # The opinion row is where this page's widest line is now: a filename, a
+    # badge, a date and an addressee. The `Arvamused` accordion that used to
+    # sit under the table is retired, and a Matter with nothing unfinished has
+    # no opinion block at all (docs/adr/0061, amendment of 2026-09-27).
+    badge = page.locator(".doctable .badge--opinion").first
+    assert badge.count(), "the seeded sent opinion is no longer an Arvamus row"
+    assert inside(page, badge), "the Arvamus badge sits outside the 420px viewport"
+    assert not page.locator("#lopetamata-arvamused, #arvamuste-haldus").count()
 
 
 def test_the_register_a_send_disclosure_fits_420px(page, base_url):
     """#182's form: nine fields, and the narrowest place they are ever shown.
 
-    The candidate is uploaded here rather than taken from the seeded world.
-    `Registreeri saatmine` only appears while some opinion file has no
-    Submission accounting for it, and the seeded Matter's opinion files all do
-    - so a test that looked for the disclosure would have skipped, and a
-    skipped test asserts nothing about the width it was written for.
+    The form survives only as a repair for an older upload: a file filed as
+    `Arvamus` through `Lae dokument` before that role left the menu, which no
+    send accounts for. The browser cannot make one any more, so the file is
+    written server-side through the same services the upload used
+    (`e2e/legacy_opinions.py`) — and the form is still the widest thing this
+    page can show.
 
     **The only Matter this file creates**, and it creates one rather than
-    uploading an opinion onto the seeded Matter, which would change the file
+    stranding an opinion on the seeded Matter, which would change the file
     counts every later test reads off `Dokumendid`. One register row is the
     cheaper of the two contaminations.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size(NARROW)
-    create_matter(page, base_url, "Kitsas saatmise registreerimine")
-    page.goto(f"{page.url}dokumendid/")
-    page.wait_for_load_state("networkidle")
-
-    # The panel starts `hidden` and is revealed from the toolbar, so its file
-    # input is attached but not operable until somebody asks for it.
-    page.locator('[data-reveals="lae-dokument"]').first.click()
-    page.locator("#lae-dokument select[name=role]").first.wait_for(state="visible")
-
-    page.locator("#lae-dokument input[type=file][name=upload]").first.set_input_files(
-        {
-            "name": "Koja-arvamus-pakendiseaduse-eelnou-kohta.pdf",
-            "mimeType": "application/pdf",
-            "buffer": b"%PDF-1.4 arvamus",
-        }
+    matter_url = create_matter(page, base_url, "Kitsas saatmise registreerimine")
+    strand_an_opinion_upload(
+        matter_url, filename="Koja-arvamus-pakendiseaduse-eelnou-kohta.pdf", actor_upn=MARTIN.upn
     )
-    page.locator("#lae-dokument select[name=role]").first.select_option("KODA_SUBMISSION_FINAL")
-    page.locator("#lae-dokument button[type=submit]").first.click()
+    page.goto(f"{matter_url}dokumendid/")
     page.wait_for_load_state("networkidle")
 
-    # `Arvamused` is an accordion and it is closed at rest, so everything
-    # inside it reports a bounding box and no visibility. Measured while
-    # writing this: the summary below resolves, has a box of 346x17 at x=37,
-    # and `is_visible()` is False - which is what a closed `<details>` looks
-    # like, not what a layout defect looks like.
-    open_opinions(page)
+    block = page.locator("#lopetamata-arvamused")
+    assert block.count(), "a stranded opinion upload is not offered as unfinished"
+    assert not overflows(page), "Lõpetamata arvamused scrolls Dokumendid sideways at 420px"
 
     # The disclosure's own summary, by exact text. A substring `get_by_text`
-    # also matches the block's explanatory hint and the submit button inside
-    # the form, neither of which opens anything.
-    trigger = page.locator("summary.disclosure__summary").filter(has_text="+ Registreeri saatmine")
+    # also matches the submit button inside the form, which opens nothing.
+    trigger = block.locator("summary.disclosure__summary").filter(has_text="Registreeri saatmine")
     assert trigger.count(), "an unaccounted-for opinion file offers no registration"
     trigger.first.click()
     page.wait_for_timeout(200)

@@ -591,8 +591,18 @@ def test_the_stale_draft_routes_refuse_over_http_too(signed_in, specialist, evid
 
 
 def test_reopening_restores_the_whole_surface(signed_in, specialist, organisation):
-    """`closed → no normal business writes`, not `closed → forever immutable`."""
+    """`closed → no normal business writes`, not `closed → forever immutable`.
+
+    The unfinished opinion records are the older kind — a draft and a stranded
+    `Arvamus` upload, both written before the teema closed — because nothing in
+    the interface creates either any more (docs/adr/0061, amendment of
+    2026-09-27). What reopening restores is the way to finish them.
+    """
     matter = factories.MatterFactory(owner=specialist)
+    document = _opinion_file(matter, name="koja-arvamus.pdf", actor=specialist)
+    draft = create_submission(
+        matter=matter, title="Koja arvamus", actor=specialist, recipients=[organisation]
+    )
     _close(matter, specialist)
     reopen_matter(matter=matter, actor=specialist)
     matter.refresh_from_db()
@@ -600,25 +610,16 @@ def test_reopening_restores_the_whole_surface(signed_in, specialist, organisatio
 
     body = _documents_page(signed_in, matter)
     assert "↑ Lae dokument" in body
-    assert "+ Uus arvamus" in body
+    assert reverse("submissions:attach_evidence", kwargs={"pk": draft.pk}) in body
+    assert reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}) in body
+    assert "+ Uus arvamus" not in body
 
     upload = signed_in.post(
         reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk}),
-        {"upload": _pdf("koja-arvamus.pdf"), "role": DocumentRole.KODA_SUBMISSION_FINAL},
+        {"upload": _pdf("ministeeriumi-kiri.pdf"), "role": DocumentRole.INCOMING_AUTHORITY},
     )
     assert upload.status_code == 302
-    document = Document.objects.get(matter=matter)
-
-    created = signed_in.post(
-        reverse("submissions:create", kwargs={"matter_id": matter.pk}),
-        {
-            "arvamus-title": "Koja arvamus",
-            "arvamus-kind": SubmissionKind.FORMAL_OPINION,
-            "arvamus-recipients": [str(organisation.pk)],
-        },
-    )
-    assert created.status_code == 302
-    draft = Submission.objects.get(matter=matter, status=SubmissionStatus.DRAFT)
+    assert Document.objects.filter(matter=matter).count() == 2
 
     signed_in.post(
         reverse("submissions:attach_evidence", kwargs={"pk": draft.pk}),
@@ -690,8 +691,10 @@ def test_an_open_matter_still_offers_everything_to_a_writer(signed_in, specialis
     body = _documents_page(signed_in, matter)
 
     assert "↑ Lae dokument" in body
-    assert "+ Uus arvamus" in body
     assert "+ SharePointi viide" in body
+    # Retired, not hidden from this reader: nobody is offered it on Dokumendid
+    # (docs/adr/0061, amendment of 2026-09-27).
+    assert "+ Uus arvamus" not in body
 
 
 def test_a_reader_is_still_offered_nothing_on_an_open_matter(client, reader, specialist):

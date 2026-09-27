@@ -43,6 +43,7 @@ from e2e.conftest import (
     sign_out,
     unique_title,
 )
+from e2e.legacy_opinions import leave_a_draft
 
 pytestmark = pytest.mark.e2e
 
@@ -441,18 +442,19 @@ def test_a_native_draft_is_counted_and_opens_in_the_drafting_list(page, base_url
     before = drafting_count(page, MARTIN.display_name)
     sign_out(page, base_url)
 
+    # The draft is written server-side: `+ Uus arvamus` is retired and nothing
+    # in the browser starts one any more, but a draft left from before still
+    # counts here and still has to open in the list (docs/adr/0061, amendment
+    # of 2026-09-27; `e2e/legacy_opinions.py`).
     title = unique_title("Omamustand")
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, title, owner=MARTIN)
-    page.locator(".tabs__tab", has_text="Dokumendid").click()
-    block = page.locator("#arvamuste-haldus")
-    if block.get_attribute("open") is None:
-        block.locator(".accordion__head").click()
-    block.locator("summary", has_text="Uus arvamus").click()
-    page.locator("#id_arvamus-title").fill(f"{title} arvamus")
-    page.locator("#id_arvamus-kind").select_option("FORMAL_OPINION")
-    page.get_by_role("button", name="Loo arvamus").click()
-    expect(page.locator(".draftrow", has_text=f"{title} arvamus")).to_be_visible()
+    matter_url = create_matter(page, base_url, title, owner=MARTIN)
+    leave_a_draft(matter_url, title=f"{title} arvamus", actor_upn=MARTIN.upn)
+    page.goto(f"{matter_url}dokumendid/")
+    page.wait_for_load_state("networkidle")
+    expect(
+        page.locator("#lopetamata-arvamused .draftrow", has_text=f"{title} arvamus")
+    ).to_be_visible()
     sign_out(page, base_url)
 
     sign_in(page, base_url, HEAD)

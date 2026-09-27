@@ -31,7 +31,16 @@ from itertools import pairwise
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, READER, create_matter, open_matter, sign_in, sign_out
+from e2e.conftest import (
+    MARTIN,
+    READER,
+    create_matter,
+    open_add_panel,
+    open_matter,
+    sign_in,
+    sign_out,
+)
+from e2e.test_teema_page_cleanup import choose_organisation
 
 pytestmark = pytest.mark.e2e
 
@@ -506,20 +515,22 @@ def test_the_retired_arvamused_address_lands_on_dokumendid(page, base_url):
 
 
 def upload_an_opinion(page, url: str) -> None:
-    """Capture one `Arvamus` through the Dokumendid panel, which is the only one.
+    """Record one sent `Koja arvamus` through `Lisa teemale`, the one way in.
 
-    The rail used to carry an upload of its own. It does not: a form in 300px
-    beside a file list that already has one is the same control twice, and the
-    role is chosen from the same select as every other document's — reading
-    `Arvamus`, storing `KODA_SUBMISSION_FINAL` (docs/adr/0061 §7, §18).
+    The rail used to carry an upload of its own, and after that the Dokumendid
+    upload offered `Arvamus` as a role. Neither does now: the Chamber's opinion
+    is recorded with its send — the exact file, the day and the addressee in one
+    act — from the Teema page (docs/adr/0061 §7, §18; amendment of 2026-09-27).
     """
-    page.goto(f"{url.rstrip('/')}/dokumendid/")
+    page.goto(url)
     page.wait_for_load_state("networkidle")
-    page.get_by_role("button", name=re.compile("Lae dokument")).first.click()
-    panel = page.locator("#lae-dokument")
+    open_add_panel(page, "arvamus-koja")
+    panel = page.locator("#arvamus-koja")
     panel.locator("input[type=file]").set_input_files(OPINION_PDF)
-    panel.locator("select[name=role]").select_option(label="Arvamus")
-    panel.get_by_role("button", name="Salvesta dokument").click()
+    choose_organisation(page, "koja-adressaat")
+    panel.get_by_role("button", name="Registreeri arvamus").click()
+    page.wait_for_load_state("networkidle")
+    page.goto(f"{url.rstrip('/')}/dokumendid/")
     page.wait_for_load_state("networkidle")
 
 
@@ -537,15 +548,15 @@ def test_a_writer_can_add_the_chambers_opinion_as_a_file(page, base_url):
     upload_an_opinion(page, url)
 
     # In the file table, badged for what it is. Scoped to the row rather than
-    # asked of the page, because `Arvamus` is also an <option> in the upload
-    # panel's role picker and a hidden option is not evidence of anything.
+    # asked of the page, because `Arvamus` is also an <option> in the role
+    # filter and a hidden option is not evidence of anything.
     row = page.locator("table tr").filter(has_text="Koja_arvamus.pdf").first
     expect(row).to_be_visible()
     expect(row.locator(".badge--opinion")).to_have_text("Arvamus")
     expect(row).to_contain_text("Arvamus")
     expect(row.get_by_text("Lõplik")).to_have_count(0)
-    # A file on the record is not a claim that anything was sent.
-    expect(row.locator(".doctable__sent")).to_have_count(0)
+    # Recorded with its send, so the row says when it went out and to whom.
+    expect(row.locator(".doctable__sent")).to_contain_text("Saadetud")
 
     # And the same one document reaches the rail on the Teema page.
     page.goto(url)

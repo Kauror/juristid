@@ -35,7 +35,13 @@ basis = "deployment"
 # akordion (#341) — iga kirje on vaikimisi üks rida ning üksikasjad, failid ja
 # «Muuda» avanevad kirjel klõpsates. Ainult kuvamine ja avamine; andmeid,
 # järjekorda ega õigusi ei muudetud.
-prs = [309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 339, 340, 341]
+#
+# **Ja õhtul:** «Dokumentide» vahelehe «Arvamused» plokk on eemaldatud (#342).
+# Koja arvamuse lisamise ainus tee on teema lehe «Lisa teemale → Koja arvamus».
+# «Lae dokument» ei paku enam rolli «Arvamus». Olemasolevaid kirjeid ei
+# muudetud; «Lõpetamata arvamused» ilmub ainult siis, kui vanem mustand või
+# registreerimata arvamusfail tõesti ootab — tootmises neid ei ole.
+prs = [309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 339, 340, 341, 342]
 changes = [
   "«+ Märke» vormil ei ole enam «Etapi» valikut. Varasemate märgete etapid jäävad alles ja «Muuda» pakub etappi ainult real, millel see juba on.",
   "«+ Märke» ja «+ Arvamuse / tagasiside» kuupäevaväli on nüüd kompaktne ega veni enam üle kogu vormi.",
@@ -45,6 +51,8 @@ changes = [
   "«Teema käigus» on esile tõstetud ainult välja saadetud arvamus, avaldatud ülevaade ja teema lõpetamine, nii et olulisemad sündmused on kergemini leitavad.",
   "«Teema käigus» on suur sinine punkt nüüd ainult välja saadetud arvamusel, avaldatud ülevaatel ja teema lõpetamisel; märked, saabunud tagasiside, teiste arvamused ja muud toetavad kirjed on väiksema halli punktiga.",
   "«Teema käik» on nüüd kompaktsem: iga kirje on vaikimisi üks rida pealkirja ja kuupäevaga ning üksikasjad, failid ja «Muuda» avanevad kirjel klõpsates; olulisemad kirjed on endiselt teistest selgemalt esile tõstetud.",
+  "Koja arvamus lisatakse nüüd ainult teema lehel, «Lisa teemale» → «Koja arvamus», kus fail salvestatakse koos saatmise kuupäeva ja adressaatidega. «Dokumentide» vahelehel ei ole enam «Arvamused» plokki ega nuppe «+ Uus arvamus» ja «+ Registreeri saatmine», ning «Lae dokument» ei paku enam rolli «Arvamus».",
+  "Saadetud arvamused on «Dokumentides» endiselt «Arvamus» ridadena näha, koos saatmise andmete, parandamise ja tagasivõtmisega; varem lisatud arvamusi ja faile ei muudetud.",
   "Pika ajalooga teemal näitab «Näita varasemaid» nüüd kogu teema käigu; varem võis tihedalt täidetud teemal mõni rida vahele jääda.",
   "Kaasamisele, välisele seisukohale ja avaldatud kodulehe ülevaatele ei saa enam panna tulevast kuupäeva: vorm ütleb seda ja sisestatud tekst jääb alles. Varem kirje salvestus, kuid ei olnud teema käigus näha enne seda päeva.",
   "Teema päises salvestub vastutaja ja hetkeseisu muutus nüüd alles «Salvesta» vajutamisel, ja klaviatuuriga valikute vahel liikumine ei muuda enam kogemata teemat ega filtrit.",

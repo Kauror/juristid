@@ -6976,18 +6976,13 @@ button.accordion__action:focus-visible {
   padding: 1px 0;
 }
 
-/* The opinion management block: the same quiet head Töödokumendid has, because
-   it is the same kind of thing — secondary to the file table above it, and open
-   only when somebody owes it work. */
-.accordion--opinions .accordion__title {
-  color: var(--text-secondary);
-}
-
 .accordion--archive .accordion__title {
   color: var(--text-secondary);
 }
 
-/* One draft, and the single next step it is waiting for. */
+/* One draft, and the single next step it is waiting for. Only ever inside
+   `Lõpetamata arvamused`, which renders only when an older draft exists
+   (docs/adr/0061, amendment of 2026-09-27). */
 .draftrow {
   display: flex;
   flex-wrap: wrap;
