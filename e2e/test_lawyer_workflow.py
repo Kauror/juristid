@@ -106,7 +106,14 @@ def record_opinion(page, filename: str) -> None:
             "buffer": b"%PDF-1.4 synthetic final opinion " + filename.encode(),
         }
     )
-    panel.get_by_role("button", name="Registreeri arvamus").click()
+    # Waited for by its own response, not by the chronology: after the first
+    # opinion `Arvamus välja` is already on the page, so a text check would
+    # pass before the second save had landed.
+    with page.expect_response(
+        lambda response: "/lisa/koja-arvamus/" in response.url and response.request.method == "POST"
+    ) as caught:
+        panel.get_by_role("button", name="Registreeri arvamus").click()
+    assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text("Arvamus välja")
 

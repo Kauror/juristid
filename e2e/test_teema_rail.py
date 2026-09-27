@@ -481,9 +481,13 @@ def test_the_retired_arvamused_address_lands_on_dokumendid(page, base_url):
     Typed rather than clicked, because nothing links to it any more — that is
     the point of retiring it. What it owes is that a bookmark still works, not
     that a page still exists, so this follows the redirect and checks where it
-    lands: Dokumendid, filtered to `Arvamus`, with the opinion workflow on it
-    and no trace of the free-text position the surface used to carry
-    (docs/adr/0061 §4, §36).
+    lands: Dokumendid, filtered to `Arvamus`, and no trace of the free-text
+    position the surface used to carry (docs/adr/0061 §4, §36).
+
+    It used to assert the `Arvamused` block's heading there as well. That
+    block is retired (docs/adr/0061, amendment of 2026-09-27): what the
+    bookmark lands on now is the filtered file list, and the retired block
+    must not be on it.
     """
     sign_in(page, base_url, MARTIN)
     url = open_matter(page, base_url, MULTI_SENDER_TITLE)
@@ -494,7 +498,9 @@ def test_the_retired_arvamused_address_lands_on_dokumendid(page, base_url):
     assert "roll=arvamus" in page.url, page.url
 
     main = page.locator(".teemamain")
-    expect(main.get_by_role("heading", name="Arvamused")).to_be_visible()
+    expect(main.get_by_role("heading", name="Failid")).to_be_visible()
+    expect(main.locator("#arvamuste-haldus")).to_have_count(0)
+    expect(main.get_by_text("+ Uus arvamus")).to_have_count(0)
 
     for phrase in (
         "Koja seisukoht",
