@@ -15,7 +15,6 @@ from django.db import IntegrityError, transaction
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.intelligence import selectors
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterWorkVictory
@@ -29,6 +28,7 @@ from app.intelligence.services import (
 from app.workflow.dates import bounds_for, year_bounds
 from app.workflow.enums import DatePrecision
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -87,7 +87,7 @@ def test_the_manual_door_invents_no_candidate_stage(normal_matter, specialist):
 
 
 def test_a_manual_victory_needs_a_description_too(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Töövõidul peab olema kirjeldus."):
         add_confirmed_work_victory(matter=normal_matter, title="   ", actor=specialist)
 
     assert MatterWorkVictory.objects.count() == 0
@@ -99,7 +99,7 @@ def test_a_manual_victory_will_not_be_confirmed_twice(normal_matter, specialist)
         matter=normal_matter, title="Juba kinnitatud", actor=specialist, **_year(2026)
     )
 
-    with pytest.raises(DomainError):
+    with refused("Töövõit on juba kinnitatud."):
         confirm_work_victory(record=record, actor=specialist)
 
 
@@ -135,7 +135,7 @@ def test_several_victories_may_belong_to_one_matter(normal_matter, specialist):
 
 
 def test_a_candidate_needs_a_description(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Töövõidul peab olema kirjeldus."):
         add_work_victory_candidate(matter=normal_matter, title="", actor=specialist)
 
 
@@ -240,7 +240,7 @@ def test_a_status_cannot_be_set_twice(normal_matter, specialist, department_head
     )
     confirm_work_victory(record=record, actor=department_head)
 
-    with pytest.raises(DomainError):
+    with refused("Töövõit on juba kinnitatud."):
         confirm_work_victory(record=record, actor=department_head)
 
 

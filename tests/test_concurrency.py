@@ -28,6 +28,7 @@ from app.documents.services import (
     create_document,
 )
 from app.matters import workspace
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, EntryRevision, Matter
 from app.matters.services import add_entry, close_matter, compose_update, edit_entry
 from app.related_materials.models import MatterRelation
@@ -46,6 +47,7 @@ from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.refusals import refused
 
 # Real transactions, so the teardown is a flush rather than a rollback and the
 # migrated reference data goes with it. `serialized_rollback=True` is how the
@@ -166,7 +168,7 @@ def test_a_closure_that_lands_first_makes_the_later_action_refuse(specialist):
     matter = factories.MatterFactory(owner=specialist)
     close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Suletud teemale ei saa järgmist tegevust määrata."):
         set_next_action(
             matter=matter,
             text="Liiga hilja",
@@ -691,7 +693,7 @@ def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
             matter=matter, other=factories.MatterFactory(owner=specialist), actor=specialist
         ),
     ):
-        with pytest.raises(DomainError):
+        with refused(CLOSED_MATTER_REFUSAL):
             call()
 
     assert Entry.objects.filter(matter=matter).count() == 0
@@ -842,7 +844,7 @@ def test_a_closure_that_commits_first_refuses_every_dokumendid_write(specialist,
             sent_at_precision=SentAtPrecision.DATE,
         ),
     ):
-        with pytest.raises(DomainError):
+        with refused(CLOSED_MATTER_REFUSAL):
             call()
 
     # Exactly what was there before the closure, and nothing else.

@@ -17,7 +17,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError, ImmutableRecordError
+from app.core.errors import ImmutableRecordError
 from app.core.richtext import excerpt, plain_text, sanitize_entry_html
 from app.matters.entry_enums import EntryKind
 from app.matters.models import Entry, EntryRevision
@@ -26,6 +26,7 @@ from app.workflow.enums import ActionKind, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import current_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -99,13 +100,13 @@ def test_creating_an_entry_records_author_time_and_audit(normal_matter, speciali
 
 
 def test_an_empty_body_is_refused(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Sissekanne vajab sisu."):
         add_entry(matter=normal_matter, body="   ", author=specialist)
 
 
 def test_a_body_that_is_only_markup_is_refused(normal_matter, specialist):
     """Stripping everything unsafe can leave nothing; that is not an entry."""
-    with pytest.raises(DomainError):
+    with refused("Sissekanne vajab sisu."):
         add_entry(matter=normal_matter, body="<script>alert(1)</script>", author=specialist)
 
 
@@ -219,7 +220,7 @@ def test_composer_accepts_a_next_action_alone(normal_matter, specialist):
 
 
 def test_composer_refuses_an_empty_save(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Täida sissekanne või vali, mida veel salvestada."):
         compose_update(matter=normal_matter, author=specialist)
 
 
@@ -231,7 +232,7 @@ def test_a_failing_next_action_rolls_back_the_entry(normal_matter, specialist):
     """
     before = Entry.objects.filter(matter=normal_matter).count()
 
-    with pytest.raises(DomainError):
+    with refused("Järgmiseks vajab teksti."):
         compose_update(
             matter=normal_matter,
             author=specialist,
@@ -333,7 +334,7 @@ def test_an_entry_revision_cannot_be_deleted(normal_matter, specialist):
 
 def test_an_unknown_visibility_override_is_refused_by_the_service(normal_matter, specialist):
     """A clear domain error at the boundary, not an IntegrityError deep inside."""
-    with pytest.raises(DomainError):
+    with refused("Unknown visibility override 'PUBLIC'"):
         add_entry(
             matter=normal_matter,
             body="<p>Tekst</p>",

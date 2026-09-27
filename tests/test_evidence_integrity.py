@@ -18,7 +18,6 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import add_evidence_version, create_document
@@ -33,6 +32,7 @@ from app.submissions.services import (
     select_final_evidence,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -77,7 +77,7 @@ def test_selecting_another_matters_version_is_refused(normal_matter, specialist)
     submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
     _document, version = _evidence(other, specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Tõend peab kuuluma sama teema juurde."):
         select_final_evidence(submission=submission, version=version, actor=specialist)
 
 
@@ -87,7 +87,7 @@ def test_attaching_to_another_matters_document_is_refused(normal_matter, special
     foreign_document = create_document(matter=other, title="Võõras", created_by=specialist)
     submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Tõend peab kuuluma sama teema juurde."):
         attach_final_evidence(
             submission=submission,
             content=PDF,
@@ -159,7 +159,7 @@ def test_selecting_less_restricted_evidence_is_refused(normal_matter, specialist
     )
     _document, open_version = _evidence(normal_matter, specialist, title="Avalik tõend")
 
-    with pytest.raises(DomainError):
+    with refused("Lõplik tõend ei tohi olla vähem piiratud kui arvamus ise."):
         select_final_evidence(submission=submission, version=open_version, actor=specialist)
 
 
@@ -171,7 +171,7 @@ def test_attaching_to_a_less_restricted_document_is_refused(normal_matter, speci
         actor=specialist,
         visibility_override=Visibility.RESTRICTED,
     )
-    with pytest.raises(DomainError):
+    with refused("Lõplik tõend ei tohi olla vähem piiratud kui arvamus ise."):
         attach_final_evidence(
             submission=submission,
             content=PDF,
@@ -229,7 +229,7 @@ def test_sending_revalidates_the_rule_independently_of_the_trigger(normal_matter
     Submission.objects.filter(pk=submission.pk).update(visibility_override=Visibility.RESTRICTED)
     submission.refresh_from_db()
 
-    with pytest.raises(DomainError):
+    with refused("Lõplik tõend ei tohi olla vähem piiratud kui arvamus ise."):
         mark_submission_sent(submission=submission, actor=specialist)
 
     submission.refresh_from_db()
@@ -363,7 +363,7 @@ def test_relaxing_a_matter_over_weaker_final_evidence_is_refused(restricted_matt
     """
     _submission, _version = _stranded_pair(restricted_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused("arvamuse lõplik tõend arvamusest endast vähem piiratuks"):
         set_matter_visibility(
             matter=restricted_matter, visibility=Visibility.NORMAL, actor=specialist
         )
@@ -374,7 +374,7 @@ def test_a_refused_relaxation_leaves_the_matter_and_its_evidence_alone(
 ):
     _submission, version = _stranded_pair(restricted_matter, specialist)
 
-    with pytest.raises(DomainError):
+    with refused("arvamuse lõplik tõend arvamusest endast vähem piiratuks"):
         set_matter_visibility(
             matter=restricted_matter, visibility=Visibility.NORMAL, actor=specialist
         )

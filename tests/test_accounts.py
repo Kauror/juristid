@@ -20,8 +20,9 @@ from app.accounts.services import (
 )
 from app.audit.enums import SecurityEventType
 from app.audit.models import SecurityAuditEvent
-from app.core.errors import DomainError, InvariantViolation
+from app.core.errors import InvariantViolation
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -151,11 +152,11 @@ def test_break_glass_grant_is_time_bounded_and_audited(specialist, department_he
 
 
 def test_break_glass_requires_a_reason_and_a_bounded_duration(specialist, department_head):
-    with pytest.raises(DomainError):
+    with refused("A break-glass grant requires a written reason."):
         grant_break_glass(
             user=specialist, granted_by=department_head, reason="  ", duration=timedelta(hours=1)
         )
-    with pytest.raises(DomainError):
+    with refused("A break-glass grant may not exceed 1 day, 0:00:00."):
         grant_break_glass(
             user=specialist,
             granted_by=department_head,
@@ -165,7 +166,7 @@ def test_break_glass_requires_a_reason_and_a_bounded_duration(specialist, depart
 
 
 def test_a_specialist_cannot_grant_break_glass(specialist, other_specialist):
-    with pytest.raises(DomainError):
+    with refused("Only the department head or a system owner may grant break-glass access."):
         grant_break_glass(
             user=other_specialist,
             granted_by=specialist,

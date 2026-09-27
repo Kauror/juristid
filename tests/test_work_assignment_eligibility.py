@@ -42,7 +42,9 @@ from app.core.enums import Visibility
 from app.matters.models import Matter
 from app.workflow.enums import ActionKind, DateSemantics
 from app.workflow.models import NextAction
+from app.workflow.services import INELIGIBLE_RESPONSIBLE_REFUSAL
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -493,12 +495,11 @@ def test_the_native_wrapper_refuses_an_explicitly_ineligible_person(specialist, 
     refuses it anyway: a second native caller added next year inherits the rule
     instead of having to remember it.
     """
-    from app.core.errors import DomainError
     from app.workflow.services import set_next_action_for_new_work
 
     matter = factories.MatterFactory(owner=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(INELIGIBLE_RESPONSIBLE_REFUSAL):
         set_next_action_for_new_work(
             matter=matter,
             text="Meisterdatud samm",

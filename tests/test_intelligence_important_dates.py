@@ -16,7 +16,6 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.core.errors import DomainError
 from app.intelligence import selectors
 from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterImportantDate
@@ -29,6 +28,7 @@ from app.intelligence.services import (
 from app.workflow.dates import bounds_for, quarter_bounds
 from app.workflow.enums import DatePrecision
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -72,7 +72,7 @@ def test_one_matter_may_carry_several_milestones(normal_matter, specialist):
 
 
 def test_a_milestone_needs_a_description(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Olulisel tähtajal peab olema kirjeldus."):
         add_important_date(
             matter=normal_matter, title="   ", actor=specialist, **_exact(date(2027, 3, 1))
         )
@@ -80,7 +80,7 @@ def test_a_milestone_needs_a_description(normal_matter, specialist):
 
 def test_the_service_refuses_bounds_that_contradict_the_precision(normal_matter, specialist):
     """A QUARTER row spanning one day would read as an exact date downstream."""
-    with pytest.raises(DomainError):
+    with refused("Kuupäev ja perioodi lõpp ei vasta valitud täpsusele (QUARTER)"):
         add_important_date(
             matter=normal_matter,
             title="Vale periood",
@@ -169,9 +169,9 @@ def test_a_cancelled_milestone_cannot_be_edited_or_cancelled_twice(normal_matter
     )
     cancel_important_date(record=record, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused("Ainult kehtivat tähtaega saab tühistada."):
         cancel_important_date(record=record, actor=specialist)
-    with pytest.raises(DomainError):
+    with refused("Ainult kehtivat tähtaega saab muuta."):
         update_important_date(
             record=record, title="Uus", actor=specialist, **_exact(date(2027, 4, 1))
         )

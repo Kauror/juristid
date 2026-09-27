@@ -35,6 +35,7 @@ from app.documents.models import Document
 from app.documents.services import link_working_document
 from app.matters.forms import WorkingDocumentForm
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -203,18 +204,18 @@ def test_the_form_accepts_an_address_the_old_bound_refused():
 
 
 def test_a_non_web_scheme_is_still_refused(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Viide peab algama http:// või https:// aadressiga."):
         _link(normal_matter, specialist, "file:///C:/kohalik.docx")
 
 
 def test_an_address_without_a_host_is_still_refused(normal_matter, specialist):
-    with pytest.raises(DomainError):
+    with refused("Viide peab sisaldama veebiaadressi."):
         _link(normal_matter, specialist, "https:///sites/oigus/arvamus.docx")
 
 
 def test_a_long_address_with_a_bad_scheme_is_still_refused(normal_matter, specialist):
     """Length does not become the only thing checked."""
-    with pytest.raises(DomainError):
+    with refused("Viide peab algama http:// või https:// aadressiga."):
         _link(normal_matter, specialist, "file://" + "a/" * 800)
 
 

@@ -48,6 +48,7 @@ from app.submissions.enums import RecipientRole, SentAtPrecision, SubmissionStat
 from app.submissions.models import Submission, SubmissionRecipient
 from app.workflow.enums import DatePrecision, Disposition
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -252,7 +253,7 @@ def test_the_domain_still_refuses_a_successor_on_the_wrong_disposition(normal_ma
     from app.matters.services import close_matter
 
     successor = factories.MatterFactory(owner=specialist)
-    with pytest.raises(DomainError):
+    with refused("Järglase saab määrata ainult siis, kui töö jätkub teise teema all."):
         close_matter(
             matter=normal_matter,
             disposition=Disposition.COMPLETED,
@@ -395,7 +396,7 @@ def test_a_sent_opinion_always_carries_its_exact_final_evidence(
     )
     assert submission.final_version is None
 
-    with pytest.raises(DomainError):
+    with refused("Saadetud arvamus vajab täpset lõplikku tõendit. Lisa või vali saadetud fail."):
         mark_submission_sent(submission=submission, actor=specialist, sent_at=timezone.now())
 
     submission.refresh_from_db()
@@ -508,7 +509,7 @@ def test_an_ambiguous_name_is_refused_rather_than_guessed(normal_matter, special
     Organisation.objects.create(name="Näidiskogu", organisation_type=OrganisationType.COMPANY)
     before = Organisation.objects.count()
 
-    with pytest.raises(DomainError):
+    with refused("«Näidiskogu» sobib mitme organisatsiooniga — vali nimekirjast."):
         _close_with_opinion(
             normal_matter, specialist, final_opinion={"recipient_names": ["Näidiskogu"]}
         )
@@ -527,7 +528,7 @@ def test_a_failed_closure_leaves_no_organisations_behind(normal_matter, speciali
     Organisation.objects.create(name="Näidiskogu", organisation_type=OrganisationType.COMPANY)
     before = Organisation.objects.count()
 
-    with pytest.raises(DomainError):
+    with refused("«Näidiskogu» sobib mitme organisatsiooniga — vali nimekirjast."):
         _close_with_opinion(
             normal_matter,
             specialist,
@@ -650,7 +651,7 @@ def test_a_closure_that_fails_late_commits_nothing(
     monkeypatch.setattr(services, "close_matter", explode)
     before = Organisation.objects.count()
 
-    with pytest.raises(DomainError):
+    with refused("Katse: hilisem samm ebaõnnestus."):
         _close_with_opinion(
             normal_matter,
             specialist,

@@ -46,6 +46,7 @@ from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSema
 from app.workflow.models import StageVocabulary
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -2663,10 +2664,9 @@ def test_a_refused_note_save_is_not_reported_as_saved(normal_matter, specialist)
     answers 400 rather than rendering a hint for a write that did not happen."""
     from django.contrib.auth.models import AnonymousUser
 
-    from app.core.errors import DomainError
     from app.matters.services import save_personal_note
 
-    with pytest.raises(DomainError):
+    with refused("Märkmeid saab salvestada ainult sisselogitud kasutaja."):
         save_personal_note(matter=normal_matter, author=AnonymousUser(), body="x")
 
 

@@ -36,7 +36,6 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.matters.enums import WebsiteOverviewStatus
 from app.matters.services import (
     cancel_website_overview,
@@ -52,6 +51,7 @@ from app.submissions.links import (
     selectable_website_overviews,
 )
 from app.submissions.models import (
+    CROSS_MATTER_OVERVIEW_LINK,
     Submission,
     SubmissionTagAssignment,
     SubmissionWebsiteOverviewLink,
@@ -61,6 +61,7 @@ from app.submissions.services import (
     set_submission_website_overviews,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -221,7 +222,7 @@ def test_a_retired_tag_cannot_be_newly_assigned(opinion, tags, specialist):
     tags[0].is_active = False
     tags[0].save(update_fields=["is_active"])
 
-    with pytest.raises(DomainError):
+    with refused("Märksõna „Märksõna 0“ ei ole enam kasutusel. Vali kehtiv märksõna."):
         set_submission_tags(submission=opinion, tags=[tags[0]], actor=specialist)
 
     assert list(opinion.tags.all()) == []
@@ -304,7 +305,7 @@ def test_an_overview_on_another_matter_is_refused(opinion, specialist, published
         actor=specialist,
     )
 
-    with pytest.raises(DomainError):
+    with refused(CROSS_MATTER_OVERVIEW_LINK):
         set_submission_website_overviews(submission=opinion, overviews=[foreign], actor=specialist)
 
     assert list(opinion.website_overviews.all()) == []
@@ -320,7 +321,7 @@ def test_a_foreign_overview_refuses_the_whole_save(opinion, specialist, publishe
     other_matter = factories.MatterFactory(owner=specialist)
     foreign = plan_website_overview(matter=other_matter, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CROSS_MATTER_OVERVIEW_LINK):
         set_submission_website_overviews(
             submission=opinion, overviews=[published, foreign], actor=specialist
         )

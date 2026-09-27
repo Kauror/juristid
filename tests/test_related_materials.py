@@ -36,7 +36,6 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.authorization import DEPARTMENT_VIEWER
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.documents.services import add_evidence_version
 from app.legacy_import.opinion_archive import (
     OpinionArchiveBatch,
@@ -63,6 +62,7 @@ from app.legacy_import.opinion_search_models import (
 )
 from app.matters import purge
 from app.matters.enums import MatterDataClass
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Matter
 from app.matters.services import close_matter, create_matter
 from app.matters.timeline import TIMELINE_EVENT_TYPES
@@ -79,6 +79,7 @@ from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import Disposition, Track
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -267,7 +268,7 @@ def test_a_relation_records_who_and_when_on_both_files(specialist):
 
 def test_a_matter_cannot_be_related_to_itself(specialist):
     matter = _matter(specialist, "Jäätmeseaduse muutmine", number=905)
-    with pytest.raises(DomainError):
+    with refused("Teemat ei saa siduda iseendaga."):
         services.link_related_matters(matter=matter, other=matter, actor=specialist)
     assert MatterRelation.objects.count() == 0
 
@@ -313,7 +314,7 @@ def test_a_relation_needs_a_person(specialist):
     first = _matter(specialist, "A", number=910)
     second = _matter(specialist, "B", number=911)
     for actor in (None, DEPARTMENT_VIEWER):
-        with pytest.raises(DomainError):
+        with refused("Seotud materjalide muutmine vajab sisse loginud kasutajat."):
             services.link_related_matters(matter=first, other=second, actor=actor)
     assert MatterRelation.objects.count() == 0
 
@@ -346,7 +347,7 @@ def test_background_selection_leaves_the_submission_exactly_as_it_was(specialist
 def test_a_matters_own_opinion_is_not_its_background(specialist):
     current = _matter(specialist, "Pakendiseaduse muutmine", number=914)
     opinion = _sent_opinion(current, "Koja arvamus")
-    with pytest.raises(DomainError):
+    with refused("Teema enda arvamus ei ole selle teema taustmaterjal."):
         services.add_background_submission(matter=current, submission=opinion, actor=specialist)
     assert MatterBackgroundMaterial.objects.count() == 0
 
@@ -414,13 +415,13 @@ def test_a_dismissal_names_exactly_one_legitimate_candidate(specialist):
     current = _matter(specialist, "A", number=918)
     other = _matter(specialist, "B", number=919)
     opinion = _sent_opinion(other, "Arvamus")
-    with pytest.raises(DomainError):
+    with refused("Soovitusel peab olema täpselt üks kandidaat."):
         services.dismiss_related_suggestion(matter=current, actor=specialist)
-    with pytest.raises(DomainError):
+    with refused("Soovitusel peab olema täpselt üks kandidaat."):
         services.dismiss_related_suggestion(
             matter=current, actor=specialist, candidate_matter=other, candidate_submission=opinion
         )
-    with pytest.raises(DomainError):
+    with refused("Teema ei saa olla iseenda soovitus."):
         services.dismiss_related_suggestion(
             matter=current, actor=specialist, candidate_matter=current
         )
@@ -1427,7 +1428,7 @@ def test_a_closed_matter_accepts_no_new_relation(specialist):
     closed = _closed(specialist, "Suletud jäätmeseadus", number=931)
     open_matter = _matter(specialist, "Avatud pakendiseadus", number=932)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         services.link_related_matters(matter=closed, other=open_matter, actor=specialist)
 
     assert MatterRelation.objects.count() == 0
@@ -1442,7 +1443,7 @@ def test_a_closed_matter_accepts_no_removal_of_one_either(specialist):
     close_matter(matter=first, disposition="COMPLETED", actor=specialist, reason="QA")
     first.refresh_from_db()
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         services.unlink_related_matters(matter=first, other=second, actor=specialist)
 
     assert MatterRelation.objects.count() == 1
@@ -1472,7 +1473,7 @@ def test_a_closed_matter_accepts_no_new_background_material(specialist, ministry
     other = _matter(specialist, "Arvamuse allikas", number=938)
     opinion = _sent_opinion(other, "Koja arvamus")
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         services.add_background_submission(matter=closed, submission=opinion, actor=specialist)
 
     assert MatterBackgroundMaterial.objects.filter(matter=closed).count() == 0

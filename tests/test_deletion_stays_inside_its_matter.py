@@ -22,7 +22,6 @@ from django.urls import reverse
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.matters.deletion import (
     BLOCKED_BY_STRADDLING_ROW,
     MATTER_PAIR_MODELS,
@@ -37,6 +36,7 @@ from app.related_materials.models import (
     MatterRelation,
     RelatedSuggestionDismissal,
 )
+from tests.refusals import refused
 from tests.test_related_materials import _matter, _sent_opinion
 
 pytestmark = pytest.mark.django_db
@@ -62,7 +62,7 @@ def test_a_background_citation_from_another_matter_refuses_the_deletion(cited, s
     assert [b.label for b in straddling] == ["related_materials.MatterBackgroundMaterial.matter"]
     assert straddling[0].count == 1
 
-    with pytest.raises(DomainError):
+    with refused("Teema sisu on seotud väljaspool teemat oleva kirjega"):
         delete_matter(matter=source, actor=specialist)
 
     assert MatterBackgroundMaterial.objects.filter(matter=citing).count() == 1
