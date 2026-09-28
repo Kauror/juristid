@@ -1,11 +1,16 @@
 {% comment %}
-`Muuda kulgu` — which phases this file's rail shows, and when each is expected.
+`Muuda kulgu` — which phases this file's rail shows, when each is expected, and
+the steps a person added to it.
 
 **A short list, not a configuration screen.** One row per phase the file's own
 procedure has, each with a box to take it off this rail and a box for a date.
-There is no ordering, no adding a phase the pattern does not contain, no
-per-step status and nothing to assign: the panel answers two questions and
-closes.
+There is no ordering of phases and no per-step status or assignment.
+
+**`+ Lisa samm` adds what the pattern did not draw** (docs/adr/0119). A name, a
+date at the precision it is known to, and a place on the rail — after any item
+drawn now, or at the start. Every added step is listed above it, closed to one
+line, and opens to be corrected or removed. It works on every file, including
+one read against no procedure at all, which has no phase rows and only this.
 
 **A phase the file has already recorded carries no date box.** Where a
 `Menetluse areng` is filed in a phase, that record dates it — the day is shown
@@ -16,6 +21,9 @@ screens start disagreeing. The box exists only where there is nothing to reuse
 Swaps itself in place, like every other correction on this page. A save
 re-renders the whole Teema view: hiding a phase changes the rail, and on a file
 whose phases carry dates it changes what the rail says about all of them.
+
+**One form for the whole panel**, so one `Salvesta`, one revision check and one
+audit row — whatever mix of phases and steps a person changed together.
 {% endcomment %}
 <form class="kulgform" data-addform
       hx-post="{% url 'matters:timeline_steps' pk=matter.pk %}"
@@ -33,6 +41,7 @@ whose phases carry dates it changes what the rail says about all of them.
     <p class="formerror" role="alert">{{ timeline_steps_error }}</p>
   {% endif %}
 
+  {% if timeline_steps_form.rows %}
   <p class="kulgform__lede">
     Eemalda sammud, mida selle teema puhul ei tule, ja lisa kuupäev sinna, kus
     see on teada.
@@ -74,6 +83,48 @@ whose phases carry dates it changes what the rail says about all of them.
       </li>
     {% endfor %}
   </ul>
+  {% endif %}
+
+  {% if timeline_steps_form.added_rows %}
+    {% comment %}
+      The steps somebody added, in the order the rail reads them. Each is one
+      line until opened: a name and a date is what a person scans for, and four
+      controls per step, open, would bury the phases above.
+    {% endcomment %}
+    <ul class="kulgform__rows kulgform__added">
+      {% for step in timeline_steps_form.added_rows %}
+        <li class="kulgform__step">
+          <details class="kulgform__stepedit"{% if step.has_errors %} open{% endif %}>
+            <summary class="kulgform__stepsum">
+              <span class="chip__name">{{ step.title }}</span>
+              {% if step.display_date %}<span class="kulgform__stepdate">{{ step.display_date }}</span>{% endif %}
+              <span class="kulgform__stepmuuda">Muuda</span>
+            </summary>
+            {% include "matters/partials/timeline_step_fields.html" with title_field=step.title_field chips=step.chips date_field=step.date_field month_field=step.month_field quarter_field=step.quarter_field year_field=step.year_field after_field=step.after_field only %}
+            <label class="chip kulgform__remove">
+              {{ step.remove_field }}
+              <span class="chip__name">Eemalda samm</span>
+            </label>
+          </details>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% with new=timeline_steps_form.new_step %}
+    <details class="kulgform__new"{% if new.open %} open{% endif %}>
+      <summary class="button button--quiet button--tiny kulgform__newsum">+ Lisa samm</summary>
+      {% include "matters/partials/timeline_step_fields.html" with title_field=new.title_field chips=new.chips date_field=new.date_field month_field=new.month_field quarter_field=new.quarter_field year_field=new.year_field after_field=new.after_field only %}
+    </details>
+  {% endwith %}
+  {% comment %}
+    The phase vocabulary as suggestions for a step's name, and only as
+    suggestions: `VTK` typed the standard way on a file whose pattern has none,
+    or anything else a person needs — `Komisjoni istung`, a second round.
+  {% endcomment %}
+  <datalist id="kulg-sammud">
+    {% for label in timeline_steps_form.title_suggestions %}<option value="{{ label }}"></option>{% endfor %}
+  </datalist>
 
   <div class="addform__actions">
     <button class="button button--primary" type="submit">Salvesta</button>

@@ -1,0 +1,26 @@
+{% comment %}
+One added rail step's three questions: its name, its date, and its place.
+
+Shared by `+ Lisa samm` and the correction of a step already added, so the two
+cannot drift — the same partial for the same record, the reason
+`period_composer.html` is one file and not four. Included with `only`.
+{% endcomment %}
+<div class="kulgform__fields">
+  <label class="cx-f" for="{{ title_field.id_for_label }}">
+    <span class="cx-f__lab">{{ title_field.label }}</span>
+    {{ title_field }}
+  </label>
+  {% if title_field.errors %}
+    <p class="field__error" id="{{ title_field.auto_id }}_error">{{ title_field.errors|first }}</p>
+  {% endif %}
+
+  {% include "matters/partials/period_composer.html" with chips=chips date_field=date_field month_field=month_field quarter_field=quarter_field year_field=year_field only %}
+
+  <label class="cx-f" for="{{ after_field.id_for_label }}">
+    <span class="cx-f__lab">{{ after_field.label }}</span>
+    {{ after_field }}
+  </label>
+  {% if after_field.errors %}
+    <p class="field__error" id="{{ after_field.auto_id }}_error">{{ after_field.errors|first }}</p>
+  {% endif %}
+</div>

@@ -10865,6 +10865,85 @@ section:has(.pw-more[open]) tbody.uxextra {
   }
 }
 
+/* -- + Lisa samm (docs/adr/0119) --------------------------------------------
+ *
+ * The steps somebody added, one line each until opened, and the disclosure that
+ * adds another. The added list sits under the phases with a hairline between
+ * them, because they are the same panel answering a second question. */
+#teema-vaade-wrap .kulgform__added {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+#teema-vaade-wrap .kulgform__step {
+  min-width: 0;
+}
+
+#teema-vaade-wrap .kulgform__stepsum {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+#teema-vaade-wrap .kulgform__stepsum::-webkit-details-marker {
+  display: none;
+}
+
+#teema-vaade-wrap .kulgform__stepdate {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The word that says the line opens. Link ink, pushed to the far end, so the
+ * row reads as a record first and a control second. */
+#teema-vaade-wrap .kulgform__stepmuuda {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--accent-link);
+}
+
+#teema-vaade-wrap .kulgform__stepedit[open] .kulgform__stepmuuda {
+  visibility: hidden;
+}
+
+/* A name, a `Täpsus` composer and a place, stacked: each is one question and
+ * they are asked in that order. */
+#teema-vaade-wrap .kulgform__fields {
+  display: grid;
+  gap: var(--spacing-2);
+  margin: var(--spacing-2) 0;
+  max-width: 420px;
+}
+
+#teema-vaade-wrap .kulgform__remove {
+  margin: 0 0 var(--spacing-2);
+}
+
+#teema-vaade-wrap .kulgform__new {
+  margin: 0 0 var(--spacing-3);
+}
+
+#teema-vaade-wrap .kulgform__newsum {
+  display: inline-flex;
+  list-style: none;
+}
+
+#teema-vaade-wrap .kulgform__newsum::-webkit-details-marker {
+  display: none;
+}
+
+/* A writer's bar over a rail with nothing on it yet: `Muuda` and no strip, so no
+ * band, no hairline, no padding and no section margin announcing an empty
+ * section — the page moves down by the one quiet button and nothing else. */
+#teema-vaade-wrap .lprail--empty {
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
 /* -- Phases on the strip ---------------------------------------------------
  *
  * `Menetluse kulg` draws phases and dated points in one row, so the phases take

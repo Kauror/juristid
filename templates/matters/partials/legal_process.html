@@ -44,9 +44,15 @@ that has chosen no `Õigusakt` and recorded no date has no road ahead to draw
 and no history to place on one, and the honest answer to «kus menetlus on» is
 that nothing here says yet. An empty heading over an empty rail would be
 dashboard decoration with no decision behind it (AGENTS.md).
+
+**Except for somebody who can add to it** (docs/adr/0119 §1). `+ Lisa samm`
+lives behind `Muuda`, and a file with nothing on its rail is precisely the file
+that needs a first step — so a writer on an open Matter gets the bar and its
+`Muuda` with no strip under it (`lprail--empty`), and everybody else still gets
+nothing at all.
 {% endcomment %}
-{% if rail_steps %}
-  <section class="lprail" aria-labelledby="menetluse-kulg-heading">
+{% if rail_steps or can_write and matter.is_open %}
+  <section class="lprail{% if not rail_steps %} lprail--empty{% endif %}" aria-labelledby="menetluse-kulg-heading">
     <div class="lprail__bar">
       <h2 class="lprail__head visually-hidden" id="menetluse-kulg-heading">Menetluse kulg</h2>
       {% comment %}
@@ -59,11 +65,12 @@ dashboard decoration with no decision behind it (AGENTS.md).
       {% comment %}
         `Muuda`, at the far end of the bar and quiet.
 
-        Only for a writer, and only where there is a procedure to tailor: a file
-        read against no pattern has no phases to hide and nothing to date, so the
-        control would open on an empty panel.
+        Only for a writer. It used to need a procedure to tailor as well — a file
+        read against no pattern had no phases to hide — but the panel now also
+        adds steps, and that is exactly what a file with no pattern, or with no
+        phase ahead of it, cannot get any other way (docs/adr/0119 §1).
       {% endcomment %}
-      {% if can_write and legal_process %}
+      {% if can_write and legal_process or can_write and matter.is_open %}
         <button type="button" class="button button--quiet button--tiny lprail__edit"
                 hx-get="{% url 'matters:timeline_steps' pk=matter.pk %}"
                 hx-target="#menetluse-kulg-muuda"
@@ -77,6 +84,7 @@ dashboard decoration with no decision behind it (AGENTS.md).
     {% endcomment %}
     <div id="menetluse-kulg-muuda" data-draft-host></div>
 
+    {% if rail_steps %}
     <div class="tl-strip" aria-label="Menetluse kulg">
       {% for step in rail_steps %}
         {% comment %}
@@ -149,6 +157,7 @@ dashboard decoration with no decision behind it (AGENTS.md).
         </span>
       {% endfor %}
     </div>
+    {% endif %}
 
     {% if legal_process.unplaced_stage %}
       {% comment %}

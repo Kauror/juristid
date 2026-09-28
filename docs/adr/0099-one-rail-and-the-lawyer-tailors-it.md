@@ -163,6 +163,14 @@ The panel offers **the pattern's own phases and no others** — a `Määrus` is 
 offered `Riigikogus` — and the checkbox means *show*, because a ticked box that
 removes a step is the one shape of this control somebody gets backwards.
 
+> *Extended by ADR 0119 (2026-09-28).* The panel also adds steps the pattern
+> did not draw (`+ Lisa samm`) — a second kind of `MatterTimelineStep` row with
+> a name, a date at the shared precisions and a stated place — and `Muuda` is
+> rendered on every writer's open file, pattern or not. The phase rows above are
+> unchanged. Two read rules were added: a phase the file is on or has recorded
+> is drawn whatever a hide said, and a recorded phase a reclassified file's
+> pattern lacks stays on the rail.
+
 ## 5 — Two actions moved, and a section retired
 
 `Kustuta` sits beside `Muuda teemat` in the header. Both answer «this record is
