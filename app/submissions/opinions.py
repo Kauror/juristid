@@ -180,46 +180,29 @@ def sent_submission_by_document(matter: Any, *, viewer: Any) -> dict[Any, Submis
     return by_document
 
 
-def draft_submission_by_document(matter: Any, *, viewer: Any) -> dict[Any, Submission]:
-    """The **draft** each opinion document is already the final evidence of.
-
-    The mirror of :func:`sent_submission_by_document`, and it exists for the
-    same reason: a file that is already accounted for must not be offered as
-    though it were not. A draft accounts for its evidence just as firmly as a
-    send does — the difference is only which operation is the correct one next.
-
-    Restricted to DRAFT deliberately (R2-01, and the brief's §18 question). A
-    draft is a live record with somewhere to go: the correct act for its
-    evidence is `Märgi saadetuks` on the draft itself, which sends the record
-    that already exists. WITHDRAWN and SUPERSEDED are terminal — `withdraw` only
-    accepts a SENT submission, so a withdrawn one was genuinely sent once, and
-    the withdrawal is a fact about the act rather than about the file — so
-    there is no draft to open and registering a later send of those bytes is a
-    legitimate historical record this must not block.
-
-    Newest last, so a document carrying more than one draft — which nothing
-    prevents — resolves to the most recent one rather than to whichever the
-    default ordering happened to return.
-    """
-    return {
-        submission.final_version.document_id: submission
-        for submission in Submission.objects.filter(
-            matter=matter, status=SubmissionStatus.DRAFT, final_version__isnull=False
-        )
-        .visible_to(viewer)
-        .select_related("final_version")
-        .order_by("created_at")
-    }
-
-
 def unregistered_opinion_documents(matter: Any, *, viewer: Any) -> list[Document]:
     """The candidates for «Registreeri saatmine» — one list, one definition.
 
     An opinion file on this Matter that has a stored binary and that **no**
-    Submission already accounts for: neither a send, which would make the
-    registration a duplicate, nor a draft, whose evidence has its own operation
+    Submission has ever been bound to: not a send, which would make the
+    registration a duplicate; not a draft, whose evidence has its own operation
     (`Märgi saadetuks`) and must not acquire a second, parallel SENT record of
-    the same bytes.
+    the same bytes; and — since the Dokumendid creation surface was retired —
+    not a withdrawn or superseded send either.
+
+    **What is left is the stranded upload and nothing else.** A file filed
+    through `Lae dokument` as `Arvamus` before that choice was taken off the
+    menu, which only this registration can turn into a canonical send. A
+    withdrawn opinion's file is not stranded: it was sent, the withdrawal is a
+    fact about the act, and offering to register those bytes again would put the
+    retired workflow back in front of a record that is complete. A later send of
+    the same text is `Lisa teemale → Koja arvamus`, like any other send
+    (docs/adr/0061, amendment of 2026-09-27).
+
+    Bound by *any* Submission rather than by one this reader may see, because
+    the answer only ever removes a candidate: a send somebody cannot see still
+    accounts for the file, and offering it would invite a duplicate the service
+    then refuses.
 
     Computed here rather than twice, because it was twice: the Dokumendid page
     built it to render the select and the route rebuilt it to resolve what came
@@ -230,12 +213,15 @@ def unregistered_opinion_documents(matter: Any, *, viewer: Any) -> list[Document
     application accepts — `register_sent_opinion` re-establishes the same rule
     against the database, because a browser submits whatever it likes.
     """
-    sends = sent_submission_by_document(matter, viewer=viewer)
-    drafts = draft_submission_by_document(matter, viewer=viewer)
+    ever_bound = set(
+        Submission.objects.filter(matter=matter, final_version__isnull=False).values_list(
+            "final_version__document_id", flat=True
+        )
+    )
     return [
         document
         for document in opinion_documents(matter, viewer=viewer)
-        if document.current_version_id and document.pk not in sends and document.pk not in drafts
+        if document.current_version_id and document.pk not in ever_bound
     ]
 
 
@@ -247,6 +233,12 @@ def open_drafts(matter: Any, *, viewer: Any) -> list[Submission]:
     is sent its evidence becomes an ordinary `Arvamus` row and this block stops
     mentioning it: one opinion must not appear twice on one page, which is the
     duplication the retired surface existed to create (docs/adr/0061 §5).
+
+    Nothing in the interface starts a draft any more — `+ Uus arvamus` was
+    retired with the Dokumendid block, and a new opinion is recorded sent, in one
+    act, from `Lisa teemale → Koja arvamus`. So this list is the drafts that were
+    started before that, and it is what keeps them finishable rather than
+    stranded (docs/adr/0061, amendment of 2026-09-27).
     """
     return list(
         Submission.objects.filter(matter=matter, status=SubmissionStatus.DRAFT)

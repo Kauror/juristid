@@ -95,6 +95,11 @@ which opens by itself when a draft is waiting. `Võta tagasi` is still a POST,
 still behind the business-write boundary, still through `withdraw_submission`,
 and still writes its `ChangeEvent`.
 
+**Superseded on 2026-09-27 for the `Arvamused` block — see the amendment at the
+end of this document.** The block, `+ Uus arvamus` and `+ Registreeri saatmine`
+are retired as ways in; a new opinion is `Lisa teemale → Koja arvamus`
+(docs/adr/0095). The row's `⋯`, its details and `Võta tagasi` are unchanged.
+
 **`register_sent_opinion` composes rather than reimplements.** Recording that a
 file already on the Matter went out used to mean creating an empty draft,
 finding it again, binding it to that file and then sending it. It is one form
@@ -231,6 +236,12 @@ left open rather than answered by the shape of a bug fix.
 
 Nothing here changes the schema, the projection or `INDEX_VERSION`.
 
+**Superseded on 2026-09-27 for withdrawn and superseded evidence — see the
+amendment at the end of this document.** «Narrow on DRAFT» kept a withdrawn
+send's file a registration candidate because `Registreeri saatmine` was the only
+way to record a later send of the same bytes. It no longer is: a later send is
+`Koja arvamus`, so only a file no Submission was ever bound to is a candidate.
+
 ---
 
 ## Amendment, 2026-09-26 — a new send names who it went to, on every door
@@ -295,3 +306,112 @@ it lived in two of the three doors rather than in the act.
   still requires a supplied day; the table above stands.
 - No schema change, no migration, no backfill, no search-projection change and
   no `INDEX_VERSION` change.
+
+---
+
+## Amendment, 2026-09-27 — `Dokumendid` reads opinions; `Koja arvamus` records them
+
+- Status: accepted, amending «Management is secondary and lives on
+  `Dokumendid`» in the Decision and «Narrow on DRAFT» in the 2026-09-11
+  amendment
+- Scope: the `Arvamused` block under the `Dokumendid` file table, the `Arvamus`
+  choice on `Lae dokument`, and which files `Registreeri saatmine` offers. The
+  `Submission` model, its services, every route, every stored row and the
+  global `/arvamused/` workspace are untouched.
+
+### What was decided before
+
+`Dokumendid` ended in a collapsed `Arvamused` accordion — «Saatmise
+registreerimine ja koostatavad arvamused» — holding the draft list,
+`+ Uus arvamus` (start a draft with no file) and `+ Registreeri saatmine`
+(record that an opinion file already on the Matter went out). `Lae dokument`
+offered `Arvamus` as a role, which filed a `KODA_SUBMISSION_FINAL` document and
+asserted nothing about a send; the registration was the step that finished it.
+The 2026-09-11 amendment kept a withdrawn send's file a registration candidate,
+because that registration was the only way to record a later send of the same
+bytes.
+
+### Why it is superseded
+
+ADR 0091 §6 and ADR 0095 §1–§2 gave the Teema page `Lisa teemale → Koja
+arvamus`: the exact file, the day it went out, the addressees and a summary, in
+one transaction over `register_sent_opinion_on_open_matter` — the same service
+the block's registration posts to. From then on there were two ways to record
+the same fact, and the older one was the worse of them: three round trips
+(upload, find it in a select, register), a draft state the lawyer had to come
+back to, and an upload that left an opinion on the record that nobody had said
+was sent. The owner asked for one way.
+
+Production was checked before deciding what had to stay (2026-09-27, read-only,
+counts only): 2 Submissions, both SENT, both bound to their evidence; 0 drafts;
+2 `KODA_SUBMISSION_FINAL` documents, both the evidence of those sends; 0
+opinion files no Submission accounts for.
+
+### What is decided now
+
+- **`Koja arvamus` on the Teema page is the one way a new Chamber opinion is
+  recorded.** `Dokumendid` no longer renders the `Arvamused` accordion, its
+  heading, «Saatmise registreerimine ja koostatavad arvamused»,
+  `+ Uus arvamus` or `+ Registreeri saatmine`. A Matter with files and nothing
+  unfinished ends at its file table and `Töödokumendid`, with no empty opinion
+  section.
+- **`Lae dokument` does not offer `Arvamus`, and refuses it.**
+  `capture_evidence_on_open_matter` refuses `KODA_SUBMISSION_FINAL` before it
+  locks or writes anything, naming `Lisa teemale → Koja arvamus`, so a browser
+  holding the old menu cannot strand a new opinion either
+  (`UPLOAD_REFUSED_ROLES`, `OPINION_UPLOAD_REFUSAL`). The role itself is
+  untouched: stored rows keep it, the `Roll` filter still offers `Arvamus`,
+  and `Koja arvamus` and the archive apply still write it — each together with
+  the send it is the evidence of.
+- **`Lõpetamata arvamused` replaces the block, and renders only when something
+  is unfinished.** It lists the records an older workflow left half done and
+  offers exactly the step each is waiting for:
+  - a draft `Submission` — `Lisa fail`, then `Märgi saadetuks` with its
+    `Adressaadid` (the 2026-09-26 amendment), and `Märksõnad ja seosed`;
+  - a stranded opinion upload — `Registreeri saatmine`, for that file.
+
+  It has no `+ Uus arvamus` and no way to create a record of either kind, and
+  it is not rendered at all on a Matter with neither. Production has neither
+  today; the block exists so that anything left elsewhere — another instance,
+  a restored backup, a draft created in the minutes before this release — is
+  finishable rather than stranded.
+- **A registration candidate is a file no Submission was ever bound to.**
+  `unregistered_opinion_documents` now excludes withdrawn and superseded
+  evidence as well as sent and draft evidence, checked against every
+  Submission on the Matter rather than the reader's visible ones — it only
+  ever removes a candidate. A withdrawn opinion's file is a complete record,
+  still an `Arvamus` row; offering to register it again would put the retired
+  workflow back in front of it and would make a withdrawal conjure an
+  unfinished block. The route resolves its choices from the same read model,
+  so a crafted post of such a file records nothing. A later send of the same
+  text is `Koja arvamus`, like any other send — which answers, for the
+  interface, the resend question the 2026-09-11 amendment left open.
+- **The row's hint follows the control.** An `Arvamus` row with no send says
+  «Saatmist ei ole registreeritud.» as before, and points at `Lõpetamata
+  arvamused` only where that block really offers its registration.
+
+### What this amendment does not change
+
+- **No route or service is removed.** `submissions:create`,
+  `submissions:register_sent`, `attach_evidence`, `mark_sent`, `withdraw` and
+  `metadata` all still resolve, still sit behind the business-write boundary
+  and the Matter's row lock, and still refuse a closed Matter on their own.
+  `create` simply has no caller in the interface; its removal would be a
+  separate decision.
+- **`Submission` stays canonical for a send**, with its exact final evidence,
+  immutable `DocumentVersion`s, recipients, sent date and precision, kind,
+  channel, reference, joint submitters, sent/withdrawn state, `ChangeEvent`s
+  and reporting. Several opinions per Matter stay ordinary.
+- **Every stored row is untouched.** No schema change, no migration, no
+  backfill, no role rewritten, no draft completed or deleted, no search
+  projection change and no `INDEX_VERSION` change.
+- **Reading is unchanged.** A sent opinion is still an `Arvamus` row with its
+  date and addressees, its `⋯` still holds the send's details, `Muuda`
+  (docs/adr/0103), `Märksõnad ja seosed` and `Võta tagasi`, the facts rail
+  still names the letter, and `/arvamused/` (ADR 0047) keeps its lists,
+  filters, counts and archive gate. Osakond's «Arvamus koostamisel» still
+  counts the drafts that exist.
+- **Closed teema and authorization are unchanged.** On a closed Matter the
+  drafts stay listed with the step each is waiting for and no control; a
+  stranded upload on a closed Matter adds nothing to the block. A reader is
+  offered no step anywhere.

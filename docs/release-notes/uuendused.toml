@@ -8,6 +8,20 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-28
+basis = "deployment"
+# «Dokumentide» vahelehe «Arvamused» plokk on eemaldatud (#342). Koja arvamuse
+# lisamise ainus tee on teema lehe «Lisa teemale → Koja arvamus». «Lae dokument»
+# ei paku enam rolli «Arvamus». Olemasolevaid kirjeid ei muudetud; «Lõpetamata
+# arvamused» ilmub ainult siis, kui vanem mustand või registreerimata
+# arvamusfail tõesti ootab — tootmises neid väljalaske ajal ei olnud.
+prs = [342]
+changes = [
+  "Koja arvamus lisatakse nüüd ainult teema lehel, «Lisa teemale» → «Koja arvamus», kus fail salvestatakse koos saatmise kuupäeva ja adressaatidega. «Dokumentide» vahelehel ei ole enam «Arvamused» plokki ega nuppe «+ Uus arvamus» ja «+ Registreeri saatmine», ning «Lae dokument» ei paku enam rolli «Arvamus».",
+  "Saadetud arvamused on «Dokumentides» endiselt «Arvamus» ridadena näha, koos saatmise andmete, parandamise ja tagasivõtmisega; varem lisatud arvamusi ja faile ei muudetud.",
+]
+
+[[day]]
 date = 2026-09-27
 basis = "deployment"
 # Üks väljalase: inseneriauditi paranduste ringid 9–19 (#309–#334), teema

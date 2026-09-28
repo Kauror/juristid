@@ -65,7 +65,7 @@ from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.filenames import NFC
 from app.documents.models import Document
 from app.documents.pending import human_size
-from app.documents.services import link_working_document
+from app.documents.services import UPLOAD_REFUSED_ROLES, link_working_document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import (
     VISIBLE_VICTORY_STATUS,
@@ -239,12 +239,10 @@ from app.related_materials.selectors import related_materials_for
 from app.search import services as search_services
 from app.submissions import embedded as opinions
 from app.submissions.forms import (
-    CREATE_PREFIX,
     REGISTER_PREFIX,
     MarkSentForm,
     RegisterSentOpinionForm,
     SentOpinionEditForm,
-    SubmissionCreateForm,
 )
 from app.submissions.opinions import (
     OPINION_ROLE_FILTER,
@@ -3235,22 +3233,25 @@ UPLOAD_ROLES_NOT_OFFERED: frozenset[str] = frozenset({DocumentRole.OUTCOME_EVIDE
 
 
 def _upload_role_choices() -> list[tuple[str, str]]:
-    """The same relabelling for the upload panel, over the *stored* vocabulary.
+    """The upload panel's roles, over the *stored* vocabulary.
 
     The filter may invent a value because it only has to survive a round trip
     through the query string. This select posts a `Document.role`, so every
-    value here is a real one and only the words change — which is the whole of
-    what this change does to the role: the user reads `Arvamus`, the database
-    keeps `KODA_SUBMISSION_FINAL`, and no migration is involved (docs/adr/0061).
+    value here is a real one.
 
-    Narrower than the filter in one respect: `UPLOAD_ROLES_NOT_OFFERED` is
+    Narrower than the filter in two respects. `UPLOAD_ROLES_NOT_OFFERED` is
     dropped here and nowhere else, so a role that is no longer a sensible thing
-    to *choose* is still a role a stored document may *have*.
+    to *choose* is still a role a stored document may *have*. And
+    `UPLOAD_REFUSED_ROLES` — `Arvamus` — is dropped because the upload service
+    refuses it: a file filed here under it was an opinion nobody had said was
+    sent, and the Chamber's opinion is recorded on the Teema page with its send
+    (docs/adr/0061, amendment of 2026-09-27). The filter still offers `Arvamus`,
+    because finding the opinions a Matter holds is exactly what it is for.
     """
     return [
-        (value, "Arvamus" if value == DocumentRole.KODA_SUBMISSION_FINAL else label)
+        (value, label)
         for value, label in DocumentRole.choices
-        if value not in UPLOAD_ROLES_NOT_OFFERED
+        if value not in UPLOAD_ROLES_NOT_OFFERED and value not in UPLOAD_REFUSED_ROLES
     ]
 
 
@@ -3424,10 +3425,14 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     _mark_duplicate_names(visible_evidence)
 
-    # Opinion files this Matter holds that no Submission accounts for at all.
-    # They are the candidates for «Registreeri saatmine», and the reason that
-    # control exists at all: uploading a file as `Arvamus` records that Koda has
-    # it, never that Koda sent it, and only a person can close that gap (§18).
+    # Opinion files this Matter holds that no Submission has ever accounted for.
+    # They are the candidates for «Registreeri saatmine», and the only reason
+    # that control is still on this page at all: a file uploaded as `Arvamus`
+    # before that choice left `Lae dokument` records that Koda has it, never that
+    # Koda sent it, and only a person can close that gap (§18). Nothing creates
+    # a new one — the upload refuses the role — so on almost every Matter this
+    # list is empty and the block it feeds is not rendered (docs/adr/0061,
+    # amendment of 2026-09-27).
     #
     # The rule lives in `unregistered_opinion_documents` rather than here,
     # because it also lived in `app/submissions/views.py` — and a candidate rule
@@ -3506,12 +3511,13 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             # details, `Ava`, `↓` and the archive letters are all still here.
             "can_add_content": may_write_business_content(request.user) and matter.is_open,
             "historical": _historical_context(matter, request.user),
-            # The opinion management block under the table. Compact, collapsed
-            # unless a draft is waiting for somebody, and never a second listing
-            # of the sent opinions already in the table above it.
+            # Unfinished opinion records from before the Dokumendid creation
+            # surface was retired, and nothing else. The block that reads these
+            # renders only when one of them exists, offers no way to start a new
+            # opinion, and never lists the sent opinions already in the table
+            # above it. A new opinion is `Lisa teemale → Koja arvamus`.
             "opinion_drafts": drafts,
             "unregistered_opinions": unregistered,
-            "submission_form": SubmissionCreateForm(prefix=CREATE_PREFIX),
             "register_form": RegisterSentOpinionForm(
                 prefix=REGISTER_PREFIX, documents=unregistered
             ),

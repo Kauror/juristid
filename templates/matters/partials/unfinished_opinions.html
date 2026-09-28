@@ -1,0 +1,174 @@
+{% comment %}
+`Lõpetamata arvamused` on Dokumendid — only what an older workflow left half done.
+
+**This is not the retired `Arvamused` block.** That was an accordion under every
+file table, open or shut, with `+ Uus arvamus` and `+ Registreeri saatmine` in
+it: a second way to record an opinion beside `Lisa teemale → Koja arvamus`,
+which stores the file and the canonical send in one act. The accordion is gone
+and neither way in is left (docs/adr/0061, amendment of 2026-09-27).
+
+What is left is a repair surface, and it renders **only when there is something
+to repair**. A Matter with files and no unfinished opinion record ends at its
+file table and working documents, with no heading, no empty state and nothing
+collapsed. Two kinds of record can still need a person, and each shows only the
+step it is waiting for:
+
+* **a draft** — a `Submission` somebody started with `+ Uus arvamus` before it
+  was retired. It keeps `Lisa fail` and `Märgi saadetuks`, because sending the
+  record that exists is the one act that finishes it without a second record of
+  the same letter (R2-01), and `Märksõnad ja seosed`, because a draft is a
+  `Submission` and may be classified like one (docs/adr/0093 §1). A draft with
+  no file has no row in the table above, so this is its only door;
+* **a stranded opinion file** — uploaded as `Arvamus` through `Lae dokument`
+  before that role left the upload menu, and never bound to any send. Only
+  `Registreeri saatmine` turns it into a canonical `Submission`, and it is
+  offered for exactly those files (`unregistered_opinion_documents`). A
+  withdrawn opinion's file is not one of them: it was sent, and it is complete.
+
+Nothing here can start a new opinion, and nothing here can make a new record of
+either kind: drafts are no longer created anywhere in the interface, and the
+upload refuses the role (`app/documents/services.py`).
+
+**On a closed teema this is a reading surface.** `can_add_content` rather than
+`can_write` gates the draft's `Lisa fail` and `Märgi saadetuks` and the
+registration, because a closed Matter takes no new canonical business content.
+The drafts themselves stay listed, with the step each is waiting for named, so
+the file still says what is unfinished about it; reopening the teema is what
+makes those steps possible again (docs/adr/0075 §12). A stranded file on a
+closed teema has no step anybody here can take, so it adds nothing to the block
+— it is still an `Arvamus` row in the table above.
+
+Every route behind these controls refuses a closed Matter on its own, under the
+Matter's row lock — hiding them is courtesy, not the boundary
+(`app/submissions/services.py`).
+{% endcomment %}
+{% if opinion_drafts or can_add_content and unregistered_opinions %}
+  <section class="docsection" id="lopetamata-arvamused" aria-labelledby="lopetamata-arvamused-heading">
+    <div class="docsection__head">
+      <h2 class="docsection__title" id="lopetamata-arvamused-heading">Lõpetamata arvamused</h2>
+      {% comment %}
+        What is inside, said from lists the view has already read for the body
+        below, so the count adds no query and can say nothing the block does not
+        contain. The registration count is behind `can_add_content` because the
+        control is (post-QA §14).
+      {% endcomment %}
+      <span class="docsection__count">
+        {% if opinion_drafts %}{{ opinion_drafts|length }} koostamisel{% endif %}{% if opinion_drafts and can_add_content and unregistered_opinions %} · {% endif %}{% if can_add_content and unregistered_opinions %}{{ unregistered_opinions|length }} registreerimata{% endif %}
+      </span>
+    </div>
+    <p class="field__help">
+      Varasemast töövoost pooleli jäänud. Uus Koja arvamus lisatakse teema lehel:
+      Lisa teemale → Koja arvamus.
+    </p>
+
+    {% for draft in opinion_drafts %}
+      {% comment %}
+        One draft, and the single next step it is waiting for. No status badge:
+        everything in this list is unfinished by construction and the heading
+        says so.
+
+        The anchor is what `Lisa fail` and `Märgi saadetuks` redirect back to,
+        so the person lands on the row they changed.
+      {% endcomment %}
+      <div class="draftrow" id="arvamus-{{ draft.pk }}">
+        <span class="draftrow__title">{{ draft.title }}</span>
+        <span class="muted">· {{ draft.get_kind_display }}</span>
+        {% comment %}
+          `can_write` rather than `can_add_content`, matching `Võta tagasi` in the
+          file row's menu and `Muuda teemat`'s own `Sildid`: classifying a record
+          that already exists is a metadata correction, not new canonical
+          content, and a closed teema does not forbid one (docs/adr/0075 §12).
+        {% endcomment %}
+        {% if can_write %}
+          <a class="quietlink" href="{% url 'submissions:metadata' pk=draft.pk %}">Märksõnad ja seosed</a>
+        {% endif %}
+        {% if can_add_content %}
+          {% if draft.final_version_id %}
+            {% comment %}
+              **Who it goes to is asked here, because this is when it becomes a
+              fact** (ENG-041). The `Adressaadid` list box opens on whoever the
+              draft already names; the browser's own `required` refuses an empty
+              choice and the service refuses it again for any post that did not
+              come from here (`mark_submission_sent_on_open_matter`). The draft's
+              title is in the label's accessible name, because several drafts
+              mean several boxes on one page.
+            {% endcomment %}
+            {% with send=draft.send_form %}
+              <form class="draftrow__form draftrow__form--send" method="post"
+                    action="{% url 'submissions:mark_sent' pk=draft.pk %}">
+                {% csrf_token %}
+                <label class="field draftrow__addressees" for="{{ send.recipients.id_for_label }}">
+                  <span class="field__label">{{ send.recipients.label }}<span class="visually-hidden"> – {{ draft.title }}</span></span>
+                  {{ send.recipients }}
+                  <span class="field__help" id="{{ send.recipients.auto_id }}_helptext">{{ send.recipients.help_text }}</span>
+                </label>
+                <label class="field field--inline">
+                  <span class="field__label">Kanal</span>
+                  <input class="field__input field__input--compact" type="text" name="channel"
+                         value="{{ draft.channel }}" placeholder="EIS, e-post…">
+                </label>
+                <button class="button button--primary button--tiny" type="submit">
+                  Märgi saadetuks
+                </button>
+              </form>
+            {% endwith %}
+          {% else %}
+            {% comment %}
+              `Vali fail` is the choosing and `Lisa fail` is the saving, visibly and
+              in the accessible name (post-QA R2-14). The chooser's name carries the
+              draft's title because there can be several rows here.
+            {% endcomment %}
+            <form class="draftrow__form" method="post" enctype="multipart/form-data"
+                  action="{% url 'submissions:attach_evidence' pk=draft.pk %}">
+              {% csrf_token %}
+              <label class="field field--inline draftrow__file">
+                <span class="field__label">Vali fail</span>
+                <input class="field__input field__input--compact" type="file" name="upload"
+                       required aria-label="Vali lõplik saadetud fail – {{ draft.title }}">
+              </label>
+              <button class="button button--tiny" type="submit">Lisa fail</button>
+            </form>
+          {% endif %}
+        {% else %}
+          <span class="muted">
+            {% if draft.final_version_id %}ootab saatmist{% else %}ootab faili{% endif %}
+          </span>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    {% if can_add_content and unregistered_opinions %}
+      {% comment %}
+        A disclosure rather than an open form: the file it registers is already
+        a row in the table above, and the form asks four questions a person has
+        to answer from the letter itself. No `+` — this does not add anything,
+        it finishes a record that is already here.
+      {% endcomment %}
+      <details class="disclosure">
+        <summary class="disclosure__summary">Registreeri saatmine</summary>
+        <form class="form" method="post"
+              action="{% url 'submissions:register_sent' matter_id=matter.pk %}">
+          {% csrf_token %}
+          <p class="field__help">
+            Kinnitab, et see fail on Kojast välja saadetud. Faili üleslaadimine
+            üksi seda ei tähenda.
+          </p>
+          <div class="formgrid">
+            {% for field in register_form %}
+              <label class="field">
+                <span class="field__label">{{ field.label }}</span>
+                {{ field }}
+                {% if field.help_text %}<span class="field__help"
+                  id="{{ field.auto_id }}_helptext">{{ field.help_text }}</span>{% endif %}
+                {% if field.errors %}<span class="field__error" id="{{ field.auto_id }}_error">{{ field.errors|first }}</span>{% endif %}
+              </label>
+            {% endfor %}
+          </div>
+          <div class="form__actions">
+            <button class="button button--primary" type="submit">Registreeri saatmine</button>
+          </div>
+        </form>
+      </details>
+    {% endif %}
+  </section>
+{% endif %}

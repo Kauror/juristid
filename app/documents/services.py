@@ -41,6 +41,21 @@ from app.matters.models import Matter
 
 logger = logging.getLogger(__name__)
 
+#: Roles `↑ Lae dokument` refuses outright, not merely leaves off its menu.
+#:
+#: `KODA_SUBMISSION_FINAL` — «Arvamus». A file uploaded under it was an opinion
+#: nobody had said was sent, and the one control that could say so was the
+#: `Dokumendid` block this set of roles was narrowed alongside. The role itself
+#: is untouched: stored rows keep it, the `Roll` filter still finds them, and
+#: `Koja arvamus` and the archive apply still write it — each together with the
+#: send it is the evidence of (docs/adr/0061, amendment of 2026-09-27).
+UPLOAD_REFUSED_ROLES: frozenset[str] = frozenset({DocumentRole.KODA_SUBMISSION_FINAL})
+
+OPINION_UPLOAD_REFUSAL = (
+    "Koja arvamus lisatakse teema lehel: Lisa teemale → Koja arvamus. "
+    "Seal salvestatakse fail koos saatmise kuupäeva ja adressaatidega."
+)
+
 # Business formats the department actually exchanges. Anything else is refused
 # rather than stored and hoped about (master specification 15.6).
 #
@@ -537,7 +552,18 @@ def capture_evidence_on_open_matter(
     (`app/matters/locks.py`): this takes the Matter's row and
     ``add_evidence_version`` takes the Document's, in that order and never the
     other way round.
+
+    **Not the Chamber's opinion.** A file filed here as `Arvamus` said Koda held
+    it and nothing about a send, and the only thing that could finish it was
+    `Registreeri saatmine` on `Dokumendid` — which is retired as a way in. So the
+    role is refused before anything is locked or written, and the refusal names
+    the door that records an opinion properly: `Lisa teemale → Koja arvamus`,
+    which stores the bytes and the canonical send in one transaction. Refused
+    here rather than only left off the menu, because a browser holding the old
+    page still posts the old value (docs/adr/0061, amendment of 2026-09-27).
     """
+    if role in UPLOAD_REFUSED_ROLES:
+        raise DomainError(OPINION_UPLOAD_REFUSAL)
     locked = lock_open_matter_for_business_write(matter.pk)
     document = create_document(
         matter=locked,

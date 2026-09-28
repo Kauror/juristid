@@ -229,22 +229,26 @@ def test_both_columns_still_reach_the_search_index(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_the_submission_workflow_is_untouched(signed_in, specialist):
-    """Drafting an opinion moved surface; it did not lose a step.
+def test_an_older_draft_keeps_its_home_and_nothing_starts_a_new_one(signed_in, specialist):
+    """A draft left from before still lives on Dokumendid; `+ Uus arvamus` does not.
 
-    The `Arvamused` block on Dokumendid is where a draft lives and where a new
-    one is started. `Osakond` counts exactly these drafts, so the way to make
-    one had to keep a native home (docs/adr/0061 §14, §16).
+    This used to assert the opposite half as well: that the `Arvamused` block
+    was where a new draft was started, because `Osakond` counted drafts and the
+    way to make one needed a native home (docs/adr/0061 §14, §16). A new
+    opinion is recorded sent, in one act, from `Lisa teemale → Koja arvamus`
+    now, and the Dokumendid creation surface is retired. The drafts that exist
+    keep their row and their next step in `Lõpetamata arvamused` (docs/adr/0061,
+    amendment of 2026-09-27).
     """
     matter = factories.MatterFactory(owner=specialist)
     create_submission(matter=matter, title="Koostamisel arvamus", actor=specialist)
 
     body = _page(signed_in, matter)
 
-    assert "Arvamused" in body
+    assert "Lõpetamata arvamused" in body
     assert "Koostamisel arvamus" in body
-    assert "+ Uus arvamus" in body
-    assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) in body
+    assert "+ Uus arvamus" not in body
+    assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) not in body
 
 
 def test_a_sent_opinion_still_lists_with_its_evidence(signed_in, specialist):
@@ -271,8 +275,9 @@ def test_a_matter_with_no_opinions_says_so_once(signed_in, specialist):
 
     The retired page opened with «Ühtegi arvamust ei ole veel loodud.» over an
     empty list. Most of the register is in that state, so Dokumendid states the
-    absence where a reader would look for the presence — the rail — and the
-    `Arvamused` block simply has nothing in it (docs/adr/0061 §6).
+    absence where a reader would look for the presence — the rail — and there
+    is no opinion block under the files at all (docs/adr/0061 §6, amendment of
+    2026-09-27).
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -280,6 +285,7 @@ def test_a_matter_with_no_opinions_says_so_once(signed_in, specialist):
 
     assert "Ühtegi arvamust ei ole veel loodud." not in body
     assert "Koostatavaid arvamusi ei ole." not in body
+    assert "Lõpetamata arvamused" not in body
     assert body.count("Sellel teemal ei ole veel dokumente.") == 1
 
 
@@ -362,7 +368,7 @@ def test_a_reader_reads_the_page_and_is_offered_no_writes(client, reader, specia
 
     body = _page(client, matter)
 
-    assert "Arvamused" in body
+    assert "Lõpetamata arvamused" in body
     assert "Koostamisel arvamus" in body
     assert "ootab faili" in body
     assert "+ Uus arvamus" not in body

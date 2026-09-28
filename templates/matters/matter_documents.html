@@ -34,6 +34,14 @@ second printing of the version and size are on none of them: they are stored,
 they are on the document's own evidence page, and they were what made the
 retired Arvamused surface a third copy of the same letter (§11, §12, §28).
 
+**Opinions are read here and recorded on the Teema page.** The `Arvamused`
+accordion that sat under the table — `+ Uus arvamus`, `+ Registreeri saatmine`
+and the draft list — is retired; a new opinion is `Lisa teemale → Koja arvamus`,
+which stores the file and the canonical send in one act. All that remains is
+`Lõpetamata arvamused`, rendered only when an older draft or a stranded opinion
+upload is actually waiting for somebody (docs/adr/0061, amendment of
+2026-09-27).
+
 Upload asks for the role *with* the file, before anything is committed. A
 document filed as "Muu" because the form asked afterwards is a document nobody
 finds again (§23.5).
@@ -136,14 +144,18 @@ finds again (§23.5).
                   {% comment %}
                     `upload_roles`, not `document_roles`. This select posts a
                     stored `Document.role`, so every value in it is a real one and
-                    only the words change — `Arvamus` where the database keeps
-                    `KODA_SUBMISSION_FINAL`. The filter above may invent a value
+                    only the words change. The filter above may invent a value
                     because it only has to survive a round trip through the query
                     string; this one may not (app/matters/views.py).
 
-                    Uploading a file as `Arvamus` records that Koda holds it. It
-                    does not claim Koda sent it — that is «Registreeri saatmine»
-                    in the Arvamused block, and it needs a person (docs/adr/0061).
+                    **No `Arvamus`.** A file uploaded here under that role said
+                    Koda held it and nothing about a send, and the one control
+                    that could finish it — «Registreeri saatmine» in the retired
+                    Arvamused block — is no longer a way in. The Chamber's own
+                    opinion is recorded on the Teema page, `Lisa teemale → Koja
+                    arvamus`, with its date and addressees in the same act; the
+                    upload service refuses the role for a browser still holding
+                    the old menu (docs/adr/0061, amendment of 2026-09-27).
                   {% endcomment %}
                   <select class="field__input" name="role" required>
                     {% for value, label in upload_roles %}
@@ -210,10 +222,10 @@ finds again (§23.5).
         </div>
         {% comment %}
           Also under the empty card. A Matter with no files at all can still
-          carry a draft opinion, and that is exactly the state where somebody
-          owes it the next step.
+          carry an older draft opinion with no file yet, and that is exactly the
+          state where somebody owes it the next step. Renders nothing otherwise.
         {% endcomment %}
-        {% include "matters/partials/opinion_block.html" %}
+        {% include "matters/partials/unfinished_opinions.html" %}
       {% else %}
         {% if evidence_documents %}
           <section class="docsection" aria-labelledby="failid-heading">
@@ -473,7 +485,7 @@ finds again (§23.5).
           </section>
         {% endif %}
 
-        {% include "matters/partials/opinion_block.html" %}
+        {% include "matters/partials/unfinished_opinions.html" %}
 
         {% comment %}
           Working documents are an accordion, closed by default. They are living

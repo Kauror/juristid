@@ -46,6 +46,7 @@ from e2e.conftest import (
     open_matter,
     sign_in,
 )
+from e2e.test_teema_page_cleanup import choose_organisation
 
 pytestmark = pytest.mark.e2e
 
@@ -301,46 +302,31 @@ def close_the_matter(page, label: str = "Menetlus lõppes") -> None:
 
 
 def register_a_send(page, matter_url: str, *, filename: str, sent_on: str) -> None:
-    """Upload an opinion file and register that it went out, on `Dokumendid`.
+    """Record a sent `Koja arvamus` through `Lisa teemale`, the one way in.
 
-    The real two-step act, because that is the only thing that produces a SENT
-    `Submission` — and a SENT Submission is the only thing that produces a
-    `Koja arvamus` column. A file uploaded as `Arvamus` and left unaccounted for
-    draws nothing, which is §8 of the brief and is asserted below.
+    The file and the send in one act, because a SENT `Submission` is the only
+    thing that produces a `Koja arvamus` column — and since the Dokumendid
+    upload no longer offers `Arvamus` there is no way left to put an opinion
+    file on the record without its send (docs/adr/0061, amendment of
+    2026-09-27).
     """
-    page.goto(f"{matter_url}dokumendid/")
+    page.goto(matter_url)
     page.wait_for_load_state("networkidle")
 
-    page.locator('[data-reveals="lae-dokument"]').first.click()
-    page.locator("#lae-dokument select[name=role]").first.wait_for(state="visible")
-    page.locator("#lae-dokument input[type=file][name=upload]").first.set_input_files(
+    open_add_panel(page, "arvamus-koja")
+    form = page.locator("#arvamus-koja")
+    form.locator("input[type=file]").set_input_files(
         {"name": filename, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
-    page.locator("#lae-dokument select[name=role]").first.select_option("KODA_SUBMISSION_FINAL")
-    page.locator("#lae-dokument button[type=submit]").first.click()
-    page.wait_for_load_state("networkidle")
-
-    accordion = page.locator("details.accordion--opinions").first
-    if not accordion.evaluate("node => node.open"):
-        accordion.locator("summary").first.click()
-        page.wait_for_timeout(200)
-
-    trigger = page.locator("summary.disclosure__summary").filter(has_text="+ Registreeri saatmine")
-    assert trigger.count(), "an unaccounted-for opinion file offers no registration"
-    trigger.first.click()
-    page.wait_for_timeout(200)
-
-    form = page.locator("#id_saadetud-sent_on").locator("xpath=ancestor::form[1]")
-    # Every required answer, explicitly. `title`, `document`, `sent_on` and
-    # `recipients` are all required since #182: the form refuses to infer any of
-    # them, which is the whole of R2-01.
-    form.locator("#id_saadetud-document").select_option(index=0)
-    form.locator("#id_saadetud-title").fill(filename.removesuffix(".pdf"))
-    form.locator("#id_saadetud-sent_on").fill(sent_on)
-    # The addressee control offers the seeded institutions; any one of them makes
-    # this a real send. Which one it is belongs to the intake tests.
-    form.locator("#id_saadetud-recipients").select_option(index=0)
-    form.locator("button[type=submit]").first.click()
+    form.locator("[name=sent_on]").fill(sent_on)
+    # Any seeded institution makes this a real send. Which one it is belongs to
+    # the intake tests.
+    choose_organisation(page, "koja-adressaat")
+    with page.expect_response(
+        lambda response: "/lisa/koja-arvamus/" in response.url and response.request.method == "POST"
+    ) as caught:
+        form.get_by_role("button", name="Registreeri arvamus").click()
+    assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
 

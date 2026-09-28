@@ -23,6 +23,7 @@ from e2e.conftest import (
     MARTIN,
     READER,
     SANDRA,
+    open_add_panel,
     open_composer,
     open_hetkeseis,
     open_next_action_form,
@@ -86,17 +87,35 @@ def register_row(page, title: str):
     return page.locator("#teemad-tulemused").get_by_role("link", name=title)
 
 
-def open_opinions(page):
-    """The `Arvamused` block on Dokumendid, open.
+def record_opinion(page, filename: str) -> None:
+    """`Lisa teemale → Koja arvamus`, on the open Teema page, sent today.
 
-    It opens itself only while a draft is waiting for somebody — which is the
-    point of it — so a test that uses it twice has to say so the second time
-    (templates/matters/partials/opinion_block.html).
+    The day and the addressee are the panel's own defaults, and both are
+    asserted rather than assumed: the date box opens on today, and
+    `Adressaadid` opens on the Teema's `Saatja` — Näidisministeerium, which this
+    walkthrough typed into `Uus teema` (docs/adr/0095 §1).
     """
-    block = page.locator("#arvamuste-haldus")
-    if block.get_attribute("open") is None:
-        block.locator(".accordion__head").click()
-    return block
+    open_add_panel(page, "arvamus-koja")
+    panel = page.locator("#arvamus-koja")
+    expect(panel.locator("[name=sent_on]")).not_to_have_value("")
+    expect(panel.get_by_role("checkbox", name="Näidisministeerium")).to_be_checked()
+    panel.locator("input[type=file]").set_input_files(
+        {
+            "name": filename,
+            "mimeType": "application/pdf",
+            "buffer": b"%PDF-1.4 synthetic final opinion " + filename.encode(),
+        }
+    )
+    # Waited for by its own response, not by the chronology: after the first
+    # opinion `Arvamus välja` is already on the page, so a text check would
+    # pass before the second save had landed.
+    with page.expect_response(
+        lambda response: "/lisa/koja-arvamus/" in response.url and response.request.method == "POST"
+    ) as caught:
+        panel.get_by_role("button", name="Registreeri arvamus").click()
+    assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#ajalugu-loend")).to_contain_text("Arvamus välja")
 
 
 def test_the_whole_lawyer_workflow(page, base_url, screenshots):
@@ -346,38 +365,20 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator("#koja-seisukoht")).to_have_count(0)
     expect(page.locator("#koja-arvamus").get_by_role("link", name="Arvamused")).to_have_count(0)
 
+    # Recorded where the work is, `Lisa teemale → Koja arvamus`: the exact file,
+    # the day and the addressees in one act. It is the only way a new opinion is
+    # recorded — `Dokumendid` no longer has `+ Uus arvamus` or a registration
+    # of its own (docs/adr/0061, amendment of 2026-09-27).
+    record_opinion(page, "koja-arvamus.pdf")
+
+    # The send lands on Dokumendid as an ordinary file row badged `Arvamus` —
+    # not a card repeating the file underneath the table, and with no opinion
+    # block under the table at all, because nothing is left unfinished.
     page.locator(".tabs__tab", has_text="Dokumendid").click()
-    opinions = open_opinions(page)
-    opinions.locator("summary", has_text="Uus arvamus").click()
-    # Prefixed ids: Dokumendid renders three forms carrying a `title`, and one
-    # `#id_title` for all of them was a strict-mode violation here and an
-    # ambiguous `<label for>` for a screen reader (app/submissions/forms.py).
-    page.locator("#id_arvamus-title").fill("Koja arvamus pakendiseaduse eelnõule")
-    page.locator("#id_arvamus-kind").select_option("FORMAL_OPINION")
-    page.locator("#id_arvamus-recipients").select_option(label="Näidisministeerium")
-    page.get_by_role("button", name="Loo arvamus").click()
-
-    # A draft is an action somebody owes, so the block opens on it by itself.
-    draft = page.locator(".draftrow", has_text="Koja arvamus pakendiseaduse eelnõule")
-    expect(draft).to_be_visible()
-
-    # Sending without evidence is not offered: the control is the upload.
-    expect(page.get_by_role("button", name="Märgi saadetuks")).to_have_count(0)
-
-    page.get_by_label("Lõplik saadetud fail").set_input_files(
-        files=[
-            {
-                "name": "koja-arvamus.pdf",
-                "mimeType": "application/pdf",
-                "buffer": b"%PDF-1.4 synthetic final opinion",
-            }
-        ]
-    )
-    page.get_by_role("button", name="Lisa fail").click()
-    page.get_by_role("button", name="Märgi saadetuks").click()
-
-    # The send lands on the row it changed, and that row is an ordinary file row
-    # badged `Arvamus` — not a card repeating the file underneath the table.
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_text("+ Uus arvamus")).to_have_count(0)
+    expect(page.get_by_text("Registreeri saatmine")).to_have_count(0)
+    expect(page.locator("#lopetamata-arvamused, #arvamuste-haldus")).to_have_count(0)
     row = page.locator("tr", has_text="koja-arvamus.pdf")
     expect(row.locator(".badge--opinion")).to_have_text("Arvamus")
     expect(row.locator(".doctable__sent")).to_contain_text("Saadetud")
@@ -393,15 +394,17 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(row.get_by_role("button", name="Võta tagasi")).to_be_visible()
     row.locator(".opinionmenu__trigger").click()
 
-    # A second submission under the same Matter is ordinary, not a workaround.
-    # Reopened, because the block folds itself once nothing is waiting: the
-    # first opinion has been sent, so there is no draft to hold it open.
-    opinions = open_opinions(page)
-    opinions.locator("summary", has_text="Uus arvamus").click()
-    page.locator("#id_arvamus-title").fill("Täiendav arvamus komisjonile")
-    page.locator("#id_arvamus-kind").select_option("SUPPLEMENTARY_OPINION")
-    page.get_by_role("button", name="Loo arvamus").click()
-    expect(page.locator(".draftrow", has_text="Täiendav arvamus komisjonile")).to_be_visible()
+    # A second opinion under the same Matter is ordinary, not a workaround: a
+    # second send through the same panel, and a second `Arvamus` row.
+    page.goto(matter_url)
+    page.wait_for_load_state("networkidle")
+    record_opinion(page, "taiendav-arvamus.pdf")
+    page.locator(".tabs__tab", has_text="Dokumendid").click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator(".doctable .badge--opinion")).to_have_count(2)
+    expect(
+        page.locator("tr", has_text="taiendav-arvamus.pdf").locator(".doctable__sent")
+    ).to_contain_text("Näidisministeerium")
 
     # -- The sent opinion reaches the main view --------------------------
     #

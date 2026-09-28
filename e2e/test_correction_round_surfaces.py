@@ -18,6 +18,7 @@ import re
 import pytest
 
 from e2e.conftest import SANDRA, create_matter, open_kaik_row, sign_in, unique_title
+from e2e.test_teema_page_cleanup import record_koja_arvamus
 
 pytestmark = pytest.mark.e2e
 
@@ -424,41 +425,16 @@ def test_the_removal_is_still_in_the_change_log(page, base_url):
 def _registered_send(page, base_url: str, prefix: str) -> str:
     """A Matter with one recorded `Koja arvamus`, built the way a lawyer does.
 
-    An opinion file is uploaded and then *registered* as sent, which is what
-    puts `Arvamus välja` on the chronology — a draft is not on it, by design
-    (`Submission.historically_sent`, docs/adr/0092 §3).
+    Through `Lisa teemale → Koja arvamus`, the one way a new opinion is
+    recorded: the file and the send in one act, which is what puts
+    `Arvamus välja` on the chronology (`Submission.historically_sent`,
+    docs/adr/0092 §3; docs/adr/0061, amendment of 2026-09-27).
     """
     url = create_matter(page, base_url, unique_title(prefix), owner=SANDRA)
 
-    page.goto(f"{url}dokumendid/")
+    page.goto(url)
     page.wait_for_load_state("networkidle")
-    page.locator('[data-reveals="lae-dokument"]').first.click()
-    page.locator("#lae-dokument select[name=role]").first.wait_for(state="visible")
-    page.locator("#lae-dokument input[type=file][name=upload]").first.set_input_files(
-        {
-            "name": "Koja-arvamus.pdf",
-            "mimeType": "application/pdf",
-            "buffer": b"%PDF-1.4 arvamus",
-        }
-    )
-    page.locator("#lae-dokument select[name=role]").first.select_option("KODA_SUBMISSION_FINAL")
-    page.locator("#lae-dokument button[type=submit]").first.click()
-    page.wait_for_load_state("networkidle")
-
-    accordion = page.locator("details.accordion--opinions").first
-    if not accordion.evaluate("node => node.open"):
-        accordion.locator("summary").first.click()
-        page.wait_for_timeout(200)
-    page.locator("summary.disclosure__summary").filter(
-        has_text="+ Registreeri saatmine"
-    ).first.click()
-    page.wait_for_selector("#id_saadetud-sent_on")
-
-    page.fill("#id_saadetud-title", "Koja arvamus eelnõule")
-    page.fill("#id_saadetud-sent_on", "14.05.2026")
-    page.locator("#id_saadetud-recipients").select_option(index=0)
-    page.locator("form:has(#id_saadetud-sent_on) button[type=submit]").first.click()
-    page.wait_for_load_state("networkidle")
+    record_koja_arvamus(page, sent_on="14.05.2026")
     return url
 
 

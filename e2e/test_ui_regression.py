@@ -846,6 +846,7 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # `teema-dokumendid` past the limit — the same defect with fewer rows to
     # differ on, and therefore with nothing to say so.
     "teema-dokumendid": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
+    "teema-dokumendid-1024": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
     "teema-arvamused": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
     # The two Teema captures that used to render a folded system run are not
     # here any more. The approved target has no folded run: those events are
@@ -895,6 +896,7 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "osakond": OSAKOND_WEEK_COUNTS,
     "osakond-3440": OSAKOND_WEEK_COUNTS,
     "teema-dokumendid": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
+    "teema-dokumendid-1024": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
     "teema-arvamused": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
 }
 
@@ -1204,8 +1206,10 @@ def test_matter_opinions(page, base_url):
     """A Matter's opinions, which are its files filtered to `Arvamus`.
 
     The separate per-Matter Arvamused page is retired: an opinion is a document,
-    the rail links straight to the letter, and the management that is not a file
-    row lives in the `Arvamused` block under the table (docs/adr/0061).
+    the rail links straight to the letter, and the send's own management is
+    behind the row's `⋯`. The `Arvamused` block that used to sit under the table
+    is retired too, so this capture ends at the file table (docs/adr/0061,
+    amendment of 2026-09-27).
 
     Reached through the retired address on purpose. It is the one scenario in
     this suite that is *also* a route assertion — the baseline is worthless if
@@ -1377,8 +1381,27 @@ def test_the_chronology_with_its_one_outcome_open(page, base_url):
 
 
 def test_matter_documents(page, base_url):
+    """`Dokumendid` on the seeded open Matter: its files and its sent opinion.
+
+    Nothing about an opinion is unfinished here, so the page ends at the file
+    table and `Töödokumendid` — no opinion block under them at all
+    (docs/adr/0061, amendment of 2026-09-27).
+    """
     signed_in_matter(page, base_url, OPEN_TITLE, tab="Dokumendid")
     compare("teema-dokumendid", capture(page, "teema-dokumendid"))
+
+
+def test_matter_documents_at_1024(page, base_url):
+    """The same page at the narrow width the Teema page is held at.
+
+    `Dokumendid` has no facts rail to fold, so what this holds is the file
+    table's four columns and the opinion row's send line inside 1024 px, with
+    nothing under the table where the retired block used to be.
+    """
+    signed_in_matter(page, base_url, OPEN_TITLE, tab="Dokumendid")
+    page.set_viewport_size({"width": 1024, "height": 900})
+    page.wait_for_load_state("networkidle")
+    compare("teema-dokumendid-1024", capture(page, "teema-dokumendid-1024"))
 
 
 def test_create_matter_form(page, base_url):

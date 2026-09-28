@@ -6,7 +6,8 @@ the audit trail, the visibility boundary, the absence of any backfill — are
 everywhere. What only a running page can settle is here:
 
 * that an opinion actually **has a door** to this surface, from the `⋯` behind
-  its row on `Dokumendid` and from the draft row in the `Arvamused` block;
+  its row on `Dokumendid` — and, for a draft left from before the Dokumendid
+  creation surface was retired, from its row in `Lõpetamata arvamused`;
 * that the page offers the governed keywords as tickable chips and saves several
   of them;
 * that the Matter's own `Sildid` arrive **unticked** — the inheritance
@@ -26,6 +27,8 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_title
+from e2e.legacy_opinions import leave_a_draft
+from e2e.test_teema_page_cleanup import choose_organisation
 
 pytestmark = pytest.mark.e2e
 
@@ -40,47 +43,49 @@ METADATA_LINK = "Märksõnad ja seosed"
 
 PLAN_BUTTON = "Lisa ülevaade / uudis"
 
+#: The opinion's file, and therefore its title: `+ Koja arvamus` names the
+#: record after the uploaded file (docs/adr/0095 §2).
+OPINION_FILE = "Koja-arvamus-pakendiseaduse-eelnoule.pdf"
+
 
 def a_new_matter(page, base_url: str) -> str:
     return create_matter(page, base_url, unique_title("Arvamuse andmed"))
 
 
-def open_opinion_block(page, matter_url: str):
-    """`Dokumendid`, with the `Arvamused` accordion open."""
-    page.goto(f"{matter_url.rstrip('/')}/dokumendid/")
-    page.wait_for_load_state("networkidle")
-    block = page.locator("#arvamuste-haldus")
-    if not block.evaluate("node => node.open"):
-        # `summary.accordion__head`, not `summary`: the block's body holds two
-        # disclosures of its own, so a bare descendant selector resolves to
-        # three elements and raises in strict mode.
-        block.locator("summary.accordion__head").click()
-    return block
+def an_opinion(page, base_url: str) -> str:
+    """File a Matter, record a sent opinion on it, and return the Matter's URL.
 
-
-def a_draft_opinion(page, base_url: str) -> str:
-    """File a Matter, start a draft opinion on it, and return the Matter's URL.
-
-    A draft rather than a send, because a draft needs no file: this suite is
-    about the metadata surface, and the upload path has its own coverage in
-    `e2e/test_lawyer_workflow_package.py`.
+    Through `Lisa teemale → Koja arvamus`, the one way a new opinion is recorded
+    (docs/adr/0061, amendment of 2026-09-27). The Matter has no `Saatja`, so the
+    addressee is chosen rather than defaulted.
     """
     matter_url = a_new_matter(page, base_url)
-    block = open_opinion_block(page, matter_url)
-    block.locator("details.disclosure").filter(has_text="+ Uus arvamus").locator("summary").click()
-    form = block.locator("form[action*='/arvamused/teema/']")
-    form.locator("[name='arvamus-title']").fill("Koja arvamus pakendiseaduse eelnõule")
-    form.get_by_role("button", name="Loo arvamus").click()
+    open_add_panel(page, "arvamus-koja")
+    panel = page.locator("#arvamus-koja")
+    panel.locator("input[type=file]").set_input_files(
+        {"name": OPINION_FILE, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 e2e"}
+    )
+    choose_organisation(page, "koja-adressaat")
+    panel.get_by_role("button", name="Registreeri arvamus").click()
     page.wait_for_load_state("networkidle")
+    expect(page.locator("#ajalugu-loend")).to_contain_text("Arvamus välja")
     return matter_url
 
 
-def open_metadata(page, base_url: str) -> str:
-    """Reach the surface the way a lawyer does: through the draft's own row."""
-    matter_url = a_draft_opinion(page, base_url)
-    block = open_opinion_block(page, matter_url)
-    block.get_by_role("link", name=METADATA_LINK).first.click()
+def open_metadata_from_row(page, matter_url: str) -> None:
+    """`Dokumendid`, the opinion row's `⋯`, then `Märksõnad ja seosed`."""
+    page.goto(f"{matter_url.rstrip('/')}/dokumendid/")
     page.wait_for_load_state("networkidle")
+    row = page.locator("tr", has_text=OPINION_FILE)
+    row.locator(".opinionmenu__trigger").click()
+    row.get_by_role("link", name=METADATA_LINK).click()
+    page.wait_for_load_state("networkidle")
+
+
+def open_metadata(page, base_url: str) -> str:
+    """Reach the surface the way a lawyer does: through the opinion's own row."""
+    matter_url = an_opinion(page, base_url)
+    open_metadata_from_row(page, matter_url)
     return matter_url
 
 
@@ -89,13 +94,32 @@ def open_metadata(page, base_url: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_a_draft_opinion_offers_the_metadata_surface(page, base_url):
-    """The draft's only door, because a draft with no file has no `⋯` menu."""
+def test_a_sent_opinion_offers_the_metadata_surface_behind_its_row(page, base_url):
     sign_in(page, base_url, SANDRA)
-    matter_url = a_draft_opinion(page, base_url)
-    block = open_opinion_block(page, matter_url)
+    open_metadata(page, base_url)
+
+    expect(page.get_by_role("heading", name="Arvamuse märksõnad ja seosed")).to_be_visible()
+
+
+def test_an_older_draft_offers_the_metadata_surface(page, base_url):
+    """The draft's only door, because a draft with no file has no `⋯` menu.
+
+    Nothing in the browser starts a draft any more, so the draft is the kind an
+    older workflow left behind, written server-side (`e2e/legacy_opinions.py`).
+    It is still a `Submission`, still classifiable, and `Lõpetamata arvamused`
+    is still where it is reached from.
+    """
+    sign_in(page, base_url, SANDRA)
+    matter_url = a_new_matter(page, base_url)
+    leave_a_draft(matter_url, title="Pooleli arvamus", actor_upn=SANDRA.upn)
+    page.goto(f"{matter_url}dokumendid/")
+    page.wait_for_load_state("networkidle")
+    block = page.locator("#lopetamata-arvamused")
 
     expect(block.get_by_role("link", name=METADATA_LINK).first).to_be_visible()
+    block.get_by_role("link", name=METADATA_LINK).first.click()
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("heading", name="Arvamuse märksõnad ja seosed")).to_be_visible()
 
 
 def test_the_page_offers_both_controls(page, base_url):
@@ -129,11 +153,9 @@ def test_the_matters_own_tags_are_not_preselected(page, base_url):
     add is what this keeps: the boxes are offered, and they arrive empty.
     """
     sign_in(page, base_url, SANDRA)
-    matter_url = a_draft_opinion(page, base_url)
+    matter_url = an_opinion(page, base_url)
 
-    block = open_opinion_block(page, matter_url)
-    block.get_by_role("link", name=METADATA_LINK).first.click()
-    page.wait_for_load_state("networkidle")
+    open_metadata_from_row(page, matter_url)
 
     expect(page.get_by_role("checkbox", name=KEYWORD, exact=True)).not_to_be_checked()
     expect(page.get_by_role("checkbox", name=SECOND_KEYWORD, exact=True)).not_to_be_checked()
@@ -148,9 +170,7 @@ def test_several_keywords_save_and_read_back(page, base_url):
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_load_state("networkidle")
 
-    block = open_opinion_block(page, matter_url)
-    block.get_by_role("link", name=METADATA_LINK).first.click()
-    page.wait_for_load_state("networkidle")
+    open_metadata_from_row(page, matter_url)
 
     expect(page.get_by_role("checkbox", name=KEYWORD, exact=True)).to_be_checked()
     expect(page.get_by_role("checkbox", name=SECOND_KEYWORD, exact=True)).to_be_checked()
@@ -165,16 +185,12 @@ def test_a_correction_removes_only_what_was_unticked(page, base_url):
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_load_state("networkidle")
 
-    block = open_opinion_block(page, matter_url)
-    block.get_by_role("link", name=METADATA_LINK).first.click()
-    page.wait_for_load_state("networkidle")
+    open_metadata_from_row(page, matter_url)
     page.get_by_role("checkbox", name=KEYWORD, exact=True).uncheck()
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_load_state("networkidle")
 
-    block = open_opinion_block(page, matter_url)
-    block.get_by_role("link", name=METADATA_LINK).first.click()
-    page.wait_for_load_state("networkidle")
+    open_metadata_from_row(page, matter_url)
 
     expect(page.get_by_role("checkbox", name=KEYWORD, exact=True)).not_to_be_checked()
     expect(page.get_by_role("checkbox", name=SECOND_KEYWORD, exact=True)).to_be_checked()
@@ -212,12 +228,10 @@ def test_a_write_up_can_be_linked_and_reads_back_under_it(page, base_url):
     covers.
     """
     sign_in(page, base_url, SANDRA)
-    matter_url = a_draft_opinion(page, base_url)
+    matter_url = an_opinion(page, base_url)
     _a_write_up(page, matter_url)
 
-    block = open_opinion_block(page, matter_url)
-    block.get_by_role("link", name=METADATA_LINK).first.click()
-    page.wait_for_load_state("networkidle")
+    open_metadata_from_row(page, matter_url)
 
     overviews = page.get_by_role("group", name="Seotud ülevaated / uudised")
     expect(overviews).to_be_visible()
@@ -229,13 +243,13 @@ def test_a_write_up_can_be_linked_and_reads_back_under_it(page, base_url):
     page.wait_for_load_state("networkidle")
     chronology = page.locator("#ajalugu-loend")
     expect(chronology).to_contain_text("Seotud arvamused")
-    expect(chronology).to_contain_text("Koja arvamus pakendiseaduse eelnõule")
+    expect(chronology).to_contain_text(OPINION_FILE)
 
 
 def test_a_matter_with_no_link_says_nothing_about_opinions(page, base_url):
     """No inference, as a reader meets it: an unlinked write-up stays silent."""
     sign_in(page, base_url, SANDRA)
-    matter_url = a_draft_opinion(page, base_url)
+    matter_url = an_opinion(page, base_url)
     _a_write_up(page, matter_url)
 
     expect(page.locator("#ajalugu-loend")).not_to_contain_text("Seotud arvamused")
@@ -268,8 +282,6 @@ def test_loobu_returns_to_the_file_list_without_saving(page, base_url):
 
     assert "/dokumendid/" in page.url
 
-    block = open_opinion_block(page, matter_url)
-    block.get_by_role("link", name=METADATA_LINK).first.click()
-    page.wait_for_load_state("networkidle")
+    open_metadata_from_row(page, matter_url)
 
     expect(page.get_by_role("checkbox", name=KEYWORD, exact=True)).not_to_be_checked()

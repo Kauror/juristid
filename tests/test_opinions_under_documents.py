@@ -144,12 +144,23 @@ def test_the_implementation_label_never_reaches_the_reader(signed_in, specialist
     assert "Koja väljasaadetud arvamus" not in body
 
 
-def test_the_upload_panel_offers_arvamus_and_still_posts_the_stored_role(signed_in, specialist):
+def test_the_upload_panel_no_longer_offers_arvamus(signed_in, specialist):
+    """An upload filed as `Arvamus` was an opinion nobody had said was sent.
+
+    The one control that could finish it was the retired `Registreeri
+    saatmine`, so the role leaves the generic upload; the Chamber's opinion is
+    recorded with its send, on the Teema page (docs/adr/0061, amendment of
+    2026-09-27). The *filter* above still offers `Arvamus` — finding opinions is
+    what it is for.
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     body = _page(signed_in, matter)
+    select = _upload_select_of(body)
 
-    assert '<option value="KODA_SUBMISSION_FINAL">Arvamus</option>' in " ".join(body.split())
+    assert "KODA_SUBMISSION_FINAL" not in select
+    assert "Arvamus" not in select
+    assert f'<option value="{OPINION_ROLE_FILTER}"' in " ".join(body.split())
 
 
 # ---------------------------------------------------------------------------
@@ -191,13 +202,14 @@ def test_tulemuse_toend_is_not_on_the_upload_menu(signed_in, specialist):
 
 
 def test_the_upload_menu_keeps_every_other_role(signed_in, specialist):
-    """One role left, and only one.
+    """Two roles left, and only two.
 
     Asserted as the whole ordered list against the enum rather than by naming
-    nine strings: the failure this guards against is an exclusion that grows,
+    eight strings: the failure this guards against is an exclusion that grows,
     and a test that names what it expects to survive stops noticing when the
-    tenth removal happens.
+    next removal happens.
     """
+    from app.documents.services import UPLOAD_REFUSED_ROLES
     from app.matters.views import UPLOAD_ROLES_NOT_OFFERED
 
     matter = factories.MatterFactory(owner=specialist)
@@ -206,11 +218,12 @@ def test_the_upload_menu_keeps_every_other_role(signed_in, specialist):
     offered = re.findall(r'<option value="([^"]+)">', select)
 
     assert UPLOAD_ROLES_NOT_OFFERED == {DocumentRole.OUTCOME_EVIDENCE}
+    assert UPLOAD_REFUSED_ROLES == {DocumentRole.KODA_SUBMISSION_FINAL}
     assert offered == [
-        value for value in DocumentRole.values if value != DocumentRole.OUTCOME_EVIDENCE
+        value
+        for value in DocumentRole.values
+        if value not in {DocumentRole.OUTCOME_EVIDENCE, DocumentRole.KODA_SUBMISSION_FINAL}
     ]
-    assert DocumentRole.KODA_SUBMISSION_FINAL in offered
-    assert "Arvamus" in select
 
 
 def test_outcome_evidence_is_still_a_valid_role(specialist):
@@ -387,10 +400,11 @@ def test_an_old_role_filter_link_still_finds_the_opinions(signed_in, specialist)
 def test_an_unrelated_role_filter_is_unaffected(signed_in, specialist):
     """Asked of the file table, which is the thing the filter filters.
 
-    The `Arvamused` block under it is not filtered and must not be: it lists
-    what somebody owes work on and what may be registered as sent, and hiding
-    those because the table above is showing incoming mail would make the block
-    disagree with itself.
+    The `Lõpetamata arvamused` block under it is not filtered and must not be:
+    it lists what somebody owes work on and what may be registered as sent, and
+    hiding those because the table above is showing incoming mail would make the
+    block disagree with itself. `Koja_arvamus.pdf` is a stranded upload here —
+    filed under the role with no send — which is exactly what that block lists.
     """
     matter = factories.MatterFactory(owner=specialist)
     _file(matter, name="Koja_arvamus.pdf", actor=specialist)
@@ -399,7 +413,7 @@ def test_an_unrelated_role_filter_is_unaffected(signed_in, specialist):
     )
 
     body = _page(signed_in, matter, roll=DocumentRole.INCOMING_AUTHORITY)
-    table = body.split('id="failid-heading"', 1)[1].split('id="arvamuste-haldus"', 1)[0]
+    table = body.split('id="failid-heading"', 1)[1].split('id="lopetamata-arvamused"', 1)[0]
 
     assert incoming.current_version.original_filename in table
     assert "Koja_arvamus.pdf" not in table
@@ -553,8 +567,11 @@ def test_a_draft_is_shown_compactly_and_only_while_it_exists(signed_in, speciali
 
     assert "Koostamisel arvamus" in body
     assert "draftrow" in body
-    # An action somebody owes, so the block is open rather than folded away.
-    assert 'id="arvamuste-haldus"' in body
+    # An action somebody owes, so the block is there and not folded away — and
+    # it is the repair block, not the retired accordion.
+    assert 'id="lopetamata-arvamused"' in body
+    assert 'id="arvamuste-haldus"' not in body
+    assert "+ Uus arvamus" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -676,12 +693,13 @@ def test_a_registered_opinion_leaves_the_unregistered_list(signed_in, specialist
 # ---------------------------------------------------------------------------
 
 
-def test_the_two_opinion_forms_do_not_share_element_ids(signed_in, specialist):
-    """Three forms on this page carry a `title`; one id each.
+def test_the_forms_on_this_page_do_not_share_element_ids(signed_in, specialist):
+    """Two forms on this page carry a `title` when a stranded upload waits.
 
     Duplicate ids make every `<label for>` ambiguous for a screen reader, and
     they made `#id_title` a strict-mode violation for the browser suite — which
-    is how this was found (app/submissions/forms.py).
+    is how this was found (app/submissions/forms.py). The third, `+ Uus
+    arvamus`'s `id_arvamus-title`, is retired with the control.
     """
     matter = factories.MatterFactory(owner=specialist)
     _file(matter, name="Koja_arvamus.pdf", actor=specialist)
@@ -689,7 +707,7 @@ def test_the_two_opinion_forms_do_not_share_element_ids(signed_in, specialist):
     body = _page(signed_in, matter)
 
     assert body.count('id="id_title"') == 1
-    assert 'id="id_arvamus-title"' in body
+    assert 'id="id_arvamus-title"' not in body
     assert 'id="id_saadetud-title"' in body
 
 
@@ -1427,12 +1445,22 @@ def test_the_draft_path_that_replaces_it_still_works(signed_in, specialist, orga
     assert Submission.objects.filter(matter=matter).count() == 1
 
 
-def test_a_withdrawn_sends_evidence_stays_registrable(signed_in, specialist, organisation):
-    """§18: the fix is narrow on DRAFT, and this is the line it must not cross.
+def test_a_withdrawn_sends_evidence_is_complete_and_not_offered_again(
+    signed_in, specialist, organisation
+):
+    """§18, revisited on 2026-09-27 when the Dokumendid creation surface went.
 
-    `withdraw_submission` only accepts a SENT submission, so a withdrawn one was
-    genuinely sent once and there is no draft to open instead. Blocking its
-    evidence would remove the only way to record a later send of those bytes.
+    This test used to hold the opposite line: a withdrawn send's evidence stayed
+    a registration candidate, because `Registreeri saatmine` was the only way to
+    record a later send of the same bytes. It is not any more — a later send is
+    `Lisa teemale → Koja arvamus`, like every other — and a withdrawn opinion is
+    a complete record, not a stranded one. Offering it would put the retired
+    workflow back in front of it, and a withdrawal would conjure an unfinished
+    block onto a Matter nobody owes anything on (docs/adr/0061, amendment of
+    2026-09-27).
+
+    The withdrawal itself is untouched: the file is still an `Arvamus` row and
+    the Submission is still WITHDRAWN.
     """
     matter = factories.MatterFactory(owner=specialist)
     document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
@@ -1443,8 +1471,16 @@ def test_a_withdrawn_sends_evidence_stays_registrable(signed_in, specialist, org
     withdraw_submission(submission=sent, actor=specialist)
 
     response = signed_in.get(_documents_url(matter))
-    offered = [str(c.pk) for c in response.context["unregistered_opinions"]]
-    assert str(document.pk) in offered
+    body = response.content.decode()
+    assert list(response.context["unregistered_opinions"]) == []
+    assert 'id="lopetamata-arvamused"' not in body
+    assert "badge--opinion" in body
+
+    # And a crafted post of the same bytes records nothing.
+    _register(signed_in, matter, document, organisation)
+    sent.refresh_from_db()
+    assert sent.status == SubmissionStatus.WITHDRAWN
+    assert Submission.objects.filter(matter=matter).count() == 1
 
 
 # ---------------------------------------------------------------------------

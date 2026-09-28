@@ -4,7 +4,9 @@ The rules are pinned against the database in `tests/test_send_requires_addressee
 and `tests/test_saaja_means_addressee.py`. What only a running page can answer is
 whether a person meets them where they work:
 
-* **ENG-041.** The draft row's `Märgi saadetuks` asks `Adressaadid`. Pressed with
+* **ENG-041.** The draft row's `Märgi saadetuks` asks `Adressaadid` — on the
+  older drafts `Lõpetamata arvamused` still lists, since nothing starts a new
+  one (docs/adr/0061, amendment of 2026-09-27). Pressed with
   nobody chosen, the send is refused beside the box with the focus on it and the
   draft stays a draft — and a post that skips the browser's own check is refused
   by the server too. With an addressee it goes out, and the file row names them.
@@ -26,6 +28,7 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import SANDRA, give_first_step, sign_in, unique_title
+from e2e.legacy_opinions import leave_a_draft, organisation_id
 
 pytestmark = pytest.mark.e2e
 
@@ -55,31 +58,23 @@ def _new_matter(page, base_url: str, title: str, *, new_sender: str | None = Non
     return page.url
 
 
-def _opinion_block(page, matter_url: str):
-    """`Dokumendid`, with the `Arvamused` accordion open."""
-    page.goto(f"{matter_url.rstrip('/')}/dokumendid/")
-    page.wait_for_load_state("networkidle")
-    block = page.locator("#arvamuste-haldus")
-    if not block.evaluate("node => node.open"):
-        block.locator("summary.accordion__head").click()
-    return block
-
-
 def _draft_with_its_file(
     page, matter_url: str, title: str, *, addressee: str = "", copied: str = ""
 ):
-    """`+ Uus arvamus`, then `Lisa fail` — a draft that is ready to be sent."""
-    block = _opinion_block(page, matter_url)
-    block.locator("details.disclosure").filter(has_text="+ Uus arvamus").locator("summary").click()
-    page.locator("#id_arvamus-title").fill(title)
-    if addressee:
-        page.locator("#id_arvamus-recipients").select_option(label=addressee)
-    if copied:
-        page.locator("#id_arvamus-for_information").select_option(label=copied)
-    page.get_by_role("button", name="Loo arvamus").click()
+    """An older draft, left with its file — ready to be sent from its row.
+
+    `+ Uus arvamus` is retired and nothing in the browser starts a draft any
+    more, so the draft is written server-side, through the services that
+    control used (`e2e/legacy_opinions.py`). Its file is chosen and filed in
+    the browser, because `Lisa fail` is still one of the two steps
+    `Lõpetamata arvamused` exists to offer (docs/adr/0061, amendment of
+    2026-09-27).
+    """
+    leave_a_draft(matter_url, title=title, actor_upn=SANDRA.upn, addressee=addressee, copied=copied)
+    page.goto(f"{matter_url.rstrip('/')}/dokumendid/")
     page.wait_for_load_state("networkidle")
 
-    draft = page.locator(".draftrow", has_text=title)
+    draft = page.locator("#lopetamata-arvamused .draftrow", has_text=title)
     expect(draft).to_have_count(1)
     draft.get_by_label("Vali lõplik saadetud fail").set_input_files(
         files=[
@@ -192,9 +187,7 @@ def test_the_register_saaja_is_the_addressee_and_never_a_copy(page, base_url):
 
     title = unique_title("Saaja arvamus")
     draft = _draft_with_its_file(page, matter_url, title, addressee=addressee, copied=copied)
-    copied_pk = page.locator("#id_arvamus-for_information option", has_text=copied).get_attribute(
-        "value"
-    )
+    copied_pk = organisation_id(copied)
     draft.get_by_role("button", name="Märgi saadetuks").click()
     page.wait_for_load_state("networkidle")
     expect(
