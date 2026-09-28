@@ -315,7 +315,11 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # N+1, which is why it is thirty entries and a `<` rather than an exact
     # count. `tests/test_substantive_matter_history.py` measures the
     # projection's own shape directly, at two populations under one budget.
-    assert len(captured) < 52
+    #
+    # **53 since docs/adr/0119**: a file read against no procedure now reads
+    # the phases it recorded a step in, so a phase it went through before it
+    # lost its pattern stays on the rail. One read, flat in the population.
+    assert len(captured) < 53
 
 
 def test_selectors_reuse_the_prefetched_open_action(specialist):

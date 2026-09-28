@@ -664,14 +664,16 @@ def test_a_reader_can_neither_open_nor_post_the_panel(client, specialist, reader
 
 def test_a_closed_file_refuses_an_added_step(specialist):
     from app.core.errors import DomainError
+    from app.matters.locks import CLOSED_MATTER_REFUSAL
     from app.matters.services import close_matter
     from app.workflow.enums import Disposition
 
     matter = _matter(specialist)
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError) as refusal:
         _add(matter, specialist, "Komisjoni istung")
+    assert str(refusal.value) == CLOSED_MATTER_REFUSAL
     assert not MatterTimelineStep.objects.filter(matter=matter).exists()
 
 
