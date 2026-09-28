@@ -92,13 +92,16 @@ from app.audit.visibility import scope_change_events
 from app.matters.models import Matter
 from app.matters.process_phases import (
     PHASE_JOUSTUMINE,
+    PHASE_KEYS,
     PHASE_ULEVOTMINE,
     ProcessPattern,
     pattern_for,
+    phase_label,
 )
 from app.matters.process_timeline import (
     PHASE_EFFECTIVE,
     PHASE_TRANSPOSITION,
+    STATE_AHEAD,
     STATE_REACHED,
     STATE_TODAY,
 )
@@ -216,6 +219,11 @@ class LegalProcessRail:
     current_label: str = ""
     unplaced_stage: str = ""
     koda_stopped: bool = False
+    #: Every phase the file recorded a step in, whether or not this pattern
+    #: draws it — read once here and handed on, so `matter_rail` can keep a
+    #: recorded phase the pattern no longer has without asking again
+    #: (docs/adr/0119 §4).
+    recorded_phases: frozenset[str] = frozenset()
 
     @property
     def label(self) -> str:
@@ -518,6 +526,7 @@ def legal_process_rail(
         current_label=(drawn[current_index].label if current_index is not None else ""),
         unplaced_stage=unplaced,
         koda_stopped=facts.disposition == Disposition.MONITORING_STOPPED,
+        recorded_phases=frozenset(recorded_phases),
     )
 
 
@@ -541,6 +550,27 @@ KIND_PHASE = "phase"
 #: `Jõustumine`, `Lõpetatud`. Read off its own canonical record by
 #: `app/matters/process_timeline.py`, which stays the one place those are read.
 KIND_MILESTONE = "milestone"
+#: A step a person added to this file's rail (`+ Lisa samm`): a name, maybe a
+#: date, and a place they chose. Stored as an added `MatterTimelineStep`
+#: (docs/adr/0119).
+KIND_STEP = "step"
+
+#: The states that say a node has been reached — a phase that is current or
+#: recorded, a dated point behind us or today. One set for every kind, because
+#: no state is shared between kinds: a phase is never `past` and a dated point
+#: is never `recorded`. An undated added step takes the phase words, because it
+#: has no date to read against today.
+_REACHED_STATES = frozenset({STATE_CURRENT, STATE_RECORDED, STATE_REACHED, STATE_TODAY})
+
+#: The phase states a hide cannot take off the rail (docs/adr/0119 §3).
+#:
+#: A phase the file is standing on, or has recorded a step in, is part of what
+#: happened. The panel refuses to hide the current one, and an old hide does not
+#: outlive a later domain act either: once the file's `Hetkeseis` reaches a
+#: phase somebody took off, or a step is recorded in it, the phase is drawn
+#: again. Decided on read, so the stored preference is untouched and a page load
+#: writes nothing.
+_EVIDENCED_STATES = frozenset({STATE_CURRENT, STATE_RECORDED})
 
 
 @dataclass(frozen=True)
@@ -597,14 +627,28 @@ class RailStep:
         return f"{round(self.reach * 100, 1):g}%"
 
 
-def _step_rows(*, matter: Matter, user: Any) -> dict[str, Any]:
-    """This Matter's own timeline steps, by phase key. Scoped like everything."""
+def _step_rows(*, matter: Matter, user: Any) -> tuple[dict[str, Any], list[Any]]:
+    """This Matter's own timeline rows: phase rows by key, and added steps.
+
+    One scoped read for both kinds. Added steps come back in the order they
+    were created, which is the order `_place_added_steps` places them in
+    (docs/adr/0119 §2).
+    """
     from app.matters.models import MatterTimelineStep
 
-    return {
-        row.phase_key: row
-        for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(user)
-    }
+    phases: dict[str, Any] = {}
+    added: list[Any] = []
+    rows = (
+        MatterTimelineStep.objects.filter(matter=matter)
+        .visible_to(user)
+        .order_by("created_at", "id")
+    )
+    for row in rows:
+        if row.is_added:
+            added.append(row)
+        else:
+            phases[row.phase_key] = row
+    return phases, added
 
 
 def anchored_phase_keys(*, matter: Matter, user: Any) -> frozenset[str]:
@@ -727,15 +771,24 @@ def matter_rail(
 
     **Hidden steps are gone from the result, not marked.** A row a person removed
     from this file's rail is not a row drawn in grey — that would be the clutter
-    they were removing.
+    they were removing. **Except a phase the file has reached**: current, or
+    recorded, is part of what happened, and a hide does not take it off
+    (docs/adr/0119 §3).
+
+    **A recorded phase the pattern no longer draws stays on the rail.** A file
+    reclassified from `Seadus` to `Määrus` still went through what it went
+    through (docs/adr/0119 §4).
+
+    **Added steps go where a person put them**, after everything the file itself
+    places (docs/adr/0119 §2).
     """
-    rows = _step_rows(matter=matter, user=user)
+    rows, added = _step_rows(matter=matter, user=user)
     steps: list[RailStep] = []
 
     if rail is not None:
         for node in rail.nodes:
             row = rows.get(node.key)
-            if row is not None and row.hidden:
+            if row is not None and row.hidden and node.state not in _EVIDENCED_STATES:
                 continue
             # **A phase node is dated by the roadmap, and by nothing else.**
             #
@@ -771,6 +824,7 @@ def matter_rail(
             )
 
     today = timezone.localdate()
+    _keep_recorded_phases(steps, matter=matter, user=user, rail=rail, rows=rows, today=today)
     for milestone in sorted(milestones, key=lambda one: one.sort_on):
         # **A fact whose phase is drawn is folded onto that phase, not beside
         # it.** A commencement used to be inserted as its own column next to
@@ -857,7 +911,204 @@ def matter_rail(
             beside = current if anchor is None else max(anchor, current)
             window, default = (beside, len(steps)), min(beside + 1, len(steps))
         steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
+    _place_added_steps(steps, added, rail=rail, today=today)
     return _one_backbone(steps, today)
+
+
+def _keep_recorded_phases(
+    steps: list[RailStep],
+    *,
+    matter: Matter,
+    user: Any,
+    rail: LegalProcessRail | None,
+    rows: dict[str, Any],
+    today: date,
+) -> None:
+    """Draw the phases this file went through that its pattern does not.
+
+    The pattern is chosen from the file's *present* `Õigusakt` and
+    `Menetlusliik`, so a file reclassified after the fact used to lose every
+    phase the new pattern lacks — including ones it had recorded a step in, or
+    that a person dated in the past. That is a completed milestone disappearing
+    because a field changed, which the rail must not do (docs/adr/0119 §4).
+
+    Two kinds of evidence, both explicit: a `Menetluse areng` filed in the
+    phase, and a phase row somebody dated on or before today and did not hide.
+    Nothing else — not the stage history, whose mapping onto a phase *is* the
+    pattern, and not a future date, which is a plan for a procedure the file no
+    longer reads against.
+
+    They read as recorded, in the vocabulary's order, just before where the
+    file now stands: they happened, and they happened before the present.
+    """
+    drawn = {node.key for node in rail.nodes} if rail is not None else set()
+    recorded = (
+        rail.recorded_phases
+        if rail is not None
+        else frozenset(recorded_phase_keys(matter=matter, user=user))
+    )
+    dated = {
+        key
+        for key, row in rows.items()
+        if not row.hidden and row.occurs_on is not None and row.occurs_on <= today
+    }
+    kept = [key for key in PHASE_KEYS if key in (recorded | dated) and key not in drawn]
+    if not kept:
+        return
+    position = next(
+        (
+            index
+            for index, step in enumerate(steps)
+            if step.state in (STATE_CURRENT, STATE_POSSIBLE)
+        ),
+        len(steps),
+    )
+    for offset, key in enumerate(kept):
+        row = rows.get(key)
+        dated_row = row if row is not None and not row.hidden else None
+        steps.insert(
+            position + offset,
+            RailStep(
+                key=key,
+                label=phase_label(key),
+                kind=KIND_PHASE,
+                state=STATE_RECORDED,
+                display_date=dated_row.display_date if dated_row is not None else "",
+                sort_on=dated_row.occurs_on if dated_row is not None else None,
+            ),
+        )
+
+
+def _place_added_steps(
+    steps: list[RailStep], added: list[Any], *, rail: LegalProcessRail | None, today: date
+) -> None:
+    """Put every added step where a person placed it: after its ``after_key``.
+
+    **A stated place, not a derived one.** The rail's own items are placed by the
+    rules above; an added step is placed by what somebody chose — immediately
+    after the item it names, or at the start for ``""``. Several steps naming one
+    anchor read newest-nearest, which is what «right after X» means the second
+    time somebody says it. Placed last, so no added step ever moves a phase or a
+    dated point the file placed itself.
+
+    **An anchor that is gone never drops the step** (docs/adr/0119 §2):
+
+    * a phase taken off this file's rail — the step reads where the phase would
+      have been, before the next phase of the pattern that is still drawn;
+    * an anchor that is itself an added step waits for that step to be placed;
+    * anything else — a dated point that moved, a phase of a pattern the file no
+      longer reads against, a loop — falls back to the step's own date among
+      the dated items, and an undated step to the end.
+
+    Deterministic and read-only: the stored anchor stays as the person left it.
+    """
+    if not added:
+        return
+    order = [node.key for node in rail.nodes] if rail is not None else []
+    pending = list(added)
+    while pending:
+        waiting = {row.rail_key for row in pending}
+        progressed = False
+        for row in list(pending):
+            index = _anchor_index(steps, row, order, waiting)
+            if index is None:
+                continue
+            steps.insert(index, _added_step(row, today))
+            pending.remove(row)
+            waiting.discard(row.rail_key)
+            progressed = True
+        if not progressed:
+            # A loop — two steps each placed after the other. The date decides.
+            for row in pending:
+                steps.insert(_fallback_index(steps, row), _added_step(row, today))
+            break
+    _state_undated_added_steps(steps)
+
+
+def _anchor_index(
+    steps: list[RailStep], row: Any, order: list[str], waiting: set[str]
+) -> int | None:
+    """Where ``row`` goes now, or ``None`` while its anchor is still to be placed."""
+    anchor = row.after_key
+    if anchor == "":
+        return 0
+    if anchor != row.rail_key:
+        for index, placed in enumerate(steps):
+            if placed.key == anchor:
+                return index + 1
+        if anchor in waiting:
+            return None
+    if anchor in order:
+        # A phase of this pattern that is not drawn: where it would have been.
+        drawn = {placed.key: index for index, placed in enumerate(steps) if placed.is_phase}
+        position = order.index(anchor)
+        for later in order[position + 1 :]:
+            if later in drawn:
+                return drawn[later]
+        for earlier in reversed(order[:position]):
+            if earlier in drawn:
+                return drawn[earlier] + 1
+    return _fallback_index(steps, row)
+
+
+def _fallback_index(steps: list[RailStep], row: Any) -> int:
+    """An added step whose anchor is gone: by its date, or at the end."""
+    if row.occurs_on is None:
+        return len(steps)
+    return _slot_for(steps, row.occurs_on, (0, len(steps)), len(steps))
+
+
+def _added_step(row: Any, today: date) -> RailStep:
+    """One added `MatterTimelineStep`, as the rail draws it.
+
+    A dated step reads against today exactly as a dated point does. An undated
+    one is given its state once every step is placed, by where it sits
+    (`_state_undated_added_steps`).
+    """
+    when = row.occurs_on
+    if when is None:
+        state = STATE_POSSIBLE
+    elif when < today:
+        state = STATE_REACHED
+    elif when == today:
+        state = STATE_TODAY
+    else:
+        state = STATE_AHEAD
+    return RailStep(
+        key=row.rail_key,
+        label=row.title,
+        kind=KIND_STEP,
+        state=state,
+        display_date=row.display_date,
+        sort_on=when,
+    )
+
+
+def _state_undated_added_steps(steps: list[RailStep]) -> None:
+    """An undated added step reads recorded behind the file's position, possible after.
+
+    The position is the current phase, or — on a rail with none — just past the
+    last dated item already behind us. A person put the step there, and a step
+    placed behind where the file stands is one they are saying happened; nothing
+    about it is inferred beyond the place they chose.
+    """
+    position = next(
+        (index for index, step in enumerate(steps) if step.state == STATE_CURRENT), None
+    )
+    if position is None:
+        position = max(
+            (
+                index + 1
+                for index, step in enumerate(steps)
+                if step.state in _REACHED_STATES and step.sort_on is not None
+            ),
+            default=0,
+        )
+    for index, step in enumerate(steps):
+        if step.kind == KIND_STEP and step.sort_on is None:
+            steps[index] = replace(
+                step, state=STATE_RECORDED if index < position else STATE_POSSIBLE
+            )
 
 
 def _one_backbone(steps: list[RailStep], today: date) -> list[RailStep]:
@@ -901,12 +1152,7 @@ def _one_backbone(steps: list[RailStep], today: date) -> list[RailStep]:
     if not steps:
         return steps
     current = next((index for index, step in enumerate(steps) if step.state == STATE_CURRENT), None)
-    reached = [
-        index
-        for index, step in enumerate(steps)
-        if (step.is_phase and step.state in (STATE_CURRENT, STATE_RECORDED))
-        or (not step.is_phase and step.state in (STATE_REACHED, STATE_TODAY))
-    ]
+    reached = [index for index, step in enumerate(steps) if step.state in _REACHED_STATES]
     if not reached:
         return [replace(step, reach=0.0) for step in steps]
     # A `Kirjas` phase to the right of `Praegu` — a file that went back — keeps
@@ -1066,6 +1312,7 @@ def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], defaul
 __all__ = [
     "KIND_MILESTONE",
     "KIND_PHASE",
+    "KIND_STEP",
     "KODA_STOPPED_LABEL",
     "STATE_CURRENT",
     "STATE_LABELS",

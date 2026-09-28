@@ -2575,6 +2575,12 @@ class MatterProceduralDevelopment(VisibilityInheritingModel, RemovableRecord):
         return self.occurred_on is not None and is_approximate(self.occurred_on_precision)
 
 
+#: How long an added step's name may be. A rail column is about 150px wide and
+#: the name is a label on it, not a sentence: «Komisjoni istung», «Teine
+#: kooskõlastusring». What happened in detail is `Teema käik`'s to say.
+TIMELINE_STEP_TITLE_MAX_LENGTH = 120
+
+
 class MatterTimelineStepQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> MatterTimelineStepQuerySet:
         """The only supported entry point for reading timeline steps."""
@@ -2623,6 +2629,23 @@ class MatterTimelineStep(VisibilityInheritingModel):
     **It creates no work.** Hiding a phase makes no Matter late; a date here is
     not a `NextAction`, not an `Oluline tähtaeg` and not a deadline anybody is
     measured against. It is a note on a roadmap (docs/adr/0078 §3).
+
+    Two kinds of row (docs/adr/0119)
+    --------------------------------
+    * **A phase row** — ``phase_key`` names one of the pattern's phases and
+      ``title`` is empty. What is described above, unchanged.
+    * **An added step** — ``phase_key`` is empty and ``title`` is what a person
+      typed: a step the pattern did not draw on this file, `+ Lisa samm`. It has
+      a date or not, at the precision it is known to, and a place on the rail
+      that is *stated* rather than derived: ``after_key`` names the rail item it
+      follows. Titles repeat freely — a second `Kooskõlastusring` is a second
+      row, never a collision.
+
+    An added step is the one kind of row here that can record something which
+    already happened, and it is still not a chronology source: `Teema käik`
+    stays the record of acts, and a step on the rail is what a person put on the
+    rail. It is never hidden; taking it off is deleting the row, and the audit
+    event keeps what it said.
     """
 
     matter = models.ForeignKey(
@@ -2633,8 +2656,26 @@ class MatterTimelineStep(VisibilityInheritingModel):
     )
     #: Which phase this row is about. A code-managed key, never a label — the
     #: reviewed vocabulary has been reworded before without a key moving
-    #: (`app/matters/process_phases.py`).
-    phase_key = models.CharField(max_length=32, verbose_name="etapp")
+    #: (`app/matters/process_phases.py`). Empty on an added step.
+    phase_key = models.CharField(max_length=32, blank=True, verbose_name="etapp")
+    #: An added step's name, in the person's own words. Empty on a phase row,
+    #: whose name is the vocabulary's.
+    #: A database default as well as a Python one: the release still serving
+    #: while this column is added inserts phase rows without naming it.
+    title = models.CharField(
+        max_length=TIMELINE_STEP_TITLE_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="nimetus",
+    )
+    #: Where an added step sits: the rail key of the item it follows, or ``""``
+    #: for the start of the rail. A stated place rather than a derived one — a
+    #: person put it there — and an anchor that is no longer drawn never drops
+    #: the step (`app/matters/legal_process.py` `_place_added_steps`).
+    after_key = models.CharField(
+        max_length=80, blank=True, default="", db_default="", verbose_name="asukoht"
+    )
     #: Whether the lawyer took this phase off *this* file's rail.
     #:
     #: Hidden, never deleted, and never hidden by default: the pattern still
@@ -2674,17 +2715,30 @@ class MatterTimelineStep(VisibilityInheritingModel):
     class Meta:
         verbose_name = "menetluse kulu samm"
         verbose_name_plural = "menetluse kulu sammud"
-        ordering = ["phase_key"]
+        ordering = ["phase_key", "created_at"]
         constraints = [
             # One row per phase per Matter. The editor writes with
             # `update_or_create`, so a second row would be a second answer to a
-            # question that has one.
+            # question that has one. Added steps are exempt: two
+            # `Kooskõlastusring` rounds are two rows (docs/adr/0119).
             models.UniqueConstraint(
-                fields=["matter", "phase_key"], name="matters_timeline_step_unique"
+                fields=["matter", "phase_key"],
+                condition=~models.Q(phase_key=""),
+                name="matters_timeline_step_unique",
             ),
+            # Exactly one kind per row: a phase from the vocabulary with no
+            # title of its own, or an added step with a title and no phase.
             models.CheckConstraint(
-                condition=models.Q(phase_key__in=PHASE_KEYS),
+                condition=(
+                    (models.Q(phase_key__in=PHASE_KEYS) & models.Q(title=""))
+                    | (models.Q(phase_key="") & ~models.Q(title=""))
+                ),
                 name="matters_timeline_step_phase_vocabulary",
+            ),
+            # An added step is never hidden: taking it off deletes it.
+            models.CheckConstraint(
+                condition=~models.Q(phase_key="") | models.Q(hidden=False),
+                name="matters_timeline_step_added_is_shown",
             ),
             models.CheckConstraint(
                 condition=models.Q(occurs_on_precision__in=DatePrecision.values),
@@ -2709,7 +2763,20 @@ class MatterTimelineStep(VisibilityInheritingModel):
         ]
 
     def __str__(self) -> str:  # pragma: no cover - admin convenience
-        return f"{self.matter_id} · {self.phase_key}"
+        return f"{self.matter_id} · {self.phase_key or self.title}"
+
+    #: The prefix of an added step's key on the rail.
+    ADDED_KEY_PREFIX = "samm:"
+
+    @property
+    def is_added(self) -> bool:
+        """An added step (`+ Lisa samm`) rather than a phase row."""
+        return not self.phase_key
+
+    @property
+    def rail_key(self) -> str:
+        """This row's key on the rail: the phase key, or ``samm:<id>``."""
+        return self.phase_key or f"{self.ADDED_KEY_PREFIX}{self.pk}"
 
     @property
     def display_date(self) -> str:

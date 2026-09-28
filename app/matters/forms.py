@@ -6241,6 +6241,24 @@ class KodaOpinionForm(forms.Form):
         return clean_typed_organisation_name(self.cleaned_data.get("recipient_name"))
 
 
+class _AnchorField(forms.ChoiceField):
+    """`Asukoht` — a select of what is drawn now, accepting any rail key back.
+
+    The options are the rail as the panel saw it, and the rail can move before
+    the save arrives: a `Koja arvamus` recorded meanwhile adds an item, one
+    corrected changes its key. Refusing the save for that would lose what the
+    person typed over something they did not do. An anchor that names nothing
+    drawn is not an error anywhere — the rail places such a step by its date
+    (`app/matters/legal_process.py` `_place_added_steps`) — so any short key is
+    accepted, and the length is the column's.
+    """
+
+    widget = forms.Select(attrs={"class": "field__input"})
+
+    def valid_value(self, value: Any) -> bool:
+        return isinstance(value, str) and len(value) <= 80
+
+
 class TimelineStepsForm(forms.Form):
     """`Muuda kulgu` — which phases this file's rail shows, and when.
 
@@ -6261,6 +6279,13 @@ class TimelineStepsForm(forms.Form):
     shows the day and says where it comes from rather than offering a second
     place to type it. That is the whole of «reuse rather than duplicate»: the box
     exists only where there is nothing to reuse.
+
+    **And the steps the pattern did not draw** (docs/adr/0119). Each step a
+    person added carries its own name, `Täpsus` composer, place and `Eemalda`,
+    under a prefix of its own id; `+ Lisa samm` is one more such group under
+    ``uus``. These rows *are* per-record, unlike the phases — but they are the
+    Matter's own rows read through `visible_to`, so a crafted id still has
+    nowhere to land: a field that was never built is never cleaned.
     """
 
     use_required_attribute = False
@@ -6271,6 +6296,13 @@ class TimelineStepsForm(forms.Form):
     #: `required=False` for the reason every other revision field here gives.
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
 
+    #: The prefix of `+ Lisa samm`'s own fields.
+    NEW_PREFIX = "uus"
+    #: The prefix of one added step's fields, before its id.
+    ADDED_PREFIX = "samm"
+    #: What the position select calls the start of the rail.
+    START_LABEL = "Algusesse"
+
     def __init__(
         self,
         *args: Any,
@@ -6279,6 +6311,9 @@ class TimelineStepsForm(forms.Form):
         current_phase: str = "",
         anchored: Any = None,
         revision: str = "",
+        added: Any = None,
+        positions: Any = None,
+        placed_after: Any = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("auto_id", "id_kulg_%s")
@@ -6286,6 +6321,18 @@ class TimelineStepsForm(forms.Form):
             kwargs.setdefault("initial", {})
             kwargs["initial"] = {**kwargs["initial"], "revision": revision}
         super().__init__(*args, **kwargs)
+        #: The steps a person added to this file's rail, in the order the
+        #: rail reads them (docs/adr/0119).
+        self.added = list(added or ())
+        #: Every item drawn on the rail now, as ``(key, label)`` in its order —
+        #: what `Asukoht` offers to place a step after.
+        self.positions = list(positions or ())
+        #: Which item each added step follows *as drawn*, by its rail key. The
+        #: stored anchor can name something no longer drawn; the select opens
+        #: on what the person sees, and a save that leaves it alone keeps the
+        #: stored one (`added_steps`).
+        self.placed_after = dict(placed_after or {})
+        self._add_step_fields()
         #: The pattern's nodes, in its own order. Empty when the file is read
         #: against no procedure, and the panel then has nothing to offer.
         self.nodes = list(phases.pattern.nodes) if phases and phases.pattern else []
@@ -6327,6 +6374,123 @@ class TimelineStepsForm(forms.Form):
                 widget=EstonianDateInput(),
                 initial=row.occurs_on if row is not None else None,
             )
+
+    def _position_choices(self, *, without: str = "") -> list[tuple[str, str]]:
+        """`Asukoht`'s options: the start, then «pärast» every drawn item."""
+        return [
+            ("", self.START_LABEL),
+            *((key, f"Pärast: {label}") for key, label in self.positions if key != without),
+        ]
+
+    def _add_step_fields(self) -> None:
+        """The fields for each added step, and for `+ Lisa samm`.
+
+        **The shared `Täpsus` composer, one per step** — `_precision_fields`
+        under the step's own prefix, so a quarter stated here is the same
+        stored period as a quarter stated anywhere else (docs/adr/0079 §1).
+        """
+        from app.matters.models import TIMELINE_STEP_TITLE_MAX_LENGTH
+
+        for row in self.added:
+            prefix = self._prefix_for(row)
+            self.fields[f"{prefix}__title"] = forms.CharField(
+                label="Nimetus",
+                max_length=TIMELINE_STEP_TITLE_MAX_LENGTH,
+                required=False,
+                initial=row.title,
+                widget=forms.TextInput(
+                    attrs={"class": "field__input", "list": "kulg-sammud", "autocomplete": "off"}
+                ),
+            )
+            group = _precision_fields(prefix, date_label="Kuupäev")
+            for name, value in period_initial(
+                prefix, row.occurs_on, row.occurs_on_precision
+            ).items():
+                group[name].initial = value
+            self.fields.update(group)
+            self.fields[f"{prefix}__after"] = _AnchorField(
+                label="Asukoht",
+                required=False,
+                choices=self._position_choices(without=row.rail_key),
+                initial=self.placed_after.get(row.rail_key, row.after_key),
+            )
+            self.fields[f"{prefix}__remove"] = forms.BooleanField(label="Eemalda", required=False)
+
+        new = self.NEW_PREFIX
+        self.fields[f"{new}__title"] = forms.CharField(
+            label="Nimetus",
+            max_length=TIMELINE_STEP_TITLE_MAX_LENGTH,
+            required=False,
+            widget=forms.TextInput(
+                attrs={"class": "field__input", "list": "kulg-sammud", "autocomplete": "off"}
+            ),
+        )
+        self.fields.update(_precision_fields(new, date_label="Kuupäev"))
+        # At the end of the rail unless somebody says otherwise: the one place
+        # that is never between two things the person did not mean to separate.
+        self.fields[f"{new}__after"] = _AnchorField(
+            label="Asukoht",
+            required=False,
+            choices=self._position_choices(),
+            initial=self.positions[-1][0] if self.positions else "",
+        )
+
+    def _prefix_for(self, row: Any) -> str:
+        return f"{self.ADDED_PREFIX}{row.pk.hex}"
+
+    @property
+    def added_rows(self) -> list[dict[str, Any]]:
+        """What the template draws for each added step."""
+        drawn: list[dict[str, Any]] = []
+        for row in self.added:
+            prefix = self._prefix_for(row)
+            drawn.append(
+                self._composer(prefix)
+                | {
+                    "row": row,
+                    "title": row.title,
+                    "display_date": row.display_date,
+                    "title_field": self[f"{prefix}__title"],
+                    "after_field": self[f"{prefix}__after"],
+                    "remove_field": self[f"{prefix}__remove"],
+                    "has_errors": any(
+                        name.startswith(prefix) for name in (self.errors if self.is_bound else {})
+                    ),
+                }
+            )
+        return drawn
+
+    @property
+    def new_step(self) -> dict[str, Any]:
+        """What the template draws for `+ Lisa samm`."""
+        new = self.NEW_PREFIX
+        return self._composer(new) | {
+            "title_field": self[f"{new}__title"],
+            "after_field": self[f"{new}__after"],
+            "open": self.is_bound and any(name.startswith(new) for name in self.errors),
+        }
+
+    def _composer(self, prefix: str) -> dict[str, Any]:
+        return {
+            "chips": _precision_chips(self, f"{prefix}_precision"),
+            "date_field": self[f"{prefix}_date"],
+            "month_field": self[f"{prefix}_month"],
+            "quarter_field": self[f"{prefix}_quarter"],
+            "year_field": self[f"{prefix}_year"],
+        }
+
+    @property
+    def title_suggestions(self) -> list[str]:
+        """The phase vocabulary, offered as a datalist and never enforced.
+
+        A standard step is typed the standard way when somebody wants it — `VTK`
+        on a `Määrus` file whose pattern has none — and anything else is
+        accepted as typed: `Komisjoni istung`, a second `Kooskõlastusring`
+        (docs/adr/0119 §1).
+        """
+        from app.matters.process_phases import PHASES
+
+        return [phase.label for phase in PHASES]
 
     #: Why a phase cannot be taken off this file's rail, in the panel's words.
     CURRENT_PHASE_REASON = "praegune etapp"
@@ -6390,7 +6554,100 @@ class TimelineStepsForm(forms.Form):
                     break
             else:
                 seen.append((node.label, when))
+        self._clean_added_steps(cleaned)
         return cleaned
+
+    def _clean_added_steps(self, cleaned: dict[str, Any]) -> None:
+        """Each added step needs a name, and a period it can build.
+
+        A new step with nothing typed is no step at all and adds nothing. One
+        with a date but no name is refused on the name, because a rail column
+        with a date under no label says nothing a reader can use.
+
+        The periods are built here, once, through `_period_anchor` — the same
+        normalisation every other composer on the product goes through — and
+        a half-stated one is refused on the control it belongs to.
+        """
+        self._periods: dict[str, tuple[Any, str]] = {}
+        anchors: dict[str, str] = {}
+        for row in self.added:
+            prefix = self._prefix_for(row)
+            if cleaned.get(f"{prefix}__remove"):
+                continue
+            if not (cleaned.get(f"{prefix}__title") or "").strip():
+                self.add_error(f"{prefix}__title", "Sammul peab olema nimetus.")
+            self._periods[prefix] = self._period(prefix)
+            anchors[row.rail_key] = cleaned.get(f"{prefix}__after") or ""
+
+        new = self.NEW_PREFIX
+        title = (cleaned.get(f"{new}__title") or "").strip()
+        period = self._period(new)
+        if title:
+            self._periods[new] = period
+        elif period[0] is not None:
+            self.add_error(f"{new}__title", "Sammul peab olema nimetus.")
+
+        # **A step cannot follow itself**, however many steps round. Two
+        # added steps each placed after the other would draw wherever the
+        # fallback put them, which is neither place anybody chose.
+        for key in anchors:
+            seen = {key}
+            anchor = anchors[key]
+            while anchor in anchors:
+                if anchor in seen:
+                    row = next(one for one in self.added if one.rail_key == key)
+                    self.add_error(
+                        f"{self._prefix_for(row)}__after",
+                        "Samm ei saa asuda iseenda järel.",
+                    )
+                    break
+                seen.add(anchor)
+                anchor = anchors[anchor]
+
+    def _period(self, prefix: str) -> tuple[Any, str]:
+        anchor, _end, precision = _period_anchor(self, prefix)
+        if anchor is None:
+            return None, DatePrecision.EXACT.value
+        return anchor, precision
+
+    def added_steps(self) -> list[tuple[Any, str, Any, str, str, bool]]:
+        """The cleaned added steps, as `set_timeline_steps` takes them.
+
+        ``(step_id, title, occurs_on, precision, after_key, remove)`` — one per
+        added step the panel showed, and one more with ``step_id=None`` when
+        `+ Lisa samm` was filled in.
+
+        **An untouched `Asukoht` keeps the stored anchor.** The select opens on
+        the item the step follows *as drawn*, which differs from the stored one
+        when that anchor is no longer on the rail; saving the panel for some
+        other reason must not quietly re-anchor the step.
+        """
+        answers: list[tuple[Any, str, Any, str, str, bool]] = []
+        for row in self.added:
+            prefix = self._prefix_for(row)
+            if self.cleaned_data.get(f"{prefix}__remove"):
+                answers.append((row.pk, row.title, None, DatePrecision.EXACT.value, "", True))
+                continue
+            after = self.cleaned_data.get(f"{prefix}__after") or ""
+            if after == self.placed_after.get(row.rail_key, row.after_key):
+                after = row.after_key
+            when, precision = self._periods[prefix]
+            title = (self.cleaned_data.get(f"{prefix}__title") or "").strip()
+            answers.append((row.pk, title, when, precision, after, False))
+        new = self.NEW_PREFIX
+        if new in self._periods:
+            when, precision = self._periods[new]
+            answers.append(
+                (
+                    None,
+                    (self.cleaned_data.get(f"{new}__title") or "").strip(),
+                    when,
+                    precision,
+                    self.cleaned_data.get(f"{new}__after") or "",
+                    False,
+                )
+            )
+        return answers
 
     def steps(self) -> list[tuple[str, bool, Any, str]]:
         """The cleaned answers, as `set_timeline_steps` takes them.

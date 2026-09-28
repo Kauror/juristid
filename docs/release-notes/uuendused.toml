@@ -19,11 +19,19 @@ basis = "deployment"
 # Sama päeva teine väljalase (#343): sisselogimise lehe pealkiri on
 # «Õigusloome töölaud» ning sissejuhatav lõik ja jagatud parooli selgitus on
 # eemaldatud. Autentimine ei muutunud.
-prs = [342, 343]
+#
+# Kolmas (#344): menetluse kulule saab «Muuda» paneelis lisada oma samme
+# («+ Lisa samm») — nimi, kuupäev tavalise täpsusega ja koht rajal. «Muuda» on
+# nüüd igal avatud teemal, ka siis, kui rajal veel midagi pole. Läbitud etapp
+# jääb rajale ka siis, kui see oli varem peidetud või kui teema õigusakti liik
+# muutus. Üks migratsioon (matters/0040), ADR 0119.
+prs = [342, 343, 344]
 changes = [
   "Koja arvamus lisatakse nüüd ainult teema lehel, «Lisa teemale» → «Koja arvamus», kus fail salvestatakse koos saatmise kuupäeva ja adressaatidega. «Dokumentide» vahelehel ei ole enam «Arvamused» plokki ega nuppe «+ Uus arvamus» ja «+ Registreeri saatmine», ning «Lae dokument» ei paku enam rolli «Arvamus».",
   "Saadetud arvamused on «Dokumentides» endiselt «Arvamus» ridadena näha, koos saatmise andmete, parandamise ja tagasivõtmisega; varem lisatud arvamusi ja faile ei muudetud.",
   "Sisselogimise lehel on nüüd ainult pealkiri «Õigusloome töölaud» ja parooli väli; selgitavad tekstid lehelt eemaldati.",
+  "Menetluse kulule saab nüüd ise samme lisada: «Muuda» → «+ Lisa samm», kus annad sammule nime, kuupäeva (päev, kuu, kvartal või aasta) ja koha rajal. Sama nimega samme võib olla mitu, lisatud sammu saab hiljem parandada või eemaldada ning «Muuda» on olemas ka teemal, mille rajal veel midagi ei ole.",
+  "Etapi eemaldamine võtab rajalt ainult selle etapi. Etapp, kuhu teema on jõudnud või mis on kirja pandud, jääb rajale ka siis, kui see oli varem peidetud või kui teema õigusakti liik hiljem muutus.",
 ]
 
 [[day]]

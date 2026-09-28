@@ -4561,13 +4561,21 @@ def timeline_steps_revision_token(matter: Matter) -> str:
 
     rows = (
         MatterTimelineStep.objects.filter(matter=matter)
-        .order_by("phase_key")
-        .values_list("phase_key", "hidden", "occurs_on", "occurs_on_precision")
+        .order_by("phase_key", "id")
+        .values_list(
+            "id", "phase_key", "hidden", "occurs_on", "occurs_on_precision", "title", "after_key"
+        )
     )
-    state = "\n".join(
-        f"{phase_key}|{int(hidden)}|{occurs_on.isoformat() if occurs_on else ''}|{precision}"
-        for phase_key, hidden, occurs_on, precision in rows
-    )
+    lines: list[str] = []
+    for pk, phase_key, hidden, occurs_on, precision, title, after_key in rows:
+        day = occurs_on.isoformat() if occurs_on else ""
+        if phase_key:
+            lines.append(f"{phase_key}|{int(hidden)}|{day}|{precision}")
+        else:
+            # An added step. Its own line shape, so a file with none keeps the
+            # token it had before added steps existed (docs/adr/0119).
+            lines.append(f"samm:{pk}|{title}|{day}|{precision}|{after_key}")
+    state = "\n".join(lines)
     return hashlib.sha256(state.encode("utf-8")).hexdigest()
 
 
@@ -4576,10 +4584,19 @@ def set_timeline_steps(
     *,
     matter: Matter,
     steps: Any,
+    added: Any = (),
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> int:
     """`Muuda kulgu` — which phases this file's rail shows, and when.
+
+    ``added`` is an iterable of ``(step_id, title, occurs_on, precision,
+    after_key, remove)`` — the steps a person added to the rail (docs/adr/0119).
+    ``step_id=None`` creates one; an id names an added step of *this* Matter,
+    and one that is not there is skipped rather than guessed at; ``remove``
+    deletes it, and the audit event keeps its name. A phase row is never
+    reached through ``added``, and an added step never through ``steps``: the
+    two kinds cannot be confused by a crafted value.
 
     ``steps`` is an iterable of ``(phase_key, hidden, occurs_on, precision)``,
     one per phase the panel offered. The panel offers the pattern's own phases
@@ -4611,12 +4628,11 @@ def set_timeline_steps(
     # token is not a conflict, for the reason given there.
     if expected_revision and timeline_steps_revision_token(locked_matter) != expected_revision:
         raise TimelineStepsConflict(TIMELINE_STEPS_CONFLICT)
-    existing = {
-        row.phase_key: row
-        for row in MatterTimelineStep.objects.select_for_update(no_key=True).filter(
-            matter=locked_matter
-        )
-    }
+    locked_rows = list(
+        MatterTimelineStep.objects.select_for_update(no_key=True).filter(matter=locked_matter)
+    )
+    existing = {row.phase_key: row for row in locked_rows if not row.is_added}
+    existing_added = {str(row.pk): row for row in locked_rows if row.is_added}
     changed: list[str] = []
     for phase_key, hidden, occurs_on, precision in steps:
         if phase_key not in PHASE_KEYS:
@@ -4648,19 +4664,115 @@ def set_timeline_steps(
         )
         changed.append(phase_key)
 
-    if not changed:
+    step_changes = _apply_added_steps(
+        matter=locked_matter, answers=added, existing=existing_added, actor=actor
+    )
+
+    if not changed and not step_changes:
         # Nothing moved, so nothing is recorded. An audit row for a save that
         # changed no value would be a history of somebody pressing a button.
         return 0
+    payload: dict[str, Any] = {"phases": sorted(changed)}
+    if step_changes:
+        # What each added step was called when it changed — so a removed one
+        # is still named in `Kõik muudatused` after its row is gone.
+        payload["steps"] = step_changes
+    summary = [*sorted(changed), *(f"{one['change']}: {one['title']}" for one in step_changes)]
     record_change_event(
         event_type=ChangeEventType.TIMELINE_STEPS_CHANGED,
         matter=locked_matter,
         actor=actor,
         obj=locked_matter,
-        summary=", ".join(sorted(changed))[:200],
-        payload={"phases": sorted(changed)},
+        summary=", ".join(summary)[:200],
+        payload=payload,
     )
-    return len(changed)
+    return len(changed) + len(step_changes)
+
+
+#: The words an added step's audit line uses for what happened to it.
+ADDED_STEP_ADDED = "lisatud"
+ADDED_STEP_CHANGED = "muudetud"
+ADDED_STEP_REMOVED = "eemaldatud"
+
+
+def _apply_added_steps(
+    *, matter: Matter, answers: Any, existing: dict[str, Any], actor: Any
+) -> list[dict[str, str]]:
+    """Create, correct and delete the steps a person added to the rail.
+
+    Runs inside `set_timeline_steps`, under the Matter's row lock and after its
+    revision check, so the whole panel is one save. Returns one line per step
+    that actually changed, for the audit payload.
+
+    **Deleted, not hidden.** An added step is not the pattern's, so there is no
+    default for it to fall back to: taking it off is taking it out. The row goes;
+    the audit event keeps what it was called (docs/adr/0119 §5).
+
+    **Nothing else moves** — the same promise the phase rows make. An added step
+    is not a `Menetluse areng`, not a deadline and not work.
+    """
+    from app.matters.models import TIMELINE_STEP_TITLE_MAX_LENGTH, MatterTimelineStep
+
+    changes: list[dict[str, str]] = []
+    for step_id, title, occurs_on, precision, after_key, remove in answers:
+        row = existing.get(str(step_id)) if step_id is not None else None
+        if step_id is not None and row is None:
+            # Not an added step of this Matter — gone meanwhile, or crafted.
+            continue
+        if remove:
+            if row is not None:
+                changes.append(
+                    {"change": ADDED_STEP_REMOVED, "title": row.title, "step": str(row.pk)}
+                )
+                row.delete()
+            continue
+        clean_title = (title or "").strip()
+        if not clean_title:
+            raise DomainError("Sammul peab olema nimetus.")
+        if len(clean_title) > TIMELINE_STEP_TITLE_MAX_LENGTH:
+            raise DomainError(
+                f"Sammu nimetus võib olla kuni {TIMELINE_STEP_TITLE_MAX_LENGTH} märki."
+            )
+        clean_precision = _development_precision(occurs_on, precision)
+        anchor = (after_key or "")[:80]
+        if row is None:
+            created = MatterTimelineStep.objects.create(
+                matter=matter,
+                phase_key="",
+                title=clean_title,
+                occurs_on=occurs_on,
+                occurs_on_precision=clean_precision,
+                after_key=anchor,
+                updated_by=actor,
+            )
+            changes.append(
+                {"change": ADDED_STEP_ADDED, "title": clean_title, "step": str(created.pk)}
+            )
+            continue
+        if (
+            row.title == clean_title
+            and row.occurs_on == occurs_on
+            and row.occurs_on_precision == clean_precision
+            and row.after_key == anchor
+        ):
+            continue
+        row.title = clean_title
+        row.occurs_on = occurs_on
+        row.occurs_on_precision = clean_precision
+        row.after_key = anchor
+        row.updated_by = actor
+        row.save(
+            update_fields=[
+                "title",
+                "occurs_on",
+                "occurs_on_precision",
+                "after_key",
+                "updated_by",
+                "updated_at",
+            ]
+        )
+        changes.append({"change": ADDED_STEP_CHANGED, "title": clean_title, "step": str(row.pk)})
+    return changes
 
 
 def record_procedural_development_document(

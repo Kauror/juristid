@@ -7446,10 +7446,28 @@ def _timeline_steps_form(
     from app.matters.models import MatterTimelineStep
 
     phases = legal_process.phase_context(matter=matter)
-    rows = {
-        row.phase_key: row
-        for row in MatterTimelineStep.objects.filter(matter=matter).visible_to(request.user)
+    visible = list(
+        MatterTimelineStep.objects.filter(matter=matter)
+        .visible_to(request.user)
+        .order_by("created_at", "id")
+    )
+    rows = {row.phase_key: row for row in visible if not row.is_added}
+    # **`+ Lisa samm` places a step after something the person can see**, so the
+    # panel reads the rail exactly as the page draws it — the same three reads,
+    # the same merge — and offers its items, in its order (docs/adr/0119 §2).
+    drawn = matter_rail(
+        matter=matter,
+        user=request.user,
+        rail=legal_process_rail(matter=matter, user=request.user, context=phases),
+        milestones=process_steps(matter=matter, user=request.user),
+    )
+    placed_after = {
+        step.key: (drawn[index - 1].key if index else "")
+        for index, step in enumerate(drawn)
+        if step.kind == legal_process.KIND_STEP
     }
+    by_key = {row.rail_key: row for row in visible if row.is_added}
+    added = [by_key[step.key] for step in drawn if step.key in by_key]
     return TimelineStepsForm(
         data,
         phases=phases,
@@ -7457,6 +7475,9 @@ def _timeline_steps_form(
         current_phase=phases.current_phase,
         anchored=legal_process.anchored_phase_keys(matter=matter, user=request.user),
         revision=timeline_steps_revision_token(matter),
+        added=added,
+        positions=[(step.key, f"{step.label} {step.display_date}".strip()) for step in drawn],
+        placed_after=placed_after,
     )
 
 
@@ -7594,6 +7615,7 @@ def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
         set_timeline_steps(
             matter=matter,
             steps=form.steps(),
+            added=form.added_steps(),
             actor=request.user,
             # What the panel was opened on. Checked under the Matter's row lock
             # inside the service, so two panels open on the same rail cannot

@@ -1643,6 +1643,13 @@ def test_the_matter_page_does_not_explode_into_queries(
     drop and repeat rows, and it is flat in the population — the same single
     read on a file with twelve updates and on one with a thousand
     (`tests/test_timeline_pagination_walk.py`).
+
+    **Measured at 52 since docs/adr/0119**, on a file read against no
+    procedure, and the one it added is the phases the file recorded a step in.
+    A patterned file already reads them for its own rail; one with no pattern
+    now asks too, so a phase it went through before it lost its pattern stays
+    on the rail rather than vanishing with the field that changed. One read,
+    flat in the population.
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
@@ -1655,5 +1662,5 @@ def test_the_matter_page_does_not_explode_into_queries(
             actor=specialist,
         )
 
-    with django_assert_max_num_queries(51):
+    with django_assert_max_num_queries(52):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

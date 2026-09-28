@@ -2725,7 +2725,10 @@ def test_a_matter_with_nothing_on_it_renders_a_short_deliberate_page(signed_in, 
     # `Matter.created_at` — a fact about this database rather than about a
     # procedure (docs/adr/0100 §1).
     assert body.count('class="tl-step tl-step--') == 0
-    assert 'id="menetluse-kulg-heading"' not in body
+    # A writer on an open file gets `Muuda` and nothing else — the way in to
+    # `+ Lisa samm` — with no strip under it (docs/adr/0119 §1).
+    assert "lprail--empty" in body
+    assert 'class="tl-strip"' not in body
     assert "factspanel" not in body
     assert 'id="kaasamine"' not in body
 
