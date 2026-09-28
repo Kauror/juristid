@@ -15,10 +15,15 @@ basis = "deployment"
 # ei paku enam rolli «Arvamus». Olemasolevaid kirjeid ei muudetud; «Lõpetamata
 # arvamused» ilmub ainult siis, kui vanem mustand või registreerimata
 # arvamusfail tõesti ootab — tootmises neid väljalaske ajal ei olnud.
-prs = [342]
+#
+# Sama päeva teine väljalase (#343): sisselogimise lehe pealkiri on
+# «Õigusloome töölaud» ning sissejuhatav lõik ja jagatud parooli selgitus on
+# eemaldatud. Autentimine ei muutunud.
+prs = [342, 343]
 changes = [
   "Koja arvamus lisatakse nüüd ainult teema lehel, «Lisa teemale» → «Koja arvamus», kus fail salvestatakse koos saatmise kuupäeva ja adressaatidega. «Dokumentide» vahelehel ei ole enam «Arvamused» plokki ega nuppe «+ Uus arvamus» ja «+ Registreeri saatmine», ning «Lae dokument» ei paku enam rolli «Arvamus».",
   "Saadetud arvamused on «Dokumentides» endiselt «Arvamus» ridadena näha, koos saatmise andmete, parandamise ja tagasivõtmisega; varem lisatud arvamusi ja faile ei muudetud.",
+  "Sisselogimise lehel on nüüd ainult pealkiri «Õigusloome töölaud» ja parooli väli; selgitavad tekstid lehelt eemaldati.",
 ]
 
 [[day]]
