@@ -88,6 +88,41 @@ def test_the_gate_page_leaks_no_data(client, gate_url):
     assert "Vali kasutaja" not in body
 
 
+REMOVED_GATE_COPY = (
+    "Koja õigusloome",
+    "See rakendus sisaldab Koja tööd eelnõudega",
+    "Sisenemiseks on vaja osakonna jagatud parooli",
+    "Jagatud parool on ajutine arendusaegne lahendus",
+    "Isikupõhine autentimine lisandub hiljem",
+)
+
+
+def test_the_gate_page_is_a_heading_and_the_password_form(client, gate_url):
+    """`Õigusloome töölaud`, then the form: no explanatory copy around it.
+
+    Checked on the first visit and on the re-rendered refusal, because both
+    come from the same template and a wrong password must not bring the old
+    paragraphs back.
+    """
+    first = client.get(gate_url)
+    refused = client.post(gate_url, {"password": "vale"})
+    assert (first.status_code, refused.status_code) == (200, 400)
+
+    for response in (first, refused):
+        body = response.content.decode()
+        assert "<h1>Õigusloome töölaud</h1>" in body
+        for removed in REMOVED_GATE_COPY:
+            assert removed not in body
+        assert '<span class="field__label">Parool</span>' in body
+        assert 'type="password"' in body
+        assert 'name="password"' in body
+        assert ">Sisene</button>" in body
+
+    passed = client.post(gate_url, {"password": PASSWORD})
+    assert passed.status_code == 302
+    assert shared_gate.has_passed(passed.wsgi_request)
+
+
 def test_the_health_check_answers_without_the_password(client):
     """The container runtime is not a person and cannot type a password."""
     assert client.get("/healthz").status_code == 200
