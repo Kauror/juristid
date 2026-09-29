@@ -8,6 +8,24 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-29
+basis = "deployment"
+# Omaniku kasutajapoolse testi (29.09) parandused, üks väljalase, ADR 0120.
+# Kaks aditiivset migratsiooni: documents/0012 (dokumendi eemaldamise veerud)
+# ja audit/0030 (kaks uut muudatuse liiki). Ajajoone leiud (UQ-02…UQ-08,
+# UQ-14) on meelega järgmiseks korraks jäetud.
+prs = [345]
+changes = [
+  "«Praeguses tegevuses» ei ole enam lauset «Koja arvamus on saadetud. Menetlus võib jätkuda».",
+  "Kui teemal ei ole järgmist tegevust määratud, näidatakse «Praeguses tegevuses» järgmisena lähimat tulevast olulist tähtaega. Sama kehtib «Minu asjades» ja nimekirjas «Järgmise tegevuseta» — sellist teemat seal enam ei loeta.",
+  "«+ Kaasamine» küsib kohe ka «Tagasisidet ootame kuni». Väli on valikuline ja tühi; täidetuna algab tagasiside ootamine kohe, ilma teise muutmiseta.",
+  "«Minu asjades» on kuu, kvartali ja aasta täpsusega kuupäev kirjas sõnadega («oktoober 2026», «IV kvartal 2026», «2026»), mitte «10.26». Sellist rida ei panda «Sel nädalal» alla ainult seetõttu, et periood algab sel nädalal, ja päise arvud «üle tähtaja» ning «sel nädalal» loevad täpselt neid ridu, mis nende all on.",
+  "Dokumendi lehel saab nüüd lisada uue versiooni, muuta dokumendi liiki ja ekslikult lisatud dokumendi eemaldada. Varasemad versioonid ja muudatuste logi jäävad alles. Saadetud arvamuse faili ei saa eemaldada ega asendada — selleks võta arvamus kõigepealt tagasi.",
+  "«Võta tagasi» on nüüd ka Koja arvamuse real «Teema käigus» ning küsib enne kinnitust. Arvamus jääb ajalukku tagasivõetuna ja ei lähe enam arvestusse.",
+  "«Kustuta» on teema päises ainult siis, kui teemat saab tõesti kustutada. Muul juhul selgitab «Muuda teemat» leht, miks see ei ole võimalik.",
+]
+
+[[day]]
 date = 2026-09-28
 basis = "deployment"
 # «Dokumentide» vahelehe «Arvamused» plokk on eemaldatud (#342). Koja arvamuse

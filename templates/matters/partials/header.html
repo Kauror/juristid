@@ -85,9 +85,17 @@ rather than read.
         with it, what cannot be undone — and no `confirm()` or `hx-confirm`,
         because a browser dialog is one keystroke from dismissed and is not
         something the server can require (docs/adr/0096 §4).
+
+        **Only where the deletion plan has no blocker** (`can_delete`,
+        docs/adr/0120). A file carrying records whose history is kept for good
+        used to be offered this link and then told «Seda teemat ei saa
+        kustutada» one click later; an action that can only fail is not offered.
+        The route still refuses a blocked deletion on its own.
       {% endcomment %}
-      <a class="button button--quiet button--tiny matterhead__delete"
-         href="{% url 'matters:matter_delete' pk=matter.pk %}">Kustuta</a>
+      {% if can_delete %}
+        <a class="button button--quiet button--tiny matterhead__delete"
+           href="{% url 'matters:matter_delete' pk=matter.pk %}">Kustuta</a>
+      {% endif %}
       {% comment %}
         The ⋯ menu, for a Matter that has files.
 

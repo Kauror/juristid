@@ -109,6 +109,11 @@ def create_submission(
     return submission
 
 
+#: A document removed from its Matter is not evidence the Matter's opinion may
+#: stand on (docs/adr/0120).
+REMOVED_DOCUMENT_IS_NOT_EVIDENCE = "Teemalt eemaldatud dokumenti ei saa arvamuse tõendiks valida."
+
+
 def check_evidence_is_usable(
     *,
     submission: Submission,
@@ -138,6 +143,11 @@ def check_evidence_is_usable(
     document = version.document
     if document.matter_id != submission.matter_id:
         raise DomainError("Tõend peab kuuluma sama teema juurde.")
+    # **Not a file taken off the Matter** (docs/adr/0120). Asked of the row as
+    # it is now rather than of the instance the caller holds: removal and the
+    # binding both take the Matter's row lock, and this is read after it.
+    if type(document)._base_manager.filter(pk=document.pk, removed_at__isnull=False).exists():
+        raise DomainError(REMOVED_DOCUMENT_IS_NOT_EVIDENCE)
 
     if matter_visibility is None:
         matter_visibility = submission.matter.visibility

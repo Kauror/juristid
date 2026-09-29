@@ -174,13 +174,12 @@ def test_wait_is_never_late_on_the_page(client, specialist, today):
 
 
 def test_month_precision_is_printed_as_a_month(client, specialist, today):
-    """«09.26» on the page, and no day invented for it.
+    """«september 2026» on the page, and no day invented for it.
 
-    The cell used to print «september 2026» and now prints the month and the
-    year's last two digits. The unchanged half is the one this test is really
-    about: two numbers, never three, so nothing on the page can be read as the
-    first of the month. `display_date` still holds the long form for the
-    surfaces that have room for it.
+    The cell printed «09.26» for a while and prints the month in words again
+    since docs/adr/0120 (UQ-09): two numbers under a column of days read as a
+    day. The half this test is really about is unchanged: nothing on the page
+    can be read as the first of the month.
     """
     anchor = (today.replace(day=1) + timedelta(days=62)).replace(day=1)
     _, end = period_bounds(anchor, DatePrecision.MONTH)
@@ -202,8 +201,10 @@ def test_month_precision_is_printed_as_a_month(client, specialist, today):
         item for band in build_my_work(specialist, today=today).bands for item in band.items
     )
     compact = f"{anchor.month:02d}.{anchor.year % 100:02d}"
-    assert f">{compact}</span>" in body
+    assert f">{compact}</span>" not in body
     assert item.display_date == f"{ESTONIAN_MONTHS[anchor.month - 1]} {anchor.year}"
+    assert item.short_date == item.display_date
+    assert f">{item.display_date}</span>" in body
     assert f"01.{anchor.month:02d}.{anchor.year}" not in body
     assert item.is_approximate
     # A month-precise date never lands in a band headed by a number of days.
@@ -247,8 +248,16 @@ def test_count_matches_population(client, specialist, today):
 
     client.force_login(specialist)
     work = build_my_work(specialist, today=today)
+    bands = {band.key: band for band in work.bands}
 
     for figure in work.seis:
+        if figure.url.startswith("#"):
+            # «üle tähtaja» and «sel nädalal» open the band they count, on this
+            # page, since docs/adr/0120 §4: the list behind the number is that
+            # band's rows.
+            band = bands.get(figure.url[1:])
+            assert figure.value == (band.total if band else 0), figure.caption
+            continue
         listed = client.get(figure.url)
         assert listed.status_code == 200, figure.url
         assert listed.context["total"] == figure.value, figure.caption

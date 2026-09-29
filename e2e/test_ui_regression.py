@@ -327,6 +327,11 @@ CLOCK_DEPENDENT = [
     # comparison. What is painted is one small box per value.
     '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
     '.seis__figure:has(.seis__caption:text-is("tähtaeg sel nädalal")) .seis__number',
+    # Minu asjad's own week figure, captioned «sel nädalal» since docs/adr/0120:
+    # the total of the *Sel nädalal* band, which moves with the weekday for the
+    # reason the Osakond figure above does. It used to share that caption, and
+    # with it that mask.
+    '.seis__figure:has(.seis__caption:text-is("sel nädalal")) .seis__number',
     # ---- The v2 surfaces, found by walking the rendered DOM for text that
     # looks like a date or a day count and asking which selector already
     # covered it — the same method that found the three above, and the reason

@@ -144,25 +144,25 @@ def test_a_teema_filed_with_no_preparation_date_has_no_step(page, base_url):
 
 
 # ---------------------------------------------------------------------------
-# §2 — `+ Kaasamine` does not ask about a wait at all
+# §2 — `+ Kaasamine` asks about a wait, optionally (docs/adr/0120 §3)
 # ---------------------------------------------------------------------------
 
 
-def test_the_capture_panel_has_no_reply_by_question(page, base_url):
-    """Not an empty box — no box, no label, no spans.
+def test_the_capture_panel_asks_the_reply_by_date_empty(page, base_url):
+    """An empty box, no default and no spans.
 
-    docs/adr/0091 §2 narrows docs/adr/0086 §2 past its default: recording that
-    Koda asked somebody something is a completed act, and an empty reply-by box
-    is still a question a lawyer has to read, understand and skip on every round
-    they file. Opening a wait is `Ootan tagasisidet` on the round's own row.
+    docs/adr/0120 §3 narrows docs/adr/0091 §2: the reply-by date is asked again
+    so a round can be recorded as waiting in one save (UQ-10), but it opens empty
+    — a round recorded as a completed act acquires no wait — and the quick spans
+    stay with `Ootan tagasisidet` on the round's own row.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-kaasamine")
 
     form = panel(page, "lisa-kaasamine")
-    expect(form.locator("[name=feedback_deadline]")).to_have_count(0)
-    expect(form.get_by_text("Tagasisidet ootame kuni")).to_have_count(0)
+    expect(form.get_by_text("Tagasisidet ootame kuni")).to_be_visible()
+    expect(form.locator("[name=feedback_deadline]")).to_have_value("")
     expect(form.locator("[data-quickdate]")).to_have_count(0)
     # `Kaasamise kuupäev` above it is unchanged and still opens on today,
     # visibly — the one shape docs/adr/0078 §2 allows a date default to take.
@@ -409,6 +409,39 @@ def _record_koda_opinion(page, base_url: str, *, sent_on: str, summary: str = ""
     form.get_by_role("button", name="Registreeri arvamus").click()
 
 
+def test_a_sent_opinion_is_withdrawn_from_its_own_row_after_a_confirmation(page, base_url):
+    """UQ-11: `Võta tagasi` is on the opinion in `Teema käik` (docs/adr/0120 §6).
+
+    The chip opens a sentence saying what happens and a confirm button; `Loobu`
+    closes it again and writes nothing. Confirmed, the opinion stays on the file
+    as sent on its day, «Arvamus tagasi võetud» is added, and the chip is gone.
+    """
+    sign_in(page, base_url, SANDRA)
+    a_new_matter(page, base_url)
+    _record_koda_opinion(page, base_url, sent_on=_past(1))
+
+    row = chronology(page).locator("article.uxtl__item").filter(has_text="Arvamus välja").first
+    open_kaik_row(row)
+    chip = row.locator("summary", has_text="Võta tagasi")
+    expect(chip).to_be_visible()
+    chip.click()
+    confirm = row.get_by_role("button", name="Kinnita tagasivõtmine")
+    expect(confirm).to_be_visible()
+    expect(row).to_contain_text("midagi ei kustutata")
+
+    row.get_by_role("button", name="Loobu").click()
+    expect(confirm).to_be_hidden()
+    expect(chronology(page)).not_to_contain_text("Arvamus tagasi võetud")
+
+    chip.click()
+    confirm.click()
+    page.wait_for_load_state("load")
+
+    expect(chronology(page)).to_contain_text("Arvamus tagasi võetud")
+    expect(chronology(page)).to_contain_text("Arvamus välja")
+    expect(page.locator("summary", has_text="Võta tagasi")).to_have_count(0)
+
+
 def test_the_koda_opinion_panel_records_a_sent_opinion_on_the_teema(page, base_url):
     """The step the whole file is about, recorded where the work is.
 
@@ -556,36 +589,29 @@ def test_a_next_step_date_with_no_sentence_is_refused_on_the_sentence(page, base
     expect(chronology(page)).not_to_contain_text("Eelnõu jõudis Riigikokku")
 
 
-def test_after_a_sent_opinion_the_page_offers_the_continuation(page, base_url):
-    """The dead end, closed: a file whose opinion went out says so and says on.
+def test_after_a_sent_opinion_the_panel_says_only_that_no_step_is_set(page, base_url):
+    """The continuation sentence is retired (docs/adr/0120 §1).
 
-    Two anchors to controls that are already on the page — not a wizard, not a
-    suggested step, and nothing created (docs/adr/0091 §5.5).
+    The owner asked for «Koja arvamus on saadetud. Menetlus võib jätkuda — lisa
+    märge.» to go, with nothing in its place: the empty panel is one line.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     _record_koda_opinion(page, base_url, sent_on=_past(1))
 
     current = page.locator("#praegune-tegevus")
-    expect(current).to_contain_text("Menetlus võib jätkuda")
-    # One link where there were two. It read «lisa menetluse areng või järgmine
-    # tegevus» and pointed at two launcher chips; there is one chip now and the
-    # next action is a box inside it (docs/adr/0097 §6, §8.2).
-    link = current.get_by_role("link", name="lisa märge")
-    expect(link).to_be_visible()
-
-    # And the anchor reaches a control that is really there and really opens.
-    link.click()
-    open_add_panel(page, "marge-tavaline")
-    expect(panel(page, "marge-tavaline").locator("[name=title]")).to_be_visible()
+    expect(current).to_contain_text("Järgmine samm on määramata")
+    expect(current).not_to_contain_text("Menetlus võib jätkuda")
+    expect(current).not_to_contain_text("Koja arvamus on saadetud")
+    expect(current.get_by_role("link", name="lisa märge")).to_have_count(0)
 
 
-def test_the_continuation_is_absent_while_a_step_is_open(page, base_url):
-    """A file with a plan is not at a dead end and needs no sentence about it."""
+def test_a_step_set_after_the_opinion_takes_the_panel(page, base_url):
+    """A file with a plan shows the plan, and no sentence about a dead end."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     _record_koda_opinion(page, base_url, sent_on=_past(1))
-    expect(page.locator("#praegune-tegevus")).to_contain_text("Menetlus võib jätkuda")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
 
     open_add_panel(page, "marge-tavaline")
     form = panel(page, "marge-tavaline")
@@ -597,7 +623,7 @@ def test_the_continuation_is_absent_while_a_step_is_open(page, base_url):
 
     current = page.locator("#praegune-tegevus")
     current.get_by_text("Vaatan läbi").first.wait_for()
-    expect(current).not_to_contain_text("Menetlus võib jätkuda")
+    expect(current).not_to_contain_text("Järgmine samm on määramata")
 
 
 # ---------------------------------------------------------------------------
@@ -626,10 +652,10 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     open_add_panel(page, "lisa-kaasamine")
     kaasamine = panel(page, "lisa-kaasamine")
     kaasamine.locator("[name=audience]").fill("234 tööstusettevõtet")
-    # No reply-by question here at all, so filing the round is a completed act
-    # and the journey continues without anything landing on a desk
-    # (docs/adr/0091 §2).
-    expect(kaasamine.locator("[name=feedback_deadline]")).to_have_count(0)
+    # The reply-by box is empty and left so, so filing the round is a completed
+    # act and the journey continues without anything landing on a desk
+    # (docs/adr/0120 §3).
+    expect(kaasamine.locator("[name=feedback_deadline]")).to_have_value("")
     kaasamine.get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("234 tööstusettevõtet").first.wait_for()
 

@@ -15,11 +15,12 @@ people stop believing (master specification 18.8).
 
 from __future__ import annotations
 
-from django.db.models import Exists, OuterRef, QuerySet
+from django.db.models import QuerySet
 
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import RecordMode
 from app.matters.models import Entry, Matter
+from app.matters.next_step import without_next_step
 from app.matters.selectors import MISSING
 from app.matters.selectors import REVIEW_DUE as REVIEW_DUE_FILTER
 from app.reporting import metric_catalogue as keys
@@ -109,10 +110,10 @@ def active_without_next_action(context: ReportingContext) -> MetricResult:
     """
     spec = definition(keys.ACTIVE_WITHOUT_NEXT_ACTION)
     active = active_full_for(context, keys.ACTIVE_WITHOUT_NEXT_ACTION)
-    has_open = NextAction.objects.visible_to(context.viewer).filter(
-        matter=OuterRef("pk"), status=ActionStatus.OPEN
-    )
-    quiet = active.annotate(has_action=Exists(has_open)).filter(has_action=False)
+    # The register's rule through the register's function, so an upcoming
+    # `Oluline tähtaeg` standing in for a missing step is excluded from both
+    # sides of the link alike (`app.matters.next_step`, docs/adr/0120).
+    quiet = without_next_step(active, context.viewer)
     return simple_result(
         spec,
         context=context,

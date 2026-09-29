@@ -101,6 +101,11 @@ ulevaade     MatterWebsiteOverview          tahtaeg      MatterImportantDate
 joustumine   MatterEffectiveDate            toovoit      MatterWorkVictory
 ```
 
+**Extended on 2026-09-29 to the file itself — see docs/adr/0120 §5.** A
+`Document` is removable too, through its own service and route
+(`documents:remove`) rather than a ninth row here, because what refuses it —
+an opinion standing on its bytes — is a documents rule, not a `Teema käik` one.
+
 Keyed by the Estonian word the row already uses, because the address a lawyer
 copies out of the browser should read like the product. Each row carries its
 own `ChangeEventType`, so `Kõik muudatused` goes on saying *which* record left

@@ -65,8 +65,12 @@ from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.filenames import NFC
 from app.documents.models import Document
 from app.documents.pending import human_size
-from app.documents.services import UPLOAD_REFUSED_ROLES, link_working_document
+from app.documents.services import (
+    link_working_document,
+    offered_document_roles,
+)
 from app.documents.uploads import UploadRejected
+from app.intelligence.models import MatterImportantDate
 from app.intelligence.selectors import (
     VISIBLE_VICTORY_STATUS,
     matter_intelligence,
@@ -170,7 +174,8 @@ from app.matters.my_work import (
     horizon_from,
     view_from,
 )
-from app.matters.process_timeline import SENT_LABEL, process_steps
+from app.matters.next_step import upcoming_milestone
+from app.matters.process_timeline import process_steps
 from app.matters.removal import (
     RecordRemovalConflict,
     kind_for,
@@ -2699,15 +2704,20 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     for item in items:
         if item.is_engagement:
             attach_wait_form(attach_feedback_form(item.record))
+    # **The next upcoming step where no `Järgmiseks` is set**: the nearest
+    # active `Oluline tähtaeg` still ahead, chosen by the one rule every surface
+    # asks (`app.matters.next_step`, docs/adr/0120). From the milestones
+    # `matter_intelligence` has already read and scoped, so choosing costs no
+    # query.
+    upcoming_step = None if current_action else upcoming_milestone(intelligence.upcoming_dates)
     # The register's own `JÄRGMISEKS`, and only where no structured action
     # exists. Read here rather than in the template so the page cannot start
     # asking the database a question of its own — and read *conditionally*,
     # because on a Matter that has a real next step neither answer is rendered
     # and both are a query for nothing (ADR 0021).
-    source_instruction = "" if current_action else source_instruction_for(matter)
+    source_instruction = "" if current_action or upcoming_step else source_instruction_for(matter)
     # Built before the dict because two entries read it: the strip renders them
-    # and `opinion_sent` below asks whether one of them is a sent opinion. Calling
-    # `process_steps` twice would be two reads of the same scoped question.
+    # and `matter_rail` merges the dated points into the rail.
     steps = process_steps(matter=matter, user=request.user, intelligence=intelligence)
     # Built once and read twice: the rail draws its nodes and `matter_rail`
     # merges the dated points into them.
@@ -2729,6 +2739,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "rail_steps": matter_rail(matter=matter, user=request.user, rail=rail, milestones=steps),
         "matter": matter,
         "current_action": current_action,
+        "upcoming_step": upcoming_step,
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
@@ -2744,23 +2755,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # is deliberately not among them and keeps its own section
         # (app/matters/process_timeline.py, docs/adr/0074 §12).
         "process_steps": steps,
-        # **Whether an opinion has gone out, and therefore whether the file needs
-        # a sentence about what happens next.**
-        #
-        # The dead end the first lawyer test found: a Matter whose opinion was
-        # sent and whose step was finished read «Järgmine samm on määramata» and
-        # offered nothing that looked like a continuation, so the procedure
-        # carrying on elsewhere — a revised draft, a committee, an adoption — had
-        # no obvious home and lawyers opened new Matters for it (lawyer
-        # feedback 14, docs/adr/0091 §5.5).
-        #
-        # Read off the strip that is already built rather than as a query of its
-        # own: `process_steps` has just resolved every SENT `Submission` this
-        # reader may see, and asking the database the same question again would be
-        # a second read for an answer already in hand. It is `visible_to`-scoped
-        # there, so a submission restricted below the Matter draws no column here
-        # and puts no sentence on the page either (AUTH-003).
-        "opinion_sent": any(step.label == SENT_LABEL for step in steps),
         # No `timeline_rows` and no `timeline_preview`. The approved target has
         # two row kinds and no folded system runs, and its `Ajajoon` head is the
         # label and the count — the preview sentence and the duplicated current
@@ -2980,8 +2974,19 @@ def _header_context(
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
     note_record = personal_note_record(matter=matter, author=request.user)
+    can_write = may_write_business_content(request.user)
     return {
         "matter": matter,
+        # **`Kustuta` only where deleting can succeed** (docs/adr/0120, UQ-13).
+        # Asked of `plan_matter_deletion` — the plan `matter_delete` renders and
+        # `delete_matter` rebuilds under the row lock — so the header states the
+        # authoritative answer rather than a template's guess at it, and a file
+        # that has records whose history is kept for good is not offered an act
+        # that can only end on «Seda teemat ei saa kustutada». Only for a writer:
+        # nobody else is shown the control, so nobody else pays for the walk. The
+        # route keeps every refusal it had; hiding the link is an offer withheld,
+        # not the guard (docs/adr/0096 §4).
+        "can_delete": can_write and not plan_matter_deletion(matter).is_blocked,
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
@@ -3061,7 +3066,7 @@ def _header_context(
         # HH:mm` hint. `None` on a Matter they have never made a note on, and the
         # hint renders nothing at all rather than a placeholder.
         "note_saved_at": note_record.updated_at if note_record is not None else None,
-        "can_write": may_write_business_content(request.user),
+        "can_write": can_write,
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over.
         "opinion_documents": opinion_documents(matter, viewer=request.user),
@@ -3216,22 +3221,6 @@ def _role_filter_choices() -> list[tuple[str, str]]:
     ]
 
 
-#: Roles a person may not file a *new* upload as, however many the model holds.
-#:
-#: `OUTCOME_EVIDENCE` — «Tulemuse tõend» — is a claim about what happened to a
-#: proposal after Koda wrote about it, and a file is almost never that at the
-#: moment somebody is uploading it. On the menu it read as a plausible tenth
-#: option beside nine descriptions of what a file *is*, and picking it filed a
-#: document under an assertion nobody had made.
-#:
-#: An exclusion from a menu and nothing else. The value stays in
-#: :class:`~app.documents.enums.DocumentRole`, documents already carrying it
-#: stay valid and render their stored label everywhere they always did, the
-#: `Roll` filter above still offers it so those documents remain findable, and
-#: no migration is involved.
-UPLOAD_ROLES_NOT_OFFERED: frozenset[str] = frozenset({DocumentRole.OUTCOME_EVIDENCE})
-
-
 def _upload_role_choices() -> list[tuple[str, str]]:
     """The upload panel's roles, over the *stored* vocabulary.
 
@@ -3248,11 +3237,7 @@ def _upload_role_choices() -> list[tuple[str, str]]:
     (docs/adr/0061, amendment of 2026-09-27). The filter still offers `Arvamus`,
     because finding the opinions a Matter holds is exactly what it is for.
     """
-    return [
-        (value, label)
-        for value, label in DocumentRole.choices
-        if value not in UPLOAD_ROLES_NOT_OFFERED and value not in UPLOAD_REFUSED_ROLES
-    ]
+    return offered_document_roles()
 
 
 def _document_display_name(document: Any) -> str:
@@ -4223,10 +4208,20 @@ def _next_action_row_context(request: HttpRequest, matter: Matter) -> dict[str, 
     different question about it.
     """
     current_action = selectors.current_action_of(matter, request.user)
-    source_instruction = "" if current_action else source_instruction_for(matter)
+    # The same rule `_overview_context` asks, so this row and `PRAEGUNE
+    # TEGEVUS` cannot name different next steps (docs/adr/0120).
+    upcoming_step = (
+        None
+        if current_action
+        else upcoming_milestone(
+            MatterImportantDate.objects.filter(matter=matter).visible_to(request.user)
+        )
+    )
+    source_instruction = "" if current_action or upcoming_step else source_instruction_for(matter)
     return {
         "matter": matter,
         "current_action": current_action,
+        "upcoming_step": upcoming_step,
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "can_write": may_write_business_content(request.user),
@@ -5026,16 +5021,15 @@ def _edit_context(
         # with material to read has anything to be read. The count is the
         # same scoped read the header makes for the Dokumendid tab.
         "has_documents": Document.objects.filter(matter=matter).visible_to(request.user).exists(),
-        # **No `can_delete` here, deliberately.** Reaching this page *is* the
-        # permission: `business_write_required` plus `get_visible_matter` is the
-        # cohort that may delete, and it is the same cohort that may edit — which
-        # is the answer the product asked for, because deletion is not an
-        # administrator's privilege but what somebody does about a Teema that
-        # should not exist (docs/adr/0096 §4.2).
-        #
-        # A flag that is always true is a decision point that is not one, and
-        # somebody would eventually read it as the gate. The gate is the delete
-        # route, which re-authorises and re-checks every blocker.
+        # **Whether deleting can succeed, from the deletion plan itself.**
+        # Reaching this page is still the *permission* — `business_write_required`
+        # plus `get_visible_matter` is the cohort that may delete (docs/adr/0096
+        # §4.2) — but a file whose records keep their history for good cannot be
+        # deleted by anybody, and offering `Kustuta teema` there only led to the
+        # refusal page. The plan is the one `matter_delete` renders and
+        # `delete_matter` rebuilds under the lock, so the page says what the route
+        # will say; the route still re-checks every blocker (docs/adr/0120).
+        "deletion_plan": plan_matter_deletion(matter),
     }
 
 
@@ -6594,11 +6588,10 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     **Both dates come off the form, and neither is invented here.** This view
     used to pass `timezone.localdate()` for `occurred_on` no matter what,
     because the panel had no date box — so a consultation from March, written
-    down in September, was stored as a September consultation. The panel asks
-    both dates now, each pre-filled with a plausible answer and each clearable,
-    and what the person left in a box is what is stored. An emptied
-    `Kaasamise kuupäev` stores nothing; an emptied `Tagasisidet ootame kuni`
-    opens no wait (docs/adr/0086 §2).
+    down in September, was stored as a September consultation. What the person
+    left in a box is what is stored: an emptied `Kaasamise kuupäev` stores
+    nothing, and `Tagasisidet ootame kuni` — empty unless somebody fills it —
+    opens a wait only when it carries a day (docs/adr/0086 §2, docs/adr/0120).
     """
     matter = get_visible_matter(request, pk)
     form = CompactEngagementForm(request.POST, request.FILES)
@@ -6614,10 +6607,9 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            # **No `feedback_deadline`.** This panel stopped asking, and the
-            # service keeps the parameter for the importer, the shell and the
-            # explicit `Ootan tagasisidet` act — none of which is this form
-            # (docs/adr/0091 §2).
+            # Optional, and `None` when the box was left empty: no wait is opened
+            # and nothing is defaulted (docs/adr/0120).
+            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
             feedback_received=form.cleaned_data.get("feedback_received") or "",
             uploads=form.cleaned_data["attachments"],
         )

@@ -20,6 +20,7 @@ from app.core.dates import format_estonian_date
 from app.matters.activity import annotate_last_activity
 from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
 from app.matters.models import Matter
+from app.matters.next_step import without_next_step
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import (
@@ -230,16 +231,22 @@ def filter_by_next_action(
 
     One open action per Matter is a database constraint, which is what makes the
     action count and the Matter count the same number.
+
+    **`puudub` asks the one next-step rule**, not only the action table: a Matter
+    whose next step is an upcoming `Oluline tähtaeg` is not «järgmise
+    tegevuseta» here, on the Matter page, on Minu asjad or in any figure that
+    links to this filter (`app.matters.next_step`, docs/adr/0120).
     """
     if value not in NEXT_ACTION_FILTERS:
         return queryset.none()
 
     today = today or timezone.localdate()
+    if value == MISSING:
+        return without_next_step(queryset, user, today)
     actions = NextAction.objects.visible_to(user).filter(
         _open_action_condition(value, today), matter=OuterRef("pk")
     )
-    annotated = queryset.annotate(matches_action=Exists(actions))
-    return annotated.filter(matches_action=value != MISSING)
+    return queryset.annotate(matches_action=Exists(actions)).filter(matches_action=True)
 
 
 def open_action_prefetch(user: Any) -> Prefetch:
@@ -693,15 +700,11 @@ def matters_without_next_action(user: Any) -> QuerySet[Matter]:
     ``visible_to`` on the subquery, like `filter_by_next_action` beside it: a
     `NextAction` can be restricted below its Matter, and an unscoped probe lets
     a step nobody here may read decide whether a visible Matter is listed.
+    Both through `without_next_step`, so an upcoming `Oluline tähtaeg` counts as
+    a next step here exactly as it does on the register (docs/adr/0120).
     """
-    has_open_action = NextAction.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), status=ActionStatus.OPEN
-    )
-    return (
-        matter_list_queryset(user)
-        .filter(is_open=True, record_mode=RecordMode.FULL)
-        .annotate(has_action=Exists(has_open_action))
-        .filter(has_action=False)
+    return without_next_step(
+        matter_list_queryset(user).filter(is_open=True, record_mode=RecordMode.FULL), user
     )
 
 

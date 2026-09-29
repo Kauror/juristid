@@ -211,6 +211,24 @@ record, not professional chronology (master specification 16.5).
             {% endcomment %}
             {% if item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
               <div class="uxtl__editactions">
+                {% comment %}
+                  **`Muuda` and `Tühista` on an `Oluline tähtaeg`** (docs/adr/0120
+                  §2). Since that record an upcoming milestone is the file's next
+                  step when no `Järgmiseks` is set, so moving its day or calling it
+                  off has to be possible where it is seen. Both are links to the
+                  pages that already correct and cancel one
+                  (`intelligence:edit_important_date`, `cancel_important_date`) —
+                  their forms, rules and audit events, nothing new — and `Tühista`
+                  only while the milestone still stands.
+                {% endcomment %}
+                {% if item.removable == "tahtaeg" %}
+                  <a class="uxtl__edit" href="{% url 'intelligence:edit_important_date' matter_id=matter.pk pk=item.record.pk %}"
+                     aria-label="Muuda olulist tähtaega: {{ item.record.title }}">Muuda</a>
+                  {% if item.record.status == "ACTIVE" %}
+                    <a class="uxtl__edit" href="{% url 'intelligence:cancel_important_date' matter_id=matter.pk pk=item.record.pk %}"
+                       aria-label="Tühista oluline tähtaeg: {{ item.record.title }}">Tühista</a>
+                  {% endif %}
+                {% endif %}
                 {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="" %}
               </div>
             {% endif %}

@@ -867,6 +867,28 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: w["matter"].documents.count(),
     ),
     WriteRoute(
+        name="documents:change_role",
+        label="Dokumendi liigi muutmine",
+        request=lambda w: ({"pk": w["plain_document"].pk}, {"role": DocumentRole.OTHER}),
+        probe=lambda w: (
+            w["plain_document"]
+            .__class__._base_manager.values_list("role", flat=True)
+            .get(pk=w["plain_document"].pk)
+        ),
+        events=(ChangeEventType.DOCUMENT_ROLE_CHANGED,),
+    ),
+    WriteRoute(
+        name="documents:remove",
+        label="Dokumendi eemaldamine",
+        request=lambda w: ({"pk": w["plain_document"].pk}, {}),
+        probe=lambda w: (
+            w["plain_document"]
+            .__class__._base_manager.values_list("removed_at", flat=True)
+            .get(pk=w["plain_document"].pk)
+        ),
+        events=(ChangeEventType.DOCUMENT_REMOVED,),
+    ),
+    WriteRoute(
         name="matters:add_working_document",
         label="Töödokumendi lisamine",
         request=lambda w: (
@@ -1091,6 +1113,16 @@ def _build_world():
         sent_at=timezone.now(),
         final_version=version,
     )
+    # An ordinary file no opinion stands on, for `Muuda liiki` and `Eemalda`
+    # (docs/adr/0120 §5): on the letter above both would be the service's own
+    # refusal rather than the boundary this file measures.
+    plain_document = factories.DocumentFactory(matter=matter, role=DocumentRole.MEMBER_FEEDBACK)
+    add_evidence_version(
+        document=plain_document,
+        content=b"%PDF-1.4\ntavaline",
+        original_filename="tavaline.pdf",
+        mime_type="application/pdf",
+    )
 
     # Its own Matter, and unowned: the register's «Määra ▾» exists only on a row
     # that has nobody, and firing at an owned one would prove nothing.
@@ -1117,6 +1149,7 @@ def _build_world():
         "review_action": review_action,
         "submission": submission,
         "sent_submission": sent_submission,
+        "plain_document": plain_document,
         "organisation": organisation,
         "stage": factories.StageFactory(),
         # A governed keyword for `submissions:metadata`. The route classifies an

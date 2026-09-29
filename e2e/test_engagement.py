@@ -114,15 +114,13 @@ def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_question
     assert panel(page).locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied out of sight"
     )
-    # **`Tagasisidet ootame kuni` is not here at all**, which is where
-    # docs/adr/0086 §2 finally lands. Recording that Koda asked somebody
-    # something is a completed act; a reply-by date turned every one of them into
-    # a managed wait with a work item and a second act to end it. Emptying the
-    # default was the first answer and it was not enough — an empty box is still
-    # a question a lawyer reads and skips on every round they file. Opening a
-    # wait is `Ootan tagasisidet` on the round's own row now (docs/adr/0091 §2).
-    expect(panel(page).locator("[name=feedback_deadline]")).to_have_count(0)
-    expect(panel(page).get_by_text("Tagasisidet ootame kuni")).to_have_count(0)
+    # **`Tagasisidet ootame kuni` is here again, optional and empty**
+    # (docs/adr/0120 §3). What docs/adr/0091 §2 removed was a *default* that
+    # turned every recorded round into a managed wait; with no default an
+    # untouched box opens nothing, and the one fact that makes a round a wait no
+    # longer needs a second edit.
+    expect(panel(page).get_by_text("Tagasisidet ootame kuni")).to_be_visible()
+    expect(panel(page).locator("[name=feedback_deadline]")).to_have_value("")
     # And its own save, which commits this operation and nothing else
     # (docs/adr/0075 §2).
     expect(panel(page).locator("button[type=submit]")).to_have_count(1)

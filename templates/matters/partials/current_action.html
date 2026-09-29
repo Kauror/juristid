@@ -225,7 +225,29 @@ task above it is a form asking about work nobody has named. The route to work is
       no date because the importer refuses to guess which of three meanings it
       carried (ADR 0021).
     {% endcomment %}
-    {% if source_instruction %}
+    {% comment %}
+      **The next upcoming step, when no explicit one is set.**
+
+      An `Oluline tähtaeg` still ahead of us — «Ootan ministeeriumi tagasisidet,
+      1.10.2026» — is the thing this file is waiting for, and reading
+      «Järgmine samm on määramata» above it made the page say the opposite of
+      what the lawyer had just recorded. `upcoming_step` is chosen in one place,
+      `work_items.upcoming_milestone`: an open `Järgmiseks` always wins and is
+      the branch above, and otherwise the earliest active milestone whose period
+      has not ended, in the model's own order. A passed, cancelled or removed
+      one is never chosen, and the chosen one is not a `NextAction` — nothing is
+      created, and there is no `Mida tegid?` under it, because a milestone has no
+      completion of its own (docs/adr/0120).
+
+      Rendered at its stored precision, like every other date on this panel.
+    {% endcomment %}
+    {% if upcoming_step %}
+      <div class="curact__task">
+        <span class="curact__flag">Oluline tähtaeg</span>
+        <span class="curact__text">{{ upcoming_step.title }}</span>
+        <span class="curact__date">{{ upcoming_step.display_date }}</span>
+      </div>
+    {% elif source_instruction %}
       <p class="curact__task">
         <span class="curact__flag">Excelist</span>
         <span class="curact__text curact__text--source">{{ source_instruction }}</span>
@@ -233,52 +255,6 @@ task above it is a form asking about work nobody has named. The route to work is
       </p>
     {% else %}
       <p class="curact__empty">Järgmine samm on määramata</p>
-    {% endif %}
-    {% comment %}
-      **The continuation, on the one file that most needs it.**
-
-      A Matter whose opinion has gone out and whose step is finished used to end
-      here, at «Järgmine samm on määramata», with nothing on the page that looked
-      like a way on. The procedure does not stop when Koda answers: the ministry
-      sends a revised draft, the government approves it, the file reaches the
-      Riigikogu, the Chamber writes again. Lawyers were opening *new Matters* for
-      the same proceeding, because this page read as finished (lawyer
-      feedback 14, docs/adr/0091 §5.5).
-
-      **Two links to controls that are already on the page**, and no third thing.
-      This is a sentence and two anchors into `LISA TEEMALE`, not a wizard, not a
-      dashboard and not a suggested next step: the file is told that the work may
-      continue, and *what* continues it is the lawyer's to say. Nothing here
-      creates, proposes or pre-fills anything (docs/adr/0091 §5.5).
-
-      **It does not invent work.** A Matter with a sent opinion and no open step
-      is a perfectly ordinary state — the opinion went out and the file is
-      waiting on somebody else — so this says «võib jätkuda» rather than naming
-      anything as outstanding, appears in no work queue, and adds nothing to any
-      count, badge or deadline surface.
-
-      Only where there is no open step, and only for somebody who may write. A
-      file that already has a `Järgmiseks` is not at a dead end and needs no
-      sentence about it, and a reader who cannot write must not be shown two
-      controls they cannot use.
-
-      `opinion_sent` is read off the process strip the page has already built,
-      scoped by `visible_to` there — so a submission restricted below this Matter
-      draws no column and puts no sentence here either (app/matters/views.py,
-      AUTH-003).
-    {% endcomment %}
-    {% comment %}
-      **One link, where there were two.** It read «lisa menetluse areng või
-      järgmine tegevus» and pointed at two launcher chips; there is one chip
-      now, and the next action is a box inside it. Both halves of the old
-      sentence are reachable through `+ Märge`, which is what it says
-      (docs/adr/0097 §6, §8.3).
-    {% endcomment %}
-    {% if opinion_sent and can_write %}
-      <p class="curact__continue">
-        Koja arvamus on saadetud. Menetlus võib jätkuda —
-        <a class="curact__continuelink" href="#lisa-marge">lisa märge</a>.
-      </p>
     {% endif %}
     {% comment %}
       The waits again, and this is the branch they were added for: a Matter whose

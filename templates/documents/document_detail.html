@@ -43,6 +43,91 @@
     </span>
   </header>
 
+  {% comment %}
+    **Correcting a document** (docs/adr/0120, UQ-12). The note under
+    `Originaal` has always said a correction is a new version; this is where
+    one is made — and the other two corrections a mistaken upload needs:
+    what the file *is*, and taking it off the Matter altogether.
+
+    Nothing here touches evidence. `Lisa uus versioon` adds an immutable
+    version and makes it current, every earlier one staying in `Versioonid`
+    below; `Muuda liiki` changes the document's classification and no byte;
+    `Eemalda` takes the document off Dokumendid, `Teema käik` and search while
+    its versions, their bytes and the audit trail stay. Each is refused by its
+    service for an opinion's letter — with the sentence printed here instead of
+    the control, so nobody presses something that can only fail — and each is
+    audited.
+
+    Only for somebody who may write, on an open Matter (`can_correct`). The
+    three routes check both again on their own, under the Matter's lock.
+  {% endcomment %}
+  {% if can_correct %}
+    <section class="card" aria-labelledby="paranda-heading" id="paranda">
+      <h2 class="sectionlabel" id="paranda-heading">Paranda dokumenti</h2>
+
+      {% if version_refusal %}
+        <p class="cardnote">{{ version_refusal }}</p>
+      {% else %}
+        <form class="stackform" method="post" enctype="multipart/form-data"
+              action="{% url 'documents:add_version' pk=document.pk %}">
+          {% csrf_token %}
+          <label class="field">
+            <span class="field__label">Lisa uus versioon</span>
+            <input class="field__input" type="file" name="upload" required>
+            <span class="field__help">
+              Parandatud fail saab kehtivaks versiooniks. Eelmised versioonid jäävad
+              muutumatuna alles versioonide ajalukku.
+            </span>
+          </label>
+          <div class="form__actions">
+            <button class="button button--primary" type="submit">Lisa uus versioon</button>
+          </div>
+        </form>
+      {% endif %}
+
+      {% if not role_refusal %}
+        <form class="stackform" method="post"
+              action="{% url 'documents:change_role' pk=document.pk %}">
+          {% csrf_token %}
+          <label class="field">
+            <span class="field__label">Liik</span>
+            <select class="field__input" name="role">
+              {% for value, label in role_choices %}
+                <option value="{{ value }}"{% if value == document.role %} selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <span class="field__help">Muudab ainult dokumendi liigitust; failid ei muutu.</span>
+          </label>
+          <div class="form__actions">
+            <button class="button button--quiet" type="submit">Muuda liiki</button>
+          </div>
+        </form>
+      {% endif %}
+
+      {% if removal_refusal %}
+        {% if removal_refusal != version_refusal %}
+          <p class="cardnote">{{ removal_refusal }}</p>
+        {% endif %}
+      {% else %}
+        <details class="disclosure" id="eemalda-dokument">
+          <summary>Eemalda dokument</summary>
+          <form class="stackform" method="post"
+                action="{% url 'documents:remove' pk=document.pk %}">
+            {% csrf_token %}
+            <p class="cardnote">
+              Dokument eemaldatakse selle teema dokumentide hulgast, teema käigust ja
+              otsingust. Failid ja kõik versioonid jäävad tõendina alles, baite ei muudeta,
+              ja eemaldamine jääb muudatuste logisse.
+            </p>
+            <div class="form__actions">
+              <button class="button button--danger" type="submit">Eemalda</button>
+            </div>
+          </form>
+        </details>
+      {% endif %}
+    </section>
+  {% endif %}
+
   {% if version %}
     <section class="card card--evidence" aria-labelledby="originaal-heading">
       <h2 class="sectionlabel" id="originaal-heading">Originaal</h2>

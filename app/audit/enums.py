@@ -124,6 +124,14 @@ class ChangeEventType(models.TextChoices):
     )
     DOCUMENT_CREATED = "DOCUMENT_CREATED", "Dokument loodud"
     EVIDENCE_VERSION_ADDED = "EVIDENCE_VERSION_ADDED", "Tõendiversioon lisatud"
+    # -- Correcting a document (docs/adr/0120, UQ-12) -------------------------
+    # `Muuda liiki` and `Eemalda dokument`. A new version needs no event of its
+    # own: `EVIDENCE_VERSION_ADDED` already says exactly that. The role change
+    # carries the old and new value; the removal carries the role, the version
+    # count and the current checksum, so `Kõik muudatused` can say which file
+    # left even though the file itself no longer reads anywhere.
+    DOCUMENT_ROLE_CHANGED = "DOCUMENT_ROLE_CHANGED", "Dokumendi liik muudetud"
+    DOCUMENT_REMOVED = "DOCUMENT_REMOVED", "Dokument eemaldatud"
     TAG_ASSIGNED = "TAG_ASSIGNED", "Silt lisatud"
     TAG_REMOVED = "TAG_REMOVED", "Silt eemaldatud"
     IMPORT_APPLIED = "IMPORT_APPLIED", "Import rakendatud"

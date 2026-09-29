@@ -223,9 +223,15 @@ def _storable_mime_type(attachment: ParsedAttachment) -> str | None:
 
 
 def parent_email_of(version: DocumentVersion) -> EmailAttachmentLink | None:
-    """The message this exact binary arrived in, if it arrived in one."""
+    """The message this exact binary arrived in, if it arrived in one.
+
+    Not one taken off its Matter (docs/adr/0120): the line would link to a page
+    that no longer opens.
+    """
     return (
-        EmailAttachmentLink.objects.filter(attachment_version=version)
+        EmailAttachmentLink.objects.filter(
+            attachment_version=version, parent_version__document__removed_at__isnull=True
+        )
         .select_related("parent_version", "parent_version__document")
         .first()
     )
@@ -234,7 +240,11 @@ def parent_email_of(version: DocumentVersion) -> EmailAttachmentLink | None:
 def attachments_of(version: DocumentVersion) -> Any:
     return (
         EmailAttachmentLink.objects.filter(
-            parent_version=version, disposition=AttachmentDisposition.ATTACHMENT
+            parent_version=version,
+            disposition=AttachmentDisposition.ATTACHMENT,
+            # An attachment removed as a mistaken file is not listed under its
+            # message either (docs/adr/0120).
+            attachment_version__document__removed_at__isnull=True,
         )
         .select_related("attachment_version", "attachment_version__document")
         .order_by("ordinal")

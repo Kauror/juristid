@@ -38,9 +38,11 @@ from typing import Any
 from django.urls import reverse
 from django.utils import timezone
 
+from app.intelligence.enums import FactStatus
 from app.matters import work_items as wi
 from app.matters.activity import BASIS_LABELS, activity_of, annotate_last_activity
 from app.matters.models import Entry, Matter
+from app.matters.next_step import milestone_is_upcoming, milestone_order
 from app.workflow.enums import ESTONIAN_MONTHS
 
 #: How far the *Hiljem* band reaches when nobody has chosen otherwise: the end
@@ -272,21 +274,33 @@ class PortfolioRow:
     """One open Matter on this desk: where it stands, what is next, when it moved."""
 
     matter: Matter
-    #: The earliest open dated action, if there is one. An `Oluline tähtaeg` is
-    #: deliberately not eligible: it is a milestone, not somebody's next step.
+    #: The earliest open dated action, if there is one.
     action: wi.WorkItem | None
     #: An open action with no date at all, when that is all there is.
     undated: wi.WorkItem | None
     last_activity: date | None
     today: date
+    #: The nearest upcoming `Oluline tähtaeg`, which is this Matter's next step
+    #: **only** where neither of the two above exists — the rule `PRAEGUNE
+    #: TEGEVUS` and the register's `?tegevus=puudub` ask as well, so this row,
+    #: the page it opens and the «järgmise tegevuseta» figure agree
+    #: (`app.matters.next_step`, docs/adr/0120). It is still a milestone and
+    #: prints as one; it is never counted as somebody's overdue step.
+    milestone: wi.WorkItem | None = None
 
     @property
     def has_action(self) -> bool:
-        return self.action is not None or self.undated is not None
+        return self.next_action is not None
 
     @property
     def next_action(self) -> wi.WorkItem | None:
-        return self.action or self.undated
+        return self.action or self.undated or self.milestone
+
+    @property
+    def dated_step(self) -> wi.WorkItem | None:
+        """The step the row prints with a meaning and a day, if it has one."""
+        step = self.next_action
+        return step if step is not None and step is not self.undated else None
 
     @property
     def stage_label(self) -> str:
@@ -371,6 +385,29 @@ def _earliest_actions(items: list[wi.WorkItem]) -> dict[Any, wi.WorkItem]:
     return earliest
 
 
+def _upcoming_milestones(items: list[wi.WorkItem], today: date) -> dict[Any, wi.WorkItem]:
+    """The milestone standing in for a missing step, per Matter, from the same read.
+
+    `next_step.milestone_is_upcoming` and `next_step.milestone_order` — the test
+    and the order the Matter page applies to its own records — applied to the
+    work items the bands were built from, so the row and the page it opens name
+    the same record (docs/adr/0120). Work items carry only *active* milestones
+    (`work_items.important_deadlines`), which is the status half of the test.
+    """
+    chosen: dict[Any, tuple[tuple[date, date, str], wi.WorkItem]] = {}
+    for item in items:
+        if item.source_type != wi.SOURCE_IMPORTANT_DEADLINE or item.when is None:
+            continue
+        end = item.period_end or item.when
+        if not milestone_is_upcoming(status=FactStatus.ACTIVE, period_end=end, today=today):
+            continue
+        key = milestone_order(item.when, end, item.object_id)
+        current = chosen.get(item.matter_id)
+        if current is None or key < current[0]:
+            chosen[item.matter_id] = (key, item)
+    return {matter_id: item for matter_id, (_key, item) in chosen.items()}
+
+
 def build_portfolio(
     user: Any,
     subject: Any,
@@ -384,6 +421,7 @@ def build_portfolio(
         wi.open_matters(user).filter(owner=subject).select_related("stage", "owner"), user
     )
     dated = _earliest_actions(items)
+    milestones = _upcoming_milestones(items, today)
     undated: dict[Any, wi.WorkItem] = {}
     for action in wi.undated_actions(user, responsible=subject).order_by("created_at"):
         undated.setdefault(action.matter_id, wi.action_item(action, today))
@@ -395,6 +433,7 @@ def build_portfolio(
             undated=undated.get(matter.pk),
             last_activity=(activity.occurred_on if (activity := activity_of(matter)) else None),
             today=today,
+            milestone=milestones.get(matter.pk),
         )
         for matter in queryset
     ]
@@ -694,10 +733,10 @@ def build_my_work(
     # order to offer "Näita kaugemaid tähtaegu" honestly.
     everything = wi.work_items(user, today=today, responsible=subject)
     week_end = wi.end_of_iso_week(today)
-    # The *same* string the strip's own «üle tähtaja» figure links to, built once
-    # and handed to both. A band whose population outgrows the render cap must
-    # open the list its heading counted, and the only way to be sure of that is
-    # for the two to be one URL rather than two that agree today (UX-002).
+    # Where *Üle tähtaja* sends the rows its render cap leaves out: the
+    # register's own overdue population, the list a band past `BAND_LIMIT`
+    # counted (UX-002). The strip's figure opens the band itself now, which
+    # holds every row it counted (docs/adr/0120).
     overdue_url = _work_url(subject, wi.WORK_OVERDUE)
     bands = wi.band_items(
         everything,
@@ -736,19 +775,24 @@ def build_my_work(
         )
 
     open_matters = portfolio.total
-    overdue = population(wi.WORK_OVERDUE)
-    week = population(wi.WORK_DEADLINE_THIS_WEEK)
+    # **The two band figures are the bands' own totals** (docs/adr/0120, UQ-09).
+    # They used to be `work_population_ids` over the same items — distinct
+    # *Matters* holding a real deadline whose anchor fell between today and
+    # Sunday — while the band beneath counted *rows* of everything due this
+    # week. Same page, two classifications: «2 tähtaeg sel nädalal» above a
+    # «Sel nädalal 3» holding an `OOTAME TAGASISIDET` row and an anchor-banded
+    # month. Now one list decides both numbers, and each figure opens the
+    # section it counted rather than a register list of Matters it could only
+    # approximate. The register populations are unchanged and still answer the
+    # manager's Kiirvaade below and Osakond.
+    band_totals = {band.key: band.total for band in bands}
+    overdue = band_totals.get(wi.BAND_OVERDUE, 0)
+    week = band_totals.get(wi.BAND_WEEK, 0)
 
     seis = [
         SeisFigure("open", open_matters, "avatud teemat", _register_url(subject)),
-        SeisFigure("overdue", overdue, "üle tähtaja", overdue_url, "danger"),
-        SeisFigure(
-            "week",
-            week,
-            "tähtaeg sel nädalal",
-            _work_url(subject, wi.WORK_DEADLINE_THIS_WEEK),
-            "warning",
-        ),
+        SeisFigure("overdue", overdue, "üle tähtaja", f"#{wi.BAND_OVERDUE}", "danger"),
+        SeisFigure("week", week, "sel nädalal", f"#{wi.BAND_WEEK}", "warning"),
         SeisFigure(
             "no_action",
             quiet_total,

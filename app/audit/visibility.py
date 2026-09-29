@@ -119,7 +119,15 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
             Submission,
             direct,
         ),
-        ((ChangeEventType.DOCUMENT_CREATED,), Document, direct),
+        (
+            (
+                ChangeEventType.DOCUMENT_CREATED,
+                ChangeEventType.DOCUMENT_ROLE_CHANGED,
+                ChangeEventType.DOCUMENT_REMOVED,
+            ),
+            Document,
+            direct,
+        ),
         ((ChangeEventType.EVIDENCE_VERSION_ADDED,), DocumentVersion, through_document),
         (
             (

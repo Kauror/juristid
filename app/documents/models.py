@@ -19,7 +19,7 @@ from app.core.authorization import (
     scope_for_user,
 )
 from app.core.enums import Visibility
-from app.core.models import BaseModel, VisibilityInheritingModel
+from app.core.models import BaseModel, RemovableRecord, VisibilityInheritingModel
 from app.documents.enums import (
     DocumentRole,
     ExtractionState,
@@ -31,14 +31,25 @@ from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 
 class DocumentQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> DocumentQuerySet:
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        """The documents this reader may be shown — and none taken off the file.
+
+        A document removed as a mistaken upload (docs/adr/0120) is filtered here,
+        at the same chokepoint and for the same reason as every other removable
+        record (docs/adr/0102 §3): Dokumendid, the tab count, the files under a
+        `Teema käik` row, the product's download routes and every count all
+        read through this, so none of them needs a filter of its own. The row,
+        its versions and their bytes stay for the plain manager — the evidence
+        integrity checks and a Matter's deletion plan read through that.
+        """
+        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return scoped.filter(removed_at__isnull=True)
 
     def with_effective_visibility(self) -> DocumentQuerySet:
         """Annotate the derived visibility so lists do not query per row."""
         return self.annotate(derived_visibility=effective_visibility_expression())
 
 
-class Document(VisibilityInheritingModel):
+class Document(VisibilityInheritingModel, RemovableRecord):
     matter = models.ForeignKey(
         "matters.Matter",
         on_delete=models.PROTECT,

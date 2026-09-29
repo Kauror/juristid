@@ -6967,6 +6967,16 @@ button.accordion__action:focus-visible {
   margin: 0;
 }
 
+/* `Võta tagasi` in the opinion's menu is the shared confirmation disclosure
+   (templates/submissions/partials/withdraw_confirm.html, docs/adr/0120 §6).
+   Among a row's document actions it keeps the 24px target the one-press
+   button it replaced had. */
+.opinionmenu .uxtl__remove > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
 /* One linked `Ülevaade / uudis` in the send's own details: a state, a date and
    an address, which is more than fits a comma-separated line at this width.
    `block` rather than a flex row because the third part is a link that may wrap,
@@ -11478,29 +11488,6 @@ section:has(.pw-more[open]) tbody.uxextra {
  * `--border-subtle` rather than the accent: this is a boundary, not an
  * emphasis, and a coloured bar would make Koda's aside the loudest thing in a
  * row about what somebody else thinks. */
-/* «Koja arvamus on saadetud. Menetlus võib jätkuda» — the continuation offer on
- * a file with no open step.
- *
- * Deliberately the muted weight of `.curact__empty` beside it rather than
- * anything louder: a Matter whose opinion went out and whose step is finished is
- * in an ordinary state, and a tinted or bordered block here would read as an
- * outstanding obligation — which is exactly what the sentence says it is not
- * (docs/adr/0091 §5.5). */
-#teema-vaade-wrap .curact__continue {
-  margin: var(--spacing-15) 0 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-/* The two anchors are ordinary in-page links, and they look like links: the
- * whole point is that they are pressable, and a reader who cannot see the colour
- * still has the underline. */
-#teema-vaade-wrap .curact__continuelink {
-  color: var(--accent-link);
-  text-decoration: underline;
-}
-
 #teema-vaade-wrap .uxtl__msnote {
   display: block;
   margin-top: var(--spacing-15);

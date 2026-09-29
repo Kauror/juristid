@@ -267,10 +267,9 @@ class WorkItem:
     the month and never prints as ``01.09.2026``, because that would manufacture
     a day nobody named (master specification 3.5).
 
-    The compact date cell writes a month as ``09.26`` rather than as *september
-    2026* — narrower than the column, and still two numbers rather than three,
-    so it cannot be read as a day. ``display_date`` keeps the long form for
-    every other surface; only this read model's compact accessors shorten it.
+    The compact date cell writes a period in words — *september 2026*,
+    *III kvartal 2026* — exactly as ``display_date`` does everywhere else; only
+    a day is shortened (docs/adr/0120).
     """
 
     source_type: str
@@ -390,39 +389,25 @@ class WorkItem:
         return (self.today - end).days
 
     @property
-    def compact_month(self) -> str:
-        """A MONTH-precision period as ``09.26``, or "" for every other one.
-
-        Month and two-digit year, in that order — the shape the compact column
-        was already using for a day (``15.09``), reused for the one approximate
-        precision that fits it. Two numbers, never three: ``09.26`` says *month
-        09 of 2026* and cannot be misread as the first of September the way
-        ``01.09.2026`` would be (master specification 3.5).
-
-        Only MONTH. A quarter and a half-year have a Roman numeral and a word
-        of their own — *II kvartal 2027* — and there is no two-number spelling
-        of those that a reader would arrive at unaided, so this returns nothing
-        for them and they keep the long form the rest of the product uses.
-        """
-        if self.when is None or self.date_precision != DatePrecision.MONTH:
-            return ""
-        return f"{self.when.month:02d}.{self.when.year % 100:02d}"
-
-    @property
     def short_date(self) -> str:
         """The value the date cell prints — the honest one, not always a day.
 
         ``10 p üle`` for something genuinely late, a bare ``9 p`` for a review
         that has merely come round, ``täna`` for today, ``26.08`` for an exact
-        date this year, ``09.26`` for a month, and the stored period verbatim
-        for anything recorded to a quarter or wider.
+        date this year, and the stored period in words — «oktoober 2026»,
+        «IV kvartal 2026», «2026» — for anything recorded to a month or wider.
+
+        **A month is written out, not as ``10.26``** (docs/adr/0120, UQ-09).
+        Two numbers under a column of days read as a day and a month, and the
+        words are what `format_at_precision` prints for the same record
+        everywhere else in the product.
 
         The word *üle* appears only where something was actually missed. A
         ministry that has not replied is not over anything, and one word is the
         whole difference between "you failed" and "have a look at this"
         (master specification 18.8).
 
-        The month is answered before ``täna`` on purpose. A month anchors on its
+        A period is answered before ``täna`` on purpose. A month anchors on its
         first day, so on 1 September a September expectation would otherwise
         print *täna* — which names a day as firmly as ``01.09.2026`` does, from
         the other direction.
@@ -432,13 +417,10 @@ class WorkItem:
         late = self.days_late
         if late:
             return f"{late} p üle" if self.is_overdue else f"{late} p"
-        month = self.compact_month
-        if month:
-            return month
-        if self.when == self.today:
-            return "täna"
         if self.display_date and self.is_approximate:
             return self.display_date
+        if self.when == self.today:
+            return "täna"
         return f"{self.when.day:02d}.{self.when.month:02d}"
 
     @property
@@ -494,13 +476,12 @@ class WorkItem:
         """The meaning, carrying the original date when the value replaced it.
 
         ``PLAANIS 14.08`` rather than a bare ``PLAANIS``, because the cell above
-        it is showing *10 p üle* and the reader still needs the day it was.
-
-        The same compact month as the line above it: the two halves of one cell
-        do not get to spell a period two different ways.
+        it is showing *10 p üle* and the reader still needs the day it was — and
+        ``PLAANIS oktoober 2026`` for a month, in the words the rest of the
+        product uses for it (docs/adr/0120).
         """
         if self.when is not None and self.days_late:
-            return f"{self.meaning} {self.compact_month or self.display_date}"
+            return f"{self.meaning} {self.display_date}"
         return self.meaning
 
 
@@ -1317,6 +1298,16 @@ def band_of(
 
     ``?kuni=`` narrows **Hiljem only**. It is that band's own control and it
     must not be able to hide something due next week.
+
+    **A period is this week's only when this week is when it is due** — its
+    last day falls in it, or it is a review whose period has begun and so has
+    come round (docs/adr/0120, UQ-09). It used to be banded on its anchor,
+    which put «oktoober 2026» under *Sel nädalal* on 29 September because the
+    first of October is a Thursday: the anchor is storage, a day nobody named,
+    and banding on it coerced a month into that day. Anything else recorded to
+    a month, a quarter, a half-year or a year and not yet ended goes to
+    **Hiljem**, the band that has never implied a day (and never to *Järgmised
+    30 päeva*, above).
     """
     when = item.when
     if when is None:
@@ -1325,6 +1316,10 @@ def band_of(
     if end < today:
         # Genuinely late, or merely come round. Both are now; only one is red.
         return BAND_OVERDUE if item.is_overdue else BAND_WEEK
+    if item.is_approximate:
+        if end <= week_end or item.is_review_ripe:
+            return BAND_WEEK
+        return BAND_LATER if horizon is None or when <= horizon else None
     if when <= week_end:
         # Today, a period already running, or a day still inside this week.
         return BAND_WEEK

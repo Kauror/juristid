@@ -159,7 +159,12 @@ anything changed.
         <span class="uxtl__msdate">{{ milestone.display_date }}</span>
       </p>
       {% if can_write_business_content %}
-        <p class="uxtl__editactions">
+        {% comment %}
+          A `<div>`, not a `<p>`: `Võta tagasi` below is a `<details>`, and the
+          parser closes an open `p` at one (`matters/partials/row_remove.html`,
+          `tests/test_ui_contract.py`).
+        {% endcomment %}
+        <div class="uxtl__editactions">
           {% comment %}
             Named by reference — the button's own word, then the headline element
             above it — rather than by repeating the headline into a
@@ -177,11 +182,19 @@ anything changed.
             user-created chronology row without one. A sent opinion is a letter
             that left this office: taking it off the file would be the record
             claiming it never went, and the domain already has the true sentence
-            for «we took it back» — `SubmissionStatus.WITHDRAWN`, which says
-            something different and is reached from the opinion's own surface
-            (docs/adr/0102 §4).
+            for «we took it back» — `SubmissionStatus.WITHDRAWN` (docs/adr/0102 §4).
+
+            **And that sentence is here now**, on the opinion itself, where a
+            person looking at a mistaken opinion looks for it. It was reachable
+            only through Dokumendid → ⋯, a tab and a menu away from the row
+            (UQ-11). Only on a letter that currently stands: a withdrawn or
+            superseded one still draws this row, as sent on its day, and has
+            nothing left to withdraw (docs/adr/0120).
           {% endcomment %}
-        </p>
+          {% if submission.is_sent %}
+            {% include "submissions/partials/withdraw_confirm.html" with submission=submission withdraw_back="teema" %}
+          {% endif %}
+        </div>
       {% endif %}
     </div>
     {% if milestone.sub %}

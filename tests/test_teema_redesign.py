@@ -1662,5 +1662,18 @@ def test_the_matter_page_does_not_explode_into_queries(
             actor=specialist,
         )
 
-    with django_assert_max_num_queries(52):
+    # **Plus the deletion plan (docs/adr/0120 §7).** A writer's header asks
+    # `plan_matter_deletion` whether `Kustuta` can succeed. Its walk is the
+    # deletion module's own cost, so it is measured on this Matter and added
+    # rather than folded into the ceiling, which keeps the ceiling on the rest of
+    # the page exactly as tight as it was.
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from app.matters.deletion import plan_matter_deletion
+
+    with CaptureQueriesContext(connection) as plan:
+        plan_matter_deletion(matter)
+
+    with django_assert_max_num_queries(52 + len(plan)):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
