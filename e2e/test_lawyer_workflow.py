@@ -391,7 +391,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The send's own details, and the withdrawal, are behind the row's `⋯`.
     row.locator(".opinionmenu__trigger").click()
     expect(row.get_by_text("Saatmise andmed")).to_be_visible()
-    expect(row.get_by_role("button", name="Võta tagasi")).to_be_visible()
+    # A disclosure since docs/adr/0120 §6: the withdrawal asks for a confirmation.
+    expect(row.locator("summary", has_text="Võta tagasi")).to_be_visible()
     row.locator(".opinionmenu__trigger").click()
 
     # A second opinion under the same Matter is ordinary, not a workaround: a

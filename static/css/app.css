@@ -6967,6 +6967,16 @@ button.accordion__action:focus-visible {
   margin: 0;
 }
 
+/* `Võta tagasi` in the opinion's menu is the shared confirmation disclosure
+   (templates/submissions/partials/withdraw_confirm.html, docs/adr/0120 §6).
+   Among a row's document actions it keeps the 24px target the one-press
+   button it replaced had. */
+.opinionmenu .uxtl__remove > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
 /* One linked `Ülevaade / uudis` in the send's own details: a state, a date and
    an address, which is more than fits a comma-separated line at this width.
    `block` rather than a flex row because the third part is a link that may wrap,

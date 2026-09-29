@@ -618,7 +618,7 @@ def test_viimane_tegevus_is_unchanged_for_every_exact_fact(specialist):
 @pytest.mark.parametrize(
     ("precision", "expected"),
     [
-        (DatePrecision.MONTH, "10.25"),
+        (DatePrecision.MONTH, "oktoober 2025"),
         (DatePrecision.QUARTER, "IV kvartal 2025"),
         (DatePrecision.YEAR, "2025"),
     ],
@@ -626,10 +626,9 @@ def test_viimane_tegevus_is_unchanged_for_every_exact_fact(specialist):
 def test_viimati_muudetud_has_a_compact_reading_that_is_not_a_day(specialist, precision, expected):
     """*Viimati muudetud* on Minu töö prints `j.n` and has no room for a year.
 
-    A month therefore becomes `10.25` — two numbers, the shape the dense work
-    surfaces already use (`WorkItem.compact_month`) — and a quarter or a year is
-    spelled out, because neither has a two-number form a reader would arrive at
-    unaided. What must not appear is `1.10`.
+    A month is spelled out like a quarter or a year — «oktoober 2025», not
+    `10.25`, which two numbers under a column of days read as a day
+    (docs/adr/0120, UQ-09). What must not appear is `1.10`.
     """
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(
