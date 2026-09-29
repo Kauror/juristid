@@ -209,6 +209,11 @@ defaults it, so nothing else that calls that helper had to change.
 
 ## 2 — A new `Kaasamine` does not ask about a wait at all
 
+**Superseded on 2026-09-29 for «not asked at all» — see docs/adr/0120 §3.**
+`+ Kaasamine` asks `Tagasisidet ootame kuni` again, optional and with **no
+default**, through the same field, rule and service parameter as `Muuda`; the
+objection below to a pre-filled box stands, and `Ootan tagasisidet` stays.
+
 **`+ Kaasamine` loses `Tagasisidet ootame kuni` — the field, its label, its three
 quick spans and its error line. Opening a wait becomes one named act of its own,
 `Ootan tagasisidet`, on the round's own chronology row.**
@@ -551,6 +556,10 @@ orphan evidence. Ordered as the composer orders its own: record, evidence, stage
 step.
 
 ### 5.5 The continuation after a `Submission`
+
+**Superseded on 2026-09-29 — see docs/adr/0120 §1.** The sentence «Koja arvamus
+on saadetud. Menetlus võib jätkuda — lisa märge.» is removed at the owner's
+request, with nothing in its place.
 
 On a Matter that has a sent opinion this reader may see, and no open step,
 `PRAEGUNE TEGEVUS` prints one sentence:

@@ -211,6 +211,11 @@ resolves for the audit trail.
 
 ### 4.3 The shape of the operation
 
+**Amended on 2026-09-29 for where the way in is offered — see docs/adr/0120 §7.**
+The header's `Kustuta` and the edit page's `Kustuta teema` are drawn only when
+`plan_matter_deletion` finds no blocker; the route, its confirmation and every
+refusal below are unchanged.
+
 A route of its own — `GET /teemad/<pk>/kustuta/` asks, `POST` acts — and never a
 second button on the form that saves. No `confirm()`: a browser dialog cannot
 name the record, is dismissed by the same reflex as every other dialog, and is
