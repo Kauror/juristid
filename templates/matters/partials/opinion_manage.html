@@ -153,12 +153,12 @@ what somebody managing an opinion is asking about (§12, §28, §29).
           A POST with its own form and its own explicit label. Never a GET and
           never a link: a withdrawal that a prefetcher or a crawler could
           perform is not a withdrawal anybody decided on.
+
+          The same confirmation, the same route and the same service as `Võta
+          tagasi` on the opinion's row in `Teema käik` — one partial, so the two
+          ways in cannot drift apart (docs/adr/0120, UQ-11).
         {% endcomment %}
-        <form class="opinionmenu__form" method="post"
-              action="{% url 'submissions:withdraw' pk=document.opinion_send.pk %}">
-          {% csrf_token %}
-          <button class="button button--quiet button--tiny" type="submit">Võta tagasi</button>
-        </form>
+        {% include "submissions/partials/withdraw_confirm.html" with submission=document.opinion_send withdraw_back="" %}
       {% endif %}
     {% else %}
       {% comment %}

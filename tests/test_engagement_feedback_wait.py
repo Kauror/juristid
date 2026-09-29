@@ -983,17 +983,24 @@ def test_the_panel_stores_feedback_without_closing_anything(signed_in, specialis
     assert engagement.feedback_closed_at is None
 
 
-def test_the_ordinary_panel_never_asks_for_a_reply_by_date(signed_in, specialist):
-    """docs/adr/0091 §2. Not an empty box — no box at all. An empty one is still
-    a question a lawyer reads, understands and skips on every round they file."""
+def test_the_ordinary_panel_asks_for_a_reply_by_date_with_no_default(signed_in, specialist):
+    """docs/adr/0120 §3, narrowing docs/adr/0091 §2: the box is back, optional and
+    empty — the default 0091 §2 objected to is what stays absent.
+
+    The panel is cut at its own `</form>`. It used to be cut at the next
+    `id="lisa-`, which is the panel's own id at offset 0 — an empty string, so
+    «not in panel» held whatever the panel said.
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     body = _detail(signed_in, matter)
     panel = body[body.index('id="lisa-kaasamine"') :]
-    panel = panel[: panel.index('id="lisa-')]
+    panel = panel[: panel.index("</form>")]
+    box = re.search(r'<input[^>]*name="feedback_deadline"[^>]*>', panel)
 
-    assert "Tagasisidet ootame kuni" not in panel
-    assert "feedback_deadline" not in panel
+    assert "Tagasisidet ootame kuni" in panel
+    assert box is not None
+    assert 'value="' not in box.group(0) or 'value=""' in box.group(0)
 
 
 def test_an_ordinary_new_engagement_creates_no_work_item(signed_in, specialist):
@@ -1014,9 +1021,9 @@ def test_an_ordinary_new_engagement_creates_no_work_item(signed_in, specialist):
     assert _waits(specialist) == []
 
 
-def test_the_panel_ignores_a_reply_by_date_posted_at_it(signed_in, specialist):
-    """docs/adr/0091 §2. The field left the form as well as the page, so a stale
-    browser cannot re-open the surface that was removed. One door, not two."""
+def test_a_reply_by_date_on_the_panel_opens_the_one_wait(signed_in, specialist):
+    """docs/adr/0120 §3. The day typed on `+ Kaasamine` is the round's wait: the
+    same column `Ootan tagasisidet` writes and the same single work item."""
     matter = factories.MatterFactory(owner=specialist)
     deadline = timezone.localdate() + dt.timedelta(days=4)
 
@@ -1028,8 +1035,8 @@ def test_the_panel_ignores_a_reply_by_date_posted_at_it(signed_in, specialist):
 
     assert response.status_code == 200, response.content.decode()[:2000]
     engagement = MatterEngagement.objects.get()
-    assert engagement.feedback_deadline is None
-    assert _waits(specialist) == []
+    assert engagement.feedback_deadline == deadline
+    assert [item.object_id for item in _waits(specialist)] == [engagement.pk]
 
 
 def test_an_unrelated_correction_leaves_a_historical_deadline_alone(signed_in, specialist):

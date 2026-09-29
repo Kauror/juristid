@@ -209,8 +209,9 @@ def test_the_upload_menu_keeps_every_other_role(signed_in, specialist):
     and a test that names what it expects to survive stops noticing when the
     next removal happens.
     """
-    from app.documents.services import UPLOAD_REFUSED_ROLES
-    from app.matters.views import UPLOAD_ROLES_NOT_OFFERED
+    # Both sets live beside the upload service since docs/adr/0120, because
+    # `Muuda liiki` offers the same vocabulary the upload does.
+    from app.documents.services import UPLOAD_REFUSED_ROLES, UPLOAD_ROLES_NOT_OFFERED
 
     matter = factories.MatterFactory(owner=specialist)
 

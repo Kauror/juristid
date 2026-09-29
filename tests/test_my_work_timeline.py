@@ -394,10 +394,11 @@ def test_the_date_meanings_are_the_agreed_words(specialist, today):
 def test_a_fuzzy_date_is_not_coerced_to_a_day(specialist, today):
     """A month-precision expectation renders as a month, not as its first day.
 
-    The compact cell shortened the month to `09.26` (tests/test_work_list_compact_dates.py);
-    what it may never do is grow a third number. Both spellings are asserted
-    here, because the rule is about the two of them agreeing on the precision
-    rather than about either one's characters.
+    The compact cell used to shorten the month to `09.26`; since docs/adr/0120
+    (UQ-09) it writes the month out exactly as `display_date` does
+    (tests/test_work_list_compact_dates.py). Both spellings are asserted here,
+    because the rule is about the two of them agreeing on the precision rather
+    than about either one's characters.
     """
     matter = _matter(specialist)
     anchor = (today.replace(day=1) + timedelta(days=62)).replace(day=1)
@@ -415,8 +416,8 @@ def test_a_fuzzy_date_is_not_coerced_to_a_day(specialist, today):
 
     assert "." not in item.display_date
     assert str(anchor.year) in item.display_date
-    assert item.short_date == f"{anchor.month:02d}.{anchor.year % 100:02d}"
-    assert item.short_date.count(".") == 1, "a month grew a third number"
+    assert item.short_date == item.display_date
+    assert "." not in item.short_date, "a month was written as numbers"
 
 
 # --- the page itself ------------------------------------------------------
@@ -709,13 +710,15 @@ def test_the_inline_disclosure_is_unchanged_by_the_honest_total(specialist, toda
 
 
 def test_the_rows_past_the_cap_have_somewhere_to_be_read(specialist, today):
-    """And it is the strip's own list, not a second one that resembles it."""
+    """The band's overflow opens the register's overdue list; the strip's figure
+    opens the band itself, which holds every row it counted (docs/adr/0120)."""
     work = _over_the_cap(specialist, today)
     band = next(one for one in work.bands if one.key == wi.BAND_OVERDUE)
     strip = next(figure for figure in work.seis if figure.key == "overdue")
 
     assert band.more_url
-    assert band.more_url == strip.url
+    assert f"too={wi.WORK_OVERDUE}" in band.more_url
+    assert strip.url == f"#{wi.BAND_OVERDUE}"
 
 
 def test_the_strip_figure_and_the_band_heading_agree(specialist, today):

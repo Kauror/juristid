@@ -40,7 +40,12 @@ than showing an empty cell somebody has to interpret.
         Outside `data-clock`, because it is not a clock value — it is the
         absence of one, and it does not move overnight.
       {% endcomment %}
-      {{ row.next_action.text }}{% if row.action %} · {{ row.action.meaning|lower }} <span data-clock>{{ row.action.day_month }}{% if row.action.is_overdue or row.action.is_review_ripe %} · {{ row.action.short_date }}{% endif %}</span>{% else %} · <span class="pw-matter__undated">{{ row.next_action.date_display|lower }}</span>{% endif %}
+      {% comment %}
+        `dated_step` is the dated action, or — where no step is set at all — the
+        nearest upcoming `Oluline tähtaeg`, which prints its own meaning
+        («oluline tähtaeg») rather than posing as a plan (docs/adr/0120).
+      {% endcomment %}
+      {{ row.next_action.text }}{% if row.dated_step %} · {{ row.dated_step.meaning|lower }} <span data-clock>{{ row.dated_step.day_month }}{% if row.dated_step.is_overdue or row.dated_step.is_review_ripe %} · {{ row.dated_step.short_date }}{% endif %}</span>{% else %} · <span class="pw-matter__undated">{{ row.next_action.date_display|lower }}</span>{% endif %}
     </span>
   {% else %}
     <span class="pw-matter__next pw-matter__next--none">

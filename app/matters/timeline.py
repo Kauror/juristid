@@ -2543,6 +2543,12 @@ def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> 
     Visibility is applied twice over, by `scope_change_events` on the event
     stream and by `DocumentLink.visible_to` and `Document.visible_to` on the
     files, and this can only ever remove a row.
+
+    **A file taken off the Matter reads nowhere** (docs/adr/0120), so its
+    upload line goes with it, in the same query: «lisas dokumendi» over a file
+    that is no longer listed is the page pointing at something that is not
+    there — ADR 0102's «the row leaves», for a document. `Kõik muudatused`
+    keeps both the upload and the removal.
     """
     from app.documents.links import DocumentLink
     from app.documents.models import DocumentVersion
@@ -2559,7 +2565,9 @@ def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> 
     )
     return set(
         DocumentVersion.objects.filter(
-            models.Q(document_id__in=linked) | models.Q(pk__in=final_texts)
+            models.Q(document_id__in=linked)
+            | models.Q(pk__in=final_texts)
+            | models.Q(document__matter=matter, document__removed_at__isnull=False)
         ).values_list("id", flat=True)
     )
 

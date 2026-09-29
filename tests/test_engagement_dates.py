@@ -19,6 +19,7 @@ panel, and the act itself is held by `tests/test_engagement_feedback_wait.py`.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import pytest
 from django.urls import reverse
@@ -81,8 +82,16 @@ def test_the_panel_asks_for_the_engagement_date_and_shows_todays_default(signed_
     assert f'value="{format_estonian_date(timezone.localdate())}"' in panel
 
 
-def test_the_panel_does_not_ask_how_long_feedback_is_awaited(signed_in, specialist):
-    """`Tagasisidet ootame kuni` is **not on this panel** — no box, no spans.
+def test_the_panel_asks_how_long_feedback_is_awaited_with_no_default(signed_in, specialist):
+    """`Tagasisidet ootame kuni` is on this panel again — **empty, and no spans**.
+
+    **docs/adr/0120 §3 narrows what follows.** The owner's QA (UQ-10) found that
+    with no box here the one fact that makes a round a wait took a second, non-
+    obvious edit. The box is back as the correction form's own field; what the
+    history below objected to — a *default* that opened waits nobody chose, and
+    quick spans that made one a click away — stays out.
+
+    The history, as it was written:
 
     **docs/adr/0091 §2 narrows docs/adr/0086 §2 past its default.** That record
     pre-filled the box with today + 7, on an argument that was right about its own
@@ -110,12 +119,13 @@ def test_the_panel_does_not_ask_how_long_feedback_is_awaited(signed_in, speciali
     matter = factories.MatterFactory(owner=specialist)
 
     panel = _panel(_workspace(signed_in, matter))
+    box = re.search(r'<input[^>]*name="feedback_deadline"[^>]*>', panel)
 
-    assert "Tagasisidet ootame kuni" not in panel
-    assert 'name="feedback_deadline"' not in panel
-    # The spans went with the question, so the panel holds no quick-date control
-    # of its own either — a chip with nothing to write into would be a control
-    # that silently does nothing.
+    assert "Tagasisidet ootame kuni" in panel
+    assert box is not None
+    assert 'value="' not in box.group(0) or 'value=""' in box.group(0)
+    # The spans stay with `Ootan tagasisidet`: no quick-date control here, so a
+    # wait is never one accidental click away.
     assert "data-quickdate" not in panel
 
 
@@ -611,9 +621,8 @@ def test_an_engagement_with_no_feedback_deadline_reads_exactly_as_it_did(signed_
     assert "Kaasamine: Liikmed" in body
     assert "Vastuseid 7" in body
     # The row says nothing about a deadline it never had — no «Määramata», no
-    # «—», no «Tähtaeg puudub». And the panel does not ask either, since
-    # docs/adr/0091 §2; what the row *does* offer is the act that would open one.
-    assert "Tagasisidet ootame kuni" not in _panel(body)
+    # «—», no «Tähtaeg puudub». What the row *does* offer is the act that would
+    # open one; the panel's own box is empty (docs/adr/0120 §3).
     assert "Ootame tagasisidet kuni" not in body
     assert "Ootan tagasisidet" in body, "the round offers no way to start waiting"
 

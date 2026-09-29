@@ -562,13 +562,11 @@ def test_the_composer_panel_asks_for_one_date(signed_in, specialist):
     often typed up days or months after it happened, and the panel answered that
     by storing today anyway, silently, with no box on the screen saying so.
 
-    **`Tagasisidet ootame kuni` is not asked here**, which is where
-    docs/adr/0086 §2 finally lands. It is what turns a round into current work,
-    and that is a decision somebody makes rather than a field on a form they were
-    already filling in — so it is `Ootan tagasisidet` on the round's own
-    chronology row, and this panel records a completed act (docs/adr/0091 §2).
-    `Saadud tagasiside / arvamused` is where the answers go when there is no
-    separate file.
+    **`Tagasisidet ootame kuni` is asked here again, optional and empty**
+    (docs/adr/0120 §3, narrowing docs/adr/0091 §2). Left empty the panel records
+    a completed act and opens no wait; filled, it is the same wait `Ootan
+    tagasisidet` on the round's row opens. `Saadud tagasiside / arvamused` is
+    where the answers go when there is no separate file.
 
     How those boxes behave is `tests/test_engagement_dates.py`; this is the
     inventory of what the panel asks.
@@ -587,8 +585,8 @@ def test_the_composer_panel_asks_for_one_date(signed_in, specialist):
     assert 'name="response_count"' in panel
     assert 'name="occurred_on"' in panel
     assert "Kaasamise kuupäev" in panel
-    assert 'name="feedback_deadline"' not in panel
-    assert "Tagasisidet ootame kuni" not in panel
+    assert 'name="feedback_deadline"' in panel
+    assert "Tagasisidet ootame kuni" in panel
     assert 'name="feedback_received"' in panel
     assert "Saadud tagasiside / arvamused" in panel
 

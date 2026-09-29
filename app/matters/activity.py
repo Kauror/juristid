@@ -237,16 +237,13 @@ class MatterActivityFact:
         """The same fact for a surface that has no room for a year.
 
         `12.5` for a day, which is what *Viimati muudetud* on Minu töö has
-        always printed; `09.26` for a month, the two-number shape the work
-        surfaces already use for exactly this (`WorkItem.compact_month`); and
-        the period spelled out for a quarter or a year, because *IV kvartal
-        2026* has no two-number form a reader would arrive at unaided.
+        always printed, and the period spelled out for a month, a quarter or a
+        year — «oktoober 2025», not `10.25`, which two numbers under a column of
+        days read as a day (docs/adr/0120, UQ-09).
 
         Never the anchor as a day. `01.10` under a heading that means "when
         something last happened" is a claim about the first of October.
         """
-        if self.date_precision == DatePrecision.MONTH:
-            return f"{self.occurred_on.month:02d}.{self.occurred_on.year % 100:02d}"
         if self.is_approximate:
             return self.display_date
         return f"{self.occurred_on.day}.{self.occurred_on.month}"

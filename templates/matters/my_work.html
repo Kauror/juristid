@@ -99,7 +99,12 @@ The rail holds only what has no honest place on a timeline.
   <div class="worklayout2">
     <div class="worklayout2__main">
       {% for band in work.bands %}
-        <section class="workband workband--{{ band.key }}" aria-label="{{ band.label }}">
+        {% comment %}
+          The id is what the strip's «üle tähtaja» and «sel nädalal» figures
+          open: each counts exactly this section's rows (docs/adr/0120).
+        {% endcomment %}
+        <section class="workband workband--{{ band.key }}" id="{{ band.key }}" tabindex="-1"
+                 aria-label="{{ band.label }}">
           <div class="workband__head">
             <h2 class="workband__title workband__title--{{ band.key }}">{{ band.label }}</h2>
             {% comment %}

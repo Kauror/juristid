@@ -14,30 +14,17 @@
       in the box where it can be read, changed and emptied — which is the one
       shape docs/adr/0078 §2 allows a date default to take.
 
-      **`Tagasisidet ootame kuni` is not asked here at all, which is where
-      docs/adr/0086 §2 finally lands.** That record put the box on this panel
-      opening on today + 7, on an argument that was right about its own subject:
-      a week is what a round asks for when nobody says otherwise. The first
-      lawyer test showed the *consequence* was out of proportion to a default —
-      recording «19.09 — kaasati 234 tööstusettevõtet» is a completed act, and
-      under a pre-filled deadline it also opened a managed wait, drew a work
-      item, appeared on somebody's Minu asjad and then needed a second
-      deliberate act to get off the page.
-
-      Emptying the default was the first answer and it was not enough: an empty
-      box is still a box that has to be read, understood and skipped, every
-      time, and it was still the panel that opened the wait. So the question
-      moved out of the capture panel altogether (lawyer feedback 11,
-      docs/adr/0091 §2).
-
-      **The wait itself is unchanged and is not withdrawn.** It is
-      `Ootan tagasisidet` on the round's own chronology row now — one named act,
-      taken by somebody who has decided this file is waiting on an answer. The
-      column, the single `WorkItem`, `PRAEGUNE TEGEVUS`, the overdue wording and
-      `Lõpeta kaasamine` are all exactly as docs/adr/0086 §3 and §6 built them;
-      it still creates no `Järgmiseks`, still is not `Arvamuse tähtaeg`, and
-      still counts towards no deadline statistic. Every round already waiting
-      goes on waiting (matters/partials/engagement_row.html).
+      **`Tagasisidet ootame kuni` is asked here again — optional and empty**
+      (docs/adr/0120, UQ-10). Without it the fact that decides whether a round is
+      waiting could only be given by saving the round and then opening `Muuda`
+      on it. What docs/adr/0091 §2 objected to was a *pre-filled* box that opened
+      a wait nobody had decided on; this one has no default, so a round recorded
+      as a completed act opens no wait, draws no work item and stores no
+      deadline. Filled in, it is the same column `Muuda` corrects and the same
+      wait `Ootan tagasisidet` opens on the row: the single `WorkItem`,
+      `PRAEGUNE TEGEVUS`, «Tagasiside tähtaeg» on the rail and `Lõpeta
+      kaasamine`, all as docs/adr/0086 §3 and §6 built them. Any day is
+      accepted — past, today or future.
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-kaasamine-valik"
            data-addpick aria-controls="lisa-kaasamine"
@@ -69,6 +56,12 @@
               <span class="cx-f__lab">Kaasamise kuupäev
                 <span class="cx-f__opt">valikuline</span></span>
               {{ add_engagement_form.occurred_on }}
+            </label>
+            <label class="cx-f cx-f--date"
+                   for="{{ add_engagement_form.feedback_deadline.id_for_label }}">
+              <span class="cx-f__lab">{{ add_engagement_form.feedback_deadline.label }}
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ add_engagement_form.feedback_deadline }}
             </label>
           </div>
           <label class="cx-f" for="{{ add_engagement_form.feedback_received.id_for_label }}">
@@ -108,6 +101,10 @@
           {% if add_engagement_form.occurred_on.errors %}
             <p class="field__error" id="{{ add_engagement_form.occurred_on.auto_id }}_error">
               {{ add_engagement_form.occurred_on.errors|first }}</p>
+          {% endif %}
+          {% if add_engagement_form.feedback_deadline.errors %}
+            <p class="field__error" id="{{ add_engagement_form.feedback_deadline.auto_id }}_error">
+              {{ add_engagement_form.feedback_deadline.errors|first }}</p>
           {% endif %}
           {% if add_engagement_form.smaily_url.errors %}
             <p class="field__error" id="{{ add_engagement_form.smaily_url.auto_id }}_error">

@@ -1,21 +1,16 @@
-"""The compact date cell on a work row, when the source named a month.
+"""The compact date cell on a work row, when the source named a period.
 
-*september 2026* is the honest way to write a month, and it was the wrong thing
-to put in this particular column. The date cell on a work row is a narrow one
-holding ``15.09``, ``täna`` and ``3 p üle``; a two-word Estonian month is twice
-its width. The decision is ``09.26`` — the month, then the year's last two
-digits.
+*september 2026* is the honest way to write a month, and since docs/adr/0120
+(UQ-09) it is what this column prints. It used to print ``09.26`` — the month,
+then the year's last two digits — to fit a narrow column, and a lawyer read
+«10.26» under a column of days as a day and a month. So a month is written in
+words here exactly as `format_at_precision` writes it on every other surface,
+beside the quarter, half-year and year that always were.
 
-The rule this file exists to hold is that shortening it did not turn it into a
-day. ``09.26`` has two numbers where a date has three, so it cannot be read as
-the first of September. ``01.09.2026`` could be, and so could ``täna`` printed
-on the first of the month; both are the failure master specification §3.5 is
-about, and both are asserted against below.
-
-Only MONTH. A quarter, a half-year and a year keep the words they had — there is
-no two-number spelling of *II kvartal 2027* that a reader would arrive at
-unaided, and inventing one would give this column a private syntax nothing else
-in the product speaks.
+The rule this file still exists to hold is that the cell never turns a period
+into a day: not ``01.09.2026``, not ``01.09``, and not ``täna`` printed on the
+first of the month — each is the failure master specification §3.5 is about,
+and each is asserted against below.
 
 Fixed dates rather than offsets from today, because the assertion is literally
 about which characters are printed for a named month; ``today`` is passed in, so
@@ -25,6 +20,7 @@ offsets instead, since a view reads the real clock.
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 import pytest
@@ -35,7 +31,7 @@ from app.intelligence.services import add_important_date
 from app.matters import work_items as wi
 from app.matters.my_work import build_my_work
 from app.matters.services import create_matter
-from app.workflow.dates import period_bounds
+from app.workflow.dates import format_at_precision, period_bounds
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.services import set_next_action
 
@@ -49,6 +45,9 @@ TODAY = date(2026, 8, 12)
 WEEK_END = date(2026, 8, 16)
 
 MY_WORK = reverse("matters:my_work")
+
+#: Two numbers and nothing else — the retired month spelling, and a day's.
+TWO_NUMBERS = re.compile(r"^\d{2}\.\d{2}$")
 
 
 def _matter(owner, title="Näidisteema"):
@@ -74,45 +73,45 @@ def _items(owner, today=TODAY):
 
 
 # ---------------------------------------------------------------------------
-# A month is two numbers
+# A month is written in words
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("anchor", "expected"),
     [
-        (date(2026, 9, 1), "09.26"),
-        (date(2027, 1, 1), "01.27"),
-        (date(2031, 12, 1), "12.31"),
+        (date(2026, 9, 1), "september 2026"),
+        (date(2027, 1, 1), "jaanuar 2027"),
+        (date(2031, 12, 1), "detsember 2031"),
     ],
 )
-def test_a_month_precision_row_prints_month_and_two_digit_year(specialist, anchor, expected):
+def test_a_month_precision_row_prints_the_month_in_words(specialist, anchor, expected):
     _action(specialist, on=anchor, precision=DatePrecision.MONTH, title="Kuu täpsusega teema")
 
-    assert _items(specialist)["Kuu täpsusega teema"].short_date == expected
+    printed = _items(specialist)["Kuu täpsusega teema"].short_date
+
+    assert printed == expected
+    assert printed == format_at_precision(anchor, DatePrecision.MONTH)
 
 
-def test_the_month_name_is_gone_and_no_day_took_its_place(specialist):
+def test_no_two_number_month_and_no_day_in_its_place(specialist):
     """Both halves of §3.5 at once, on the string the row actually prints.
 
-    The long form must be gone — that is the change — and the anchor day must
-    not have arrived in its place, which is the thing the change was not allowed
-    to do.
+    The two-number form must be gone — that is the change (UQ-09) — and the
+    anchor day must not have arrived in its place.
     """
     _action(specialist, on=date(2026, 9, 1), precision=DatePrecision.MONTH, title="Kuu täpsusega")
 
     printed = _items(specialist)["Kuu täpsusega"].short_date
 
-    assert printed == "09.26"
-    assert "september" not in printed.lower()
-    assert "01.09.2026" not in printed
-    # Not «01.09» either. The compact column's own spelling of a day is two
-    # numbers as well, and their order is the entire safeguard.
-    assert printed != "01.09"
+    assert printed == "september 2026"
+    assert not TWO_NUMBERS.match(printed)
+    assert "09.26" not in printed
+    assert "01.09" not in printed
 
 
 def test_a_month_that_starts_today_is_still_a_month(specialist):
-    """The other way to name a day, and the reason the month is answered first.
+    """The other way to name a day, and the reason a period is answered first.
 
     A month anchors on its first, so on 1 September a September expectation
     would otherwise print *täna* — which tells the reader it is due today just
@@ -121,23 +120,22 @@ def test_a_month_that_starts_today_is_still_a_month(specialist):
     first = date(2026, 9, 1)
     _action(specialist, on=first, precision=DatePrecision.MONTH, title="Algab täna")
 
-    assert _items(specialist, today=first)["Algab täna"].short_date == "09.26"
+    assert _items(specialist, today=first)["Algab täna"].short_date == "september 2026"
 
 
 def test_an_overdue_month_names_the_month_beside_the_count(specialist):
     """The second line of the same cell speaks the same way.
 
     A passed month prints «N p üle» in the date cell and the meaning line under
-    it carries the period it was, so the two halves of one cell must not spell
-    that period two different ways.
+    it carries the period it was, in the words the rest of the product uses.
     """
     _action(specialist, on=date(2026, 6, 1), precision=DatePrecision.MONTH, title="Möödas kuu")
 
     item = _items(specialist)["Möödas kuu"]
 
     assert item.short_date == "43 p üle"
-    assert item.meaning_line == "PLAANIS 06.26"
-    assert "juuni" not in item.meaning_line.lower()
+    assert item.meaning_line == "PLAANIS juuni 2026"
+    assert "06.26" not in item.meaning_line
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +151,7 @@ def test_an_exact_date_still_prints_as_a_day(specialist):
     assert item.short_date == "15.09"
     assert item.day_month == "15.09"
     assert item.weekday_letter == "T"
-    assert item.compact_month == ""
+    assert not item.is_approximate
 
 
 @pytest.mark.parametrize(
@@ -165,14 +163,13 @@ def test_an_exact_date_still_prints_as_a_day(specialist):
     ],
 )
 def test_a_wider_period_keeps_the_words_it_had(specialist, anchor, precision, expected):
-    """No ``04.27`` for a quarter. The compact spelling is MONTH's alone."""
+    """No ``04.27`` for a quarter, as there is none for a month any more."""
     _action(specialist, on=anchor, precision=precision, title="Lai periood")
 
     item = _items(specialist)["Lai periood"]
 
     assert item.short_date == expected
     assert item.display_date == expected
-    assert item.compact_month == ""
 
 
 def test_a_response_deadline_is_a_day_and_stays_one(specialist):
@@ -190,7 +187,7 @@ def test_a_response_deadline_is_a_day_and_stays_one(specialist):
     assert item.source_type == wi.SOURCE_RESPONSE_DEADLINE
     assert item.date_precision == DatePrecision.EXACT
     assert item.short_date == "15.09"
-    assert item.compact_month == ""
+    assert not item.is_approximate
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +200,7 @@ def test_an_important_date_recorded_to_a_month_reads_the_same_way(specialist):
 
     A milestone and a next action are different obligations sharing one column,
     and a reader comparing two rows must not have to know which table each came
-    from in order to read the date. ``display_date`` is untouched underneath —
-    the long form is still what the Matter page and the edit forms print.
+    from in order to read the date.
     """
     matter = _matter(specialist, title="Olulise tähtajaga teema")
     start, end = period_bounds(date(2026, 9, 1), DatePrecision.MONTH)
@@ -220,7 +216,7 @@ def test_an_important_date_recorded_to_a_month_reads_the_same_way(specialist):
     item = _items(specialist)["Olulise tähtajaga teema"]
 
     assert item.source_type == wi.SOURCE_IMPORTANT_DEADLINE
-    assert item.short_date == "09.26"
+    assert item.short_date == "september 2026"
     assert item.display_date == "september 2026"
 
 
@@ -232,7 +228,7 @@ def test_an_important_date_recorded_to_a_month_reads_the_same_way(specialist):
 def test_the_month_keeps_its_anchor_period_band_and_overdue_reading(specialist):
     """A display decision that had reached the sorting would be a bug rather
     than a UI change. Every value the list is built out of, asserted against the
-    stored month rather than against the shortened string."""
+    stored month rather than against the printed string."""
     anchor = date(2026, 9, 1)
     _action(specialist, on=anchor, precision=DatePrecision.MONTH, title="Kuu täpsusega")
 
@@ -246,8 +242,8 @@ def test_the_month_keeps_its_anchor_period_band_and_overdue_reading(specialist):
     assert not item.is_review_ripe
     # A weekday would name a day exactly the way the date would.
     assert item.weekday_letter == ""
-    # *Järgmised 30 päeva* still takes day-precise dates only, so a month inside
-    # the window is *Hiljem* — as it was before the string changed.
+    # *Järgmised 30 päeva* takes day-precise dates only, so a month inside the
+    # window is *Hiljem*.
     assert wi.band_of(item, TODAY, WEEK_END, None) == wi.BAND_LATER
 
 
@@ -255,25 +251,19 @@ def test_the_cell_counts_days_from_the_last_day_of_the_month(specialist):
     """The period, not the anchor. 30 September is still inside September.
 
     `days_late` is what the cell prints and it reads `period_end`, so the month
-    is still spelled `09.26` on its last day and becomes «1 p üle» the morning
-    after. That is unchanged; only the string it falls back to is new.
-
-    Not asserted here: `NextAction.is_overdue`, which compares the *anchor* and
-    so calls a September DO late from the 2nd. It is read for the row's colour
-    and for the «Üle tähtaja» count, it disagrees with the count of days beside
-    it, and it disagreed before this change — untouched on purpose.
+    is still spelled out on its last day and becomes «1 p üle» the morning after.
     """
     _action(specialist, on=date(2026, 9, 1), precision=DatePrecision.MONTH, title="Kuu täpsusega")
 
     last_day = _items(specialist, today=date(2026, 9, 30))["Kuu täpsusega"]
     assert last_day.period_end == date(2026, 9, 30)
     assert last_day.days_late == 0
-    assert last_day.short_date == "09.26"
+    assert last_day.short_date == "september 2026"
 
     after = _items(specialist, today=date(2026, 10, 1))["Kuu täpsusega"]
     assert after.days_late == 1
     assert after.short_date == "1 p üle"
-    assert after.meaning_line == "PLAANIS 09.26"
+    assert after.meaning_line == "PLAANIS september 2026"
 
 
 def test_the_page_builder_puts_the_month_where_it_always_was(specialist):
@@ -301,7 +291,7 @@ def _compact(anchor: date) -> str:
     return f"{anchor.month:02d}.{anchor.year % 100:02d}"
 
 
-def test_the_rendered_work_row_carries_the_compact_month(client, specialist):
+def test_the_rendered_work_row_writes_the_month_out(client, specialist):
     """Through the view, so the template is proved and not only the read model."""
     anchor = _next_month_first()
     _action(specialist, on=anchor, precision=DatePrecision.MONTH, title="Renderdatud kuu")
@@ -310,7 +300,8 @@ def test_the_rendered_work_row_carries_the_compact_month(client, specialist):
     html = client.get(MY_WORK).content.decode()
 
     assert "Renderdatud kuu" in html
-    assert f">{_compact(anchor)}</span>" in html
+    assert format_at_precision(anchor, DatePrecision.MONTH) in html
+    assert f">{_compact(anchor)}</span>" not in html
     assert f"01.{anchor.month:02d}.{anchor.year}" not in html
 
 
@@ -324,4 +315,5 @@ def test_a_colleagues_page_spells_the_month_the_same_way(client, specialist, dep
     html = client.get(url).content.decode()
 
     assert "Kolleegi kuu" in html
-    assert f">{_compact(anchor)}</span>" in html
+    assert format_at_precision(anchor, DatePrecision.MONTH) in html
+    assert f">{_compact(anchor)}</span>" not in html

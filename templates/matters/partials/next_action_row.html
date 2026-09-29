@@ -145,7 +145,16 @@ the first textarea (static/js/ux.js, `data-koostaja-toggle`).
       with no mode and no date because the importer refuses to guess which of
       the three meanings it carried (ADR 0021, Teema redesign §8.3).
     {% endcomment %}
-    {% if source_instruction %}
+    {% if upcoming_step %}
+      {% comment %}
+        The nearest upcoming `Oluline tähtaeg`, where no step is set — the rule
+        `PRAEGUNE TEGEVUS` reads, so the two cannot name different next steps
+        (app/matters/next_step.py, docs/adr/0120).
+      {% endcomment %}
+      <span class="uxnext__flag">Oluline tähtaeg</span>
+      <span class="uxnext__text">{{ upcoming_step.title }}</span>
+      <span class="uxnext__date">{{ upcoming_step.display_date }}</span>
+    {% elif source_instruction %}
       <span class="uxnext__flag uxnext__flag--source">Excelist</span>
       <span class="uxnext__text uxnext__text--source">{{ source_instruction }}</span>
       {% if source_snapshot %}

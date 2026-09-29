@@ -23,6 +23,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
@@ -338,6 +339,14 @@ def as_midnight(value: Any) -> Any:
 @business_write_required
 @require_http_methods(["POST"])
 def withdraw(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Võta tagasi` — from the opinion's ⋯ on Dokumendid or its row in `Teema käik`.
+
+    Both controls are one partial posting here, so there is one withdrawal:
+    `withdraw_submission`, its state check and its `SUBMISSION_WITHDRAWN` row
+    (docs/adr/0120). `tagasi=teema` is a fixed word, never a URL — the rule
+    `documents.views._after_upload` states — and returns the person to the
+    opinion's row on the Teema page they pressed it on.
+    """
     submission = _visible_submission(request, pk)
     try:
         withdraw_submission(
@@ -346,6 +355,11 @@ def withdraw(request: HttpRequest, pk: Any) -> HttpResponse:
         messages.success(request, "Arvamus on tagasi võetud.")
     except DomainError as error:
         messages.error(request, str(error))
+    if request.POST.get("tagasi") == "teema":
+        return redirect(
+            reverse("matters:matter_detail", kwargs={"pk": submission.matter_id})
+            + f"#koja-arvamus-{submission.pk}-sisu"
+        )
     return _back(submission)
 
 

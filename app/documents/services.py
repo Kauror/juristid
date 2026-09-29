@@ -56,6 +56,156 @@ OPINION_UPLOAD_REFUSAL = (
     "Seal salvestatakse fail koos saatmise kuupäeva ja adressaatidega."
 )
 
+#: Roles a person may not file a *new* upload as, however many the model holds.
+#:
+#: `OUTCOME_EVIDENCE` — «Tulemuse tõend» — is a claim about what happened to a
+#: proposal after Koda wrote about it, and a file is almost never that at the
+#: moment somebody is uploading it. On the menu it read as a plausible tenth
+#: option beside nine descriptions of what a file *is*, and picking it filed a
+#: document under an assertion nobody had made.
+#:
+#: An exclusion from a menu and nothing else. The value stays in
+#: :class:`~app.documents.enums.DocumentRole`, documents already carrying it
+#: stay valid and render their stored label everywhere they always did, the
+#: `Roll` filter still offers it so those documents remain findable, and no
+#: migration is involved. Here rather than in the Dokumendid view since
+#: docs/adr/0120, because `Muuda liiki` offers the same vocabulary the upload
+#: does and one set is what keeps the two from drifting.
+UPLOAD_ROLES_NOT_OFFERED: frozenset[str] = frozenset({DocumentRole.OUTCOME_EVIDENCE})
+
+# -- Correcting a document (docs/adr/0120, UQ-12) ----------------------------
+#
+# What a person may do about a file once it is on the Matter, and — stated once,
+# for the page that offers the act and for the service that performs it — what
+# refuses each act. The evidence architecture is not touched by any of them: no
+# byte is rewritten, no `DocumentVersion` is removed, and a letter that went out
+# stays exactly the letter that went out.
+
+#: A sent opinion's letter. The standing opinion is what Koda said; its file is
+#: the proof of the exact words, and the way to undo a mistaken one is the
+#: domain's own — withdrawing it — which is named so the reader knows what to do.
+SENT_OPINION_EVIDENCE = (
+    "See fail on saadetud Koja arvamuse tõend: just see fail läks välja ja jääb "
+    "arvamuse juurde. Kui arvamus saadeti ekslikult või vale failiga, võta arvamus "
+    "kõigepealt tagasi (Teema käik → arvamuse rida → Võta tagasi); õige arvamus "
+    "registreeritakse uuena."
+)
+#: A superseded opinion's letter, or the chosen text of one still being prepared.
+KEPT_OPINION_EVIDENCE = (
+    "See fail on Koja arvamuse tõend (asendatud või koostamisel arvamus) ja jääb "
+    "selle arvamuse juurde."
+)
+#: A withdrawn opinion's letter may leave the list, but it is not revised or
+#: reclassified: it is still the record of what went out before the withdrawal.
+WITHDRAWN_OPINION_EVIDENCE = (
+    "See fail on tagasi võetud Koja arvamuse tõend. Saadetud faili ei parandata ega "
+    "liigitata ümber; õige arvamus registreeritakse uuena."
+)
+DOCUMENT_UNDER_LEGAL_HOLD = "Dokumendile on seatud säilitamiskohustus, seega ei saa seda eemaldada."
+DOCUMENT_ROLE_NOT_OFFERED = "Seda liiki ei saa dokumendile valida."
+#: The confirmation a removal answers with, for the view's message.
+DOCUMENT_REMOVED_MESSAGE = "Dokument on teema dokumentide hulgast eemaldatud."
+
+
+def offered_document_roles(current: str = "") -> list[tuple[str, str]]:
+    """The roles a person may file a document as — on upload, or by correcting it.
+
+    `Muuda liiki` and `↑ Lae dokument` offer one vocabulary, so a role a person
+    could upload under is a role they can correct to and nothing else is. The
+    document's own stored role is kept in the list even when it is no longer
+    offered (`Tulemuse tõend`, `Arvamus`), so the select can say what the file
+    is now rather than silently showing something else.
+    """
+    return [
+        (value, label)
+        for value, label in DocumentRole.choices
+        if value == current
+        or (value not in UPLOAD_ROLES_NOT_OFFERED and value not in UPLOAD_REFUSED_ROLES)
+    ]
+
+
+def opinion_evidence_statuses(document: Document) -> set[str]:
+    """The statuses of every opinion standing on one of this document's versions.
+
+    `Submission.final_version` — the exact bytes a send stands on — is the one
+    tie between a file and a letter the evidence architecture keeps (ADR 0040,
+    DATA-001). Read from the plain manager and unscoped: this decides whether an
+    act on the file may happen at all, never what a reader is shown.
+    """
+    from app.submissions.models import Submission
+
+    return set(
+        Submission.objects.filter(final_version__document=document).values_list("status", flat=True)
+    )
+
+
+def _opinion_refusal(statuses: set[str], *, withdrawn_blocks: bool) -> str:
+    from app.submissions.enums import SubmissionStatus
+
+    if SubmissionStatus.SENT in statuses:
+        return SENT_OPINION_EVIDENCE
+    if statuses & {SubmissionStatus.SUPERSEDED, SubmissionStatus.DRAFT}:
+        return KEPT_OPINION_EVIDENCE
+    if withdrawn_blocks and SubmissionStatus.WITHDRAWN in statuses:
+        return WITHDRAWN_OPINION_EVIDENCE
+    return ""
+
+
+def new_version_refusal(document: Document, statuses: set[str] | None = None) -> str:
+    """Why `Lisa uus versioon` may not add a version to this file, or "".
+
+    A sent letter is not revised after the fact: a second version would become
+    the file's *current* bytes, so the Dokumendid row badged `Arvamus` would
+    open a text that never went out while the opinion itself still stands on
+    the first. The opinion's own record never moves — `final_version` pins the
+    exact version — but the page would contradict it.
+
+    ``statuses`` lets the page that asks all three questions read the opinions
+    once (`opinion_evidence_statuses`).
+    """
+    if statuses is None:
+        statuses = opinion_evidence_statuses(document)
+    return _opinion_refusal(statuses, withdrawn_blocks=True)
+
+
+def role_change_refusal(document: Document, statuses: set[str] | None = None) -> str:
+    """Why `Muuda liiki` may not reclassify this file, or ""."""
+    if statuses is None:
+        statuses = opinion_evidence_statuses(document)
+    return _opinion_refusal(statuses, withdrawn_blocks=True)
+
+
+def removal_refusal(document: Document, statuses: set[str] | None = None) -> str:
+    """Why `Eemalda` may not take this file off the Matter, or "".
+
+    **A standing opinion's letter stays** — sent, superseded, or the chosen text
+    of one being prepared. A sent one names the way out: withdraw the opinion,
+    after which its letter may leave the list like any mistaken upload, the
+    withdrawn `Submission` keeping its `final_version` pointer and the bytes
+    staying in the evidence store (`PROTECT`). **A legal hold** outlives a
+    person's decision that a file does not belong, the rule deleting a Matter
+    applies to its documents (`app.matters.deletion`).
+    """
+    if statuses is None:
+        statuses = opinion_evidence_statuses(document)
+    refusal = _opinion_refusal(statuses, withdrawn_blocks=False)
+    if refusal:
+        return refusal
+    if document.legal_hold:
+        return DOCUMENT_UNDER_LEGAL_HOLD
+    return ""
+
+
+def _locked_document(document: Document) -> Document:
+    """The document's own row, re-read under a lock after the Matter's.
+
+    `Matter → Document` is the one lock order (`app/matters/locks.py`); the
+    refusals above are then asked of the row as it is now rather than as the
+    page that posted saw it.
+    """
+    return Document._base_manager.select_for_update(no_key=True).get(pk=document.pk)
+
+
 # Business formats the department actually exchanges. Anything else is refused
 # rather than stored and hoped about (master specification 15.6).
 #
@@ -602,8 +752,20 @@ def add_version_on_open_matter(
     caller resolved the document through the reader's visibility scope, and a
     Matter passed alongside it would be a second answer to the question of
     which file this belongs to.
+
+    **`Lisa uus versioon` on Dokumendid** (docs/adr/0120, UQ-12). The corrected
+    file becomes the document's current version and every earlier one stays,
+    immutable, in its version history — one document, not a second row with
+    the same name. Refused for an opinion's letter (`new_version_refusal`) and
+    for a file taken off the Matter, both under the locks.
     """
     lock_open_matter_for_business_write(document.matter_id)
+    locked = _locked_document(document)
+    if locked.is_removed:
+        raise DomainError(DOCUMENT_ALREADY_REMOVED)
+    refusal = new_version_refusal(locked)
+    if refusal:
+        raise DomainError(refusal)
     return add_evidence_version(
         document=document,
         content=content,
@@ -611,3 +773,93 @@ def add_version_on_open_matter(
         mime_type=mime_type,
         uploaded_by=uploaded_by,
     )
+
+
+DOCUMENT_ALREADY_REMOVED = "See dokument on teemalt juba eemaldatud."
+
+
+@transaction.atomic
+def change_document_role(*, document: Document, role: str, actor: Any = None) -> Document:
+    """`Muuda liiki` — what the file *is*, corrected (docs/adr/0120, UQ-12).
+
+    Metadata only: `Document.role` changes and nothing about a version does —
+    the bytes, the checksum and the version history are exactly what they were.
+    The vocabulary is the upload's (`offered_document_roles`), so `Arvamus`
+    stays reachable only through `Koja arvamus`, which records the send with
+    it; an opinion's own letter is not reclassified (`role_change_refusal`).
+
+    Audited as `DOCUMENT_ROLE_CHANGED`, old and new value in the payload. The
+    same role again writes nothing and returns the row unchanged, so a double
+    submit is not a second event. The search row follows on the save
+    (`app.search.signals.refresh_on_document_change`).
+    """
+    matter = lock_open_matter_for_business_write(document.matter_id)
+    locked = _locked_document(document)
+    if locked.is_removed:
+        raise DomainError(DOCUMENT_ALREADY_REMOVED)
+    if role not in {value for value, _label in offered_document_roles(locked.role)}:
+        if role in UPLOAD_REFUSED_ROLES:
+            raise DomainError(OPINION_UPLOAD_REFUSAL)
+        raise DomainError(DOCUMENT_ROLE_NOT_OFFERED)
+    if role == locked.role:
+        return locked
+    refusal = role_change_refusal(locked)
+    if refusal:
+        raise DomainError(refusal)
+    previous = locked.role
+    locked.role = role
+    locked.save(update_fields=["role", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.DOCUMENT_ROLE_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=locked,
+        summary=locked.title[:200],
+        payload={"from": previous, "to": role},
+    )
+    return locked
+
+
+@transaction.atomic
+def remove_document(*, document: Document, actor: Any = None) -> Document:
+    """`Eemalda dokument` — a mistaken upload comes off the Matter (docs/adr/0120).
+
+    ADR 0102's removal, extended to the file itself: `removed_at` and
+    `removed_by` are set and nothing is destroyed. Every `DocumentVersion`
+    stays, and so do its bytes in the immutable store; `DocumentLink` rows stay
+    and stop reading (`DocumentLink.visible_to`); the `ChangeEvent`s that said
+    the file arrived stay in `Kõik muudatused`, and `DOCUMENT_REMOVED` joins
+    them. What changes is every business read: `Document.objects.visible_to`
+    drops the row, so the Dokumendid list, the count on its tab, the files under
+    `Teema käik` rows, downloads through the product and search all stop
+    offering it — the search rows are withdrawn by the save's own signal.
+
+    Refused, under the Matter's and then the document's lock, for the reasons
+    `removal_refusal` states — above all while an opinion stands on it. On a
+    closed Matter the lock itself refuses, as it does every change to the file
+    (docs/adr/0076). Removing a removed document is not an error and writes
+    nothing.
+    """
+    matter = lock_open_matter_for_business_write(document.matter_id)
+    locked = _locked_document(document)
+    if locked.is_removed:
+        return locked
+    refusal = removal_refusal(locked)
+    if refusal:
+        raise DomainError(refusal)
+    locked.removed_at = timezone.now()
+    locked.removed_by = actor if getattr(actor, "pk", None) is not None else None
+    locked.save(update_fields=["removed_at", "removed_by", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.DOCUMENT_REMOVED,
+        matter=matter,
+        actor=actor,
+        obj=locked,
+        summary=locked.title[:200],
+        payload={
+            "role": locked.role,
+            "versions": locked.versions.count(),
+            "current_sha256": locked.current_version.sha256 if locked.current_version else "",
+        },
+    )
+    return locked

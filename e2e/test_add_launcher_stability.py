@@ -432,10 +432,8 @@ def test_the_engagement_panel_shows_both_dates_and_only_one_default(page, base_u
     assert panel.locator("[name=occurred_on]").input_value(), (
         "the engagement date opens empty, so today is being applied where nobody can see it"
     )
-    # And the reply-by date **not at all**, since docs/adr/0091 §2 narrowed
-    # docs/adr/0086 §2: a completed act does not acquire a managed wait nobody
-    # asked for, and an empty box is still a question. It moved to
-    # `Ootan tagasisidet` on the round's own chronology row, with the three spans
-    # travelling with it, which is what makes the narrowing affordable.
-    expect(panel.locator("[name=feedback_deadline]")).to_have_count(0)
-    expect(panel.get_by_text("Tagasisidet ootame kuni")).to_have_count(0)
+    # And the reply-by date **empty** — asked again since docs/adr/0120 §3, and
+    # with no default: a completed act acquires no wait nobody chose, which is
+    # what docs/adr/0091 §2 was about.
+    expect(panel.get_by_text("Tagasisidet ootame kuni")).to_be_visible()
+    expect(panel.locator("[name=feedback_deadline]")).to_have_value("")

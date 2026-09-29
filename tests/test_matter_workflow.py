@@ -17,6 +17,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.matters import selectors
+from app.matters.deletion import plan_matter_deletion
 from app.matters.models import Matter
 from app.matters.services import (
     assign_matter,
@@ -319,7 +320,16 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # **53 since docs/adr/0119**: a file read against no procedure now reads
     # the phases it recorded a step in, so a phase it went through before it
     # lost its pattern stays on the rail. One read, flat in the population.
-    assert len(captured) < 53
+    #
+    # **Plus the deletion plan, measured rather than guessed (docs/adr/0120 §7).**
+    # A writer's header asks `plan_matter_deletion` whether `Kustuta` can
+    # succeed, and the plan walks the ownership graph — a cost that belongs to
+    # the deletion module and is its own to keep. It is measured here on the
+    # same Matter and added, so the ceiling on *everything else* stays exactly
+    # as tight as it was.
+    with CaptureQueriesContext(connection) as plan:
+        plan_matter_deletion(matter)
+    assert len(captured) < 53 + len(plan)
 
 
 def test_selectors_reuse_the_prefetched_open_action(specialist):

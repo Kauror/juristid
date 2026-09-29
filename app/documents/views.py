@@ -35,6 +35,7 @@ from django.views.decorators.http import require_http_methods
 from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.authorization import may_write_business_content
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.errors import DomainError
 from app.core.http import content_disposition
@@ -45,9 +46,17 @@ from app.documents.extraction.orchestrator import derivative_storage
 from app.documents.models import Document, DocumentDerivative, DocumentVersion
 from app.documents.preview import build_preview
 from app.documents.services import (
+    DOCUMENT_REMOVED_MESSAGE,
     add_version_on_open_matter,
     capture_evidence_on_open_matter,
+    change_document_role,
     evidence_storage,
+    new_version_refusal,
+    offered_document_roles,
+    opinion_evidence_statuses,
+    removal_refusal,
+    remove_document,
+    role_change_refusal,
 )
 from app.documents.uploads import UploadRejected, read_upload
 from app.matters.views import get_visible_matter
@@ -165,7 +174,13 @@ def _after_upload(request: HttpRequest, matter: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Add a further version to an existing document. Bytes never change."""
+    """`Lisa uus versioon` — the corrected file, as this document's next version.
+
+    Bytes never change: the new file is a new immutable `DocumentVersion`, it
+    becomes the current one, and every earlier version stays in the history on
+    the page this returns to — the document's own, where the control is
+    (docs/adr/0120, UQ-12).
+    """
     document = get_object_or_404(Document.objects.visible_to(request.user), pk=pk)
     form = DocumentUploadForm(request.POST, request.FILES)
     form.fields["title"].required = False
@@ -173,7 +188,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
 
     if not form.is_valid() and "upload" in form.errors:
         messages.error(request, "Vali fail.")
-        return redirect("matters:matter_documents", pk=document.matter_id)
+        return redirect("documents:document_detail", pk=document.pk)
 
     try:
         upload = read_upload(request.FILES.get("upload"))
@@ -188,6 +203,49 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
     except (DomainError, UploadRejected) as error:
         messages.error(request, str(error))
 
+    return redirect("documents:document_detail", pk=document.pk)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def change_role(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Muuda liiki` — reclassify a file; its bytes and versions stay as they are.
+
+    The vocabulary and every refusal are `change_document_role`'s, asked under
+    the Matter's and the document's locks (docs/adr/0120, UQ-12).
+    """
+    document = get_object_or_404(Document.objects.visible_to(request.user), pk=pk)
+    try:
+        change_document_role(
+            document=document, role=request.POST.get("role", ""), actor=request.user
+        )
+        messages.success(request, "Dokumendi liik on muudetud.")
+    except DomainError as error:
+        messages.error(request, str(error))
+    return redirect("documents:document_detail", pk=document.pk)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def remove(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Eemalda dokument` — a mistaken upload comes off the Matter.
+
+    POST only, behind the confirmation on the document's page. Refused with the
+    service's own sentence — an opinion's letter, a legal hold, a closed Matter
+    — back on that page; done, it lands on Dokumendid, which no longer lists the
+    file (`remove_document`, docs/adr/0120). A second press from a stale tab
+    answers 404: the lookup is `visible_to`, which is where removal is filtered
+    (the rule docs/adr/0102 §5 states for every removable record).
+    """
+    document = get_object_or_404(Document.objects.visible_to(request.user), pk=pk)
+    try:
+        remove_document(document=document, actor=request.user)
+    except DomainError as error:
+        messages.error(request, str(error))
+        return redirect("documents:document_detail", pk=document.pk)
+    messages.success(request, DOCUMENT_REMOVED_MESSAGE)
     return redirect("matters:matter_documents", pk=document.matter_id)
 
 
@@ -354,6 +412,14 @@ def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     )
     version = document.current_version
     versions = list(document.versions.order_by("-version_number"))
+    # **What may be corrected here, and what refuses it** (docs/adr/0120,
+    # UQ-12). Only for a writer on an open Matter — the three routes refuse
+    # everybody else on their own, and a control that could only fail is not
+    # drawn. The opinions standing on this file are read once for all three
+    # answers; each refusal is the service's own sentence, so the page says
+    # exactly what the route would.
+    can_correct = may_write_business_content(request.user) and document.matter.is_open
+    statuses = opinion_evidence_statuses(document) if can_correct else set()
 
     return render(
         request,
@@ -363,6 +429,11 @@ def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
             "document": document,
             "version": version,
             "versions": versions,
+            "can_correct": can_correct,
+            "role_choices": offered_document_roles(document.role) if can_correct else [],
+            "role_refusal": role_change_refusal(document, statuses) if can_correct else "",
+            "version_refusal": new_version_refusal(document, statuses) if can_correct else "",
+            "removal_refusal": removal_refusal(document, statuses) if can_correct else "",
             "preview": build_preview(version) if version is not None else None,
             # Provenance in both directions: what this file arrived inside, and
             # what arrived inside it.

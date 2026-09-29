@@ -340,6 +340,27 @@ def test_each_band_caps_its_preview_and_holds_the_rest_inline(page, base_url):
     assert seen, "Minu asjad rendered no timeline band at all"
 
 
+def test_the_strip_figures_are_the_counts_of_the_bands_they_open(page, base_url):
+    """UQ-09: «N üle tähtaja» and «N sel nädalal» count the rows of their band.
+
+    One list decides both numbers (docs/adr/0120 §4): each figure equals the
+    heading of the band it links to, and that band is on this page.
+    """
+    _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
+
+    for caption, key in (("üle tähtaja", "ule_tahtaja"), ("sel nädalal", "sel_nadalal")):
+        figure = page.locator(f'.seis__figure:has(.seis__caption:text-is("{caption}"))')
+        band = page.locator(f"section.workband#{key}")
+        if figure.count() == 0:
+            # A zero is not drawn; then the band holds nothing either.
+            assert band.count() == 0, f"{key} has rows the strip does not count"
+            continue
+        assert figure.get_attribute("href") == f"#{key}"
+        assert int(figure.locator(".seis__number").inner_text().strip()) == int(
+            band.locator(".workband__count").inner_text().strip()
+        )
+
+
 def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):
     """*Hiljem* is a band of the timeline, not a panel dropped into it.
 

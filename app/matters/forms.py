@@ -185,6 +185,18 @@ def engagement_response_count_field() -> forms.IntegerField:
     )
 
 
+def engagement_feedback_deadline_field() -> EstonianDateField:
+    """`Tagasisidet ootame kuni` — one optional day, the same on both surfaces.
+
+    `+ Kaasamine` writes it and `Muuda` corrects it (docs/adr/0120), so like
+    `Vastuseid` above it has one definition and nothing to keep in step. No
+    `initial`, on either: a default is a date nobody chose sitting one `Salvesta`
+    away from opening a wait. Any day is valid input — the only rule about it is
+    the date order `refuse_deadline_before_engagement` states.
+    """
+    return EstonianDateField(label="Tagasisidet ootame kuni", required=False, widget=DATE_WIDGET)
+
+
 def clean_provider_link(form: forms.Form, field: str) -> str:
     """The service's own rule, reported under the box somebody typed it in."""
     from app.matters.services import normalize_engagement_url
@@ -3787,9 +3799,7 @@ class EngagementForm(forms.Form):
     #: longer waiting for anything, which also ends a wait somebody had already
     #: finished — the closure has nothing left to be a closure *of*
     #: (`update_engagement`, docs/adr/0086 §6).
-    feedback_deadline = EstonianDateField(
-        label="Tagasisidet ootame kuni", required=False, widget=DATE_WIDGET
-    )
+    feedback_deadline = engagement_feedback_deadline_field()
     #: `Saadud tagasiside / arvamused`, correctable like everything else.
     #:
     #: Editable after the wait is closed, and deliberately: a lawyer who typed
@@ -4386,19 +4396,19 @@ class CompactEngagementForm(forms.Form):
     cost a reader nothing when they are empty and they are the only place a
     mailing's address lives (docs/adr/0027, amended 2026-09-12).
 
-    **This panel does not ask for a reply-by date at all**, which is where
-    docs/adr/0086 §2 finally lands. That record put `Tagasisidet ootame kuni` on
-    this form; docs/adr/0091 §2 emptied its default; using it on real files showed
-    that neither went far enough. Recording that Koda asked somebody something is a
-    *completed act*, and a question about a reply-by date in the middle of it is
-    the complexity the department asked to have removed — an empty box is still a
-    box that has to be read, understood and skipped, every time.
-
-    The wait is unchanged and is not withdrawn: the column, the `WorkItem`, the
-    overdue reading and `Lõpeta kaasamine` are all exactly as docs/adr/0086 built
-    them. What moved is where one comes from — `Ootan tagasisidet` on the round's
-    own chronology row, which is a decision with somebody's name on it rather than
-    a field they were already filling in (lawyer feedback 11, docs/adr/0091 §2).
+    **`Tagasisidet ootame kuni` is back on this panel, optional and empty**
+    (docs/adr/0120, UQ-10). docs/adr/0091 §2 took it off, so the one fact that
+    decides whether a round is waiting — until when — could only be given by
+    saving the round and then opening `Muuda` on it: a second edit for the
+    ordinary case. It is the *same* field `EngagementForm` corrects it with, the
+    same date-order rule and the same service parameter, so creating and
+    correcting cannot disagree. What 0091 §2 feared is still kept out: the box
+    has **no default** — an untouched panel opens no wait, draws no work item
+    and invents no deadline — which was the whole of the harm the pre-filled
+    today + 7 did. Any day is accepted, past, today or future; a reply-by date
+    that has already passed is simply a wait that reads «Tagasiside tähtaeg
+    möödus» from the start. `Ootan tagasisidet` on the row stays for a round
+    recorded without one.
 
     **`Liik` is gone from this panel and no longer a `ChipChoices` question.**
     `Küsitlus` / `Koosolek` / `Kirjade voor` was a classification the department
@@ -4458,6 +4468,12 @@ class CompactEngagementForm(forms.Form):
         widget=EstonianDateInput(),
         initial=timezone.localdate,
     )
+    #: `Tagasisidet ootame kuni` — optional, and **no `initial`**: an empty box
+    #: is no wait at all, and a date nobody chose one `Salvesta` away from being
+    #: stored is what docs/adr/0091 §2 removed. One definition with
+    #: `EngagementForm`'s, so the correction form reads back exactly what this
+    #: one wrote (docs/adr/0120).
+    feedback_deadline = engagement_feedback_deadline_field()
     #: `Saadud tagasiside / arvamused` — what came back, where no separate file
     #: exists.
     #:
@@ -4507,10 +4523,9 @@ class CompactEngagementForm(forms.Form):
         cleaned["occurred_on_value"] = cleaned.get("occurred_on")
         cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
         refuse_future_engagement(self, cleaned)
-        # No `refuse_deadline_before_engagement` here any more: this panel has no
-        # reply-by box to relate to the engagement date. The rule is unchanged and
-        # is kept by the two surfaces that still write one — `EngagementForm` and
-        # `open_engagement_feedback_wait` (docs/adr/0091 §2).
+        # The one rule relating the two dates, under the box it is about — the
+        # service's own, asked the way `EngagementForm` asks it (docs/adr/0120).
+        refuse_deadline_before_engagement(self, cleaned)
         return cleaned
 
 

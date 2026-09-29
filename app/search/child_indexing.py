@@ -345,9 +345,15 @@ def indexable_fragments() -> QuerySet[DocumentTextFragment]:
     rebuild that removes them; indexing both would return the same page twice
     with slightly different text and no way for a reader to tell which is
     current.
+
+    So are the pages of a document taken off its Matter (docs/adr/0120): the
+    derivative is kept with the evidence, and a search result opening a file
+    the Matter no longer lists would be a result nobody can reach
+    (docs/adr/0116).
     """
     return DocumentTextFragment.objects.filter(
-        derivative__status=DerivativeStatus.ACTIVE
+        derivative__status=DerivativeStatus.ACTIVE,
+        derivative__version__document__removed_at__isnull=True,
     ).select_related(
         "derivative",
         "derivative__version",
@@ -522,14 +528,20 @@ def refresh_documents(
         source_kind=SearchSourceKind.DOCUMENT,
         source_object_id__in=[document.pk for document in rows],
     ).delete()
+    # **Delete for every row, insert only for the ones still on the Matter** —
+    # the shape every removable kind here has (docs/adr/0102), now that a
+    # document can be removed too (docs/adr/0120). The per-write refresh a
+    # removal's save fires withdraws the row; a full rebuild reaches the same
+    # index without a second path deciding what to skip.
+    live = [row for row in rows if not row.is_removed]
     SearchDocument.objects.bulk_create(
         [
             SearchDocument(**document_values(document, now), generation=generation)
-            for document in rows
+            for document in live
             for generation in generations
         ]
     )
-    return len(rows)
+    return len(live)
 
 
 def indexable_source_links() -> QuerySet:

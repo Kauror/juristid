@@ -133,7 +133,10 @@ def _expected_populations() -> list[tuple[str, str, int]]:
         (
             "Dokumendi tekstiosad",
             SearchSourceKind.DOCUMENT_FRAGMENT.value,
-            DocumentTextFragment.objects.filter(derivative__status=DerivativeStatus.ACTIVE).count(),
+            DocumentTextFragment.objects.filter(
+                derivative__status=DerivativeStatus.ACTIVE,
+                derivative__version__document__removed_at__isnull=True,
+            ).count(),
         ),
         (
             "Ajaloolised lehed",
@@ -166,11 +169,12 @@ def _expected_populations() -> list[tuple[str, str, int]]:
             MatterExternalPosition.objects.filter(**live).count(),
         ),
         # One row per Document whatever its extraction state, which is what
-        # `indexable_documents` projects (ENG-030).
+        # `indexable_documents` projects (ENG-030) — and none for one taken off
+        # its Matter, which projects nothing (docs/adr/0120).
         (
             "Dokumendid",
             SearchSourceKind.DOCUMENT.value,
-            Document.objects.filter(matter__deleted_at__isnull=True).count(),
+            Document.objects.filter(matter__deleted_at__isnull=True, **live).count(),
         ),
     ]
 
@@ -291,7 +295,7 @@ def kind_contracts() -> dict[str, KindContract]:
         SearchSourceKind.DOCUMENT.value: KindContract(
             "Dokumendid",
             "document__matter_id",
-            _child_texts(child.indexable_documents, child.document_values),
+            _child_texts(child.indexable_documents, child.document_values, removable=True),
             REPAIR_ALL,
         ),
     }

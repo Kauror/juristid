@@ -1,0 +1,49 @@
+{% comment %}
+`Võta tagasi` on a sent `Koja arvamus`, with its confirmation (docs/adr/0120, UQ-11).
+
+**One control, two places, one act.** The opinion's own row in `Teema käik` —
+where a person looking at the opinion finds it — and the opinion's ⋯ on
+Dokumendid both include this, and both post to `submissions:withdraw`, which is
+`withdraw_submission` and nothing else: the SENT → WITHDRAWN transition and its
+`SUBMISSION_WITHDRAWN` audit row. There is no second withdrawal path to keep in
+step.
+
+**Confirmed before it happens.** A withdrawal takes the letter out of every
+count of sent opinions and out of reporting, so the press that does it is the
+second one, under a sentence saying exactly that. A native disclosure, like
+`Kustuta` on a `Teema käik` row (`matters/partials/row_remove.html`): no second
+page, no `confirm()`, and `Loobu` closes it again.
+
+**Nothing is deleted, and the sentence says so.** The opinion stays in `Teema
+käik` as sent on its day, with «Arvamus tagasi võetud» under it, and the file
+that went out stays its evidence (docs/adr/0102 §1, docs/adr/0092 §3).
+
+The caller supplies `submission`, and `withdraw_back` — `"teema"` from the
+Teema page, which the route answers by returning there; empty elsewhere, where
+it lands on Dokumendid as it always has. On the Teema row the chip is named by
+reference to the row's headline (`koja-arvamus-<pk>-pealkiri`, the element
+`Muuda` beside it is named by), so a file with three opinions has three
+distinguishable `Võta tagasi` controls.
+{% endcomment %}
+<details class="uxtl__remove" data-withdraw>
+  {% if withdraw_back == "teema" %}
+    <summary class="uxtl__edit" id="arvamus-{{ submission.pk }}-tagasi"
+             aria-labelledby="arvamus-{{ submission.pk }}-tagasi koja-arvamus-{{ submission.pk }}-pealkiri">Võta tagasi</summary>
+  {% else %}
+    <summary class="uxtl__edit" id="arvamus-{{ submission.pk }}-tagasi">Võta tagasi</summary>
+  {% endif %}
+  <form class="uxtl__removeform" method="post"
+        action="{% url 'submissions:withdraw' pk=submission.pk %}">
+    {% csrf_token %}
+    {% if withdraw_back %}<input type="hidden" name="tagasi" value="{{ withdraw_back }}">{% endif %}
+    <p class="uxtl__removeask">
+      Võtan selle arvamuse tagasi. See ei lähe enam saadetud arvamuste ega
+      aruandluse arvestusse. Saatmise kirje, kuupäev ja saadetud fail jäävad
+      teema käiku ja muudatuste logisse — midagi ei kustutata.
+    </p>
+    <div class="uxtl__editactions">
+      <button class="button button--quiet button--tiny" type="submit">Kinnita tagasivõtmine</button>
+      <button class="uxtl__edit" type="button" data-close-disclosure>Loobu</button>
+    </div>
+  </form>
+</details>

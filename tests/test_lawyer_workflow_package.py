@@ -477,27 +477,29 @@ def test_the_date_box_is_empty_on_a_fresh_form(client, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_the_capture_panel_has_no_reply_by_field(client, specialist, normal_matter):
-    """The whole of §2: the panel does not ask, so nothing it saves waits.
+def test_the_capture_panel_asks_the_reply_by_date_empty(client, specialist, normal_matter):
+    """§2 as docs/adr/0120 §3 narrowed it: the panel asks, optional and empty.
 
     Asserted on the form's own `fields` and on the rendered page, because those
     are two different claims: the first is the contract and the second is what a
-    lawyer sees. An empty box would satisfy neither — it is still a question they
-    have to read, understand and skip on every round they file.
+    lawyer sees. What §2 objected to — a default that opened a wait nobody chose
+    — is what must still be absent: the box renders with no value.
     """
     from app.matters.forms import CompactEngagementForm
 
-    assert "feedback_deadline" not in CompactEngagementForm().fields
+    field = CompactEngagementForm().fields["feedback_deadline"]
+    assert field.required is False
+    assert field.initial is None
 
     client.force_login(specialist)
     body = client.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
     panel = body[body.index('id="lisa-kaasamine"') :]
-    panel = panel[: panel.index('id="lisa-')]
+    panel = panel[: panel.index("</form>")]
 
-    assert "Tagasisidet ootame kuni" not in panel
-    assert "feedback_deadline" not in panel
+    assert "Tagasisidet ootame kuni" in panel
+    assert _rendered_value(panel, "feedback_deadline") == ""
 
 
 def test_the_engagement_date_still_opens_on_today(client, specialist, normal_matter):
@@ -534,28 +536,29 @@ def test_a_new_engagement_creates_no_waiting_work_item(client, specialist, norma
     assert not any(item.matter.pk == normal_matter.pk for item in items)
 
 
-def test_the_panel_ignores_a_reply_by_date_posted_at_it(client, specialist, normal_matter):
-    """The field left the form as well as the page, so the wait has one door.
+def test_a_reply_by_date_given_on_the_panel_opens_the_wait(client, specialist, normal_matter):
+    """docs/adr/0120 §3: a day somebody typed is the wait, stored in one save.
 
-    A stale tab holding the old panel — or a crafted post — must not re-open the
-    surface §2 removed, because a wait it opened would be a work item nobody
-    decided to take on.
+    The same column and the same single work item `Ootan tagasisidet` opens, so
+    the panel is a second door onto one wait rather than a second kind of wait.
     """
     client.force_login(specialist)
+    deadline = timezone.localdate() + dt.timedelta(days=5)
     response = client.post(
         reverse("matters:add_engagement_compact", kwargs={"pk": normal_matter.pk}),
         {
             "audience": "liikmed",
-            "occurred_on": "19.09.2026",
-            "feedback_deadline": "30.09.2026",
+            "occurred_on": _estonian(timezone.localdate()),
+            "feedback_deadline": _estonian(deadline),
         },
     )
 
     assert response.status_code == 200
     engagement = normal_matter.engagements.get()
-    assert engagement.feedback_deadline is None
+    assert engagement.feedback_deadline == deadline
     items = work_items.work_items(specialist, responsible=specialist)
-    assert not any(item.matter.pk == normal_matter.pk for item in items)
+    waits = [item for item in items if item.matter.pk == normal_matter.pk]
+    assert [item.source_type for item in waits] == [work_items.SOURCE_FEEDBACK_WAIT]
 
 
 def test_the_explicit_act_opens_exactly_one_wait(client, specialist, normal_matter):
@@ -2134,13 +2137,14 @@ def test_nothing_clamps_clears_or_half_saves_a_refused_future_date(
 
 
 # ---------------------------------------------------------------------------
-# §5.5 — the continuation after a Submission
+# §5.5 — the continuation after a Submission, retired by docs/adr/0120 §1
 # ---------------------------------------------------------------------------
 
 
-def test_a_sent_opinion_with_no_open_step_offers_the_continuation(
+def test_a_sent_opinion_with_no_open_step_offers_no_continuation_sentence(
     client, specialist, normal_matter, ministry, evidence_root
 ):
+    """The owner asked for the sentence gone, with nothing in its place."""
     add_matter_koda_opinion(
         matter=normal_matter,
         author=specialist,
@@ -2153,12 +2157,9 @@ def test_a_sent_opinion_with_no_open_step_offers_the_continuation(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
 
-    assert "Menetlus võib jätkuda" in body
-    # `#lisa-marge`, which is the family. The sentence used to offer two links
-    # — «lisa menetluse areng või järgmine tegevus» — pointing at two launcher
-    # chips; there is one chip now and the next action is a box inside it
-    # (docs/adr/0097 §6, §8.2).
-    assert "#lisa-marge" in body
+    assert "Menetlus võib jätkuda" not in body
+    assert "Koja arvamus on saadetud" not in body
+    assert "Järgmine samm on määramata" in body
 
 
 def test_a_matter_with_no_sent_opinion_offers_nothing_of_the_kind(

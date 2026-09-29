@@ -38,6 +38,7 @@ from app.core.authorization import scoped_count
 from app.core.dates import format_estonian_date
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
+from app.matters.next_step import without_next_step
 from app.matters.register_filters import (
     OPINION_DRAFTING,
     filter_by_opinion_state,
@@ -230,11 +231,12 @@ def without_next_action(user: Any) -> QuerySet[Matter]:
     off. Read unscoped, a Matter dropped out of Osakond's *järgmine tegevus
     puudub* column the moment somebody filed a restricted step on it, which is
     a restricted record announcing itself through a count (AUTH-003).
+
+    The register's own rule, not a copy of it: an upcoming `Oluline tähtaeg` is
+    this Matter's next step when no `Järgmiseks` is set, and the column this
+    feeds links to `?tegevus=puudub` (`app.matters.next_step`, docs/adr/0120).
     """
-    has_open = NextAction.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), status=ActionStatus.OPEN
-    )
-    return active_matters(user).annotate(has_action=Exists(has_open)).filter(has_action=False)
+    return without_next_step(active_matters(user), user)
 
 
 #: Every summary card, as the register parameters that define it.

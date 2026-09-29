@@ -151,6 +151,11 @@ class DocumentLinkQuerySet(models.QuerySet):
             condition &= models.Q(**{f"{field}__isnull": True}) | models.Q(
                 **{f"{field}__removed_at__isnull": True}
             )
+        # **And a link from a file that was taken off the file goes too**
+        # (docs/adr/0120): the other end of the same line. A mistaken upload
+        # removed from Dokumendid must not go on reading as an attachment under
+        # the `Märge` it came in with.
+        condition &= models.Q(document__removed_at__isnull=True)
         return apply_scope(self, condition)
 
 
