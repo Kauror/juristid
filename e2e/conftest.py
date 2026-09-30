@@ -467,10 +467,13 @@ def set_next_step(page, text: str, when: str) -> None:
     is, there is no control of its own at all: `+ Järgmine tegevus` left the
     launcher on 2026-09-20, because two controls both offering to set «the next
     action» is how a lawyer ends up believing they have two — and the one
-    ordinary way to set the first step is the optional `Järgmine tegevus` inside
-    `+ Märge`, beside the thing that prompted it (docs/adr/0097 §8.2).
+    ordinary way to set the first step is `+ Märge` itself: the activity,
+    dated ahead, with `Märgi järgmiseks tegevuseks` ticked (docs/adr/0097 §8.2,
+    docs/adr/0124). That save also records the `Märge`, which `Teema käik`
+    draws as an `Eesolev` row carrying the same sentence.
 
-    `when` is an Estonian date as the box takes it.
+    `when` is an Estonian date as the box takes it, and on this host it has to
+    be **after today**: a past or today's `Märge` offers no step.
     """
     if page.locator("#lisa-jargmine").count():
         open_next_action_form(page)
@@ -479,9 +482,12 @@ def set_next_step(page, text: str, when: str) -> None:
         page.locator("#lisa-jargmine button[type=submit]").first.click()
     else:
         open_add_panel(page, "marge-tavaline")
-        page.locator("#id_marge_title").fill(f"Kirjutasin üles: {text}")
-        page.locator("#id_marge_next_text").fill(text)
-        page.locator("#id_marge_next_date").fill(when)
+        page.locator("#id_marge_title").fill(text)
+        page.locator("#id_marge_occurred_on").fill(when)
+        offer = page.locator("#id_marge_as_next_step")
+        offer.wait_for(state="visible")
+        if not offer.is_checked():
+            offer.check()
         page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
@@ -599,7 +605,7 @@ def open_composer(page) -> None:
     A test that used to type a body into the composer is recording a note, so
     that is what this opens (docs/adr/0075 §2).
 
-    **It opens `Märke liik · Tavaline`, and the box is `Mis juhtus?`.** The
+    **It opens `Märke liik · Tavaline`, and the box is `Tegevus`.** The
     ordinary note writes a `MatterProceduralDevelopment` now, through a single
     stated line rather than a prose body, and `+ Menetluse areng` is gone as a
     separate control — so a test that recorded a note through the composer

@@ -173,7 +173,7 @@ def _the_whole_address_is_still_there(readings: list[dict]) -> None:
         )
 
 
-def _file_a_development(page, url: str, note: str = "", **fields: str) -> None:
+def _file_a_development(page, url: str, note: str = "", retitle: str = "", **fields: str) -> None:
     """One `+ Märge · Tavaline`, and a wait on the record rather than the network.
 
     The save swaps `#teema-vaade` wholesale, so the `networkidle` that follows the
@@ -188,6 +188,13 @@ def _file_a_development(page, url: str, note: str = "", **fields: str) -> None:
     it will take it (docs/adr/0097 §6.2). The editor still offers the box on a
     stored row, which is where a note comes from now — and `.uxtl__msnote` is
     rendered the same either way, which is what this file measures.
+
+    **`retitle` goes in through `Muuda` too.** Since docs/adr/0124 a step made
+    from `+ Märge` is the activity itself, and the row leaves off the «→» pill
+    while the two say the same thing. Correcting the headline afterwards makes
+    them two sentences again, which is the one way left to draw a step pill
+    under a development from the interface — and the pill is a region this file
+    measures.
     """
     open_add_panel(page, "marge-tavaline")
     form = page.locator("#marge-tavaline")
@@ -201,7 +208,7 @@ def _file_a_development(page, url: str, note: str = "", **fields: str) -> None:
                .some(el => (el.textContent || '').includes(marker))""",
         arg=marker,
     )
-    if note:
+    if note or retitle:
         row = page.locator(".uxtl__ms-body").first
         row.wait_for()
         open_kaik_row(row)
@@ -211,7 +218,10 @@ def _file_a_development(page, url: str, note: str = "", **fields: str) -> None:
         row.locator(".uxtl__edit").first.click()
         editor = page.locator(".uxtl__editform")
         editor.locator("textarea[name=note]").wait_for()
-        editor.locator("textarea[name=note]").fill(note)
+        if note:
+            editor.locator("textarea[name=note]").fill(note)
+        if retitle:
+            editor.locator("input[name=title]").fill(retitle)
         editor.get_by_role("button", name="Salvesta", exact=True).click()
         page.wait_for_load_state("networkidle")
     page.goto(url)
@@ -243,14 +253,15 @@ def test_a_development_carrying_a_pasted_address_does_not_widen_the_page(
     """
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, unique_title("Pikk viide"))
+    # The step is the activity dated ahead and ticked (docs/adr/0124); the
+    # headline is then corrected so the row carries both sentences.
     _file_a_development(
         page,
         url,
-        title=f"Ministeerium saatis eelnõu: {PASTED_LINK}",
-        occurred_on=_estonian(date.today() - timedelta(days=2)),
+        title=f"Loen uue versiooni läbi {PASTED_LINK}",
+        occurred_on=_estonian(date.today() + timedelta(days=4)),
         note=f"Vaata ka {PASTED_LINK}",
-        next_text=f"Loen uue versiooni läbi {PASTED_LINK}",
-        next_date=_estonian(date.today() + timedelta(days=4)),
+        retitle=f"Ministeerium saatis eelnõu: {PASTED_LINK}",
     )
 
     readings = _readings(page, url, selector)

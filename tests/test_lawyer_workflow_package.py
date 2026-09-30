@@ -1480,16 +1480,21 @@ def test_a_future_dated_row_is_drawn_and_marked_ahead(normal_matter, specialist)
 
 
 def test_the_development_route_records_everything_in_one_post(client, specialist, normal_matter):
+    """The record, the stage and the step, from one activity dated ahead.
+
+    One sentence and one day since docs/adr/0124: ticked, the activity is also
+    the next step, in the same transaction as the stage it moved.
+    """
     stage = factories.StageFactory(label_et="Riigikogus", is_active=True)
+    ahead = timezone.localdate() + dt.timedelta(days=4)
     client.force_login(specialist)
     response = client.post(
         _development_url(normal_matter),
         {
-            "title": "Eelnõu jõudis Riigikokku",
-            "occurred_on": _estonian(_happened()),
+            "title": "Vaatan Riigikogu teksti läbi",
+            "occurred_on": _estonian(ahead),
+            "as_next_step": "on",
             "stage": str(stage.pk),
-            "next_text": "Vaatan uue teksti läbi",
-            "next_date": _estonian(timezone.localdate() + dt.timedelta(days=4)),
         },
     )
 
@@ -1497,34 +1502,30 @@ def test_the_development_route_records_everything_in_one_post(client, specialist
     normal_matter.refresh_from_db()
     assert normal_matter.stage_id == stage.pk
     development = MatterProceduralDevelopment.objects.get(matter=normal_matter)
-    assert development.title == "Eelnõu jõudis Riigikokku"
-    assert NextAction.objects.get(matter=normal_matter).text == "Vaatan uue teksti läbi"
+    assert development.title == "Vaatan Riigikogu teksti läbi"
+    action = NextAction.objects.get(matter=normal_matter)
+    assert (action.text, action.target_date) == ("Vaatan Riigikogu teksti läbi", ahead)
 
 
-def test_a_next_step_with_no_date_saves_the_whole_marge(client, specialist, normal_matter):
-    """docs/adr/0106, which reverses what 0105 §4 decided about this control.
+def test_an_undated_marge_makes_no_step_even_ticked(client, specialist, normal_matter):
+    """docs/adr/0124: a step made from `+ Märge` takes the `Märge`'s own day.
 
-    The `Märge` and the step are one transaction either way; what changed is
-    that the step no longer needs a day for the transaction to be allowed.
+    An emptied `Kuupäev` is «kuupäev teadmata», which is never ahead, so the
+    `Märge` is saved and nothing becomes the next step. The undated step of
+    docs/adr/0106 is made where a step is edited.
     """
     client.force_login(specialist)
     response = client.post(
         _development_url(normal_matter),
-        {
-            "title": "Eelnõu jõudis Riigikokku",
-            "occurred_on": _estonian(_happened()),
-            "next_text": "Vaatan uue teksti läbi",
-        },
+        {"title": "Vaatan uue teksti läbi", "occurred_on": "", "as_next_step": "on"},
     )
 
     assert response.status_code == 200
     assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
-    action = NextAction.objects.get(matter=normal_matter, status=ActionStatus.OPEN)
-    assert action.text == "Vaatan uue teksti läbi"
-    assert action.target_date is None
+    assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 
-def test_a_next_step_date_with_no_sentence_is_refused_on_the_sentence(
+def test_a_step_ahead_with_no_sentence_is_refused_on_the_sentence(
     client, specialist, normal_matter
 ):
     """And nothing is written — the `Märge` and the step share one transaction."""
@@ -1532,9 +1533,9 @@ def test_a_next_step_date_with_no_sentence_is_refused_on_the_sentence(
     response = client.post(
         _development_url(normal_matter),
         {
-            "title": "Eelnõu jõudis Riigikokku",
-            "occurred_on": _estonian(_happened()),
-            "next_date": _estonian(_happened() + dt.timedelta(days=30)),
+            "title": "",
+            "occurred_on": _estonian(timezone.localdate() + dt.timedelta(days=30)),
+            "as_next_step": "on",
         },
     )
 
@@ -1931,7 +1932,8 @@ def test_a_future_development_is_saved_whole_with_its_stage_step_and_file(
     """The one save writes all of it, together — nothing is half-saved.
 
     The stage is what the lawyer chose to set now; the `Märge` is the planned
-    sitting; the next step is theirs. None of it is refused for the date.
+    sitting, and ticked it is also their next step (docs/adr/0124). None of it
+    is refused for the date.
     """
     stage = factories.StageFactory(label_et="Kooskõlastusringil", is_active=True)
     parliament = factories.StageFactory(label_et="Riigikogus", is_active=True)
@@ -1943,8 +1945,7 @@ def test_a_future_development_is_saved_whole_with_its_stage_step_and_file(
             "title": "Riigikogu esimene lugemine",
             "occurred_on": "30.09.2026",
             "stage": str(parliament.pk),
-            "next_text": "Valmistan märkused",
-            "next_date": "29.09.2026",
+            "as_next_step": "on",
             "attachments": _pdf("eelnou_v2.pdf"),
         },
         headers={"HX-Request": "true"},
@@ -1955,7 +1956,8 @@ def test_a_future_development_is_saved_whole_with_its_stage_step_and_file(
     assert matter.stage_id == parliament.pk
     development = MatterProceduralDevelopment.objects.get(matter=matter)
     assert development.occurred_on == dt.date(2026, 9, 30)
-    assert NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).count() == 1
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    assert (step.text, step.target_date) == ("Riigikogu esimene lugemine", dt.date(2026, 9, 30))
     assert DocumentLink.objects.filter(document__matter=matter).exists()
     assert _events(matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED).count() == 1
 

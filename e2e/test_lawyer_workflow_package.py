@@ -529,64 +529,61 @@ def test_the_addressee_opens_on_the_teema_sender(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_a_development_records_the_step_the_stage_and_the_next_action(page, base_url):
-    """One save, three canonical writes, and the page shows all three.
+def test_a_planned_activity_is_the_marge_and_the_next_step(page, base_url):
+    """One sentence, one day ahead, one save — and the page shows both records.
 
-    Before this, recording «the ministry sent a revised draft» meant a `Märge`
-    with no date box, a `Hetkeseis` change in the header, and
-    `+ Järgmine tegevus` under the launcher — three saves for one thought.
+    Before docs/adr/0124 the plan was written twice: once under `Mis juhtus?`
+    and again under `Järgmine tegevus` with its own `Millal?`. The day ahead now
+    offers `Märgi järgmiseks tegevuseks`, ticked, and the same sentence and day
+    become the step.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "marge-tavaline")
 
     form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Ministeerium saatis uue eelnõu versiooni")
-    form.locator("[name=occurred_on]").fill(_past(2))
-    form.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
-    form.locator("[name=next_date]").fill(_future(4))
+    form.locator("[name=title]").fill("Vaatan uue versiooni läbi")
+    form.locator("[name=occurred_on]").fill(_future(4))
+    expect(form.locator("[name=as_next_step]")).to_be_visible()
+    expect(form.locator("[name=as_next_step]")).to_be_checked()
     form.get_by_role("button", name="Salvesta", exact=True).click()
 
-    chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni").first.wait_for()
     current = page.locator("#praegune-tegevus")
-    expect(current).to_contain_text("Vaatan uue versiooni läbi")
+    current.get_by_text("Vaatan uue versiooni läbi").first.wait_for()
     expect(current).to_contain_text(_future(4))
+    expect(chronology(page)).to_contain_text("Vaatan uue versiooni läbi")
 
 
-def test_a_next_step_with_no_date_saves_the_whole_marge(page, base_url):
-    """docs/adr/0106. The `Märge` and the step are still one transaction.
-
-    What changed is that the transaction is now allowed: the step no longer needs
-    a day for the save to go through.
-    """
+def test_a_past_activity_offers_no_step_and_sets_none(page, base_url):
+    """A day that is not ahead is a record of something done, and nothing else."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "marge-tavaline")
 
     form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
-    form.locator("[name=next_text]").fill("Vaatan uue teksti läbi")
+    form.locator("[name=occurred_on]").fill(_past(2))
+    expect(form.locator("[name=as_next_step]")).to_be_hidden()
     form.get_by_role("button", name="Salvesta", exact=True).click()
 
-    expect(chronology(page)).to_contain_text("Eelnõu jõudis Riigikokku")
-    current = page.locator("#praegune-tegevus")
-    expect(current).to_contain_text("Vaatan uue teksti läbi")
-    expect(current).to_contain_text("Kuupäev määramata")
+    chronology(page).get_by_text("Eelnõu jõudis Riigikokku").first.wait_for()
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
 
 
-def test_a_next_step_date_with_no_sentence_is_refused_on_the_sentence(page, base_url):
-    """The refusal that stays, and nothing is written — one transaction."""
+def test_a_step_ahead_with_no_sentence_is_refused_on_the_sentence(page, base_url):
+    """A step is its sentence: refused on `Tegevus`, and nothing is written."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "marge-tavaline")
 
     form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
-    form.locator("[name=next_date]").fill(_future(9))
+    form.locator("[name=title]").fill("")
+    form.locator("[name=occurred_on]").fill(_future(9))
+    expect(form.locator("[name=as_next_step]")).to_be_checked()
     form.get_by_role("button", name="Salvesta", exact=True).click()
 
     expect(page.locator("#marge-tavaline")).to_contain_text("Kirjuta järgmine tegevus.")
-    expect(chronology(page)).not_to_contain_text("Eelnõu jõudis Riigikokku")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
 
 
 def test_after_a_sent_opinion_the_panel_says_only_that_no_step_is_set(page, base_url):
@@ -615,10 +612,9 @@ def test_a_step_set_after_the_opinion_takes_the_panel(page, base_url):
 
     open_add_panel(page, "marge-tavaline")
     form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Eelnõu läks Justiitsministeeriumisse")
-    form.locator("[name=occurred_on]").fill(_past(1))
-    form.locator("[name=next_text]").fill("Vaatan läbi")
-    form.locator("[name=next_date]").fill(_future(3))
+    form.locator("[name=title]").fill("Vaatan läbi")
+    form.locator("[name=occurred_on]").fill(_future(3))
+    expect(form.locator("[name=as_next_step]")).to_be_checked()
     form.get_by_role("button", name="Salvesta", exact=True).click()
 
     current = page.locator("#praegune-tegevus")
@@ -683,17 +679,23 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     _record_koda_opinion(page, base_url, sent_on=_past(3))
     expect(page.locator(".tl-strip")).to_contain_text("Koja arvamus")
 
-    # And the procedure continues on the same file.
+    # And the procedure continues on the same file: what happened, then what
+    # the lawyer will do about it — one activity each (docs/adr/0124).
     open_add_panel(page, "marge-tavaline")
     areng = panel(page, "marge-tavaline")
     areng.locator("[name=title]").fill("Ministeerium saatis uue eelnõu versiooni")
     areng.locator("[name=occurred_on]").fill(_past(1))
-    areng.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
-    areng.locator("[name=next_date]").fill(_future(4))
     areng.get_by_role("button", name="Salvesta", exact=True).click()
-
     chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni").first.wait_for()
-    expect(page.locator("#praegune-tegevus")).to_contain_text("Vaatan uue versiooni läbi")
+
+    open_add_panel(page, "marge-tavaline")
+    plan = panel(page, "marge-tavaline")
+    plan.locator("[name=title]").fill("Vaatan uue versiooni läbi")
+    plan.locator("[name=occurred_on]").fill(_future(4))
+    expect(plan.locator("[name=as_next_step]")).to_be_checked()
+    plan.get_by_role("button", name="Salvesta", exact=True).click()
+
+    page.locator("#praegune-tegevus").get_by_text("Vaatan uue versiooni läbi").first.wait_for()
     # The first opinion is still on the file: a second round is not a rewrite.
     expect(page.locator(".tl-strip")).to_contain_text("Koja arvamus")
     expect(chronology(page)).to_contain_text("Meile saadetud tagasiside:")
@@ -784,7 +786,9 @@ def test_a_future_development_is_saved_and_reads_eesolev(page, base_url):
     «Riigikogu esimene lugemine toimub …» written down before the sitting is a
     real note. The whole save lands — the note, and the stage the lawyer chose —
     and the row is on Teema käik at once, marked `Eesolev` so it is not read as
-    something that already happened.
+    something that already happened. It is somebody else's event and not the
+    lawyer's task, so `Märgi järgmiseks tegevuseks` is unticked and no step is
+    made (docs/adr/0124 §2).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -793,6 +797,7 @@ def test_a_future_development_is_saved_and_reads_eesolev(page, base_url):
     form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Riigikogu esimene lugemine")
     form.locator("[name=occurred_on]").fill(_future(12))
+    form.locator("[name=as_next_step]").uncheck()
     form.locator("[name=stage]").select_option(label="Riigikogus")
     form.get_by_role("button", name="Salvesta", exact=True).click()
 

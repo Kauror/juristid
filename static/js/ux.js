@@ -57,7 +57,7 @@
     /* `[data-composer-focus]` first, and a textarea only as the fallback.
 
        `+ Märge` stopped having a textarea on 2026-09-20: the ordinary note
-       asks `Mis juhtus?` as one stated line, because the record it writes is
+       asks `Tegevus` as one stated line, because the record it writes is
        the structured one and its title is what the chronology renders
        (docs/adr/0097 §6). A selector naming the control by *type* found
        nothing, so `L` opened the panel and left the cursor where it was — a
@@ -172,7 +172,7 @@
          hidden CSRF token.
 
          The attribute matters on `+ Märge`, whose first control is a date box
-         that arrives already filled — the caret belongs in `Mis juhtus?`, which
+         that arrives already filled — the caret belongs in `Tegevus`, which
          is where the `L` shortcut puts it too. */
       var box =
         target.querySelector("[data-composer-focus]") ||

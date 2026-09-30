@@ -158,11 +158,12 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page,
     # step since `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
     # The refusal is the same one: `set_next_action` runs inside the note's own
     # transaction, so a departed owner refuses the whole save.
+    # The step is the activity itself, dated ahead and ticked (docs/adr/0124).
     when = date.today() + timedelta(days=7)
     open_add_panel(page, "marge-tavaline")
-    page.locator("#id_marge_title").fill("Vaatasin toimikut")
-    page.locator("#id_marge_next_text").fill("Kontrollida, kas ministeerium vastas")
-    page.locator("#id_marge_next_date").fill(f"{when.day}.{when.month}.{when.year}")
+    page.locator("#id_marge_title").fill("Kontrollida, kas ministeerium vastas")
+    page.locator("#id_marge_occurred_on").fill(f"{when.day}.{when.month}.{when.year}")
+    expect(page.locator("#id_marge_as_next_step")).to_be_checked()
     page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 

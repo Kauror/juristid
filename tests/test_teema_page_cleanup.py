@@ -199,10 +199,18 @@ def test_a_stage_only_marge_moves_the_stage_and_places_no_phase(signed_in, proce
 
 
 def test_a_next_step_only_marge_sets_the_step_and_places_no_phase(signed_in, procedure_matter):
-    """A8."""
+    """A8. A planned activity made the next step places no phase either.
+
+    Since docs/adr/0124 the step is the activity itself, dated ahead and ticked.
+    """
+    ahead = timezone.localdate() + timedelta(days=5)
     signed_in.post(
         _add_note(procedure_matter),
-        {"next_text": "Vaatan uue versiooni üle", "next_date": "25.09.2026"},
+        {
+            "title": "Vaatan uue versiooni üle",
+            "occurred_on": f"{ahead.day}.{ahead.month}.{ahead.year}",
+            "as_next_step": "on",
+        },
     )
 
     step = NextAction.objects.get(matter=procedure_matter, status=ActionStatus.OPEN)

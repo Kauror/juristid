@@ -1,5 +1,5 @@
 {% comment %}
-`Märke liik · Tavaline` — something happened on this file, and this says what.
+`Märke liik · Tavaline` — one activity on this file, done or planned.
 
 The default choice inside `+ Märge`, and the control a lawyer reaches for most.
 It is the merge of two chips that used to stand side by side in the launcher:
@@ -12,34 +12,38 @@ versiooni» is a *menetluse areng*; «Rääkisin Justiitsministeeriumiga» is a
 *märge*; and a lawyer who has just done one of them is not thinking about which
 of the two words the application wants. `Menetluse areng` was never a phrase
 anybody asked for — it is an implementation abstraction that reached the screen
-— so it is gone from the screen, and what is left is the question:
-**mis juhtus?** (docs/adr/0097 §6).
+— so it is gone from the screen (docs/adr/0097 §6).
 
-**Four questions, in the order somebody answers them** (docs/adr/0105 §4):
+**And the next step was the same question asked a third time.** The panel then
+ended in `Järgmine tegevus · Millal?`, so «Saadan ministeeriumile kirja, 2.10»
+had to be written twice — once as what the lawyer is doing and once as what is
+next — or put in the wrong box. Now there is **one sentence and one day**
+(docs/adr/0124):
 
-    Mis juhtus?                 what did I do
-    Lisa failid                 did I attach a file
-    Uus hetkeseis               has the state changed
-    Järgmine tegevus · Millal?  what is next, and by when
+    Tegevus                      what I did, or what I am going to do
+    Lisa failid                  did I attach a file
+    Kuupäev                      when — and, when that is ahead,
+      [✓] Märgi järgmiseks tegevuseks
+    Uus hetkeseis                has the state changed
 
-`Mis juhtus?` leads, because it is the answer on nearly every save and because a
+`Tegevus` leads, because it is the answer on nearly every save and because a
 panel opening on a date box asks for bookkeeping before it asks what happened.
 `Kuupäev` follows the sentence rather than preceding it: the day arrives filled
 with today and needs no answer at all on the ordinary save. There is no `Etapp`
 (docs/adr/0105, amended 2026-09-27).
 
 **Every control is optional, and any one of them is a whole save.** A file that
-just arrived, the file reaching the Riigikogu, «vaatan uue versiooni üle, 25.09»
-— each is a complete record of something, and `Mis juhtus?` being required made
-the panel refuse a save whose content was already there. What is refused is a
-press carrying nothing at all, as one sentence naming the four ways to answer
-(`MatterProgressForm.clean`, `DEVELOPMENT_NEEDS_SOMETHING`).
+just arrived, the file reaching the Riigikogu — each is a complete record of
+something, and the sentence being required made the panel refuse a save whose
+content was already there. What is refused is a press carrying nothing at all,
+as one sentence naming the ways to answer (`MatterProgressForm.clean`,
+`DEVELOPMENT_NEEDS_SOMETHING`).
 
 **One record type underneath, and it is the structured one.**
 `MatterProgressForm` carries the argument at length; the short version is that
 `MatterProceduralDevelopment` exists because a projection needs a title it did
 not have to parse, and that reason is untouched by anything in this round.
-`title` is «what happened», stated. `Entry.body` is prose.
+`title` is the activity, stated. `Entry.body` is prose.
 
 **`Täpsus` is not here**, and neither is `Juristi märkus`. Both are deleted from
 this form rather than hidden — see `MatterProgressForm` for what each one cost
@@ -51,10 +55,11 @@ and what still offers it (`Muuda` on the record, which decides per row).
       hx-encoding="multipart/form-data">
   {% csrf_token %}
   {% comment %}
-    **What did I do.** Optional, and the box a lawyer types into first — which is
-    why `data-composer-focus` is named on it rather than found by type: the `L`
-    shortcut opens this panel and puts the cursor here (static/js/ux.js,
-    `openComposer`).
+    **What I did, or what I am going to do.** Optional, and the box a lawyer
+    types into first — which is why `data-composer-focus` is named on it rather
+    than found by type: the `L` shortcut opens this panel and puts the cursor
+    here (static/js/ux.js, `openComposer`). Its placeholder names both tenses,
+    because the day below is what tells them apart (docs/adr/0124 §1).
   {% endcomment %}
   <label class="cx-f" for="{{ progress_form.title.id_for_label }}">
     <span class="cx-f__lab">{{ progress_form.title.label }}
@@ -71,11 +76,26 @@ and what still offers it (`Muuda` on the record, which decides per row).
   {% endcomment %}
   {% include "matters/partials/add_files.html" with field=progress_form.attachments %}
   {% comment %}
-    **When** — under the sentence it dates.
+    **When** — under the sentence it dates, and what the day offers beside it.
 
     The date opens on today, in the box where it can be read, changed and
     emptied, which is the one shape docs/adr/0078 §2 allows a date default to
     take. An emptied box stores `NULL` and the row reads «Kuupäev teadmata».
+
+    **`Märgi järgmiseks tegevuseks` is on the date's own row, and only for a day
+    after today** (docs/adr/0124 §2). A day ahead is the one moment the
+    sentence above can be a plan, so that is where the question is put — and
+    it arrives ticked, because «write what I will do, pick the day, save» is the
+    ordinary way a lawyer sets their next step. Unticked, a future `Märge` is
+    information and moves no step.
+
+    Drawn from the server's answer (`next_step_offered`, compared against
+    `today` on the application's clock), then kept in step with the box by
+    `bindNextStepOffers` in static/js/app.js, which reads the same `data-today`.
+    **Hidden means disabled**: a checkbox that is not shown is not sent, so a
+    tick left over from a moment the date was ahead cannot make a step. The
+    form and the use case ignore it on any other day as well — the script is a
+    convenience and the server is the rule.
 
     **No `Etapp`.** A `Märge` is a record of what happened, and the owner decided
     it is not filed under a phase of somebody else's procedure. The control is
@@ -83,17 +103,24 @@ and what still offers it (`Muuda` on the record, which decides per row).
     where the procedure stands is `Uus hetkeseis` below (docs/adr/0105, amended
     2026-09-27).
 
-    Alone on its row, so `cx-f--solo` keeps it the width of a date rather than
-    of the panel.
+    The date keeps `cx-f--solo`, so it stays the width of a date rather than of
+    the panel, and the checkbox takes the rest of the row.
   {% endcomment %}
-  <label class="cx-f cx-f--date cx-f--solo" for="{{ progress_form.occurred_on.id_for_label }}">
-    <span class="cx-f__lab">{{ progress_form.occurred_on.label }}</span>
-    {{ progress_form.occurred_on }}
-    {% if progress_form.occurred_on.errors %}
-      <p class="field__error" id="{{ progress_form.occurred_on.auto_id }}_error">
-        {{ progress_form.occurred_on.errors|first }}</p>
-    {% endif %}
-  </label>
+  <div class="cx-dated" data-next-step-offer data-today="{{ progress_form.today|date:'Y-m-d' }}">
+    <label class="cx-f cx-f--date cx-f--solo" for="{{ progress_form.occurred_on.id_for_label }}">
+      <span class="cx-f__lab">{{ progress_form.occurred_on.label }}</span>
+      {{ progress_form.occurred_on }}
+      {% if progress_form.occurred_on.errors %}
+        <p class="field__error" id="{{ progress_form.occurred_on.auto_id }}_error">
+          {{ progress_form.occurred_on.errors|first }}</p>
+      {% endif %}
+    </label>
+    <label class="cx-check" for="{{ progress_form.as_next_step.id_for_label }}"
+           data-next-step-choice{% if not progress_form.next_step_offered %} hidden{% endif %}>
+      {{ progress_form.as_next_step }}
+      <span>{{ progress_form.as_next_step.label }}</span>
+    </label>
+  </div>
   {% comment %}
     **Has the state changed.**
 
@@ -115,43 +142,8 @@ and what still offers it (`Muuda` on the record, which decides per row).
     </label>
   </div>
   {% comment %}
-    **What is next, and by when.**
-
-    `Järgmine tegevus` goes through the canonical `NextAction` service, the same
-    one `PRAEGUNE TEGEVUS` uses, so a Matter cannot end up with two ideas of what
-    happens next. Left empty it creates nothing and supersedes nothing: a record
-    of something that happened is not an instruction to a person
-    (docs/adr/0078 §3, docs/adr/0084 §1).
-
-    **The two halves are still asked together**, and it is the one date on this
-    panel that is not optional. A step with no day appears in nobody's
-    `Tähtajad` and in nobody's `Minu asjad` — `set_next_action` refuses
-    `DO`/`DEADLINE` with no date for exactly that reason — so the refusal lands on
-    the empty half rather than the panel quietly writing a step the rest of the
-    product cannot show (ADR 0052 §5).
-  {% endcomment %}
-  <div class="cx-grid cx-grid--links">
-    <label class="cx-f" for="{{ progress_form.next_text.id_for_label }}">
-      <span class="cx-f__lab">{{ progress_form.next_text.label }}
-        <span class="cx-f__opt">valikuline</span></span>
-      {{ progress_form.next_text }}
-      {% if progress_form.next_text.errors %}
-        <p class="field__error" id="{{ progress_form.next_text.auto_id }}_error">
-          {{ progress_form.next_text.errors|first }}</p>
-      {% endif %}
-    </label>
-    <label class="cx-f cx-f--date" for="{{ progress_form.next_date.id_for_label }}">
-      <span class="cx-f__lab">{{ progress_form.next_date.label }}</span>
-      {{ progress_form.next_date }}
-      {% if progress_form.next_date.errors %}
-        <p class="field__error" id="{{ progress_form.next_date.auto_id }}_error">
-          {{ progress_form.next_date.errors|first }}</p>
-      {% endif %}
-    </label>
-  </div>
-  {% comment %}
     The refusal that belongs to the whole panel rather than to any one box: a
-    press carrying no sentence, no file, no stage and no step. `add_to_matter.html`
+    press carrying no sentence, no file and no stage. `add_to_matter.html`
     prints `workspace_error` above this form for the service's own refusals; this
     one is the form's, and it reads where the `Salvesta` that raised it is
     (`MatterProgressForm.clean`).

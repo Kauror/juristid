@@ -10218,6 +10218,32 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-secondary);
 }
 
+/* `Kuupäev` and what the day offers beside it — `+ Märge`'s `Märgi järgmiseks
+   tegevuseks`, shown only for a day after today (docs/adr/0124 §2). One row,
+   the checkbox beside the date box rather than under it, so it reads as a
+   property of that day and not as a section of its own; it wraps under the
+   date on a panel too narrow for both. The checkbox row is as tall as the date
+   box (34px, `.datepicker__trigger`'s reasoning) and bottom-aligned with it, so
+   the box and its words sit on the input's centre line whatever the label
+   above the date measures. */
+#teema-vaade-wrap .cx-dated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 9px var(--spacing-3);
+}
+
+#teema-vaade-wrap .cx-dated .cx-check {
+  min-height: 34px;
+}
+
+/* `display: flex` above outranks the user agent's `[hidden] { display: none }`,
+   so a hidden checkbox row has to be hidden here — otherwise the offer for a
+   day ahead would show beside today's date too. */
+#teema-vaade-wrap .cx-check[hidden] {
+  display: none;
+}
+
 /* A box a checkbox asks for: `Lõpeta teema → Märgi töövõiduks` and its
    `Töövõidu märkus`. Hidden until the box is ticked, and read from the checkbox
    itself so no script can leave the two disagreeing. A refused save comes back

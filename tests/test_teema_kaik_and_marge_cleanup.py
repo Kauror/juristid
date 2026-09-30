@@ -9,9 +9,10 @@ docs/adr/0105, in three parts, each asserted where it is decided:
    heading reaches the document and that the classes that drew one are unused;
 2. **a milestone row is compact.** The headline, the day and the controls that
    correct it are one line, which is `.uxtl__head`;
-3. **`+ Märge` saves whatever there is.** A comment, a file, a stage, a next
-   step, or any combination — and a press carrying none of them is refused with
-   one sentence naming all four.
+3. **`+ Märge` saves whatever there is.** A comment, a file, a stage, or any
+   combination — and a press carrying none of them is refused with one sentence
+   naming them. Since docs/adr/0124 the next step is not a box of its own: it is
+   the activity, dated ahead and ticked.
 
 `tests/test_website_overviews.py` and `tests/test_overview_news_publication.py`
 own §3, the `Ülevaade / uudis` row's address. `tests/test_lawyer_workflow_package.py`
@@ -20,6 +21,8 @@ owns what a titleless `MatterProceduralDevelopment` means once it is stored, and
 """
 
 from __future__ import annotations
+
+import datetime as dt
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -101,6 +104,12 @@ def _inside_head(html: str) -> list[str]:
 def _today() -> str:
     today = timezone.localdate()
     return f"{today.day}.{today.month}.{today.year}"
+
+
+def _ahead(days: int = 5) -> str:
+    """A day after today, relative to the clock — the only day that makes a step."""
+    ahead = timezone.localdate() + dt.timedelta(days=days)
+    return f"{ahead.day}.{ahead.month}.{ahead.year}"
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +234,9 @@ def test_the_panel_marks_every_control_optional(signed_in, specialist, stage):
     zone = body[body.index('id="lisa-teemale"') :]
     panel = zone[zone.index('id="marge-tavaline"') : zone.index('id="marge-tahtaeg"')]
 
-    assert "Mis juhtus?" in panel
+    assert 'cx-f__lab">Tegevus' in panel
     # The sentence box now says so, which is the visible half of §4.
-    head = panel[panel.index("Mis juhtus?") :]
+    head = panel[panel.index('cx-f__lab">Tegevus') :]
     assert "valikuline" in head[:200]
 
 
@@ -274,19 +283,24 @@ def test_a_marge_saves_with_only_a_state_change(signed_in, specialist, stage):
     assert record.occurred_on is None
 
 
-def test_a_marge_saves_with_only_a_next_task(signed_in, specialist, stage):
-    """«Vaatan uue versiooni üle, 25.09», and nothing said about what happened."""
+def test_a_marge_saves_as_only_a_next_task(signed_in, specialist, stage):
+    """«Vaatan uue versiooni üle», dated ahead and ticked: the plan is the whole save.
+
+    One sentence, written once — it is the `Märge` and the step (docs/adr/0124).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
         _add_note(matter),
-        {"next_text": "Vaatan uue versiooni üle", "next_date": "25.09.2026"},
+        {"title": "Vaatan uue versiooni üle", "occurred_on": _ahead(), "as_next_step": "on"},
     )
 
     assert response.status_code == 200
     action = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     assert action.text == "Vaatan uue versiooni üle"
-    assert MatterProceduralDevelopment.objects.get(matter=matter).title == ""
+    assert MatterProceduralDevelopment.objects.get(matter=matter).title == (
+        "Vaatan uue versiooni üle"
+    )
 
 
 def test_a_marge_saves_all_four_together(signed_in, specialist, stage, evidence_root):
@@ -296,18 +310,17 @@ def test_a_marge_saves_all_four_together(signed_in, specialist, stage, evidence_
     response = signed_in.post(
         _add_note(matter),
         {
-            "title": "Ministeerium saatis uue eelnõu versiooni",
-            "occurred_on": _today(),
+            "title": "Vaatan uue eelnõu versiooni üle",
+            "occurred_on": _ahead(),
+            "as_next_step": "on",
             "stage": str(stage.pk),
-            "next_text": "Vaatan uue versiooni üle",
-            "next_date": "25.09.2026",
             "attachments": [_pdf("eelnou_v2.pdf")],
         },
     )
 
     assert response.status_code == 200
     record = MatterProceduralDevelopment.objects.get(matter=matter)
-    assert record.title == "Ministeerium saatis uue eelnõu versiooni"
+    assert record.title == "Vaatan uue eelnõu versiooni üle"
     matter.refresh_from_db()
     assert matter.stage_id == stage.pk
     assert NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).exists()
@@ -332,36 +345,30 @@ def test_a_marge_carrying_nothing_is_refused_with_one_sentence(signed_in, specia
     assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
 
 
-def test_a_next_step_with_no_day_saves(signed_in, specialist, stage):
-    """docs/adr/0106 reverses the one refusal this round kept.
+def test_an_undated_marge_is_never_a_step(signed_in, specialist, stage):
+    """docs/adr/0124 retires the `+ Märge` half of docs/adr/0106.
 
-    The reasoning for keeping it was that a dateless step appears in nobody's
-    `Tähtajad` and in nobody's `Minu asjad`. The first is true and correct — a
-    list of dates is not where an undated step belongs. The second was wrong:
-    `my_work.undated_items` has rendered a `Kuupäevata` block since the page was
-    built, and simply had only WAIT and MONITOR rows to put in it.
-
-    `tests/test_undated_next_actions.py` owns the whole new contract; this holds
-    the `+ Märge` half of it, on the route this file is about.
+    The panel's step is its own activity on its own day, and «kuupäev
+    teadmata» is never ahead — so the `Märge` saves and no step is written.
+    `tests/test_undated_next_actions.py` owns the undated step, which is made
+    through `NextActionForm`.
     """
     matter = factories.MatterFactory(owner=specialist)
 
-    response = signed_in.post(_add_note(matter), {"next_text": "Vaatan uue versiooni üle"})
+    response = signed_in.post(
+        _add_note(matter), {"title": "Vaatan uue versiooni üle", "as_next_step": "on"}
+    )
 
     assert response.status_code == 200
-    action = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
-    assert action.text == "Vaatan uue versiooni üle"
-    assert action.target_date is None
+    assert not NextAction.objects.filter(matter=matter).exists()
     assert MatterProceduralDevelopment.objects.filter(matter=matter).exists()
 
 
-def test_a_date_with_no_next_step_is_refused_on_the_sentence(signed_in, specialist, stage):
-    """Unchanged, and the other half of the same pair."""
+def test_a_step_ahead_with_no_sentence_is_refused_on_the_sentence(signed_in, specialist, stage):
+    """The other half of the same pair: a step is its sentence."""
     matter = factories.MatterFactory(owner=specialist)
 
-    response = signed_in.post(
-        _add_note(matter), {"title": "Midagi juhtus", "next_date": "25.09.2026"}
-    )
+    response = signed_in.post(_add_note(matter), {"occurred_on": _ahead(), "as_next_step": "on"})
 
     assert response.status_code == 400
     assert "Kirjuta järgmine tegevus." in response.content.decode()

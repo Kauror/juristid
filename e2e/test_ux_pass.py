@@ -113,7 +113,7 @@ def test_a_marge_still_saves_with_ctrl_enter(page, base_url):
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     open_composer(page)
-    # `Mis juhtus?` is one stated line rather than a prose textarea since
+    # `Tegevus` is one stated line rather than a prose textarea since
     # docs/adr/0097 §6. The shortcut is the form's, not the control's: the
     # handler reaches `form[data-addform]` from anything inside it.
     box = page.locator("#id_marge_title")

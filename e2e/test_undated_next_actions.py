@@ -4,9 +4,12 @@
 everywhere cheaply. This file holds the three things only a rendered page can
 settle:
 
-* that the step can be **recorded from the UI** with the day box left alone, and
+* that the step can be **recorded from the UI** with the day box empty, and
   that `PRAEGUNE TEGEVUS` then says «Kuupäev määramata» rather than trailing off
-  after the sentence or borrowing the overdue colour;
+  after the sentence or borrowing the overdue colour. Since docs/adr/0124 that
+  is `Muuda` beside the step: `+ Märge` makes a step only from an activity dated
+  ahead, so a first step is set there and its day emptied where a step is
+  edited;
 * that it **reaches `Minu asjad`**, which is the claim docs/adr/0105 §4 got
   wrong and refused the whole feature over;
 * that «Kuupäev määramata» does not wrap badly or push the page sideways at
@@ -18,6 +21,8 @@ world is shared across a shard.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from playwright.sync_api import expect
 
@@ -28,17 +33,35 @@ pytestmark = pytest.mark.e2e
 UNDATED_LABEL = "Kuupäev määramata"
 
 
+def _ahead(days: int) -> str:
+    day = date.today() + timedelta(days=days)
+    return f"{day.day}.{day.month}.{day.year}"
+
+
 def _record_undated_step(page, text: str) -> None:
-    """Through `+ Märge`, with the day box left alone — the ordinary route."""
+    """A first step from `+ Märge`, then its day emptied through `Muuda`.
+
+    `+ Märge` makes a step only from an activity dated ahead, with `Märgi
+    järgmiseks tegevuseks` ticked (docs/adr/0124), so an undated step is the
+    ordinary step with its day taken off where a step is edited
+    (docs/adr/0106 §4).
+    """
     open_add_panel(page, "marge-tavaline")
     form = page.locator("#marge-tavaline")
-    form.locator("[name=next_text]").fill(text)
+    form.locator("[name=title]").fill(text)
+    form.locator("[name=occurred_on]").fill(_ahead(3))
+    expect(form.locator("[name=as_next_step]")).to_be_checked()
     form.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+
+    page.locator("#praegune-tegevus #lisa-jargmine > summary").click()
+    page.locator("#id_target_date").fill("")
+    page.locator("#lisa-jargmine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
 
 def test_a_step_saves_with_the_day_box_left_alone(page, base_url):
-    """The gesture the round is for: type the sentence, press save."""
+    """The gesture the round is for: a step with its day box empty, saved."""
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Kuupäevata samm"), owner=SANDRA)
 

@@ -14,6 +14,7 @@ writing into another file's fixtures.
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 
 import pytest
 
@@ -299,23 +300,26 @@ def test_a_refusal_still_focuses_the_field_that_was_wrong(page, base_url):
 
     The refusal this used was «Kirjuta, mis juhtus.» on an empty `Mis juhtus?`,
     which docs/adr/0105 §4 retired; the one it used next was «Vali järgmise
-    tegevuse kuupäev.» on an empty day, which docs/adr/0106 retired in turn — a
-    step with no day is an ordinary save now. What is left, and is the honest
-    field-scoped refusal, is the other direction: a day with nothing to do on it,
-    pinned to the sentence somebody did *not* write.
+    tegevuse kuupäev.» on an empty day, which docs/adr/0106 retired in turn, and
+    then «Kirjuta järgmine tegevus.» on the separate step box, which
+    docs/adr/0124 removed. What is left, and is the honest field-scoped refusal,
+    is the same sentence where the step now comes from: a day ahead marked as
+    the next step with nothing written in `Tegevus`.
     """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA keeldumise fookus"), owner=SANDRA)
+    ahead = date.today() + timedelta(days=5)
 
     page.goto(url)
     page.get_by_text("+ Märge", exact=True).click()
-    page.fill("#id_marge_title", "Ministeerium saatis uue versiooni")
-    page.fill("#id_marge_next_date", "30.09.2026")
+    page.fill("#id_marge_title", "")
+    page.fill("#id_marge_occurred_on", f"{ahead.day}.{ahead.month}.{ahead.year}")
+    page.locator("#id_marge_as_next_step").wait_for(state="visible")
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Kirjuta järgmine tegevus.")
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.id")
-    assert focused == "id_marge_next_text"
+    assert focused == "id_marge_title"
 
 
 def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url):
@@ -323,8 +327,8 @@ def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url
 
     A `Märge` with no sentence, no file, no stage and no step names no box, so
     `focusFirstRefusal` takes the summary itself rather than guessing a field —
-    putting the cursor in `Mis juhtus?` would say the sentence is the missing
-    answer when any of four would do (static/js/ux.js).
+    putting the cursor in `Tegevus` would say the sentence is the missing
+    answer when any of them would do (static/js/ux.js).
     """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA tühi märge"), owner=SANDRA)
@@ -333,7 +337,7 @@ def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url
     page.get_by_text("+ Märge", exact=True).click()
     page.fill("#id_marge_title", "")
     page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_selector("text=või lisa fail, uus hetkeseis või järgmine tegevus")
+    page.wait_for_selector("text=Kirjuta tegevus, lisa fail või vali uus hetkeseis.")
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.className")
     assert "formerror" in (focused or ""), focused

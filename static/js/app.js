@@ -3160,6 +3160,52 @@
     });
   }
 
+  /* ---- `Märgi järgmiseks tegevuseks` follows `Kuupäev` ---------------------
+   * `+ Märge · Tavaline` offers to make the activity the next step only when
+   * its day is after today (docs/adr/0124 §2). The server draws the row from
+   * the same rule (`MatterProgressForm.next_step_offered`) and applies it again
+   * on save; this keeps the row in step with the date box while somebody edits
+   * it — typing fires `input`, and a calendar pick fires `input` and `change`.
+   *
+   * "Today" is the server's (`data-today`, the application's clock), never
+   * `new Date()`: the rule the save applies and the box the page shows must
+   * agree about where «ahead» starts.
+   *
+   * **Hidden is disabled**, so a box that is not shown is not sent, and a tick
+   * left from a moment the date was ahead cannot make a step. Each time the
+   * row appears the box arrives ticked, which is its default; somebody who
+   * unticks it and then moves between two days ahead keeps their answer.
+   *
+   * Progressive enhancement: with scripting off the row is what the server
+   * drew for the day it was drawn with, and the save applies the rule anyway.
+   */
+  function bindNextStepOffers(scope) {
+    (scope || document).querySelectorAll("[data-next-step-offer]").forEach(function (row) {
+      if (!once(row, "NextStepOffer")) {
+        return;
+      }
+      var date = row.querySelector("input[data-datepicker]");
+      var choice = row.querySelector("[data-next-step-choice]");
+      var box = choice ? choice.querySelector("input[type=checkbox]") : null;
+      var today = parseEstonian(row.getAttribute("data-today"));
+      if (!date || !box || !today) {
+        return;
+      }
+      var sync = function () {
+        var when = parseEstonian(date.value);
+        var ahead = !!when && when > today;
+        if (ahead && choice.hidden) {
+          box.checked = true;
+        }
+        choice.hidden = !ahead;
+        box.disabled = !ahead;
+      };
+      date.addEventListener("input", sync);
+      date.addEventListener("change", sync);
+      sync();
+    });
+  }
+
   /* ---- «Kasuta» on Dokumendist leitud --------------------------------------
    * A suggestion the person chooses is written into the real form control
    * beside it — the title box, the deadline box, the Menetlusliik radio, a
@@ -4395,6 +4441,7 @@
     bindChipCounts(document);
     bindStageHelp(document);
     bindRequiredAction(document);
+    bindNextStepOffers(document);
     bindSuggestionUse(document);
     bindPersonaMenu(document);
     focusFragmentTarget();
@@ -4414,6 +4461,7 @@
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
+    bindNextStepOffers(event.target.querySelector ? event.target : document);
     bindSuggestionUse(event.target.querySelector ? event.target : document);
     bindPersonaMenu(event.target.querySelector ? event.target : document);
   });

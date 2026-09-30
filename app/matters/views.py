@@ -6541,7 +6541,8 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
     removed rather than left reachable behind no button (docs/adr/0097 §6).
 
     Up to four canonical writes in one transaction: the
-    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and the next step.
+    `MatterProceduralDevelopment`, its files, the `Hetkeseis` and — when the
+    activity is dated ahead and marked as the next one — the next step.
     A refusal anywhere leaves the Matter exactly as it was — a stage that moved
     without the note that moved it would be a file claiming to be in the
     Riigikogu with nothing saying how it got there
@@ -6580,8 +6581,12 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
             # that has one (docs/adr/0097 §6.2).
             note="",
             stage=form.cleaned_data.get("stage"),
-            next_text=form.cleaned_data.get("next_text") or "",
-            next_date=form.cleaned_data.get("next_date"),
+            # One sentence and one day, and the step is made from them when the
+            # day is ahead and `Märgi järgmiseks tegevuseks` is ticked. The form
+            # has already dropped the box on any other day; the use case asks
+            # again on its own clock and writes the step through the ordinary
+            # service (docs/adr/0124).
+            as_next_step=form.cleaned_data["as_next_step"],
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:

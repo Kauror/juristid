@@ -51,10 +51,11 @@ they are not content at all:
 
 `+ Järgmine tegevus` is gone from the row too. There is at most one open
 `NextAction` and there is now exactly one *ordinary* way to set one: while a
-task is current, `Muuda` in `PRAEGUNE TEGEVUS`; otherwise the optional
-`Järgmine tegevus` inside `+ Märge`, beside the thing that prompted it. Two
-controls both offering to set "the next action" is how a lawyer ends up
-believing they have two (docs/adr/0097 §8.2).
+task is current, `Muuda` in `PRAEGUNE TEGEVUS`; otherwise `+ Märge` itself —
+an activity dated ahead with `Märgi järgmiseks tegevuseks` ticked, which is the
+same sentence and day written once (docs/adr/0124). Two controls both offering
+to set "the next action" is how a lawyer ends up believing they have two
+(docs/adr/0097 §8.2).
 
 **Ten choices, not ten forms — and that still holds.** The launcher is a row of
 quiet chips and nothing else until somebody picks one; picking one opens that
