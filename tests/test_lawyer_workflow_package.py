@@ -54,7 +54,6 @@ from app.matters.models import (
     MatterProceduralDevelopment,
 )
 from app.matters.services import (
-    DEVELOPMENT_CANNOT_BE_FUTURE,
     DEVELOPMENT_NEEDS_SOMETHING,
     EXTERNAL_POSITION_LABEL_IS_RECEIVED_ONLY,
     EXTERNAL_POSITION_NEEDS_ORGANISATION,
@@ -1457,21 +1456,15 @@ def test_a_development_reaches_the_chronology(normal_matter, specialist):
     assert headlines.count("Märge: Eelnõu jõudis Riigikokku") == 1
 
 
-def test_a_future_dated_row_filed_before_the_rule_is_still_not_history(normal_matter, specialist):
-    """A step somebody expects is not a step that happened.
+def test_a_future_dated_row_is_drawn_and_marked_ahead(normal_matter, specialist):
+    """A step somebody expects is drawn, and says it has not happened yet.
 
-    The chronology's own rule, which `MatterEngagement` and
-    `MatterExternalPosition` follow too, and which is now unreachable through the
-    service: §5.1 refuses a future development before it is written, so no new
-    row can land here.
-
-    It is asserted against a row created **directly**, because rows filed before
-    that rule exist, are real, and are not rewritten (docs/adr/0092 §4). No
-    backfill clears them, no migration re-dates them, and the projection goes on
-    omitting each one until its day arrives rather than showing it under a day
-    nobody recorded it to.
+    It used to be left off the chronology until its day, which hid a record the
+    file holds together with its `Muuda`. Since docs/adr/0121 §3 a `Märge` may
+    be dated ahead of today, so the row is on the page at once and reads
+    `Eesolev` — including a row filed directly, the way old rows were.
     """
-    MatterProceduralDevelopment.objects.create(
+    development = MatterProceduralDevelopment.objects.create(
         matter=normal_matter,
         title="Riigikogu komisjon arutab eelnõu",
         occurred_on=timezone.localdate() + dt.timedelta(days=21),
@@ -1480,10 +1473,10 @@ def test_a_future_dated_row_filed_before_the_rule_is_still_not_history(normal_ma
     )
 
     items, _ = matter_timeline(matter=normal_matter, user=specialist, limit=50)
-    headlines = [item.milestone.what for item in items if item.milestone is not None]
-    assert not any("Riigikogu komisjon" in headline for headline in headlines)
-    # The record is on the file and readable; it is the *chronology* that waits.
-    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).count() == 1
+    rows = [item for item in items if item.record == development]
+    assert len(rows) == 1
+    assert rows[0].milestone.ahead
+    assert "Riigikogu komisjon" in rows[0].milestone.what
 
 
 def test_the_development_route_records_everything_in_one_post(client, specialist, normal_matter):
@@ -1758,24 +1751,17 @@ def test_the_koda_opinion_route_refuses_a_future_send_date(
 
 
 # ---------------------------------------------------------------------------
-# §5.1 — a `Menetluse areng` records something that has happened
+# §5.1 — a `Märge` may be dated in the past, today or ahead (docs/adr/0121 §3)
 # ---------------------------------------------------------------------------
 #
-# The product decision this round makes. «Ministeerium saatis uue eelnõu
-# versiooni» belongs here; «Riigikogu esimene lugemine toimub 30.09» does not —
-# it is a plan, and the product's forward-looking facts are `Järgmiseks` and
-# `+ Oluline tähtaeg`, each with its own date, its own lateness and its own place
-# on the page. No scheduled-development model is invented for it.
-#
-# What made this a defect rather than a missing feature: the chronology already
-# declined to draw a future development, deliberately and correctly — and the
-# stage change saved in the same breath was *not* declined, so one half of an
-# atomic professional act survived as apparent truth. A file read «Hetkeseis:
-# Riigikogus», dated to the afternoon somebody typed it, with nothing anywhere
-# saying why.
-#
-# The refusal is therefore the whole save, at the canonical service, before any
-# of the four writes.
+# This section used to pin the QA-07 / ENG-004 refusal of a `Märge` dated after
+# today. The owner withdrew it: the application records what happened, what is
+# happening and what is planned, and «Riigikogu esimene lugemine toimub 30.09»
+# is a note a lawyer writes before the sitting. Validity is separate from
+# meaning. The save is accepted whole, at every precision; what the date means
+# is read where it is used — a `Märge` ahead of today reads `Eesolev` in
+# Teema käik, marks no phase as reached on the rail, is not the file's last
+# activity and never becomes its next step.
 
 
 #: The day these tests are read on. Written down rather than taken from the
@@ -1858,15 +1844,10 @@ def _correction_url(matter, development) -> str:
 
 
 @pytest.mark.parametrize(("label", "fields"), FUTURE_PERIODS, ids=[p[0] for p in FUTURE_PERIODS])
-def test_a_correction_may_not_move_a_period_into_the_future_at_any_precision(
+def test_a_correction_may_move_a_period_ahead_at_any_precision(
     signed_in, specialist, today_is_18_september, label, fields
 ):
-    """The rule is about the period, not about the stored number.
-
-    Each of these has its whole span after 18 September, at a precision the
-    correction form can produce, and each is refused with the same sentence
-    beside the control it was typed into — and the stored row is unchanged.
-    """
+    """Each of these has its whole span after 18 September, and each is saved."""
     matter, development = _recorded_step(specialist)
     payload = {
         "title": f"Tulevane samm: {label}",
@@ -1879,10 +1860,10 @@ def test_a_correction_may_not_move_a_period_into_the_future_at_any_precision(
         _correction_url(matter, development), payload, headers={"HX-Request": "true"}
     )
 
-    assert response.status_code == 400
-    assert DEVELOPMENT_CANNOT_BE_FUTURE in response.content.decode()
+    assert response.status_code == 200, response.content.decode()[:2000]
     development.refresh_from_db()
-    assert development.occurred_on == dt.date(2026, 9, 1)
+    assert development.title == f"Tulevane samm: {label}"
+    assert development.occurred_on > QA_TODAY
 
 
 @pytest.mark.parametrize(
@@ -1891,13 +1872,7 @@ def test_a_correction_may_not_move_a_period_into_the_future_at_any_precision(
 def test_a_period_that_is_not_definitely_future_is_accepted(
     signed_in, specialist, today_is_18_september, label, fields
 ):
-    """A broad period covering today is a step somebody is describing as past.
-
-    *september 2026* on 18 September, and *2026* at any point in it, tell nobody
-    that the thing they describe is still to come. Refusing them would leave a
-    lawyer who knows only «septembris» choosing between an invented day and an
-    empty field, which is the choice docs/adr/0079 exists to remove.
-    """
+    """A broad period covering today is accepted as it always was."""
     matter, development = _recorded_step(specialist)
     payload = {
         "title": f"Toimunud samm: {label}",
@@ -1916,23 +1891,13 @@ def test_a_period_that_is_not_definitely_future_is_accepted(
 
 
 @pytest.mark.django_db
-def test_the_refusal_names_the_control_the_period_was_typed_into(
+def test_the_correction_form_accepts_a_future_month_and_a_future_day(
     signed_in, specialist, today_is_18_september
 ):
-    """ADR 0052 §5's rule: the refusal lands on the box that is wrong.
-
-    A month is answered in the month select, and pinning «ei saa olla tulevikus»
-    to the empty day box — which an approximate save leaves empty on purpose —
-    would point at the wrong field.
-
-    Read off `ProceduralDevelopmentEditForm`, which is the form that still
-    offers the four precisions. `+ Märge · Tavaline` has one date box and
-    therefore one place a refusal can land, which is asserted where that panel
-    is (`tests/test_teema_ux_consolidation.py`).
-    """
+    """No control carries «ei saa olla tulevikus» any more (docs/adr/0121 §3)."""
     _, record = _recorded_step(specialist, title="Toimunud samm")
 
-    form = ProceduralDevelopmentEditForm(
+    month = ProceduralDevelopmentEditForm(
         {
             "title": "Komisjon arutab eelnõu",
             "areng_precision": "MONTH",
@@ -1943,10 +1908,9 @@ def test_the_refusal_names_the_control_the_period_was_typed_into(
         },
         record=record,
     )
-
-    assert form.is_valid() is False
-    assert form.errors["areng_month"] == [DEVELOPMENT_CANNOT_BE_FUTURE]
-    assert "occurred_on" not in form.errors
+    assert month.is_valid(), month.errors
+    assert month.cleaned_data["occurred_on_value"] == dt.date(2026, 10, 1)
+    assert month.cleaned_data["occurred_on_precision"] == DatePrecision.MONTH
 
     exact = ProceduralDevelopmentEditForm(
         {
@@ -1957,22 +1921,17 @@ def test_the_refusal_names_the_control_the_period_was_typed_into(
         },
         record=record,
     )
-    assert exact.is_valid() is False
-    assert exact.errors["occurred_on"] == [DEVELOPMENT_CANNOT_BE_FUTURE]
+    assert exact.is_valid(), exact.errors
+    assert exact.cleaned_data["occurred_on_value"] == dt.date(2026, 9, 30)
 
 
-def test_a_refused_future_development_moves_no_stage_action_or_evidence(
+def test_a_future_development_is_saved_whole_with_its_stage_step_and_file(
     signed_in, specialist, today_is_18_september, evidence_root
 ):
-    """The atomic guarantee, and the reason QA-07 was HIGH rather than cosmetic.
+    """The one save writes all of it, together — nothing is half-saved.
 
-    The dangerous part was never that a future row was hidden. It was that the
-    stage change written in the same transaction survived the row's absence and
-    stood on the page as professional truth — a file claiming to be in the
-    Riigikogu, dated to the day of data entry, with nothing saying how it got
-    there.
-
-    So the refusal is proved against all five things the operation can write.
+    The stage is what the lawyer chose to set now; the `Märge` is the planned
+    sitting; the next step is theirs. None of it is refused for the date.
     """
     stage = factories.StageFactory(label_et="Kooskõlastusringil", is_active=True)
     parliament = factories.StageFactory(label_et="Riigikogus", is_active=True)
@@ -1991,64 +1950,32 @@ def test_a_refused_future_development_moves_no_stage_action_or_evidence(
         headers={"HX-Request": "true"},
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 200, response.content.decode()[:2000]
     matter.refresh_from_db()
-    assert matter.stage_id == stage.pk
-    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
-    assert not NextAction.objects.filter(matter=matter).exists()
-    assert not Document.objects.filter(matter=matter).exists()
-    assert not DocumentLink.objects.filter(document__matter=matter).exists()
-    assert _events(matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED).count() == 0
-    assert _events(matter, ChangeEventType.MATTER_STAGE_CHANGED).count() == 0
-    assert _events(matter, ChangeEventType.NEXT_ACTION_SET).count() == 0
+    assert matter.stage_id == parliament.pk
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert development.occurred_on == dt.date(2026, 9, 30)
+    assert NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).count() == 1
+    assert DocumentLink.objects.filter(document__matter=matter).exists()
+    assert _events(matter, ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED).count() == 1
 
 
-def test_a_direct_service_call_is_refused_the_same_way(
-    normal_matter, specialist, today_is_18_september, evidence_root
-):
-    """§10 defence in depth: the invariant is the service's, not the form's.
-
-    A caller that renders no form — an importer, a management command, a future
-    API — must not be able to move `Matter.stage` on the strength of a sitting
-    that has not happened. `record_procedural_development` is the seam every
-    writer passes through and it is the *first* write of the transaction, so the
-    refusal unwinds all four together.
-    """
-    stage = factories.StageFactory(label_et="Kooskõlastusringil", is_active=True)
-    parliament = factories.StageFactory(label_et="Riigikogus", is_active=True)
-    normal_matter.stage = stage
-    normal_matter.save(update_fields=["stage"])
-
-    with pytest.raises(DomainError) as refusal:
-        add_procedural_development(
-            matter=normal_matter,
-            author=specialist,
-            title="Riigikogu esimene lugemine",
-            occurred_on=dt.date(2026, 9, 30),
-            stage=parliament,
-            next_text="Valmistan märkused",
-            next_date=dt.date(2026, 9, 29),
-            uploads=[_pdf("eelnou_v2.pdf")],
-        )
-
-    assert str(refusal.value) == DEVELOPMENT_CANNOT_BE_FUTURE
-    normal_matter.refresh_from_db()
-    assert normal_matter.stage_id == stage.pk
-    assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
-    assert not NextAction.objects.filter(matter=normal_matter).exists()
-    assert not Document.objects.filter(matter=normal_matter).exists()
-
-
-def test_a_correction_may_not_move_a_development_into_the_future(
+def test_a_direct_service_call_accepts_a_future_date(
     normal_matter, specialist, today_is_18_september
 ):
-    """The same invariant on the other writer of the date.
+    development = add_procedural_development(
+        matter=normal_matter,
+        author=specialist,
+        title="Riigikogu esimene lugemine",
+        occurred_on=dt.date(2026, 9, 30),
+    ).record
 
-    `correct_procedural_development` has no route yet (that is a separate round),
-    but it is a canonical writer of `occurred_on` and a rule with one enforced
-    seam and one unenforced one is a rule that holds until somebody wires the
-    second up.
-    """
+    assert development.occurred_on == dt.date(2026, 9, 30)
+
+
+def test_a_correction_may_move_a_development_ahead(
+    normal_matter, specialist, today_is_18_september
+):
     development = add_procedural_development(
         matter=normal_matter,
         author=specialist,
@@ -2056,44 +1983,9 @@ def test_a_correction_may_not_move_a_development_into_the_future(
         occurred_on=dt.date(2026, 9, 10),
     ).record
 
-    with pytest.raises(DomainError) as refusal:
-        correct_procedural_development(
-            development=development,
-            title=development.title,
-            occurred_on=dt.date(2026, 10, 30),
-            occurred_on_precision=DatePrecision.EXACT.value,
-            note="",
-            actor=specialist,
-            expected_revision=development_revision(development),
-        )
-
-    assert str(refusal.value) == DEVELOPMENT_CANNOT_BE_FUTURE
-    development.refresh_from_db()
-    assert development.occurred_on == dt.date(2026, 9, 10)
-
-
-def test_a_row_already_dated_ahead_keeps_its_date_and_stays_correctable(
-    normal_matter, specialist, today_is_18_september
-):
-    """Existing rows are not rewritten, and not made permanently unfixable either.
-
-    Nothing backfills, clamps or clears a development filed before this rule
-    existed. Its headline can still be corrected — the refusal is on *moving* the
-    date into the future, not on a save that merely carries the one already
-    stored — and the chronology goes on omitting it until its day arrives, which
-    is the behaviour it already had (docs/adr/0092 §4).
-    """
-    development = MatterProceduralDevelopment.objects.create(
-        matter=normal_matter,
-        title="Vana kirje tuleviku kuupäevaga",
-        occurred_on=dt.date(2026, 10, 30),
-        occurred_on_precision=DatePrecision.EXACT,
-        created_by=specialist,
-    )
-
     corrected = correct_procedural_development(
         development=development,
-        title="Vana kirje, parandatud pealkiri",
+        title=development.title,
         occurred_on=dt.date(2026, 10, 30),
         occurred_on_precision=DatePrecision.EXACT.value,
         note="",
@@ -2101,39 +1993,39 @@ def test_a_row_already_dated_ahead_keeps_its_date_and_stays_correctable(
         expected_revision=development_revision(development),
     )
 
-    assert corrected.title == "Vana kirje, parandatud pealkiri"
     assert corrected.occurred_on == dt.date(2026, 10, 30)
 
 
-def test_nothing_clamps_clears_or_half_saves_a_refused_future_date(
+def test_a_future_development_reads_eesolev_and_is_never_the_next_step(
     signed_in, specialist, today_is_18_september
 ):
-    """The whole save is refused, and the person's answer comes back to them.
+    """Valid input, and still not history: the row is marked, the phase is not
+    reached, and `PRAEGUNE TEGEVUS` is not answered by it (docs/adr/0121 §3)."""
+    from app.matters.legal_process import recorded_phase_keys
+    from app.matters.timeline import AHEAD_LABEL, projected_milestones
 
-    Not clamped to today, not cleared, not kept-but-suppressed, and not turned
-    into a `Järgmiseks` on their behalf. A form that silently rewrote the date
-    would file a fact nobody stated, which is the failure the refusal exists to
-    avoid rather than a gentler version of it.
-    """
     matter = factories.MatterFactory(owner=specialist)
+    ahead = add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Riigikogu esimene lugemine",
+        occurred_on=dt.date(2026, 9, 30),
+    ).record
+    MatterProceduralDevelopment.objects.filter(pk=ahead.pk).update(process_phase="riigikogu")
 
-    response = signed_in.post(
-        _development_url(matter),
-        {
-            "title": "Riigikogu esimene lugemine",
-            "occurred_on": "30.09.2026",
-        },
-        headers={"HX-Request": "true"},
-    )
-    body = response.content.decode()
+    rows = [
+        item
+        for item in projected_milestones(matter=matter, user=specialist, today=QA_TODAY)
+        if item.record == ahead
+    ]
+    assert len(rows) == 1 and rows[0].milestone.ahead
+    assert "riigikogu" not in recorded_phase_keys(matter=matter, user=specialist)
 
-    assert response.status_code == 400
-    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
-    assert not NextAction.objects.filter(matter=matter).exists()
-    # The typed answer is still in the box, so the person can change it rather
-    # than retype the sentence they already wrote.
-    assert "30.09.2026" in body
-    assert "Riigikogu esimene lugemine" in body
+    body = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    ).content.decode()
+    assert f'<span class="uxtl__msahead">{AHEAD_LABEL}</span>' in body
+    assert "Järgmine samm on määramata" in body
 
 
 # ---------------------------------------------------------------------------

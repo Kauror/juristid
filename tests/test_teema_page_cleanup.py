@@ -313,8 +313,9 @@ def _closing_panel(body: str) -> str:
     return body[start : body.index("</form>", start)]
 
 
-def test_the_closing_panel_is_three_chips_and_lopposona(signed_in, normal_matter):
-    """C16–C20. The words gone from the screen; the group still named."""
+def test_the_closing_panel_is_four_chips_and_lopposona(signed_in, normal_matter):
+    """C16–C20. The words gone from the screen; the group still named. `Muu` is
+    the fourth chip since docs/adr/0121 §8."""
     panel = _closing_panel(signed_in.get(_teema(normal_matter)).content.decode())
 
     assert '<span class="cx-f__lab">Kuidas lõppes</span>' not in panel
@@ -326,7 +327,7 @@ def test_the_closing_panel_is_three_chips_and_lopposona(signed_in, normal_matter
     assert 'data-chipgroup="disposition"' in group
     assert '<legend class="visually-hidden">Kuidas lõppes</legend>' in group
     chips = re.findall(r'data-chipvalue="([A-Z_]+)">([^<]+)<', group)
-    assert [label for _value, label in chips] == ["Jõustus", "Menetlus lõppes", "Loobuti"]
+    assert [label for _value, label in chips] == ["Jõustus", "Menetlus lõppes", "Loobuti", "Muu"]
     assert 'name="disposition"' in group
 
     assert "Lõppsõna" in panel

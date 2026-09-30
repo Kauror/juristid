@@ -260,7 +260,6 @@ def test_publishing_an_already_published_overview_is_refused(normal_matter, spec
         "data:text/html,<script>alert(1)</script>",
         "file:///c:/uudised/x",
         "mailto:info@koda.ee",
-        "koda.ee/uudised/x",
         "https:///uudised/x",
         "https://user:pw@/uudised/x",
         "https://koda.ee@example.com/uudised",
@@ -746,7 +745,9 @@ def test_the_chronology_shows_the_address_in_a_new_tab(signed_in, normal_matter,
     assert 'rel="noopener noreferrer"' in row
     assert "avaneb uues aknas" in row
     assert f'href="{KODA_URL}"' in row
-    assert ">koda.ee/uudised/pakendiseaduse-ulevaade<" in row
+    assert ">Ülevaade / uudis<span" in row
+    assert 'title="koda.ee/uudised/pakendiseaduse-ulevaade"' in row
+    assert ": koda.ee/uudised/pakendiseaduse-ulevaade — avaneb uues aknas" in row
 
 
 def test_the_chronology_records_published_and_cancelled_and_not_planned(normal_matter, specialist):

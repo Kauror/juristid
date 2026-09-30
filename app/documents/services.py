@@ -32,6 +32,7 @@ from app.audit.services import record_change_event
 from app.core.enums import validate_visibility_override
 from app.core.errors import DomainError
 from app.core.ids import uuid7
+from app.core.web_addresses import normalize_web_address
 from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.filenames import canonical_filename
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
@@ -315,12 +316,6 @@ def create_document(
     return document
 
 
-#: The URL schemes a working reference may point at. The same two the
-#: engagement link accepts, and for the same reason: anything else is either
-#: unopenable or an attempt to smuggle a script into somebody's browser.
-WORKING_REFERENCE_SCHEMES = ("http", "https")
-
-
 @transaction.atomic
 def link_working_document(
     *,
@@ -349,17 +344,22 @@ def link_working_document(
     row created without one is stamped with a deterministic placeholder derived
     from the URL rather than left to read as an evidence document with no file.
     """
-    from urllib.parse import urlsplit
-
     clean_title = (title or "").strip()
     if not clean_title:
         raise DomainError("Töödokument vajab nime.")
 
-    url = (web_url or "").strip()
-    parts = urlsplit(url)
-    if parts.scheme.lower() not in WORKING_REFERENCE_SCHEMES:
-        raise DomainError("Viide peab algama http:// või https:// aadressiga.")
-    if not parts.netloc:
+    # The product's one web-address rule (docs/adr/0121 §5): `https://` is
+    # added to an address pasted without one, a scheme somebody typed is kept,
+    # and anything that is not an http(s) host is refused in this box's words.
+    # The length is this column's own check below, worded with the measured
+    # length, so the shared rule is asked for none.
+    url = normalize_web_address(
+        web_url,
+        max_length=None,
+        not_a_url="Viide peab sisaldama veebiaadressi.",
+        not_web_scheme="Viide peab algama http:// või https:// aadressiga.",
+    )
+    if not url:
         raise DomainError("Viide peab sisaldama veebiaadressi.")
     # Refuse, never shorten. This used to be `url[:1000]` on the way into the
     # column, which stored a broken link under a success message and threw away

@@ -778,17 +778,13 @@ def test_a_development_with_no_note_gains_no_empty_note_block(page, base_url):
     expect(item.locator(".uxtl__msnote")).to_have_count(0)
 
 
-def test_a_future_development_is_refused_and_moves_no_stage(page, base_url):
-    """The product decision, in the browser: a development records what happened.
+def test_a_future_development_is_saved_and_reads_eesolev(page, base_url):
+    """docs/adr/0121 §3, in the browser: a `Märge` may be dated ahead of today.
 
-    «Riigikogu esimene lugemine toimub 30.09» is a plan, and filing it here used
-    to succeed silently — the chronology declined to draw a future row, and the
-    stage change saved in the same breath was not declined, so the file read
-    «Hetkeseis: Riigikogus» dated to the afternoon somebody typed it, with
-    nothing anywhere saying why.
-
-    The whole save is refused now, with the panel open and the answer still in
-    it.
+    «Riigikogu esimene lugemine toimub …» written down before the sitting is a
+    real note. The whole save lands — the note, and the stage the lawyer chose —
+    and the row is on Teema käik at once, marked `Eesolev` so it is not read as
+    something that already happened.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -799,17 +795,13 @@ def test_a_future_development_is_refused_and_moves_no_stage(page, base_url):
     form.locator("[name=occurred_on]").fill(_future(12))
     form.locator("[name=stage]").select_option(label="Riigikogus")
     form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
 
-    panel_after = panel(page, "marge-tavaline")
-    expect(panel_after).to_contain_text("Märge ei saa olla tulevikus.")
-    # Nothing was written, and that includes the half of the act that used to
-    # survive on its own: a standalone `Hetkeseis` row, carrying the day of data
-    # entry, for a stage the file had not reached.
-    expect(chronology(page)).not_to_contain_text("Riigikogu esimene lugemine")
-    expect(chronology(page)).not_to_contain_text("Hetkeseis")
-    # The typed answer is still there to be corrected rather than retyped.
-    expect(panel_after.locator("[name=title]")).to_have_value("Riigikogu esimene lugemine")
+    chronology(page).get_by_text("Riigikogu esimene lugemine").first.wait_for()
+    item = chronology(page).locator(
+        ".uxtl__item", has=page.locator(".uxtl__mswhat", has_text="Riigikogu esimene lugemine")
+    )
+    expect(item.locator(".uxtl__msahead")).to_have_text("Eesolev")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
 
 
 def _file_a_step(page, title: str):
@@ -836,17 +828,11 @@ def _open_the_editor(page):
     return form
 
 
-def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
-    """The rule is about the period, not about the day box.
-
-    A lawyer who picks `Kuu` and says *the month after next* has stated
-    something as wholly ahead as an exact date does, and the refusal has to
-    reach the control they answered it in.
+def test_a_future_month_quarter_and_year_are_accepted_too(page, base_url):
+    """The period may be wholly ahead at any precision (docs/adr/0121 §3).
 
     **Driven through `Muuda`**, which is the surface that still offers the four
-    precisions: `+ Märge` asks for a day or nothing, so it cannot state an
-    approximate period at all (docs/adr/0097 §6.1). The rule being asserted is
-    the service's and is unchanged.
+    precisions: `+ Märge` asks for a day or nothing (docs/adr/0097 §6.1).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -866,8 +852,9 @@ def test_a_future_month_quarter_and_year_are_refused_too(page, base_url):
         form.get_by_role("button", name="Salvesta", exact=True).click()
         page.wait_for_load_state("networkidle")
 
-        expect(page.locator(".uxtl__editform")).to_contain_text("Märge ei saa olla tulevikus.")
-        expect(chronology(page)).not_to_contain_text(f"Tulevane samm, {precision}")
+        expect(page.locator(".uxtl__editform")).to_have_count(0)
+        expect(chronology(page)).to_contain_text(f"Tulevane samm, {precision}")
+        expect(chronology(page).locator(".uxtl__msahead").first).to_have_text("Eesolev")
         page.reload()
         page.wait_for_load_state("networkidle")
 

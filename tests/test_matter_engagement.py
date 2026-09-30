@@ -670,7 +670,7 @@ def test_the_route_refuses_a_javascript_link(signed_in, specialist):
     (docs/adr/0074 §9)."""
     matter = factories.MatterFactory(owner=specialist)
 
-    response = _post_add(signed_in, matter, url="javascript:alert(1)")
+    response = _post_add(signed_in, matter, smaily_url="javascript:alert(1)")
 
     assert response.status_code == 400
     assert not MatterEngagement.objects.exists()
@@ -1353,6 +1353,9 @@ CREDENTIALED_URL = (
 )
 
 PROVIDER_FIELDS = ["url", "smaily_url", "alchemer_url"]
+#: The link boxes a *form* still offers. The generic `url` left `Muuda` and the
+#: compatibility door (docs/adr/0121 §4); the service keeps its rule for it.
+FORM_LINK_FIELDS = ["smaily_url", "alchemer_url"]
 
 
 @pytest.mark.parametrize("field", PROVIDER_FIELDS)
@@ -1430,7 +1433,7 @@ def test_correcting_a_link_to_one_too_long_leaves_the_stored_one_alone(
     assert getattr(engagement, field) == kept
 
 
-@pytest.mark.parametrize("field", PROVIDER_FIELDS)
+@pytest.mark.parametrize("field", FORM_LINK_FIELDS)
 def test_the_route_answers_a_too_long_link_the_way_it_answers_every_bad_link(
     signed_in, specialist, field
 ):

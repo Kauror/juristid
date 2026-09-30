@@ -1,0 +1,97 @@
+"""The second user-side correction batch, in the browser (docs/adr/0121).
+
+Three journeys whose truth depends on the page itself: a checkbox that opens its
+box by stylesheet, a file chooser posting several files at once, and a
+`Kaasamine` whose edit form must ask what its panel asked. The rules behind them
+are asserted without a browser in `tests/test_user_correction_batch_two.py`.
+"""
+
+from __future__ import annotations
+
+import pytest
+from playwright.sync_api import expect
+
+from e2e.conftest import MARTIN, create_matter, open_kaik_row, sign_in, unique_title
+from e2e.test_engagement import open_panel as open_kaasamine
+from e2e.test_teema_closing_flow import open_closing_panel
+from e2e.test_uus_teema_files import PDF_BYTES, create_with_files
+
+pytestmark = pytest.mark.e2e
+
+
+def chronology(page):
+    return page.locator("#ajalugu-loend")
+
+
+def test_closing_with_muu_records_the_ordinary_work_win(page, base_url):
+    """`Muu`, `Lõppsõna` and `Märgi töövõiduks` in one press (§8, §9)."""
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Lõpetamine muu ja töövõiduga"))
+
+    panel = open_closing_panel(page)
+    note = panel.locator("[name=victory_note]")
+    expect(note).to_be_hidden()
+    panel.get_by_label("Märgi töövõiduks").check()
+    expect(note).to_be_visible()
+    panel.locator(".uxchip", has_text="Muu").click()
+    panel.locator("[name=closing_words]").fill("Lõpetatud muul põhjusel.")
+    note.fill("Üleminekuaeg pikendati 2028. aastani.")
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+
+    banner = page.locator(".banner--closed")
+    expect(banner).to_contain_text("Teema on suletud.")
+    expect(banner).to_contain_text("Muu")
+    expect(banner).to_contain_text("Lõpetatud muul põhjusel.")
+    expect(chronology(page)).to_contain_text("Töövõit")
+    expect(chronology(page)).to_contain_text("Üleminekuaeg pikendati 2028. aastani.")
+
+
+def test_files_chosen_together_are_one_teema_kaik_line(page, base_url, tmp_path):
+    """Five files in one `Loo teema` press read «lisas 5 dokumenti», once (§6)."""
+    sign_in(page, base_url, MARTIN)
+    paths = []
+    for n in range(1, 6):
+        path = tmp_path / f"koos-{n}.pdf"
+        path.write_bytes(PDF_BYTES + str(n).encode())
+        paths.append(str(path))
+
+    create_with_files(page, base_url, unique_title("Viis faili korraga"), paths)
+
+    expect(chronology(page).get_by_text("lisas 5 dokumenti")).to_have_count(1)
+    expect(chronology(page).get_by_text("lisas dokumendi")).to_have_count(0)
+
+
+def test_a_kaasamine_edits_what_it_asked_and_its_links_read_as_names(page, base_url):
+    """No generic `Link` or `Märkus` on `Muuda`; a bare host is saved with
+    `https://`; the links read «Smaily» and «Alchemer» and nothing else (§4, §5)."""
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title("Kaasamise väljad"))
+
+    form = open_kaasamine(page)
+    form.locator("[name=audience]").fill("liikmed")
+    form.locator("[name=smaily_url]").fill("www.sendsmaily.net/kampaania")
+    form.locator("[name=alchemer_url]").fill("survey.alchemer.eu/s3/97")
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    chronology(page).get_by_text("Kaasamine: liikmed").first.wait_for()
+
+    row = chronology(page).locator(".uxtl__item", has_text="Kaasamine: liikmed").first
+    open_kaik_row(row)
+    links = row.locator("a.uxtl__link")
+    expect(links).to_have_count(2)
+    expect(links.nth(0)).to_have_attribute("href", "https://www.sendsmaily.net/kampaania")
+    assert links.nth(0).evaluate("node => node.firstChild.textContent.trim()") == "Smaily"
+    assert links.nth(1).evaluate("node => node.firstChild.textContent.trim()") == "Alchemer"
+    # Nothing is drawn after a label.
+    assert links.nth(0).evaluate("node => getComputedStyle(node, '::after').content") in (
+        "none",
+        "",
+    )
+
+    row.locator(".uxtl__edit", has_text="Muuda").first.click()
+    edit = page.locator(".uxtl__editform")
+    edit.wait_for()
+    expect(edit.locator("[name=feedback_deadline]")).to_be_visible()
+    expect(edit.locator("[name=smaily_url]")).to_be_visible()
+    expect(edit.locator("[name=url]")).to_have_count(0)
+    expect(edit.locator("[name=note]")).to_have_count(0)

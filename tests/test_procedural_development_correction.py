@@ -44,7 +44,6 @@ from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.matters.models import MatterProceduralDevelopment
 from app.matters.services import (
-    DEVELOPMENT_CANNOT_BE_FUTURE,
     DEVELOPMENT_EDIT_CONFLICT,
     close_matter,
     record_procedural_development,
@@ -405,51 +404,65 @@ def test_an_approximate_record_reopens_on_its_period_and_not_on_its_anchor(
     assert f'value="{first.month}" selected' in html or f'value="{first.month}"' in html
 
 
-# -- §D. the future-date invariant (QA-07, preserved) ------------------------
+# -- §D. a date ahead of today is accepted (docs/adr/0121 §3) ------------------
 
 
 @pytest.mark.parametrize("ahead", [7, 30, 400])
-def test_j_a_correction_may_not_move_the_date_into_the_future(
+def test_j_a_correction_may_move_the_date_ahead_of_today(
     signed_in, normal_matter, development, ahead
 ):
-    """§12.J. The invariant `record_procedural_development` states, unchanged."""
+    """docs/adr/0121 §3 withdrew the QA-07 / ENG-004 refusal: a `Märge` may record
+    something planned, and the correction that says so is saved."""
     future = timezone.localdate() + dt.timedelta(days=ahead)
 
     response = _save(
         signed_in, normal_matter, development, occurred_on=format_estonian_date(future)
     )
 
-    assert response.status_code == 400
-    assert DEVELOPMENT_CANNOT_BE_FUTURE in response.content.decode()
+    assert response.status_code == 200
     development.refresh_from_db()
-    assert development.occurred_on == HAPPENED
+    assert development.occurred_on == future
+    assert development.occurred_on_precision == DatePrecision.EXACT
 
 
-def test_j_a_wholly_future_period_is_refused_at_every_precision(
+def test_j_a_wholly_future_period_is_accepted_at_every_precision(
     signed_in, normal_matter, development
 ):
-    """§8. A month, a quarter and a year that have not begun are all refused."""
+    """A month, a quarter and a year that have not begun are all saved as stated."""
     next_year = timezone.localdate().year + 1
 
-    for extra in (
-        {
-            "areng_precision": DatePrecision.MONTH.value,
-            "areng_year": str(next_year),
-            "areng_month": "10",
-        },
-        {
-            "areng_precision": DatePrecision.QUARTER.value,
-            "areng_year": str(next_year),
-            "areng_quarter": "4",
-        },
-        {"areng_precision": DatePrecision.YEAR.value, "areng_year": str(next_year)},
+    for extra, anchor, precision in (
+        (
+            {
+                "areng_precision": DatePrecision.MONTH.value,
+                "areng_year": str(next_year),
+                "areng_month": "10",
+            },
+            dt.date(next_year, 10, 1),
+            DatePrecision.MONTH,
+        ),
+        (
+            {
+                "areng_precision": DatePrecision.QUARTER.value,
+                "areng_year": str(next_year),
+                "areng_quarter": "4",
+            },
+            dt.date(next_year, 10, 1),
+            DatePrecision.QUARTER,
+        ),
+        (
+            {"areng_precision": DatePrecision.YEAR.value, "areng_year": str(next_year)},
+            dt.date(next_year, 1, 1),
+            DatePrecision.YEAR,
+        ),
     ):
         response = _save(signed_in, normal_matter, development, occurred_on="", **extra)
-        assert response.status_code == 400, extra
-        assert DEVELOPMENT_CANNOT_BE_FUTURE in response.content.decode(), extra
-
-    development.refresh_from_db()
-    assert development.occurred_on == HAPPENED
+        assert response.status_code == 200, extra
+        development.refresh_from_db()
+        assert (development.occurred_on, development.occurred_on_precision) == (
+            anchor,
+            precision,
+        ), extra
 
 
 def test_a_period_that_has_begun_is_allowed(signed_in, normal_matter, development):
@@ -788,9 +801,13 @@ def test_a_save_that_changed_nothing_records_nothing(signed_in, normal_matter, d
 
 
 def test_a_refused_correction_writes_no_audit_row(signed_in, normal_matter, development):
-    future = timezone.localdate() + dt.timedelta(days=30)
-    _save(signed_in, normal_matter, development, occurred_on=format_estonian_date(future))
+    """A date that does not exist is refused, and the refusal writes nothing.
 
+    (A day ahead of today used to be the refusal here; since docs/adr/0121 §3 it
+    is valid input.)"""
+    response = _save(signed_in, normal_matter, development, occurred_on="31.02.2026")
+
+    assert response.status_code == 400
     assert _corrections(development).count() == 0
 
 

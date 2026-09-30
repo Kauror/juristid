@@ -24,6 +24,7 @@ from app.audit.services import record_change_event
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
+from app.core.web_addresses import WEB_SCHEMES, normalize_web_address
 from app.documents.enums import DocumentRole
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import read_upload
@@ -70,7 +71,7 @@ from app.matters.models import (
     TagAssignment,
 )
 from app.submissions.models import Submission
-from app.workflow.dates import period_bounds, period_starts_after
+from app.workflow.dates import period_bounds
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
 from app.workflow.models import NextAction
 from app.workflow.services import (
@@ -1650,16 +1651,9 @@ def add_source_derived_policy_areas(
     return missing
 
 
-#: The only schemes an engagement link may use.
-#:
-#: Not a general URL policy — a narrow allow-list for one field that renders as
-#: a clickable control on a page a lawyer trusts. `javascript:` and `data:` are
-#: script delivery dressed as an address; `file:` and `ftp:` point somewhere the
-#: reader's browser cannot usefully follow. Nothing here fetches the link, and
-#: nothing checks whether the far end is alive: an engagement recorded in 2019
-#: whose campaign has since been archived is still a true record of what the
-#: Chamber did (Agent-F brief 12).
-ENGAGEMENT_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+#: The only schemes an engagement link may use — the product's one web-scheme
+#: allow-list, kept under this name for the callers that import it.
+ENGAGEMENT_URL_SCHEMES: frozenset[str] = WEB_SCHEMES
 
 
 def _normalize_public_link(
@@ -1672,66 +1666,26 @@ def _normalize_public_link(
     has_credentials: str = "Link ei tohi sisaldada kasutajanime ega parooli.",
     too_long: str | None = None,
 ) -> str:
-    """One implementation of «a public http(s) address, or nothing».
+    """«A public http(s) address, or nothing», for the Teema page's link columns.
 
-    Factored out of :func:`normalize_engagement_url` when `Väline seisukoht`
-    needed exactly the same rule under its own column width, because the rule is
-    not the kind that may exist twice: it is the difference between a clickable
-    control on a page a lawyer trusts and a script-delivery vector, and a second
-    copy is a second place for `javascript:` to be forgotten. ``max_length`` is
-    the only thing the first two callers disagreed about, and both of them state
-    their own — the refusal sentence is built from it, so neither caller's
-    wording changed when this was extracted.
-
-    The refusal sentences are parameters for the third caller,
-    :func:`normalize_overview_news_url`, which names its own record in every one
-    of them. A shared «Link peab sisaldama veebiaadressi.» would have been the
-    only sentence on a Teema page that did not say *which* link it meant, on a
-    page that now renders three different kinds of them.
-
-    ``reject_credentials`` is off by default and the default is the older
-    behaviour, deliberately. `https://user:pw@host/` has a perfectly good host,
-    and for a campaign address out of the historical register — which this
-    department did not choose and cannot re-issue — refusing it would mean
-    refusing to record what actually happened. An `Ülevaade / uudis` address is
-    one somebody is pasting *now*, from a page they have open, so there is no
-    such history to accommodate and a credential on the file is a credential in
-    an audit payload, on a rendered page and in everybody's browser history
-    (docs/adr/0081 §3, kept by docs/adr/0085 §2).
+    `app.core.web_addresses.normalize_web_address` is the rule, and this is the
+    name the four link families here have always called it by
+    (`normalize_engagement_url`, `normalize_external_position_url`,
+    `normalize_overview_news_url`, `normalize_procedural_link_url`). Since
+    docs/adr/0121 §5 it accepts an address typed without a scheme —
+    `www.delfi.ee`, `delfi.ee/uudised` — and stores it with `https://`; a scheme
+    somebody did type is never changed, and text that is not a host is still
+    refused.
     """
-    from urllib.parse import urlsplit
-
-    url = (value or "").strip()
-    if not url:
-        return ""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        raise DomainError(not_a_url) from None
-    if parts.scheme.lower() not in ENGAGEMENT_URL_SCHEMES:
-        raise DomainError(not_web_scheme)
-    try:
-        hostname = parts.hostname
-        username = parts.username
-        password = parts.password
-    except ValueError:
-        # A malformed authority — an unbracketed IPv6 literal, a port that is
-        # not a number. A refusal, not an unhandled exception from a parser.
-        hostname = None
-        username = password = None
-    if reject_credentials and (username or password):
-        raise DomainError(has_credentials)
-    if not hostname:
-        raise DomainError(not_a_url)
-    if len(url) > max_length:
-        raise DomainError(
-            too_long
-            or (
-                f"Link on liiga pikk — kuni {max_length} tähemärki. "
-                "Lühenda aadressi või salvesta see märkusesse."
-            )
-        )
-    return url
+    return normalize_web_address(
+        value,
+        max_length=max_length,
+        reject_credentials=reject_credentials,
+        not_a_url=not_a_url,
+        not_web_scheme=not_web_scheme,
+        has_credentials=has_credentials,
+        too_long=too_long,
+    )
 
 
 def normalize_engagement_url(value: str | None) -> str:
@@ -1866,25 +1820,13 @@ def _refuse_deadline_before_engagement(
         raise DomainError(DEADLINE_BEFORE_ENGAGEMENT)
 
 
-#: What a consultation dated after today is told (ENG-004).
-#:
-#: A `Kaasamine` is something that already happened (docs/adr/0082), and Teema
-#: käik projects only what has: a round dated tomorrow was saved, then left the
-#: page together with its only `Muuda` and `Kustuta` until the day arrived — and
-#: `24.09.62` is 2062. So the date is refused where every writer passes, with the
-#: sentence both `Kaasamine` forms print.
-ENGAGEMENT_CANNOT_BE_FUTURE = "Kaasamise kuupäev ei saa olla tulevikus."
-
-
-def _refuse_a_future_engagement(occurred_on: Any, occurred_on_precision: Any) -> None:
-    """A round whose whole period begins after the Tallinn business day is refused.
-
-    `period_starts_after`, the comparison `+ Märge` makes and the one the
-    chronology hides by: *september 2026* read on the 18th covers today and is
-    not the future, and an unknown date is not in the future either.
-    """
-    if period_starts_after(occurred_on, occurred_on_precision, day=timezone.localdate()):
-        raise DomainError(ENGAGEMENT_CANNOT_BE_FUTURE)
+#: **A `Kaasamine` may be dated in the past, today or the future**
+#: (docs/adr/0121 §3). ENG-004 refused a round dated after today because Teema
+#: käik then hid it until its day came; a round being planned is a real thing to
+#: record, so the refusal is gone and the chronology shows such a round marked
+#: `Eesolev` instead (`app.matters.timeline.projected_milestones`). What a date
+#: *means* is decided where it is read — a round ahead of us is not activity yet
+#: (`app.matters.activity`), and only the reply-by rule relates the two dates.
 
 
 @transaction.atomic
@@ -2043,7 +1985,6 @@ def add_engagement(
     if not clean_title:
         raise DomainError("Kaasamisel peab olema pealkiri.")
     precision = _engagement_precision(occurred_on, occurred_on_precision)
-    _refuse_a_future_engagement(occurred_on, precision)
     _refuse_deadline_before_engagement(occurred_on, precision, feedback_deadline)
 
     engagement = MatterEngagement.objects.create(
@@ -2273,22 +2214,12 @@ def update_engagement(
     # the save moves one of them: a row that already holds the impossible pair
     # — written before the rule reached this service — is a finding for
     # `check_domain_invariants`, and refusing a correction of its title would
-    # freeze it without making it any less wrong. The same reasoning
-    # `correct_procedural_development` gives for its future-date rule.
+    # freeze it without making it any less wrong.
     if {"occurred_on", "occurred_on_precision", "feedback_deadline"} & set(changed):
         _refuse_deadline_before_engagement(
             proposed.get("occurred_on", locked.occurred_on),
             proposed.get("occurred_on_precision", locked.occurred_on_precision),
             proposed.get("feedback_deadline", locked.feedback_deadline),
-        )
-    # **Nor may a correction move the round into the future** (ENG-004), guarded
-    # the same way: only when the date or its precision moves. A row stored with
-    # a future date before this rule existed stays correctable — its title, its
-    # note, and its date back to the day it really happened.
-    if {"occurred_on", "occurred_on_precision"} & set(changed):
-        _refuse_a_future_engagement(
-            proposed.get("occurred_on", locked.occurred_on),
-            proposed.get("occurred_on_precision", locked.occurred_on_precision),
         )
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
@@ -2760,12 +2691,9 @@ WEBSITE_OVERVIEW_URL_TOO_LONG = (
     f"Ülevaate või uudise link on liiga pikk — kuni {WEBSITE_OVERVIEW_URL_MAX_LENGTH} tähemärki."
 )
 WEBSITE_OVERVIEW_NEEDS_LINK = "Avaldatud ülevaade või uudis vajab linki."
-#: What a publication dated after today is told (ENG-004). `published_on` is the
-#: day the page went up (docs/adr/0081), which cannot be tomorrow; Teema käik
-#: shows only what has happened, so a future day was saved and then left the
-#: page together with the row's `Paranda link` and `Kustuta`. An empty date is
-#: still an ordinary answer — *the day is unknown* (docs/adr/0089 §8).
-WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE = "Avaldamise kuupäev ei saa olla tulevikus."
+#: A publication date may be in the past, today or the future (docs/adr/0121
+#: §3): a page scheduled to go up is recorded as published on its day and reads
+#: `Eesolev` in Teema käik until then. ENG-004's refusal is gone.
 WEBSITE_OVERVIEW_ALREADY_PUBLISHED = (
     "See ülevaade või uudis on juba avaldatud. Linki ja kuupäeva saab parandada."
 )
@@ -2983,12 +2911,6 @@ def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsite
     return overview
 
 
-def _refuse_a_future_publication(published_on: Any) -> None:
-    """A page cannot have gone up after the Tallinn business day. `None` is unknown."""
-    if published_on is not None and published_on > timezone.localdate():
-        raise DomainError(WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE)
-
-
 def _publication_values(url: Any, published_on: Any) -> tuple[str, Any]:
     """The one thing a publication needs, and the one it may not know.
 
@@ -3051,7 +2973,6 @@ def publish_website_overview(
         raise DomainError(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL)
 
     clean_url, day = _publication_values(url, published_on)
-    _refuse_a_future_publication(day)
     now = timezone.now()
     locked.status = WebsiteOverviewStatus.PUBLISHED
     locked.url = clean_url
@@ -3152,12 +3073,6 @@ def correct_website_overview_link(
     clean_url, day = _publication_values(url, published_on)
     if clean_url == locked.url and day == locked.published_on:
         return locked
-    # Only a day that *moves* is judged (ENG-004): a publication stored with a
-    # future day before the rule existed can still have its address corrected,
-    # and its day moved back or cleared.
-    if day != locked.published_on:
-        _refuse_a_future_publication(day)
-
     payload: dict[str, Any] = {"fields": []}
     if clean_url != locked.url:
         payload["fields"].append("url")
@@ -3696,17 +3611,9 @@ EXTERNAL_POSITION_ENGAGEMENT_ELSEWHERE = "Seotud kaasamine peab olema sama teema
 #: and deliberately the same shape of sentence.
 EXTERNAL_POSITION_EDIT_CONFLICT = "Välist seisukohta on vahepeal mujal muudetud."
 
-#: What a position dated after today is told (ENG-004). What another
-#: organisation *said* is a fact about the past, and Teema käik shows only what
-#: has happened (docs/adr/0084) — so a future date is refused where every writer
-#: passes rather than saved and then left off the page with its controls.
-EXTERNAL_POSITION_CANNOT_BE_FUTURE = "Välise seisukoha kuupäev ei saa olla tulevikus."
-
-
-def _refuse_a_future_position(stated_on: Any, stated_on_precision: Any) -> None:
-    """The `Kaasamine` rule, for the same reason: a period begun after today."""
-    if period_starts_after(stated_on, stated_on_precision, day=timezone.localdate()):
-        raise DomainError(EXTERNAL_POSITION_CANNOT_BE_FUTURE)
+#: A position's date may be in the past, today or the future (docs/adr/0121
+#: §3) — feedback promised for a day, an opinion due to be published. ENG-004's
+#: refusal is gone; Teema käik marks such a row `Eesolev` until its day.
 
 
 class ExternalPositionConflict(DomainError):
@@ -3960,9 +3867,6 @@ def record_external_position(
     _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
     precision = _external_position_precision(stated_on, stated_on_precision)
-    # Before the row exists and before the workspace captures a single file, so
-    # a refusal leaves no record, no event and no evidence behind.
-    _refuse_a_future_position(stated_on, precision)
 
     position = MatterExternalPosition.objects.create(
         matter=matter,
@@ -4214,12 +4118,6 @@ def correct_external_position(
         # changed no value would be a history of somebody pressing a button
         # (`update_engagement`).
         return current
-    # Only when the date or its precision moves (ENG-004): a position stored
-    # with a future date before the rule existed can still have its summary,
-    # its source or its date corrected — back to the past, never forward.
-    if {"stated_on", "stated_on_precision"} & set(changed):
-        _refuse_a_future_position(stated_on, precision)
-
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "organisation_id" in changed:
         payload["organisation_from"] = (
@@ -4349,19 +4247,12 @@ def development_save_says_something(
     )
 
 
-#: What somebody filing next month's committee sitting as a development is told.
-#:
-#: `Menetluse areng` records something that **has happened** (docs/adr/0092 §3,
-#: §4). A plan belongs to `Järgmiseks` or to `+ Oluline tähtaeg`, which are the
-#: product's two forward-looking facts and have their own dates, their own
-#: lateness and their own place on the page.
-#:
-#: The sentence names the record rather than the box, deliberately. «Menetluse
-#: arengu kuupäev ei saa olla tulevikus» invites somebody to clear the date and
-#: file the future step undated, which is the same untruth with less of it
-#: written down. One wording, used by the form and by the service, so the two
-#: cannot come to mean subtly different things.
-DEVELOPMENT_CANNOT_BE_FUTURE = "Märge ei saa olla tulevikus."
+#: A `Märge` may be dated in the past, today or the future (docs/adr/0121 §3):
+#: «istung 12.11» written down ahead of the sitting is a real note. ENG-004's
+#: refusal is gone. What the date *means* is read elsewhere — a `Märge` ahead
+#: of us is marked `Eesolev` in Teema käik, is not evidence that a phase was
+#: reached (`app.matters.legal_process`) and never becomes the next step
+#: (`app.matters.next_step`).
 #: What a stale correction is told. The sibling of `EXTERNAL_POSITION_EDIT_CONFLICT`
 #: and deliberately the same shape of sentence.
 DEVELOPMENT_EDIT_CONFLICT = "Märget on vahepeal mujal muudetud."
@@ -4466,17 +4357,6 @@ def record_procedural_development(
     clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
     clean_note = (note or "").strip()
     precision = _development_precision(occurred_on, occurred_on_precision)
-    # **The invariant, here rather than on the form.** This is the one seam every
-    # writer of a `MatterProceduralDevelopment` passes through, and it is the
-    # *first* write of `add_procedural_development`'s transaction — so a refusal
-    # raised here unwinds the record, its evidence, the `Hetkeseis` and the
-    # `Järgmiseks` together, and a caller that never renders a form cannot move
-    # a Matter to `Riigikogus` on the strength of a sitting that has not
-    # happened. The form adds the same refusal beside the control the person
-    # typed into, from the same helper and the same sentence.
-    if period_starts_after(occurred_on, precision, day=timezone.localdate()):
-        raise DomainError(DEVELOPMENT_CANNOT_BE_FUTURE)
-
     development = MatterProceduralDevelopment.objects.create(
         matter=matter,
         title=clean_title,
@@ -4884,19 +4764,6 @@ def correct_procedural_development(
         has_files=current.document_links.exists(),
     ):
         raise DomainError(DEVELOPMENT_CORRECTION_LEAVES_NOTHING)
-    # **A correction may not move the date into the future**, the same invariant
-    # `record_procedural_development` states and the same sentence.
-    #
-    # Guarded on the date having actually *moved*, which is the difference
-    # between this seam and that one. A row filed before the rule existed is left
-    # exactly as it is and is not rewritten, so refusing every correction that
-    # merely *carries* its stored future date would make such a row's headline
-    # permanently uncorrectable — a second, quieter way of the file being unable
-    # to say what happened.
-    if ("occurred_on" in changed or "occurred_on_precision" in changed) and period_starts_after(
-        occurred_on, precision, day=timezone.localdate()
-    ):
-        raise DomainError(DEVELOPMENT_CANNOT_BE_FUTURE)
 
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "occurred_on" in changed:

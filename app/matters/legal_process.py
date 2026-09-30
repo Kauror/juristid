@@ -105,6 +105,7 @@ from app.matters.process_timeline import (
     STATE_REACHED,
     STATE_TODAY,
 )
+from app.workflow.dates import period_starts_after
 from app.workflow.enums import Disposition
 
 # ---------------------------------------------------------------------------
@@ -387,16 +388,25 @@ def recorded_phase_keys(*, matter: Matter, user: Any) -> set[str]:
 
     Scoped like every other read on this page, so a step a reader may not see
     marks no node for them (AUTH-003).
+
+    **Only a step that has happened.** A `Märge` may be dated ahead of today since
+    docs/adr/0121 §3 — «istung 12.11» written down before the sitting — and a
+    plan is not evidence that a phase was reached. So a development whose period
+    begins after today marks nothing until its day comes; an undated one still
+    counts, as it always has.
     """
     from app.matters.models import MatterProceduralDevelopment
 
+    today = timezone.localdate()
     return {
         phase
-        for phase in MatterProceduralDevelopment.objects.filter(matter=matter)
+        for phase, occurred_on, precision in MatterProceduralDevelopment.objects.filter(
+            matter=matter
+        )
         .visible_to(user)
-        .values_list("process_phase", flat=True)
-        .distinct()
-        if phase
+        .exclude(process_phase="")
+        .values_list("process_phase", "occurred_on", "occurred_on_precision")
+        if not period_starts_after(occurred_on, precision, day=today)
     }
 
 
@@ -709,7 +719,12 @@ def recorded_phase_dates(
         .values_list("process_phase", "occurred_on", "occurred_on_precision")
         .order_by("occurred_on")
     )
+    today = timezone.localdate()
     for phase_key, occurred_on, precision in rows:
+        # A `Märge` dated ahead of today dates no phase until its day comes
+        # (docs/adr/0121 §3): the rail's phase date is when it happened.
+        if period_starts_after(occurred_on, precision, day=today):
+            continue
         found.setdefault(phase_key, (occurred_on, precision))
     return found
 

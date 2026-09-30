@@ -171,7 +171,8 @@ def test_the_panels_are_compact_and_fit(page, base_url, width):
     chip_top = first_chip.evaluate("el => el.getBoundingClientRect().top")
     # The body's own padding and nothing else: no label row above the chips.
     assert chip_top - body_top <= 20, (body_top, chip_top)
-    expect(closing.locator(".uxchip")).to_have_count(3)
+    # Four outcomes since docs/adr/0121 §8; the row wraps rather than scrolling.
+    expect(closing.locator(".uxchip")).to_have_count(4)
     expect(closing.locator("[name=closing_words]")).to_be_visible()
     expect(closing).not_to_contain_text("Teema läheb arhiivi")
     assert_no_sideways_scroll(page)

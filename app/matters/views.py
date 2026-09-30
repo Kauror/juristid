@@ -44,6 +44,7 @@ from app.accounts.selectors import (
     owner_filter_choices,
 )
 from app.audit.models import ChangeEvent
+from app.audit.operations import composer_operation
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     may_review_work_victory,
@@ -2024,20 +2025,31 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # from extracted text (`promote_intake_files`).
                 if claim.session is not None:
                     intake_staging.record_created_matter(session=claim.session, matter=matter)
-                if intake_session is not None:
-                    promoted = intake_staging.promote_intake_files(
-                        session=intake_session, matter=matter, actor=request.user
-                    )
-                    # A press while the upload was still in flight posts the
-                    # session *and* the files it had just staged. Promoted
-                    # once is filed once; held uploads are never compared
-                    # (`without_staged_copies`).
-                    uploads = [
-                        *resumed,
-                        *intake_staging.without_staged_copies(chosen, promoted),
-                    ]
-                for upload in uploads:
-                    _attach_incoming_file(matter, upload, actor=request.user)
+                # **Every file this press files is one operation** (docs/adr/0121
+                # §6): the staged ones and the ones posted with the form share
+                # one `operation_id`, so `Teema käik` reads «lisas 7 dokumenti»
+                # once instead of «lisas dokumendi» seven times. Only the files —
+                # `Teema loodud`, the scratch note and the first step below are
+                # separate facts with rows of their own. Each document keeps its
+                # own `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED`; the
+                # grouping is the chronology's reading, never a merged record.
+                # A second upload is a second request and a new identifier, so
+                # two uploads in the same second are still two rows.
+                with composer_operation():
+                    if intake_session is not None:
+                        promoted = intake_staging.promote_intake_files(
+                            session=intake_session, matter=matter, actor=request.user
+                        )
+                        # A press while the upload was still in flight posts the
+                        # session *and* the files it had just staged. Promoted
+                        # once is filed once; held uploads are never compared
+                        # (`without_staged_copies`).
+                        uploads = [
+                            *resumed,
+                            *intake_staging.without_staged_copies(chosen, promoted),
+                        ]
+                    for upload in uploads:
+                        _attach_incoming_file(matter, upload, actor=request.user)
 
                 # The private scratch pad, through its own service, and only when
                 # something was typed. An empty note would create a row recording
@@ -3653,10 +3665,11 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             # asking for (docs/adr/0086 §1).
             kind=EngagementKind.OTHER.value,
             title=form.cleaned_data["title"],
-            url=form.cleaned_data.get("url") or "",
+            # No generic `url` or `note`: the form stopped offering both
+            # (docs/adr/0121 §4), so a round created here stores them empty,
+            # exactly as one created through `+ Kaasamine` does.
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            note=form.cleaned_data.get("note") or "",
             # The **resolved** date. On this route it is always the day box or
             # nothing, because a create has no stored period to preserve
             # (`app/matters/forms.py`, `EngagementForm.clean`).
@@ -3712,10 +3725,8 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
     return EngagementForm(
         initial={
             "title": engagement.title,
-            "url": engagement.url,
             "smaily_url": engagement.smaily_url,
             "alchemer_url": engagement.alchemer_url,
-            "note": engagement.note,
             # `Kaasamise kuupäev`, and **only** when it is a day. A record dated
             # to a month, a quarter or a year opens with this box empty and its
             # period stated in words beside it: the stored anchor is a place in
@@ -3985,10 +3996,12 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             # whatever is stored exactly as it is — a historical `Kaasamiskutse
             # veebis` keeps saying so (docs/adr/0086 §1).
             title=form.cleaned_data["title"],
-            url=form.cleaned_data.get("url") or "",
+            # No `url` and no `note` either, for the same reason (docs/adr/0121
+            # §4): the editor stopped offering the generic `Link` and `Märkus`,
+            # and naming them here would clear a legacy value on every save.
+            # Unnamed, `_UNSET` keeps what the record holds.
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            note=form.cleaned_data.get("note") or "",
             # Both dates, named explicitly on every save, so an emptied box
             # clears the column. `update_engagement`'s `_UNSET` sentinel is what
             # protects a field a caller does *not* name — the importer and the
@@ -5772,16 +5785,13 @@ def _website_overview_link_form(
     from what it actually says, because there the form is a correction.
     """
     auto_id = f"id_kodulehe_ulevaade_{overview.pk}_%s"
-    # What the row already says, so the form's future-date rule judges only a
-    # day the save would put there (ENG-004). A plan has no day yet.
-    stored = overview.published_on if overview.is_published else None
     if data is not None:
-        return WebsiteOverviewLinkForm(data, auto_id=auto_id, stored_published_on=stored)
+        return WebsiteOverviewLinkForm(data, auto_id=auto_id)
     initial: dict[str, Any] = {"revision": overview.revision_token}
     if overview.is_published:
         initial["url"] = overview.url
         initial["published_on"] = overview.published_on
-    return WebsiteOverviewLinkForm(initial=initial, auto_id=auto_id, stored_published_on=stored)
+    return WebsiteOverviewLinkForm(initial=initial, auto_id=auto_id)
 
 
 def _planned_website_overview_rows(
@@ -8133,6 +8143,7 @@ def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
             author=request.user,
             disposition=form.cleaned_data["disposition"],
             closing_words=form.cleaned_data.get("closing_words") or "",
+            work_victory=form.cleaned_data.get("work_victory_kwargs"),
         )
     except DomainError as error:
         return _workspace_refusal(request, matter, key="closure_form", form=form, error=str(error))

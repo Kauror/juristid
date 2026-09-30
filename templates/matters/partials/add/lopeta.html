@@ -45,11 +45,13 @@
               hx-target="#teema-vaade" hx-swap="outerHTML">
           {% csrf_token %}
           {% comment %}
-            The three outcomes, with no visible heading over them: the chips say
+            The four outcomes, with no visible heading over them: the chips say
             what they are, and the owner asked for the label off the screen. A
             `<fieldset>` whose `<legend>` is visually hidden, so a screen reader
-            still hears «Kuidas lõppes» before the first chip and the three are
-            one group rather than three loose buttons.
+            still hears «Kuidas lõppes» before the first chip and the four are
+            one group rather than four loose buttons. `Muu` is the stored
+            `Disposition.OTHER`, not an alias of the other three
+            (docs/adr/0121 §8).
           {% endcomment %}
           <fieldset class="cx-fieldset cx-when" data-chipgroup="{{ closure_form.disposition.html_name }}">
             <legend class="visually-hidden">{{ closure_form.disposition.label }}</legend>
@@ -66,6 +68,29 @@
           {% if closure_form.disposition.errors %}
             <p class="field__error" id="{{ closure_form.disposition.auto_id }}_error">{{ closure_form.disposition.errors|first }}</p>
           {% endif %}
+          {% comment %}
+            **`Märgi töövõiduks`** — unticked by default, and unticked the
+            closure is exactly what it was. Ticked, it opens `Töövõidu märkus`,
+            and the save records the ordinary `Töövõit` (`+ Märge → Töövõit`'s
+            use case, service and sentence) and closes the file in one
+            transaction (docs/adr/0121 §9). The box is shown by the stylesheet
+            from the checkbox itself (`.cx-reveal`).
+          {% endcomment %}
+          <div class="cx-reveal">
+            <label class="cx-check" for="{{ closure_form.mark_work_victory.id_for_label }}">
+              {{ closure_form.mark_work_victory }}
+              <span>{{ closure_form.mark_work_victory.label }}</span>
+            </label>
+            <div class="cx-reveal__body">
+              <label class="cx-f" for="{{ closure_form.victory_note.id_for_label }}">
+                <span class="cx-f__lab">{{ closure_form.victory_note.label }}</span>
+                {{ closure_form.victory_note }}
+              </label>
+              {% if closure_form.victory_note.errors %}
+                <p class="field__error" id="{{ closure_form.victory_note.auto_id }}_error">{{ closure_form.victory_note.errors|first }}</p>
+              {% endif %}
+            </div>
+          </div>
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
           </div>

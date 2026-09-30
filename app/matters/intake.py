@@ -28,6 +28,7 @@ from typing import Any
 
 from django.db import transaction
 
+from app.audit.operations import composer_operation
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
@@ -153,19 +154,24 @@ def register_incoming(
     if note:
         add_entry(matter=matter, body=note, author=actor, kind=EntryKind.NOTE)
 
-    for upload in uploads:
-        document = create_document(
-            matter=matter,
-            title=upload.filename,
-            role=role_for(upload.filename),
-            created_by=actor,
-        )
-        add_evidence_version(
-            document=document,
-            content=upload.content,
-            original_filename=upload.filename,
-            mime_type=upload.mime_type,
-            uploaded_by=actor,
-        )
+    # The files filed by this one press are one operation, so `Teema käik` reads
+    # «lisas 3 dokumenti» once — the rule `Uus teema` follows (docs/adr/0121 §6).
+    # The handover note above is its own row and deliberately outside it: a
+    # grouped note would swallow the files into «lisas märkuse».
+    with composer_operation():
+        for upload in uploads:
+            document = create_document(
+                matter=matter,
+                title=upload.filename,
+                role=role_for(upload.filename),
+                created_by=actor,
+            )
+            add_evidence_version(
+                document=document,
+                content=upload.content,
+                original_filename=upload.filename,
+                mime_type=upload.mime_type,
+                uploaded_by=actor,
+            )
 
     return IntakeResult(matter=matter, documents=len(uploads))

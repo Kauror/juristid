@@ -93,6 +93,11 @@ register's deep link is frequently a query and nothing else, and a canonicaliser
 that «tidied» it would quietly point the row at a different page than the one
 somebody opened.
 
+**Narrowed on 2026-09-30 by docs/adr/0121 §5:** an address typed *without* a
+scheme that looks like a host — `www.delfi.ee`, `delfi.ee/uudised?id=123` — is
+stored with `https://` in front. Everything else here stands: a scheme somebody
+typed is never upgraded or replaced, and nothing after the host is touched.
+
 The safety half is *shared* rather than copied, for the reason ADR 0085 §2
 gives: it is the difference between a clickable control on a page a lawyer
 trusts and a script-delivery vector, and a second copy is a second place for

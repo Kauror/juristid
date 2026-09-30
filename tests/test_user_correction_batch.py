@@ -496,10 +496,13 @@ def test_a_broad_period_is_not_banded_this_week_by_its_anchor(mixed_desk, title)
     assert title in _band_texts(work, wi.BAND_LATER)
 
 
-def test_a_period_ending_this_week_is_this_weeks(mixed_desk):
+def test_a_period_ending_this_week_is_still_a_period(mixed_desk):
+    """docs/adr/0121 §7 narrows docs/adr/0120 §4: no day of a period — not its
+    last one either — makes it this week's. It is `Hiljem` until it has ended."""
     work = build_my_work(mixed_desk, today=TODAY)
 
-    assert "September lõpeb sel nädalal" in _band_texts(work, wi.BAND_WEEK)
+    assert "September lõpeb sel nädalal" not in _band_texts(work, wi.BAND_WEEK)
+    assert "September lõpeb sel nädalal" in _band_texts(work, wi.BAND_LATER)
 
 
 def test_a_wait_is_in_the_week_it_asked_for(mixed_desk):
@@ -535,8 +538,9 @@ def test_the_figures_are_the_totals_of_the_bands_they_open(mixed_desk):
     assert figures["week"].value == bands[wi.BAND_WEEK].total == len(bands[wi.BAND_WEEK].items)
     assert figures["week"].url == f"#{wi.BAND_WEEK}"
     assert figures["week"].caption == "sel nädalal"
-    # Three rows: the exact day, the month that ends on Wednesday, the wait.
-    assert figures["week"].value == 3
+    # Two rows: the exact day and the wait. The month that ends on Wednesday is
+    # a period, not a weekly deadline (docs/adr/0121 §7).
+    assert figures["week"].value == 2
 
 
 def test_the_overdue_figure_counts_the_overdue_band(specialist):

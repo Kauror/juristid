@@ -120,6 +120,12 @@ it had just opened.
 `Ava ülevaade või uudis`, and prints the address itself. `Paranda link` becomes
 `Muuda`.
 
+**Narrowed on 2026-09-30 by docs/adr/0121 §5:** the link's visible text is the
+name `Ülevaade / uudis`, and the address — printed as below — is its `title`
+and the rest of its accessible name, so *which page* is still answerable
+without the row reading as a truncated path. `Avaldatud` stays gone, `Muuda`
+stays `Muuda`.
+
 **Context.** The row said four things, of which one was the answer:
 
 ```

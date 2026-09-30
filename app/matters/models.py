@@ -1699,6 +1699,20 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
             return WEBSITE_OVERVIEW_DATE_UNKNOWN
         return format_estonian_date(self.published_on)
 
+    #: What the link on the `Teema käik` row says (docs/adr/0121 §5).
+    #:
+    #: The record has no title of its own, so the link carries the name of what
+    #: it opens — the way a `Kaasamine`'s reads `Smaily` and `Alchemer` — rather
+    #: than a path cut at 72 characters. The address is not lost: it is the
+    #: link's `title`, the rest of its accessible name (so three write-ups on
+    #: one file are still told apart, docs/adr/0105 §3) and the box `Muuda`
+    #: opens with.
+    LINK_LABEL = "Ülevaade / uudis"
+
+    @property
+    def link_label(self) -> str:
+        return self.LINK_LABEL
+
     #: How long the printed address may run before it is cut.
     #:
     #: A published page's address is usually short — `koda.ee/uudised/<slug>` —

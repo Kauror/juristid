@@ -193,7 +193,12 @@ def test_the_chronology_names_the_activity_and_shows_the_address(
     # `Avaldatud` was the sub-line on every published row.
     assert "Avaldatud" not in row
     assert f'href="{NEWS_HTTPS_URL}"' in row
-    assert ">uudised.example/2026/03/kaubanduskoda-hoiatab<" in row
+    # The link reads the name of what it opens, and the address — without its
+    # scheme — is its hover title and the rest of its accessible name
+    # (docs/adr/0121 §5, narrowing docs/adr/0105 §3).
+    assert ">Ülevaade / uudis<span" in row
+    assert 'title="uudised.example/2026/03/kaubanduskoda-hoiatab"' in row
+    assert ": uudised.example/2026/03/kaubanduskoda-hoiatab — avaneb uues aknas" in row
     assert 'target="_blank"' in row
     assert 'rel="noopener noreferrer"' in row
     assert "avaneb uues aknas" in row
@@ -254,6 +259,14 @@ def test_any_public_web_address_is_accepted(url):
     assert normalize_overview_news_url(url) == url
 
 
+def test_an_address_typed_without_its_scheme_is_accepted_with_https():
+    """docs/adr/0121 §5: `koda.ee/uudised/x` is refused no longer; it is stored
+    with `https://`, and a scheme somebody typed is never changed."""
+    assert normalize_overview_news_url("koda.ee/uudised/x") == "https://koda.ee/uudised/x"
+    assert normalize_overview_news_url("www.koda.ee/uudised/x") == "https://www.koda.ee/uudised/x"
+    assert normalize_overview_news_url(NEWS_HTTP_URL) == NEWS_HTTP_URL
+
+
 @pytest.mark.parametrize(
     ("url", "because"),
     [
@@ -263,7 +276,6 @@ def test_any_public_web_address_is_accepted(url):
         ("file:///c:/uudised/x", "not somewhere a reader's browser can follow"),
         ("mailto:info@koda.ee", "not a page"),
         ("ftp://example.com/x", "not a web scheme"),
-        ("koda.ee/uudised/x", "no scheme at all"),
         ("https:///uudised/x", "a scheme and no host"),
         ("https://user:pw@/uudised/x", "an authority made of nothing but credentials"),
         ("https://koda.ee@example.com/x", "the name is in the userinfo a browser ignores"),
