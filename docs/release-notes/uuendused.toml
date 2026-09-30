@@ -8,6 +8,22 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-09-30
+basis = "deployment"
+# Omaniku teise kasutajapoolse testi (30.09) parandused, üks väljalase, ADR 0121.
+# Migratsioone ei ole. Saadetud Koja arvamuse kuupäev jääb tulevikku keelatuks.
+changes = [
+  "Kuupäeva võib sisestada nii minevikku, tänasesse kui ka tulevikku — ka märkele, kaasamisele, teiste arvamusele, meile saadetud tagasisidele ja avaldatud ülevaatele. Tulevikku jääv kirje on «Teema käigus» kohe näha ja märgitud «Eesolev».",
+  "Kaasamise muutmisel on samad väljad, mis selle lisamisel. Üldist «Link» ja «Märkus» välja seal enam ei ole; varem salvestatud väärtused jäävad alles.",
+  "Veebiaadressi võib kirjutada ilma «https://»-ta, näiteks www.delfi.ee või delfi.ee/uudised — see lisatakse ise. Täielik aadress jääb samaks ning aadressiks mittesobiv tekst lükatakse endiselt tagasi.",
+  "«Teema käigus» on lingid puhtad: kaasamisel lihtsalt «Smaily» ja «Alchemer», ülevaatel «Ülevaade / uudis», ilma lisanumbrite ja ikoonideta.",
+  "Kui uue teema loomisel lisatakse korraga mitu faili, on «Teema käigus» üks rida, näiteks «lisas 7 dokumenti». Hiljem eraldi lisatud failid on oma real.",
+  "«Minu asjades» ei panda kuu, kvartali ega aasta täpsusega kuupäeva enam «Sel nädalal» alla — see on «Hiljem», kuni periood on läbi. Teema, mille järgmine tegevus on kolleegil, ei ole enam «Järgmise tegevuseta».",
+  "Teema lõpetamisel saab valida ka «Muu».",
+  "Teema lõpetamisel saab linnukesega «Märgi töövõiduks» lisada samal ajal tavalise töövõidu koos lühikirjeldusega.",
+]
+
+[[day]]
 date = 2026-09-29
 basis = "deployment"
 # Omaniku kasutajapoolse testi (29.09) parandused, üks väljalase, ADR 0120.

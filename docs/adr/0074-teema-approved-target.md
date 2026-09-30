@@ -216,6 +216,11 @@ the service instead.
 `Disposition` vocabulary — `COMPLETED`, `INITIATIVE_WITHDRAWN`,
 `MONITORING_STOPPED`. Nothing was added to it and nothing retired from it.
 
+**Amended on 2026-09-30 by docs/adr/0121 §8–§9:** a fourth chip, `Muu`, is the
+stored `OTHER`; and an optional, unticked `Märgi töövõiduks` records the
+ordinary `Töövõit` through `add_matter_work_victory` in the closure's own
+transaction. Closing still infers nothing: without the tick no win is recorded.
+
 ### 11. `Täpsus` is three chips over one date box
 
 `Täpne päev` / `Kuu` / `Kvartal`, and `_period_anchor` derives the year, month,

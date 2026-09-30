@@ -52,6 +52,9 @@ The rule lives in `app/matters/next_step.py` and nowhere else:
   primary key — so the Matter page, a `Minu asjad` row and the register cannot
   pick different records.
 
+  **Narrowed on 2026-09-30 by docs/adr/0121 §1:** ranked by the period's end
+  first (the one due first), then the anchor, then the key.
+
 The milestone is **surfaced, not converted.** No `NextAction` is written, it
 keeps its own label («Oluline tähtaeg»), and `PRAEGUNE TEGEVUS` draws no
 `Mida tegid?` under it — a milestone has no completion of its own; it stops
@@ -102,6 +105,10 @@ stands.
   **Hiljem**, never *Järgmised 30 päeva*. Banding on the anchor put «oktoober
   2026» into *Sel nädalal* on 29 September because 1 October is a Thursday.
   Exact dates band exactly as before.
+  **Superseded on 2026-09-30 by docs/adr/0121 §7:** a period that has not
+  ended is never *Sel nädalal*, whichever of its days falls this week — not its
+  last day, and not a review's first. It is *Hiljem* until it has ended.
+
 * **Labels.** `WorkItem.short_date` and `meaning_line` print a month as
   `format_at_precision` does everywhere else — «oktoober 2026», not `10.26` —
   and a quarter and a year as they already did («IV kvartal 2026», «2026»).
@@ -191,6 +198,11 @@ a past milestone is history and never the next step, a past feedback deadline
 reads «Tagasiside tähtaeg möödus». The existing ENG-004 rule that a record of
 something that **happened** — a `Märge`, `Kaasamise kuupäev`, a send — is not
 dated after today is unchanged.
+
+**Superseded on 2026-09-30 by docs/adr/0121 §3** for a `Märge`, a
+`Kaasamise kuupäev`, a `Väline seisukoht` and a published `Ülevaade / uudis`:
+each accepts a future date and reads `Eesolev` in Teema käik. The sent-opinion
+rule (ENG-043) is kept.
 
 ## Not changed
 
