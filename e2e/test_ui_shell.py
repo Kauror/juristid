@@ -554,7 +554,7 @@ def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
     rather than at markup (human QA §4, §23).
     """
     sign_in(page, base_url, SANDRA)
-    pattern = re.compile(r"(19|20)\d{2}_\d+")
+    pattern = re.compile(r"\b(19|20)\d{2}_\d+\b")
 
     for path in ("/osakond/", "/minu-asjad/", "/teemad/", "/saabunud/"):
         page.goto(f"{base_url}{path}")

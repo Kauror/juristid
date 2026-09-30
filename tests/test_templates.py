@@ -104,7 +104,7 @@ def test_every_label_reference_points_at_a_heading_in_the_same_file(template: Pa
 #: unit. Deliberately not every variable inside a `style="…"` — a CSS custom
 #: property name is a string and localization cannot touch it.
 _STYLE_VARIABLE = re.compile(r'style="[^"]*:\s*\{\{\s*([^}]+?)\s*\}\}\s*(?:%|px|rem|em|vh|vw)')
-_SVG_GEOMETRY = re.compile(r'(?:cx|cy|x1|y1|x2|y2|x|y|r|width|height)="\{\{\s*([^}]+?)\s*\}\}"')
+_SVG_GEOMETRY = re.compile(r'\b(?:cx|cy|x1|y1|x2|y2|x|y|r|width|height)="\{\{\s*([^}]+?)\s*\}\}"')
 
 #: Expressions that are safe there: a name ending in `_css` is a string this
 #: codebase formatted itself, and an integer is not localized unless

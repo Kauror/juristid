@@ -501,7 +501,7 @@ def test_the_rehearsal_template_pins_no_stage_number(env_example: dict[str, str]
     stage = env_example.get("APPLICATION_STAGE", "")
 
     assert stage, "the rehearsal instance should still say which instance it is"
-    assert not re.search(r"Stage|\d", stage), (
+    assert not re.search(r"\bStage\b|\d", stage), (
         f"APPLICATION_STAGE={stage!r} pins a stage number; it will be wrong by the "
         "next merge and nobody reads a footer to check"
     )

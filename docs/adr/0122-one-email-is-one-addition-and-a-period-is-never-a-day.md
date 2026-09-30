@@ -207,6 +207,32 @@ the way `app.css` was guarded after docs/adr/0121 §5's «97».
 `tests/test_deployment_unraid.py:504`, `tests/test_templates.py:107`. Restoring
 them changes what those tests check, so it is its own change.
 
+### Addendum — the four test files, 2026-09-30
+
+That change is made. Each 0x08 is the two characters `\b` again, written byte
+by byte rather than through a shell, and each assertion now checks what it
+says:
+
+- `COUNTDOWN`, `\d+\s+p\b` — the strip prints no «N p» countdown;
+- `\b(19|20)\d{2}_\d+\b` — no ordinary reading surface prints a Matter
+  reference such as «2026_10»;
+- `\bStage\b|\d` — the rehearsal's `APPLICATION_STAGE` names no stage; until now
+  only the digit alternative had ever been checked, and `Rehearsal` passes both;
+- `_SVG_GEOMETRY` — no SVG coordinate is a template variable Django would
+  localize.
+
+The last is the only one that found anything. `reporting/_trend.html` drew its
+points from `Point.cx` / `Point.cy`, which were already strings formatted with a
+decimal point in Python, so no chart was ever wrong; but the guard recognises a
+Python-formatted string by its `_css` suffix — the convention `Bar.width_css`
+and `Trend.baseline_css` already follow — and these two did not carry it. They
+are `cx_css` / `cy_css` now. The guard is unchanged, and a test renders the
+partial in Estonian and reads every coordinate back, because a misspelt
+attribute renders as `""` and the browser drops the point without a word.
+
+`test_test_source_carries_no_raw_control_byte` reads `tests/` and `e2e/` for
+the same bytes as the production guard.
+
 ---
 
 ## Not changed

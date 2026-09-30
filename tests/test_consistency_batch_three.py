@@ -9,7 +9,8 @@ unchanged beside this module. This one holds what docs/adr/0122 made consistent:
    surface — Minu asjad, the register's deadline populations, Ülevaade and
    Osakond — through one rule, and becomes past only when it has ended;
 3. **no raw control byte in production source** — the `\\b` in
-   `opinion_sources.ADDRESSEE_SEPARATOR` that had been saved as a backspace.
+   `opinion_sources.ADDRESSEE_SEPARATOR` that had been saved as a backspace —
+   and, since the addendum to §3, none in `tests/` or `e2e/` either.
 """
 
 from __future__ import annotations
@@ -780,10 +781,23 @@ def test_the_window_rule(value, precision, start, end, inside):
 #: except tab, line feed and carriage return, and DEL.
 CONTROL_BYTE = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
-#: The trees that ship in the image. `tests/` and `e2e/` still carry four of
-#: these (docs/adr/0122 §3 lists them) and are deliberately not in scope here.
+#: The trees that ship in the image.
 PRODUCTION_TREES = ("app", "config", "templates", "static", "scripts", "deploy")
+#: The trees that check them.
+TEST_TREES = ("tests", "e2e")
 TEXT_SUFFIXES = {".py", ".html", ".css", ".js", ".sh", ".txt", ".toml", ".yml", ".yaml", ".md"}
+
+
+def _raw_control_bytes(trees: tuple[str, ...]) -> list[str]:
+    offenders = []
+    for tree in trees:
+        for path in (REPO / tree).rglob("*"):
+            if path.suffix not in TEXT_SUFFIXES or not path.is_file():
+                continue
+            for number, line in enumerate(path.read_bytes().split(b"\n"), start=1):
+                if CONTROL_BYTE.search(line):
+                    offenders.append(f"{path.relative_to(REPO)}:{number}")
+    return offenders
 
 
 def test_production_source_carries_no_raw_control_byte():
@@ -791,16 +805,63 @@ def test_production_source_carries_no_raw_control_byte():
     `opinion_sources.ADDRESSEE_SEPARATOR` came to hold two 0x08 bytes: the file
     compiled, the tests passed, and «ning» never separated anything. A byte like
     that is invisible in review, so the tree is read for it instead."""
-    offenders = []
-    for tree in PRODUCTION_TREES:
-        for path in (REPO / tree).rglob("*"):
-            if path.suffix not in TEXT_SUFFIXES or not path.is_file():
-                continue
-            for number, line in enumerate(path.read_bytes().split(b"\n"), start=1):
-                if CONTROL_BYTE.search(line):
-                    offenders.append(f"{path.relative_to(REPO)}:{number}")
+    assert _raw_control_bytes(PRODUCTION_TREES) == []
 
-    assert offenders == []
+
+def test_test_source_carries_no_raw_control_byte():
+    """In a test the same byte breaks nothing and proves nothing: the pattern it
+    sits in can never match, so an `assert not pattern.search(…)` passes
+    whatever the page says. Four did — the strip's countdown, a Matter
+    reference in reading text, a stage in the rehearsal label and the SVG half
+    of the localized-geometry guard (docs/adr/0122 §3, addendum)."""
+    assert _raw_control_bytes(TEST_TREES) == []
+
+
+def test_a_trend_reaches_the_page_with_a_decimal_point():
+    """The SVG half of `tests/test_templates.py`'s geometry guard, the first time
+    its `\\b` was a word boundary, named `_trend.html`: it read `point.cx` and
+    `point.cy`. Those were already strings formatted in Python — nothing was
+    broken — but not named `_css`, which is how the guard tells such a string
+    from a float Django would localize. They are `cx_css` / `cy_css` now.
+
+    A misspelt attribute renders as `""` and the browser drops the point without
+    a word, so this renders the partial in Estonian and reads every coordinate
+    back."""
+    from django.template import Context, Template
+    from django.template.loader import render_to_string
+    from django.utils import translation
+
+    from app.reporting.metric_types import MetricDefinition, MetricResult, Segment, TimeBasis
+    from app.reporting.views import _trends
+
+    definition = MetricDefinition(
+        key="TREND_PROBE",
+        version=1,
+        label_et="Proov",
+        description_et="Proov",
+        source_population_et="Proov",
+        time_basis=TimeBasis.REPORTING_YEAR,
+        respects_period=False,
+    )
+    result = MetricResult(
+        definition=definition,
+        segments=(Segment("2024", 3, url="/a/"), Segment("2025", 7), Segment("2026", 5, url="/c/")),
+    )
+    (item,) = _trends([result])
+    points = item["trend"].points
+
+    with translation.override("et"):
+        # The premise: a float rendered here takes a decimal comma.
+        assert Template("{{ y }}").render(Context({"y": 103.4})) == "103,4"
+        html = render_to_string("reporting/_trend.html", {"item": item})
+
+    circles = re.findall(r'<circle class="trend__(?:hit|point)" cx="([^"]*)" cy="([^"]*)"', html)
+    # Two circles for a point that links, one for a point that does not.
+    assert len(circles) == 5
+    assert set(circles) == {(p.cx_css, p.cy_css) for p in points}
+    assert ("44.0", "103.4") in circles
+    ticks = re.findall(r'<text class="trend__tick" x="([^"]*)" y="200"', html)
+    assert ticks == [p.cx_css for p in points]
 
 
 def test_ning_separates_addressees_as_a_whole_word():

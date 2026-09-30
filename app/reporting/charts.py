@@ -81,12 +81,15 @@ class Point:
 
     #: SVG coordinates, formatted here for the same reason as ``Bar.width_css``:
     #: `cx="123,4"` is not a coordinate, and the browser drops the attribute.
+    #: Named `_css` like the others because that suffix is how
+    #: `tests/test_templates.py` tells a Python-formatted string from a float the
+    #: template would localize.
     @property
-    def cx(self) -> str:
+    def cx_css(self) -> str:
         return f"{self.x:.1f}"
 
     @property
-    def cy(self) -> str:
+    def cy_css(self) -> str:
         return f"{self.y:.1f}"
 
 

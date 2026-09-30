@@ -53,7 +53,7 @@ pytestmark = pytest.mark.e2e
 WIDTHS = [1440, 1024, 420]
 
 #: The `N p` countdown the strip used to print on a future milestone.
-COUNTDOWN = re.compile(r"\d+\s+p")
+COUNTDOWN = re.compile(r"\d+\s+p\b")
 
 #: The seeded Matters, spelled as `seed_e2e_data` writes them. Copied rather
 #: than imported for the reason `e2e/conftest.py` gives: this directory
