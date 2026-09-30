@@ -418,7 +418,7 @@ def test_an_address_is_accepted_with_or_without_its_scheme(typed, stored):
     ],
 )
 def test_text_that_is_not_an_address_is_still_refused(typed):
-    with pytest.raises(DomainError, match="^Link peab "):
+    with pytest.raises(DomainError, match=r"^Link peab "):
         normalize_web_address(typed, max_length=1000)
 
 
@@ -434,7 +434,7 @@ def test_text_that_is_not_an_address_is_still_refused(typed):
 def test_every_teema_link_family_uses_the_one_rule(normalise):
     assert normalise("www.delfi.ee/uudised") == "https://www.delfi.ee/uudised"
     assert normalise("https://www.delfi.ee") == "https://www.delfi.ee"
-    with pytest.raises(DomainError, match="(?i)link peab"):
+    with pytest.raises(DomainError, match=r"(?i)link peab"):
         normalise("see ei ole aadress")
 
 
