@@ -101,12 +101,13 @@ from app.matters.process_phases import (
 from app.matters.process_timeline import (
     PHASE_EFFECTIVE,
     PHASE_TRANSPOSITION,
-    STATE_AHEAD,
     STATE_REACHED,
     STATE_TODAY,
+    dated_state,
 )
 from app.workflow.dates import period_starts_after
 from app.workflow.enums import Disposition
+from app.workflow.lateness import period_end_for
 
 # ---------------------------------------------------------------------------
 # The four states
@@ -870,7 +871,12 @@ def matter_rail(
             (index for index, placed in enumerate(steps) if placed.state == STATE_CURRENT),
             len(steps),
         )
-        if milestone.sort_on <= today:
+        # «Already happened» is the strip's own reading of the point, not a
+        # second comparison of its date: for a day the two agree, and a period
+        # has happened only once it has ended (docs/adr/0123). A commencement
+        # known to a month used to be placed among what had happened from the
+        # month's first day, while the strip still read it ahead.
+        if milestone.state in _REACHED_STATES:
             # Up to and including the current phase, and on over the dated
             # points already placed after it — without them in the window a
             # later send was scanned against the phase alone and inserted in
@@ -1076,26 +1082,33 @@ def _fallback_index(steps: list[RailStep], row: Any) -> int:
 def _added_step(row: Any, today: date) -> RailStep:
     """One added `MatterTimelineStep`, as the rail draws it.
 
-    A dated step reads against today exactly as a dated point does. An undated
-    one is given its state once every step is placed, by where it sits
+    A dated step reads against today exactly as a dated point does — through
+    the strip's own `dated_state`, not a copy of it. An undated one is given its
+    state once every step is placed, by where it sits
     (`_state_undated_added_steps`).
+
+    **A step dated as a period is never today** (docs/adr/0123). It used to
+    compare its anchor, so «Istung oktoober 2026» carried `aria-current="date"`
+    on 1 October — a day nobody named — and read as reached from the 2nd. It is
+    reached once October is over, as a period column of the strip is, and it
+    sits at the period's last day for the same reason that column does: the
+    fill running into a step still ahead must not already be solid. Where the
+    step is *placed* is unchanged — the place a person chose, or its own date
+    when that anchor is gone (`_fallback_index`).
     """
     when = row.occurs_on
     if when is None:
-        state = STATE_POSSIBLE
-    elif when < today:
-        state = STATE_REACHED
-    elif when == today:
-        state = STATE_TODAY
+        state, sort_on = STATE_POSSIBLE, None
     else:
-        state = STATE_AHEAD
+        state = dated_state(when, row.occurs_on_precision, today)
+        sort_on = period_end_for(when, row.occurs_on_precision)
     return RailStep(
         key=row.rail_key,
         label=row.title,
         kind=KIND_STEP,
         state=state,
         display_date=row.display_date,
-        sort_on=when,
+        sort_on=sort_on,
     )
 
 

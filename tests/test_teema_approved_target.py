@@ -1632,9 +1632,11 @@ def test_several_commencements_each_draw_their_own_column(normal_matter, special
 
 def test_an_approximate_commencement_is_not_given_a_fabricated_day(normal_matter, specialist):
     """A QUARTER record renders «II kvartal», the same reading the fact section
-    and the chronology print, and never `1.4.2027`. It sorts on `date_value`,
-    the first day of the period, because that is how every other surface orders
-    these records."""
+    and the chronology print, and never `1.4.2027`. It sits at `period_end`,
+    the last day of the quarter, as a watched `Oluline tähtaeg` on the same
+    strip does: the column's position is the date its state is read on, and a
+    commencement known to a quarter has taken effect once the quarter is over
+    (docs/adr/0123)."""
     start = date(timezone.localdate().year + 1, 4, 1)
     MatterEffectiveDate.objects.create(
         matter=normal_matter,
@@ -1651,7 +1653,7 @@ def test_an_approximate_commencement_is_not_given_a_fabricated_day(normal_matter
     assert step.label == "Jõustumine"
     assert step.display == format_at_precision(start, DatePrecision.QUARTER)
     assert step.display != format_estonian_date(start)
-    assert step.sort_on == start
+    assert step.sort_on == date(start.year, 6, 30)
 
 
 def test_a_self_set_next_action_date_is_not_a_process_milestone(
