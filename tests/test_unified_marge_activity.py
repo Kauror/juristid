@@ -663,3 +663,81 @@ def test_a_reader_without_business_write_writes_neither(client, matter, reader):
     assert response.status_code in (302, 403, 404)
     assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
     assert not NextAction.objects.filter(matter=matter).exists()
+
+
+# ---------------------------------------------------------------------------
+# Teema käik: one plan is not printed twice in one row
+# ---------------------------------------------------------------------------
+
+
+def _history(body: str) -> str:
+    return body[body.index('id="ajajoon"') :]
+
+
+def _pill(text: str) -> str:
+    return f'<span class="uxtl__nexttext">{text}</span>'
+
+
+def test_the_row_does_not_repeat_the_step_it_is(signed_in, matter):
+    """The activity *is* the step, so no «→ same sentence» pill under it."""
+    signed_in.post(
+        _add_note(matter),
+        {
+            "title": "Saadan ministeeriumile kirja",
+            "occurred_on": _et(_day(2)),
+            "as_next_step": "on",
+        },
+    )
+
+    history = _history(signed_in.get(_teema(matter)).content.decode())
+
+    assert "Saadan ministeeriumile kirja" in history
+    assert _pill("Saadan ministeeriumile kirja") not in history
+
+
+def test_a_step_that_says_something_else_keeps_its_pill(signed_in, matter, specialist):
+    """A row whose step is a different sentence still shows it (docs/adr/0092 §6)."""
+    add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Ministeerium saatis uue versiooni",
+        occurred_on=_day(-2),
+        next_text="Vaatan uue versiooni läbi",
+        next_date=_day(4),
+    )
+
+    history = _history(signed_in.get(_teema(matter)).content.decode())
+
+    assert _pill("Vaatan uue versiooni läbi") in history
+
+
+def test_a_corrected_headline_brings_the_pill_back(signed_in, matter, specialist):
+    """Once the two differ, the pill says something the headline does not."""
+    result = add_procedural_development(
+        matter=matter,
+        author=specialist,
+        title="Saadan kirja",
+        occurred_on=_day(3),
+        as_next_step=True,
+    )
+    record = result.record
+    signed_in.post(
+        reverse(
+            "matters:update_development",
+            kwargs={"pk": matter.pk, "development_id": record.pk},
+        ),
+        {
+            "title": "Ministeerium palus kirja",
+            "note": "",
+            "occurred_on": _et(_day(3)),
+            "areng_precision": DatePrecision.EXACT,
+            "areng_month": "",
+            "areng_quarter": "",
+            "areng_year": "",
+            "revision": record.revision_token,
+        },
+    )
+
+    history = _history(signed_in.get(_teema(matter)).content.decode())
+
+    assert _pill("Saadan kirja") in history

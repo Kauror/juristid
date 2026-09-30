@@ -2557,20 +2557,47 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     if not wanted:
         return page
 
+    actions = {
+        action.pk: action for action in NextAction.objects.filter(pk__in=wanted).visible_to(user)
+    }
     steps = {
-        action.pk: TimelineNextStep(
+        pk: TimelineNextStep(
             text=action.text,
             date_label=action.date_label,
             date_value=action.display_date if action.target_date else "",
         )
-        for action in NextAction.objects.filter(pk__in=wanted).visible_to(user)
+        for pk, action in actions.items()
     }
 
     resolved = []
     for item in page:
-        step = steps.get(action_of(item))
+        key = action_of(item)
+        step = steps.get(key)
+        if step is not None and _step_is_the_activity(item.record, actions[key]):
+            step = None
         resolved.append(replace(item, next_step=step) if step is not None else item)
     return resolved
+
+
+def _step_is_the_activity(record: Any, action: Any) -> bool:
+    """Whether a folded step is the row's own activity, marked as the next one.
+
+    `+ Märge` makes its step from the activity itself — the same sentence on the
+    same day, when the day is ahead and `Märgi järgmiseks tegevuseks` is ticked
+    (docs/adr/0124). Folded as usual, the row would read its headline and then
+    «→» the identical headline under it: one plan printed twice. So the pill is
+    left off exactly while the two agree. A step written from separate boxes
+    (older rows), or a `Märge` corrected since, differs from the row and keeps
+    its pill, because then it says something the headline does not.
+    """
+    from app.matters.models import MatterProceduralDevelopment
+
+    return (
+        isinstance(record, MatterProceduralDevelopment)
+        and (record.title or "").strip() == (action.text or "").strip()
+        and record.occurred_on is not None
+        and record.occurred_on == action.target_date
+    )
 
 
 def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> set[Any]:

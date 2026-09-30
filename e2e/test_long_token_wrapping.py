@@ -85,7 +85,7 @@ def _file_a_note(page, text: str) -> None:
     **`Mida tegid?` in `PRAEGUNE TEGEVUS`, not `+ Märge`.** This file measures
     `.richtext`, which is prose a person authored — `Entry.body` — and the
     launcher's ordinary note stopped writing one on 2026-09-20: `+ Märge` asks
-    `Mis juhtus?` as a single stated line and files a
+    `Tegevus` as a single stated line and files a
     `MatterProceduralDevelopment`, whose headline the chronology renders as a
     milestone rather than as a body (docs/adr/0097 §6).
 

@@ -280,31 +280,32 @@ def test_the_stage_reads_in_the_header_and_the_phase_on_the_rail(page, base_url)
 def test_one_development_save_reads_as_one_act_carrying_its_stage_and_step(page, base_url):
     """Three canonical writes, one row — the defect docs/adr/0092 §6 fixes.
 
-    Before this the ministry's revised draft, the stage it moved the file to and
-    the step the lawyer set were three separate lines, so the reason for two of
-    them sat two rows away from the fact.
+    Before this the development, the stage it moved the file to and the step
+    the lawyer set were three separate lines, so the reason for two of them sat
+    two rows away from the fact. Since docs/adr/0124 the step is the activity
+    itself, dated ahead and ticked; the stage and the step still fold under the
+    one row.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "marge-tavaline")
 
     form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Ministeerium saatis eelnõu uue versiooni")
-    form.locator("[name=occurred_on]").fill(_past(2))
+    form.locator("[name=title]").fill("Vaatan eelnõu uue versiooni läbi")
+    form.locator("[name=occurred_on]").fill(_future(4))
     form.locator("[name=stage]").select_option(label="Kooskõlastusringil")
-    form.locator("[name=next_text]").fill("Vaatan uue versiooni läbi")
-    form.locator("[name=next_date]").fill(_future(4))
+    expect(form.locator("[name=as_next_step]")).to_be_checked()
     form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     row = (
         history(page)
         .locator("article.uxtl__item")
-        .filter(has_text="Ministeerium saatis eelnõu uue versiooni")
+        .filter(has_text="Vaatan eelnõu uue versiooni läbi")
     )
     expect(row).to_have_count(1)
     expect(row).to_contain_text("Kooskõlastusringil")
-    expect(row).to_contain_text("Vaatan uue versiooni läbi")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Vaatan eelnõu uue versiooni läbi")
     # And not as a second and third row of its own.
     expect(history(page).locator("article.uxtl__item").filter(has_text="Hetkeseis:")).to_have_count(
         0
@@ -320,10 +321,8 @@ def test_the_open_step_reads_once_at_the_top(page, base_url):
     a_new_matter(page, base_url)
     _record_development(
         page,
-        title="Eelnõu jõudis Riigikokku",
-        occurred_on=_past(3),
-        next_text="Kirjutan komisjonile",
-        next_date=_future(6),
+        title="Kirjutan komisjonile",
+        occurred_on=_future(6),
     )
 
     expect(page.locator("#praegune-tegevus")).to_contain_text("Kirjutan komisjonile")

@@ -83,8 +83,8 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     # beside a task — so once `+ Järgmine tegevus` left the launcher the old
     # target did not exist on exactly the rows this block lists, and a browser
     # answers a missing fragment by scrolling nowhere. The one ordinary way to
-    # set a first step is the optional `Järgmine tegevus` inside `+ Märge`
-    # (docs/adr/0097 §8.2).
+    # set a first step is `+ Märge` itself — an activity dated ahead with
+    # `Märgi järgmiseks tegevuseks` ticked (docs/adr/0097 §8.2, docs/adr/0124).
     cta = own if own.count() else quiet.locator("a.quietrow__cta")
     assert cta.count(), "Minu asjad does not offer Määra for a Matter with no next step"
     href = cta.first.get_attribute("href") or ""
@@ -96,7 +96,7 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     # The field is only visible once the panel is open, so waiting for it is
     # what makes this free of a race with `load` — the assertion below then
     # reports the state rather than the timing.
-    page.locator("#lisa-marge [name='next_text']").wait_for(state="visible")
+    page.locator("#lisa-marge [name='title']").wait_for(state="visible")
 
     panel = page.locator("#lisa-marge")
     # Open because somebody asked for it by following a control that says so —
@@ -109,7 +109,7 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     expect(panel).to_be_visible()
     assert page.locator("#lisa-marge-valik").is_checked()
 
-    # And the caret is in `Mis juhtus?` rather than in the date box above it,
+    # And the caret is in `Tegevus` rather than in the date box below it,
     # which arrives already filled. Same rule as the `L` shortcut: the
     # attribute names the box a person is meant to type in.
     assert page.evaluate(
